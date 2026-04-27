@@ -1,0 +1,32 @@
+---
+description: Enforce generic contract-driven code (no hacks)
+alwaysApply: true
+---
+
+# Generic Code Rules (No Hacks)
+
+These rules apply to all code changes in this repository.
+
+- No one-off hacks, compatibility shims, or "special case for this sample/template" logic.
+- No behavior based on specific project names, template names, file paths, or app-specific constructor names.
+- No field-name guessing heuristics tied to domain words (for example: hour/minute/watchface/weather/logo).
+- No regex/string parsing of debug labels to recover semantic arguments (for example parsing coordinates/text out of a label string).
+- No operation inference from free-form message text fragments; operations must come from declared constructors/contracts.
+- Prefer contract-driven behavior: typed payloads, declared interfaces, constructors, and explicit metadata.
+- If runtime data is missing, extend the contract and propagate it through adapters instead of inferring from names.
+- Fallback logic must be generic and capability-based (shape/type/contract), never app-specific.
+- If data cannot be resolved from the contract, surface it as unmapped/unsupported instead of guessing.
+- Keep implementation names generic when logic is generic; use domain-specific names only for domain-specific behavior.
+
+## Required When Changing Runtime Paths
+
+- Add or update tests that prove behavior works across at least two different templates/fixtures.
+- Avoid fixes that only make one sample/template pass.
+- If a temporary workaround is unavoidable, document why and create a follow-up removal task.
+
+## Quick Examples
+
+- Bad: `if project_slug == "wf-analog" do ... end`
+- Bad: `if key contains "hour" then ...`
+- Good: add `CurrentDateTime` payload type and map by declared fields.
+- Good: dispatch by constructor/contract metadata, not by template identity.

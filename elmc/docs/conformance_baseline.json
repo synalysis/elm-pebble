@@ -1,0 +1,13 @@
+{
+  "required_functions": {
+    "total": 59,
+    "present": 59
+  },
+  "required_runtime_symbols": {
+    "total": 28,
+    "present": 28
+  },
+  "behavior_assertions": {
+    "total": 61
+  }
+}

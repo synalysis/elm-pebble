@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: elm-pebble-dev
+    runtime: static
+    rootDir: elm_pebble_dev
+    buildCommand: npm ci --include=dev && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0

@@ -1,0 +1,56 @@
+name: Debugger Strict Coverage
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  elm_executor-runtime:
+    name: elm_executor runtime suites
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.1"
+          elixir-version: "1.17.3"
+
+      - name: Install elm_executor dependencies
+        working-directory: elm_executor
+        run: mix deps.get
+
+      - name: Run elm_executor strict runtime suites
+        working-directory: elm_executor
+        run: |
+          mix test test/runtime_semantic_executor_test.exs
+
+  ide-debugger:
+    name: IDE debugger/runtime suites
+    runs-on: ubuntu-latest
+    needs: elm_executor-runtime
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.1"
+          elixir-version: "1.17.3"
+
+      - name: Install IDE dependencies
+        working-directory: ide
+        run: mix deps.get
+
+      - name: Run IDE debugger/runtime suites
+        working-directory: ide
+        run: |
+          mix test test/ide/debugger_test.exs \
+            test/ide/debugger/runtime_executor_test.exs \
+            test/ide/debugger/runtime_executor_parity_test.exs

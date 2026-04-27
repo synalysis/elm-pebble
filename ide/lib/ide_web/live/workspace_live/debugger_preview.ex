@@ -1,0 +1,1215 @@
+defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
+  @moduledoc false
+
+  @default_screen_w 144
+  @default_screen_h 168
+
+  @spec svg_ops(term(), term()) :: term()
+  def svg_ops(tree, runtime) when is_map(tree) do
+    runtime_ops = runtime_view_output(runtime)
+
+    if runtime_ops != [] do
+      runtime_ops
+    else
+      model = runtime_model(runtime)
+      primary_int = primary_int_model_value(model)
+
+      tree
+      |> collect_view_nodes()
+      |> Enum.flat_map(&svg_op_from_node(&1, primary_int, model))
+    end
+  end
+
+  def svg_ops(_tree, runtime), do: runtime_view_output(runtime)
+
+  @spec unresolved_summary(term()) :: term()
+  def unresolved_summary(rows) when is_list(rows) and rows != [] do
+    sample =
+      rows
+      |> Enum.take(3)
+      |> Enum.map(fn row ->
+        "#{display_node_type(row.node_type)}(#{row.provided_int_count}/#{row.required_int_count})"
+      end)
+      |> Enum.join(", ")
+
+    "Unresolved primitives (#{length(rows)}): #{sample}"
+  end
+
+  def unresolved_summary(_rows), do: ""
+
+  @spec display_node_type(term()) :: String.t()
+  defp display_node_type(value) when is_binary(value), do: value
+  defp display_node_type(_), do: "node"
+
+  @spec arc_path(term()) :: term()
+  def arc_path(op) when is_map(op) do
+    x = op.x || 0
+    y = op.y || 0
+    w = max(op.w || 1, 1)
+    h = max(op.h || 1, 1)
+    start_angle = op.start_angle || 0
+    end_angle = op.end_angle || 16_384
+
+    cx = x + w / 2.0
+    cy = y + h / 2.0
+    rx = w / 2.0
+    ry = h / 2.0
+
+    start_rad = pebble_angle_to_rad(start_angle)
+    finish_rad = pebble_angle_to_rad(end_angle)
+
+    sweep_rad =
+      if finish_rad >= start_rad,
+        do: finish_rad - start_rad,
+        else: finish_rad - start_rad + 2.0 * :math.pi()
+
+    large_arc = if sweep_rad > :math.pi(), do: 1, else: 0
+
+    sx = cx + rx * :math.cos(start_rad)
+    sy = cy + ry * :math.sin(start_rad)
+    ex = cx + rx * :math.cos(finish_rad)
+    ey = cy + ry * :math.sin(finish_rad)
+
+    "M #{Float.round(sx, 2)} #{Float.round(sy, 2)} A #{Float.round(rx, 2)} #{Float.round(ry, 2)} 0 #{large_arc} 1 #{Float.round(ex, 2)} #{Float.round(ey, 2)}"
+  end
+
+  def arc_path(_), do: ""
+
+  @spec runtime_model(term()) :: term()
+  def runtime_model(runtime) when is_map(runtime) do
+    model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
+    runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model)
+    if is_map(runtime_model), do: runtime_model, else: model
+  end
+
+  def runtime_model(_runtime), do: %{}
+
+  @spec primary_int_model_value(term()) :: term()
+  def primary_int_model_value(model) when is_map(model) do
+    preferred = ["hhmm", "count", "counter", "n", "value", "index", "total"]
+
+    Enum.find_value(preferred, fn key ->
+      val = Map.get(model, key)
+      if is_integer(val), do: val, else: nil
+    end) ||
+      Enum.find_value(model, fn {_key, val} ->
+        if is_integer(val), do: val, else: nil
+      end)
+  end
+
+  def primary_int_model_value(_model), do: nil
+
+  @spec text_label_from_node(term(), term()) :: term()
+  def text_label_from_node(node, model \\ %{})
+
+  def text_label_from_node(node, model) when is_map(node) and is_map(model) do
+    env = %{"model" => model}
+
+    text =
+      case node_children(node) do
+        [_font_node, _pos_node, label_node | _] ->
+          resolve_text_label_value(label_node, env)
+
+        _ ->
+          resolve_text_label_value(node, env)
+      end
+
+    if is_binary(text) and String.trim(text) != "", do: text, else: "Label"
+  end
+
+  def text_label_from_node(_node, _model), do: "Label"
+
+  @spec resolve_text_label_value(term(), map()) :: String.t() | nil
+  defp resolve_text_label_value(node, env) when is_map(node) and is_map(env) do
+    value = Map.get(node, "value") || Map.get(node, :value)
+    op = (Map.get(node, "op") || Map.get(node, :op) || "") |> to_string()
+    type = (Map.get(node, "type") || Map.get(node, :type) || "") |> to_string()
+    label = (Map.get(node, "label") || Map.get(node, :label) || "") |> to_string()
+
+    cond do
+      normalize_text_value(value) != nil ->
+        normalize_text_value(value)
+
+      op == "field_access" ->
+        resolve_field_access_text(node, env)
+
+      type == "var" and label != "" ->
+        env
+        |> map_value_by_key(label)
+        |> normalize_text_value()
+
+      true ->
+        node_children(node)
+        |> Enum.find_value(&resolve_text_label_value(&1, env))
+    end
+  end
+
+  defp resolve_text_label_value(_node, _env), do: nil
+
+  @spec resolve_field_access_text(map(), map()) :: String.t() | nil
+  defp resolve_field_access_text(node, env) when is_map(node) and is_map(env) do
+    label = (Map.get(node, "label") || Map.get(node, :label) || "") |> to_string()
+
+    field =
+      (Map.get(node, "field") || Map.get(node, :field) ||
+         label |> String.split(".") |> List.last())
+      |> to_string()
+
+    source_value =
+      case node_children(node) do
+        [source_node | _] ->
+          resolve_raw_value(source_node, env)
+
+        _ ->
+          if String.contains?(label, ".") do
+            source_name = label |> String.split(".") |> List.first()
+            map_value_by_key(env, source_name)
+          else
+            nil
+          end
+      end
+
+    source_value
+    |> case do
+      map when is_map(map) -> map_value_by_key(map, field)
+      _ -> nil
+    end
+    |> normalize_text_value()
+  end
+
+  defp resolve_field_access_text(_node, _env), do: nil
+
+  @spec resolve_raw_value(term(), map()) :: term()
+  defp resolve_raw_value(node, env) when is_map(node) and is_map(env) do
+    value = Map.get(node, "value") || Map.get(node, :value)
+    type = (Map.get(node, "type") || Map.get(node, :type) || "") |> to_string()
+    label = (Map.get(node, "label") || Map.get(node, :label) || "") |> to_string()
+    op = (Map.get(node, "op") || Map.get(node, :op) || "") |> to_string()
+
+    cond do
+      not is_nil(value) ->
+        value
+
+      op == "field_access" ->
+        resolve_field_access_text(node, env)
+
+      type == "var" and label != "" ->
+        map_value_by_key(env, label)
+
+      true ->
+        nil
+    end
+  end
+
+  defp resolve_raw_value(_node, _env), do: nil
+
+  @spec normalize_text_value(term()) :: String.t() | nil
+  defp normalize_text_value(value) when is_binary(value) do
+    if String.trim(value) != "", do: value, else: nil
+  end
+
+  defp normalize_text_value(value) when is_integer(value), do: Integer.to_string(value)
+
+  defp normalize_text_value(value) when is_float(value),
+    do: :erlang.float_to_binary(value, [:compact])
+
+  defp normalize_text_value(_value), do: nil
+
+  @spec map_value_by_key(map(), String.t()) :: term()
+  defp map_value_by_key(map, key) when is_map(map) and is_binary(key) do
+    Map.get(map, key) ||
+      Enum.find_value(map, fn
+        {atom_key, value} when is_atom(atom_key) ->
+          if Atom.to_string(atom_key) == key, do: value, else: nil
+
+        _ ->
+          nil
+      end)
+  end
+
+  @spec pebble_angle_to_rad(term()) :: term()
+  defp pebble_angle_to_rad(angle) when is_integer(angle) do
+    angle * 2.0 * :math.pi() / 65_536.0 - :math.pi() / 2.0
+  end
+
+  defp pebble_angle_to_rad(_), do: -:math.pi() / 2.0
+
+  @spec runtime_view_output(term()) :: term()
+  defp runtime_view_output(runtime) when is_map(runtime) do
+    model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
+    ops = Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output) || []
+
+    ops
+    |> List.wrap()
+    |> Enum.filter(&is_map/1)
+    |> Enum.map(&normalize_svg_op/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp runtime_view_output(_runtime), do: []
+
+  @spec normalize_svg_op(term()) :: term()
+  defp normalize_svg_op(op) when is_map(op) do
+    kind = to_string(Map.get(op, "kind") || Map.get(op, :kind) || "")
+
+    case kind do
+      "clear" ->
+        case map_integer_required(op, "color") do
+          {:ok, color} -> %{kind: :clear, color: color}
+          :error -> unresolved_svg_op("clear", ["color"], op)
+        end
+
+      "round_rect" ->
+        case map_integers_required(op, ["x", "y", "w", "h", "radius", "fill"]) do
+          {:ok, [x, y, w, h, radius, fill]} ->
+            %{kind: :round_rect, x: x, y: y, w: w, h: h, radius: radius, fill: fill}
+
+          :error ->
+            unresolved_svg_op("round_rect", ["x", "y", "w", "h", "radius", "fill"], op)
+        end
+
+      "rect" ->
+        case map_integers_required(op, ["x", "y", "w", "h", "fill"]) do
+          {:ok, [x, y, w, h, fill]} -> %{kind: :rect, x: x, y: y, w: w, h: h, fill: fill}
+          :error -> unresolved_svg_op("rect", ["x", "y", "w", "h", "fill"], op)
+        end
+
+      "fill_rect" ->
+        case map_integers_required(op, ["x", "y", "w", "h", "fill"]) do
+          {:ok, [x, y, w, h, fill]} -> %{kind: :fill_rect, x: x, y: y, w: w, h: h, fill: fill}
+          :error -> unresolved_svg_op("fill_rect", ["x", "y", "w", "h", "fill"], op)
+        end
+
+      "line" ->
+        case map_integers_required(op, ["x1", "y1", "x2", "y2", "color"]) do
+          {:ok, [x1, y1, x2, y2, color]} ->
+            %{kind: :line, x1: x1, y1: y1, x2: x2, y2: y2, color: color}
+
+          :error ->
+            unresolved_svg_op("line", ["x1", "y1", "x2", "y2", "color"], op)
+        end
+
+      "arc" ->
+        case map_integers_required(op, ["x", "y", "w", "h", "start_angle", "end_angle"]) do
+          {:ok, [x, y, w, h, start_angle, end_angle]} ->
+            %{kind: :arc, x: x, y: y, w: w, h: h, start_angle: start_angle, end_angle: end_angle}
+
+          :error ->
+            unresolved_svg_op("arc", ["x", "y", "w", "h", "start_angle", "end_angle"], op)
+        end
+
+      "fill_radial" ->
+        case map_integers_required(op, ["x", "y", "w", "h", "start_angle", "end_angle"]) do
+          {:ok, [x, y, w, h, start_angle, end_angle]} ->
+            %{
+              kind: :fill_radial,
+              x: x,
+              y: y,
+              w: w,
+              h: h,
+              start_angle: start_angle,
+              end_angle: end_angle
+            }
+
+          :error ->
+            unresolved_svg_op("fill_radial", ["x", "y", "w", "h", "start_angle", "end_angle"], op)
+        end
+
+      "path_filled" ->
+        case map_path_required(op) do
+          {:ok, path} ->
+            Map.put(path, :kind, :path_filled)
+
+          :error ->
+            unresolved_svg_op("path_filled", ["points", "offset_x", "offset_y", "rotation"], op)
+        end
+
+      "path_outline" ->
+        case map_path_required(op) do
+          {:ok, path} ->
+            Map.put(path, :kind, :path_outline)
+
+          :error ->
+            unresolved_svg_op("path_outline", ["points", "offset_x", "offset_y", "rotation"], op)
+        end
+
+      "path_outline_open" ->
+        case map_path_required(op) do
+          {:ok, path} ->
+            Map.put(path, :kind, :path_outline_open)
+
+          :error ->
+            unresolved_svg_op(
+              "path_outline_open",
+              ["points", "offset_x", "offset_y", "rotation"],
+              op
+            )
+        end
+
+      "circle" ->
+        case map_integers_required(op, ["cx", "cy", "r", "color"]) do
+          {:ok, [cx, cy, r, color]} -> %{kind: :circle, cx: cx, cy: cy, r: r, color: color}
+          :error -> unresolved_svg_op("circle", ["cx", "cy", "r", "color"], op)
+        end
+
+      "fill_circle" ->
+        case map_integers_required(op, ["cx", "cy", "r", "color"]) do
+          {:ok, [cx, cy, r, color]} -> %{kind: :fill_circle, cx: cx, cy: cy, r: r, color: color}
+          :error -> unresolved_svg_op("fill_circle", ["cx", "cy", "r", "color"], op)
+        end
+
+      "pixel" ->
+        case map_integers_required(op, ["x", "y", "color"]) do
+          {:ok, [x, y, color]} -> %{kind: :pixel, x: x, y: y, color: color}
+          :error -> unresolved_svg_op("pixel", ["x", "y", "color"], op)
+        end
+
+      "bitmap_in_rect" ->
+        case map_integers_required(op, ["bitmap_id", "x", "y", "w", "h"]) do
+          {:ok, [bitmap_id, x, y, w, h]} ->
+            %{kind: :bitmap_in_rect, bitmap_id: bitmap_id, x: x, y: y, w: w, h: h}
+
+          :error ->
+            unresolved_svg_op("bitmap_in_rect", ["bitmap_id", "x", "y", "w", "h"], op)
+        end
+
+      "rotated_bitmap" ->
+        case map_integers_required(op, [
+               "bitmap_id",
+               "src_w",
+               "src_h",
+               "angle",
+               "center_x",
+               "center_y"
+             ]) do
+          {:ok, [bitmap_id, src_w, src_h, angle, center_x, center_y]} ->
+            %{
+              kind: :rotated_bitmap,
+              bitmap_id: bitmap_id,
+              src_w: src_w,
+              src_h: src_h,
+              angle: angle,
+              center_x: center_x,
+              center_y: center_y
+            }
+
+          :error ->
+            unresolved_svg_op(
+              "rotated_bitmap",
+              ["bitmap_id", "src_w", "src_h", "angle", "center_x", "center_y"],
+              op
+            )
+        end
+
+      "text_int" ->
+        case map_integers_required(op, ["x", "y"]) do
+          {:ok, [x, y]} ->
+            text = to_string(Map.get(op, "text") || Map.get(op, :text) || "")
+
+            if text == "",
+              do: unresolved_svg_op("text_int", ["x", "y", "text"], op),
+              else: %{kind: :text_int, x: x, y: y, text: text}
+
+          :error ->
+            unresolved_svg_op("text_int", ["x", "y", "text"], op)
+        end
+
+      "text_label" ->
+        case map_integers_required(op, ["x", "y"]) do
+          {:ok, [x, y]} ->
+            text = to_string(Map.get(op, "text") || Map.get(op, :text) || "")
+
+            if text == "",
+              do: unresolved_svg_op("text_label", ["x", "y", "text"], op),
+              else: %{kind: :text_label, x: x, y: y, text: text}
+
+          :error ->
+            unresolved_svg_op("text_label", ["x", "y", "text"], op)
+        end
+
+      "text" ->
+        case map_integers_required(op, ["x", "y"]) do
+          {:ok, [x, y]} ->
+            text = to_string(Map.get(op, "text") || Map.get(op, :text) || "")
+
+            if text == "",
+              do: unresolved_svg_op("text", ["x", "y", "text"], op),
+              else: %{kind: :text_label, x: x, y: y, text: text}
+
+          :error ->
+            unresolved_svg_op("text", ["x", "y", "text"], op)
+        end
+
+      "unresolved" ->
+        unresolved_svg_op(
+          to_string(Map.get(op, "node_type") || Map.get(op, :node_type) || "node"),
+          [],
+          op
+        )
+
+      _ ->
+        nil
+    end
+  end
+
+  defp normalize_svg_op(_op), do: nil
+
+  @spec map_integer_required(term(), term()) :: term()
+  defp map_integer_required(map, key) when is_map(map) and is_binary(key) do
+    value = map_integer(map, key, :__missing__)
+    if is_integer(value), do: {:ok, value}, else: :error
+  end
+
+  defp map_integer_required(_map, _key), do: :error
+
+  @spec map_integers_required(term(), term()) :: term()
+  defp map_integers_required(map, keys) when is_map(map) and is_list(keys) do
+    values = Enum.map(keys, &map_integer_required(map, &1))
+
+    if Enum.all?(values, &match?({:ok, _}, &1)) do
+      {:ok, Enum.map(values, fn {:ok, v} -> v end)}
+    else
+      :error
+    end
+  end
+
+  defp map_integers_required(_map, _keys), do: :error
+
+  @spec map_path_required(term()) :: term()
+  defp map_path_required(map) when is_map(map) do
+    with {:ok, points} <- map_points_required(map),
+         {:ok, offset_x} <- map_integer_required(map, "offset_x"),
+         {:ok, offset_y} <- map_integer_required(map, "offset_y"),
+         {:ok, rotation} <- map_integer_required(map, "rotation") do
+      {:ok, %{points: points, offset_x: offset_x, offset_y: offset_y, rotation: rotation}}
+    else
+      _ -> :error
+    end
+  end
+
+  @spec map_points_required(term()) :: term()
+  defp map_points_required(map) when is_map(map) do
+    points = Map.get(map, "points") || Map.get(map, :points)
+
+    cond do
+      is_list(points) and points != [] ->
+        normalized =
+          points
+          |> Enum.map(&normalize_point_pair/1)
+
+        if Enum.all?(normalized, &match?({:ok, _}, &1)) do
+          {:ok, Enum.map(normalized, fn {:ok, pair} -> pair end)}
+        else
+          :error
+        end
+
+      true ->
+        :error
+    end
+  end
+
+  @spec normalize_point_pair(term()) :: term()
+  defp normalize_point_pair([x, y]) when is_integer(x) and is_integer(y), do: {:ok, [x, y]}
+  defp normalize_point_pair({x, y}) when is_integer(x) and is_integer(y), do: {:ok, [x, y]}
+
+  defp normalize_point_pair(%{"x" => x, "y" => y}) when is_integer(x) and is_integer(y),
+    do: {:ok, [x, y]}
+
+  defp normalize_point_pair(%{x: x, y: y}) when is_integer(x) and is_integer(y), do: {:ok, [x, y]}
+  defp normalize_point_pair(_), do: :error
+
+  @spec unresolved_svg_op(term(), term(), term()) :: term()
+  defp unresolved_svg_op(node_type, required_keys, op) do
+    %{
+      kind: :unresolved,
+      node_type: to_string(node_type),
+      required_keys: required_keys,
+      provided_int_count: map_integer(op, "provided_int_count", 0),
+      required_int_count: map_integer(op, "required_int_count", length(required_keys))
+    }
+  end
+
+  @spec map_integer(term(), term(), term()) :: term()
+  defp map_integer(map, key, fallback) when is_map(map) and is_binary(key) do
+    atom_key =
+      case key do
+        "x" -> :x
+        "y" -> :y
+        "w" -> :w
+        "h" -> :h
+        "x1" -> :x1
+        "y1" -> :y1
+        "x2" -> :x2
+        "y2" -> :y2
+        "cx" -> :cx
+        "cy" -> :cy
+        "r" -> :r
+        "radius" -> :radius
+        "fill" -> :fill
+        "color" -> :color
+        "start_angle" -> :start_angle
+        "end_angle" -> :end_angle
+        "provided_int_count" -> :provided_int_count
+        "required_int_count" -> :required_int_count
+        "offset_x" -> :offset_x
+        "offset_y" -> :offset_y
+        "rotation" -> :rotation
+        "bitmap_id" -> :bitmap_id
+        "src_w" -> :src_w
+        "src_h" -> :src_h
+        "angle" -> :angle
+        "center_x" -> :center_x
+        "center_y" -> :center_y
+        _ -> nil
+      end
+
+    value = Map.get(map, key) || Map.get(map, atom_key)
+
+    cond do
+      is_integer(value) ->
+        value
+
+      is_float(value) ->
+        trunc(value)
+
+      is_binary(value) ->
+        case Integer.parse(value) do
+          {parsed, ""} -> parsed
+          _ -> fallback
+        end
+
+      true ->
+        fallback
+    end
+  end
+
+  @spec collect_view_nodes(term()) :: term()
+  defp collect_view_nodes(node) when is_map(node) do
+    children =
+      case node["children"] || node[:children] do
+        list when is_list(list) -> list
+        _ -> []
+      end
+
+    here = if is_binary(node["type"] || node[:type]), do: [node], else: []
+    child_nodes = children |> Enum.filter(&is_map/1) |> Enum.flat_map(&collect_view_nodes/1)
+    here ++ child_nodes
+  end
+
+  defp collect_view_nodes(_), do: []
+
+  @spec svg_op_from_node(term(), term(), term()) :: term()
+  defp svg_op_from_node(node, primary_int, model) when is_map(node) do
+    type = node |> Map.get("type", Map.get(node, :type, "")) |> to_string()
+    ints = node_int_args(node)
+
+    case type do
+      "clear" ->
+        case require_ints(ints, 1) do
+          {:ok, [color]} ->
+            [%{kind: :clear, color: color}]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "clear",
+                provided_int_count: length(ints),
+                required_int_count: 1
+              }
+            ]
+        end
+
+      "roundRect" ->
+        case require_ints(ints, 6) do
+          {:ok, [x, y, w, h, radius, fill]} ->
+            [
+              %{
+                kind: :round_rect,
+                x: clamp(x, 0, @default_screen_w - 1),
+                y: clamp(y, 0, @default_screen_h - 1),
+                w: clamp(w, 1, @default_screen_w),
+                h: clamp(h, 1, @default_screen_h),
+                radius: clamp(radius, 0, 80),
+                fill: fill
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "roundRect",
+                provided_int_count: length(ints),
+                required_int_count: 6
+              }
+            ]
+        end
+
+      "rect" ->
+        case require_ints(ints, 5) do
+          {:ok, [x, y, w, h, fill]} ->
+            [
+              %{
+                kind: :rect,
+                x: clamp(x, 0, @default_screen_w - 1),
+                y: clamp(y, 0, @default_screen_h - 1),
+                w: clamp(w, 1, @default_screen_w),
+                h: clamp(h, 1, @default_screen_h),
+                fill: fill
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "rect",
+                provided_int_count: length(ints),
+                required_int_count: 5
+              }
+            ]
+        end
+
+      "fillRect" ->
+        case require_ints(ints, 5) do
+          {:ok, [x, y, w, h, fill]} ->
+            [
+              %{
+                kind: :fill_rect,
+                x: clamp(x, 0, @default_screen_w - 1),
+                y: clamp(y, 0, @default_screen_h - 1),
+                w: clamp(w, 1, @default_screen_w),
+                h: clamp(h, 1, @default_screen_h),
+                fill: fill
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "fillRect",
+                provided_int_count: length(ints),
+                required_int_count: 5
+              }
+            ]
+        end
+
+      "line" ->
+        case require_ints(ints, 5) do
+          {:ok, [x1, y1, x2, y2, color]} ->
+            [
+              %{
+                kind: :line,
+                x1: clamp(x1, 0, @default_screen_w - 1),
+                y1: clamp(y1, 0, @default_screen_h - 1),
+                x2: clamp(x2, 0, @default_screen_w - 1),
+                y2: clamp(y2, 0, @default_screen_h - 1),
+                color: color
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "line",
+                provided_int_count: length(ints),
+                required_int_count: 5
+              }
+            ]
+        end
+
+      "arc" ->
+        case require_ints(ints, 6) do
+          {:ok, [x, y, w, h, start_angle, end_angle]} ->
+            [
+              %{
+                kind: :arc,
+                x: clamp(x, 0, @default_screen_w - 1),
+                y: clamp(y, 0, @default_screen_h - 1),
+                w: clamp(w, 1, @default_screen_w),
+                h: clamp(h, 1, @default_screen_h),
+                start_angle: start_angle,
+                end_angle: end_angle
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "arc",
+                provided_int_count: length(ints),
+                required_int_count: 6
+              }
+            ]
+        end
+
+      "fillRadial" ->
+        case require_ints(ints, 6) do
+          {:ok, [x, y, w, h, start_angle, end_angle]} ->
+            [
+              %{
+                kind: :fill_radial,
+                x: clamp(x, 0, @default_screen_w - 1),
+                y: clamp(y, 0, @default_screen_h - 1),
+                w: clamp(w, 1, @default_screen_w),
+                h: clamp(h, 1, @default_screen_h),
+                start_angle: start_angle,
+                end_angle: end_angle
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "fillRadial",
+                provided_int_count: length(ints),
+                required_int_count: 6
+              }
+            ]
+        end
+
+      "pathFilled" ->
+        case path_from_view_node(node) do
+          {:ok, path} ->
+            [
+              %{
+                kind: :path_filled,
+                points: path.points,
+                offset_x: path.offset_x,
+                offset_y: path.offset_y,
+                rotation: path.rotation
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "pathFilled",
+                provided_int_count: length(ints),
+                required_int_count: 4
+              }
+            ]
+        end
+
+      "pathOutline" ->
+        case path_from_view_node(node) do
+          {:ok, path} ->
+            [
+              %{
+                kind: :path_outline,
+                points: path.points,
+                offset_x: path.offset_x,
+                offset_y: path.offset_y,
+                rotation: path.rotation
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "pathOutline",
+                provided_int_count: length(ints),
+                required_int_count: 4
+              }
+            ]
+        end
+
+      "pathOutlineOpen" ->
+        case path_from_view_node(node) do
+          {:ok, path} ->
+            [
+              %{
+                kind: :path_outline_open,
+                points: path.points,
+                offset_x: path.offset_x,
+                offset_y: path.offset_y,
+                rotation: path.rotation
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "pathOutlineOpen",
+                provided_int_count: length(ints),
+                required_int_count: 4
+              }
+            ]
+        end
+
+      "circle" ->
+        case require_ints(ints, 4) do
+          {:ok, [cx, cy, r, color]} ->
+            [
+              %{
+                kind: :circle,
+                cx: clamp(cx, 0, @default_screen_w - 1),
+                cy: clamp(cy, 0, @default_screen_h - 1),
+                r: clamp(r, 1, 80),
+                color: color
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "circle",
+                provided_int_count: length(ints),
+                required_int_count: 4
+              }
+            ]
+        end
+
+      "fillCircle" ->
+        case require_ints(ints, 4) do
+          {:ok, [cx, cy, r, color]} ->
+            [
+              %{
+                kind: :fill_circle,
+                cx: clamp(cx, 0, @default_screen_w - 1),
+                cy: clamp(cy, 0, @default_screen_h - 1),
+                r: clamp(r, 1, 80),
+                color: color
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "fillCircle",
+                provided_int_count: length(ints),
+                required_int_count: 4
+              }
+            ]
+        end
+
+      "pixel" ->
+        case require_ints(ints, 3) do
+          {:ok, [x, y, color]} ->
+            [
+              %{
+                kind: :pixel,
+                x: clamp(x, 0, @default_screen_w - 1),
+                y: clamp(y, 0, @default_screen_h - 1),
+                color: color
+              }
+            ]
+
+          :error ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "pixel",
+                provided_int_count: length(ints),
+                required_int_count: 3
+              }
+            ]
+        end
+
+      "textInt" ->
+        case node_children(node) do
+          [_font_node, pos_node, value_node | _] ->
+            with {:ok, [x, y]} <- point_pair_from_point_node(pos_node),
+                 value when is_integer(value) <- node_int_value(value_node) || primary_int do
+              [
+                %{
+                  kind: :text_int,
+                  x: clamp(x, 0, @default_screen_w - 1),
+                  y: clamp(y, 0, @default_screen_h),
+                  text: Integer.to_string(value)
+                }
+              ]
+            else
+              _ ->
+                [
+                  %{
+                    kind: :unresolved,
+                    node_type: "textInt",
+                    provided_int_count: length(ints),
+                    required_int_count: 3
+                  }
+                ]
+            end
+
+          _ ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "textInt",
+                provided_int_count: length(ints),
+                required_int_count: 3
+              }
+            ]
+        end
+
+      "textLabel" ->
+        case node_children(node) do
+          [_font_node, pos_node | _] ->
+            case point_pair_from_point_node(pos_node) do
+              {:ok, [x, y]} ->
+                [
+                  %{
+                    kind: :text_label,
+                    x: clamp(x, 0, @default_screen_w - 1),
+                    y: clamp(y, 0, @default_screen_h),
+                    text: text_label_from_node(node, model)
+                  }
+                ]
+
+              :error ->
+                [
+                  %{
+                    kind: :unresolved,
+                    node_type: "textLabel",
+                    provided_int_count: length(ints),
+                    required_int_count: 3
+                  }
+                ]
+            end
+
+          _ ->
+            [
+              %{
+                kind: :unresolved,
+                node_type: "textLabel",
+                provided_int_count: length(ints),
+                required_int_count: 3
+              }
+            ]
+        end
+
+      _ ->
+        []
+    end
+  end
+
+  defp svg_op_from_node(_node, _primary_int, _model), do: []
+
+  @spec node_int_args(term()) :: term()
+  defp node_int_args(node) when is_map(node) do
+    label = (Map.get(node, "label") || Map.get(node, :label) || "") |> to_string()
+    from_label = extract_ints(label)
+
+    if from_label != [] do
+      from_label
+    else
+      children =
+        case Map.get(node, "children") || Map.get(node, :children) do
+          list when is_list(list) -> list
+          _ -> []
+        end
+
+      children
+      |> Enum.filter(&is_map/1)
+      |> Enum.map(&node_int_value/1)
+      |> Enum.reject(&is_nil/1)
+    end
+  end
+
+  @spec node_int_value(term()) :: term()
+  defp node_int_value(node) when is_map(node) do
+    value = Map.get(node, "value") || Map.get(node, :value)
+
+    cond do
+      is_integer(value) ->
+        value
+
+      is_float(value) ->
+        trunc(value)
+
+      is_binary(value) ->
+        case Integer.parse(value) do
+          {parsed, ""} -> parsed
+          _ -> nil
+        end
+
+      true ->
+        label = (Map.get(node, "label") || Map.get(node, :label) || "") |> to_string()
+        label_ints = extract_ints(label)
+        List.first(label_ints)
+    end
+  end
+
+  defp node_int_value(_node), do: nil
+
+  @spec node_children(term()) :: [map()]
+  defp node_children(node) when is_map(node) do
+    case Map.get(node, "children") || Map.get(node, :children) do
+      list when is_list(list) ->
+        Enum.filter(list, &is_map/1)
+
+      _ ->
+        type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
+        op = to_string(Map.get(node, "op") || Map.get(node, :op) || "")
+        fields = Map.get(node, "fields") || Map.get(node, :fields)
+
+        if (type == "record" or (type == "expr" and op == "record_literal")) and is_map(fields) do
+          fields
+          |> Enum.map(fn {k, v} ->
+            child =
+              cond do
+                is_map(v) -> v
+                is_integer(v) -> %{"type" => "expr", "value" => v}
+                is_float(v) -> %{"type" => "expr", "value" => trunc(v)}
+                is_binary(v) -> %{"type" => "expr", "label" => v}
+                true -> %{"type" => "expr", "label" => to_string(v)}
+              end
+
+            %{
+              "type" => "field",
+              "label" => to_string(k),
+              "children" => [child]
+            }
+          end)
+        else
+          []
+        end
+    end
+  end
+
+  @spec path_from_view_node(term()) :: term()
+  defp path_from_view_node(node) when is_map(node) do
+    children = node_children(node)
+
+    case children do
+      [points_node, ox_node, oy_node, rot_node | _] ->
+        with {:ok, points} <- points_from_points_node(points_node),
+             ox when is_integer(ox) <- node_int_value(ox_node),
+             oy when is_integer(oy) <- node_int_value(oy_node),
+             rot when is_integer(rot) <- node_int_value(rot_node) do
+          {:ok, %{points: points, offset_x: ox, offset_y: oy, rotation: rot}}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  @spec points_from_points_node(term()) :: term()
+  defp points_from_points_node(node) when is_map(node) do
+    type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
+
+    if type == "List" do
+      children = node_children(node)
+
+      pairs =
+        children
+        |> Enum.map(&point_pair_from_point_node/1)
+
+      if Enum.all?(pairs, &match?({:ok, _}, &1)) do
+        {:ok, Enum.map(pairs, fn {:ok, pair} -> pair end)}
+      else
+        :error
+      end
+    else
+      :error
+    end
+  end
+
+  @spec point_pair_from_point_node(term()) :: term()
+  defp point_pair_from_point_node(node) when is_map(node) do
+    type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
+    op = to_string(Map.get(node, "op") || Map.get(node, :op) || "")
+
+    case {type, op} do
+      {"tuple2", _} ->
+        children = node_children(node)
+
+        case children do
+          [x_node, y_node | _] ->
+            x = node_int_value(x_node)
+            y = node_int_value(y_node)
+            if is_integer(x) and is_integer(y), do: {:ok, [x, y]}, else: :error
+
+          _ ->
+            :error
+        end
+
+      {"record", _} ->
+        fields =
+          node
+          |> node_children()
+          |> Enum.filter(&(to_string(Map.get(&1, "type") || Map.get(&1, :type) || "") == "field"))
+
+        x =
+          fields
+          |> Enum.find(&(to_string(Map.get(&1, "label") || Map.get(&1, :label) || "") == "x"))
+          |> field_value_int()
+
+        y =
+          fields
+          |> Enum.find(&(to_string(Map.get(&1, "label") || Map.get(&1, :label) || "") == "y"))
+          |> field_value_int()
+
+        if is_integer(x) and is_integer(y), do: {:ok, [x, y]}, else: :error
+
+      {"expr", "record_literal"} ->
+        fields =
+          node
+          |> node_children()
+          |> Enum.filter(&(to_string(Map.get(&1, "type") || Map.get(&1, :type) || "") == "field"))
+
+        x =
+          fields
+          |> Enum.find(&(to_string(Map.get(&1, "label") || Map.get(&1, :label) || "") == "x"))
+          |> field_value_int()
+
+        y =
+          fields
+          |> Enum.find(&(to_string(Map.get(&1, "label") || Map.get(&1, :label) || "") == "y"))
+          |> field_value_int()
+
+        if is_integer(x) and is_integer(y), do: {:ok, [x, y]}, else: :error
+
+      _ ->
+        :error
+    end
+  end
+
+  defp point_pair_from_point_node(_), do: :error
+
+  @spec field_value_int(term()) :: integer() | nil
+  defp field_value_int(field_node) when is_map(field_node) do
+    case node_children(field_node) do
+      [value_node | _] -> node_int_value(value_node)
+      _ -> nil
+    end
+  end
+
+  defp field_value_int(_field_node), do: nil
+
+  @spec extract_ints(term()) :: term()
+  defp extract_ints(text) when is_binary(text) do
+    Regex.scan(~r/-?\d+/, text)
+    |> Enum.map(fn [raw] -> String.to_integer(raw) end)
+  end
+
+  @spec require_ints(term(), term()) :: term()
+  defp require_ints(values, required)
+       when is_list(values) and is_integer(required) and required > 0 do
+    if length(values) >= required do
+      head = Enum.take(values, required)
+      if Enum.all?(head, &is_integer/1), do: {:ok, head}, else: :error
+    else
+      :error
+    end
+  end
+
+  defp require_ints(_values, _required), do: :error
+
+  @spec clamp(term(), term(), term()) :: term()
+  defp clamp(value, min, max) when is_integer(value), do: max(min, min(value, max))
+  defp clamp(_value, min, _max), do: min
+end

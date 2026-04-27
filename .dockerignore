@@ -1,0 +1,10 @@
+.git
+.github
+tmp
+elm-stuff
+**/deps
+**/_build
+**/node_modules
+**/*.beam
+**/*.ez
+**/.DS_Store

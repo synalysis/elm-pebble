@@ -1,0 +1,25 @@
+{
+    "type": "package",
+    "name": "elm-pebble/companion-core",
+    "summary": "Protocol contracts and codecs for Pebble phone companion bridges",
+    "license": "MIT",
+    "version": "0.1.0",
+    "exposed-modules": [
+        "Pebble.Companion.Command",
+        "Pebble.Companion.Contract",
+        "Pebble.Companion.Codec",
+        "Pebble.Companion.Configuration",
+        "Pebble.Companion.Geolocation",
+        "Pebble.Companion.Lifecycle",
+        "Pebble.Companion.Network",
+        "Pebble.Companion.Storage",
+        "Pebble.Companion.Timeline",
+        "Pebble.Companion.WebSocket"
+    ],
+    "elm-version": "0.19.0 <= v < 0.20.0",
+    "dependencies": {
+        "elm/core": "1.0.0 <= v < 2.0.0",
+        "elm/json": "1.0.0 <= v < 2.0.0"
+    },
+    "test-dependencies": {}
+}

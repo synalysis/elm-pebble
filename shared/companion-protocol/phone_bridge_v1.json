@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "channel": "pebble_companion_bridge",
+  "envelopes": {
+    "command": {
+      "required": [
+        "id",
+        "api",
+        "op",
+        "payload"
+      ],
+      "shape": {
+        "id": "string",
+        "api": "string",
+        "op": "string",
+        "payload": "json"
+      }
+    },
+    "result": {
+      "required": [
+        "id",
+        "ok"
+      ],
+      "shape": {
+        "id": "string",
+        "ok": "bool",
+        "payload": "json?",
+        "error": "error?"
+      }
+    },
+    "event": {
+      "required": [
+        "event",
+        "payload"
+      ],
+      "shape": {
+        "event": "string",
+        "payload": "json"
+      }
+    },
+    "error": {
+      "required": [
+        "type",
+        "message"
+      ],
+      "shape": {
+        "type": "string",
+        "message": "string",
+        "retryable": "bool?"
+      }
+    }
+  },
+  "apis": [
+    {
+      "name": "http",
+      "ops": [
+        "send"
+      ]
+    },
+    {
+      "name": "appMessage",
+      "ops": [
+        "send",
+        "subscribe"
+      ]
+    },
+    {
+      "name": "storage",
+      "ops": [
+        "set",
+        "get",
+        "remove",
+        "clear"
+      ]
+    },
+    {
+      "name": "lifecycle",
+      "ops": [
+        "subscribe"
+      ]
+    },
+    {
+      "name": "configuration",
+      "ops": [
+        "open",
+        "subscribe"
+      ]
+    },
+    {
+      "name": "timeline",
+      "ops": [
+        "getToken",
+        "insertPin",
+        "deletePin"
+      ]
+    },
+    {
+      "name": "geolocation",
+      "ops": [
+        "getCurrentPosition",
+        "watch",
+        "clearWatch"
+      ]
+    },
+    {
+      "name": "network",
+      "ops": [
+        "status",
+        "subscribe"
+      ]
+    },
+    {
+      "name": "webSocket",
+      "ops": [
+        "connect",
+        "disconnect",
+        "send",
+        "subscribe"
+      ]
+    }
+  ]
+}

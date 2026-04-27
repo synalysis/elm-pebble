@@ -1,0 +1,12 @@
+{
+  "elm_make_enabled": true,
+  "elm_make_excluded_modules": [
+    "fixtures/pebble_surface_project/src/Main.elm"
+  ],
+  "expected_expression_parse_failures": [
+    "fixtures/pebble_surface_project/src/Main.elm#update"
+  ],
+  "expected_unsupported_expr_roots": [
+    "fixtures/pebble_surface_project/src/Main.elm#update"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "name": "ide-pebble-app-template",
+  "author": "MakeAwesomeHappen",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "ide-pebble-app-template",
+    "uuid": "9ca2518c-0f0f-49be-bf80-a3d2144fcec2",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "msg_tag",
+      "increment",
+      "decrement",
+      "request_tag",
+      "request_value",
+      "response_tag",
+      "response_value"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}

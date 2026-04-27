@@ -1,0 +1,29 @@
+{
+    "type": "package",
+    "name": "elm-pebble/elm-watch",
+    "summary": "Watch runtime bindings for Pebble applications in Elm",
+    "license": "MIT",
+    "version": "0.1.0",
+    "exposed-modules": [
+        "Pebble.Cmd",
+        "Pebble.Events",
+        "Pebble.Hardware",
+        "Pebble.Light",
+        "Pebble.Log",
+        "Pebble.Platform",
+        "Pebble.Storage",
+        "Pebble.System",
+        "Pebble.Time",
+        "Pebble.Ui",
+        "Pebble.Vibes",
+        "Pebble.Wakeup",
+        "Pebble.WatchInfo"
+    ],
+    "elm-version": "0.19.0 <= v < 0.20.0",
+    "dependencies": {
+        "elm/core": "1.0.0 <= v < 2.0.0",
+        "elm/json": "1.0.0 <= v < 2.0.0",
+        "elm/time": "1.0.0 <= v < 2.0.0"
+    },
+    "test-dependencies": {}
+}

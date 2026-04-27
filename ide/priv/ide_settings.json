@@ -1,0 +1,18 @@
+{
+  "acp_agent_capabilities": [
+    "read"
+  ],
+  "acp_agent_enabled": true,
+  "auto_format_on_save": false,
+  "debug_mode": false,
+  "editor_active_line_highlight": true,
+  "editor_line_numbers": true,
+  "editor_mode": "vim",
+  "editor_theme": "system",
+  "formatter_backend": "elm_format",
+  "mcp_http_capabilities": [
+    "read"
+  ],
+  "mcp_http_enabled": true,
+  "mcp_http_port": 4000
+}

@@ -1,0 +1,4 @@
+services:
+  elm-pebble-ide:
+    volumes:
+      - /mnt/external-disk/elm-pebble-ide:/var/lib/ide

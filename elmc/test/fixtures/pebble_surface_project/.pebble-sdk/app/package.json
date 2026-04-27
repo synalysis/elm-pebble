@@ -1,0 +1,34 @@
+{
+  "author": "elm-pebble-ide",
+  "dependencies": {},
+  "keywords": [
+    "pebble-app"
+  ],
+  "name": "pebble-surface-smoke",
+  "pebble": {
+    "displayName": "Pebble Surface Smoke",
+    "enableMultiJS": true,
+    "messageKeys": [
+      "msg_tag",
+      "increment",
+      "decrement",
+      "request_tag",
+      "request_value",
+      "response_tag",
+      "response_value"
+    ],
+    "resources": {
+      "media": []
+    },
+    "sdkVersion": "3",
+    "targetPlatforms": [
+      "chalk"
+    ],
+    "uuid": "c1f62679-f61b-88c4-0de9-66f3fcb5ca14",
+    "watchapp": {
+      "watchface": false
+    }
+  },
+  "private": true,
+  "version": "1.0.0"
+}

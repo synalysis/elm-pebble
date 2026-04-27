@@ -1,0 +1,54 @@
+# Global build and dependency artifacts
+**/_build/
+**/deps/
+**/tmp/
+**/build/
+**/build_elx/
+**/build_executor/
+**/cover/
+**/doc/
+
+# Elm artifacts
+**/elm-stuff/
+**/.elm/
+
+# Node / JS artifacts
+**/node_modules/
+**/dist/
+
+# OS / editor noise
+.DS_Store
+*~
+*.swp
+*.swo
+
+# Logs and crash dumps
+*.log
+erl_crash.dump
+
+# Generated Erlang parser/lexer outputs from elm_ex/src/*.xrl and *.yrl
+elm_ex/src/*.erl
+
+# SQLite databases (local/dev/test)
+*.db
+*.db-shm
+*.db-wal
+
+# Pebble generated or local screenshots
+ide/priv/pebble_app_template/weather-demo*.png
+ide/priv/pebble_app_template/build/
+**/.lock-waf_linux_build
+ide/priv/pebble_app_template/src/c/elmc/
+ide/priv/pebble_app_template/src/c/generated/
+ide/priv/pebble_app_template/src/elm/Companion/Internal.elm
+ide/priv/pebble_app_template/src/pkjs/companion-protocol.js
+
+# Keep only source snapshots in tests, ignore generated tmp harness output
+elmc/test/tmp/
+
+# IDE generated workspace projects (templates live under ide/priv/project_templates)
+ide/workspace_projects/**
+
+# Locally built escript binaries
+elmc/elmc
+elm_executor/elm_executor

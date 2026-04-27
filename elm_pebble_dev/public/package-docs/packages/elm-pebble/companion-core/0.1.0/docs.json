@@ -1,0 +1,475 @@
+[
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Build command envelopes for the JavaScript companion bridge.\n\nMost higher-level companion modules use this module internally, but it is handy\nwhen you need to talk to a custom bridge API.\n\n    import Json.Encode as Encode\n    import Pebble.Companion.Command as Command\n\n    vibrateCommand =\n        Command.command \"cmd-1\" \"watch\" \"vibrate\"\n            |> Command.withPayload (Encode.object [])\n\n# Command envelopes\n@docs command, withPayload",
+    "name": "Pebble.Companion.Command",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Build a command envelope with an empty payload.",
+        "name": "command",
+        "type": "String -> String -> String -> CommandEnvelope"
+      },
+      {
+        "comment": "Replace payload on an existing command envelope.",
+        "name": "withPayload",
+        "type": "Encode.Value -> CommandEnvelope -> CommandEnvelope"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Structured command envelope sent from Elm to the JS companion bridge.",
+        "name": "CommandEnvelope",
+        "type": "{ id : String\n, api : String\n, op : String\n, payload : Encode.Value\n}"
+      },
+      {
+        "args": [],
+        "comment": "Structured result envelope sent from JS companion bridge back to Elm.",
+        "name": "ResultEnvelope",
+        "type": "{ id : String\n, ok : Bool\n, payload : Maybe Decode.Value\n, error : Maybe BridgeError\n}"
+      },
+      {
+        "args": [],
+        "comment": "Structured bridge errors instead of plain string errors.",
+        "name": "BridgeError",
+        "type": "{ type_ : String\n, message : String\n, retryable : Maybe Bool\n}"
+      },
+      {
+        "args": [],
+        "comment": "Pushed event envelope from JS companion bridge to Elm.",
+        "name": "BridgeEvent",
+        "type": "{ event : String\n, payload : Decode.Value\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Shared data contracts for the Pebble companion bridge.\n\nThese records describe the JSON envelopes exchanged between Elm and the\nJavaScript bridge.\n\n# Envelopes\n@docs CommandEnvelope, ResultEnvelope, BridgeError, BridgeEvent",
+    "name": "Pebble.Companion.Contract",
+    "unions": [],
+    "values": []
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "JSON codecs for bridge command, result, and event envelopes.\n\nUse these decoders at the boundary where JavaScript bridge messages enter Elm.\n\n# Encoding\n@docs encodeCommand\n\n# Decoding\n@docs decodeBridgeError, decodeResult, decodeEvent",
+    "name": "Pebble.Companion.Codec",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Encode a command envelope into wire JSON.",
+        "name": "encodeCommand",
+        "type": "CommandEnvelope -> Encode.Value"
+      },
+      {
+        "comment": "Decode a bridge error envelope.",
+        "name": "decodeBridgeError",
+        "type": "Decoder BridgeError"
+      },
+      {
+        "comment": "Decode a result envelope.",
+        "name": "decodeResult",
+        "type": "Decoder ResultEnvelope"
+      },
+      {
+        "comment": "Decode a pushed bridge event.",
+        "name": "decodeEvent",
+        "type": "Decoder BridgeEvent"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Open and observe the Pebble companion configuration page.\n\n    Pebble.Companion.Configuration.open \"settings\" \"https://example.com/config\"\n\n# Events\n@docs Event, decode\n\n# Commands\n@docs open, subscribe",
+    "name": "Pebble.Companion.Configuration",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Closed",
+            [
+              "(Maybe",
+              "String)"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Configuration lifecycle events reported by the bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Decode a bridge event into a configuration event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
+      },
+      {
+        "comment": "Ask the companion bridge to open a configuration URL.",
+        "name": "open",
+        "type": "String -> String -> CommandEnvelope"
+      },
+      {
+        "comment": "Subscribe to configuration close events.",
+        "name": "subscribe",
+        "type": "String -> CommandEnvelope"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Access browser geolocation through the phone companion bridge.\n\n    Pebble.Companion.Geolocation.getCurrentPosition \"location-now\"\n\n# Events\n@docs Event, decode\n\n# Commands\n@docs getCurrentPosition, watch, clearWatch",
+    "name": "Pebble.Companion.Geolocation",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Position",
+            [
+              "{",
+              "latitude",
+              ":",
+              "Float,",
+              "longitude",
+              ":",
+              "Float,",
+              "accuracy",
+              ":",
+              "Float",
+              "}"
+            ]
+          ],
+          [
+            "Error",
+            [
+              "String"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Geolocation events reported by the bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Decode a bridge geolocation event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
+      },
+      {
+        "comment": "Request the current phone location once.",
+        "name": "getCurrentPosition",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Start watching location changes.",
+        "name": "watch",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Stop a previously started location watch.",
+        "name": "clearWatch",
+        "type": "String -> Int -> CommandEnvelope"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Observe phone companion lifecycle events.\n\nSubscribe once during companion startup and route pushed bridge events through\n`decode`.\n\n# Events\n@docs Event, decode\n\n# Commands\n@docs subscribe",
+    "name": "Pebble.Companion.Lifecycle",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Ready",
+            []
+          ],
+          [
+            "ShowConfiguration",
+            []
+          ],
+          [
+            "WebViewClosed",
+            [
+              "(Maybe",
+              "String)"
+            ]
+          ],
+          [
+            "VisibilityChanged",
+            [
+              "Bool"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Lifecycle events emitted by the companion bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Decode a bridge lifecycle event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
+      },
+      {
+        "comment": "Subscribe to lifecycle events.",
+        "name": "subscribe",
+        "type": "String -> CommandEnvelope"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Query and observe phone network status.\n\n    Pebble.Companion.Network.status \"network-status\"\n\n# Events\n@docs Event, decode\n\n# Commands\n@docs status, subscribe",
+    "name": "Pebble.Companion.Network",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "StatusChanged",
+            [
+              "Bool"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Network status events from the companion bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Decode a bridge network event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
+      },
+      {
+        "comment": "Request the current online/offline status.",
+        "name": "status",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Subscribe to network status changes.",
+        "name": "subscribe",
+        "type": "String -> CommandEnvelope"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Persistent key/value storage through the phone companion bridge.\n\n    import Pebble.Companion.Storage as Storage\n\n    saveHighScore =\n        Storage.set \"score-save\" \"high-score\" (Storage.IntValue 9001)\n\n# Values and errors\n@docs Value, Error\n\n# Commands\n@docs set, get, remove, clear\n\n# Results\n@docs decodeGet",
+    "name": "Pebble.Companion.Storage",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "StringValue",
+            [
+              "String"
+            ]
+          ],
+          [
+            "IntValue",
+            [
+              "Int"
+            ]
+          ],
+          [
+            "BoolValue",
+            [
+              "Bool"
+            ]
+          ],
+          [
+            "JsonValue",
+            [
+              "Encode.Value"
+            ]
+          ]
+        ],
+        "comment": "Values that can be stored by the companion bridge.",
+        "name": "Value"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "BridgeFailure",
+            [
+              "BridgeError"
+            ]
+          ],
+          [
+            "MissingPayload",
+            []
+          ],
+          [
+            "DecodeFailure",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Storage result errors.",
+        "name": "Error"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Store a value under a key.",
+        "name": "set",
+        "type": "String -> String -> Value -> CommandEnvelope"
+      },
+      {
+        "comment": "Request a value by key.",
+        "name": "get",
+        "type": "String -> String -> CommandEnvelope"
+      },
+      {
+        "comment": "Remove a value by key.",
+        "name": "remove",
+        "type": "String -> String -> CommandEnvelope"
+      },
+      {
+        "comment": "Remove all stored values.",
+        "name": "clear",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Decode the result of a `get` command.",
+        "name": "decodeGet",
+        "type": "ResultEnvelope -> Result Error Value"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Timeline commands for companion-driven pins.\n\n    Pebble.Companion.Timeline.insertPin \"pin-create\" pinJson\n\n# Commands\n@docs getToken, insertPin, deletePin",
+    "name": "Pebble.Companion.Timeline",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Request the timeline token for the current user.",
+        "name": "getToken",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Insert or update a timeline pin from encoded pin JSON.",
+        "name": "insertPin",
+        "type": "String -> Encode.Value -> CommandEnvelope"
+      },
+      {
+        "comment": "Delete a timeline pin by id.",
+        "name": "deletePin",
+        "type": "String -> String -> CommandEnvelope"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "WebSocket commands and events through the phone companion bridge.\n\n    Pebble.Companion.WebSocket.connect \"socket-connect\" \"wss://example.com/live\"\n\n# Events\n@docs Event, decode\n\n# Commands\n@docs connect, disconnect, send, subscribe",
+    "name": "Pebble.Companion.WebSocket",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Opened",
+            []
+          ],
+          [
+            "Closed",
+            [
+              "(Maybe",
+              "Int)"
+            ]
+          ],
+          [
+            "Message",
+            [
+              "String"
+            ]
+          ],
+          [
+            "Error",
+            [
+              "String"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "WebSocket events emitted by the companion bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Decode a bridge WebSocket event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
+      },
+      {
+        "comment": "Open a WebSocket connection.",
+        "name": "connect",
+        "type": "String -> String -> CommandEnvelope"
+      },
+      {
+        "comment": "Close the active WebSocket connection.",
+        "name": "disconnect",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Send a string message over the active WebSocket.",
+        "name": "send",
+        "type": "String -> String -> CommandEnvelope"
+      },
+      {
+        "comment": "Subscribe to WebSocket events.",
+        "name": "subscribe",
+        "type": "String -> CommandEnvelope"
+      }
+    ]
+  }
+]

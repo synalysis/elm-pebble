@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "bitmap_bticon",
+      "ctor": "BtIcon",
+      "filename": "BtIcon.png",
+      "mime": "image/png",
+      "bytes": 238
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+services:
+  elm-pebble-ide:
+    image: ${ELM_PEBBLE_IMAGE:-elm-pebble-ide:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: elm-pebble-ide
+    ports:
+      - "${ELM_PEBBLE_PORT:-4000}:4000"
+    environment:
+      PHX_HOST: ${PHX_HOST:-localhost}
+      PORT: 4000
+      IDE_DATA_ROOT: /var/lib/ide
+      DATABASE_PATH: /var/lib/ide/ide_prod.db
+      PROJECTS_ROOT: /var/lib/ide/workspace_projects
+      SETTINGS_FILE: /var/lib/ide/config/settings.json
+      PEBBLE_SDK_VERSION: ${PEBBLE_SDK_VERSION:-latest}
+      INSTALL_PEBBLE_SDK: ${INSTALL_PEBBLE_SDK:-1}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-8eXjTGrTXoJHN8S-sqKoLrXp1xQ8vlqv2Ryr_5wPjMz5f4lAQ9S3v5dvU7uIGrYb}
+    volumes:
+      - elm_pebble_ide_data:/var/lib/ide
+    restart: unless-stopped
+
+volumes:
+  elm_pebble_ide_data:

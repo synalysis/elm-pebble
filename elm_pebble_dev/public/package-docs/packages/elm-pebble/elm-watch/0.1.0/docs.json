@@ -1,0 +1,1143 @@
+[
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Structured local time/date information from the watch runtime.",
+        "name": "CurrentDateTime",
+        "type": "{ year : Int\n, month : Int\n, day : Int\n, dayOfWeek : Weekday\n, hour : Int\n, minute : Int\n, second : Int\n, utcOffsetMinutes : Int\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Core watch commands.\n\nUse this module for generic scheduling. Hardware controls live in\n`Pebble.Hardware`, watch metadata requests live in `Pebble.WatchInfo`, and\nkey-value persistence helpers live in `Pebble.Storage`.\n\n    type Msg\n        = WakeUp\n\n    scheduleWakeUp : Cmd Msg\n    scheduleWakeUp =\n        timerAfter 1000\n\n# Scheduling\n@docs none, timerAfter\n\n# Time\n@docs CurrentDateTime, getCurrentDateTime",
+    "name": "Pebble.Cmd",
+    "unions": [],
+    "values": [
+      {
+        "comment": "A command that does nothing.",
+        "name": "none",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Run a command after `ms` milliseconds.",
+        "name": "timerAfter",
+        "type": "Int -> Cmd msg"
+      },
+      {
+        "comment": "Request the current local date/time with UTC offset in minutes.",
+        "name": "getCurrentDateTime",
+        "type": "(CurrentDateTime -> msg) -> Cmd msg"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Subscriptions for watch-side hardware and button events.\n\nEach helper turns a platform event into a regular Elm `Sub msg`.\n\n# Tick\n@docs onTick, onHourChange, onMinuteChange\n\n# Buttons\n@docs onButtonUp, onButtonSelect, onButtonDown, onButtonLongUp, onButtonLongSelect, onButtonLongDown\n\n# Sensors\n@docs onAccelTap\n\n# Composition\n@docs batch",
+    "name": "Pebble.Events",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Receive the current second on each clock tick from the runtime.\n\nThe value is the current wall-clock second, from `0` to `59`.",
+        "name": "onTick",
+        "type": "(Int -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive a message when the local hour changes.",
+        "name": "onHourChange",
+        "type": "(Int -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive a message when the local minute changes.",
+        "name": "onMinuteChange",
+        "type": "(Int -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive a message when the Up button is pressed.",
+        "name": "onButtonUp",
+        "type": "msg -> Sub msg"
+      },
+      {
+        "comment": "Receive a message when the Select button is pressed.",
+        "name": "onButtonSelect",
+        "type": "msg -> Sub msg"
+      },
+      {
+        "comment": "Receive a message when the Down button is pressed.",
+        "name": "onButtonDown",
+        "type": "msg -> Sub msg"
+      },
+      {
+        "comment": "Receive a message when the Up button is long-pressed.",
+        "name": "onButtonLongUp",
+        "type": "msg -> Sub msg"
+      },
+      {
+        "comment": "Receive a message when the Select button is long-pressed.",
+        "name": "onButtonLongSelect",
+        "type": "msg -> Sub msg"
+      },
+      {
+        "comment": "Receive a message when the Down button is long-pressed.",
+        "name": "onButtonLongDown",
+        "type": "msg -> Sub msg"
+      },
+      {
+        "comment": "Receive a message when an accelerometer tap gesture fires.",
+        "name": "onAccelTap",
+        "type": "msg -> Sub msg"
+      },
+      {
+        "comment": "Combine multiple Pebble subscriptions into one.",
+        "name": "batch",
+        "type": "List (Sub msg) -> Sub msg"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Custom vibration patterns as a list of (duration_ms, pause_ms) pairs.",
+        "name": "VibrationPattern",
+        "type": "List ( Int, Int )"
+      }
+    ],
+    "binops": [],
+    "comment": "Enhanced hardware access for Pebble watch devices.\n\n# Types\n@docs VibrationType, VibrationPattern, BacklightLevel, HardwareCmd\n\n# Vibration\n@docs vibrate, vibratePattern\n\n# Backlight\n@docs setBacklight, enableBacklight, disableBacklight, flashBacklight\n\n# System Status\n@docs getBatteryLevel, getConnectionStatus\n\n# Audio (if supported)\n@docs playTone, stopTone",
+    "name": "Pebble.Hardware",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Short",
+            []
+          ],
+          [
+            "Long",
+            []
+          ],
+          [
+            "Double",
+            []
+          ],
+          [
+            "Nudge",
+            []
+          ]
+        ],
+        "comment": "Types of vibration available.",
+        "name": "VibrationType"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "Off",
+            []
+          ],
+          [
+            "Low",
+            []
+          ],
+          [
+            "Medium",
+            []
+          ],
+          [
+            "High",
+            []
+          ],
+          [
+            "Max",
+            []
+          ]
+        ],
+        "comment": "Backlight intensity levels.",
+        "name": "BacklightLevel"
+      },
+      {
+        "args": [
+          "msg"
+        ],
+        "cases": [
+          [
+            "Vibrate",
+            [
+              "VibrationType"
+            ]
+          ],
+          [
+            "VibratePattern",
+            [
+              "VibrationPattern"
+            ]
+          ],
+          [
+            "SetBacklight",
+            [
+              "BacklightLevel",
+              "Int"
+            ]
+          ],
+          [
+            "GetBatteryLevel",
+            [
+              "(Int",
+              "->",
+              "msg)"
+            ]
+          ],
+          [
+            "GetConnectionStatus",
+            [
+              "(Bool",
+              "->",
+              "msg)"
+            ]
+          ],
+          [
+            "PlayTone",
+            [
+              "Int",
+              "Int"
+            ]
+          ],
+          [
+            "StopTone",
+            []
+          ]
+        ],
+        "comment": "Commands for watch hardware operations.",
+        "name": "HardwareCmd"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Trigger a simple vibration.",
+        "name": "vibrate",
+        "type": "VibrationType -> HardwareCmd msg"
+      },
+      {
+        "comment": "Create a custom vibration pattern.",
+        "name": "vibratePattern",
+        "type": "VibrationPattern -> HardwareCmd msg"
+      },
+      {
+        "comment": "Set backlight level for a specific duration.",
+        "name": "setBacklight",
+        "type": "BacklightLevel -> Int -> HardwareCmd msg"
+      },
+      {
+        "comment": "Enable backlight at medium level for 3 seconds.",
+        "name": "enableBacklight",
+        "type": "HardwareCmd msg"
+      },
+      {
+        "comment": "Turn off backlight immediately.",
+        "name": "disableBacklight",
+        "type": "HardwareCmd msg"
+      },
+      {
+        "comment": "Flash backlight for attention.",
+        "name": "flashBacklight",
+        "type": "HardwareCmd msg"
+      },
+      {
+        "comment": "Get current battery level (0-100).",
+        "name": "getBatteryLevel",
+        "type": "(Int -> msg) -> HardwareCmd msg"
+      },
+      {
+        "comment": "Check if connected to phone via Bluetooth.",
+        "name": "getConnectionStatus",
+        "type": "(Bool -> msg) -> HardwareCmd msg"
+      },
+      {
+        "comment": "Play a tone at specific frequency and duration.",
+        "name": "playTone",
+        "type": "Int -> Int -> HardwareCmd msg"
+      },
+      {
+        "comment": "Stop any currently playing tone.",
+        "name": "stopTone",
+        "type": "HardwareCmd msg"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Backlight controls.\n\n@docs interaction, disable, enable",
+    "name": "Pebble.Light",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Trigger the default interaction backlight behavior.",
+        "name": "interaction",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Force backlight off.",
+        "name": "disable",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Force backlight on.",
+        "name": "enable",
+        "type": "Cmd msg"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Runtime logging commands.\n\nThis app-focused wave exposes integer code logging for deterministic C-side\nlogging output.\n\n@docs infoCode, warnCode, errorCode",
+    "name": "Pebble.Log",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Emit an info-level log event.",
+        "name": "infoCode",
+        "type": "Int -> Cmd msg"
+      },
+      {
+        "comment": "Emit a warning-level log event.",
+        "name": "warnCode",
+        "type": "Int -> Cmd msg"
+      },
+      {
+        "comment": "Emit an error-level log event.",
+        "name": "errorCode",
+        "type": "Int -> Cmd msg"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Screen details for the currently simulated or connected watch model.",
+        "name": "LaunchScreen",
+        "type": "{ width : Int\n, height : Int\n, isColor : Bool\n, isRound : Bool\n}"
+      },
+      {
+        "args": [],
+        "comment": "Full launch metadata delivered to `init`.",
+        "name": "LaunchContext",
+        "type": "{ reason : LaunchReason\n, watchModel : String\n, watchProfileId : String\n, screen : LaunchScreen\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Platform glue for Pebble watch applications.\n\nThis module wraps `Platform.worker` so your `init` function receives a\ntyped `LaunchContext` decoded from JSON launch metadata.\n\n# Launch metadata\n@docs LaunchReason, LaunchScreen, LaunchContext, launchReasonFromTag, launchReasonToInt\n\n# Program entrypoint\n@docs watchface, application",
+    "name": "Pebble.Platform",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "LaunchSystem",
+            []
+          ],
+          [
+            "LaunchUser",
+            []
+          ],
+          [
+            "LaunchPhone",
+            []
+          ],
+          [
+            "LaunchWakeup",
+            []
+          ],
+          [
+            "LaunchWorker",
+            []
+          ],
+          [
+            "LaunchQuickLaunch",
+            []
+          ],
+          [
+            "LaunchTimelineAction",
+            []
+          ],
+          [
+            "LaunchSmartstrap",
+            []
+          ],
+          [
+            "LaunchUnknown",
+            []
+          ]
+        ],
+        "comment": "Why the app or worker launched on the watch.",
+        "name": "LaunchReason"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Decode an integer launch tag into a `LaunchReason`.",
+        "name": "launchReasonFromTag",
+        "type": "Int -> LaunchReason"
+      },
+      {
+        "comment": "Encode a `LaunchReason` into the integer tag used by the native runtime.",
+        "name": "launchReasonToInt",
+        "type": "LaunchReason -> Int"
+      },
+      {
+        "comment": "Start a Pebble watchface.\n\n`config.init` receives a typed launch context. `view` is retained as the\nwatch rendering contract, while init/update/subscriptions are forwarded to\nElm's headless `Platform.worker`.",
+        "name": "watchface",
+        "type": "{ init : LaunchContext -> ( model, Cmd msg )\n, update : msg -> model -> ( model, Cmd msg )\n, view : model -> view\n, subscriptions : model -> Sub msg\n}\n-> Program Decode.Value model msg"
+      },
+      {
+        "comment": "Start a Pebble watch application.\n\nUse this for apps rather than watchfaces. It currently has the same runtime\nshape as `watchface`, but keeps the app/watchface distinction explicit for\nbuild tooling.",
+        "name": "application",
+        "type": "{ init : LaunchContext -> ( model, Cmd msg )\n, update : msg -> model -> ( model, Cmd msg )\n, view : model -> view\n, subscriptions : model -> Sub msg\n}\n-> Program Decode.Value model msg"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Watch-local integer key/value storage commands.\n\nThe watch runtime exposes a lightweight integer key/value store.\n\n    saveCounter : Cmd msg\n    saveCounter =\n        writeInt 1 42\n\n    loadCounter : Cmd Msg\n    loadCounter =\n        readInt 1 CounterLoaded\n\n# Operations\n@docs writeInt, readInt, delete",
+    "name": "Pebble.Storage",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Store an integer value under an integer key.",
+        "name": "writeInt",
+        "type": "Int -> Int -> Cmd msg"
+      },
+      {
+        "comment": "Read an integer by key and send it to `toMsg`.",
+        "name": "readInt",
+        "type": "Int -> (Int -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Remove a stored value at `key`.",
+        "name": "delete",
+        "type": "Int -> Cmd msg"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "System-state subscriptions sourced from Pebble event services.\n\n@docs batteryLevel, connectionStatus, onBatteryChange, onConnectionChange",
+    "name": "Pebble.System",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Request the current battery level as a percentage from 0 to 100.",
+        "name": "batteryLevel",
+        "type": "(Int -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request whether the watch is connected to the phone.",
+        "name": "connectionStatus",
+        "type": "(Bool -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Receive the current battery percentage when battery state changes.",
+        "name": "onBatteryChange",
+        "type": "(Int -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive whether the watch is connected to the phone when connection state changes.",
+        "name": "onConnectionChange",
+        "type": "(Bool -> msg) -> Sub msg"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Structured local time/date information from the watch runtime.",
+        "name": "CurrentDateTime",
+        "type": "{ year : Int\n, month : Int\n, day : Int\n, dayOfWeek : DayOfWeek\n, hour : Int\n, minute : Int\n, second : Int\n, utcOffsetMinutes : Int\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Commands for reading watch time and timezone information.\n\n# Time and timezone\n@docs DayOfWeek, CurrentDateTime, currentDateTime, currentTimeString, clockStyle24h, timezoneIsSet, timezone",
+    "name": "Pebble.Time",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Monday",
+            []
+          ],
+          [
+            "Tuesday",
+            []
+          ],
+          [
+            "Wednesday",
+            []
+          ],
+          [
+            "Thursday",
+            []
+          ],
+          [
+            "Friday",
+            []
+          ],
+          [
+            "Saturday",
+            []
+          ],
+          [
+            "Sunday",
+            []
+          ]
+        ],
+        "comment": "Structured local time/date information from the watch runtime.",
+        "name": "DayOfWeek"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Request the current local date/time with UTC offset in minutes.",
+        "name": "currentDateTime",
+        "type": "(CurrentDateTime -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request the current local time string from the watch runtime.",
+        "name": "currentTimeString",
+        "type": "(String -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request whether the user is using 24-hour time.",
+        "name": "clockStyle24h",
+        "type": "(Bool -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request whether timezone data is currently available.",
+        "name": "timezoneIsSet",
+        "type": "(Bool -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request the current timezone identifier string.",
+        "name": "timezone",
+        "type": "(String -> msg) -> Cmd msg"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Nested drawing context containing style settings and commands.",
+        "name": "Context",
+        "type": "( List ContextSetting, List RenderOp )"
+      },
+      {
+        "args": [],
+        "comment": "Bitmap resource handle from `Pebble.Ui.Resources`.",
+        "name": "Bitmap",
+        "type": "UiResources.Bitmap"
+      },
+      {
+        "args": [],
+        "comment": "Font resource handle from `Pebble.Ui.Resources`.",
+        "name": "Font",
+        "type": "UiResources.Font"
+      },
+      {
+        "args": [],
+        "comment": "Path geometry for path draw operations.",
+        "name": "Path",
+        "type": "( List ( Int, Int ), ( Int, Int ), Int )"
+      },
+      {
+        "args": [],
+        "comment": "2D point for draw positions.",
+        "name": "Point",
+        "type": "{ x : Int\n, y : Int\n}"
+      },
+      {
+        "args": [],
+        "comment": "Rectangle bounds for draw operations.",
+        "name": "Rect",
+        "type": "{ x : Int\n, y : Int\n, w : Int\n, h : Int\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Retained virtual UI model for Pebble rendering.\n\n`Pebble.Ui` provides a declarative scene graph for watch windows, layers,\nand drawing operations. Build values here and emit them through your app's\nrender bridge to keep view logic in pure Elm.\n\n    mainWindow : WindowNode\n    mainWindow =\n        window 1\n            [ canvasLayer 2\n                [ fillRect\n                    { x = 0, y = 0, w = 144, h = 168 }\n                    UiColor.black\n                ]\n            ]\n\n\n# Core nodes\n\n@docs UiNode, WindowNode, LayerNode, toUiNode, windowStack, window, canvasLayer\n\n\n# Drawing operations\n\n@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawRotatedBitmap, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial\n\n\n# Resources, labels and path/context helpers\n\n@docs Label, Context, Bitmap, Font, Path, Point, Rect, Rotation, context, path, rotationFromPebbleAngle, rotationFromDegrees\n\n\n# Drawing settings\n\n@docs ContextSetting, strokeWidth, antialiased, strokeColor, fillColor, textColor, compositingMode",
+    "name": "Pebble.Ui",
+    "unions": [
+      {
+        "args": [],
+        "cases": [],
+        "comment": "Root virtual UI node.",
+        "name": "UiNode"
+      },
+      {
+        "args": [],
+        "cases": [],
+        "comment": "A virtual window identified by a stable id.",
+        "name": "WindowNode"
+      },
+      {
+        "args": [],
+        "cases": [],
+        "comment": "A virtual layer identified by a stable id.",
+        "name": "LayerNode"
+      },
+      {
+        "args": [],
+        "cases": [],
+        "comment": "Drawing operations for a canvas layer.",
+        "name": "RenderOp"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "WaitingForCompanion",
+            []
+          ]
+        ],
+        "comment": "Localized labels produced in Elm and rendered on watch.",
+        "name": "Label"
+      },
+      {
+        "args": [],
+        "cases": [],
+        "comment": "Rotation value for Pebble graphics APIs.\n\nUse `rotationFromPebbleAngle` when you already have Pebble angle units\n(`TRIG_MAX_ANGLE == 65536`) or `rotationFromDegrees` for degree inputs.",
+        "name": "Rotation"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "StrokeWidth",
+            [
+              "Int"
+            ]
+          ],
+          [
+            "Antialiased",
+            [
+              "Int"
+            ]
+          ],
+          [
+            "StrokeColor",
+            [
+              "Int"
+            ]
+          ],
+          [
+            "FillColor",
+            [
+              "Int"
+            ]
+          ],
+          [
+            "TextColor",
+            [
+              "Int"
+            ]
+          ],
+          [
+            "CompositingMode",
+            [
+              "Int"
+            ]
+          ]
+        ],
+        "comment": "Drawing style settings used by `context`.",
+        "name": "ContextSetting"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Build a complete single-window UI from drawing operations.\n\nThis is a convenience for watchfaces and apps whose view is just one canvas.\nIt is equivalent to:\n\n    windowStack\n        [ window 1\n            [ canvasLayer 1 ops ]\n        ]",
+        "name": "toUiNode",
+        "type": "List RenderOp -> UiNode"
+      },
+      {
+        "comment": "Build a window stack node.",
+        "name": "windowStack",
+        "type": "List WindowNode -> UiNode"
+      },
+      {
+        "comment": "Build a window node with a stable id and layers.",
+        "name": "window",
+        "type": "Int -> List LayerNode -> WindowNode"
+      },
+      {
+        "comment": "Build a canvas layer node with a stable id and draw operations.",
+        "name": "canvasLayer",
+        "type": "Int -> List RenderOp -> LayerNode"
+      },
+      {
+        "comment": "Draw a string in the given rectangle using a resource font.",
+        "name": "text",
+        "type": "Font -> Rect -> String -> RenderOp"
+      },
+      {
+        "comment": "Draw an integer at the given position using a custom resource font.",
+        "name": "textInt",
+        "type": "Font -> Point -> Int -> RenderOp"
+      },
+      {
+        "comment": "Draw a predefined label at the given position using a custom resource font.",
+        "name": "textLabel",
+        "type": "Font -> Point -> Label -> RenderOp"
+      },
+      {
+        "comment": "Clear the canvas to a color.",
+        "name": "clear",
+        "type": "UiColor.Color -> RenderOp"
+      },
+      {
+        "comment": "Fill a rectangle with a color.",
+        "name": "fillRect",
+        "type": "Rect -> UiColor.Color -> RenderOp"
+      },
+      {
+        "comment": "Draw a single pixel with a color.",
+        "name": "pixel",
+        "type": "Point -> UiColor.Color -> RenderOp"
+      },
+      {
+        "comment": "Draw a line with a color.",
+        "name": "line",
+        "type": "Point -> Point -> UiColor.Color -> RenderOp"
+      },
+      {
+        "comment": "Draw a rectangle outline with a color.",
+        "name": "rect",
+        "type": "Rect -> UiColor.Color -> RenderOp"
+      },
+      {
+        "comment": "Draw a circle outline with a color.",
+        "name": "circle",
+        "type": "Point -> Int -> UiColor.Color -> RenderOp"
+      },
+      {
+        "comment": "Draw a filled circle with a color.",
+        "name": "fillCircle",
+        "type": "Point -> Int -> UiColor.Color -> RenderOp"
+      },
+      {
+        "comment": "Draw bitmap resource in the provided rectangle.",
+        "name": "drawBitmapInRect",
+        "type": "Bitmap -> Rect -> RenderOp"
+      },
+      {
+        "comment": "Draw bitmap resource using width/height, angle and center point.",
+        "name": "drawRotatedBitmap",
+        "type": "Bitmap -> Rect -> Rotation -> Point -> RenderOp"
+      },
+      {
+        "comment": "Group operations under a temporary style context.",
+        "name": "group",
+        "type": "Context -> RenderOp"
+      },
+      {
+        "comment": "Draw a filled path.",
+        "name": "pathFilled",
+        "type": "Path -> RenderOp"
+      },
+      {
+        "comment": "Draw a closed path outline.",
+        "name": "pathOutline",
+        "type": "Path -> RenderOp"
+      },
+      {
+        "comment": "Draw an open path outline.",
+        "name": "pathOutlineOpen",
+        "type": "Path -> RenderOp"
+      },
+      {
+        "comment": "Draw a rounded rectangle outline.",
+        "name": "roundRect",
+        "type": "Rect -> Int -> UiColor.Color -> RenderOp"
+      },
+      {
+        "comment": "Draw an arc inside rectangle bounds in Pebble angle units.",
+        "name": "arc",
+        "type": "Rect -> Int -> Int -> RenderOp"
+      },
+      {
+        "comment": "Draw a filled radial slice inside rectangle bounds.",
+        "name": "fillRadial",
+        "type": "Rect -> Int -> Int -> RenderOp"
+      },
+      {
+        "comment": "Build a drawing context from settings and nested operations.",
+        "name": "context",
+        "type": "List ContextSetting -> List RenderOp -> Context"
+      },
+      {
+        "comment": "Build path data from points, offset and rotation.",
+        "name": "path",
+        "type": "List Point -> Point -> Rotation -> Path"
+      },
+      {
+        "comment": "Create a rotation from raw Pebble angle units (`0..65535`).",
+        "name": "rotationFromPebbleAngle",
+        "type": "Int -> Rotation"
+      },
+      {
+        "comment": "Create a rotation from degrees.",
+        "name": "rotationFromDegrees",
+        "type": "Float -> Rotation"
+      },
+      {
+        "comment": "Set stroke width for a context.",
+        "name": "strokeWidth",
+        "type": "Int -> ContextSetting"
+      },
+      {
+        "comment": "Enable or disable antialiasing (`0` or `1`).",
+        "name": "antialiased",
+        "type": "Int -> ContextSetting"
+      },
+      {
+        "comment": "Set stroke color for a context.",
+        "name": "strokeColor",
+        "type": "UiColor.Color -> ContextSetting"
+      },
+      {
+        "comment": "Set fill color for a context.",
+        "name": "fillColor",
+        "type": "UiColor.Color -> ContextSetting"
+      },
+      {
+        "comment": "Set text color for a context.",
+        "name": "textColor",
+        "type": "UiColor.Color -> ContextSetting"
+      },
+      {
+        "comment": "Set graphics compositing mode (`0..4` Pebble `GCompOp`).",
+        "name": "compositingMode",
+        "type": "Int -> ContextSetting"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Vibration motor controls.\n\n@docs cancel, shortPulse, longPulse, doublePulse",
+    "name": "Pebble.Vibes",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Stop any in-progress vibration.",
+        "name": "cancel",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Trigger a short vibration pulse.",
+        "name": "shortPulse",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Trigger a long vibration pulse.",
+        "name": "longPulse",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Trigger a double vibration pulse.",
+        "name": "doublePulse",
+        "type": "Cmd msg"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Wakeup scheduling commands.\n\n@docs scheduleAfterSeconds, cancel",
+    "name": "Pebble.Wakeup",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Schedule the app to be woken up after `seconds`.",
+        "name": "scheduleAfterSeconds",
+        "type": "Int -> Cmd msg"
+      },
+      {
+        "comment": "Cancel a scheduled wakeup by id.",
+        "name": "cancel",
+        "type": "Int -> Cmd msg"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Firmware version of the watch.\n\nThis corresponds to the C `WatchInfoVersion` struct.\n\nThe version has the form `X.[X.[X]]`. When a version component is not present,\nit is reported as `0`.\n\nExamples:\n\n  - `2.4.1` is represented as `{ major = 2, minor = 4, patch = 1 }`\n  - `2.4` is represented as `{ major = 2, minor = 4, patch = 0 }`",
+        "name": "FirmwareVersion",
+        "type": "{ major : Int\n, minor : Int\n, patch : Int\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Access information about the watch itself.\n\nThis API mirrors Pebble's C `WatchInfo` module and provides information such as\nwatch model, watch color, and firmware version.\n\n# Types\n@docs WatchModel, FirmwareVersion, WatchColor\n\n# Device info\n@docs getModel, getFirmwareVersion, getColor",
+    "name": "Pebble.WatchInfo",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "UnknownModel",
+            []
+          ],
+          [
+            "PebbleOriginal",
+            []
+          ],
+          [
+            "PebbleSteel",
+            []
+          ],
+          [
+            "PebbleTime",
+            []
+          ],
+          [
+            "PebbleTimeSteel",
+            []
+          ],
+          [
+            "PebbleTimeRound14",
+            []
+          ],
+          [
+            "PebbleTimeRound20",
+            []
+          ],
+          [
+            "Pebble2Hr",
+            []
+          ],
+          [
+            "Pebble2Se",
+            []
+          ],
+          [
+            "PebbleTime2",
+            []
+          ],
+          [
+            "CoreDevicesP2D",
+            []
+          ],
+          [
+            "CoreDevicesPT2",
+            []
+          ],
+          [
+            "CoreDevicesPR2",
+            []
+          ]
+        ],
+        "comment": "The model of the watch.\n\nThis corresponds to the C `WatchInfoModel` enum.",
+        "name": "WatchModel"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "UnknownColor",
+            []
+          ],
+          [
+            "Black",
+            []
+          ],
+          [
+            "White",
+            []
+          ],
+          [
+            "Red",
+            []
+          ],
+          [
+            "Orange",
+            []
+          ],
+          [
+            "Gray",
+            []
+          ],
+          [
+            "StainlessSteel",
+            []
+          ],
+          [
+            "MatteBlack",
+            []
+          ],
+          [
+            "Blue",
+            []
+          ],
+          [
+            "Green",
+            []
+          ],
+          [
+            "Pink",
+            []
+          ],
+          [
+            "TimeWhite",
+            []
+          ],
+          [
+            "TimeBlack",
+            []
+          ],
+          [
+            "TimeRed",
+            []
+          ],
+          [
+            "TimeSteelSilver",
+            []
+          ],
+          [
+            "TimeSteelBlack",
+            []
+          ],
+          [
+            "TimeSteelGold",
+            []
+          ],
+          [
+            "TimeRoundSilver14",
+            []
+          ],
+          [
+            "TimeRoundBlack14",
+            []
+          ],
+          [
+            "TimeRoundSilver20",
+            []
+          ],
+          [
+            "TimeRoundBlack20",
+            []
+          ],
+          [
+            "TimeRoundRoseGold14",
+            []
+          ],
+          [
+            "Pebble2HrBlack",
+            []
+          ],
+          [
+            "Pebble2HrLime",
+            []
+          ],
+          [
+            "Pebble2HrFlame",
+            []
+          ],
+          [
+            "Pebble2HrWhite",
+            []
+          ],
+          [
+            "Pebble2HrAqua",
+            []
+          ],
+          [
+            "Pebble2SeBlack",
+            []
+          ],
+          [
+            "Pebble2SeWhite",
+            []
+          ],
+          [
+            "PebbleTime2Black",
+            []
+          ],
+          [
+            "PebbleTime2Silver",
+            []
+          ],
+          [
+            "PebbleTime2Gold",
+            []
+          ],
+          [
+            "CoreDevicesP2DBlack",
+            []
+          ],
+          [
+            "CoreDevicesP2DWhite",
+            []
+          ],
+          [
+            "CoreDevicesPT2BlackGrey",
+            []
+          ],
+          [
+            "CoreDevicesPT2BlackRed",
+            []
+          ],
+          [
+            "CoreDevicesPT2SilverBlue",
+            []
+          ],
+          [
+            "CoreDevicesPT2SilverGrey",
+            []
+          ],
+          [
+            "CoreDevicesPR2Black20",
+            []
+          ],
+          [
+            "CoreDevicesPR2Silver20",
+            []
+          ],
+          [
+            "CoreDevicesPR2Gold14",
+            []
+          ],
+          [
+            "CoreDevicesPR2Silver14",
+            []
+          ]
+        ],
+        "comment": "The case color of the watch.\n\nThis corresponds to the C `WatchInfoColor` enum.",
+        "name": "WatchColor"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Request the model of the current watch.\n\nEquivalent to `watch_info_get_model()` in the C API.",
+        "name": "getModel",
+        "type": "(WatchModel -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request the firmware version running on the watch.\n\nEquivalent to `watch_info_get_firmware_version()` in the C API.",
+        "name": "getFirmwareVersion",
+        "type": "(FirmwareVersion -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request the case color of the current watch.\n\nEquivalent to `watch_info_get_color()` in the C API.",
+        "name": "getColor",
+        "type": "(WatchColor -> msg) -> Cmd msg"
+      }
+    ]
+  }
+]

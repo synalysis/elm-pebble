@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "font_jersey",
+      "ctor": "Jersey",
+      "filename": "Jersey.ttf",
+      "mime": "font/ttf",
+      "height": 48,
+      "bytes": 76636
+    }
+  ]
+}
