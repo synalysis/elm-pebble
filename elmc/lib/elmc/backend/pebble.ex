@@ -628,6 +628,12 @@ defmodule Elmc.Backend.Pebble do
       }
     }
 
+    static int elmc_is_virtual_ui_tag(ElmcValue *value, int64_t encoded_tag) {
+      if (!value) return 0;
+      int64_t tag = elmc_as_int(value);
+      return tag == encoded_tag || tag == 1;
+    }
+
     static int elmc_extract_virtual_canvas_ops(
         ElmcValue *view,
         int64_t *out_window_id,
@@ -641,7 +647,7 @@ defmodule Elmc.Backend.Pebble do
       if (view->tag != ELMC_TAG_TUPLE2 || view->payload == NULL) return -2;
       ElmcTuple2 *root = (ElmcTuple2 *)view->payload;
       if (!root->first || !root->second) return -3;
-      if (elmc_as_int(root->first) != ELMC_PEBBLE_UI_WINDOW_STACK) return -4;
+      if (!elmc_is_virtual_ui_tag(root->first, ELMC_PEBBLE_UI_WINDOW_STACK)) return -4;
 
       ElmcValue *window_cursor = root->second;
       ElmcValue *top_window = NULL;
@@ -652,7 +658,7 @@ defmodule Elmc.Backend.Pebble do
         if (window_node->head && window_node->head->tag == ELMC_TAG_TUPLE2 && window_node->head->payload != NULL) {
           ElmcTuple2 *candidate_tuple = (ElmcTuple2 *)window_node->head->payload;
           if (candidate_tuple->first && candidate_tuple->second &&
-              elmc_as_int(candidate_tuple->first) == ELMC_PEBBLE_UI_WINDOW_NODE &&
+              elmc_is_virtual_ui_tag(candidate_tuple->first, ELMC_PEBBLE_UI_WINDOW_NODE) &&
               candidate_tuple->second->tag == ELMC_TAG_TUPLE2 &&
               candidate_tuple->second->payload != NULL) {
             ElmcTuple2 *candidate_payload = (ElmcTuple2 *)candidate_tuple->second->payload;
@@ -672,7 +678,7 @@ defmodule Elmc.Backend.Pebble do
 
       ElmcTuple2 *window_tuple = (ElmcTuple2 *)top_window->payload;
       if (!window_tuple->first || !window_tuple->second) return -6;
-      if (elmc_as_int(window_tuple->first) != ELMC_PEBBLE_UI_WINDOW_NODE) return -7;
+      if (!elmc_is_virtual_ui_tag(window_tuple->first, ELMC_PEBBLE_UI_WINDOW_NODE)) return -7;
 
       if (window_tuple->second->tag != ELMC_TAG_TUPLE2 || window_tuple->second->payload == NULL) return -8;
       ElmcTuple2 *window_payload = (ElmcTuple2 *)window_tuple->second->payload;
@@ -688,7 +694,7 @@ defmodule Elmc.Backend.Pebble do
         if (layer_node->head && layer_node->head->tag == ELMC_TAG_TUPLE2 && layer_node->head->payload != NULL) {
           ElmcTuple2 *candidate_tuple = (ElmcTuple2 *)layer_node->head->payload;
           if (candidate_tuple->first && candidate_tuple->second &&
-              elmc_as_int(candidate_tuple->first) == ELMC_PEBBLE_UI_CANVAS_LAYER &&
+              elmc_is_virtual_ui_tag(candidate_tuple->first, ELMC_PEBBLE_UI_CANVAS_LAYER) &&
               candidate_tuple->second->tag == ELMC_TAG_TUPLE2 &&
               candidate_tuple->second->payload != NULL) {
             ElmcTuple2 *candidate_payload = (ElmcTuple2 *)candidate_tuple->second->payload;
@@ -708,7 +714,7 @@ defmodule Elmc.Backend.Pebble do
 
       ElmcTuple2 *layer_tuple = (ElmcTuple2 *)top_layer->payload;
       if (!layer_tuple->first || !layer_tuple->second) return -11;
-      if (elmc_as_int(layer_tuple->first) != ELMC_PEBBLE_UI_CANVAS_LAYER) return -12;
+      if (!elmc_is_virtual_ui_tag(layer_tuple->first, ELMC_PEBBLE_UI_CANVAS_LAYER)) return -12;
 
       if (layer_tuple->second->tag != ELMC_TAG_TUPLE2 || layer_tuple->second->payload == NULL) return -13;
       ElmcTuple2 *layer_payload = (ElmcTuple2 *)layer_tuple->second->payload;
@@ -1025,6 +1031,9 @@ defmodule Elmc.Backend.Pebble do
       int64_t window_id = 0;
       int64_t layer_id = 0;
       int extracted = elmc_extract_virtual_canvas_ops(result, &window_id, &layer_id, &ops);
+      if (extracted != 0 || !ops) {
+        ops = result;
+      }
 
       if (ops->tag == ELMC_TAG_LIST) {
         ElmcValue *cursor = ops;

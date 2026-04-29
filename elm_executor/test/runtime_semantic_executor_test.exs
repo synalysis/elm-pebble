@@ -27,6 +27,218 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert result.protocol_events == []
   end
 
+  test "core update returns evaluated elm/http commands as followup work" do
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Main",
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "update",
+              "expr" => %{
+                "op" => :case,
+                "subject" => %{"op" => :var, "name" => "msg"},
+                "branches" => [
+                  %{
+                    "pattern" => %{"kind" => :constructor, "name" => "RequestWeather"},
+                    "expr" => %{
+                      "op" => :tuple2,
+                      "left" => %{
+                        "op" => :record_literal,
+                        "fields" => [
+                          %{
+                            "name" => "status",
+                            "expr" => %{"op" => :string_literal, "value" => "requested"}
+                          }
+                        ]
+                      },
+                      "right" => %{
+                        "op" => :qualified_call,
+                        "target" => "Cmd.batch",
+                        "args" => [
+                          %{
+                            "op" => :list_literal,
+                            "items" => [
+                              %{
+                                "op" => :qualified_call,
+                                "target" => "Http.get",
+                                "args" => [
+                                  %{
+                                    "op" => :record_literal,
+                                    "fields" => [
+                                      %{
+                                        "name" => "url",
+                                        "expr" => %{
+                                          "op" => :string_literal,
+                                          "value" => "https://example.test/weather"
+                                        }
+                                      },
+                                      %{
+                                        "name" => "expect",
+                                        "expr" => %{
+                                          "op" => :qualified_call,
+                                          "target" => "Http.expectString",
+                                          "args" => [%{"op" => :var, "name" => "WeatherReceived"}]
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    request = %{
+      source_root: "companion",
+      source: "module Main exposing (..)",
+      introspect: %{"view_tree" => %{"type" => "root", "children" => []}},
+      current_model: %{"runtime_model" => %{"status" => "idle"}},
+      current_view_tree: %{"type" => "root", "children" => []},
+      message: "RequestWeather",
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+    assert result.model_patch["runtime_model"]["status"] == "requested"
+
+    assert [
+             %{
+               "source" => "http_command",
+               "package" => "elm/http",
+               "command" => command
+             }
+           ] = result.followup_messages
+
+    assert command["kind"] == "http"
+    assert command["method"] == "GET"
+    assert command["url"] == "https://example.test/weather"
+    assert command["expect"]["kind"] == "string"
+  end
+
+  test "core update matches structured protocol payloads with nested constructors" do
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "CompanionApp",
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "update",
+              "expr" => %{
+                "op" => :case,
+                "subject" => %{"op" => :var, "name" => "msg"},
+                "branches" => [
+                  %{
+                    "pattern" => %{
+                      "kind" => :constructor,
+                      "name" => "FromWatch",
+                      "arg_pattern" => %{
+                        "kind" => :constructor,
+                        "name" => "Ok",
+                        "arg_pattern" => %{
+                          "kind" => :constructor,
+                          "name" => "RequestWeather",
+                          "arg_pattern" => %{"kind" => :var, "name" => "location"}
+                        }
+                      }
+                    },
+                    "expr" => %{
+                      "op" => :tuple2,
+                      "left" => %{
+                        "op" => :record_literal,
+                        "fields" => [
+                          %{
+                            "name" => "status",
+                            "expr" => %{"op" => :string_literal, "value" => "requested"}
+                          }
+                        ]
+                      },
+                      "right" => %{
+                        "op" => :case,
+                        "subject" => %{"op" => :var, "name" => "location"},
+                        "branches" => [
+                          %{
+                            "pattern" => %{"kind" => :constructor, "name" => "CurrentLocation"},
+                            "expr" => %{
+                              "op" => :qualified_call,
+                              "target" => "Http.get",
+                              "args" => [
+                                %{
+                                  "op" => :record_literal,
+                                  "fields" => [
+                                    %{
+                                      "name" => "url",
+                                      "expr" => %{
+                                        "op" => :string_literal,
+                                        "value" => "https://example.test/weather"
+                                      }
+                                    },
+                                    %{
+                                      "name" => "expect",
+                                      "expr" => %{
+                                        "op" => :qualified_call,
+                                        "target" => "Http.expectString",
+                                        "args" => [%{"op" => :var, "name" => "WeatherReceived"}]
+                                      }
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    request = %{
+      source_root: "companion",
+      source: "module CompanionApp exposing (..)",
+      introspect: %{"view_tree" => %{"type" => "root", "children" => []}},
+      current_model: %{"runtime_model" => %{"status" => "idle"}},
+      current_view_tree: %{"type" => "root", "children" => []},
+      message: "FromWatch (Ok (RequestWeather CurrentLocation))",
+      message_value: %{
+        "ctor" => "FromWatch",
+        "args" => [
+          %{
+            "ctor" => "Ok",
+            "args" => [
+              %{
+                "ctor" => "RequestWeather",
+                "args" => [%{"ctor" => "CurrentLocation", "args" => []}]
+              }
+            ]
+          }
+        ]
+      },
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+    assert result.model_patch["runtime_model"]["status"] == "requested"
+    assert [%{"command" => %{"url" => "https://example.test/weather"}}] = result.followup_messages
+  end
+
   test "reload path uses init model and parser view tree" do
     request = %{
       source_root: "watch",
@@ -220,7 +432,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert runtime_model["screenH"] == 168
   end
 
-  test "companion http send emits package followup callback message" do
+  test "companion http introspection does not synthesize fake package callbacks" do
     request = %{
       source_root: "protocol",
       rel_path: "phone/src/CompanionApp.elm",
@@ -250,11 +462,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     }
 
     assert {:ok, result} = SemanticExecutor.execute(request)
-    assert result.runtime["followup_message_count"] == 1
-
-    assert Enum.any?(result.followup_messages, fn row ->
-             row["message"] == "WeatherReceived (Ok 21.5)" and row["package"] == "elm/http"
-           end)
+    assert result.runtime["followup_message_count"] == 0
+    assert result.followup_messages == []
   end
 
   test "step result includes normalized runtime view_output contract" do
@@ -306,6 +515,52 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert Enum.any?(result.view_output, fn row ->
              row["kind"] == "text_int" and row["text"] == "1511"
            end)
+  end
+
+  test "step result preserves group style context in runtime view_output" do
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: "module Main exposing (main)\n",
+      introspect: %{
+        "view_tree" => %{
+          "type" => "root",
+          "children" => [
+            %{
+              "type" => "group",
+              "style" => %{"text_color" => 0xFF},
+              "children" => [
+                %{
+                  "type" => "text",
+                  "font_id" => 1,
+                  "x" => 0,
+                  "y" => 52,
+                  "w" => 180,
+                  "h" => 56,
+                  "text" => ~c"--:--",
+                  "children" => []
+                }
+              ]
+            }
+          ]
+        }
+      },
+      current_model: %{"runtime_model" => %{}},
+      current_view_tree: %{},
+      message: "Tick",
+      update_branches: ["Tick"]
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert [
+             %{"kind" => "push_context"},
+             %{"kind" => "text_color", "color" => 0xFF},
+             %{"kind" => "text", "text" => "--:--"},
+             %{"kind" => "pop_context"}
+           ] = result.view_output
+
+    assert Jason.encode!(result.view_tree) =~ ~s("text":"--:--")
   end
 
   test "step result includes normalized path draw operations" do
@@ -860,6 +1115,46 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
                                       },
                                       %{
                                         "op" => :qualified_call,
+                                        "target" => "Pebble.Ui.fillRect",
+                                        "args" => [
+                                          %{
+                                            "op" => :record_literal,
+                                            "fields" => [
+                                              %{
+                                                "name" => "x",
+                                                "expr" => %{
+                                                  "op" => :add_const,
+                                                  "var" => "cardX",
+                                                  "value" => 2
+                                                }
+                                              },
+                                              %{
+                                                "name" => "y",
+                                                "expr" => %{
+                                                  "op" => :add_const,
+                                                  "var" => "cardY",
+                                                  "value" => 2
+                                                }
+                                              },
+                                              %{
+                                                "name" => "w",
+                                                "expr" => %{
+                                                  "op" => :sub_const,
+                                                  "var" => "cardW",
+                                                  "value" => 4
+                                                }
+                                              },
+                                              %{
+                                                "name" => "h",
+                                                "expr" => %{"op" => :int_literal, "value" => 4}
+                                              }
+                                            ]
+                                          },
+                                          %{"op" => :int_literal, "value" => 204}
+                                        ]
+                                      },
+                                      %{
+                                        "op" => :qualified_call,
                                         "target" => "Pebble.Ui.textInt",
                                         "args" => [
                                           %{"op" => :int_literal, "value" => 0},
@@ -925,6 +1220,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
 
     assert Enum.any?(result.view_output, fn row ->
              row["kind"] == "round_rect" and row["x"] == 22 and row["w"] == 100
+           end)
+
+    assert Enum.any?(result.view_output, fn row ->
+             row["kind"] == "fill_rect" and row["x"] == 24 and row["y"] == 58 and row["w"] == 96
            end)
 
     assert Enum.any?(result.view_output, fn row ->
@@ -1064,6 +1363,208 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert Enum.any?(result.view_output, fn row ->
              row["kind"] == "text" and row["text"] == "08:41" and row["x"] == 0 and
                row["y"] == 46
+           end)
+
+    assert %{"type" => "window", "children" => [%{"children" => layer_children}]} =
+             Enum.find(result.view_tree["children"], &(&1["type"] == "window"))
+
+    assert [%{"type" => "clear"}, %{"children" => [%{"text" => "08:41"}]}] =
+             layer_children
+  end
+
+  test "engine resolves user transform output before deriving preview ops" do
+    wrap_ops_body = %{
+      "op" => :qualified_call,
+      "target" => "PebbleUi.windowStack",
+      "args" => [
+        %{
+          "op" => :list_literal,
+          "items" => [
+            %{
+              "op" => :qualified_call,
+              "target" => "PebbleUi.window",
+              "args" => [
+                %{"op" => :int_literal, "value" => 1},
+                %{
+                  "op" => :list_literal,
+                  "items" => [
+                    %{
+                      "op" => :qualified_call,
+                      "target" => "PebbleUi.canvasLayer",
+                      "args" => [
+                        %{"op" => :int_literal, "value" => 1},
+                        %{"op" => :var, "name" => "ops"}
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Main",
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "wrapOps",
+              "args" => ["ops"],
+              "expr" => wrap_ops_body
+            },
+            %{
+              "kind" => "function",
+              "name" => "view",
+              "args" => ["model"],
+              "expr" => %{
+                "op" => :qualified_call,
+                "target" => "Main.wrapOps",
+                "args" => [
+                  %{
+                    "op" => :list_literal,
+                    "items" => [
+                      %{
+                        "op" => :qualified_call,
+                        "target" => "PebbleUi.clear",
+                        "args" => [
+                          %{
+                            "op" => :qualified_call,
+                            "target" => "PebbleColor.black",
+                            "args" => []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: "",
+      introspect: %{
+        "view_tree" => %{
+          "type" => "wrapOps",
+          "qualified_target" => "Main.wrapOps",
+          "children" => []
+        }
+      },
+      current_model: %{"runtime_model" => %{}},
+      current_view_tree: %{},
+      message: "Tick",
+      update_branches: ["Tick"],
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+    assert result.view_tree["type"] == "windowStack"
+
+    assert Enum.any?(result.view_output, fn row ->
+             row["kind"] == "clear" and row["color"] == 0xC0
+           end)
+  end
+
+  test "engine normalizes lowered Pebble Ui constructor tuples after transforms" do
+    canvas_layer_expr = %{
+      "op" => :tuple2,
+      "left" => %{"op" => :int_literal, "value" => 1},
+      "right" => %{
+        "op" => :tuple2,
+        "left" => %{"op" => :int_literal, "value" => 1},
+        "right" => %{"op" => :var, "name" => "ops"}
+      }
+    }
+
+    window_expr = %{
+      "op" => :tuple2,
+      "left" => %{"op" => :int_literal, "value" => 1},
+      "right" => %{
+        "op" => :tuple2,
+        "left" => %{"op" => :int_literal, "value" => 1},
+        "right" => %{"op" => :list_literal, "items" => [canvas_layer_expr]}
+      }
+    }
+
+    wrap_ops_body = %{
+      "op" => :tuple2,
+      "left" => %{"op" => :int_literal, "value" => 1},
+      "right" => %{"op" => :list_literal, "items" => [window_expr]}
+    }
+
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Main",
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "wrapOps",
+              "args" => ["ops"],
+              "expr" => wrap_ops_body
+            },
+            %{
+              "kind" => "function",
+              "name" => "view",
+              "args" => ["model"],
+              "expr" => %{
+                "op" => :qualified_call,
+                "target" => "Main.wrapOps",
+                "args" => [
+                  %{
+                    "op" => :list_literal,
+                    "items" => [
+                      %{
+                        "op" => :qualified_call,
+                        "target" => "PebbleUi.clear",
+                        "args" => [
+                          %{
+                            "op" => :qualified_call,
+                            "target" => "PebbleColor.black",
+                            "args" => []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: "",
+      introspect: %{"view_tree" => %{"type" => "root", "children" => []}},
+      current_model: %{"runtime_model" => %{}},
+      current_view_tree: %{},
+      message: "Tick",
+      update_branches: ["Tick"],
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+    assert result.view_tree["type"] == "windowStack"
+
+    assert Enum.any?(result.view_tree["children"], fn child ->
+             child["type"] == "window" and child["id"] == 1
+           end)
+
+    assert Enum.any?(result.view_output, fn row ->
+             row["kind"] == "clear" and row["color"] == 0xC0
            end)
   end
 

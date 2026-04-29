@@ -115,6 +115,14 @@ defmodule ElmEx.IR.DeadCode do
     end)
   end
 
+  defp collect_calls(%{op: :record_update, base: base, fields: fields}, mod) when is_list(fields) do
+    collect_calls(base, mod) ++
+      Enum.flat_map(fields, fn
+        %{expr: expr} -> collect_calls(expr, mod)
+        _ -> []
+      end)
+  end
+
   defp collect_calls(%{op: :field_access, arg: arg}, mod) when is_map(arg) do
     collect_calls(arg, mod)
   end

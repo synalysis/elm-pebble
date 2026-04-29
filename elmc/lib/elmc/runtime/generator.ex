@@ -314,10 +314,7 @@ defmodule Elmc.Runtime.Generator do
 
     int64_t elmc_as_int(ElmcValue *value);
     int elmc_string_length(ElmcValue *value);
-    int64_t elmc_list_foldl_add_zero(ElmcValue *list);
-    ElmcValue *elmc_maybe_with_default_int(ElmcValue *maybe_value, int64_t fallback);
     ElmcValue *elmc_list_head(ElmcValue *list);
-    ElmcValue *elmc_maybe_map_inc(ElmcValue *maybe_value);
     ElmcValue *elmc_tuple_first(ElmcValue *tuple);
     ElmcValue *elmc_tuple_second(ElmcValue *tuple);
     ElmcValue *elmc_result_inc_or_zero(ElmcValue *result);
@@ -336,6 +333,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_debug_log(ElmcValue *label, ElmcValue *value);
     ElmcValue *elmc_debug_todo(ElmcValue *label);
     ElmcValue *elmc_debug_to_string(ElmcValue *value);
+    ElmcValue *elmc_append(ElmcValue *left, ElmcValue *right);
     ElmcValue *elmc_string_append(ElmcValue *left, ElmcValue *right);
     ElmcValue *elmc_string_is_empty(ElmcValue *value);
     ElmcValue *elmc_dict_from_list(ElmcValue *items);
@@ -748,35 +746,10 @@ defmodule Elmc.Runtime.Generator do
       return (int)strlen((const char *)value->payload);
     }
 
-    int64_t elmc_list_foldl_add_zero(ElmcValue *list) {
-      int64_t sum = 0;
-      ElmcValue *cursor = list;
-      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
-        ElmcCons *node = (ElmcCons *)cursor->payload;
-        sum += elmc_as_int(node->head);
-        cursor = node->tail;
-      }
-      return sum;
-    }
-
-    ElmcValue *elmc_maybe_with_default_int(ElmcValue *maybe_value, int64_t fallback) {
-      if (!maybe_value || maybe_value->tag != ELMC_TAG_MAYBE) return elmc_new_int(fallback);
-      ElmcMaybe *maybe = (ElmcMaybe *)maybe_value->payload;
-      if (maybe->is_just && maybe->value) return elmc_retain(maybe->value);
-      return elmc_new_int(fallback);
-    }
-
     ElmcValue *elmc_list_head(ElmcValue *list) {
       if (!list || list->tag != ELMC_TAG_LIST || list->payload == NULL) return elmc_maybe_nothing();
       ElmcCons *node = (ElmcCons *)list->payload;
       return elmc_maybe_just(node->head);
-    }
-
-    ElmcValue *elmc_maybe_map_inc(ElmcValue *maybe_value) {
-      if (!maybe_value || maybe_value->tag != ELMC_TAG_MAYBE) return elmc_maybe_nothing();
-      ElmcMaybe *maybe = (ElmcMaybe *)maybe_value->payload;
-      if (!maybe->is_just || !maybe->value) return elmc_maybe_nothing();
-      return elmc_maybe_just(elmc_new_int(elmc_as_int(maybe->value) + 1));
     }
 
     ElmcValue *elmc_tuple_second(ElmcValue *tuple) {
@@ -923,6 +896,13 @@ defmodule Elmc.Runtime.Generator do
       ElmcValue *result = elmc_alloc(ELMC_TAG_STRING, out);
       if (!result) free(out);
       return result;
+    }
+
+    ElmcValue *elmc_append(ElmcValue *left, ElmcValue *right) {
+      if ((left && left->tag == ELMC_TAG_STRING) || (right && right->tag == ELMC_TAG_STRING)) {
+        return elmc_string_append(left, right);
+      }
+      return elmc_list_append(left, right);
     }
 
     ElmcValue *elmc_string_is_empty(ElmcValue *value) {

@@ -64,6 +64,65 @@ defmodule Ide.DebuggerTest do
     end
   end
 
+  defmodule HttpFollowupRuntimeExecutor do
+    @moduledoc false
+
+    def execute(%{message: "Tick"}) do
+      {:ok,
+       %{
+         model_patch: %{"runtime_model" => %{"lastResponse" => 0}},
+         view_tree: %{"type" => "root", "children" => []},
+         view_output: [],
+         protocol_events: [],
+         followup_messages: [
+           %{
+             "source" => "http_command",
+             "package" => "elm/http",
+             "message" => "WeatherReceived <GET https://example.test/weather>",
+             "command" => %{
+               "kind" => "http",
+               "method" => "GET",
+               "url" => "https://example.test/weather",
+               "headers" => [],
+               "body" => %{"kind" => "empty"},
+               "expect" => %{
+                 "kind" => "string",
+                 "to_msg" => {:function_ref, "WeatherReceived"}
+               }
+             }
+           }
+         ]
+       }}
+    end
+
+    def execute(%{message_value: %{"ctor" => "WeatherReceived"} = message_value}) do
+      {:ok,
+       %{
+         model_patch: %{
+           "runtime_model" => %{
+             "lastResponse" => 1,
+             "received" => message_value
+           }
+         },
+         view_tree: %{"type" => "root", "children" => []},
+         view_output: [],
+         protocol_events: [],
+         followup_messages: []
+       }}
+    end
+
+    def execute(_request) do
+      {:ok,
+       %{
+         model_patch: %{"runtime_model" => %{}},
+         view_tree: %{"type" => "root", "children" => []},
+         view_output: [],
+         protocol_events: [],
+         followup_messages: []
+       }}
+    end
+  end
+
   defmodule NilMaybeRuntimeExecutor do
     @moduledoc false
 
@@ -84,6 +143,37 @@ defmodule Ide.DebuggerTest do
            "runtime_model_source" => "nil_maybe_test"
          },
          view_tree: %{"type" => "nil-maybe-runtime", "children" => []},
+         view_output: []
+       }}
+    end
+  end
+
+  defmodule MaybeShapeRuntimeExecutor do
+    @moduledoc false
+
+    def execute(request) when is_map(request) do
+      runtime_model =
+        request
+        |> get_in([:current_model, "runtime_model"])
+        |> case do
+          model when is_map(model) -> model
+          _ -> %{}
+        end
+        |> Map.merge(%{
+          "backgroundColor" => 0,
+          "batteryLevel" => 88,
+          "condition" => {1, %{"ctor" => "Clear", "args" => []}},
+          "connected" => {1, true},
+          "temperature" => {1, %{"ctor" => "Celsius", "args" => [4]}}
+        })
+
+      {:ok,
+       %{
+         model_patch: %{
+           "runtime_model" => runtime_model,
+           "runtime_model_source" => "maybe_shape_test"
+         },
+         view_tree: %{"type" => "maybe-shape-runtime", "children" => []},
          view_output: []
        }}
     end
@@ -207,6 +297,17 @@ defmodule Ide.DebuggerTest do
     assert get_in(updated, [:launch_context, "screen", "width"]) == 180
     assert get_in(updated, [:watch, :model, "screen_width"]) == 180
     assert get_in(updated, [:watch, :model, "supports_color"]) == true
+  end
+
+  test "set_watch_profile exposes isRound on launch screen contract" do
+    slug = "sim-watch-profile-is-round-#{System.unique_integer([:positive])}"
+
+    assert {:ok, _} = Debugger.start_session(slug)
+    assert {:ok, updated} = Debugger.set_watch_profile(slug, %{watch_profile_id: "chalk"})
+
+    assert get_in(updated, [:launch_context, "screen", "width"]) == 180
+    assert get_in(updated, [:launch_context, "screen", "height"]) == 180
+    assert get_in(updated, [:launch_context, "screen", "isRound"]) == true
   end
 
   test "start_session preserves selected watch profile when no profile override is provided" do
@@ -1400,7 +1501,7 @@ defmodule Ide.DebuggerTest do
            end)
   end
 
-  test "watchface digital runtime output resolves centered coordinates from engine" do
+  test "watchface digital source-only runtime does not invent launch model aliases" do
     slug = "sim-watchface-centered-#{System.unique_integer([:positive])}"
 
     source =
@@ -1417,27 +1518,15 @@ defmodule Ide.DebuggerTest do
       })
 
     assert {:ok, ticked} = Debugger.tick(slug, %{target: "watch", count: 1})
-    ops = get_in(ticked, [:watch, :model, "runtime_view_output"]) || []
+    runtime_model = get_in(ticked, [:watch, :model, "runtime_model"]) || %{}
 
-    round_rect = Enum.find(ops, &(is_map(&1) and (&1["kind"] || &1[:kind]) == "round_rect"))
-    text_label = Enum.find(ops, &(is_map(&1) and (&1["kind"] || &1[:kind]) == "text_label"))
-
-    assert is_map(round_rect)
-    assert is_map(text_label)
-    assert round_rect["x"] > 0
-    assert round_rect["y"] > 0
-    assert text_label["x"] > 0
-    assert text_label["y"] > 0
-
-    preview_ops =
-      IdeWeb.WorkspaceLive.DebuggerPreview.svg_ops(ticked.watch.view_tree, %{
-        model: ticked.watch.model
-      })
-
-    refute Enum.any?(preview_ops, &(&1.kind == :unresolved))
+    refute Map.has_key?(runtime_model, "width")
+    refute Map.has_key?(runtime_model, "height")
+    refute Map.has_key?(runtime_model, "screenWidth")
+    refute Map.has_key?(runtime_model, "screenHeight")
   end
 
-  test "tutorial watchface init model hydrates static constructors and launch fields" do
+  test "tutorial watchface source-only init hydrates static constructors without inventing launch fields" do
     slug = "sim-tutorial-init-hydration-#{System.unique_integer([:positive])}"
 
     source =
@@ -1457,7 +1546,6 @@ defmodule Ide.DebuggerTest do
 
     runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
 
-    assert runtime_model["isRound"] == false
     assert runtime_model["batteryLevel"] == %{"ctor" => "Just", "args" => [88]}
     assert runtime_model["connected"] == %{"ctor" => "Just", "args" => [true]}
     assert runtime_model["showDate"] == %{"ctor" => "Nothing", "args" => []}
@@ -1466,6 +1554,10 @@ defmodule Ide.DebuggerTest do
     assert runtime_model["condition"] == %{"ctor" => "Nothing", "args" => []}
     assert runtime_model["temperature"] == %{"ctor" => "Nothing", "args" => []}
     assert runtime_model["currentDateTime"] == %{"ctor" => "Nothing", "args" => []}
+    refute Map.has_key?(runtime_model, "width")
+    refute Map.has_key?(runtime_model, "height")
+    refute Map.has_key?(runtime_model, "screenWidth")
+    refute Map.has_key?(runtime_model, "screenHeight")
     refute Map.has_key?(runtime_model, "hour")
     refute Map.has_key?(runtime_model, "dayOfWeek")
   end
@@ -1506,7 +1598,7 @@ defmodule Ide.DebuggerTest do
     assert runtime_model["connected"] == %{"ctor" => "Just", "args" => [true]}
   end
 
-  test "tutorial watchface request weather drives companion response back to watch" do
+  test "tutorial watchface request weather carries structured protocol payload" do
     slug = "sim-tutorial-weather-roundtrip-#{System.unique_integer([:positive])}"
 
     companion_source =
@@ -1542,12 +1634,11 @@ defmodule Ide.DebuggerTest do
 
     assert Enum.any?(protocol_events, fn payload ->
              payload[:from] == "watch" and payload[:to] == "companion" and
-               payload[:message] == "RequestWeather CurrentLocation"
-           end)
-
-    assert Enum.any?(protocol_events, fn payload ->
-             payload[:from] == "companion" and payload[:to] == "watch" and
-               payload[:message] == "ProvideTemperature (Celsius 0)"
+               payload[:message] == "RequestWeather CurrentLocation" and
+               payload[:message_value] == %{
+                 "ctor" => "RequestWeather",
+                 "args" => [%{"ctor" => "CurrentLocation", "args" => []}]
+               }
            end)
 
     timeline =
@@ -1555,23 +1646,10 @@ defmodule Ide.DebuggerTest do
       |> Enum.map(&{&1.target, &1.message, &1.message_source})
 
     assert {"protocol", "FromWatch (Ok (RequestWeather CurrentLocation))", "protocol_rx"} in timeline
-    assert {"watch", "FromPhone (ProvideTemperature (Celsius 0))", "protocol_rx"} in timeline
 
     companion_runtime = get_in(reloaded, [:companion, :model, "runtime_model"]) || %{}
     assert companion_runtime["protocol_message_count"] == 1
     assert companion_runtime["protocol_last_inbound_message"] == "RequestWeather CurrentLocation"
-
-    watch_runtime = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
-
-    assert watch_runtime["temperature"] == %{
-             "ctor" => "Just",
-             "args" => [%{"ctor" => "Celsius", "args" => [0]}]
-           }
-
-    assert watch_runtime["condition"] == %{
-             "ctor" => "Just",
-             "args" => [%{"ctor" => "Clear", "args" => []}]
-           }
   end
 
   test "tutorial watchface minute subscription does not replay sibling device commands" do
@@ -1692,6 +1770,51 @@ defmodule Ide.DebuggerTest do
 
     runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
     assert runtime_model["batteryLevel"] == %{"ctor" => "Just", "args" => [88]}
+  end
+
+  test "tutorial watchface normalizes optimized Maybe fields from runtime model contract" do
+    previous_config = Application.get_env(:ide, Debugger, [])
+
+    Application.put_env(
+      :ide,
+      Debugger,
+      Keyword.put(previous_config, :runtime_executor_module, MaybeShapeRuntimeExecutor)
+    )
+
+    on_exit(fn -> Application.put_env(:ide, Debugger, previous_config) end)
+
+    slug = "sim-tutorial-maybe-shapes-#{System.unique_integer([:positive])}"
+
+    source =
+      File.read!(
+        Path.join(["priv", "project_templates", "watchface_tutorial_complete", "src", "Main.elm"])
+      )
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    {:ok, reloaded} =
+      Debugger.reload(slug, %{
+        rel_path: "watch/src/Main.elm",
+        source: source,
+        reason: "tutorial_maybe_shapes",
+        source_root: "watch"
+      })
+
+    runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
+
+    assert runtime_model["backgroundColor"] == %{"ctor" => "Nothing", "args" => []}
+    assert runtime_model["batteryLevel"] == %{"ctor" => "Just", "args" => [88]}
+    assert runtime_model["connected"] == %{"ctor" => "Just", "args" => [true]}
+
+    assert runtime_model["condition"] == %{
+             "ctor" => "Just",
+             "args" => [%{"ctor" => "Clear", "args" => []}]
+           }
+
+    assert runtime_model["temperature"] == %{
+             "ctor" => "Just",
+             "args" => [%{"ctor" => "Celsius", "args" => [4]}]
+           }
   end
 
   test "compile artifacts refresh visual preview after an introspection-only reload" do
@@ -2734,6 +2857,42 @@ defmodule Ide.DebuggerTest do
     assert get_in(st.watch, [:model, "elmc_compile_cached"]) == "true"
   end
 
+  test "ingest_elmc_compile scopes runtime artifacts to compiled source root" do
+    slug = "sim-elmc-compile-artifacts-#{System.unique_integer([:positive])}"
+    {:ok, _} = Debugger.start_session(slug)
+
+    companion_core = %{"modules" => [%{"name" => "CompanionApp"}]}
+    watch_core = %{"modules" => [%{"name" => "Main"}]}
+
+    assert {:ok, _} =
+             Debugger.ingest_elmc_compile(slug, %{
+               status: :ok,
+               compiled_path: "phone",
+               revision: "companion",
+               elm_executor_core_ir_b64:
+                 :erlang.term_to_binary(companion_core) |> Base.encode64(),
+               elm_executor_metadata: %{"target" => "phone"}
+             })
+
+    assert {:ok, st_after_companion} = Debugger.snapshot(slug, event_limit: 10)
+    assert get_in(st_after_companion.companion, [:model, "elm_executor_core_ir_b64"])
+    refute get_in(st_after_companion.watch, [:model, "elm_executor_core_ir_b64"])
+
+    assert {:ok, st_after_watch} =
+             Debugger.ingest_elmc_compile(slug, %{
+               status: :ok,
+               compiled_path: "watch",
+               revision: "watch",
+               elm_executor_core_ir_b64: :erlang.term_to_binary(watch_core) |> Base.encode64(),
+               elm_executor_metadata: %{"target" => "watch"}
+             })
+
+    assert get_in(st_after_watch.watch, [:model, "elm_executor_core_ir_b64"])
+
+    assert get_in(st_after_watch.companion, [:model, "elm_executor_core_ir_b64"]) ==
+             get_in(st_after_companion.companion, [:model, "elm_executor_core_ir_b64"])
+  end
+
   test "ingest_elmc_manifest merges model fields and appends event when running" do
     slug = "sim-elmc-manifest-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
@@ -2802,63 +2961,59 @@ defmodule Ide.DebuggerTest do
     assert get_in(snap.phone, [:view_tree, "type"]) == "PhoneRoot"
   end
 
-  test "companion elm/http command emits package followup callback in debugger" do
+  test "companion elm/http command executes and feeds structured callback message" do
+    previous_debugger_config = Application.get_env(:ide, Debugger, [])
+    previous_http_executor = Application.get_env(:ide, Ide.Debugger.HttpExecutor)
+
+    Application.put_env(
+      :ide,
+      Debugger,
+      Keyword.put(previous_debugger_config, :runtime_executor_module, HttpFollowupRuntimeExecutor)
+    )
+
+    Application.put_env(:ide, Ide.Debugger.HttpExecutor,
+      request_fun: fn _command ->
+        {:ok, %{"status" => 200, "body" => "ok"}}
+      end
+    )
+
+    on_exit(fn ->
+      Application.put_env(:ide, Debugger, previous_debugger_config)
+
+      if is_nil(previous_http_executor) do
+        Application.delete_env(:ide, Ide.Debugger.HttpExecutor)
+      else
+        Application.put_env(:ide, Ide.Debugger.HttpExecutor, previous_http_executor)
+      end
+    end)
+
     slug = "sim-companion-http-#{System.unique_integer([:positive])}"
-
-    source = """
-    module CompanionSnap exposing (..)
-
-    import Http
-    import Json.Decode as Decode
-
-    type alias Model =
-        { lastResponse : Int }
-
-    type Msg
-        = Tick
-        | WeatherReceived (Result Http.Error Float)
-
-    init _ =
-        ( { lastResponse = 0 }, Cmd.none )
-
-    update msg model =
-        case msg of
-            Tick ->
-                let
-                    weatherRequest =
-                        Http.get
-                            { url = "https://example.com/weather"
-                            , expect =
-                                Http.expectJson
-                                    WeatherReceived
-                                    (Decode.field "value" Decode.float)
-                            }
-                in
-                ( model, weatherRequest )
-
-            WeatherReceived _ ->
-                ( { model | lastResponse = 1 }, Cmd.none )
-    """
 
     assert {:ok, _} = Debugger.start_session(slug)
 
     assert {:ok, reloaded} =
              Debugger.reload(slug, %{
                rel_path: "phone/src/CompanionApp.elm",
-               source: source,
+               source: "module CompanionSnap exposing (..)",
                reason: "companion_http_followup",
                source_root: "protocol"
              })
 
     assert {:ok, stepped} = Debugger.step(slug, %{target: "protocol", message: "Tick", count: 1})
     assert get_in(reloaded, [:companion, :model, "elm_introspect", "module"]) == "CompanionSnap"
-    assert stepped.companion.last_message == "WeatherReceived (Ok 21.5)"
+    assert String.starts_with?(stepped.companion.last_message, "WeatherReceived ")
+    assert get_in(stepped.companion.model, ["runtime_model", "lastResponse"]) == 1
+
+    assert get_in(stepped.companion.model, ["runtime_model", "received"]) == %{
+             "ctor" => "WeatherReceived",
+             "args" => [%{"ctor" => "Ok", "args" => ["ok"]}]
+           }
 
     assert Enum.any?(stepped.events, fn event ->
              event.type == "debugger.package_cmd" and
                event.payload.target == "protocol" and
                event.payload.package == "elm/http" and
-               event.payload.response_message == "WeatherReceived (Ok 21.5)"
+               String.starts_with?(event.payload.response_message, "WeatherReceived ")
            end)
   end
 

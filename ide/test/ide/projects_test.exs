@@ -1,6 +1,7 @@
 defmodule Ide.ProjectsTest do
   use Ide.DataCase, async: false
 
+  alias Ide.Debugger
   alias Ide.Projects
 
   setup do
@@ -59,6 +60,28 @@ defmodule Ide.ProjectsTest do
 
     assert :ok = Projects.delete_source_path(project, "watch", "src/App.elm")
     assert {:error, :enoent} = Projects.read_source_file(project, "watch", "src/App.elm")
+  end
+
+  test "delete project clears debugger state for reusable slug" do
+    slug = "delete-clears-debugger-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "DeleteClearsDebugger",
+               "slug" => slug,
+               "target_type" => "app"
+             })
+
+    assert {:ok, started} = Debugger.start_session(slug)
+    assert started.running == true
+    assert started.events != []
+
+    assert {:ok, _deleted} = Projects.delete_project(project)
+
+    assert {:ok, snapshot} = Debugger.snapshot(slug, event_limit: 10)
+    assert snapshot.running == false
+    assert snapshot.events == []
+    assert snapshot.debugger_timeline == []
   end
 
   test "bitmap/font resource import generates read-only resources module" do

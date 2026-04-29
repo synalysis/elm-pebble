@@ -30,6 +30,7 @@ typedef struct {
 
 static void render_model(void);
 static void apply_pending_cmd(void);
+static ElmcValue *build_launch_context(AppLaunchReason launch);
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
 static bool send_companion_request(int request_tag, int request_value);
 static void flush_pending_companion_request(void);
@@ -351,7 +352,16 @@ static void apply_pending_cmd(void) {
 }
 
 static GColor color_from_code(int64_t value) {
-  return value == 0 ? GColorWhite : GColorBlack;
+  int code = (int)(value & 0xff);
+  int red = ((code >> 4) & 0x3) * 85;
+  int green = ((code >> 2) & 0x3) * 85;
+  int blue = (code & 0x3) * 85;
+#ifdef PBL_COLOR
+  return GColorFromRGB(red, green, blue);
+#else
+  int luminance = (red * 30 + green * 59 + blue * 11) / 100;
+  return luminance >= 128 ? GColorWhite : GColorBlack;
+#endif
 }
 
 static GCompOp compositing_from_code(int64_t value) {
@@ -851,6 +861,57 @@ static void main_window_unload(Window *window) {
   s_draw_layer = NULL;
 }
 
+static int launch_reason_to_elm_tag(AppLaunchReason launch) {
+  switch (launch) {
+    case APP_LAUNCH_SYSTEM:
+      return 1;
+    case APP_LAUNCH_USER:
+      return 2;
+    case APP_LAUNCH_PHONE:
+      return 3;
+    case APP_LAUNCH_WAKEUP:
+      return 4;
+    case APP_LAUNCH_WORKER:
+      return 5;
+    case APP_LAUNCH_QUICK_LAUNCH:
+      return 6;
+    case APP_LAUNCH_TIMELINE_ACTION:
+      return 7;
+    case APP_LAUNCH_SMARTSTRAP:
+      return 8;
+    default:
+      return 9;
+  }
+}
+
+static ElmcValue *build_launch_context(AppLaunchReason launch) {
+  GRect bounds = layer_get_bounds(window_get_root_layer(s_main_window));
+
+  ElmcValue *screen_width = elmc_new_int(bounds.size.w);
+  ElmcValue *screen_height = elmc_new_int(bounds.size.h);
+  ElmcValue *screen_is_color = elmc_new_bool(PBL_IF_COLOR_ELSE(1, 0));
+  ElmcValue *screen_is_round = elmc_new_bool(PBL_IF_ROUND_ELSE(1, 0));
+  const char *screen_names[] = {"height", "isColor", "isRound", "width"};
+  ElmcValue *screen_values[] = {screen_height, screen_is_color, screen_is_round, screen_width};
+  ElmcValue *screen = elmc_record_new(4, screen_names, screen_values);
+  elmc_release(screen_width);
+  elmc_release(screen_height);
+  elmc_release(screen_is_color);
+  elmc_release(screen_is_round);
+
+  ElmcValue *reason = elmc_new_int(launch_reason_to_elm_tag(launch));
+  ElmcValue *watch_model = elmc_new_string("");
+  ElmcValue *watch_profile_id = elmc_new_string("");
+  const char *context_names[] = {"reason", "screen", "watchModel", "watchProfileId"};
+  ElmcValue *context_values[] = {reason, screen, watch_model, watch_profile_id};
+  ElmcValue *context = elmc_record_new(4, context_names, context_values);
+  elmc_release(reason);
+  elmc_release(screen);
+  elmc_release(watch_model);
+  elmc_release(watch_profile_id);
+  return context;
+}
+
 static void init(void) {
 #ifdef ELMC_WATCHFACE_MODE
   s_run_mode = ELMC_PEBBLE_MODE_WATCHFACE;
@@ -871,7 +932,7 @@ static void init(void) {
   window_stack_push(s_main_window, true);
 
   AppLaunchReason launch = launch_reason();
-  ElmcValue *flags = elmc_new_int((int64_t)launch);
+  ElmcValue *flags = build_launch_context(launch);
   int rc = elmc_pebble_init_with_mode(&s_elm_app, flags, s_run_mode);
   elmc_release(flags);
   APP_LOG(APP_LOG_LEVEL_INFO, "launch_reason=%d mode=%d", (int)launch, (int)s_run_mode);

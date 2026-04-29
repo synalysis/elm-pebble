@@ -500,7 +500,8 @@ defmodule Ide.Debugger.ElmIntrospect do
               %{expr: e} ->
                 cmd_calls_from_case_branch_expr(e)
 
-              _ -> []
+              _ ->
+                []
             end)
           else
             []
@@ -1494,6 +1495,48 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp expr_to_view_tree(%{op: :var, name: n}, _, _, _api_metadata) do
     %{"type" => "var", "label" => n, "children" => [], "op" => "var", "value" => n}
+  end
+
+  defp expr_to_view_tree(%{op: :add_const, var: var, value: value}, d, max, api_metadata)
+       when d < max do
+    expr_to_view_tree(
+      %{
+        op: :call,
+        name: "__add__",
+        args: [%{op: :var, name: var}, %{op: :int_literal, value: value}]
+      },
+      d,
+      max,
+      api_metadata
+    )
+  end
+
+  defp expr_to_view_tree(%{op: :sub_const, var: var, value: value}, d, max, api_metadata)
+       when d < max do
+    expr_to_view_tree(
+      %{
+        op: :call,
+        name: "__sub__",
+        args: [%{op: :var, name: var}, %{op: :int_literal, value: value}]
+      },
+      d,
+      max,
+      api_metadata
+    )
+  end
+
+  defp expr_to_view_tree(%{op: :add_vars, left: left, right: right}, d, max, api_metadata)
+       when d < max do
+    expr_to_view_tree(
+      %{
+        op: :call,
+        name: "__add__",
+        args: [%{op: :var, name: left}, %{op: :var, name: right}]
+      },
+      d,
+      max,
+      api_metadata
+    )
   end
 
   defp expr_to_view_tree(%{op: :int_literal, value: v}, _, _, _api_metadata) when is_integer(v) do

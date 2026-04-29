@@ -231,6 +231,12 @@ defmodule ElmEx.IR.Lowerer do
         signature_by_name = Map.new(signature_declarations, &{&1.name, &1})
         definition_only_by_name = Map.new(definition_only_declarations, &{&1.name, &1})
 
+        type_alias_declarations =
+          others
+          |> Enum.filter(&(&1.kind == :type_alias))
+          |> Enum.map(&lower_declaration(&1, nil))
+          |> Enum.reject(&is_nil/1)
+
         ordered_function_names =
           frontend_module.declarations
           |> Enum.filter(&(&1.kind in [:function_signature, :function_definition]))
@@ -246,11 +252,12 @@ defmodule ElmEx.IR.Lowerer do
           |> Enum.reverse()
 
         ordered_declarations =
-          ordered_function_names
-          |> Enum.map(fn name ->
-            Map.get(signature_by_name, name) || Map.get(definition_only_by_name, name)
-          end)
-          |> Enum.reject(&is_nil/1)
+          type_alias_declarations ++
+            (ordered_function_names
+             |> Enum.map(fn name ->
+               Map.get(signature_by_name, name) || Map.get(definition_only_by_name, name)
+             end)
+             |> Enum.reject(&is_nil/1))
 
         %Module{
           name: frontend_module.name,
@@ -313,9 +320,12 @@ defmodule ElmEx.IR.Lowerer do
   end
 
   defp lower_declaration(%{kind: :type_alias, name: name} = decl, _definition) do
+    fields = Map.get(decl, :fields) || []
+
     %Declaration{
       kind: :type_alias,
       name: name,
+      expr: type_alias_expr(fields),
       span: Map.get(decl, :span),
       ownership: [:retain_on_assign, :release_on_scope_exit]
     }
@@ -329,6 +339,15 @@ defmodule ElmEx.IR.Lowerer do
       ownership: [:retain_on_constructor, :release_on_match_exit]
     }
   end
+
+  defp type_alias_expr(fields) when is_list(fields) and fields != [] do
+    %{
+      op: :record_alias,
+      fields: Enum.map(fields, &to_string/1)
+    }
+  end
+
+  defp type_alias_expr(_fields), do: nil
 
   @spec ownership_for_type(String.t() | nil) :: [atom()]
   defp ownership_for_type(type) do
@@ -453,32 +472,16 @@ defmodule ElmEx.IR.Lowerer do
       fields
       |> Enum.map(fn field -> %{field | expr: rewrite_expr(field.expr, lookup)} end)
 
-    # Sort fields alphabetically for deterministic ordering
-    sorted_fields = Enum.sort_by(rewritten_fields, & &1.name)
-
-    # For 2-field records with value+temperature, keep the tuple2 optimization
-    field_map =
-      rewritten_fields
-      |> Map.new(fn field -> {field.name, field.expr} end)
-
-    value_expr = Map.get(field_map, "value")
-    temperature_expr = Map.get(field_map, "temperature")
-
-    case {value_expr, temperature_expr, length(rewritten_fields)} do
-      {v, t, 2} when v != nil and t != nil ->
-        %{op: :tuple2, left: v, right: t}
-
-      _ ->
-        %{op: :record_literal, fields: sorted_fields}
-    end
+    %{op: :record_literal, fields: Enum.sort_by(rewritten_fields, & &1.name)}
   end
 
-  defp rewrite_expr(%{op: :field_access, arg: arg, field: "value"}, lookup) do
-    %{op: :tuple_first, arg: rewrite_expr(arg, lookup)}
-  end
+  defp rewrite_expr(%{op: :record_update, base: base, fields: fields}, lookup) do
+    rewritten_fields =
+      fields
+      |> Enum.map(fn field -> %{field | expr: rewrite_expr(field.expr, lookup)} end)
+      |> Enum.sort_by(& &1.name)
 
-  defp rewrite_expr(%{op: :field_access, arg: arg, field: "temperature"}, lookup) do
-    %{op: :tuple_second, arg: rewrite_expr(arg, lookup)}
+    %{op: :record_update, base: rewrite_expr(base, lookup), fields: rewritten_fields}
   end
 
   defp rewrite_expr(%{op: :field_access, arg: arg, field: field}, lookup) do

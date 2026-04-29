@@ -93,6 +93,36 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridgeTest do
     assert manifest.payload.diagnostic_preview == []
   end
 
+  test "sync_compile assigns runtime artifacts to inferred source root" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "BridgeCompileArtifacts",
+               "slug" => "bridge-compile-artifacts",
+               "target_type" => "app"
+             })
+
+    assert {:ok, _} = Debugger.start_session(project.slug)
+
+    socket = debugger_socket(project)
+    workspace = Projects.project_workspace_path(project)
+    core_ir = %{"modules" => [%{"name" => "CompanionApp"}]}
+
+    _updated_compile =
+      DebuggerBridge.sync_compile(socket, %{
+        status: :ok,
+        compiled_path: Path.join([workspace, "phone", ".elmc-build"]),
+        revision: "rev-phone",
+        cached?: false,
+        diagnostics: nil,
+        elm_executor_core_ir_b64: :erlang.term_to_binary(core_ir) |> Base.encode64(),
+        elm_executor_metadata: %{"target" => "phone"}
+      })
+
+    assert {:ok, state} = Debugger.snapshot(project.slug, event_limit: 10)
+    assert get_in(state.companion, [:model, "elm_executor_core_ir_b64"])
+    refute get_in(state.watch, [:model, "elm_executor_core_ir_b64"])
+  end
+
   defp debugger_socket(project) do
     %Phoenix.LiveView.Socket{}
     |> Phoenix.Component.assign(:project, project)

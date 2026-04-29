@@ -33,8 +33,10 @@ defmodule Elmc.GoldenSnapshotTest do
     branch_tuple_out = Enum.find(compliance_ir, &(&1.name == "branchTupleOut"))
     branch_tuple_out_nested = Enum.find(compliance_ir, &(&1.name == "branchTupleOutNested"))
 
-    assert fold_sum.expr.op == :list_foldl_add_zero
-    assert maybe_inc.expr.op == :maybe_inc
+    assert fold_sum.expr.op == :qualified_call
+    assert fold_sum.expr.target == "List.foldl"
+    assert maybe_inc.expr.op == :qualified_call
+    assert maybe_inc.expr.target == "Maybe.withDefault"
     assert char_from_code.expr.op in [:char_from_code, :char_from_code_expr]
     assert tuple_case.expr.op == :case
     assert nested_result.expr.op == :case
@@ -70,8 +72,9 @@ defmodule Elmc.GoldenSnapshotTest do
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert String.contains?(generated, "elmc_list_foldl_add_zero")
-    assert String.contains?(generated, "elmc_maybe_map_inc")
+    assert String.contains?(generated, "elmc_list_foldl")
+    assert String.contains?(generated, "elmc_maybe_map")
+    assert String.contains?(generated, "elmc_maybe_with_default")
     assert String.contains?(generated, "elmc_tuple_second")
     assert String.contains?(generated, "elmc_tuple_first")
     assert String.contains?(generated, "elmc_string_length")

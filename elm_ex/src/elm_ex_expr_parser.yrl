@@ -196,7 +196,8 @@ list_items -> pipe_right_expr : ['$1'].
 
 record_expr -> lbrace rbrace : #{op => record_literal, fields => []}.
 record_expr -> lbrace record_fields rbrace : #{op => record_literal, fields => '$2'}.
-record_expr -> lbrace lower_qid pipe record_fields rbrace : #{op => record_literal, fields => '$4'}.
+record_expr -> lbrace lower_qid pipe record_fields rbrace :
+  #{op => record_update, base => #{op => var, name => token_value('$2')}, fields => '$4'}.
 
 record_fields -> record_field comma record_fields : ['$1' | '$3'].
 record_fields -> record_field comma : ['$1'].

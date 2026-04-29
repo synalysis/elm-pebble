@@ -6,7 +6,8 @@ This is the Elm-based Pebble development platform.
 
 - `elmc/` - Elm-to-C compiler, runtime, and conformance tests.
 - `ide/` - Phoenix LiveView IDE app (Phases 1-3 baseline).
-- `src/` - shared Elm-side Pebble API surface currently used by fixtures/apps.
+- `packages/elm-pebble/elm-watch/` - watch-side Elm package API surface.
+- `packages/elm-pebble-companion-core/` - companion-side Elm package API surface.
 - `shared/` - cross-target Elm protocol modules (watch + companion).
 - `ide/priv/pebble_app_template/` - Pebble app template/shim used by IDE publish builds.
 

@@ -767,7 +767,7 @@ defmodule Ide.PebbleToolchain do
           {output, exit_code} =
             System.cmd(
               elm_bin,
-              ["make", "src/CompanionApp.elm", "--output", out_file],
+              ["make", "src/CompanionApp.elm", "--optimize", "--output", out_file],
               cd: phone_root,
               stderr_to_stdout: true,
               env: [{"LC_ALL", "C"}]
@@ -779,7 +779,7 @@ defmodule Ide.PebbleToolchain do
             {:error,
              {:phone_companion_elm_make_failed,
               %{
-                command: "#{elm_bin} make src/CompanionApp.elm --output #{out_file}",
+                command: "#{elm_bin} make src/CompanionApp.elm --optimize --output #{out_file}",
                 output: output,
                 exit_code: exit_code,
                 cwd: phone_root

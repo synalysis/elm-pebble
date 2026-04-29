@@ -4,6 +4,49 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   @default_screen_w 144
   @default_screen_h 168
 
+  @spec screen_dimensions(term(), term()) :: {pos_integer(), pos_integer()}
+  def screen_dimensions(runtime, tree \\ nil) do
+    raw_model = raw_runtime_model(runtime)
+    model = runtime_model(runtime)
+    launch = first_map([map_get_any(model, "launch_context"), map_get_any(raw_model, "launch_context")])
+    launch_screen = first_map([map_get_any(launch, "screen")])
+    tree_box = if is_map(tree), do: first_map([map_get_any(tree, "box")]), else: %{}
+
+    width =
+      first_present([
+        map_get_any(launch_screen, "width"),
+        map_get_any(tree_box, "w")
+      ])
+
+    height =
+      first_present([
+        map_get_any(launch_screen, "height"),
+        map_get_any(tree_box, "h")
+      ])
+
+    {dimension_int(width, @default_screen_w), dimension_int(height, @default_screen_h)}
+  end
+
+  @spec screen_round?(term(), term()) :: boolean()
+  def screen_round?(runtime, tree \\ nil) do
+    raw_model = raw_runtime_model(runtime)
+    model = runtime_model(runtime)
+    launch = first_map([map_get_any(model, "launch_context"), map_get_any(raw_model, "launch_context")])
+    launch_screen = first_map([map_get_any(launch, "screen")])
+
+    round? =
+      first_present([
+        map_get_any(launch_screen, "isRound")
+      ])
+
+    shape =
+      if is_map(tree) do
+        map_get_any(tree, "shape")
+      end
+
+    boolean_value?(round?) || shape == "round"
+  end
+
   @spec svg_ops(term(), term()) :: term()
   def svg_ops(tree, runtime) when is_map(tree) do
     runtime_ops = runtime_view_output(runtime)
@@ -77,24 +120,84 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   @spec runtime_model(term()) :: term()
   def runtime_model(runtime) when is_map(runtime) do
-    model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
+    model = raw_runtime_model(runtime)
     runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model)
     if is_map(runtime_model), do: runtime_model, else: model
   end
 
   def runtime_model(_runtime), do: %{}
 
+  @spec raw_runtime_model(term()) :: term()
+  defp raw_runtime_model(runtime) when is_map(runtime) do
+    Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
+  end
+
+  defp raw_runtime_model(_runtime), do: %{}
+
+  @spec first_map([term()]) :: map()
+  defp first_map(values) when is_list(values) do
+    Enum.find(values, %{}, &is_map/1)
+  end
+
+  @spec first_present([term()]) :: term()
+  defp first_present(values) when is_list(values) do
+    Enum.find(values, fn value -> not is_nil(value) end)
+  end
+
+  @spec map_get_any(term(), String.t()) :: term()
+  defp map_get_any(map, key) when is_map(map) and is_binary(key) do
+    case Map.fetch(map, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        map_value_by_atom_name(map, key)
+    end
+  end
+
+  defp map_get_any(_map, _key), do: nil
+
+  @spec map_value_by_atom_name(map(), String.t()) :: term()
+  defp map_value_by_atom_name(map, key) when is_map(map) and is_binary(key) do
+    Enum.find_value(map, fn
+      {atom_key, value} when is_atom(atom_key) ->
+        if Atom.to_string(atom_key) == key, do: value, else: nil
+
+      _ ->
+        nil
+    end)
+  end
+
+  @spec dimension_int(term(), pos_integer()) :: pos_integer()
+  defp dimension_int(value, _fallback) when is_integer(value) and value > 0, do: value
+
+  defp dimension_int(value, _fallback) when is_float(value) and value > 0,
+    do: max(1, trunc(value))
+
+  defp dimension_int(value, fallback) when is_binary(value) do
+    case Integer.parse(value) do
+      {parsed, ""} when parsed > 0 -> parsed
+      _ -> fallback
+    end
+  end
+
+  defp dimension_int(_value, fallback), do: fallback
+
+  @spec boolean_value?(term()) :: boolean()
+  defp boolean_value?(value) when value in [true, 1, "true", "True", "TRUE"], do: true
+  defp boolean_value?(_value), do: false
+
   @spec primary_int_model_value(term()) :: term()
   def primary_int_model_value(model) when is_map(model) do
-    preferred = ["hhmm", "count", "counter", "n", "value", "index", "total"]
+    ints =
+      model
+      |> Map.values()
+      |> Enum.filter(&is_integer/1)
 
-    Enum.find_value(preferred, fn key ->
-      val = Map.get(model, key)
-      if is_integer(val), do: val, else: nil
-    end) ||
-      Enum.find_value(model, fn {_key, val} ->
-        if is_integer(val), do: val, else: nil
-      end)
+    case ints do
+      [value] -> value
+      _ -> nil
+    end
   end
 
   def primary_int_model_value(_model), do: nil
@@ -244,6 +347,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     |> Enum.filter(&is_map/1)
     |> Enum.map(&normalize_svg_op/1)
     |> Enum.reject(&is_nil/1)
+    |> apply_svg_style_state()
   end
 
   defp runtime_view_output(_runtime), do: []
@@ -253,6 +357,39 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     kind = to_string(Map.get(op, "kind") || Map.get(op, :kind) || "")
 
     case kind do
+      "push_context" ->
+        %{kind: :push_context}
+
+      "pop_context" ->
+        %{kind: :pop_context}
+
+      "stroke_width" ->
+        case map_integer_required(op, "value") do
+          {:ok, value} -> %{kind: :stroke_width, value: max(value, 1)}
+          :error -> unresolved_svg_op("stroke_width", ["value"], op)
+        end
+
+      "antialiased" ->
+        case map_integer_required(op, "value") do
+          {:ok, value} -> %{kind: :antialiased, value: value != 0}
+          :error -> unresolved_svg_op("antialiased", ["value"], op)
+        end
+
+      "stroke_color" ->
+        normalize_style_color_op(:stroke_color, op, "stroke_color")
+
+      "fill_color" ->
+        normalize_style_color_op(:fill_color, op, "fill_color")
+
+      "text_color" ->
+        normalize_style_color_op(:text_color, op, "text_color")
+
+      "compositing_mode" ->
+        case map_integer_required(op, "value") do
+          {:ok, value} -> %{kind: :compositing_mode, value: value}
+          :error -> unresolved_svg_op("compositing_mode", ["value"], op)
+        end
+
       "clear" ->
         case map_integer_required(op, "color") do
           {:ok, color} -> %{kind: :clear, color: color}
@@ -434,7 +571,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
             if text == "",
               do: unresolved_svg_op("text", ["x", "y", "text"], op),
-              else: %{kind: :text_label, x: x, y: y, text: text}
+              else: text_box_svg_op(op, x, y, text)
 
           :error ->
             unresolved_svg_op("text", ["x", "y", "text"], op)
@@ -453,6 +590,145 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   end
 
   defp normalize_svg_op(_op), do: nil
+
+  @spec text_box_svg_op(map(), integer(), integer(), String.t()) :: map()
+  defp text_box_svg_op(op, x, y, text) when is_map(op) and is_integer(x) and is_integer(y) do
+    base = %{kind: :text_label, x: x, y: y, text: text}
+
+    case map_integers_required(op, ["w", "h"]) do
+      {:ok, [w, h]} -> Map.merge(base, %{w: w, h: h, text_align: "center"})
+      :error -> base
+    end
+  end
+
+  @spec normalize_style_color_op(atom(), map(), String.t(), String.t()) :: map()
+  defp normalize_style_color_op(kind, op, node_type, value_key \\ "color")
+       when is_atom(kind) and is_map(op) and is_binary(node_type) and is_binary(value_key) do
+    value =
+      case map_integer_required(op, value_key) do
+        {:ok, color} ->
+          {:ok, color}
+
+        :error when value_key == "color" ->
+          map_integer_required(op, "value")
+
+        :error ->
+          :error
+      end
+
+    case value do
+      {:ok, color} -> %{kind: kind, color: color}
+      :error -> unresolved_svg_op(node_type, [value_key], op)
+    end
+  end
+
+  @spec apply_svg_style_state([map()]) :: [map()]
+  defp apply_svg_style_state(ops) when is_list(ops) do
+    {rows, _stack} =
+      Enum.reduce(ops, {[], [default_svg_style()]}, fn op, {rows, stack} ->
+        style = List.first(stack) || default_svg_style()
+
+        case op.kind do
+          :push_context ->
+            {rows, [style | stack]}
+
+          :pop_context ->
+            {rows, pop_svg_style(stack)}
+
+          :stroke_width ->
+            {rows, update_svg_style(stack, :stroke_width, op.value)}
+
+          :antialiased ->
+            {rows, update_svg_style(stack, :antialiased, op.value)}
+
+          :stroke_color ->
+            {rows, update_svg_style(stack, :stroke_color, op.color)}
+
+          :fill_color ->
+            {rows, update_svg_style(stack, :fill_color, op.color)}
+
+          :text_color ->
+            {rows, update_svg_style(stack, :text_color, op.color)}
+
+          :compositing_mode ->
+            {rows, update_svg_style(stack, :compositing_mode, op.value)}
+
+          _ ->
+            {[apply_svg_style(op, style) | rows], stack}
+        end
+      end)
+
+    Enum.reverse(rows)
+  end
+
+  @spec default_svg_style() :: map()
+  defp default_svg_style do
+    %{
+      stroke_color: nil,
+      fill_color: nil,
+      text_color: nil,
+      stroke_width: 1,
+      antialiased: true,
+      compositing_mode: 0
+    }
+  end
+
+  @spec pop_svg_style([map()]) :: [map()]
+  defp pop_svg_style([_current, parent | rest]), do: [parent | rest]
+  defp pop_svg_style(stack), do: stack
+
+  @spec update_svg_style([map()], atom(), term()) :: [map()]
+  defp update_svg_style([style | rest], key, value), do: [Map.put(style, key, value) | rest]
+  defp update_svg_style([], key, value), do: [Map.put(default_svg_style(), key, value)]
+
+  @spec apply_svg_style(map(), map()) :: map()
+  defp apply_svg_style(%{kind: :unresolved} = op, _style), do: op
+
+  defp apply_svg_style(%{kind: :clear} = op, _style), do: op
+
+  defp apply_svg_style(%{kind: kind} = op, style)
+       when kind in [
+              :line,
+              :rect,
+              :round_rect,
+              :arc,
+              :path_outline,
+              :path_outline_open,
+              :circle,
+              :pixel
+            ] do
+    op
+    |> Map.put(:stroke_color, style_color(style, :stroke_color, Map.get(op, :color) || Map.get(op, :fill)))
+    |> Map.put(:stroke_width, style.stroke_width || 1)
+    |> put_common_svg_style(style)
+  end
+
+  defp apply_svg_style(%{kind: kind} = op, style)
+       when kind in [:fill_rect, :fill_circle, :path_filled, :fill_radial] do
+    op
+    |> Map.put(:fill_color, style_color(style, :fill_color, Map.get(op, :color) || Map.get(op, :fill)))
+    |> Map.put(:stroke_color, style_color(style, :stroke_color, Map.get(op, :color) || Map.get(op, :fill)))
+    |> Map.put(:stroke_width, style.stroke_width || 1)
+    |> put_common_svg_style(style)
+  end
+
+  defp apply_svg_style(%{kind: kind} = op, style) when kind in [:text_int, :text_label] do
+    op
+    |> Map.put(:text_color, style_color(style, :text_color, Map.get(op, :color)))
+    |> put_common_svg_style(style)
+  end
+
+  defp apply_svg_style(op, style), do: put_common_svg_style(op, style)
+
+  @spec put_common_svg_style(map(), map()) :: map()
+  defp put_common_svg_style(op, style) do
+    op
+    |> Map.put(:antialiased, style.antialiased)
+    |> Map.put(:compositing_mode, style.compositing_mode)
+  end
+
+  @spec style_color(map(), atom(), term()) :: term()
+  defp style_color(style, key, fallback), do: Map.get(style, key) || fallback
 
   @spec map_integer_required(term(), term()) :: term()
   defp map_integer_required(map, key) when is_map(map) and is_binary(key) do
@@ -547,6 +823,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
         "radius" -> :radius
         "fill" -> :fill
         "color" -> :color
+        "value" -> :value
+        "p0" -> :p0
         "start_angle" -> :start_angle
         "end_angle" -> :end_angle
         "provided_int_count" -> :provided_int_count

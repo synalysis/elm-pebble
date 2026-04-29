@@ -183,6 +183,40 @@ defmodule Ide.Debugger.ElmIntrospectTest do
     assert "textIntWithFont" in types
   end
 
+  test "analyze_source preserves shorthand arithmetic operands in view tree" do
+    source = """
+    module ShorthandArithmeticView exposing (..)
+
+    view model =
+        let
+            x =
+                model.screenW // 2
+
+            y =
+                model.screenH // 4
+
+            w =
+                model.screenW + model.screenH
+        in
+        PebbleUi.fillRect { x = x + 2, y = y + 2, w = w - 4, h = 4 } 1
+    """
+
+    assert {:ok, %{"elm_introspect" => ei}} =
+             ElmIntrospect.analyze_source(source, "ShorthandArithmeticView.elm")
+
+    nodes = collect_tree_nodes(ei["view_tree"])
+
+    assert Enum.any?(nodes, fn node ->
+             Map.get(node, "type") == "call" and Map.get(node, "label") == "__add__" and
+               Enum.any?(Map.get(node, "children", []), &(Map.get(&1, "label") == "x"))
+           end)
+
+    assert Enum.any?(nodes, fn node ->
+             Map.get(node, "type") == "call" and Map.get(node, "label") == "__sub__" and
+               Enum.any?(Map.get(node, "children", []), &(Map.get(&1, "label") == "w"))
+           end)
+  end
+
   test "analyze_source keeps drawable nodes for watchface digital template source" do
     path = Path.expand("../../../priv/project_templates/watchface_digital/src/Main.elm", __DIR__)
     source = File.read!(path)
@@ -301,7 +335,7 @@ defmodule Ide.Debugger.ElmIntrospectTest do
     assert Enum.any?(calls, fn row ->
              (row["name"] == "getCurrentTimeString" || row[:name] == "getCurrentTimeString") and
                (row["callback_constructor"] == "CurrentTime" ||
-                 row[:callback_constructor] == "CurrentTime") and
+                  row[:callback_constructor] == "CurrentTime") and
                (row["branch_constructor"] == "Tick" || row[:branch_constructor] == "Tick")
            end)
   end

@@ -291,7 +291,7 @@ defmodule ElmExTest do
   # Lowerer: record_literal handling
   # ---------------------------------------------------------------------------
 
-  test "lowerer rewrites {value, temperature} record to tuple2" do
+  test "lowerer preserves value and temperature records without field-name heuristics" do
     project =
       synthetic_project([
         sig("mk", "{ value : Int, temperature : Int }"),
@@ -306,7 +306,8 @@ defmodule ElmExTest do
 
     {:ok, %IR{modules: [mod]}} = Lowerer.lower_project(project)
     func = Enum.find(mod.declarations, &(&1.name == "mk" and &1.kind == :function))
-    assert func.expr.op == :tuple2
+    assert func.expr.op == :record_literal
+    assert Enum.map(func.expr.fields, & &1.name) == ["temperature", "value"]
   end
 
   test "lowerer preserves generic record_literal for non-value/temperature fields" do

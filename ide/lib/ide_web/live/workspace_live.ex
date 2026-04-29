@@ -239,6 +239,8 @@ defmodule IdeWeb.WorkspaceLive do
 
         publish_readiness = PublishFlow.publish_readiness(screenshots)
 
+        selected_emulator_target = project_emulator_target(project)
+
         {:noreply,
          socket
          |> assign(:project, project)
@@ -284,9 +286,10 @@ defmodule IdeWeb.WorkspaceLive do
          |> assign(:github_push_status, :idle)
          |> assign(:github_push_output, nil)
          |> assign(:packages_target_root, preferred_packages_target_root(socket, project))
+         |> assign(:selected_emulator_target, selected_emulator_target)
          |> assign(
            :emulator_form,
-           to_form(%{"target" => socket.assigns.selected_emulator_target}, as: :emulator)
+           to_form(%{"target" => selected_emulator_target}, as: :emulator)
          )
          |> assign(:page_title, "#{project.name} · #{Atom.to_string(socket.assigns.live_action)}")
          |> maybe_initialize_forms(project)
@@ -1621,8 +1624,12 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_event("set-emulator-target", %{"emulator" => %{"target" => target}}, socket) do
+    project = persist_project_emulator_target(socket.assigns.project, target)
+    target = project_emulator_target(project)
+
     {:noreply,
      socket
+     |> assign(:project, project)
      |> assign(:selected_emulator_target, target)
      |> assign(:emulator_form, to_form(%{"target" => target}, as: :emulator))}
   end
@@ -1638,8 +1645,10 @@ defmodule IdeWeb.WorkspaceLive do
             watch_profile_id: project_debugger_watch_profile_id(project)
           })
 
-        socket = socket |> DebuggerSupport.refresh()
-        socket = warm_debugger_compile_context(socket, project)
+        socket =
+          socket
+          |> DebuggerSupport.refresh()
+          |> warm_debugger_compile_context(project)
 
         {socket, message} = bootstrap_debugger_preview(socket, project)
         apply_project_auto_fire_settings(project)
@@ -1911,6 +1920,21 @@ defmodule IdeWeb.WorkspaceLive do
     {:noreply, DebuggerSupport.set_debugger_cursor_seq(socket, seq)}
   end
 
+  def handle_event("debugger-hover-rendered-node", %{"path" => path, "scope" => scope}, socket)
+      when is_binary(path) and is_binary(scope) do
+    {:noreply,
+     socket
+     |> assign(:debugger_hovered_rendered_scope, scope)
+     |> assign(:debugger_hovered_rendered_path, path)}
+  end
+
+  def handle_event("debugger-clear-rendered-node-hover", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:debugger_hovered_rendered_scope, nil)
+     |> assign(:debugger_hovered_rendered_path, nil)}
+  end
+
   def handle_event("debugger-set-timeline-kind", %{"kind" => kind}, socket) do
     {:noreply, DebuggerSupport.set_timeline_kind(socket, kind)}
   end
@@ -2140,9 +2164,20 @@ defmodule IdeWeb.WorkspaceLive do
       |> assign(:manifest_status, primary.manifest.status)
       |> assign(:manifest_output, primary.manifest.output)
 
-    socket = DebuggerBridge.sync_check(socket, primary.check)
-    socket = DebuggerBridge.sync_compile(socket, primary.compile)
-    socket = DebuggerBridge.sync_manifest(socket, primary.manifest)
+    socket =
+      result.roots
+      |> List.wrap()
+      |> Enum.reduce(socket, fn root_result, acc ->
+        acc
+        |> DebuggerBridge.sync_check(Map.put(root_result.check, :source_root, root_result.label))
+        |> DebuggerBridge.sync_compile(
+          Map.put(root_result.compile, :source_root, root_result.label)
+        )
+        |> DebuggerBridge.sync_manifest(
+          Map.put(root_result.manifest, :source_root, root_result.label)
+        )
+      end)
+
     {:noreply, socket}
   end
 
@@ -2995,21 +3030,32 @@ defmodule IdeWeb.WorkspaceLive do
           <div class="col-span-12 flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2 lg:col-span-3">
             <div class="flex items-center justify-between gap-2">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-600">Timeline</h3>
-              <form phx-change="debugger-set-timeline-mode">
-                <select
-                  name="mode"
-                  class="rounded border border-zinc-300 bg-white px-1.5 py-1 text-[11px] text-zinc-800"
-                >
-                  <option value="watch" selected={@debugger_timeline_mode == "watch"}>watch</option>
-                  <option value="companion" selected={@debugger_timeline_mode == "companion"}>
-                    companion
-                  </option>
-                  <option value="mixed" selected={@debugger_timeline_mode == "mixed"}>mixed</option>
-                  <option value="separate" selected={@debugger_timeline_mode == "separate"}>
-                    separate
-                  </option>
-                </select>
-              </form>
+              <div class="flex items-center gap-1">
+                <.debugger_copy_button
+                  id="debugger-timeline-copy"
+                  text={
+                    @debugger_rows
+                    |> DebuggerSupport.debugger_rows_for_mode(@debugger_timeline_mode)
+                    |> DebuggerSupport.debugger_timeline_text()
+                  }
+                  title="Copy visible timeline as raw text"
+                />
+                <form phx-change="debugger-set-timeline-mode">
+                  <select
+                    name="mode"
+                    class="rounded border border-zinc-300 bg-white px-1.5 py-1 text-[11px] text-zinc-800"
+                  >
+                    <option value="watch" selected={@debugger_timeline_mode == "watch"}>watch</option>
+                    <option value="companion" selected={@debugger_timeline_mode == "companion"}>
+                      companion
+                    </option>
+                    <option value="mixed" selected={@debugger_timeline_mode == "mixed"}>mixed</option>
+                    <option value="separate" selected={@debugger_timeline_mode == "separate"}>
+                      separate
+                    </option>
+                  </select>
+                </form>
+              </div>
             </div>
             <div
               :if={@debugger_timeline_mode != "separate"}
@@ -3054,7 +3100,16 @@ defmodule IdeWeb.WorkspaceLive do
           </div>
           <div class="col-span-12 grid min-h-0 grid-cols-2 gap-3 lg:col-span-4">
             <div class="flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-600">Watch model</h3>
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-600">
+                  Watch model
+                </h3>
+                <.debugger_copy_button
+                  id="debugger-watch-model-copy"
+                  text={DebuggerSupport.copy_json(debugger_debugger_model(@debugger_watch_runtime))}
+                  title="Copy watch model as JSON"
+                />
+              </div>
               <.debugger_model_tree runtime={@debugger_watch_runtime} />
               <.debugger_subscription_buttons
                 title="Watch subscribed events"
@@ -3064,9 +3119,18 @@ defmodule IdeWeb.WorkspaceLive do
               />
             </div>
             <div class="flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-600">
-                Companion model
-              </h3>
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-600">
+                  Companion model
+                </h3>
+                <.debugger_copy_button
+                  id="debugger-companion-model-copy"
+                  text={
+                    DebuggerSupport.copy_json(debugger_debugger_model(@debugger_companion_runtime))
+                  }
+                  title="Copy companion model as JSON"
+                />
+              </div>
               <.debugger_model_tree runtime={@debugger_companion_runtime} />
               <.debugger_subscription_buttons
                 title="Companion subscribed events"
@@ -3078,11 +3142,21 @@ defmodule IdeWeb.WorkspaceLive do
           </div>
           <div class="col-span-12 grid min-h-0 grid-cols-2 gap-3 lg:col-span-5">
             <div class="flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-600">
-                Rendered view
-              </h3>
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-600">
+                  Rendered view
+                </h3>
+                <.debugger_copy_button
+                  id="debugger-rendered-view-copy"
+                  text={
+                    DebuggerSupport.copy_json(debugger_rendered_tree(@debugger_watch_view_runtime))
+                  }
+                  title="Copy rendered view as JSON"
+                />
+              </div>
               <.debugger_rendered_view_tree
                 id="debugger-watch-rendered-view"
+                scope="watch-live"
                 runtime={@debugger_watch_view_runtime}
               />
             </div>
@@ -3091,6 +3165,9 @@ defmodule IdeWeb.WorkspaceLive do
                 runtime={@debugger_watch_view_runtime}
                 project={@project}
                 title="Visual preview"
+                hover_scope="watch-live"
+                hovered_rendered_scope={@debugger_hovered_rendered_scope}
+                hovered_rendered_path={@debugger_hovered_rendered_path}
               />
             </div>
           </div>
@@ -4006,6 +4083,7 @@ defmodule IdeWeb.WorkspaceLive do
                 </p>
                 <.debugger_rendered_view_tree
                   id="debugger-watch-rendered-view"
+                  scope="watch-cursor"
                   runtime={@debugger_cursor_watch_runtime}
                 />
               </div>
@@ -4015,6 +4093,7 @@ defmodule IdeWeb.WorkspaceLive do
                 </p>
                 <.debugger_rendered_view_tree
                   id="debugger-companion-rendered-view"
+                  scope="companion-cursor"
                   runtime={@debugger_cursor_companion_runtime}
                 />
               </div>
@@ -4024,11 +4103,17 @@ defmodule IdeWeb.WorkspaceLive do
                 runtime={@debugger_cursor_watch_runtime}
                 project={@project}
                 title="Watch · visual preview"
+                hover_scope="watch-cursor"
+                hovered_rendered_scope={@debugger_hovered_rendered_scope}
+                hovered_rendered_path={@debugger_hovered_rendered_path}
               />
               <.debugger_view_preview
                 runtime={@debugger_cursor_companion_runtime}
                 project={@project}
                 title="Companion / phone app · visual preview"
+                hover_scope="companion-cursor"
+                hovered_rendered_scope={@debugger_hovered_rendered_scope}
+                hovered_rendered_path={@debugger_hovered_rendered_path}
               />
             </div>
             <pre class="max-h-44 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-2 text-[11px] text-zinc-900"><%= DebuggerSupport.event_json(@debugger_selected_event) %></pre>
@@ -4108,6 +4193,27 @@ defmodule IdeWeb.WorkspaceLive do
         </tbody>
       </table>
     </div>
+    """
+  end
+
+  attr(:id, :string, required: true)
+  attr(:text, :string, required: true)
+  attr(:label, :string, default: "Copy")
+  attr(:title, :string, default: "Copy to clipboard")
+
+  @spec debugger_copy_button(term()) :: term()
+  defp debugger_copy_button(assigns) do
+    ~H"""
+    <button
+      id={@id}
+      type="button"
+      phx-hook="CopyToClipboard"
+      data-copy-text={@text}
+      title={@title}
+      class="shrink-0 rounded bg-zinc-900 px-2 py-1 text-[10px] font-medium text-white hover:bg-zinc-800"
+    >
+      {@label}
+    </button>
     """
   end
 
@@ -4527,11 +4633,18 @@ defmodule IdeWeb.WorkspaceLive do
   attr(:runtime, :any, required: true)
   attr(:project, :any, default: nil)
   attr(:title, :string, default: "Visual preview")
+  attr(:hover_scope, :string, default: nil)
+  attr(:hovered_rendered_scope, :any, default: nil)
+  attr(:hovered_rendered_path, :any, default: nil)
 
   @spec debugger_view_preview(term()) :: term()
   defp debugger_view_preview(assigns) do
     tree = debugger_preview_tree(assigns.runtime)
+    rendered_tree = debugger_rendered_tree(assigns.runtime)
     {screen_w, screen_h} = debugger_preview_dimensions(assigns.runtime, tree)
+    screen_round? = DebuggerPreview.screen_round?(assigns.runtime, tree)
+    clip_radius = min(screen_w, screen_h) / 2
+    clip_id = debugger_preview_clip_id(assigns, screen_w, screen_h, screen_round?)
 
     svg_ops =
       tree
@@ -4540,16 +4653,35 @@ defmodule IdeWeb.WorkspaceLive do
 
     unresolved_ops = Enum.filter(svg_ops, &(&1.kind == :unresolved))
 
+    hover_box =
+      if assigns.hover_scope != nil and assigns.hover_scope == assigns.hovered_rendered_scope do
+        DebuggerSupport.rendered_node_bounds(
+          rendered_tree,
+          assigns.hovered_rendered_path,
+          screen_w,
+          screen_h
+        )
+      else
+        nil
+      end
+
     assigns =
       assigns
       |> assign(:tree, tree)
+      |> assign(:rendered_tree, rendered_tree)
       |> assign(:screen_w, screen_w)
       |> assign(:screen_h, screen_h)
+      |> assign(:screen_round?, screen_round?)
+      |> assign(:clip_cx, screen_w / 2)
+      |> assign(:clip_cy, screen_h / 2)
+      |> assign(:clip_radius, clip_radius)
+      |> assign(:clip_id, clip_id)
       |> assign(:svg_ops, svg_ops)
       |> assign(:unresolved_ops, unresolved_ops)
+      |> assign(:hover_box, hover_box)
 
     ~H"""
-    <div class="flex h-full min-h-0 flex-col rounded-lg border border-dashed border-zinc-300 bg-zinc-50/80 p-3">
+    <div class="flex h-full min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2">
       <p class="mb-2 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-zinc-600">
         {@title}
       </p>
@@ -4558,160 +4690,192 @@ defmodule IdeWeb.WorkspaceLive do
           viewBox={"0 0 #{@screen_w} #{@screen_h}"}
           role="img"
           aria-label="Watch screen preview"
-          class="mx-auto h-52 w-[11.25rem] rounded border border-zinc-700 bg-white shadow-inner object-contain"
+          class={[
+            "mx-auto h-52 w-[11.25rem] border border-zinc-700 bg-white shadow-inner object-contain",
+            @screen_round? && "rounded-full",
+            !@screen_round? && "rounded"
+          ]}
         >
-          <rect x="0" y="0" width={@screen_w} height={@screen_h} fill="white" />
-          <%= for op <- @svg_ops do %>
+          <defs :if={@screen_round?}>
+            <clipPath id={@clip_id}>
+              <circle cx={@clip_cx} cy={@clip_cy} r={@clip_radius} />
+            </clipPath>
+          </defs>
+          <g clip-path={if @screen_round?, do: "url(##{@clip_id})", else: nil}>
+            <rect x="0" y="0" width={@screen_w} height={@screen_h} fill="white" />
+            <%= for op <- @svg_ops do %>
+              <rect
+                :if={op.kind == :clear}
+                x="0"
+                y="0"
+                width={@screen_w}
+                height={@screen_h}
+                fill={debugger_svg_color(op.color, "white")}
+              />
+              <image
+                :if={op.kind == :bitmap_in_rect and is_binary(op[:href])}
+                x={op.x}
+                y={op.y}
+                width={op.w}
+                height={op.h}
+                href={op.href}
+                preserveAspectRatio="none"
+              />
+              <image
+                :if={op.kind == :rotated_bitmap and is_binary(op[:href])}
+                x={op.center_x - div(op.src_w, 2)}
+                y={op.center_y - div(op.src_h, 2)}
+                width={op.src_w}
+                height={op.src_h}
+                href={op.href}
+                transform={"rotate(#{debugger_pebble_angle_deg(op.angle)} #{op.center_x} #{op.center_y})"}
+                preserveAspectRatio="none"
+              />
+              <rect
+                :if={op.kind == :round_rect}
+                x={op.x}
+                y={op.y}
+                width={op.w}
+                height={op.h}
+                rx={op.radius}
+                ry={op.radius}
+                fill="none"
+                stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                stroke-width={op.stroke_width || 1}
+              />
+              <rect
+                :if={op.kind == :rect}
+                x={op.x}
+                y={op.y}
+                width={op.w}
+                height={op.h}
+                fill="none"
+                stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                stroke-width={op.stroke_width || 1}
+              />
+              <rect
+                :if={op.kind == :fill_rect}
+                x={op.x}
+                y={op.y}
+                width={op.w}
+                height={op.h}
+                fill={debugger_svg_color(op.fill_color, "#111111")}
+                stroke={
+                  debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
+                }
+                stroke-width={op.stroke_width || 1}
+              />
+              <line
+                :if={op.kind == :line}
+                x1={op.x1}
+                y1={op.y1}
+                x2={op.x2}
+                y2={op.y2}
+                stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                stroke-width={op.stroke_width || 1}
+              />
+              <path
+                :if={op.kind == :arc}
+                d={debugger_arc_path(op)}
+                fill="none"
+                stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                stroke-width={op.stroke_width || 1}
+              />
+              <path
+                :if={op.kind == :fill_radial}
+                d={debugger_arc_sector_path(op)}
+                fill={debugger_svg_color(op.fill_color, "#111111")}
+                stroke={
+                  debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
+                }
+                stroke-width={op.stroke_width || 1}
+              />
+              <path
+                :if={op.kind == :path_filled}
+                d={debugger_path_d(op, true)}
+                fill={debugger_svg_color(op.fill_color, "#111111")}
+                stroke={
+                  debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
+                }
+                stroke-width={op.stroke_width || 1}
+              />
+              <path
+                :if={op.kind == :path_outline}
+                d={debugger_path_d(op, true)}
+                fill="none"
+                stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                stroke-width={op.stroke_width || 1}
+              />
+              <path
+                :if={op.kind == :path_outline_open}
+                d={debugger_path_d(op, false)}
+                fill="none"
+                stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                stroke-width={op.stroke_width || 1}
+              />
+              <circle
+                :if={op.kind == :circle}
+                cx={op.cx}
+                cy={op.cy}
+                r={op.r}
+                fill="none"
+                stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                stroke-width={op.stroke_width || 1}
+              />
+              <circle
+                :if={op.kind == :fill_circle}
+                cx={op.cx}
+                cy={op.cy}
+                r={op.r}
+                fill={debugger_svg_color(op.fill_color, "#111111")}
+                stroke={
+                  debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
+                }
+                stroke-width={op.stroke_width || 1}
+              />
+              <rect
+                :if={op.kind == :pixel}
+                x={op.x}
+                y={op.y}
+                width="1"
+                height="1"
+                fill={debugger_svg_color(op.stroke_color, "#111111")}
+              />
+              <text
+                :if={op.kind == :text_int}
+                x={op.x}
+                y={op.y}
+                font-size="14"
+                font-family="monospace"
+                fill={debugger_svg_color(op.text_color, "#111111")}
+              >
+                {op.text}
+              </text>
+              <text
+                :if={op.kind == :text_label}
+                x={debugger_text_svg_x(op)}
+                y={op.y}
+                font-size="11"
+                font-family="sans-serif"
+                text-anchor={debugger_text_svg_anchor(op)}
+                fill={debugger_svg_color(op.text_color, "#111111")}
+              >
+                {op.text}
+              </text>
+            <% end %>
             <rect
-              :if={op.kind == :clear}
-              x="0"
-              y="0"
-              width={@screen_w}
-              height={@screen_h}
-              fill={debugger_svg_color(op.color, "white")}
+              :if={is_map(@hover_box)}
+              x={@hover_box.x}
+              y={@hover_box.y}
+              width={@hover_box.w}
+              height={@hover_box.h}
+              fill="rgba(59, 130, 246, 0.12)"
+              stroke="#2563eb"
+              stroke-width="1.5"
+              stroke-dasharray="3 2"
+              pointer-events="none"
             />
-            <image
-              :if={op.kind == :bitmap_in_rect and is_binary(op[:href])}
-              x={op.x}
-              y={op.y}
-              width={op.w}
-              height={op.h}
-              href={op.href}
-              preserveAspectRatio="none"
-            />
-            <image
-              :if={op.kind == :rotated_bitmap and is_binary(op[:href])}
-              x={op.center_x - div(op.src_w, 2)}
-              y={op.center_y - div(op.src_h, 2)}
-              width={op.src_w}
-              height={op.src_h}
-              href={op.href}
-              transform={"rotate(#{debugger_pebble_angle_deg(op.angle)} #{op.center_x} #{op.center_y})"}
-              preserveAspectRatio="none"
-            />
-            <rect
-              :if={op.kind == :round_rect}
-              x={op.x}
-              y={op.y}
-              width={op.w}
-              height={op.h}
-              rx={op.radius}
-              ry={op.radius}
-              fill="none"
-              stroke={debugger_svg_color(op.fill, "#111111")}
-              stroke-width="1"
-            />
-            <rect
-              :if={op.kind == :rect}
-              x={op.x}
-              y={op.y}
-              width={op.w}
-              height={op.h}
-              fill="none"
-              stroke={debugger_svg_color(op.fill, "#111111")}
-              stroke-width="1"
-            />
-            <rect
-              :if={op.kind == :fill_rect}
-              x={op.x}
-              y={op.y}
-              width={op.w}
-              height={op.h}
-              fill={debugger_svg_color(op.fill, "#111111")}
-              stroke={debugger_svg_color(op.fill, "#111111")}
-              stroke-width="1"
-            />
-            <line
-              :if={op.kind == :line}
-              x1={op.x1}
-              y1={op.y1}
-              x2={op.x2}
-              y2={op.y2}
-              stroke={debugger_svg_color(op.color, "#111111")}
-              stroke-width="1"
-            />
-            <path
-              :if={op.kind == :arc}
-              d={debugger_arc_path(op)}
-              fill="none"
-              stroke="#111111"
-              stroke-width="1"
-            />
-            <path
-              :if={op.kind == :fill_radial}
-              d={debugger_arc_sector_path(op)}
-              fill="#111111"
-              stroke="#111111"
-              stroke-width="1"
-            />
-            <path
-              :if={op.kind == :path_filled}
-              d={debugger_path_d(op, true)}
-              fill="#111111"
-              stroke="#111111"
-              stroke-width="1"
-            />
-            <path
-              :if={op.kind == :path_outline}
-              d={debugger_path_d(op, true)}
-              fill="none"
-              stroke="#111111"
-              stroke-width="1"
-            />
-            <path
-              :if={op.kind == :path_outline_open}
-              d={debugger_path_d(op, false)}
-              fill="none"
-              stroke="#111111"
-              stroke-width="1"
-            />
-            <circle
-              :if={op.kind == :circle}
-              cx={op.cx}
-              cy={op.cy}
-              r={op.r}
-              fill="none"
-              stroke={debugger_svg_color(op.color, "#111111")}
-              stroke-width="1"
-            />
-            <circle
-              :if={op.kind == :fill_circle}
-              cx={op.cx}
-              cy={op.cy}
-              r={op.r}
-              fill={debugger_svg_color(op.color, "#111111")}
-              stroke={debugger_svg_color(op.color, "#111111")}
-              stroke-width="1"
-            />
-            <rect
-              :if={op.kind == :pixel}
-              x={op.x}
-              y={op.y}
-              width="1"
-              height="1"
-              fill={debugger_svg_color(op.color, "#111111")}
-            />
-            <text
-              :if={op.kind == :text_int}
-              x={op.x}
-              y={op.y}
-              font-size="14"
-              font-family="monospace"
-              fill="#111111"
-            >
-              {op.text}
-            </text>
-            <text
-              :if={op.kind == :text_label}
-              x={op.x}
-              y={op.y}
-              font-size="11"
-              font-family="sans-serif"
-              fill="#111111"
-            >
-              {op.text}
-            </text>
-          <% end %>
+          </g>
         </svg>
         <p :if={@svg_ops == []} class="mt-1 text-center text-[10px] text-zinc-500">
           No drawable primitives found in this snapshot.
@@ -4763,6 +4927,7 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   attr(:id, :string, required: true)
+  attr(:scope, :string, required: true)
   attr(:runtime, :any, required: true)
 
   @spec debugger_rendered_view_tree(term()) :: term()
@@ -4784,6 +4949,7 @@ defmodule IdeWeb.WorkspaceLive do
         depth={0}
         arg_name={nil}
         path="0"
+        scope={@scope}
       />
       <p :if={!is_map(@tree)} class="text-[11px] text-zinc-500">(no rendered view in snapshot)</p>
     </div>
@@ -4795,6 +4961,7 @@ defmodule IdeWeb.WorkspaceLive do
   attr(:depth, :integer, default: 0)
   attr(:arg_name, :any, default: nil)
   attr(:path, :string, default: "0")
+  attr(:scope, :string, required: true)
 
   @spec debugger_rendered_node(term()) :: term()
   defp debugger_rendered_node(assigns) do
@@ -4822,7 +4989,13 @@ defmodule IdeWeb.WorkspaceLive do
     ~H"""
     <div :if={!debugger_hidden_rendered_node_type?(@type)} class="pl-1">
       <div :if={@children != [] && @depth < 2} class="mt-0.5">
-        <div class="text-zinc-800">{@summary}</div>
+        <div
+          class="rounded px-0.5 text-zinc-800 hover:bg-blue-50 hover:text-blue-950"
+          data-rendered-node-hover-path={@path}
+          data-rendered-node-hover-scope={@scope}
+        >
+          {@summary}
+        </div>
         <div class="ml-3 border-l border-zinc-200 pl-2">
           <.debugger_rendered_node
             :for={child <- @children}
@@ -4831,11 +5004,18 @@ defmodule IdeWeb.WorkspaceLive do
             depth={@depth + 1}
             arg_name={child.arg_name}
             path={child.path}
+            scope={@scope}
           />
         </div>
       </div>
       <details :if={@children != [] && @depth >= 2} class="mt-0.5" data-rendered-node-path={@path}>
-        <summary class="cursor-pointer select-none text-zinc-800">{@summary}</summary>
+        <summary
+          class="cursor-pointer select-none rounded px-0.5 text-zinc-800 hover:bg-blue-50 hover:text-blue-950"
+          data-rendered-node-hover-path={@path}
+          data-rendered-node-hover-scope={@scope}
+        >
+          {@summary}
+        </summary>
         <div class="ml-3 border-l border-zinc-200 pl-2">
           <.debugger_rendered_node
             :for={child <- @children}
@@ -4844,10 +5024,18 @@ defmodule IdeWeb.WorkspaceLive do
             depth={@depth + 1}
             arg_name={child.arg_name}
             path={child.path}
+            scope={@scope}
           />
         </div>
       </details>
-      <div :if={@children == []} class="mt-0.5 text-zinc-800">{@summary}</div>
+      <div
+        :if={@children == []}
+        class="mt-0.5 rounded px-0.5 text-zinc-800 hover:bg-blue-50 hover:text-blue-950"
+        data-rendered-node-hover-path={@path}
+        data-rendered-node-hover-scope={@scope}
+      >
+        {@summary}
+      </div>
     </div>
     """
   end
@@ -5010,19 +5198,7 @@ defmodule IdeWeb.WorkspaceLive do
   defp debugger_unresolved_svg_summary(rows), do: DebuggerPreview.unresolved_summary(rows)
 
   @spec debugger_rendered_tree(term()) :: term()
-  defp debugger_rendered_tree(%{} = runtime) do
-    model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
-    elm_introspect = Map.get(model, "elm_introspect") || Map.get(model, :elm_introspect) || %{}
-    parser_tree = Map.get(elm_introspect, "view_tree") || Map.get(elm_introspect, :view_tree)
-
-    if is_map(parser_tree) and map_size(parser_tree) > 0 do
-      parser_tree
-    else
-      debugger_preview_tree(runtime)
-    end
-  end
-
-  defp debugger_rendered_tree(runtime), do: debugger_preview_tree(runtime)
+  defp debugger_rendered_tree(runtime), do: DebuggerSupport.rendered_tree(runtime)
 
   @spec debugger_preview_tree(term()) :: term()
   defp debugger_preview_tree(%{} = runtime) do
@@ -5041,37 +5217,21 @@ defmodule IdeWeb.WorkspaceLive do
   defp debugger_preview_tree(_runtime), do: nil
 
   @spec debugger_preview_dimensions(term(), term()) :: term()
-  defp debugger_preview_dimensions(runtime, tree) do
-    model = debugger_runtime_model(runtime)
-    launch = Map.get(model, "launch_context") || Map.get(model, :launch_context) || %{}
-    launch_screen = Map.get(launch, "screen") || Map.get(launch, :screen) || %{}
-    tree_box = if is_map(tree), do: Map.get(tree, "box") || Map.get(tree, :box) || %{}, else: %{}
+  defp debugger_preview_dimensions(runtime, tree),
+    do: DebuggerPreview.screen_dimensions(runtime, tree)
 
-    width =
-      Map.get(tree_box, "w") || Map.get(tree_box, :w) ||
-        Map.get(launch_screen, "width") || Map.get(launch_screen, :width) || 144
+  @spec debugger_preview_clip_id(term(), pos_integer(), pos_integer(), boolean()) :: String.t()
+  defp debugger_preview_clip_id(assigns, screen_w, screen_h, screen_round?) do
+    key = {
+      Map.get(assigns, :title),
+      Map.get(assigns, :hover_scope),
+      screen_w,
+      screen_h,
+      screen_round?
+    }
 
-    height =
-      Map.get(tree_box, "h") || Map.get(tree_box, :h) ||
-        Map.get(launch_screen, "height") || Map.get(launch_screen, :height) || 168
-
-    {debugger_dimension_int(width, 144), debugger_dimension_int(height, 168)}
+    "debugger-preview-clip-#{:erlang.phash2(key)}"
   end
-
-  @spec debugger_dimension_int(term(), term()) :: term()
-  defp debugger_dimension_int(value, _fallback) when is_integer(value) and value > 0, do: value
-
-  defp debugger_dimension_int(value, _fallback) when is_float(value) and value > 0,
-    do: trunc(value)
-
-  defp debugger_dimension_int(value, fallback) when is_binary(value) do
-    case Integer.parse(value) do
-      {parsed, ""} when parsed > 0 -> parsed
-      _ -> fallback
-    end
-  end
-
-  defp debugger_dimension_int(_value, fallback), do: fallback
 
   @spec debugger_arc_path(term()) :: term()
   defp debugger_arc_path(op), do: DebuggerPreview.arc_path(op)
@@ -5135,6 +5295,15 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   defp debugger_path_d(_op, _close_shape?), do: ""
+
+  @spec debugger_text_svg_x(term()) :: number()
+  defp debugger_text_svg_x(%{x: x, w: w}) when is_number(x) and is_number(w), do: x + w / 2
+  defp debugger_text_svg_x(%{x: x}) when is_number(x), do: x
+  defp debugger_text_svg_x(_op), do: 0
+
+  @spec debugger_text_svg_anchor(term()) :: String.t() | nil
+  defp debugger_text_svg_anchor(%{text_align: "center", w: w}) when is_number(w), do: "middle"
+  defp debugger_text_svg_anchor(_op), do: nil
 
   @spec debugger_svg_color(term(), term()) :: term()
   defp debugger_svg_color(value, _fallback) when is_integer(value) do
@@ -5439,18 +5608,39 @@ defmodule IdeWeb.WorkspaceLive do
   defp warm_debugger_compile_context(socket, project) do
     workspace_root = Projects.project_workspace_path(project)
 
-    case Compiler.compile(project.slug, workspace_root: workspace_root) do
-      {:ok, result} ->
+    results =
+      workspace_root
+      |> build_roots(project.source_roots || [])
+      |> Enum.map(fn {label, root_path} ->
+        {label, Compiler.compile("#{project.slug}:#{label}", workspace_root: root_path)}
+      end)
+
+    primary =
+      Enum.find(results, fn {label, _result} -> label == "watch" end) ||
+        List.first(results)
+
+    socket =
+      Enum.reduce(results, socket, fn
+        {label, {:ok, result}}, acc ->
+          DebuggerBridge.sync_compile(acc, Map.put(result, :source_root, label))
+
+        {_label, {:error, reason}}, acc ->
+          DebuggerBridge.sync_compile_failed(acc, inspect(reason))
+      end)
+
+    case primary do
+      {_label, {:ok, result}} ->
         socket
         |> assign(:compile_status, result.status)
         |> assign(:compile_output, result.output)
-        |> DebuggerBridge.sync_compile(result)
 
-      {:error, reason} ->
+      {_label, {:error, reason}} ->
         socket
         |> assign(:compile_status, :error)
         |> assign(:compile_output, inspect(reason))
-        |> DebuggerBridge.sync_compile_failed(inspect(reason))
+
+      nil ->
+        socket
     end
   end
 
@@ -5539,9 +5729,9 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   @spec run_emulator_install_flow(term(), term(), term(), term()) :: term()
-  defp run_emulator_install_flow(project, workspace_root, emulator_target, package_path) do
+  defp run_emulator_install_flow(project, workspace_root, emulator_target, _package_path) do
     with {:ok, resolved_package_path} <-
-           ensure_install_package_path(project, workspace_root, package_path),
+           package_for_emulator_target(project, workspace_root, emulator_target),
          {:ok, install_result} <-
            PebbleToolchain.run_emulator(project.slug,
              emulator_target: emulator_target,
@@ -5551,19 +5741,16 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  @spec ensure_install_package_path(term(), term(), term()) :: term()
-  defp ensure_install_package_path(project, workspace_root, package_path) do
-    if is_binary(package_path) and package_path != "" and File.exists?(package_path) do
-      {:ok, package_path}
-    else
-      with {:ok, packaged} <-
-             PebbleToolchain.package(project.slug,
-               workspace_root: workspace_root,
-               target_type: project.target_type,
-               project_name: project.name
-             ) do
-        {:ok, packaged.artifact_path}
-      end
+  @spec package_for_emulator_target(term(), term(), term()) :: term()
+  defp package_for_emulator_target(project, workspace_root, emulator_target) do
+    with {:ok, packaged} <-
+           PebbleToolchain.package(project.slug,
+             workspace_root: workspace_root,
+             target_type: project.target_type,
+             project_name: project.name,
+             target_platforms: [emulator_target]
+           ) do
+      {:ok, packaged.artifact_path}
     end
   end
 
@@ -6428,6 +6615,20 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp persist_project_debugger_timeline_mode(project, _mode), do: project
 
+  @spec persist_project_emulator_target(Project.t() | term(), term()) :: term()
+  defp persist_project_emulator_target(%Project{} = project, target) do
+    selected = normalize_emulator_target(target)
+    settings = project.debugger_settings || %{}
+    updated_settings = Map.put(settings, "emulator_target", selected)
+
+    case Projects.update_project(project, %{"debugger_settings" => updated_settings}) do
+      {:ok, updated} -> updated
+      {:error, _} -> project
+    end
+  end
+
+  defp persist_project_emulator_target(project, _target), do: project
+
   @spec persist_project_debugger_watch_profile(Project.t(), String.t()) :: Project.t()
   defp persist_project_debugger_watch_profile(%Project{} = project, watch_profile_id)
        when is_binary(watch_profile_id) do
@@ -6452,6 +6653,14 @@ defmodule IdeWeb.WorkspaceLive do
       _ -> "mixed"
     end
   end
+
+  @spec project_emulator_target(term()) :: String.t()
+  defp project_emulator_target(%Project{} = project) do
+    settings = project.debugger_settings || %{}
+    normalize_emulator_target(Map.get(settings, "emulator_target"))
+  end
+
+  defp project_emulator_target(_), do: default_emulator_target()
 
   @spec project_debugger_watch_profile_id(Project.t()) :: String.t()
   defp project_debugger_watch_profile_id(%Project{} = project) do
@@ -6883,6 +7092,21 @@ defmodule IdeWeb.WorkspaceLive do
     Application.get_env(:ide, Ide.PebbleToolchain, [])
     |> Keyword.get(:emulator_target, "basalt")
   end
+
+  @spec normalize_emulator_target(term()) :: String.t()
+  defp normalize_emulator_target(target) when is_binary(target) do
+    target = String.trim(target)
+    targets = ToolchainPresenter.emulator_targets()
+
+    cond do
+      target in targets -> target
+      default_emulator_target() in targets -> default_emulator_target()
+      targets != [] -> hd(targets)
+      true -> default_emulator_target()
+    end
+  end
+
+  defp normalize_emulator_target(_), do: normalize_emulator_target(default_emulator_target())
 
   @spec tokenize_content(term(), term(), term()) :: term()
   defp tokenize_content(content, rel_path, opts) do

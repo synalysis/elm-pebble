@@ -89,6 +89,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     |> Component.assign(:debugger_timeline_limit, 30)
     |> Component.assign(:debugger_timeline_query, "")
     |> Component.assign(:debugger_advanced_debug_tools, false)
+    |> Component.assign(:debugger_hovered_rendered_scope, nil)
+    |> Component.assign(:debugger_hovered_rendered_path, nil)
     |> Component.assign(:debugger_trigger_buttons, [])
     |> Component.assign(:debugger_watch_trigger_buttons, [])
     |> Component.assign(:debugger_companion_trigger_buttons, [])
@@ -188,6 +190,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         |> Component.assign(:debugger_timeline_limit, 30)
         |> Component.assign(:debugger_timeline_query, "")
         |> Component.assign(:debugger_advanced_debug_tools, false)
+        |> Component.assign(:debugger_hovered_rendered_scope, nil)
+        |> Component.assign(:debugger_hovered_rendered_path, nil)
         |> Component.assign(:debugger_trigger_buttons, [])
         |> Component.assign(:debugger_watch_trigger_buttons, [])
         |> Component.assign(:debugger_companion_trigger_buttons, [])
@@ -643,6 +647,626 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   def runtime_json(runtime) when is_map(runtime), do: Jason.encode!(runtime, pretty: true)
   def runtime_json(_runtime), do: "{}"
 
+  @spec rendered_tree(map() | term()) :: map() | nil
+  def rendered_tree(%{} = runtime) do
+    case Map.get(runtime, :view_tree) || Map.get(runtime, "view_tree") do
+      tree when is_map(tree) and map_size(tree) > 0 ->
+        normalize_rendered_tree(tree)
+
+      _ ->
+        runtime
+        |> runtime_model()
+        |> parser_view_tree()
+    end
+  end
+
+  def rendered_tree(_runtime), do: nil
+
+  @spec rendered_node_bounds(term(), term(), term(), term()) :: map() | nil
+  def rendered_node_bounds(tree, path, screen_w, screen_h)
+      when is_map(tree) and is_binary(path) do
+    tree
+    |> rendered_node_at_path(path)
+    |> rendered_bounds_for_node(screen_w, screen_h)
+  end
+
+  def rendered_node_bounds(_tree, _path, _screen_w, _screen_h), do: nil
+
+  @spec rendered_node_at_path(map(), String.t()) :: map() | nil
+  defp rendered_node_at_path(tree, path) when is_map(tree) and is_binary(path) do
+    indexes =
+      path
+      |> String.split(".", trim: true)
+      |> Enum.map(&Integer.parse/1)
+
+    case indexes do
+      [{0, ""} | rest] -> rendered_node_at_indexes(tree, rest)
+      [] -> tree
+      _ -> nil
+    end
+  end
+
+  @spec rendered_node_at_indexes(term(), [{integer(), String.t()}]) :: map() | nil
+  defp rendered_node_at_indexes(node, []) when is_map(node), do: node
+
+  defp rendered_node_at_indexes(node, [{index, ""} | rest]) when is_map(node) and index >= 0 do
+    children = Map.get(node, "children") || Map.get(node, :children) || []
+
+    children
+    |> Enum.filter(&is_map/1)
+    |> Enum.at(index)
+    |> rendered_node_at_indexes(rest)
+  end
+
+  defp rendered_node_at_indexes(_node, _indexes), do: nil
+
+  @spec rendered_bounds_for_node(term(), term(), term()) :: map() | nil
+  defp rendered_bounds_for_node(node, screen_w, screen_h) when is_map(node) do
+    type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
+
+    case type do
+      "clear" ->
+        w = if is_integer(screen_w), do: screen_w, else: 0
+        h = if is_integer(screen_h), do: screen_h, else: 0
+        %{x: 0, y: 0, w: max(w, 1), h: max(h, 1)}
+
+      "roundRect" ->
+        rect_bounds(node)
+
+      "rect" ->
+        rect_bounds(node)
+
+      "fillRect" ->
+        rect_bounds(node)
+
+      "text" ->
+        rect_bounds(node)
+
+      "bitmapInRect" ->
+        rect_bounds(node)
+
+      "arc" ->
+        rect_bounds(node)
+
+      "fillRadial" ->
+        rect_bounds(node)
+
+      "pathFilled" ->
+        path_bounds(node)
+
+      "pathOutline" ->
+        path_bounds(node)
+
+      "pathOutlineOpen" ->
+        path_bounds(node)
+
+      "line" ->
+        line_bounds(node)
+
+      "pixel" ->
+        with x when is_integer(x) <- map_integer(node, :x),
+             y when is_integer(y) <- map_integer(node, :y) do
+          %{x: x, y: y, w: 1, h: 1}
+        else
+          _ -> nil
+        end
+
+      "circle" ->
+        circle_bounds(node)
+
+      "fillCircle" ->
+        circle_bounds(node)
+
+      "textInt" ->
+        text_point_bounds(node, 48, 14)
+
+      "textLabel" ->
+        text_point_bounds(node, 56, 12)
+
+      "rotatedBitmap" ->
+        rotated_bitmap_bounds(node)
+
+      _ ->
+        aggregate_child_bounds(node, screen_w, screen_h)
+    end
+  end
+
+  defp rendered_bounds_for_node(_node, _screen_w, _screen_h), do: nil
+
+  @spec rect_bounds(map()) :: map() | nil
+  defp rect_bounds(node) when is_map(node) do
+    with x when is_integer(x) <- map_integer(node, :x),
+         y when is_integer(y) <- map_integer(node, :y),
+         w when is_integer(w) <- map_integer(node, :w),
+         h when is_integer(h) <- map_integer(node, :h) do
+      %{x: x, y: y, w: max(w, 1), h: max(h, 1)}
+    else
+      _ -> nil
+    end
+  end
+
+  @spec line_bounds(map()) :: map() | nil
+  defp line_bounds(node) when is_map(node) do
+    with x1 when is_integer(x1) <- map_integer(node, :x1),
+         y1 when is_integer(y1) <- map_integer(node, :y1),
+         x2 when is_integer(x2) <- map_integer(node, :x2),
+         y2 when is_integer(y2) <- map_integer(node, :y2) do
+      x = min(x1, x2)
+      y = min(y1, y2)
+      %{x: x, y: y, w: max(abs(x2 - x1), 1), h: max(abs(y2 - y1), 1)}
+    else
+      _ -> nil
+    end
+  end
+
+  @spec circle_bounds(map()) :: map() | nil
+  defp circle_bounds(node) when is_map(node) do
+    with cx when is_integer(cx) <- map_integer(node, :cx),
+         cy when is_integer(cy) <- map_integer(node, :cy),
+         r when is_integer(r) <- map_integer(node, :r) do
+      radius = max(r, 1)
+      %{x: cx - radius, y: cy - radius, w: radius * 2, h: radius * 2}
+    else
+      _ -> nil
+    end
+  end
+
+  @spec text_point_bounds(map(), integer(), integer()) :: map() | nil
+  defp text_point_bounds(node, default_w, default_h) when is_map(node) do
+    with x when is_integer(x) <- map_integer(node, :x),
+         y when is_integer(y) <- map_integer(node, :y) do
+      %{x: x, y: y - default_h, w: default_w, h: default_h}
+    else
+      _ -> nil
+    end
+  end
+
+  @spec rotated_bitmap_bounds(map()) :: map() | nil
+  defp rotated_bitmap_bounds(node) when is_map(node) do
+    with center_x when is_integer(center_x) <- map_integer(node, :center_x),
+         center_y when is_integer(center_y) <- map_integer(node, :center_y),
+         src_w when is_integer(src_w) <- map_integer(node, :src_w),
+         src_h when is_integer(src_h) <- map_integer(node, :src_h) do
+      angle = map_integer(node, :angle) || 0
+
+      rotated_points_bounds(
+        [
+          {-src_w / 2.0, -src_h / 2.0},
+          {src_w / 2.0, -src_h / 2.0},
+          {src_w / 2.0, src_h / 2.0},
+          {-src_w / 2.0, src_h / 2.0}
+        ],
+        center_x,
+        center_y,
+        angle
+      )
+    else
+      _ -> nil
+    end
+  end
+
+  @spec path_bounds(map()) :: map() | nil
+  defp path_bounds(node) when is_map(node) do
+    payload = path_payload_from_children(node)
+    points = Map.get(node, "points") || Map.get(node, :points) || Map.get(payload, :points, [])
+    offset_x = map_integer(node, :offset_x) || Map.get(payload, :offset_x, 0)
+    offset_y = map_integer(node, :offset_y) || Map.get(payload, :offset_y, 0)
+    rotation = map_integer(node, :rotation) || Map.get(payload, :rotation, 0)
+
+    points
+    |> normalize_path_points()
+    |> case do
+      [] ->
+        nil
+
+      normalized ->
+        rotated_points_bounds(normalized, offset_x, offset_y, rotation)
+    end
+  end
+
+  @spec rotated_points_bounds([{number(), number()}], number(), number(), integer()) ::
+          map() | nil
+  defp rotated_points_bounds(points, offset_x, offset_y, rotation)
+       when is_list(points) and is_number(offset_x) and is_number(offset_y) and
+              is_integer(rotation) do
+    rotation_rad = rotation * 2.0 * :math.pi() / 65_536.0
+    cos_r = :math.cos(rotation_rad)
+    sin_r = :math.sin(rotation_rad)
+
+    transformed =
+      Enum.map(points, fn {x, y} ->
+        xr = x * cos_r - y * sin_r
+        yr = x * sin_r + y * cos_r
+        {xr + offset_x, yr + offset_y}
+      end)
+
+    case transformed do
+      [] ->
+        nil
+
+      _ ->
+        xs = Enum.map(transformed, fn {x, _y} -> x end)
+        ys = Enum.map(transformed, fn {_x, y} -> y end)
+        min_x = Enum.min(xs)
+        min_y = Enum.min(ys)
+        max_x = Enum.max(xs)
+        max_y = Enum.max(ys)
+
+        %{
+          x: rendered_bounds_number(Float.floor(min_x, 2)),
+          y: rendered_bounds_number(Float.floor(min_y, 2)),
+          w: rendered_bounds_number(max(Float.ceil(max_x - min_x, 2), 1)),
+          h: rendered_bounds_number(max(Float.ceil(max_y - min_y, 2), 1))
+        }
+    end
+  end
+
+  @spec rendered_bounds_number(number()) :: number()
+  defp rendered_bounds_number(value) when is_float(value) do
+    rounded = round(value)
+    if Float.round(value, 6) == rounded * 1.0, do: rounded, else: value
+  end
+
+  defp rendered_bounds_number(value), do: value
+
+  @spec path_payload_from_children(map()) :: map()
+  defp path_payload_from_children(node) when is_map(node) do
+    case Map.get(node, "children") || Map.get(node, :children) || [] do
+      [%{"points" => points} = payload | _] ->
+        %{
+          points: points,
+          offset_x: map_integer(payload, :offset_x) || 0,
+          offset_y: map_integer(payload, :offset_y) || 0,
+          rotation: map_integer(payload, :rotation) || 0
+        }
+
+      [%{points: points} = payload | _] ->
+        %{
+          points: points,
+          offset_x: map_integer(payload, :offset_x) || 0,
+          offset_y: map_integer(payload, :offset_y) || 0,
+          rotation: map_integer(payload, :rotation) || 0
+        }
+
+      [payload | _] ->
+        path_payload_from_node(payload)
+
+      _ ->
+        %{}
+    end
+  end
+
+  @spec path_payload_from_node(term()) :: map()
+  defp path_payload_from_node(payload) do
+    with {:ok, [points_node, offset_node, rotation_node]} <- normalized_payload_args(payload, 3),
+         points when points != [] <- normalize_path_points_from_node(points_node),
+         {offset_x, offset_y} <- normalize_path_point(offset_node),
+         rotation when is_integer(rotation) <- rendered_expr_scalar(rotation_node) do
+      %{points: points, offset_x: offset_x, offset_y: offset_y, rotation: rotation}
+    else
+      _ -> %{}
+    end
+  end
+
+  @spec normalize_path_points_from_node(term()) :: [{integer(), integer()}]
+  defp normalize_path_points_from_node(%{"type" => "List", "children" => points})
+       when is_list(points) do
+    normalize_path_points(points)
+  end
+
+  defp normalize_path_points_from_node(%{type: "List", children: points}) when is_list(points) do
+    normalize_path_points(points)
+  end
+
+  defp normalize_path_points_from_node(points), do: normalize_path_points(points)
+
+  @spec normalize_path_points(term()) :: [{integer(), integer()}]
+  defp normalize_path_points(points) when is_list(points) do
+    points
+    |> Enum.map(&normalize_path_point/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp normalize_path_points(_points), do: []
+
+  @spec normalize_path_point(term()) :: {integer(), integer()} | nil
+  defp normalize_path_point([x, y]) when is_integer(x) and is_integer(y), do: {x, y}
+
+  defp normalize_path_point(%{"x" => x, "y" => y}) when is_integer(x) and is_integer(y),
+    do: {x, y}
+
+  defp normalize_path_point(%{x: x, y: y}) when is_integer(x) and is_integer(y), do: {x, y}
+
+  defp normalize_path_point(%{"type" => "tuple2", "children" => [x_node, y_node]}) do
+    x = rendered_expr_scalar(x_node)
+    y = rendered_expr_scalar(y_node)
+    if is_integer(x) and is_integer(y), do: {x, y}, else: nil
+  end
+
+  defp normalize_path_point(%{type: "tuple2", children: [x_node, y_node]}) do
+    x = rendered_expr_scalar(x_node)
+    y = rendered_expr_scalar(y_node)
+    if is_integer(x) and is_integer(y), do: {x, y}, else: nil
+  end
+
+  defp normalize_path_point(_point), do: nil
+
+  @spec aggregate_child_bounds(map(), term(), term()) :: map() | nil
+  defp aggregate_child_bounds(node, screen_w, screen_h) when is_map(node) do
+    node
+    |> Map.get("children", Map.get(node, :children, []))
+    |> Enum.filter(&is_map/1)
+    |> Enum.map(&rendered_bounds_for_node(&1, screen_w, screen_h))
+    |> Enum.reject(&is_nil/1)
+    |> union_bounds()
+  end
+
+  @spec union_bounds([map()]) :: map() | nil
+  defp union_bounds([]), do: nil
+
+  defp union_bounds([first | rest]) do
+    Enum.reduce(rest, first, fn box, acc ->
+      min_x = min(acc.x, box.x)
+      min_y = min(acc.y, box.y)
+      max_x = max(acc.x + acc.w, box.x + box.w)
+      max_y = max(acc.y + acc.h, box.y + box.h)
+      %{x: min_x, y: min_y, w: max(max_x - min_x, 1), h: max(max_y - min_y, 1)}
+    end)
+  end
+
+  @spec normalize_rendered_tree(map()) :: map()
+  defp normalize_rendered_tree(tree) when is_map(tree) do
+    case normalize_rendered_ui_value(tree) do
+      {:ok, node} -> node
+      :error -> tree
+    end
+  end
+
+  @spec normalize_rendered_ui_value(term()) :: {:ok, map()} | :error
+  defp normalize_rendered_ui_value(%{"type" => type, "children" => children} = value)
+       when is_binary(type) and is_list(children) and type not in ["tuple2", "List"] do
+    value =
+      value
+      |> Map.put("children", Enum.map(children, &normalize_rendered_child/1))
+      |> normalize_rendered_text_field()
+      |> promote_rendered_node_args()
+
+    {:ok, value}
+  end
+
+  defp normalize_rendered_ui_value(value) do
+    with {:ok, 1, windows} <- normalized_tagged_tuple(value),
+         {:ok, windows} <- normalized_list_values(windows),
+         {:ok, window_nodes} <-
+           normalize_rendered_list(windows, &normalize_rendered_window_node/1) do
+      {:ok, %{"type" => "windowStack", "label" => "", "children" => window_nodes}}
+    else
+      _ -> :error
+    end
+  end
+
+  @spec normalize_rendered_window_node(term()) :: {:ok, map()} | :error
+  defp normalize_rendered_window_node(value) do
+    with {:ok, 1, payload} <- normalized_tagged_tuple(value),
+         {:ok, [id, layers]} <- normalized_payload_args(payload, 2),
+         {:ok, layers} <- normalized_list_values(layers),
+         {:ok, layer_nodes} <- normalize_rendered_list(layers, &normalize_rendered_layer_node/1) do
+      {:ok,
+       %{
+         "type" => "window",
+         "label" => "",
+         "id" => rendered_expr_scalar(normalize_rendered_child(id)),
+         "children" => layer_nodes
+       }}
+    else
+      _ -> :error
+    end
+  end
+
+  @spec normalize_rendered_layer_node(term()) :: {:ok, map()} | :error
+  defp normalize_rendered_layer_node(value) do
+    with {:ok, 1, payload} <- normalized_tagged_tuple(value),
+         {:ok, [id, ops]} <- normalized_payload_args(payload, 2),
+         {:ok, ops} <- normalized_list_values(ops),
+         {:ok, op_nodes} <- normalize_rendered_list(ops, &normalize_rendered_op_node/1) do
+      {:ok,
+       %{
+         "type" => "canvasLayer",
+         "label" => "",
+         "id" => rendered_expr_scalar(normalize_rendered_child(id)),
+         "children" => op_nodes
+       }}
+    else
+      _ -> :error
+    end
+  end
+
+  @spec normalize_rendered_op_node(term()) :: {:ok, map()} | :error
+  defp normalize_rendered_op_node(%{} = value), do: normalize_rendered_ui_value(value)
+  defp normalize_rendered_op_node(_value), do: :error
+
+  @spec normalize_rendered_child(term()) :: term()
+  defp normalize_rendered_child(%{"type" => _type} = value), do: normalize_rendered_tree(value)
+  defp normalize_rendered_child(value), do: value
+
+  @spec promote_rendered_node_args(map()) :: map()
+  defp promote_rendered_node_args(%{"type" => "window", "children" => [id | rest]} = node) do
+    case rendered_expr_scalar(id) do
+      nil -> node
+      value -> node |> Map.put("id", value) |> Map.put("children", rest)
+    end
+  end
+
+  defp promote_rendered_node_args(%{"type" => "canvasLayer", "children" => [id | rest]} = node) do
+    case rendered_expr_scalar(id) do
+      nil -> node
+      value -> node |> Map.put("id", value) |> Map.put("children", rest)
+    end
+  end
+
+  defp promote_rendered_node_args(%{"children" => children} = node) when is_list(children) do
+    fields = rendered_node_arg_fields(Map.get(node, "type"))
+
+    if fields != [] and length(fields) == length(children) do
+      values = Enum.map(children, &rendered_expr_scalar/1)
+
+      if Enum.all?(values, &(!is_nil(&1))) do
+        fields
+        |> Enum.zip(values)
+        |> Enum.reduce(Map.put(node, "children", []), fn {field, value}, acc ->
+          put_rendered_node_arg(acc, field, value)
+        end)
+      else
+        node
+      end
+    else
+      node
+    end
+  end
+
+  defp promote_rendered_node_args(node), do: node
+
+  @spec put_rendered_node_arg(map(), String.t(), term()) :: map()
+  defp put_rendered_node_arg(node, "text", value) when is_map(node) do
+    Map.put(node, "text", normalize_rendered_text(value) || "")
+  end
+
+  defp put_rendered_node_arg(node, field, value) when is_map(node) do
+    Map.put(node, field, value)
+  end
+
+  @spec normalize_rendered_text_field(map()) :: map()
+  defp normalize_rendered_text_field(%{"text" => value} = node) do
+    case normalize_rendered_text(value) do
+      nil -> node
+      text -> Map.put(node, "text", text)
+    end
+  end
+
+  defp normalize_rendered_text_field(node), do: node
+
+  @spec normalize_rendered_text(term()) :: String.t() | nil
+  defp normalize_rendered_text(value) when is_binary(value) do
+    if String.trim(value) != "", do: value, else: nil
+  end
+
+  defp normalize_rendered_text(value) when is_integer(value), do: Integer.to_string(value)
+
+  defp normalize_rendered_text(value) when is_float(value),
+    do: :erlang.float_to_binary(value, [:compact])
+
+  defp normalize_rendered_text(value) when is_list(value) do
+    if List.ascii_printable?(value) do
+      value
+      |> List.to_string()
+      |> normalize_rendered_text()
+    else
+      nil
+    end
+  end
+
+  defp normalize_rendered_text(_value), do: nil
+
+  @spec rendered_expr_scalar(term()) :: term()
+  defp rendered_expr_scalar(%{"type" => "expr"} = node) do
+    cond do
+      Map.has_key?(node, "value") -> Map.get(node, "value")
+      is_binary(Map.get(node, "label")) -> Map.get(node, "label")
+      true -> nil
+    end
+  end
+
+  defp rendered_expr_scalar(_node), do: nil
+
+  @spec rendered_node_arg_fields(term()) :: [String.t()]
+  defp rendered_node_arg_fields(type) do
+    case to_string(type || "") do
+      "clear" -> ["color"]
+      "pixel" -> ["x", "y", "color"]
+      "line" -> ["x1", "y1", "x2", "y2", "color"]
+      "rect" -> ["x", "y", "w", "h", "color"]
+      "fillRect" -> ["x", "y", "w", "h", "fill"]
+      "circle" -> ["cx", "cy", "r", "color"]
+      "fillCircle" -> ["cx", "cy", "r", "color"]
+      "roundRect" -> ["x", "y", "w", "h", "radius", "fill"]
+      "arc" -> ["x", "y", "w", "h", "start_angle", "end_angle"]
+      "fillRadial" -> ["x", "y", "w", "h", "start_angle", "end_angle"]
+      "bitmapInRect" -> ["bitmap_id", "x", "y", "w", "h"]
+      "rotatedBitmap" -> ["bitmap_id", "src_w", "src_h", "angle", "center_x", "center_y"]
+      "textInt" -> ["font_id", "x", "y", "value"]
+      "textLabel" -> ["font_id", "x", "y", "text"]
+      "text" -> ["font_id", "x", "y", "w", "h", "text"]
+      _ -> []
+    end
+  end
+
+  @spec normalize_rendered_list([term()], (term() -> {:ok, map()} | :error)) ::
+          {:ok, [map()]} | :error
+  defp normalize_rendered_list(values, fun) when is_list(values) and is_function(fun, 1) do
+    values
+    |> Enum.reduce_while({:ok, []}, fn value, {:ok, acc} ->
+      case fun.(value) do
+        {:ok, node} -> {:cont, {:ok, [node | acc]}}
+        :error -> {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, nodes} -> {:ok, Enum.reverse(nodes)}
+      :error -> :error
+    end
+  end
+
+  @spec normalized_tagged_tuple(term()) :: {:ok, integer(), term()} | :error
+  defp normalized_tagged_tuple(%{"type" => "tuple2", "children" => [tag_node, payload]}) do
+    case normalized_expr_value(tag_node) do
+      tag when is_integer(tag) -> {:ok, tag, payload}
+      _ -> :error
+    end
+  end
+
+  defp normalized_tagged_tuple(_value), do: :error
+
+  @spec normalized_expr_value(term()) :: term()
+  defp normalized_expr_value(%{"type" => "expr"} = node), do: Map.get(node, "value")
+  defp normalized_expr_value(_node), do: nil
+
+  @spec normalized_list_values(term()) :: {:ok, [term()]} | :error
+  defp normalized_list_values(%{"type" => "List", "children" => children}) when is_list(children),
+    do: {:ok, children}
+
+  defp normalized_list_values(values) when is_list(values), do: {:ok, values}
+  defp normalized_list_values(_values), do: :error
+
+  @spec normalized_payload_args(term(), non_neg_integer()) :: {:ok, [term()]} | :error
+  defp normalized_payload_args(payload, 1), do: {:ok, [payload]}
+
+  defp normalized_payload_args(payload, arity) when is_integer(arity) and arity > 1 do
+    flatten_normalized_payload(payload, arity, [])
+  end
+
+  @spec flatten_normalized_payload(term(), non_neg_integer(), [term()]) ::
+          {:ok, [term()]} | :error
+  defp flatten_normalized_payload(value, 1, acc), do: {:ok, Enum.reverse([value | acc])}
+
+  defp flatten_normalized_payload(
+         %{"type" => "tuple2", "children" => [left, right]},
+         remaining,
+         acc
+       )
+       when remaining > 1 do
+    flatten_normalized_payload(right, remaining - 1, [left | acc])
+  end
+
+  defp flatten_normalized_payload(_value, _remaining, _acc), do: :error
+
+  @spec copy_json(term()) :: String.t()
+  def copy_json(term) do
+    case Jason.encode(term, pretty: true) do
+      {:ok, json} -> json
+      {:error, _reason} -> Jason.encode!(inspect(term), pretty: true)
+    end
+  end
+
   @doc """
   Human-readable summary of `model.elm_introspect` for a frozen runtime snapshot (e.g. at timeline cursor).
   """
@@ -1079,6 +1703,23 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   end
 
   def view_tree_outline(_), do: "(no snapshot)"
+
+  @spec runtime_model(map() | term()) :: map()
+  defp runtime_model(%{} = runtime) do
+    case Map.get(runtime, :model) || Map.get(runtime, "model") do
+      model when is_map(model) -> model
+      _ -> %{}
+    end
+  end
+
+  @spec parser_view_tree(map() | term()) :: map() | nil
+  defp parser_view_tree(%{} = model) do
+    elm_introspect = Map.get(model, "elm_introspect") || Map.get(model, :elm_introspect) || %{}
+    tree = Map.get(elm_introspect, "view_tree") || Map.get(elm_introspect, :view_tree)
+    if is_map(tree), do: tree, else: nil
+  end
+
+  defp parser_view_tree(_model), do: nil
 
   @spec model_diagnostic_preview(map() | nil) :: [map()]
   def model_diagnostic_preview(nil), do: []
@@ -1671,9 +2312,30 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def debugger_rows_for_mode(_rows, _mode), do: []
 
+  @spec debugger_timeline_text([debugger_row()] | term()) :: String.t()
+  def debugger_timeline_text(rows) when is_list(rows) do
+    rows
+    |> newest_first()
+    |> Enum.map(&debugger_timeline_line/1)
+    |> Enum.join("\n")
+  end
+
+  def debugger_timeline_text(_rows), do: ""
+
   @spec newest_first([map()]) :: [map()]
   defp newest_first(rows) when is_list(rows),
     do: Enum.sort_by(rows, &Map.get(&1, :seq, 0), :desc)
+
+  @spec debugger_timeline_line(map()) :: String.t()
+  defp debugger_timeline_line(row) when is_map(row) do
+    seq = Map.get(row, :seq) || Map.get(row, "seq") || "?"
+    target = Map.get(row, :target) || Map.get(row, "target") || "-"
+    type = Map.get(row, :type) || Map.get(row, "type") || "update"
+    message = Map.get(row, :message) || Map.get(row, "message") || ""
+
+    "##{seq} [#{target}] #{type} #{message}"
+    |> String.trim()
+  end
 
   @spec normalize_debugger_row(map()) :: debugger_row()
   defp normalize_debugger_row(row) when is_map(row) do
@@ -2865,18 +3527,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     value_hint = rendered_value_hint(node, model)
     value = rendered_node_value(node, value_hint)
     arg_name = rendered_arg_name(arg_name)
+    detail = rendered_node_detail_suffix(node)
 
     cond do
       arg_name != nil and value != "" ->
-        "#{value} [#{arg_name}]"
+        [value, render_suffix(arg_name), detail]
+        |> Enum.reject(&(&1 == ""))
+        |> Enum.join(" ")
 
       arg_name != nil ->
-        [type, render_suffix(arg_name)]
+        [type, render_suffix(arg_name), detail]
         |> Enum.reject(&(&1 == ""))
         |> Enum.join(" ")
 
       true ->
-        [type, render_suffix(label), render_suffix(text), render_suffix(value_hint)]
+        [type, render_suffix(label), render_suffix(text), render_suffix(value_hint), detail]
         |> Enum.reject(&(&1 == ""))
         |> Enum.uniq()
         |> Enum.join(" ")
@@ -2884,6 +3549,249 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   end
 
   def rendered_node_summary(_node, _model, _arg_name), do: "node"
+
+  @spec rendered_node_detail_suffix(map()) :: String.t()
+  defp rendered_node_detail_suffix(node) when is_map(node) do
+    fields =
+      node
+      |> rendered_detail_fields()
+      |> Enum.flat_map(fn field ->
+        case map_scalar_detail(node, field) do
+          "" -> []
+          value -> ["#{field}=#{rendered_detail_value(node, field, value)}"]
+        end
+      end)
+
+    child_count = rendered_visible_child_count(node)
+    count_suffix = rendered_child_count_suffix(node, child_count)
+
+    (fields ++ List.wrap(count_suffix))
+    |> Enum.reject(&(&1 in ["", nil]))
+    |> case do
+      [] -> ""
+      parts -> "(" <> Enum.join(parts, ", ") <> ")"
+    end
+  end
+
+  defp rendered_node_detail_suffix(_node), do: ""
+
+  @spec rendered_detail_value(map(), String.t(), String.t()) :: String.t()
+  defp rendered_detail_value(node, field, value)
+       when is_map(node) and is_binary(field) and is_binary(value) do
+    if rendered_color_field?(node, field) do
+      color_value = scalar_map_value(node, field)
+
+      case rendered_color_label(color_value) do
+        "" -> value
+        label -> "#{value} #{label}"
+      end
+    else
+      value
+    end
+  end
+
+  @spec rendered_color_field?(map(), String.t()) :: boolean()
+  defp rendered_color_field?(node, field) when is_map(node) and is_binary(field) do
+    type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
+
+    field in rendered_node_color_fields(type)
+  end
+
+  @spec rendered_node_color_fields(String.t()) :: [String.t()]
+  defp rendered_node_color_fields(type) do
+    case type do
+      "clear" -> ["color"]
+      "pixel" -> ["color"]
+      "line" -> ["color"]
+      "rect" -> ["color"]
+      "fillRect" -> ["fill"]
+      "circle" -> ["color"]
+      "fillCircle" -> ["color"]
+      "roundRect" -> ["fill"]
+      _ -> []
+    end
+  end
+
+  @spec rendered_color_label(term()) :: String.t()
+  defp rendered_color_label(value) when is_integer(value) and value >= 0 and value <= 255 do
+    name = pebble_color_name(value)
+    hex = pebble_color_hex(value)
+
+    case name do
+      "" -> "(#{hex})"
+      _ -> "(#{name}, #{hex})"
+    end
+  end
+
+  defp rendered_color_label(_value), do: ""
+
+  @spec pebble_color_name(integer()) :: String.t()
+  defp pebble_color_name(value) do
+    case value do
+      0x00 -> "clearColor"
+      0xC0 -> "black"
+      0xC1 -> "oxfordBlue"
+      0xC2 -> "dukeBlue"
+      0xC3 -> "blue"
+      0xC4 -> "darkGreen"
+      0xC5 -> "midnightGreen"
+      0xC6 -> "cobaltBlue"
+      0xC7 -> "blueMoon"
+      0xC8 -> "islamicGreen"
+      0xC9 -> "jaegerGreen"
+      0xCA -> "tiffanyBlue"
+      0xCB -> "vividCerulean"
+      0xCC -> "green"
+      0xCD -> "malachite"
+      0xCE -> "mediumSpringGreen"
+      0xCF -> "cyan"
+      0xD0 -> "bulgarianRose"
+      0xD1 -> "imperialPurple"
+      0xD2 -> "indigo"
+      0xD3 -> "electricUltramarine"
+      0xD4 -> "armyGreen"
+      0xD5 -> "darkGray"
+      0xD6 -> "liberty"
+      0xD7 -> "veryLightBlue"
+      0xD8 -> "kellyGreen"
+      0xD9 -> "mayGreen"
+      0xDA -> "cadetBlue"
+      0xDB -> "pictonBlue"
+      0xDC -> "brightGreen"
+      0xDD -> "screaminGreen"
+      0xDE -> "mediumAquamarine"
+      0xDF -> "electricBlue"
+      0xE0 -> "darkCandyAppleRed"
+      0xE1 -> "jazzberryJam"
+      0xE2 -> "purple"
+      0xE3 -> "vividViolet"
+      0xE4 -> "windsorTan"
+      0xE5 -> "roseVale"
+      0xE6 -> "purpureus"
+      0xE7 -> "lavenderIndigo"
+      0xE8 -> "limerick"
+      0xE9 -> "brass"
+      0xEA -> "lightGray"
+      0xEB -> "babyBlueEyes"
+      0xEC -> "springBud"
+      0xED -> "inchworm"
+      0xEE -> "mintGreen"
+      0xEF -> "celeste"
+      0xF0 -> "red"
+      0xF1 -> "folly"
+      0xF2 -> "fashionMagenta"
+      0xF3 -> "magenta"
+      0xF4 -> "orange"
+      0xF5 -> "sunsetOrange"
+      0xF6 -> "brilliantRose"
+      0xF7 -> "shockingPink"
+      0xF8 -> "chromeYellow"
+      0xF9 -> "rajah"
+      0xFA -> "melon"
+      0xFB -> "richBrilliantLavender"
+      0xFC -> "yellow"
+      0xFD -> "icterine"
+      0xFE -> "pastelYellow"
+      0xFF -> "white"
+      _ -> ""
+    end
+  end
+
+  @spec pebble_color_hex(integer()) :: String.t()
+  defp pebble_color_hex(value) when is_integer(value) do
+    alpha = value |> Bitwise.bsr(6) |> Bitwise.band(0x03)
+    red = value |> Bitwise.bsr(4) |> Bitwise.band(0x03)
+    green = value |> Bitwise.bsr(2) |> Bitwise.band(0x03)
+    blue = Bitwise.band(value, 0x03)
+
+    [red, green, blue, alpha]
+    |> Enum.map(&color_2bit_to_hex/1)
+    |> Enum.join()
+    |> then(&"##{&1}")
+  end
+
+  @spec color_2bit_to_hex(integer()) :: String.t()
+  defp color_2bit_to_hex(value) when is_integer(value) do
+    value
+    |> max(0)
+    |> min(3)
+    |> Kernel.*(85)
+    |> Integer.to_string(16)
+    |> String.pad_leading(2, "0")
+  end
+
+  @spec rendered_detail_fields(map()) :: [String.t()]
+  defp rendered_detail_fields(node) when is_map(node) do
+    type = Map.get(node, "type") || Map.get(node, :type)
+    base = rendered_node_arg_fields(type)
+
+    if Map.has_key?(node, "id") or Map.has_key?(node, :id) do
+      ["id" | base]
+    else
+      base
+    end
+  end
+
+  @spec map_scalar_detail(map(), String.t()) :: String.t()
+  defp map_scalar_detail(node, field) when is_map(node) and is_binary(field) do
+    node
+    |> scalar_map_value(field)
+    |> rendered_scalar_value()
+  end
+
+  @spec scalar_map_value(map(), String.t()) :: term()
+  defp scalar_map_value(node, field) when is_map(node) and is_binary(field) do
+    cond do
+      Map.has_key?(node, field) ->
+        Map.get(node, field)
+
+      true ->
+        node
+        |> Enum.find_value(fn
+          {key, value} when is_atom(key) ->
+            if Atom.to_string(key) == field, do: {:ok, value}, else: nil
+
+          _ ->
+            nil
+        end)
+        |> case do
+          {:ok, value} -> value
+          _ -> nil
+        end
+    end
+  end
+
+  @spec rendered_visible_child_count(map()) :: non_neg_integer()
+  defp rendered_visible_child_count(node) when is_map(node) do
+    node
+    |> Map.get("children", Map.get(node, :children, []))
+    |> Enum.filter(fn
+      %{} = child ->
+        type = to_string(Map.get(child, "type") || Map.get(child, :type) || "")
+        not hidden_rendered_node_type?(type)
+
+      _ ->
+        false
+    end)
+    |> length()
+  end
+
+  @spec rendered_child_count_suffix(map(), non_neg_integer()) :: String.t() | nil
+  defp rendered_child_count_suffix(node, child_count) when is_map(node) and child_count > 0 do
+    case to_string(Map.get(node, "type") || Map.get(node, :type) || "") do
+      "windowStack" -> "#{child_count} #{pluralize("window", child_count)}"
+      "window" -> "#{child_count} #{pluralize("layer", child_count)}"
+      "canvasLayer" -> "#{child_count} #{pluralize("op", child_count)}"
+      "group" -> "#{child_count} #{pluralize("op", child_count)}"
+      _ -> nil
+    end
+  end
+
+  defp rendered_child_count_suffix(_node, _child_count), do: nil
+
+  @spec pluralize(String.t(), non_neg_integer()) :: String.t()
+  defp pluralize(noun, 1), do: noun
+  defp pluralize(noun, _count), do: noun <> "s"
 
   @spec rendered_child_rows([map()], map()) :: [{map(), String.t() | nil}]
   defp rendered_child_rows(children, parent) when is_list(children) and is_map(parent) do

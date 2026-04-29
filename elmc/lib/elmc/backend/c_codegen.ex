@@ -341,45 +341,6 @@ defmodule Elmc.Backend.CCodegen do
     {code, out, final_counter}
   end
 
-  defp compile_expr(%{op: :maybe_with_default_list_head, arg: arg}, env, counter) do
-    source = Map.get(env, arg, arg)
-    next = counter + 1
-    head = "tmp_#{next}"
-    next2 = next + 1
-    result = "tmp_#{next2}"
-
-    code = """
-    ElmcValue *#{head} = elmc_list_head(#{source});
-      ElmcValue *#{result} = elmc_maybe_with_default_int(#{head}, 0);
-      elmc_release(#{head});
-    """
-
-    {code, result, next2}
-  end
-
-  defp compile_expr(%{op: :list_foldl_add_zero, arg: arg}, env, counter) do
-    source = Map.get(env, arg, arg)
-    next = counter + 1
-    var = "tmp_#{next}"
-    {"ElmcValue *#{var} = elmc_new_int(elmc_list_foldl_add_zero(#{source}));", var, next}
-  end
-
-  defp compile_expr(%{op: :maybe_inc, arg: arg}, env, counter) do
-    source = Map.get(env, arg, arg)
-    next = counter + 1
-    mapped = "tmp_#{next}"
-    next2 = next + 1
-    result = "tmp_#{next2}"
-
-    code = """
-    ElmcValue *#{mapped} = elmc_maybe_map_inc(#{source});
-      ElmcValue *#{result} = elmc_maybe_with_default_int(#{mapped}, 0);
-      elmc_release(#{mapped});
-    """
-
-    {code, result, next2}
-  end
-
   defp compile_expr(%{op: :tuple_second, arg: arg}, env, counter) do
     source = Map.get(env, arg, arg)
     next = counter + 1
@@ -716,6 +677,29 @@ defmodule Elmc.Backend.CCodegen do
     """
 
     {code, out, next}
+  end
+
+  defp compile_expr(%{op: :record_update, base: base, fields: fields}, env, counter) do
+    {base_code, base_var, counter} = compile_expr(base, env, counter)
+    sorted_fields = Enum.sort_by(fields, & &1.name)
+
+    {update_code, current_var, counter} =
+      Enum.reduce(sorted_fields, {"", base_var, counter}, fn field, {code_acc, current, c} ->
+        {field_code, field_var, c2} = compile_expr(field.expr, env, c)
+        next = c2 + 1
+        out = "tmp_#{next}"
+
+        code = """
+        #{field_code}
+          ElmcValue *#{out} = elmc_record_update(#{current}, "#{escape_c_string(field.name)}", #{field_var});
+          elmc_release(#{current});
+          elmc_release(#{field_var});
+        """
+
+        {code_acc <> "\n  " <> code, out, next}
+      end)
+
+    {base_code <> update_code, current_var, counter}
   end
 
   defp compile_expr(%{op: :field_access, arg: arg, field: field}, env, counter)
@@ -1550,7 +1534,7 @@ defmodule Elmc.Backend.CCodegen do
     do: %{op: :runtime_call, function: "elmc_debug_to_string", args: [value]}
 
   defp special_value_from_target("String.append", [left, right]),
-    do: %{op: :runtime_call, function: "elmc_string_append", args: [left, right]}
+    do: %{op: :runtime_call, function: "elmc_append", args: [left, right]}
 
   defp special_value_from_target("String.isEmpty", [value]),
     do: %{op: :runtime_call, function: "elmc_string_is_empty", args: [value]}
@@ -1647,7 +1631,7 @@ defmodule Elmc.Backend.CCodegen do
 
   defp special_value_from_target("Cmd.none", _args), do: %{op: :int_literal, value: 0}
 
-  defp special_value_from_target("Cmd.batch", _args), do: %{op: :int_literal, value: 0}
+  defp special_value_from_target("Cmd.batch", [commands]), do: commands
 
   defp special_value_from_target("Sub.none", _args), do: %{op: :int_literal, value: 0}
   defp special_value_from_target("Sub.batch", args), do: subscription_batch_expr(args)
@@ -3071,6 +3055,14 @@ defmodule Elmc.Backend.CCodegen do
   defp compile_builtin_operator_call("__idiv__", [left, right], env, counter),
     do: compile_int_idiv(left, right, env, counter)
 
+  defp compile_builtin_operator_call("__append__", [left, right], env, counter),
+    do:
+      compile_expr(
+        %{op: :runtime_call, function: "elmc_append", args: [left, right]},
+        env,
+        counter
+      )
+
   defp compile_builtin_operator_call("modBy", [base, value], env, counter),
     do:
       compile_expr(
@@ -3262,6 +3254,7 @@ defmodule Elmc.Backend.CCodegen do
              "__pow__",
              "__fdiv__",
              "__idiv__",
+             "__append__",
              "modBy",
              "remainderBy",
              "round",
@@ -3318,10 +3311,6 @@ defmodule Elmc.Backend.CCodegen do
     Enum.reduce(args, MapSet.new(), fn arg, acc -> MapSet.union(acc, used_vars(arg)) end)
   end
 
-  defp used_vars(%{op: :list_foldl_add_zero, arg: arg}), do: MapSet.new([arg])
-  defp used_vars(%{op: :maybe_inc, arg: arg}), do: MapSet.new([arg])
-  defp used_vars(%{op: :maybe_with_default_list_head, arg: arg}), do: MapSet.new([arg])
-
   defp used_vars(%{op: :list_literal, items: items}) do
     Enum.reduce(items, MapSet.new(), fn item, acc -> MapSet.union(acc, used_vars(item)) end)
   end
@@ -3340,6 +3329,13 @@ defmodule Elmc.Backend.CCodegen do
 
   defp used_vars(%{op: :record_literal, fields: fields}) do
     Enum.reduce(fields, MapSet.new(), fn
+      %{expr: expr}, acc -> MapSet.union(acc, used_vars(expr))
+      _other, acc -> acc
+    end)
+  end
+
+  defp used_vars(%{op: :record_update, base: base, fields: fields}) do
+    Enum.reduce(fields, used_vars(base), fn
       %{expr: expr}, acc -> MapSet.union(acc, used_vars(expr))
       _other, acc -> acc
     end)

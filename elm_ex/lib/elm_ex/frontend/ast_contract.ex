@@ -214,6 +214,9 @@ defmodule ElmEx.Frontend.AstContract do
       :record_literal ->
         validate_record_literal(expr)
 
+      :record_update ->
+        validate_record_update(expr)
+
       :tuple_first_expr ->
         validate_unary_wrapped_expr(expr, :arg)
 
@@ -225,15 +228,6 @@ defmodule ElmEx.Frontend.AstContract do
 
       :char_from_code_expr ->
         validate_unary_wrapped_expr(expr, :arg)
-
-      :maybe_with_default_list_head ->
-        validate_non_empty_binary(expr[:arg], :invalid_maybe_with_default_list_head)
-
-      :list_foldl_add_zero ->
-        validate_non_empty_binary(expr[:arg], :invalid_list_foldl_add_zero)
-
-      :maybe_inc ->
-        validate_non_empty_binary(expr[:arg], :invalid_maybe_inc)
 
       :unsupported ->
         validate_non_empty_or_empty_binary(expr[:source], :invalid_unsupported_expr)
@@ -272,7 +266,8 @@ defmodule ElmEx.Frontend.AstContract do
   defp validate_sub_const(_), do: {:error, :invalid_sub_const}
 
   @spec validate_compare(term()) :: :ok | {:error, atom()}
-  defp validate_compare(%{left: left, right: right, kind: kind}) when kind in [:eq, :gt, :lt] do
+  defp validate_compare(%{left: left, right: right, kind: kind})
+       when kind in [:eq, :neq, :gt, :gte, :lt, :lte] do
     with :ok <- validate_expr(left),
          :ok <- validate_expr(right) do
       :ok
@@ -445,6 +440,19 @@ defmodule ElmEx.Frontend.AstContract do
   end
 
   defp validate_record_literal(_), do: {:error, :invalid_record_literal}
+
+  @spec validate_record_update(term()) :: :ok | {:error, atom()}
+  defp validate_record_update(%{base: base, fields: fields}) when is_list(fields) do
+    with :ok <- validate_expr(base) do
+      if Enum.all?(fields, &valid_record_field?/1) do
+        :ok
+      else
+        {:error, :invalid_record_update}
+      end
+    end
+  end
+
+  defp validate_record_update(_), do: {:error, :invalid_record_update}
 
   @spec valid_record_field?(term()) :: boolean()
   defp valid_record_field?(%{name: name, expr: expr}) when is_binary(name) and is_map(expr) do

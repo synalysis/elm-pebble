@@ -313,6 +313,35 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
   end
 
   test "debugger start loads watch main when protocol tab is active", %{conn: conn} do
+    previous_http_executor = Application.get_env(:ide, Ide.Debugger.HttpExecutor)
+
+    Application.put_env(:ide, Ide.Debugger.HttpExecutor,
+      request_fun: fn command ->
+        url = Map.get(command, "url") || ""
+
+        cond do
+          String.contains?(url, "api.open-meteo.com") ->
+            {:ok,
+             %{
+               "status" => 200,
+               "body" =>
+                 Jason.encode!(%{"current" => %{"temperature_2m" => 19.2, "weather_code" => 0}})
+             }}
+
+          true ->
+            {:ok, %{"status" => 200, "body" => "ok"}}
+        end
+      end
+    )
+
+    on_exit(fn ->
+      if is_nil(previous_http_executor) do
+        Application.delete_env(:ide, Ide.Debugger.HttpExecutor)
+      else
+        Application.put_env(:ide, Ide.Debugger.HttpExecutor, previous_http_executor)
+      end
+    end)
+
     assert {:ok, project} =
              Projects.create_project(%{
                "name" => "WorkspaceDebuggerWatchMainBootstrap",
@@ -338,6 +367,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     assert watch_model["last_path"] == "src/Main.elm"
     assert watch_model["source_root"] == "watch"
+    assert get_in(state.companion, [:model, "elm_executor_core_ir_b64"])
 
     timeline =
       state.debugger_timeline
@@ -346,6 +376,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     assert {"watch", "init"} in timeline
     assert Enum.any?(timeline, &(&1 == {"watch", "init_device_data"}))
+    assert Enum.any?(timeline, &(&1 == {"protocol", "runtime_followup"}))
   end
 
   test "editor opens watch Main elm by default", %{conn: conn} do

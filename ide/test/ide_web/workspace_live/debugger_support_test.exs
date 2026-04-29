@@ -2,6 +2,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
   use ExUnit.Case, async: true
 
   alias Ide.Debugger
+  alias IdeWeb.WorkspaceLive.DebuggerPreview
   alias IdeWeb.WorkspaceLive.DebuggerSupport
 
   test "view_tree_outline renders nested watch view_tree" do
@@ -298,6 +299,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert Enum.map(DebuggerSupport.debugger_rows_for_target(rows, "watch"), & &1.seq) == [3, 1]
   end
 
+  test "debugger_timeline_text exports visible rows as raw lines" do
+    rows = [
+      %{seq: 1, target: "watch", type: "init", message: "init"},
+      %{seq: 2, target: "companion", type: "update", message: "Sync {\"ok\":true}"}
+    ]
+
+    assert DebuggerSupport.debugger_timeline_text(rows) ==
+             "#2 [companion] update Sync {\"ok\":true}\n#1 [watch] init init"
+  end
+
+  test "copy_json exports debugger payloads as pretty JSON" do
+    assert DebuggerSupport.copy_json(%{"model" => %{"count" => 2}}) ==
+             "{\n  \"model\": {\n    \"count\": 2\n  }\n}"
+  end
+
   test "set_debugger_timeline_mode normalizes supported timeline modes" do
     socket = DebuggerSupport.assign_defaults(%Phoenix.LiveView.Socket{})
 
@@ -473,6 +489,132 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert preview =~ "textInt [x=36, y=93, 1626]"
   end
 
+  test "debugger preview dimensions prefer launch context screen over stale tree box" do
+    runtime = %{
+      model: %{
+        "launch_context" => %{
+          "screen" => %{"width" => 200, "height" => 228}
+        }
+      }
+    }
+
+    tree = %{"type" => "window", "box" => %{"w" => 144, "h" => 168}, "children" => []}
+
+    assert DebuggerPreview.screen_dimensions(runtime, tree) == {200, 228}
+  end
+
+  test "debugger preview dimensions fall back to launch context before tree box" do
+    runtime = %{
+      model: %{
+        "launch_context" => %{
+          "screen" => %{"width" => 180, "height" => 180}
+        }
+      }
+    }
+
+    tree = %{"type" => "window", "box" => %{"w" => 144, "h" => 168}, "children" => []}
+
+    assert DebuggerPreview.screen_dimensions(runtime, tree) == {180, 180}
+  end
+
+  test "debugger preview shape follows launch context round screen contract" do
+    runtime = %{
+      model: %{
+        "launch_context" => %{
+          "screen" => %{"width" => 180, "height" => 180, "isRound" => true}
+        }
+      }
+    }
+
+    refute DebuggerPreview.screen_round?(%{
+             model: %{"launch_context" => %{"screen" => %{"isRound" => false}}}
+           })
+
+    assert DebuggerPreview.screen_round?(runtime)
+  end
+
+  test "debugger preview shape falls back to launch context screen" do
+    runtime = %{
+      model: %{
+        "launch_context" => %{
+          "screen" => %{"width" => 180, "height" => 180, "isRound" => true}
+        }
+      }
+    }
+
+    assert DebuggerPreview.screen_round?(runtime)
+  end
+
+  test "debugger preview applies text color from runtime style context" do
+    runtime = %{
+      model: %{
+        "runtime_view_output" => [
+          %{"kind" => "clear", "color" => 192},
+          %{"kind" => "push_context"},
+          %{"kind" => "text_color", "color" => 255},
+          %{"kind" => "text", "x" => 0, "y" => 24, "text" => "visible"},
+          %{"kind" => "pop_context"},
+          %{"kind" => "text", "x" => 0, "y" => 48, "text" => "default"}
+        ]
+      }
+    }
+
+    [clear, visible, default] = DebuggerPreview.svg_ops(nil, runtime)
+
+    assert clear.kind == :clear
+    assert visible.kind == :text_label
+    assert visible.text_color == 255
+    assert default.kind == :text_label
+    assert default.text_color == nil
+  end
+
+  test "debugger preview preserves text bounds for centered SVG text" do
+    runtime = %{
+      model: %{
+        "runtime_view_output" => [
+          %{
+            "kind" => "text",
+            "x" => 0,
+            "y" => 52,
+            "w" => 180,
+            "h" => 56,
+            "text" => "--:--"
+          }
+        ]
+      }
+    }
+
+    [text] = DebuggerPreview.svg_ops(nil, runtime)
+
+    assert text.kind == :text_label
+    assert text.x == 0
+    assert text.w == 180
+    assert text.h == 56
+    assert text.text_align == "center"
+  end
+
+  test "debugger preview restores parent style after nested contexts" do
+    runtime = %{
+      model: %{
+        "runtime_view_output" => [
+          %{"kind" => "push_context"},
+          %{"kind" => "fill_color", "color" => 204},
+          %{"kind" => "fill_rect", "x" => 1, "y" => 2, "w" => 3, "h" => 4, "fill" => 1},
+          %{"kind" => "push_context"},
+          %{"kind" => "fill_color", "color" => 255},
+          %{"kind" => "fill_rect", "x" => 5, "y" => 6, "w" => 7, "h" => 8, "fill" => 1},
+          %{"kind" => "pop_context"},
+          %{"kind" => "fill_rect", "x" => 9, "y" => 10, "w" => 11, "h" => 12, "fill" => 1},
+          %{"kind" => "pop_context"}
+        ]
+      }
+    }
+
+    rows = DebuggerPreview.svg_ops(nil, runtime)
+
+    assert Enum.map(rows, & &1.fill_color) == [204, 255, 204]
+  end
+
   test "replay_preview_rows respects target and cursor bounds" do
     events = [
       %{seq: 6, type: "debugger.update_in", payload: %{target: "watch", message: "Inc"}},
@@ -627,6 +769,219 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
   test "view_tree_outline handles nil runtime" do
     assert DebuggerSupport.view_tree_outline(nil) == "(no snapshot)"
+  end
+
+  test "rendered_tree prefers evaluated runtime view tree over parser wrapper outline" do
+    runtime = %{
+      view_tree: %{
+        "type" => "windowStack",
+        "children" => [%{"type" => "window", "children" => []}]
+      },
+      model: %{
+        "elm_introspect" => %{
+          "view_tree" => %{
+            "type" => "toUiNode",
+            "qualified_target" => "PebbleUi.toUiNode",
+            "children" => [%{"type" => "append", "children" => []}]
+          }
+        }
+      }
+    }
+
+    rendered = DebuggerSupport.rendered_tree(runtime)
+
+    assert rendered["type"] == "windowStack"
+    refute rendered["type"] == "toUiNode"
+  end
+
+  test "rendered_tree repairs normalized lowered Pebble Ui tuple trees" do
+    runtime = %{
+      view_tree: %{
+        "type" => "tuple2",
+        "label" => "",
+        "children" => [
+          %{"type" => "expr", "value" => 1, "children" => []},
+          %{
+            "type" => "List",
+            "children" => [
+              %{
+                "type" => "tuple2",
+                "children" => [
+                  %{"type" => "expr", "value" => 1, "children" => []},
+                  %{
+                    "type" => "tuple2",
+                    "children" => [
+                      %{"type" => "expr", "value" => 1, "children" => []},
+                      %{
+                        "type" => "List",
+                        "children" => [
+                          %{
+                            "type" => "tuple2",
+                            "children" => [
+                              %{"type" => "expr", "value" => 1, "children" => []},
+                              %{
+                                "type" => "tuple2",
+                                "children" => [
+                                  %{"type" => "expr", "value" => 1, "children" => []},
+                                  %{
+                                    "type" => "List",
+                                    "children" => [
+                                      %{
+                                        "type" => "clear",
+                                        "label" => "",
+                                        "children" => [
+                                          %{"type" => "expr", "value" => 192, "children" => []}
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+    rendered = DebuggerSupport.rendered_tree(runtime)
+
+    assert rendered["type"] == "windowStack"
+    assert get_in(rendered, ["children", Access.at(0), "type"]) == "window"
+    assert get_in(rendered, ["children", Access.at(0), "id"]) == 1
+
+    layer = get_in(rendered, ["children", Access.at(0), "children", Access.at(0)])
+    assert layer["type"] == "canvasLayer"
+    assert layer["id"] == 1
+    assert get_in(layer, ["children", Access.at(0), "color"]) == 192
+    assert get_in(layer, ["children", Access.at(0), "children"]) == []
+  end
+
+  test "rendered_tree normalizes text charlists to strings" do
+    runtime = %{
+      view_tree: %{
+        "type" => "text",
+        "children" => [
+          %{"type" => "expr", "value" => 1, "children" => []},
+          %{"type" => "expr", "value" => 0, "children" => []},
+          %{"type" => "expr", "value" => 52, "children" => []},
+          %{"type" => "expr", "value" => 180, "children" => []},
+          %{"type" => "expr", "value" => 56, "children" => []},
+          %{"type" => "expr", "value" => ~c"22:31", "children" => []}
+        ]
+      }
+    }
+
+    rendered = DebuggerSupport.rendered_tree(runtime)
+
+    assert rendered["text"] == "22:31"
+    assert Jason.encode!(rendered) =~ ~s("text":"22:31")
+  end
+
+  test "rendered_node_bounds derives preview boxes from normalized rendered nodes" do
+    tree = %{
+      "type" => "windowStack",
+      "children" => [
+        %{
+          "type" => "window",
+          "children" => [
+            %{
+              "type" => "canvasLayer",
+              "children" => [
+                %{"type" => "clear", "color" => 192, "children" => []},
+                %{"type" => "fillRect", "x" => 2, "y" => 3, "w" => 10, "h" => 8, "fill" => 255},
+                %{"type" => "line", "x1" => 12, "y1" => 20, "x2" => 8, "y2" => 14, "color" => 0},
+                %{"type" => "circle", "cx" => 30, "cy" => 40, "r" => 5, "color" => 0},
+                %{
+                  "type" => "arc",
+                  "x" => 3,
+                  "y" => 4,
+                  "w" => 12,
+                  "h" => 13,
+                  "start_angle" => 0,
+                  "end_angle" => 16_384
+                },
+                %{
+                  "type" => "pathOutline",
+                  "points" => [[1, 2], [7, 5], [3, 11]],
+                  "offset_x" => 10,
+                  "offset_y" => 20,
+                  "rotation" => 0
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+
+    assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.0", 144, 168) ==
+             %{x: 0, y: 0, w: 144, h: 168}
+
+    assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.1", 144, 168) ==
+             %{x: 2, y: 3, w: 10, h: 8}
+
+    assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.2", 144, 168) ==
+             %{x: 8, y: 14, w: 4, h: 6}
+
+    assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.3", 144, 168) ==
+             %{x: 25, y: 35, w: 10, h: 10}
+
+    assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.4", 144, 168) ==
+             %{x: 3, y: 4, w: 12, h: 13}
+
+    assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.5", 144, 168) ==
+             %{x: 11, y: 22, w: 6, h: 9}
+  end
+
+  test "rendered_node_summary includes promoted drawing command fields" do
+    node = %{
+      "type" => "roundRect",
+      "x" => 50,
+      "y" => 8,
+      "w" => 100,
+      "h" => 8,
+      "radius" => 2,
+      "fill" => 255,
+      "children" => []
+    }
+
+    assert DebuggerSupport.rendered_node_summary(node, %{}) ==
+             "roundRect (x=50, y=8, w=100, h=8, radius=2, fill=255 (white, #FFFFFFFF))"
+  end
+
+  test "rendered_node_summary resolves only declared color fields" do
+    node = %{
+      "type" => "fillRect",
+      "x" => 2,
+      "y" => 2,
+      "w" => 3,
+      "h" => 4,
+      "fill" => 204,
+      "children" => []
+    }
+
+    assert DebuggerSupport.rendered_node_summary(node, %{}) ==
+             "fillRect (x=2, y=2, w=3, h=4, fill=204 (green, #00FF00FF))"
+  end
+
+  test "rendered_tree falls back to parser view tree when runtime tree is absent" do
+    runtime = %{
+      model: %{
+        "elm_introspect" => %{
+          "view_tree" => %{"type" => "root", "children" => [%{"type" => "text"}]}
+        }
+      }
+    }
+
+    assert DebuggerSupport.rendered_tree(runtime)["type"] == "root"
   end
 
   test "model_diagnostic_preview reads elmc_diagnostic_preview from runtime model" do

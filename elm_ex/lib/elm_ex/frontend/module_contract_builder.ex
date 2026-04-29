@@ -9,7 +9,6 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
   alias ElmEx.Frontend.GeneratedExpressionParser
 
   @typep expr() :: map() | nil
-  @typep pattern() :: map()
   @typep decl() :: map()
 
   @spec build(String.t(), String.t(), String.t(), [String.t()]) :: Module.t()
@@ -128,8 +127,13 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
       |> Enum.join(" ")
 
     case GeneratedDeclarationParser.parse_line(candidate) do
-      {:ok, {:type_alias, _} = alias_decl} -> %{line_info | decl: {:ok, alias_decl}}
-      _ -> line_info
+      {:ok, {:type_alias, _} = alias_decl} ->
+        line_info
+        |> Map.put(:type_alias_source, candidate)
+        |> Map.put(:decl, {:ok, alias_decl})
+
+      _ ->
+        line_info
     end
   end
 
@@ -174,11 +178,17 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
                                                         union_current} ->
         case line_info.decl do
           {:ok, {:type_alias, name}} ->
+            fields =
+              type_alias_record_fields(
+                Map.get(line_info, :type_alias_source) || line_info.trimmed
+              )
+
             {
               [
                 %{
                   kind: :type_alias,
                   name: name,
+                  fields: fields,
                   span: %{start_line: line_info.line_no, end_line: line_info.line_no}
                 }
                 | aliases_acc
@@ -211,6 +221,101 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
       unions: Enum.reverse(flush_union(unions, current_union)),
       signatures: Enum.reverse(signatures)
     }
+  end
+
+  @spec type_alias_record_fields(String.t()) :: [String.t()]
+  defp type_alias_record_fields(source) when is_binary(source) do
+    with {:ok, rhs} <- split_type_alias_rhs(source),
+         {:ok, inner} <- record_type_body(rhs) do
+      inner
+      |> strip_extensible_record_base()
+      |> split_top_level(",", [])
+      |> Enum.flat_map(&record_field_name/1)
+    else
+      _ -> []
+    end
+  end
+
+  defp type_alias_record_fields(_source), do: []
+
+  @spec split_type_alias_rhs(String.t()) :: {:ok, String.t()} | :error
+  defp split_type_alias_rhs(source) do
+    case split_top_level(source, "=", []) do
+      [_left, right] -> {:ok, String.trim(right)}
+      _ -> :error
+    end
+  end
+
+  @spec record_type_body(String.t()) :: {:ok, String.t()} | :error
+  defp record_type_body(source) do
+    trimmed = String.trim(source)
+
+    if String.starts_with?(trimmed, "{") and String.ends_with?(trimmed, "}") do
+      {:ok, trimmed |> String.slice(1, String.length(trimmed) - 2) |> String.trim()}
+    else
+      :error
+    end
+  end
+
+  @spec strip_extensible_record_base(String.t()) :: String.t()
+  defp strip_extensible_record_base(source) do
+    case split_top_level(source, "|", []) do
+      [_base, fields] -> String.trim(fields)
+      _ -> source
+    end
+  end
+
+  @spec record_field_name(String.t()) :: [String.t()]
+  defp record_field_name(source) do
+    case split_top_level(source, ":", []) do
+      [name, _type] ->
+        name = String.trim(name)
+        if valid_record_field_name?(name), do: [name], else: []
+
+      _ ->
+        []
+    end
+  end
+
+  @spec valid_record_field_name?(String.t()) :: boolean()
+  defp valid_record_field_name?(<<first::utf8, rest::binary>>) when first in ?a..?z do
+    String.printable?(rest)
+  end
+
+  defp valid_record_field_name?(_), do: false
+
+  @spec split_top_level(String.t(), String.t(), [String.t()]) :: [String.t()]
+  defp split_top_level(source, separator, acc)
+       when is_binary(source) and is_binary(separator) and byte_size(separator) == 1 do
+    do_split_top_level(source, separator, acc, "", 0, nil)
+  end
+
+  defp do_split_top_level(<<>>, _separator, acc, current, _depth, _quote) do
+    Enum.reverse([String.trim(current) | acc])
+  end
+
+  defp do_split_top_level(<<char::utf8, rest::binary>>, separator, acc, current, depth, quote) do
+    char_text = <<char::utf8>>
+
+    cond do
+      quote == nil and char_text == separator and depth == 0 ->
+        do_split_top_level(rest, separator, [String.trim(current) | acc], "", depth, quote)
+
+      quote == nil and char_text in ["\"", "'"] ->
+        do_split_top_level(rest, separator, acc, current <> char_text, depth, char_text)
+
+      quote == char_text ->
+        do_split_top_level(rest, separator, acc, current <> char_text, depth, nil)
+
+      quote == nil and char_text in ["(", "[", "{"] ->
+        do_split_top_level(rest, separator, acc, current <> char_text, depth + 1, quote)
+
+      quote == nil and char_text in [")", "]", "}"] ->
+        do_split_top_level(rest, separator, acc, current <> char_text, max(depth - 1, 0), quote)
+
+      true ->
+        do_split_top_level(rest, separator, acc, current <> char_text, depth, quote)
+    end
   end
 
   @spec parse_function_definitions([map()]) :: [decl()]
@@ -306,250 +411,9 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
   defp parse_expression(_name, body) do
     body = String.trim(body)
-    parts = split_top_level_spaces(body)
     generated_expr = maybe_generated_expr(body)
 
-    tuple =
-      if String.starts_with?(body, "(") and String.ends_with?(body, ")") do
-        inner = String.slice(body, 1, String.length(body) - 2)
-        items = split_top_level_items(inner)
-
-        if length(items) >= 2 do
-          items
-          |> Enum.map(&parse_expression(nil, String.trim(&1)))
-          |> tuple_chain_expr()
-        else
-          nil
-        end
-      else
-        nil
-      end
-
-    cond do
-      generated_expr != nil ->
-        generated_expr
-
-      Regex.match?(~r/^"(?:[^"\\]|\\.)*"$/, body) ->
-        %{op: :string_literal, value: parse_string_literal(body)}
-
-      Regex.match?(~r/^'(?:[^'\\]|\\.)'$/, body) ->
-        %{op: :char_literal, value: parse_char_literal(body)}
-
-      String.starts_with?(body, "{") and String.ends_with?(body, "}") ->
-        parse_record_literal(body)
-
-      Regex.match?(~r/^[a-z][A-Za-z0-9_]*\.[a-z][A-Za-z0-9_]*\s+.+$/, body) ->
-        [arg, field, args_source] =
-          Regex.run(
-            ~r/^([a-z][A-Za-z0-9_]*)\.([a-z][A-Za-z0-9_]*)\s+(.+)$/,
-            body,
-            capture: :all_but_first
-          )
-
-        args =
-          split_top_level_spaces(args_source)
-          |> Enum.map(&parse_expression(nil, &1))
-
-        %{op: :field_call, arg: arg, field: field, args: args}
-
-      Regex.match?(~r/^[a-z][A-Za-z0-9_]*\.[a-z][A-Za-z0-9_]*$/, body) ->
-        [arg, field] =
-          Regex.run(
-            ~r/^([a-z][A-Za-z0-9_]*)\.([a-z][A-Za-z0-9_]*)$/,
-            body,
-            capture: :all_but_first
-          )
-
-        %{op: :field_access, arg: arg, field: field}
-
-      Regex.match?(~r/^let\s+[a-z][A-Za-z0-9_]*\s*=.+\sin\s+.+$/s, body) ->
-        [name, value_source, in_source] =
-          Regex.run(
-            ~r/^let\s+([a-z][A-Za-z0-9_]*)\s*=\s*(.+?)\s+in\s+(.+)$/s,
-            body,
-            capture: :all_but_first
-          )
-
-        %{
-          op: :let_in,
-          name: name,
-          value_expr: parse_expression(nil, String.trim(value_source)),
-          in_expr: parse_expression(nil, String.trim(in_source))
-        }
-
-      Regex.match?(~r/^if\s+.+\s+then\s+.+\s+else\s+.+$/s, body) ->
-        [cond_source, then_source, else_source] =
-          Regex.run(
-            ~r/^if\s+(.+?)\s+then\s+(.+?)\s+else\s+(.+)$/s,
-            body,
-            capture: :all_but_first
-          )
-
-        %{
-          op: :if,
-          cond: parse_expression(nil, String.trim(cond_source)),
-          then_expr: parse_expression(nil, String.trim(then_source)),
-          else_expr: parse_expression(nil, String.trim(else_source))
-        }
-
-      String.starts_with?(body, "[") and String.ends_with?(body, "]") ->
-        parse_list_literal(body)
-
-      tuple != nil ->
-        tuple
-
-      has_outer_parens?(body) ->
-        inner = String.slice(body, 1, String.length(body) - 2) |> String.trim()
-        parse_expression(nil, inner)
-
-      String.starts_with?(body, "case ") and String.contains?(body, " of") ->
-        parse_case_expression(body)
-
-      String.contains?(body, "Maybe.withDefault 0 (List.head ") ->
-        [_, arg] = Regex.run(~r/Maybe\.withDefault 0 \(List\.head ([a-z][A-Za-z0-9_]*)\)/, body)
-        %{op: :maybe_with_default_list_head, arg: arg, default: 0}
-
-      String.contains?(body, "List.foldl (+) 0 ") ->
-        [_, arg] = Regex.run(~r/List\.foldl \(\+\) 0 ([a-z][A-Za-z0-9_]*)/, body)
-        %{op: :list_foldl_add_zero, arg: arg}
-
-      String.contains?(body, "Maybe.withDefault 0 (Maybe.map ((+) 1)") ->
-        [_, arg] =
-          Regex.run(
-            ~r/Maybe\.withDefault 0 \(Maybe\.map \(\(\+\) 1\) ([a-z][A-Za-z0-9_]*)\)/,
-            body
-          )
-
-        %{op: :maybe_inc, arg: arg}
-
-      String.starts_with?(body, "Tuple.second ") ->
-        arg_source = body |> String.replace_prefix("Tuple.second ", "") |> String.trim()
-        %{op: :tuple_second_expr, arg: parse_expression(nil, arg_source)}
-
-      String.starts_with?(body, "Tuple.first ") ->
-        arg_source = body |> String.replace_prefix("Tuple.first ", "") |> String.trim()
-        %{op: :tuple_first_expr, arg: parse_expression(nil, arg_source)}
-
-      String.starts_with?(body, "String.length ") ->
-        arg_source = body |> String.replace_prefix("String.length ", "") |> String.trim()
-        %{op: :string_length_expr, arg: parse_expression(nil, arg_source)}
-
-      String.starts_with?(body, "Char.fromCode ") ->
-        arg_source = body |> String.replace_prefix("Char.fromCode ", "") |> String.trim()
-        %{op: :char_from_code_expr, arg: parse_expression(nil, arg_source)}
-
-      body == "Cmd.none" ->
-        %{op: :cmd_none}
-
-      Regex.match?(~r/^\\[a-z][A-Za-z0-9_]*\s*->\s*.+$/s, body) ->
-        [arg, lambda_body] =
-          Regex.run(~r/^\\([a-z][A-Za-z0-9_]*)\s*->\s*(.+)$/s, body, capture: :all_but_first)
-
-        %{op: :lambda, args: [arg], body: parse_expression(nil, String.trim(lambda_body))}
-
-      length(parts) > 1 and
-          Regex.match?(~r/^[A-Z][A-Za-z0-9_.]*\.[a-z][A-Za-z0-9_]*$/, hd(parts)) ->
-        [target | arg_parts] = parts
-
-        %{
-          op: :qualified_call,
-          target: target,
-          args: Enum.map(arg_parts, &parse_expression(nil, &1))
-        }
-
-      length(parts) > 1 and
-          Regex.match?(~r/^[A-Z][A-Za-z0-9_.]*\.[A-Z][A-Za-z0-9_]*$/, hd(parts)) ->
-        [target | arg_parts] = parts
-
-        %{
-          op: :constructor_call,
-          target: target,
-          args: Enum.map(arg_parts, &parse_expression(nil, &1))
-        }
-
-      length(parts) > 1 and Regex.match?(~r/^[A-Z][A-Za-z0-9_]*$/, hd(parts)) ->
-        [target | arg_parts] = parts
-
-        %{
-          op: :constructor_call,
-          target: target,
-          args: Enum.map(arg_parts, &parse_expression(nil, &1))
-        }
-
-      Regex.match?(~r/^[A-Z][A-Za-z0-9_.]*\.[a-z][A-Za-z0-9_]*(\s+.+)?$/, body) ->
-        [target | arg_parts] = parts
-
-        args =
-          arg_parts
-          |> Enum.map(&parse_expression(nil, &1))
-
-        %{op: :qualified_call, target: target, args: args}
-
-      Regex.match?(~r/^[A-Z][A-Za-z0-9_.]*\.[A-Z][A-Za-z0-9_]*(\s+.+)?$/, body) ->
-        [target | arg_parts] = parts
-
-        args =
-          arg_parts
-          |> Enum.map(&parse_expression(nil, &1))
-
-        %{op: :constructor_call, target: target, args: args}
-
-      Regex.match?(~r/^[A-Z][A-Za-z0-9_]*(\s+.+)?$/, body) ->
-        [target | arg_parts] = parts
-
-        args =
-          arg_parts
-          |> Enum.map(&parse_expression(nil, &1))
-
-        %{op: :constructor_call, target: target, args: args}
-
-      Regex.match?(~r/^[a-z][A-Za-z0-9_]*\s*(==|>|<)\s*[a-z][A-Za-z0-9_]*$/, body) ->
-        parse_compare_expr(body)
-
-      Regex.match?(~r/^[a-z][A-Za-z0-9_]*\s*(==|>|<)\s*[0-9]+$/, body) ->
-        parse_compare_expr(body)
-
-      Regex.match?(~r/^[a-z][A-Za-z0-9_]* \+ [0-9]+$/, body) ->
-        [var, int] =
-          Regex.run(~r/^([a-z][A-Za-z0-9_]*) \+ ([0-9]+)$/, body, capture: :all_but_first)
-
-        %{op: :add_const, var: var, value: String.to_integer(int)}
-
-      Regex.match?(~r/^-?[0-9]+$/, body) ->
-        %{op: :int_literal, value: String.to_integer(body)}
-
-      Regex.match?(~r/^[a-z][A-Za-z0-9_]* \+ [a-z][A-Za-z0-9_]*$/, body) ->
-        [left, right] =
-          Regex.run(
-            ~r/^([a-z][A-Za-z0-9_]*) \+ ([a-z][A-Za-z0-9_]*)$/,
-            body,
-            capture: :all_but_first
-          )
-
-        %{op: :add_vars, left: left, right: right}
-
-      Regex.match?(~r/^[a-z][A-Za-z0-9_]* - [0-9]+$/, body) ->
-        [var, int] =
-          Regex.run(~r/^([a-z][A-Za-z0-9_]*) - ([0-9]+)$/, body, capture: :all_but_first)
-
-        %{op: :sub_const, var: var, value: String.to_integer(int)}
-
-      Regex.match?(~r/^[a-z][A-Za-z0-9_]*$/, body) ->
-        %{op: :var, name: body}
-
-      Regex.match?(~r/^[a-z][A-Za-z0-9_]*\s+.+$/, body) ->
-        [name, args_source] =
-          Regex.run(~r/^([a-z][A-Za-z0-9_]*)\s+(.+)$/, body, capture: :all_but_first)
-
-        args =
-          split_top_level_spaces(args_source)
-          |> Enum.map(&parse_expression(nil, &1))
-
-        %{op: :call, name: name, args: args}
-
-      true ->
-        %{op: :unsupported, source: body}
-    end
+    generated_expr || %{op: :unsupported, source: body}
   end
 
   @spec maybe_generated_expr(String.t()) :: expr()
@@ -609,48 +473,6 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
   defp normalize_generated_expr(%{op: :qualified_call, target: "Cmd.none", args: []}) do
     %{op: :cmd_none}
-  end
-
-  defp normalize_generated_expr(%{
-         op: :qualified_call,
-         target: "List.foldl",
-         args: [
-           %{op: :var, name: "__add__"},
-           %{op: :int_literal, value: 0},
-           %{op: :var, name: arg}
-         ]
-       }) do
-    %{op: :list_foldl_add_zero, arg: arg}
-  end
-
-  defp normalize_generated_expr(%{
-         op: :qualified_call,
-         target: "Maybe.withDefault",
-         args: [
-           %{op: :int_literal, value: 0},
-           %{
-             op: :qualified_call,
-             target: "Maybe.map",
-             args: [add_one_fun, %{op: :var, name: arg}]
-           }
-         ]
-       }) do
-    if generated_add_one_fun?(add_one_fun) do
-      %{op: :maybe_inc, arg: arg}
-    else
-      %{
-        op: :qualified_call,
-        target: "Maybe.withDefault",
-        args: [
-          %{op: :int_literal, value: 0},
-          %{
-            op: :qualified_call,
-            target: "Maybe.map",
-            args: [normalize_generated_expr(add_one_fun), %{op: :var, name: arg}]
-          }
-        ]
-      }
-    end
   end
 
   defp normalize_generated_expr(%{op: :qualified_call, target: target, args: args}) do
@@ -750,6 +572,18 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     }
   end
 
+  defp normalize_generated_expr(%{op: :record_update, base: base, fields: fields}) do
+    %{
+      op: :record_update,
+      base: normalize_generated_expr(base),
+      fields:
+        Enum.map(fields, fn
+          %{name: name, expr: expr} -> %{name: name, expr: normalize_generated_expr(expr)}
+          field -> field
+        end)
+    }
+  end
+
   defp normalize_generated_expr(expr), do: expr
 
   @spec nested_field_access_expr([String.t()]) :: map()
@@ -758,12 +592,6 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
       %{op: :field_access, arg: arg, field: field}
     end)
   end
-
-  @spec generated_add_one_fun?(term()) :: boolean()
-  defp generated_add_one_fun?(%{op: :call, name: "__add__", args: [%{op: :int_literal, value: 1}]}),
-       do: true
-
-  defp generated_add_one_fun?(_), do: false
 
   @spec allow_generated_expr?(expr()) :: boolean()
   defp allow_generated_expr?(%{op: op})
@@ -790,13 +618,12 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
               :if,
               :case,
               :record_literal,
+              :record_update,
               :tuple_second_expr,
               :tuple_first_expr,
               :string_length_expr,
               :char_from_code_expr,
-              :cmd_none,
-              :list_foldl_add_zero,
-              :maybe_inc
+              :cmd_none
             ],
        do: true
 
@@ -860,420 +687,15 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end)
   end
 
+  defp allow_generated_expr?(%{op: :record_update, base: base, fields: fields}) do
+    allow_generated_expr?(base) and
+      Enum.all?(fields, fn
+        %{expr: expr} -> allow_generated_expr?(expr)
+        _ -> false
+      end)
+  end
+
   defp allow_generated_expr?(_), do: false
-
-  @spec parse_string_literal(String.t()) :: String.t()
-  defp parse_string_literal(body) do
-    body
-    |> String.slice(1, String.length(body) - 2)
-    |> String.replace("\\\"", "\"")
-    |> String.replace("\\\\", "\\")
-  end
-
-  @spec parse_char_literal(String.t()) :: non_neg_integer()
-  defp parse_char_literal(body) do
-    inner =
-      body
-      |> String.slice(1, String.length(body) - 2)
-      |> String.replace("\\'", "'")
-      |> String.replace("\\\\", "\\")
-
-    case String.to_charlist(inner) do
-      [code] -> code
-      _ -> 0
-    end
-  end
-
-  @spec parse_compare_expr(String.t()) :: map()
-  defp parse_compare_expr(body) do
-    [left, op, right] =
-      Regex.run(
-        ~r/^([a-z][A-Za-z0-9_]*)\s*(==|>|<)\s*([a-z][A-Za-z0-9_]*|[0-9]+)$/,
-        body,
-        capture: :all_but_first
-      )
-
-    right_expr =
-      if Regex.match?(~r/^[0-9]+$/, right) do
-        %{op: :int_literal, value: String.to_integer(right)}
-      else
-        %{op: :var, name: right}
-      end
-
-    kind =
-      case op do
-        "==" -> :eq
-        ">" -> :gt
-        "<" -> :lt
-      end
-
-    %{op: :compare, kind: kind, left: %{op: :var, name: left}, right: right_expr}
-  end
-
-  @spec parse_list_literal(String.t()) :: map()
-  defp parse_list_literal(body) do
-    inner = String.slice(body, 1, String.length(body) - 2)
-
-    items =
-      inner
-      |> split_top_level_items()
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.map(&parse_expression(nil, &1))
-
-    %{op: :list_literal, items: items}
-  end
-
-  @spec parse_record_literal(String.t()) :: map()
-  defp parse_record_literal(body) do
-    inner = String.slice(body, 1, String.length(body) - 2)
-
-    fields =
-      inner
-      |> split_top_level_items()
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.map(fn field_source ->
-        case Regex.run(~r/^([a-z][A-Za-z0-9_]*)\s*=\s*(.+)$/s, field_source,
-               capture: :all_but_first
-             ) do
-          [name, value_source] ->
-            %{name: name, expr: parse_expression(nil, String.trim(value_source))}
-
-          _ ->
-            %{name: "_invalid", expr: %{op: :unsupported, source: field_source}}
-        end
-      end)
-
-    %{op: :record_literal, fields: fields}
-  end
-
-  @spec parse_case_expression(String.t()) :: map()
-  defp parse_case_expression(body) do
-    lines =
-      body
-      |> String.split("\n")
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-
-    case lines do
-      [header | rest] ->
-        case Regex.run(
-               ~r/^case\s+([a-z][A-Za-z0-9_]*(?:\.[a-z][A-Za-z0-9_]*)*)\s+of$/,
-               header,
-               capture: :all_but_first
-             ) do
-          [subject] ->
-            %{op: :case, subject: subject, branches: parse_case_branches(rest)}
-
-          _ ->
-            %{op: :unsupported, source: body}
-        end
-
-      _ ->
-        %{op: :unsupported, source: body}
-    end
-  end
-
-  @spec parse_case_branches([String.t()]) :: [map()]
-  defp parse_case_branches(lines) do
-    lines
-    |> Enum.reduce({[], nil}, fn line, {acc, current} ->
-      case Regex.run(~r/^(.+?)\s*->\s*(.*)$/, line, capture: :all_but_first) do
-        [pattern, rhs] ->
-          flushed = flush_branch(acc, current)
-
-          expr_lines =
-            if String.trim(rhs) == "" do
-              []
-            else
-              [String.trim(rhs)]
-            end
-
-          {flushed, %{pattern: parse_pattern(String.trim(pattern)), expr_lines: expr_lines}}
-
-        _ ->
-          if current do
-            {acc, %{current | expr_lines: current.expr_lines ++ [line]}}
-          else
-            {acc, current}
-          end
-      end
-    end)
-    |> then(fn {acc, current} -> Enum.reverse(flush_branch(acc, current)) end)
-  end
-
-  @spec flush_branch([map()], map() | nil) :: [map()]
-  defp flush_branch(acc, nil), do: acc
-
-  defp flush_branch(acc, current) do
-    expr =
-      current.expr_lines
-      |> Enum.join("\n")
-      |> String.trim()
-      |> then(&parse_expression(nil, &1))
-
-    [%{pattern: current.pattern, expr: expr} | acc]
-  end
-
-  @spec parse_pattern(term()) :: pattern()
-  defp parse_pattern(pattern) when not is_binary(pattern), do: %{kind: :unknown, source: pattern}
-  defp parse_pattern("_"), do: %{kind: :wildcard}
-
-  defp parse_pattern(pattern) do
-    grouped =
-      if String.starts_with?(pattern, "(") and String.ends_with?(pattern, ")") do
-        String.slice(pattern, 1, String.length(pattern) - 2) |> String.trim()
-      else
-        nil
-      end
-
-    case split_tuple(pattern) do
-      {left, right} ->
-        %{kind: :tuple, elements: [parse_pattern(left), parse_pattern(right)]}
-
-      :not_tuple ->
-        if grouped != nil do
-          parse_pattern(grouped)
-        else
-          parse_non_tuple_pattern(pattern)
-        end
-    end
-  end
-
-  @spec parse_non_tuple_pattern(String.t()) :: pattern()
-  defp parse_non_tuple_pattern(pattern) do
-    constructor =
-      Regex.run(
-        ~r/^([A-Z][A-Za-z0-9_]*)(?:\s+([a-z_][A-Za-z0-9_]*))?$/,
-        pattern,
-        capture: :all_but_first
-      )
-
-    case constructor do
-      [name, bind] ->
-        bind_name = if bind == "_", do: nil, else: bind
-        %{kind: :constructor, name: name, bind: bind_name, arg_pattern: nil}
-
-      [name] ->
-        %{kind: :constructor, name: name, bind: nil, arg_pattern: nil}
-
-      _ ->
-        case Regex.run(~r/^([A-Z][A-Za-z0-9_]*)\s+(.+)$/, pattern, capture: :all_but_first) do
-          [name, arg_pattern] ->
-            %{
-              kind: :constructor,
-              name: name,
-              bind: nil,
-              arg_pattern: parse_pattern(String.trim(arg_pattern))
-            }
-
-          _ ->
-            parse_var_or_unknown(pattern)
-        end
-    end
-  end
-
-  @spec parse_var_or_unknown(String.t()) :: pattern()
-  defp parse_var_or_unknown(pattern) do
-    if Regex.match?(~r/^[a-z][A-Za-z0-9_]*$/, pattern) do
-      %{kind: :var, name: pattern}
-    else
-      %{kind: :unknown, source: pattern}
-    end
-  end
-
-  @spec split_tuple(term()) :: {String.t(), String.t()} | :not_tuple
-  defp split_tuple(body) do
-    if not is_binary(body) do
-      :not_tuple
-    else
-      body = String.trim(body)
-
-      if String.starts_with?(body, "(") and String.ends_with?(body, ")") do
-        inner = String.slice(body, 1, String.length(body) - 2)
-
-        case split_top_level_comma(inner) do
-          {left, right} when is_binary(left) and is_binary(right) ->
-            {String.trim(left), String.trim(right)}
-
-          _ ->
-            :not_tuple
-        end
-      else
-        :not_tuple
-      end
-    end
-  end
-
-  @spec tuple_chain_expr([expr()]) :: map()
-  defp tuple_chain_expr([left, right]), do: %{op: :tuple2, left: left, right: right}
-
-  defp tuple_chain_expr([head | rest]) do
-    %{op: :tuple2, left: head, right: tuple_chain_expr(rest)}
-  end
-
-  @spec split_top_level_comma(String.t()) :: {String.t(), String.t()} | :none
-  defp split_top_level_comma(text) do
-    chars = String.to_charlist(text)
-
-    {idx, _paren_depth, _bracket_depth, _brace_depth} =
-      Enum.reduce_while(
-        Enum.with_index(chars),
-        {nil, 0, 0, 0},
-        fn {char, i}, {_idx, paren_depth, bracket_depth, brace_depth} ->
-          cond do
-            char == ?( ->
-              {:cont, {nil, paren_depth + 1, bracket_depth, brace_depth}}
-
-            char == ?) ->
-              {:cont, {nil, max(paren_depth - 1, 0), bracket_depth, brace_depth}}
-
-            char == ?[ ->
-              {:cont, {nil, paren_depth, bracket_depth + 1, brace_depth}}
-
-            char == ?] ->
-              {:cont, {nil, paren_depth, max(bracket_depth - 1, 0), brace_depth}}
-
-            char == ?{ ->
-              {:cont, {nil, paren_depth, bracket_depth, brace_depth + 1}}
-
-            char == ?} ->
-              {:cont, {nil, paren_depth, bracket_depth, max(brace_depth - 1, 0)}}
-
-            char == ?, and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0 ->
-              {:halt, {i, paren_depth, bracket_depth, brace_depth}}
-
-            true ->
-              {:cont, {nil, paren_depth, bracket_depth, brace_depth}}
-          end
-        end
-      )
-
-    if idx == nil do
-      :none
-    else
-      left = String.slice(text, 0, idx)
-      right = String.slice(text, idx + 1, String.length(text) - idx - 1)
-      {left, right}
-    end
-  end
-
-  @spec split_top_level_items(String.t()) :: [String.t()]
-  defp split_top_level_items(text) do
-    chars = String.to_charlist(text)
-
-    {parts, current, _paren_depth, _bracket_depth, _brace_depth} =
-      Enum.reduce(chars, {[], [], 0, 0, 0}, fn char,
-                                               {parts, current, paren_depth, bracket_depth,
-                                                brace_depth} ->
-        cond do
-          char == ?( ->
-            {parts, [char | current], paren_depth + 1, bracket_depth, brace_depth}
-
-          char == ?) ->
-            {parts, [char | current], max(paren_depth - 1, 0), bracket_depth, brace_depth}
-
-          char == ?[ ->
-            {parts, [char | current], paren_depth, bracket_depth + 1, brace_depth}
-
-          char == ?] ->
-            {parts, [char | current], paren_depth, max(bracket_depth - 1, 0), brace_depth}
-
-          char == ?{ ->
-            {parts, [char | current], paren_depth, bracket_depth, brace_depth + 1}
-
-          char == ?} ->
-            {parts, [char | current], paren_depth, bracket_depth, max(brace_depth - 1, 0)}
-
-          char == ?, and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0 ->
-            part = current |> Enum.reverse() |> to_string() |> String.trim()
-            {parts ++ [part], [], paren_depth, bracket_depth, brace_depth}
-
-          true ->
-            {parts, [char | current], paren_depth, bracket_depth, brace_depth}
-        end
-      end)
-
-    last = current |> Enum.reverse() |> to_string() |> String.trim()
-    all = if last == "", do: parts, else: parts ++ [last]
-    Enum.reject(all, &(&1 == ""))
-  end
-
-  @spec split_top_level_spaces(String.t()) :: [String.t()]
-  defp split_top_level_spaces(text) do
-    chars = String.to_charlist(text)
-
-    {parts, current, _paren_depth, _bracket_depth, _brace_depth} =
-      Enum.reduce(chars, {[], [], 0, 0, 0}, fn char,
-                                               {parts, current, paren_depth, bracket_depth,
-                                                brace_depth} ->
-        cond do
-          char == ?( ->
-            {parts, [char | current], paren_depth + 1, bracket_depth, brace_depth}
-
-          char == ?) ->
-            {parts, [char | current], max(paren_depth - 1, 0), bracket_depth, brace_depth}
-
-          char == ?[ ->
-            {parts, [char | current], paren_depth, bracket_depth + 1, brace_depth}
-
-          char == ?] ->
-            {parts, [char | current], paren_depth, max(bracket_depth - 1, 0), brace_depth}
-
-          char == ?{ ->
-            {parts, [char | current], paren_depth, bracket_depth, brace_depth + 1}
-
-          char == ?} ->
-            {parts, [char | current], paren_depth, bracket_depth, max(brace_depth - 1, 0)}
-
-          (char == ?\s or char == ?\n or char == ?\t or char == ?\r) and paren_depth == 0 and
-            bracket_depth == 0 and brace_depth == 0 ->
-            token = current |> Enum.reverse() |> to_string() |> String.trim()
-
-            if token == "" do
-              {parts, [], paren_depth, bracket_depth, brace_depth}
-            else
-              {parts ++ [token], [], paren_depth, bracket_depth, brace_depth}
-            end
-
-          true ->
-            {parts, [char | current], paren_depth, bracket_depth, brace_depth}
-        end
-      end)
-
-    last = current |> Enum.reverse() |> to_string() |> String.trim()
-    all = if last == "", do: parts, else: parts ++ [last]
-    Enum.reject(all, &(&1 == ""))
-  end
-
-  @spec has_outer_parens?(String.t()) :: boolean()
-  defp has_outer_parens?(text) when is_binary(text) do
-    if String.length(text) < 2 or not String.starts_with?(text, "(") or
-         not String.ends_with?(text, ")") do
-      false
-    else
-      chars = String.to_charlist(text)
-
-      {_depth, enclosed} =
-        Enum.reduce(Enum.with_index(chars), {0, true}, fn {char, idx}, {depth, enclosed} ->
-          cond do
-            char == ?( ->
-              {depth + 1, enclosed}
-
-            char == ?) ->
-              next_depth = depth - 1
-              closes_early = next_depth == 0 and idx < length(chars) - 1
-              {next_depth, enclosed and not closes_early}
-
-            true ->
-              {depth, enclosed}
-          end
-        end)
-
-      enclosed
-    end
-  end
 
   @spec parse_union_line(map(), [map()], map() | nil) :: {[map()], map() | nil}
   defp parse_union_line(line_info, acc, current) do

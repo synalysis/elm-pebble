@@ -8,6 +8,7 @@ defmodule Ide.Projects do
   alias Ide.Projects.FileStore
   alias Ide.Projects.Project
   alias Ide.AppStore
+  alias Ide.Debugger
   alias Ide.Resources.ResourceStore
   alias Ide.ProjectBundle
   alias Ide.ProjectImport
@@ -200,6 +201,7 @@ defmodule Ide.Projects do
 
     case Repo.delete(project) do
       {:ok, deleted} ->
+        :ok = Debugger.forget_project(project.slug)
         _ = File.rm_rf(workspace_path)
         {:ok, deleted}
 

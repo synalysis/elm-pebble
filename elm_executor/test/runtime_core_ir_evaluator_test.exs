@@ -18,6 +18,34 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
     assert {:ok, 12} = CoreIREvaluator.evaluate(expr)
   end
 
+  test "evaluates all generated operator forms" do
+    env = %{"x" => 10, "y" => 3, "z" => 5}
+
+    cases = [
+      {%{"op" => :add_const, "var" => "x", "value" => 2}, 12},
+      {%{"op" => :sub_const, "var" => "x", "value" => 2}, 8},
+      {%{"op" => :add_vars, "left" => "x", "right" => "y"}, 13},
+      {call("__add__", [var("x"), var("y")]), 13},
+      {call("__sub__", [var("x"), var("y")]), 7},
+      {call("__mul__", [var("x"), var("y")]), 30},
+      {call("__idiv__", [var("x"), var("y")]), 3},
+      {call("__fdiv__", [var("x"), var("y")]), 10 / 3},
+      {call("__pow__", [var("y"), int(3)]), 27},
+      {call("modBy", [var("y"), var("x")]), 1},
+      {call("remainderBy", [var("y"), var("x")]), 1},
+      {compare(:eq, var("x"), int(10)), true},
+      {compare(:neq, var("x"), var("y")), true},
+      {compare(:lt, var("y"), var("x")), true},
+      {compare(:lte, var("y"), var("y")), true},
+      {compare(:gt, var("x"), var("y")), true},
+      {compare(:gte, var("x"), var("z")), true}
+    ]
+
+    for {expr, expected} <- cases do
+      assert {:ok, ^expected} = CoreIREvaluator.evaluate(expr, env)
+    end
+  end
+
   test "supports case pattern match with constructor payload" do
     expr = %{
       "op" => :case,
@@ -188,6 +216,58 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
 
     assert length(children) == 5
     assert Enum.at(children, 4)["value"] == 240
+  end
+
+  test "Pebble.Ui group preserves context style settings" do
+    expr = %{
+      "op" => :qualified_call,
+      "target" => "Pebble.Ui.group",
+      "args" => [
+        %{
+          "op" => :qualified_call,
+          "target" => "Pebble.Ui.context",
+          "args" => [
+            %{
+              "op" => :list_literal,
+              "items" => [
+                %{
+                  "op" => :qualified_call,
+                  "target" => "Pebble.Ui.textColor",
+                  "args" => [%{"op" => :int_literal, "value" => 255}]
+                }
+              ]
+            },
+            %{
+              "op" => :list_literal,
+              "items" => [
+                %{
+                  "op" => :qualified_call,
+                  "target" => "Pebble.Ui.text",
+                  "args" => [
+                    %{"op" => :int_literal, "value" => 1},
+                    %{
+                      "op" => :record_literal,
+                      "fields" => [
+                        %{"name" => "x", "expr" => %{"op" => :int_literal, "value" => 0}},
+                        %{"name" => "y", "expr" => %{"op" => :int_literal, "value" => 52}},
+                        %{"name" => "w", "expr" => %{"op" => :int_literal, "value" => 180}},
+                        %{"name" => "h", "expr" => %{"op" => :int_literal, "value" => 56}}
+                      ]
+                    },
+                    %{"op" => :string_literal, "value" => "--:--"}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, %{"type" => "group", "style" => %{"text_color" => 255}} = group} =
+             CoreIREvaluator.evaluate(expr, %{}, %{})
+
+    assert [%{"type" => "text"}] = group["children"]
   end
 
   test "Pebble.Ui line accepts point records and Pebble.Ui.Color constants" do
@@ -387,4 +467,222 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
              if Map.has_key?(node, "value"), do: node["value"], else: node["label"]
            end) == [1, 0, 42, 144, 56, "08:41"]
   end
+
+  test "evaluates elm/http get descriptors and decodes json callbacks" do
+    decoder = {:json_decoder, {:field, "temperature", {:json_decoder, :float}}}
+
+    expr = %{
+      "op" => :qualified_call,
+      "target" => "Http.get",
+      "args" => [
+        %{
+          "op" => :record_literal,
+          "fields" => [
+            %{
+              "name" => "url",
+              "expr" => %{"op" => :string_literal, "value" => "https://example.test/weather"}
+            },
+            %{
+              "name" => "expect",
+              "expr" => %{
+                "op" => :qualified_call,
+                "target" => "Http.expectJson",
+                "args" => [%{"op" => :var, "name" => "WeatherReceived"}, decoder]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, command} = CoreIREvaluator.evaluate(expr)
+    assert command["kind"] == "http"
+    assert command["method"] == "GET"
+    assert command["url"] == "https://example.test/weather"
+    assert command["expect"]["kind"] == "json"
+
+    response = %{"status" => 200, "body" => ~s({"temperature":21.5})}
+
+    assert {:ok,
+            %{
+              "ctor" => "WeatherReceived",
+              "args" => [%{"ctor" => "Ok", "args" => [21.5]}]
+            }} = CoreIREvaluator.decode_http_response(command, response)
+  end
+
+  test "evaluates zero arity decoder values and tagged http callbacks" do
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Main",
+          "unions" => %{
+            "Msg" => %{
+              "tags" => %{"WeatherReceived" => 2}
+            }
+          },
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "update",
+              "args" => ["msg", "model"],
+              "expr" => %{"op" => :literal, "value" => nil}
+            },
+            %{
+              "kind" => "type_alias",
+              "name" => "WeatherReport",
+              "expr" => %{"op" => :record_alias, "fields" => ["temperature", "condition"]}
+            },
+            %{
+              "kind" => "function",
+              "name" => "weatherReportDecoder",
+              "args" => [],
+              "expr" => %{
+                "op" => :qualified_call,
+                "target" => "Json.Decode.map2",
+                "args" => [
+                  %{"op" => :constructor_call, "target" => "WeatherReport", "args" => []},
+                  %{
+                    "op" => :qualified_call,
+                    "target" => "Json.Decode.field",
+                    "args" => [
+                      %{"op" => :string_literal, "value" => "temperature_2m"},
+                      %{"op" => :qualified_call, "target" => "Json.Decode.float", "args" => []}
+                    ]
+                  },
+                  %{
+                    "op" => :qualified_call,
+                    "target" => "Json.Decode.field",
+                    "args" => [
+                      %{"op" => :string_literal, "value" => "weather_code"},
+                      %{"op" => :qualified_call, "target" => "Json.Decode.int", "args" => []}
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    context = %{
+      module: "Main",
+      source_module: "Main",
+      functions: CoreIREvaluator.index_functions(core_ir),
+      record_aliases: CoreIREvaluator.index_record_aliases(core_ir),
+      constructor_tags: CoreIREvaluator.index_constructor_tags(core_ir)
+    }
+
+    expr = %{
+      "op" => :qualified_call,
+      "target" => "Http.get",
+      "args" => [
+        %{
+          "op" => :record_literal,
+          "fields" => [
+            %{
+              "name" => "url",
+              "expr" => %{"op" => :string_literal, "value" => "https://example.test"}
+            },
+            %{
+              "name" => "expect",
+              "expr" => %{
+                "op" => :qualified_call,
+                "target" => "Http.expectJson",
+                "args" => [
+                  %{"op" => :int_literal, "value" => 2},
+                  %{"op" => :var, "name" => "weatherReportDecoder"}
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, command} = CoreIREvaluator.evaluate(expr, %{}, context)
+    assert {:json_decoder, _} = command["expect"]["decoder"]
+
+    response = %{"status" => 200, "body" => ~s({"temperature_2m":19.2,"weather_code":0})}
+
+    assert {:ok,
+            %{
+              "ctor" => "WeatherReceived",
+              "args" => [
+                %{
+                  "ctor" => "Ok",
+                  "args" => [%{"temperature" => 19.2, "condition" => 0}]
+                }
+              ]
+            }} = CoreIREvaluator.decode_http_response(command, response, context)
+  end
+
+  test "evaluates elm/http request descriptors with headers and string bodies" do
+    expr = %{
+      "op" => :qualified_call,
+      "target" => "Http.request",
+      "args" => [
+        %{
+          "op" => :record_literal,
+          "fields" => [
+            %{"name" => "method", "expr" => %{"op" => :string_literal, "value" => "PUT"}},
+            %{
+              "name" => "url",
+              "expr" => %{"op" => :string_literal, "value" => "https://example.test/items/1"}
+            },
+            %{
+              "name" => "headers",
+              "expr" => %{
+                "op" => :list_literal,
+                "items" => [
+                  %{
+                    "op" => :qualified_call,
+                    "target" => "Http.header",
+                    "args" => [
+                      %{"op" => :string_literal, "value" => "x-test"},
+                      %{"op" => :string_literal, "value" => "yes"}
+                    ]
+                  }
+                ]
+              }
+            },
+            %{
+              "name" => "body",
+              "expr" => %{
+                "op" => :qualified_call,
+                "target" => "Http.stringBody",
+                "args" => [
+                  %{"op" => :string_literal, "value" => "text/plain"},
+                  %{"op" => :string_literal, "value" => "payload"}
+                ]
+              }
+            },
+            %{
+              "name" => "expect",
+              "expr" => %{
+                "op" => :qualified_call,
+                "target" => "Http.expectString",
+                "args" => [%{"op" => :var, "name" => "Saved"}]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, command} = CoreIREvaluator.evaluate(expr)
+    assert command["method"] == "PUT"
+    assert command["headers"] == [%{"name" => "x-test", "value" => "yes"}]
+    assert command["body"]["kind"] == "string"
+    assert command["body"]["content_type"] == "text/plain"
+    assert command["body"]["body"] == "payload"
+  end
+
+  defp call(name, args), do: %{"op" => :call, "name" => name, "args" => args}
+
+  defp compare(kind, left, right),
+    do: %{"op" => :compare, "kind" => kind, "left" => left, "right" => right}
+
+  defp int(value), do: %{"op" => :int_literal, "value" => value}
+  defp var(name), do: %{"op" => :var, "name" => name}
 end

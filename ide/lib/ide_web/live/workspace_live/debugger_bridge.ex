@@ -70,6 +70,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
             Ide.Debugger.ingest_elmc_compile(slug, %{
               status: result.status,
               compiled_path: result.compiled_path,
+              source_root: compile_result_source_root(socket, result),
               revision: result.revision,
               cached: result.cached? == true,
               error_count: counts.error_count,
@@ -217,6 +218,41 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     |> Map.get(:diagnostics, Map.get(result, "diagnostics"))
     |> Diagnostics.normalize_list()
   end
+
+  @spec compile_result_source_root(Phoenix.LiveView.Socket.t(), map()) :: String.t() | nil
+  defp compile_result_source_root(socket, result) when is_map(result) do
+    explicit = Map.get(result, :source_root) || Map.get(result, "source_root")
+
+    if is_binary(explicit) and explicit != "" do
+      explicit
+    else
+      infer_source_root_from_compiled_path(socket, Map.get(result, :compiled_path))
+    end
+  end
+
+  defp compile_result_source_root(_socket, _result), do: nil
+
+  @spec infer_source_root_from_compiled_path(Phoenix.LiveView.Socket.t(), term()) ::
+          String.t() | nil
+  defp infer_source_root_from_compiled_path(socket, compiled_path)
+       when is_binary(compiled_path) do
+    with %{source_roots: source_roots} = project <- socket.assigns[:project],
+         workspace when is_binary(workspace) <- Projects.project_workspace_path(project) do
+      compiled = Path.expand(compiled_path)
+
+      source_roots
+      |> List.wrap()
+      |> Enum.find(fn source_root ->
+        root_path = Path.expand(to_string(source_root), workspace)
+        relative = Path.relative_to(compiled, root_path)
+        relative != compiled and not String.starts_with?(relative, "..")
+      end)
+    else
+      _ -> nil
+    end
+  end
+
+  defp infer_source_root_from_compiled_path(_socket, _compiled_path), do: nil
 
   @spec debugger_session_active?(term()) :: term()
   defp debugger_session_active?(socket) do

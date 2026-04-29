@@ -118,6 +118,48 @@ defmodule Elmc.Backend.Worker do
       return elmc_retain(pair->second);
     }
 
+    static int elmc_cmd_is_none(ElmcValue *value) {
+      return !value || ((value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) && elmc_as_int(value) == 0);
+    }
+
+    static ElmcValue *elmc_cmd_singleton(ElmcValue *cmd) {
+      ElmcValue *empty = elmc_list_nil();
+      ElmcValue *list = elmc_list_cons(cmd, empty);
+      elmc_release(empty);
+      return list;
+    }
+
+    static ElmcValue *elmc_cmd_queue_append(ElmcValue *existing, ElmcValue *next) {
+      if (elmc_cmd_is_none(existing) && elmc_cmd_is_none(next)) return elmc_new_int(0);
+      if (elmc_cmd_is_none(existing)) return elmc_retain(next);
+      if (elmc_cmd_is_none(next)) return elmc_retain(existing);
+
+      if (existing->tag == ELMC_TAG_LIST && next->tag == ELMC_TAG_LIST) {
+        return elmc_list_append(existing, next);
+      }
+
+      if (existing->tag == ELMC_TAG_LIST) {
+        ElmcValue *next_list = elmc_cmd_singleton(next);
+        ElmcValue *merged = elmc_list_append(existing, next_list);
+        elmc_release(next_list);
+        return merged;
+      }
+
+      ElmcValue *existing_list = elmc_cmd_singleton(existing);
+
+      if (next->tag == ELMC_TAG_LIST) {
+        ElmcValue *merged = elmc_list_append(existing_list, next);
+        elmc_release(existing_list);
+        return merged;
+      }
+
+      ElmcValue *next_list = elmc_cmd_singleton(next);
+      ElmcValue *merged = elmc_list_append(existing_list, next_list);
+      elmc_release(existing_list);
+      elmc_release(next_list);
+      return merged;
+    }
+
     static int64_t compute_subscriptions(ElmcWorkerState *state) {
       if (!state || !state->model) return 0;
     #{subscriptions_call}
@@ -152,10 +194,13 @@ defmodule Elmc.Backend.Worker do
       }
       elmc_release(state->model);
       state->model = next_model;
+      ElmcValue *next_cmd = extract_cmd(result);
+      ElmcValue *merged_cmd = elmc_cmd_queue_append(state->pending_cmd, next_cmd);
       if (state->pending_cmd) {
         elmc_release(state->pending_cmd);
       }
-      state->pending_cmd = extract_cmd(result);
+      elmc_release(next_cmd);
+      state->pending_cmd = merged_cmd;
       elmc_release(result);
       state->subscriptions = compute_subscriptions(state);
       return 0;
@@ -168,7 +213,46 @@ defmodule Elmc.Backend.Worker do
 
     ElmcValue *elmc_worker_take_cmd(ElmcWorkerState *state) {
       if (!state) return NULL;
-      ElmcValue *cmd = state->pending_cmd ? state->pending_cmd : elmc_new_int(0);
+      if (!state->pending_cmd) {
+        return elmc_new_int(0);
+      }
+
+      while (state->pending_cmd && state->pending_cmd->tag == ELMC_TAG_LIST) {
+        if (state->pending_cmd->payload == NULL) {
+          elmc_release(state->pending_cmd);
+          state->pending_cmd = elmc_new_int(0);
+          return elmc_new_int(0);
+        }
+
+        ElmcCons *node = (ElmcCons *)state->pending_cmd->payload;
+        ElmcValue *head = node->head ? elmc_retain(node->head) : elmc_new_int(0);
+        ElmcValue *next_pending = node->tail ? elmc_retain(node->tail) : elmc_new_int(0);
+        elmc_release(state->pending_cmd);
+        state->pending_cmd = next_pending;
+
+        if (head->tag == ELMC_TAG_LIST) {
+          ElmcValue *merged_pending = elmc_cmd_queue_append(head, state->pending_cmd);
+          elmc_release(state->pending_cmd);
+          state->pending_cmd = merged_pending;
+          elmc_release(head);
+          continue;
+        }
+
+        if (elmc_cmd_is_none(head)) {
+          elmc_release(head);
+          continue;
+        }
+
+        return head;
+      }
+
+      if (elmc_cmd_is_none(state->pending_cmd)) {
+        elmc_release(state->pending_cmd);
+        state->pending_cmd = elmc_new_int(0);
+        return elmc_new_int(0);
+      }
+
+      ElmcValue *cmd = state->pending_cmd;
       state->pending_cmd = elmc_new_int(0);
       return cmd;
     }

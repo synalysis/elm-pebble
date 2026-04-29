@@ -5,6 +5,29 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
 
   alias Ide.Projects
 
+  test "emulator pane remembers selected watch model in project settings", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceEmulatorSettings",
+               "slug" => "workspace-emulator-settings",
+               "target_type" => "app"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
+
+    view
+    |> form("form[phx-change='set-emulator-target']", %{
+      "emulator" => %{"target" => "emery"}
+    })
+    |> render_change()
+
+    updated = Projects.get_project_by_slug(project.slug)
+    assert updated.debugger_settings["emulator_target"] == "emery"
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
+    assert has_element?(view, "select[name='emulator[target]'] option[selected][value='emery']")
+  end
+
   test "project settings pane saves release metadata and github config", %{conn: conn} do
     assert {:ok, project} =
              Projects.create_project(%{

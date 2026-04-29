@@ -192,14 +192,40 @@ Hooks.PreserveRenderedDetails = {
   mounted() {
     this.openByPath = {}
     this.boundDetails = new WeakSet()
+    this.hoveredPath = null
+    this.hoveredScope = null
     this.onToggle = (event) => {
       const details = event.currentTarget
       const path = details && details.dataset && details.dataset.renderedNodePath
       if (!path) return
       this.openByPath[path] = details.open
     }
+    this.onMouseOver = (event) => {
+      const target = event.target.closest("[data-rendered-node-hover-path]")
+      if (!target || !this.el.contains(target)) return
+
+      const path = target.dataset.renderedNodeHoverPath
+      const scope = target.dataset.renderedNodeHoverScope
+      if (!path || !scope) return
+      if (path === this.hoveredPath && scope === this.hoveredScope) return
+
+      this.hoveredPath = path
+      this.hoveredScope = scope
+      this.pushEvent("debugger-hover-rendered-node", {path, scope})
+    }
+    this.onMouseOut = (event) => {
+      const target = event.target.closest("[data-rendered-node-hover-path]")
+      if (!target || !this.el.contains(target)) return
+      if (target.contains(event.relatedTarget)) return
+
+      this.hoveredPath = null
+      this.hoveredScope = null
+      this.pushEvent("debugger-clear-rendered-node-hover", {})
+    }
 
     this.syncDetails()
+    this.el.addEventListener("mouseover", this.onMouseOver)
+    this.el.addEventListener("mouseout", this.onMouseOut)
   },
 
   updated() {
@@ -210,6 +236,8 @@ Hooks.PreserveRenderedDetails = {
     this.el.querySelectorAll("details[data-rendered-node-path]").forEach(details => {
       details.removeEventListener("toggle", this.onToggle)
     })
+    this.el.removeEventListener("mouseover", this.onMouseOver)
+    this.el.removeEventListener("mouseout", this.onMouseOut)
   },
 
   syncDetails() {
