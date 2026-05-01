@@ -287,5 +287,9 @@ defmodule Ide.PackagesTest do
     assert companion_core
     refute "Pebble.Companion.AppMessage" in companion_core.modules
     assert "Pebble.Companion.Command" in companion_core.modules
+
+    companion_preferences = Enum.find(rows, &(&1.package == "elm-pebble/companion-preferences"))
+    assert companion_preferences
+    assert "Pebble.Companion.Preferences" in companion_preferences.modules
   end
 end

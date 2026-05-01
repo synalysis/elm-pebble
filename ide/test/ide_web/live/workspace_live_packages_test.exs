@@ -312,6 +312,131 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     refute html =~ "Just %{"
   end
 
+  test "debugger renders companion configuration under companion model", %{conn: conn} do
+    slug = "workspace-debugger-companion-config-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceDebuggerCompanionConfig",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "watchface-tutorial-complete"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/debugger")
+    render_click(view, "debugger-start")
+
+    assert {:ok, state} = Debugger.snapshot(project.slug, event_limit: 20)
+
+    assert get_in(state.companion, [:model, "runtime_model", "configuration", "title"]) ==
+             "Tutorial Watchface"
+
+    html = render(view)
+
+    assert html =~ ~s(data-testid="debugger-companion-configuration")
+    assert html =~ "Reset"
+    refute html =~ "Tutorial Watchface"
+    assert html =~ "Background"
+    assert html =~ "Text"
+    assert html =~ "Show date"
+    assert html =~ "backgroundColor"
+    assert html =~ "showDate"
+    refute html =~ "configuration {"
+
+    view
+    |> form("form[phx-submit='debugger-save-configuration']", %{
+      "configuration" => %{
+        "backgroundColor" => "blue",
+        "textColor" => "yellow",
+        "showDate" => "false"
+      }
+    })
+    |> render_submit()
+
+    view
+    |> form("form[phx-submit='debugger-save-configuration']", %{
+      "configuration" => %{
+        "backgroundColor" => "blue",
+        "textColor" => "yellow",
+        "showDate" => "true"
+      }
+    })
+    |> render_submit()
+
+    assert {:ok, saved_state} = Debugger.snapshot(project.slug, event_limit: 20)
+
+    watch_runtime_model = get_in(saved_state.watch, [:model, "runtime_model"]) || %{}
+
+    assert watch_runtime_model["showDate"] == %{
+             "ctor" => "Just",
+             "args" => [true]
+           }
+
+    assert get_in(watch_runtime_model, ["backgroundColor", "ctor"]) == "Just"
+    assert get_in(watch_runtime_model, ["textColor", "ctor"]) == "Just"
+    assert watch_runtime_model["isRound"] == false
+    refute Map.has_key?(watch_runtime_model, "protocol_message_count")
+
+    assert get_in(saved_state.watch, [:view_tree, "type"]) == "windowStack"
+    view_tree_json = Jason.encode!(saved_state.watch.view_tree)
+    assert view_tree_json =~ ~s("text":"0C Clear")
+    assert view_tree_json =~ ~s("text":"Thu Apr 30")
+    assert view_tree_json =~ ~s("text_color":248)
+
+    runtime_output = get_in(saved_state.watch, [:model, "runtime_view_output"]) || []
+    assert runtime_output != []
+    runtime_output_json = Jason.encode!(runtime_output)
+    assert runtime_output_json =~ ~s("text":"0C Clear")
+    assert runtime_output_json =~ ~s("color":248,"kind":"text_color")
+
+    saved_html = render(view)
+    assert get_in(saved_state.companion, [:model, "configuration", "values", "backgroundColor"]) ==
+             "blue"
+
+    assert get_in(saved_state.companion, [:model, "configuration", "values", "textColor"]) ==
+             "yellow"
+
+    assert get_in(saved_state.companion, [:model, "configuration", "values", "showDate"]) == true
+    assert saved_html =~ ~r/<option(?=[^>]*selected)(?=[^>]*value="blue")/
+    assert saved_html =~ ~r/<option(?=[^>]*selected)(?=[^>]*value="yellow")/
+    assert saved_html =~ ~r/<input(?=[^>]*checked)(?=[^>]*name="configuration\[showDate\]")/
+    refute saved_html =~ "Unresolved primitives"
+    refute saved_html =~ "toUiNode"
+
+    render_click(view, "debugger-start")
+    assert {:ok, restarted_state} = Debugger.snapshot(project.slug, event_limit: 20)
+
+    assert get_in(restarted_state.companion, [:model, "configuration", "values", "backgroundColor"]) ==
+             "blue"
+
+    render_click(view, "debugger-reset-configuration")
+
+    assert {:ok, reset_state} = Debugger.snapshot(project.slug, event_limit: 20)
+    refute get_in(reset_state.companion, [:model, "configuration", "values", "backgroundColor"])
+
+    messages = Enum.map(saved_state.debugger_timeline, & &1.message)
+    assert Enum.any?(messages, &String.contains?(&1, "SetShowDate True"))
+
+    bridge_seq =
+      saved_state.debugger_timeline
+      |> Enum.find(&(&1.message == "FromBridge"))
+      |> Map.fetch!(:seq)
+
+    assert Enum.any?(saved_state.debugger_timeline, fn row ->
+             row.seq < bridge_seq and String.contains?(row.message, "ProvideTemperature")
+           end)
+
+    assert Enum.any?(saved_state.debugger_timeline, fn row ->
+             row.seq < bridge_seq and String.contains?(row.message, "ProvideCondition")
+           end)
+
+    refute Enum.any?(saved_state.debugger_timeline, fn row ->
+             row.seq > bridge_seq and
+               (String.contains?(row.message, "ProvideTemperature") or
+                  String.contains?(row.message, "ProvideCondition"))
+           end)
+  end
+
   test "debugger start loads watch main when protocol tab is active", %{conn: conn} do
     previous_http_executor = Application.get_env(:ide, Ide.Debugger.HttpExecutor)
 

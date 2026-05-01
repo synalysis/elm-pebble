@@ -407,6 +407,17 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           {:ok, {left, right}}
         end
 
+      :tuple ->
+        elements = expr["elements"] || expr[:elements] || []
+
+        with true <- is_list(elements),
+             {:ok, values} <-
+               elements |> Enum.map(&maybe_evaluate(&1, env, context, stack)) |> collect_ok() do
+          {:ok, List.to_tuple(values)}
+        else
+          _ -> {:error, {:unsupported_tuple, expr}}
+        end
+
       :tuple_first_expr ->
         with {:ok, value} <- maybe_evaluate(expr["arg"] || expr[:arg], env, context, stack) do
           {:ok, tuple_first(value)}
@@ -3203,7 +3214,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
       :literal ->
         expected = pattern["value"] || pattern[:value]
-        if expected == value, do: {:ok, %{}}, else: :nomatch
+        if literal_pattern_match?(expected, value), do: {:ok, %{}}, else: :nomatch
 
       :int ->
         expected = pattern["value"] || pattern[:value]
@@ -3335,6 +3346,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp normalize_pattern_kind("tuple"), do: :tuple
   defp normalize_pattern_kind("alias"), do: :alias
   defp normalize_pattern_kind(kind), do: kind
+
+  @spec literal_pattern_match?(term(), term()) :: boolean()
+  defp literal_pattern_match?("True", true), do: true
+  defp literal_pattern_match?("False", false), do: true
+  defp literal_pattern_match?(expected, value), do: expected == value
 
   @spec match_constructor_by_name(String.t(), term(), term(), term(), term()) :: term()
   defp match_constructor_by_name(name, arg_pattern, bind_name, pattern, value)

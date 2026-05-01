@@ -590,6 +590,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert text.x == 0
     assert text.w == 180
     assert text.h == 56
+    assert text.font_size == 56
     assert text.text_align == "center"
   end
 

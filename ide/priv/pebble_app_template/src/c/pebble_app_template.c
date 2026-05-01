@@ -36,12 +36,37 @@ static bool send_companion_request(int request_tag, int request_value);
 static void flush_pending_companion_request(void);
 #endif
 
+static GFont system_font_for_height(int64_t requested_height) {
+  if (requested_height <= 22) return fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  if (requested_height <= 28) return fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  if (requested_height <= 36) return fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
+  return s_font;
+}
+
 static GFont font_from_id(int64_t font_id, bool *should_unload) {
   uint32_t resource_id = elm_pebble_font_resource_id(font_id);
-  if (resource_id == 0) {
+  if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
     if (should_unload) *should_unload = false;
     return s_font;
   }
+  if (should_unload) *should_unload = true;
+  return fonts_load_custom_font(resource_get_handle(resource_id));
+}
+
+static GFont font_from_id_for_height(int64_t font_id, int64_t requested_height, bool *should_unload) {
+  uint32_t resource_id = elm_pebble_font_resource_id(font_id);
+  int64_t resource_height = elm_pebble_font_resource_height(font_id);
+
+  if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
+    if (should_unload) *should_unload = false;
+    return system_font_for_height(requested_height);
+  }
+
+  if (requested_height > 0 && resource_height > 0 && resource_height > requested_height + 4) {
+    if (should_unload) *should_unload = false;
+    return system_font_for_height(requested_height);
+  }
+
   if (should_unload) *should_unload = true;
   return fonts_load_custom_font(resource_get_handle(resource_id));
 }
@@ -623,7 +648,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
       }
       case ELMC_PEBBLE_DRAW_TEXT: {
         bool should_unload = false;
-        GFont font = font_from_id(cmd.p0, &should_unload);
+        GFont font = font_from_id_for_height(cmd.p0, cmd.p4, &should_unload);
         graphics_draw_text(ctx, cmd.text, font,
                            GRect((int16_t)cmd.p1, (int16_t)cmd.p2, (int16_t)cmd.p3, (int16_t)cmd.p4),
                            GTextOverflowModeWordWrap,
@@ -634,7 +659,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
       }
       case ELMC_PEBBLE_DRAW_BITMAP_IN_RECT: {
         uint32_t resource_id = elm_pebble_bitmap_resource_id(cmd.p0);
-        if (resource_id == 0) {
+        if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
           break;
         }
         GBitmap *bitmap = gbitmap_create_with_resource(resource_id);

@@ -8,6 +8,8 @@ defmodule Ide.Debugger do
   alias Ide.Debugger.HttpExecutor
   alias Ide.Debugger.RuntimeExecutor
   alias Ide.Debugger.RuntimeFingerprintDrift
+  alias Ide.PebblePreferences
+  alias Ide.Projects
   alias Ide.WatchModels
 
   @dialyzer :no_match
@@ -95,6 +97,7 @@ defmodule Ide.Debugger do
           debugger_seq: 0,
           seq: 0
       }
+      |> attach_companion_configuration(project_slug)
       |> apply_launch_context_to_surfaces(launch_reason)
       |> append_event("debugger.start", %{
         launch_reason: launch_reason,
@@ -116,17 +119,19 @@ defmodule Ide.Debugger do
 
       launch_context = launch_context_for(watch_profile_id, launch_reason)
 
-      base = %{
-        state
-        | revision: nil,
-          watch_profile_id: watch_profile_id,
-          launch_context: launch_context,
-          watch: default_watch_runtime(launch_context),
-          companion: default_companion_runtime(),
-          phone: default_phone_runtime(),
-          debugger_timeline: [],
-          debugger_seq: 0
-      }
+      base =
+        %{
+          state
+          | revision: nil,
+            watch_profile_id: watch_profile_id,
+            launch_context: launch_context,
+            watch: default_watch_runtime(launch_context),
+            companion: default_companion_runtime(),
+            phone: default_phone_runtime(),
+            debugger_timeline: [],
+            debugger_seq: 0
+        }
+        |> attach_companion_configuration(project_slug)
 
       append_event(base, "debugger.reset", %{})
     end)
@@ -314,6 +319,9 @@ defmodule Ide.Debugger do
     view_tree =
       Map.get(snapshot_runtime, :view_tree) || Map.get(snapshot_runtime, "view_tree") || %{}
 
+    latest_view_tree =
+      Map.get(latest_runtime, :view_tree) || Map.get(latest_runtime, "view_tree") || %{}
+
     if is_map(introspect) and artifacts != %{} do
       request =
         %{
@@ -333,14 +341,25 @@ defmodule Ide.Debugger do
             |> Map.get(:model_patch, %{})
             |> then(fn patch -> if is_map(patch), do: patch, else: %{} end)
 
+          runtime_view_output =
+            preferred_runtime_view_output(
+              Map.get(payload, :view_output),
+              Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output)
+            )
+
           next_model =
             model
             |> Map.put("elm_executor_mode", "runtime_executed")
             |> Map.merge(model_patch)
-            |> put_runtime_view_output(Map.get(payload, :view_output))
-            |> put_runtime_view_output(Map.get(payload, :view_output))
+            |> put_runtime_view_output(runtime_view_output)
 
-          runtime_view_tree = Map.get(payload, :view_tree)
+          runtime_view_tree =
+            choose_runtime_preview_view_tree(
+              Map.get(payload, :view_tree),
+              latest_view_tree,
+              view_tree,
+              runtime_view_output
+            )
 
           snapshot_runtime
           |> Map.put(:model, next_model)
@@ -365,7 +384,10 @@ defmodule Ide.Debugger do
     source_root = normalize_source_root(attrs)
 
     update(project_slug, fn state ->
-      apply_hot_reload(ensure_phone_state(state), rel_path, source, reason, source_root)
+      state
+      |> ensure_phone_state()
+      |> apply_hot_reload(rel_path, source, reason, source_root)
+      |> attach_companion_configuration(project_slug)
     end)
   end
 
@@ -386,6 +408,56 @@ defmodule Ide.Debugger do
       else
         state
       end
+    end)
+  end
+
+  @doc """
+  Simulates saving the companion configuration webview in the debugger.
+  """
+  @spec save_configuration(String.t(), map()) :: {:ok, runtime_state()}
+  def save_configuration(project_slug, values) when is_binary(project_slug) and is_map(values) do
+    update(project_slug, fn state ->
+      state = attach_companion_configuration(ensure_phone_state(state), project_slug)
+
+      configuration =
+        get_in(state, [:companion, :model, "configuration"]) ||
+          get_in(state, [:companion, :model, "runtime_model", "configuration"]) ||
+          %{}
+
+      encoded_values = encode_configuration_values(configuration, values)
+
+      bridge_event = %{
+        "event" => "configuration.closed",
+        "payload" => %{
+          "response" => Jason.encode!(encoded_values)
+        }
+      }
+
+      state
+      |> apply_step_once(
+        :companion,
+        "FromBridge",
+        %{"ctor" => "FromBridge", "args" => [bridge_event]},
+        "configuration",
+        "configuration"
+      )
+      |> apply_configuration_protocol_messages(configuration, encoded_values)
+      |> attach_companion_configuration(project_slug)
+      |> put_companion_configuration_values(encoded_values)
+      |> refresh_runtime_preview_for_target(:watch)
+    end)
+  end
+
+  @doc """
+  Reloads persisted companion configuration values without sending them to the app.
+  """
+  @spec reload_configuration(String.t()) :: {:ok, runtime_state()}
+  def reload_configuration(project_slug) when is_binary(project_slug) do
+    update(project_slug, fn state ->
+      state
+      |> ensure_phone_state()
+      |> update_in([:companion, :model], &drop_companion_configuration/1)
+      |> attach_companion_configuration(project_slug)
     end)
   end
 
@@ -937,7 +1009,11 @@ defmodule Ide.Debugger do
     message_source = source_override || msg_source
 
     protocol_events =
-      (runtime_protocol_events ++ command_protocol_events)
+      if message_source == "configuration" do
+        []
+      else
+        runtime_protocol_events ++ command_protocol_events
+      end
       |> enrich_protocol_events(trigger, message_source)
 
     updated_model =
@@ -1018,6 +1094,9 @@ defmodule Ide.Debugger do
     do: state
 
   defp maybe_apply_device_data_responses(state, _target, _message, _model, "init_device_data"),
+    do: state
+
+  defp maybe_apply_device_data_responses(state, _target, _message, _model, "configuration"),
     do: state
 
   defp maybe_apply_device_data_responses(state, target, message, model, _message_source)
@@ -1416,6 +1495,9 @@ defmodule Ide.Debugger do
 
   @spec maybe_apply_runtime_followups(term(), term(), term(), term(), term()) :: term()
   defp maybe_apply_runtime_followups(state, _target, _message, "runtime_followup", _followups),
+    do: state
+
+  defp maybe_apply_runtime_followups(state, _target, _message, "configuration", _followups),
     do: state
 
   defp maybe_apply_runtime_followups(state, target, message, _message_source, followups)
@@ -2256,24 +2338,16 @@ defmodule Ide.Debugger do
   defp update_recipient_runtime_model_from_protocol(state, recipient, row)
        when recipient in [:watch, :companion, :phone] and is_map(row) do
     inbound_count = get_in(state, [recipient, :model, "protocol_inbound_count"]) || 0
-    current_runtime_model = get_in(state, [recipient, :model, "runtime_model"])
-    current_runtime_model = if is_map(current_runtime_model), do: current_runtime_model, else: %{}
-
-    runtime_model =
-      current_runtime_model
-      |> Map.put("protocol_last_inbound_message", row["message"])
-      |> Map.put("protocol_last_inbound_from", row["from"])
-      |> Map.put("protocol_inbound_count", inbound_count)
-      |> Map.put(
-        "protocol_message_count",
-        length(get_in(state, [recipient, :protocol_messages]) || [])
-      )
-      |> Map.put("protocol_last_trigger", row["trigger"])
 
     state
-    |> put_in([recipient, :model, "runtime_model"], runtime_model)
-    |> put_in([recipient, :model, "runtime_model_source"], "protocol_rx")
-    |> put_in([recipient, :model, "runtime_view_tree_source"], "protocol_rx_view_tree")
+    |> put_in([recipient, :model, "protocol_last_inbound_message"], row["message"])
+    |> put_in([recipient, :model, "protocol_last_inbound_from"], row["from"])
+    |> put_in([recipient, :model, "protocol_inbound_count"], inbound_count)
+    |> put_in(
+      [recipient, :model, "protocol_message_count"],
+      length(get_in(state, [recipient, :protocol_messages]) || [])
+    )
+    |> put_in([recipient, :model, "protocol_last_trigger"], row["trigger"])
     |> put_in([recipient, :model, "runtime_last_message"], row["message"])
     |> put_in([recipient, :model, "runtime_message_source"], "protocol_rx")
   end
@@ -2281,36 +2355,7 @@ defmodule Ide.Debugger do
   @spec update_recipient_protocol_view_tree(term(), term(), term()) :: term()
   defp update_recipient_protocol_view_tree(state, recipient, row)
        when recipient in [:watch, :companion, :phone] and is_map(row) do
-    update_in(state, [recipient, :view_tree], fn view_tree ->
-      protocol_view_tree_with_inbound(view_tree, row)
-    end)
-  end
-
-  @spec protocol_view_tree_with_inbound(term(), term()) :: term()
-  defp protocol_view_tree_with_inbound(view_tree, row) when is_map(row) do
-    base =
-      if is_map(view_tree) and map_size(view_tree) > 0 do
-        view_tree
-      else
-        %{"type" => "root", "children" => []}
-      end
-
-    children =
-      case Map.get(base, "children") || Map.get(base, :children) do
-        xs when is_list(xs) -> xs
-        _ -> []
-      end
-
-    marker = %{
-      "type" => "protocolInbound",
-      "label" => "#{row["from"]}->#{row["to"]}: #{row["message"]}",
-      "trigger" => row["trigger"],
-      "children" => []
-    }
-
-    base
-    |> Map.put("children", [marker | children] |> Enum.take(20))
-    |> Map.put("last_protocol_inbound", row["message"])
+    put_in(state, [recipient, :model, "protocol_last_view_message"], row["message"])
   end
 
   @spec refresh_runtime_surface_fingerprints(term(), term()) :: term()
@@ -3329,6 +3374,14 @@ defmodule Ide.Debugger do
     end
   end
 
+  @spec preferred_runtime_view_output(term(), term()) :: [term()]
+  defp preferred_runtime_view_output(primary, fallback) do
+    case normalize_view_output(primary) do
+      [] -> normalize_view_output(fallback)
+      rows -> rows
+    end
+  end
+
   @spec render_view_after_update(term(), term(), term(), term(), term(), term()) :: term()
   defp render_view_after_update(
          runtime_view_tree,
@@ -3340,8 +3393,13 @@ defmodule Ide.Debugger do
        )
        when target in [:watch, :companion, :phone] and is_binary(message) and is_binary(trigger) and
               is_map(model) do
+    output_view_tree = runtime_view_output_tree(model, target)
+
     base =
       cond do
+        is_map(output_view_tree) ->
+          output_view_tree
+
         is_map(runtime_view_tree) and map_size(runtime_view_tree) > 0 ->
           runtime_view_tree
 
@@ -3385,6 +3443,203 @@ defmodule Ide.Debugger do
       do: previous_view_tree,
       else: default_view_tree_for_target(target)
   end
+
+  @spec runtime_view_output_tree(term(), term()) :: map() | nil
+  defp runtime_view_output_tree(model, target)
+       when is_map(model) and target in [:watch, :companion, :phone] do
+    case normalize_view_output(Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output)) do
+      [] ->
+        nil
+
+      ops ->
+        {screen_w, screen_h} = runtime_view_output_screen(model)
+        op_nodes = runtime_view_output_nodes(ops)
+
+        %{
+          "type" => "windowStack",
+          "label" => "",
+          "box" => %{"x" => 0, "y" => 0, "w" => screen_w, "h" => screen_h},
+          "children" => [
+            %{
+              "type" => "window",
+              "label" => "",
+              "id" => 1,
+              "children" => [
+                %{
+                  "type" => "canvasLayer",
+                  "label" => "",
+                  "id" => 1,
+                  "children" => op_nodes
+                }
+              ]
+            }
+          ]
+        }
+    end
+  end
+
+  defp runtime_view_output_tree(_model, _target), do: nil
+
+  @spec runtime_view_output_screen(map()) :: {pos_integer(), pos_integer()}
+  defp runtime_view_output_screen(model) when is_map(model) do
+    runtime_model =
+      case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
+        %{} = value -> value
+        _ -> model
+      end
+
+    {
+      positive_integer_value(Map.get(runtime_model, "screenW") || Map.get(runtime_model, :screenW), 144),
+      positive_integer_value(Map.get(runtime_model, "screenH") || Map.get(runtime_model, :screenH), 168)
+    }
+  end
+
+  @spec positive_integer_value(term(), pos_integer()) :: pos_integer()
+  defp positive_integer_value(value, _fallback) when is_integer(value) and value > 0, do: value
+  defp positive_integer_value(value, _fallback) when is_float(value) and value > 0, do: trunc(value)
+
+  defp positive_integer_value(value, fallback) when is_binary(value) do
+    case Integer.parse(value) do
+      {parsed, ""} when parsed > 0 -> parsed
+      _ -> fallback
+    end
+  end
+
+  defp positive_integer_value(_value, fallback), do: fallback
+
+  @spec runtime_view_output_nodes([term()]) :: [map()]
+  defp runtime_view_output_nodes(ops) when is_list(ops) do
+    {nodes, _rest} = runtime_view_output_nodes_until(ops, false)
+    nodes
+  end
+
+  @spec runtime_view_output_nodes_until([term()], boolean()) :: {[map()], [term()]}
+  defp runtime_view_output_nodes_until(rows, stop_on_pop?) when is_list(rows) do
+    runtime_view_output_nodes_until(rows, stop_on_pop?, [])
+  end
+
+  defp runtime_view_output_nodes_until([], _stop_on_pop?, acc), do: {Enum.reverse(acc), []}
+
+  defp runtime_view_output_nodes_until([row | rest], stop_on_pop?, acc) when is_map(row) do
+    case runtime_view_output_kind(row) do
+      "pop_context" when stop_on_pop? ->
+        {Enum.reverse(acc), rest}
+
+      "pop_context" ->
+        runtime_view_output_nodes_until(rest, stop_on_pop?, acc)
+
+      "push_context" ->
+        {group_nodes, remaining} = runtime_view_output_nodes_until(rest, true)
+        {style, children} = split_runtime_view_output_group(group_nodes)
+
+        group =
+          %{"type" => "group", "label" => "", "children" => children}
+          |> maybe_put_group_style(style)
+
+        runtime_view_output_nodes_until(remaining, stop_on_pop?, [group | acc])
+
+      kind when kind in ["stroke_color", "fill_color", "text_color"] ->
+        runtime_view_output_nodes_until(rest, stop_on_pop?, [runtime_view_output_style_node(row) | acc])
+
+      _ ->
+        case runtime_view_output_node(row) do
+          %{} = node -> runtime_view_output_nodes_until(rest, stop_on_pop?, [node | acc])
+          nil -> runtime_view_output_nodes_until(rest, stop_on_pop?, acc)
+        end
+    end
+  end
+
+  defp runtime_view_output_nodes_until([_row | rest], stop_on_pop?, acc),
+    do: runtime_view_output_nodes_until(rest, stop_on_pop?, acc)
+
+  @spec split_runtime_view_output_group([map()]) :: {map(), [map()]}
+  defp split_runtime_view_output_group(nodes) when is_list(nodes) do
+    Enum.reduce(nodes, {%{}, []}, fn node, {style, children} ->
+      case Map.get(node, "type") do
+        "style" ->
+          {Map.put(style, Map.get(node, "key"), Map.get(node, "value")), children}
+
+        _ ->
+          {style, [node | children]}
+      end
+    end)
+    |> then(fn {style, children} -> {style, Enum.reverse(children)} end)
+  end
+
+  @spec maybe_put_group_style(map(), map()) :: map()
+  defp maybe_put_group_style(group, style) when is_map(group) and map_size(style) > 0,
+    do: Map.put(group, "style", style)
+
+  defp maybe_put_group_style(group, _style), do: group
+
+  @spec runtime_view_output_style_node(map()) :: map()
+  defp runtime_view_output_style_node(row) when is_map(row) do
+    kind = runtime_view_output_kind(row)
+
+    %{
+      "type" => "style",
+      "key" => kind,
+      "value" => map_value(row, "color") || map_value(row, "value")
+    }
+  end
+
+  @spec runtime_view_output_node(map()) :: map() | nil
+  defp runtime_view_output_node(row) when is_map(row) do
+    case runtime_view_output_kind(row) do
+      "clear" ->
+        %{
+          "type" => "clear",
+          "label" => "",
+          "children" => [],
+          "color" => integer_or_zero(map_value(row, "color"))
+        }
+
+      "round_rect" ->
+        %{
+          "type" => "roundRect",
+          "label" => "",
+          "children" => [],
+          "x" => integer_or_zero(map_value(row, "x")),
+          "y" => integer_or_zero(map_value(row, "y")),
+          "w" => integer_or_zero(map_value(row, "w")),
+          "h" => integer_or_zero(map_value(row, "h")),
+          "radius" => integer_or_zero(map_value(row, "radius")),
+          "fill" => integer_or_zero(map_value(row, "fill"))
+        }
+
+      "fill_rect" ->
+        %{
+          "type" => "fillRect",
+          "label" => "",
+          "children" => [],
+          "x" => integer_or_zero(map_value(row, "x")),
+          "y" => integer_or_zero(map_value(row, "y")),
+          "w" => integer_or_zero(map_value(row, "w")),
+          "h" => integer_or_zero(map_value(row, "h")),
+          "fill" => integer_or_zero(map_value(row, "fill"))
+        }
+
+      "text" ->
+        %{
+          "type" => "text",
+          "label" => "",
+          "children" => [],
+          "x" => integer_or_zero(map_value(row, "x")),
+          "y" => integer_or_zero(map_value(row, "y")),
+          "w" => integer_or_zero(map_value(row, "w")),
+          "h" => integer_or_zero(map_value(row, "h")),
+          "font_id" => integer_or_zero(map_value(row, "font_id")),
+          "text" => to_string(map_value(row, "text") || "")
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  @spec runtime_view_output_kind(map()) :: String.t()
+  defp runtime_view_output_kind(row) when is_map(row),
+    do: to_string(map_value(row, "kind") || "")
 
   @spec default_view_tree_for_target(term()) :: map()
   defp default_view_tree_for_target(:watch), do: Map.get(default_watch_runtime(), :view_tree)
@@ -3823,6 +4078,300 @@ defmodule Ide.Debugger do
     }
   end
 
+  @spec attach_companion_configuration(map(), String.t()) :: map()
+  defp attach_companion_configuration(state, project_slug)
+       when is_map(state) and is_binary(project_slug) do
+    case companion_configuration_model(project_slug) do
+      nil ->
+        update_in(state, [:companion, :model], &drop_companion_configuration/1)
+
+      configuration ->
+        configuration =
+          put_configuration_values(
+            configuration,
+            get_in(state, [:companion, :model, "configuration", "values"])
+          )
+
+        state
+        |> put_in([:companion, :model, "configuration"], configuration)
+        |> put_in([:companion, :model, "runtime_model", "configuration"], configuration)
+    end
+  end
+
+  defp attach_companion_configuration(state, _project_slug), do: state
+
+  @spec companion_configuration_model(String.t()) :: map() | nil
+  defp companion_configuration_model(project_slug) do
+    try do
+      with %{} = project <- Projects.get_project_by_slug(project_slug),
+           workspace_root <- Projects.project_workspace_path(project),
+           phone_root <- Path.join(workspace_root, "phone"),
+           true <- File.exists?(Path.join(phone_root, "elm.json")),
+           {:ok, %{} = schema} <- PebblePreferences.extract(phone_root) do
+        configuration = %{
+          "title" => schema.title,
+          "sections" => companion_configuration_sections(schema.sections)
+        }
+
+        put_configuration_values(configuration, project_debugger_configuration_values(project))
+      else
+        _ -> nil
+      end
+    rescue
+      DBConnection.OwnershipError ->
+        nil
+
+      error in RuntimeError ->
+        if String.contains?(Exception.message(error), "could not lookup Ecto repo") do
+          nil
+        else
+          reraise(error, __STACKTRACE__)
+        end
+    end
+  end
+
+  @spec project_debugger_configuration_values(term()) :: map() | nil
+  defp project_debugger_configuration_values(%{debugger_settings: settings}) when is_map(settings) do
+    case Map.get(settings, "configuration_values") do
+      values when is_map(values) -> values
+      _ -> nil
+    end
+  end
+
+  defp project_debugger_configuration_values(_project), do: nil
+
+  @spec companion_configuration_sections(term()) :: [map()]
+  defp companion_configuration_sections(sections) when is_list(sections) do
+    Enum.map(sections, fn section ->
+      %{
+        "title" => Map.get(section, :title) || Map.get(section, "title") || "",
+        "fields" =>
+          companion_configuration_fields(
+            Map.get(section, :fields) || Map.get(section, "fields") || []
+          )
+      }
+    end)
+  end
+
+  defp companion_configuration_sections(_sections), do: []
+
+  @spec companion_configuration_fields(term()) :: [map()]
+  defp companion_configuration_fields(fields) when is_list(fields) do
+    Enum.map(fields, fn field ->
+      %{
+        "id" => Map.get(field, :id) || Map.get(field, "id") || "",
+        "label" => Map.get(field, :label) || Map.get(field, "label") || "",
+        "control" => stringify_keys(Map.get(field, :control) || Map.get(field, "control") || %{})
+      }
+    end)
+  end
+
+  defp companion_configuration_fields(_fields), do: []
+
+  @spec stringify_keys(term()) :: term()
+  defp stringify_keys(value) when is_map(value) do
+    Map.new(value, fn {key, child_value} -> {to_string(key), stringify_keys(child_value)} end)
+  end
+
+  defp stringify_keys(value) when is_list(value), do: Enum.map(value, &stringify_keys/1)
+  defp stringify_keys(value), do: value
+
+  @spec put_companion_configuration_values(map(), map()) :: map()
+  defp put_companion_configuration_values(state, values) when is_map(state) and is_map(values) do
+    update_in(state, [:companion, :model], fn model ->
+      model
+      |> put_configuration_values_at(["configuration"], values)
+      |> put_configuration_values_at(["runtime_model", "configuration"], values)
+    end)
+  end
+
+  defp put_companion_configuration_values(state, _values), do: state
+
+  @spec put_configuration_values_at(term(), [String.t()], map()) :: term()
+  defp put_configuration_values_at(model, path, values) when is_map(model) and is_list(path) do
+    case get_in(model, path) do
+      %{} = configuration -> put_in(model, path, put_configuration_values(configuration, values))
+      _ -> model
+    end
+  end
+
+  defp put_configuration_values_at(model, _path, _values), do: model
+
+  @spec put_configuration_values(map(), term()) :: map()
+  defp put_configuration_values(configuration, values) when is_map(configuration) and is_map(values) do
+    values = stringify_keys(values)
+
+    configuration
+    |> Map.put("values", values)
+    |> update_configuration_field_values(values)
+  end
+
+  defp put_configuration_values(configuration, _values) when is_map(configuration), do: configuration
+
+  @spec update_configuration_field_values(map(), map()) :: map()
+  defp update_configuration_field_values(configuration, values)
+       when is_map(configuration) and is_map(values) do
+    update_in(configuration, ["sections"], fn
+      sections when is_list(sections) ->
+        Enum.map(sections, fn
+          %{} = section ->
+            update_in(section, ["fields"], fn
+              fields when is_list(fields) ->
+                Enum.map(fields, fn
+                  %{"id" => id, "control" => %{} = control} = field when is_binary(id) ->
+                    if Map.has_key?(values, id) do
+                      put_in(field, ["control", "value"], Map.get(values, id))
+                    else
+                      Map.put(field, "control", Map.delete(control, "value"))
+                    end
+
+                  field ->
+                    field
+                end)
+
+              fields ->
+                fields
+            end)
+
+          section ->
+            section
+        end)
+
+      sections ->
+        sections
+    end)
+  end
+
+  @spec encode_configuration_values(term(), map()) :: map()
+  defp encode_configuration_values(configuration, values)
+       when is_map(configuration) and is_map(values) do
+    configuration
+    |> configuration_fields()
+    |> Enum.reduce(%{}, fn field, acc ->
+      id = Map.get(field, "id")
+      control = Map.get(field, "control", %{})
+
+      if is_binary(id) and id != "" do
+        Map.put(acc, id, encode_configuration_value(control, Map.get(values, id)))
+      else
+        acc
+      end
+    end)
+  end
+
+  defp encode_configuration_values(_configuration, values) when is_map(values), do: values
+
+  @spec configuration_fields(term()) :: [map()]
+  defp configuration_fields(configuration) when is_map(configuration) do
+    configuration
+    |> Map.get("sections", [])
+    |> Enum.flat_map(fn
+      %{"fields" => fields} when is_list(fields) -> fields
+      %{fields: fields} when is_list(fields) -> fields
+      _ -> []
+    end)
+  end
+
+  defp configuration_fields(_configuration), do: []
+
+  @spec encode_configuration_value(term(), term()) :: term()
+  defp encode_configuration_value(%{"type" => "toggle"}, value),
+    do: truthy_configuration_value?(value)
+
+  defp encode_configuration_value(%{"type" => type}, value) when type in ["number", "slider"] do
+    case value do
+      n when is_number(n) ->
+        n
+
+      value when is_binary(value) ->
+        case Float.parse(value) do
+          {parsed, ""} -> parsed
+          {parsed, _rest} -> parsed
+          :error -> 0
+        end
+
+      _ ->
+        0
+    end
+  end
+
+  defp encode_configuration_value(_control, value), do: value
+
+  @spec truthy_configuration_value?(term()) :: boolean()
+  defp truthy_configuration_value?(value) when value in [true, "true", "True", "on", "1", 1],
+    do: true
+
+  defp truthy_configuration_value?(_value), do: false
+
+  @spec apply_configuration_protocol_messages(map(), term(), map()) :: map()
+  defp apply_configuration_protocol_messages(state, configuration, values)
+       when is_map(state) and is_map(configuration) and is_map(values) do
+    events =
+      configuration
+      |> configuration_fields()
+      |> Enum.flat_map(&configuration_protocol_events(&1, values))
+
+    state
+    |> append_protocol_events(events)
+    |> apply_protocol_state_effects(events)
+  end
+
+  defp apply_configuration_protocol_messages(state, _configuration, _values), do: state
+
+  @spec configuration_protocol_events(map(), map()) :: [map()]
+  defp configuration_protocol_events(field, values) when is_map(field) and is_map(values) do
+    control = Map.get(field, "control", %{})
+    constructor = Map.get(control, "send_to_watch")
+    id = Map.get(field, "id")
+
+    with true <- is_binary(constructor) and constructor != "",
+         true <- is_binary(id) and id != "",
+         value <- Map.get(values, id),
+         {:ok, arg_label, arg_value} <- configuration_protocol_arg(control, value) do
+      message = String.trim("#{constructor} #{arg_label}")
+
+      protocol_tx_rx_events("companion", "watch", message, "configuration", %{
+        "ctor" => constructor,
+        "args" => [arg_value]
+      })
+    else
+      _ -> []
+    end
+  end
+
+  defp configuration_protocol_events(_field, _values), do: []
+
+  @spec configuration_protocol_arg(map(), term()) :: {:ok, String.t(), term()} | :error
+  defp configuration_protocol_arg(%{"type" => "toggle"}, value) do
+    bool = truthy_configuration_value?(value)
+    {:ok, if(bool, do: "True", else: "False"), bool}
+  end
+
+  defp configuration_protocol_arg(%{"type" => "choice", "options" => options}, value)
+       when is_list(options) do
+    case Enum.find(options, &(Map.get(&1, "value") == value)) do
+      %{"constructor" => constructor} when is_binary(constructor) and constructor != "" ->
+        {:ok, constructor, %{"ctor" => constructor, "args" => []}}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp configuration_protocol_arg(_control, _value), do: :error
+
+  @spec drop_companion_configuration(term()) :: term()
+  defp drop_companion_configuration(model) when is_map(model) do
+    model
+    |> Map.drop(["configuration", :configuration])
+    |> update_in(["runtime_model"], fn
+      %{} = runtime_model -> Map.drop(runtime_model, ["configuration", :configuration])
+      other -> other
+    end)
+  end
+
+  defp drop_companion_configuration(model), do: model
+
   @spec default_phone_runtime() :: map()
   defp default_phone_runtime do
     %{
@@ -4157,9 +4706,37 @@ defmodule Ide.Debugger do
   @spec hydrate_runtime_model_launch_context(map(), map()) :: map()
   defp hydrate_runtime_model_launch_context(runtime_model, model)
        when is_map(runtime_model) and is_map(model) do
-    _model = model
     runtime_model
+    |> put_launch_context_value_if_missing("screenW", get_in(model, ["launch_context", "screen", "width"]))
+    |> put_launch_context_value_if_missing("screenH", get_in(model, ["launch_context", "screen", "height"]))
+    |> put_launch_context_value_if_missing(
+      "isRound",
+      launch_context_round?(Map.get(model, "launch_context"))
+    )
   end
+
+  @spec put_launch_context_value_if_missing(map(), String.t(), term()) :: map()
+  defp put_launch_context_value_if_missing(runtime_model, key, value)
+       when is_map(runtime_model) and is_binary(key) and not is_nil(value) do
+    case Map.get(runtime_model, key) do
+      nil -> Map.put(runtime_model, key, value)
+      _ -> runtime_model
+    end
+  end
+
+  defp put_launch_context_value_if_missing(runtime_model, _key, _value) when is_map(runtime_model),
+    do: runtime_model
+
+  @spec launch_context_round?(term()) :: boolean() | nil
+  defp launch_context_round?(%{"screen" => %{} = screen}) do
+    cond do
+      is_boolean(Map.get(screen, "isRound")) -> Map.get(screen, "isRound")
+      is_binary(Map.get(screen, "shape")) -> Map.get(screen, "shape") == "round"
+      true -> nil
+    end
+  end
+
+  defp launch_context_round?(_launch_context), do: nil
 
   @spec hydrate_runtime_model_message_payload(map(), term()) :: map()
   defp hydrate_runtime_model_message_payload(runtime_model, message)
@@ -4865,13 +5442,27 @@ defmodule Ide.Debugger do
             |> Map.get(:model_patch, %{})
             |> then(fn patch -> if is_map(patch), do: patch, else: %{} end)
 
+          runtime_view_output =
+            preferred_runtime_view_output(
+              Map.get(payload, :view_output),
+              Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output)
+            )
+
           next_model =
             model
             |> Map.put("elm_executor_mode", "runtime_executed")
             |> Map.merge(model_patch)
+            |> put_runtime_view_output(runtime_view_output)
 
           next_state = put_in(state, [target, :model], next_model)
-          runtime_view_tree = Map.get(payload, :view_tree)
+
+          runtime_view_tree =
+            choose_runtime_preview_view_tree(
+              Map.get(payload, :view_tree),
+              view_tree,
+              view_tree,
+              runtime_view_output
+            )
 
           if introspect_view_usable?(runtime_view_tree) do
             put_in(next_state, [target, :view_tree], runtime_view_tree)
@@ -4896,6 +5487,7 @@ defmodule Ide.Debugger do
         "elm_executor_metadata",
         "elm_executor_core_ir",
         "elm_executor_core_ir_b64",
+        "runtime_view_output",
         "last_path"
       ],
       snapshot_model,
@@ -4916,6 +5508,50 @@ defmodule Ide.Debugger do
       runtime
     end
   end
+
+  @spec choose_runtime_preview_view_tree(term(), term(), term(), term()) :: term()
+  defp choose_runtime_preview_view_tree(runtime_view_tree, latest_view_tree, snapshot_view_tree, view_output) do
+    cond do
+      concrete_runtime_view_tree?(runtime_view_tree) ->
+        runtime_view_tree
+
+      has_runtime_view_output?(view_output) and concrete_runtime_view_tree?(latest_view_tree) ->
+        latest_view_tree
+
+      concrete_runtime_view_tree?(latest_view_tree) and parser_expression_view_tree?(runtime_view_tree) ->
+        latest_view_tree
+
+      is_map(runtime_view_tree) and map_size(runtime_view_tree) > 0 ->
+        runtime_view_tree
+
+      true ->
+        snapshot_view_tree
+    end
+  end
+
+  @spec has_runtime_view_output?(term()) :: boolean()
+  defp has_runtime_view_output?(value) when is_list(value), do: value != []
+  defp has_runtime_view_output?(_value), do: false
+
+  @spec concrete_runtime_view_tree?(term()) :: boolean()
+  defp concrete_runtime_view_tree?(%{"type" => type} = tree) when is_binary(type) do
+    introspect_view_usable?(tree) and not parser_expression_root_type?(type)
+  end
+
+  defp concrete_runtime_view_tree?(_tree), do: false
+
+  @spec parser_expression_view_tree?(term()) :: boolean()
+  defp parser_expression_view_tree?(%{"type" => type}) when is_binary(type),
+    do: parser_expression_root_type?(type)
+
+  defp parser_expression_view_tree?(_tree), do: false
+
+  @spec parser_expression_root_type?(String.t()) :: boolean()
+  defp parser_expression_root_type?(type)
+       when type in ["toUiNode", "append", "List", "call", "expr", "var", "withDefault", "if", "case"],
+       do: true
+
+  defp parser_expression_root_type?(_type), do: false
 
   @spec maybe_put_runtime_artifact_atom_key(term(), term(), term()) :: map()
   defp maybe_put_runtime_artifact_atom_key(map, key, value)

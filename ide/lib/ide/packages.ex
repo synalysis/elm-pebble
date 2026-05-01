@@ -166,6 +166,9 @@ defmodule Ide.Packages do
   defp builtin_docs_source_root("elm-pebble/companion-core"),
     do: {:ok, Ide.InternalPackages.pebble_companion_core_elm_src_abs()}
 
+  defp builtin_docs_source_root("elm-pebble/companion-preferences"),
+    do: {:ok, Ide.InternalPackages.pebble_companion_preferences_elm_src_abs()}
+
   defp builtin_docs_source_root("elm-pebble/companion-protocol"),
     do: {:ok, Ide.InternalPackages.companion_protocol_elm_src_abs()}
 
@@ -224,6 +227,7 @@ defmodule Ide.Packages do
     [
       "elm-pebble/elm-watch",
       "elm-pebble/companion-core",
+      "elm-pebble/companion-preferences",
       "elm/core",
       "elm/json",
       "elm/time"
@@ -375,6 +379,9 @@ defmodule Ide.Packages do
   defp doc_catalog_builtin_label("elm-pebble/companion-core"),
     do: "elm-pebble/companion-core (Pebble companion bridge contracts)"
 
+  defp doc_catalog_builtin_label("elm-pebble/companion-preferences"),
+    do: "elm-pebble/companion-preferences (typed companion configuration UI)"
+
   defp doc_catalog_builtin_label("elm-pebble/companion-protocol"),
     do: "elm-pebble/companion-protocol (typed watch/phone protocol bridge)"
 
@@ -392,6 +399,7 @@ defmodule Ide.Packages do
       :phone ->
         [
           "elm-pebble/companion-core",
+          "elm-pebble/companion-preferences",
           "elm-pebble/companion-protocol",
           "elm-pebble/companion-internal",
           "elm/core",
@@ -460,7 +468,18 @@ defmodule Ide.Packages do
   end
 
   defp fallback_builtin_source_modules("elm-pebble/companion-core") do
-    case exposed_modules_from_source_root(Ide.InternalPackages.pebble_companion_core_elm_src_abs()) do
+    case exposed_modules_from_source_root(
+           Ide.InternalPackages.pebble_companion_core_elm_src_abs()
+         ) do
+      {:ok, modules} -> modules
+      _ -> []
+    end
+  end
+
+  defp fallback_builtin_source_modules("elm-pebble/companion-preferences") do
+    case exposed_modules_from_source_root(
+           Ide.InternalPackages.pebble_companion_preferences_elm_src_abs()
+         ) do
       {:ok, modules} -> modules
       _ -> []
     end
@@ -504,7 +523,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec normalize_exposed_modules(term()) :: {:ok, [String.t()]} | {:error, :invalid_exposed_modules}
+  @spec normalize_exposed_modules(term()) ::
+          {:ok, [String.t()]} | {:error, :invalid_exposed_modules}
   defp normalize_exposed_modules(modules) when is_list(modules) do
     {:ok, modules |> Enum.filter(&is_binary/1) |> Enum.sort()}
   end

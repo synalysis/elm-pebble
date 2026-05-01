@@ -45,6 +45,10 @@ defmodule Ide.PackageDocs.Exporter do
       %{
         name: "elm-pebble/companion-core",
         root: package_root("packages/elm-pebble-companion-core")
+      },
+      %{
+        name: "elm-pebble/companion-preferences",
+        root: package_root("packages/elm-pebble-companion-preferences")
       }
     ]
   end

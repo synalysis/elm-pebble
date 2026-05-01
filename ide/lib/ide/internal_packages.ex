@@ -43,6 +43,12 @@ defmodule Ide.InternalPackages do
   end
 
   @doc false
+  @spec pebble_companion_preferences_elm_src_abs() :: String.t()
+  def pebble_companion_preferences_elm_src_abs do
+    Path.join(repo_root(), "packages/elm-pebble-companion-preferences/src") |> Path.expand()
+  end
+
+  @doc false
   @spec companion_protocol_elm_src_abs() :: String.t()
   def companion_protocol_elm_src_abs do
     Path.join(ide_root(), "priv/internal_packages/companion-protocol/src") |> Path.expand()
@@ -77,6 +83,7 @@ defmodule Ide.InternalPackages do
   def phone_elm_json_extra_source_dirs_abs do
     [
       pebble_companion_core_elm_src_abs(),
+      pebble_companion_preferences_elm_src_abs(),
       shared_elm_abs(),
       shared_elm_companion_abs(),
       elm_time_elm_src_abs()

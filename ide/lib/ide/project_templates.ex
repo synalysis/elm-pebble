@@ -76,7 +76,24 @@ defmodule Ide.ProjectTemplates do
   defp seed_watchface_tutorial_workspace(workspace_path) do
     with :ok <- seed_protocol_shared(workspace_path),
          :ok <- seed_phone_companion(workspace_path),
+         :ok <- seed_watchface_tutorial_phone(workspace_path),
          :ok <- seed_watch_only_workspace(workspace_path, "watchface_tutorial_complete") do
+      :ok
+    end
+  end
+
+  @spec seed_watchface_tutorial_phone(term()) :: term()
+  defp seed_watchface_tutorial_phone(workspace_path) do
+    source = Path.join(ide_root(), "priv/project_templates/watchface_tutorial_complete/phone/src")
+    target = Path.join(workspace_path, "phone/src")
+
+    with :ok <-
+           copy_file(Path.join(source, "CompanionApp.elm"), Path.join(target, "CompanionApp.elm")),
+         :ok <-
+           copy_file(
+             Path.join(source, "CompanionPreferences.elm"),
+             Path.join(target, "CompanionPreferences.elm")
+           ) do
       :ok
     end
   end
@@ -243,7 +260,8 @@ defmodule Ide.ProjectTemplates do
     [
       "src",
       "../protocol/src",
-      InternalPackages.shared_elm_companion_abs()
+      InternalPackages.shared_elm_companion_abs(),
+      InternalPackages.pebble_companion_preferences_elm_src_abs()
     ]
   end
 

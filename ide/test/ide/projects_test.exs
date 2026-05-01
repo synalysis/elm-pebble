@@ -313,6 +313,7 @@ defmodule Ide.ProjectsTest do
     assert File.exists?(Path.join(base, "phone/elm.json"))
     assert File.exists?(Path.join(base, "phone/src/Engine.elm"))
     assert File.exists?(Path.join(base, "phone/src/CompanionApp.elm"))
+    assert File.exists?(Path.join(base, "phone/src/CompanionPreferences.elm"))
     assert File.exists?(Path.join(base, "phone/src/Pebble/Companion/AppMessage.elm"))
     refute File.exists?(Path.join(base, "phone/src/Companion/Internal.elm"))
     refute File.exists?(Path.join(base, "phone/src/Companion/Http.elm"))
@@ -362,6 +363,16 @@ defmodule Ide.ProjectsTest do
 
     assert String.contains?(companion_app, "import Http")
     assert String.contains?(companion_app, "CompanionPhone.onWatchToPhone FromWatch")
+    assert String.contains?(companion_app, "RawBridge.onMessage FromBridge")
+
+    assert String.contains?(
+             companion_app,
+             "Preferences.decodeResponse CompanionPreferences.settings"
+           )
+
+    assert String.contains?(companion_app, "SetBackgroundColor settings.backgroundColor")
+    assert String.contains?(companion_app, "SetTextColor settings.textColor")
+    assert String.contains?(companion_app, "SetShowDate settings.showDate")
     assert String.contains?(companion_app, "FromWatch (Result String WatchToPhone)")
     assert String.contains?(companion_app, "conditionFromCode")
     assert String.contains?(companion_app, "ProvideCondition weather.condition")
@@ -371,6 +382,23 @@ defmodule Ide.ProjectsTest do
     refute String.contains?(companion_app, "port outgoing")
     refute String.contains?(companion_app, "port httpRequest")
     refute String.contains?(companion_app, "port httpResponse")
+
+    assert {:ok, companion_preferences} =
+             Projects.read_source_file(project, "phone", "src/CompanionPreferences.elm")
+
+    assert String.contains?(companion_preferences, "Preferences.schema \"Tutorial Watchface\"")
+    assert String.contains?(companion_preferences, "Preferences.field \"backgroundColor\"")
+    assert String.contains?(companion_preferences, "Preferences.field \"textColor\"")
+    assert String.contains?(companion_preferences, "Preferences.field \"showDate\"")
+
+    assert {:ok, preferences_schema} = Ide.PebblePreferences.extract(Path.join(base, "phone"))
+    assert preferences_schema.title == "Tutorial Watchface"
+
+    assert Enum.flat_map(preferences_schema.sections, & &1.fields) |> Enum.map(& &1.id) == [
+             "backgroundColor",
+             "textColor",
+             "showDate"
+           ]
   end
 
   test "import project maps watch/protocol/phone directories" do

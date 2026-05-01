@@ -3,6 +3,7 @@ defmodule Ide.PebbleToolchain do
   Boundary for Pebble SDK and emulator command execution.
   """
   alias Ide.CompanionProtocolGenerator
+  alias Ide.PebblePreferences
   alias Ide.Resources.ResourceStore
   alias Ide.WatchModels
   alias ElmEx.Frontend.Bridge
@@ -332,6 +333,7 @@ defmodule Ide.PebbleToolchain do
          resolved_target_type <- infer_package_target_type(compile_project_root, target_type),
          :ok <- copy_pebble_template(template_root, app_root),
          {:ok, media_entries} <- stage_project_resources(workspace_root, app_root),
+         {:ok, preferences_schema} <- extract_phone_preferences(workspace_root),
          protocol_elm <- companion_protocol_types_path(workspace_root, template_root),
          {:ok, app_message_keys} <- companion_protocol_message_keys(protocol_elm),
          :ok <-
@@ -342,13 +344,15 @@ defmodule Ide.PebbleToolchain do
              project_name,
              opts,
              media_entries,
-             app_message_keys
+             app_message_keys,
+             preferences_schema
            ),
          :ok <- generate_elmc_sources(compile_project_root, app_root, workspace_root),
          :ok <- generate_companion_protocol(protocol_elm, app_root),
          :ok <- generate_companion_protocol_elm_internal(protocol_elm),
+         :ok <- write_preferences_config(app_root, preferences_schema),
          :ok <- compile_phone_companion(workspace_root, app_root),
-         :ok <- write_companion_index(workspace_root, app_root) do
+         :ok <- write_companion_index(workspace_root, app_root, preferences_schema) do
       {:ok, app_root}
     end
   end
@@ -460,7 +464,8 @@ defmodule Ide.PebbleToolchain do
     end)
   end
 
-  @spec write_package_json(term(), term(), term(), term(), term(), term(), term()) :: term()
+  @spec write_package_json(term(), term(), term(), term(), term(), term(), term(), term()) ::
+          term()
   defp write_package_json(
          app_root,
          project_slug,
@@ -468,30 +473,48 @@ defmodule Ide.PebbleToolchain do
          project_name,
          opts,
          media_entries,
-         app_message_keys
+         app_message_keys,
+         preferences_schema
        ) do
     target_platforms = target_platforms_for_target_type(target_type, opts)
 
-    package = %{
-      "name" => project_slug,
-      "author" => "elm-pebble-ide",
-      "version" => "1.0.0",
-      "keywords" => ["pebble-app"],
-      "private" => true,
-      "dependencies" => %{},
-      "pebble" => %{
-        "displayName" => truncate_display_name(project_name),
-        "uuid" => deterministic_uuid(project_slug),
-        "sdkVersion" => "3",
-        "enableMultiJS" => true,
-        "targetPlatforms" => target_platforms,
-        "watchapp" => %{"watchface" => target_type == "watchface"},
-        "messageKeys" => Map.merge(%{"increment" => 1, "decrement" => 2}, app_message_keys),
-        "resources" => %{"media" => media_entries}
+    package =
+      %{
+        "name" => project_slug,
+        "author" => "elm-pebble-ide",
+        "version" => "1.0.0",
+        "keywords" => ["pebble-app"],
+        "private" => true,
+        "dependencies" => %{},
+        "pebble" => %{
+          "displayName" => truncate_display_name(project_name),
+          "uuid" => deterministic_uuid(project_slug),
+          "sdkVersion" => "3",
+          "enableMultiJS" => true,
+          "targetPlatforms" => target_platforms,
+          "watchapp" => %{"watchface" => target_type == "watchface"},
+          "messageKeys" => Map.merge(%{"increment" => 1, "decrement" => 2}, app_message_keys),
+          "resources" => %{"media" => media_entries}
+        }
       }
-    }
+      |> maybe_put_configurable_capability(preferences_schema)
 
     File.write(Path.join(app_root, "package.json"), Jason.encode!(package, pretty: true))
+  end
+
+  @spec maybe_put_configurable_capability(map(), term()) :: map()
+  defp maybe_put_configurable_capability(package, nil), do: package
+
+  defp maybe_put_configurable_capability(package, _preferences_schema) do
+    update_in(package, ["pebble"], fn pebble ->
+      capabilities =
+        pebble
+        |> Map.get("capabilities", [])
+        |> Kernel.++(["configurable"])
+        |> Enum.uniq()
+
+      Map.put(pebble, "capabilities", capabilities)
+    end)
   end
 
   @spec stage_project_resources(term(), term()) :: term()
@@ -509,16 +532,23 @@ defmodule Ide.PebbleToolchain do
 
     bitmap_cases =
       bitmap_entries
-      |> Enum.with_index()
+      |> Enum.with_index(1)
       |> Enum.map_join("\n", fn {entry, index} ->
         "    case #{index}: return RESOURCE_ID_#{Map.fetch!(entry, "name")};"
       end)
 
     font_cases =
       font_entries
-      |> Enum.with_index()
+      |> Enum.with_index(1)
       |> Enum.map_join("\n", fn {entry, index} ->
         "    case #{index}: return RESOURCE_ID_#{Map.fetch!(entry, "name")};"
+      end)
+
+    font_height_cases =
+      font_entries
+      |> Enum.with_index(1)
+      |> Enum.map_join("\n", fn {entry, index} ->
+        "    case #{index}: return #{Map.get(entry, "height", 0)};"
       end)
 
     source = """
@@ -527,16 +557,25 @@ defmodule Ide.PebbleToolchain do
 
     #include <stdint.h>
 
+    #define ELM_PEBBLE_RESOURCE_ID_MISSING UINT32_MAX
+
     static uint32_t elm_pebble_bitmap_resource_id(int64_t bitmap_id) {
       switch (bitmap_id) {
     #{bitmap_cases}
-        default: return 0;
+        default: return ELM_PEBBLE_RESOURCE_ID_MISSING;
       }
     }
 
     static uint32_t elm_pebble_font_resource_id(int64_t font_id) {
       switch (font_id) {
     #{font_cases}
+        default: return ELM_PEBBLE_RESOURCE_ID_MISSING;
+      }
+    }
+
+    static int64_t elm_pebble_font_resource_height(int64_t font_id) {
+      switch (font_id) {
+    #{font_height_cases}
         default: return 0;
       }
     }
@@ -626,7 +665,8 @@ defmodule Ide.PebbleToolchain do
               %{
                 "type" => "font",
                 "name" => "FONT_" <> macro_name(ctor) <> "_#{height}",
-                "file" => package_rel
+                "file" => package_rel,
+                "height" => height
               }
             end)
             |> Enum.filter(fn row -> String.trim(to_string(Map.get(row, "file", ""))) != "" end)
@@ -789,22 +829,50 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
+  @spec extract_phone_preferences(term()) :: term()
+  defp extract_phone_preferences(workspace_root) do
+    case phone_companion_project_root(workspace_root) do
+      nil -> {:ok, nil}
+      phone_root -> PebblePreferences.extract(phone_root)
+    end
+  end
+
+  @spec write_preferences_config(term(), term()) :: term()
+  defp write_preferences_config(_app_root, nil), do: :ok
+
+  defp write_preferences_config(app_root, preferences_schema) do
+    config_path = Path.join(app_root, "src/pkjs/generated/preferences.html")
+
+    with :ok <- File.mkdir_p(Path.dirname(config_path)) do
+      File.write(config_path, PebblePreferences.render_html(preferences_schema))
+    end
+  end
+
   @spec phone_companion_app_path(term()) :: String.t() | nil
   defp phone_companion_app_path(workspace_root) do
-    path = Path.join(workspace_root, "phone/src/CompanionApp.elm")
+    path = Path.join([workspace_root, "phone", "src", "CompanionApp.elm"])
 
     if File.exists?(path) and File.exists?(Path.join(workspace_root, "phone/elm.json")) do
       path
     end
   end
 
-  @spec write_companion_index(term(), term()) :: term()
-  defp write_companion_index(workspace_root, app_root) do
+  @spec phone_companion_project_root(term()) :: String.t() | nil
+  defp phone_companion_project_root(workspace_root) do
+    root = Path.join(workspace_root, "phone")
+
+    if File.exists?(Path.join(root, "elm.json")) do
+      root
+    end
+  end
+
+  @spec write_companion_index(term(), term(), term()) :: term()
+  defp write_companion_index(workspace_root, app_root, preferences_schema) do
     index_path = Path.join(app_root, "src/pkjs/index.js")
 
     source =
       if phone_companion_app_path(workspace_root),
-        do: elm_companion_index_js(),
+        do: elm_companion_index_js(preferences_schema),
         else: no_phone_companion_index_js()
 
     with :ok <- File.mkdir_p(Path.dirname(index_path)) do
@@ -812,9 +880,200 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec elm_companion_index_js() :: String.t()
-  defp elm_companion_index_js do
+  @spec elm_companion_index_js(term()) :: String.t()
+  defp elm_companion_index_js(preferences_schema) do
+    preferences_url =
+      if preferences_schema do
+        PebblePreferences.data_url(preferences_schema)
+      end
+
     """
+    var pendingIncoming = [];
+    var incomingPort = null;
+    var protocol = require("./companion-protocol.js");
+    var generatedConfigurationUrl = #{Jason.encode!(preferences_url)};
+    var appMessageKeyNamesById = {};
+    var appMessageKeyIdsByName = {};
+
+    Object.keys(protocol).forEach(function (key) {
+        if (key.indexOf("KEY_") !== 0 || typeof protocol[key] !== "number") {
+            return;
+        }
+
+        var name = key.substring(4).toLowerCase();
+        appMessageKeyNamesById[protocol[key]] = name;
+        appMessageKeyIdsByName[name] = protocol[key];
+    });
+
+    function appMessageValue(payload, name) {
+        if (!payload) {
+            return undefined;
+        }
+
+        var id = appMessageKeyIdsByName[name];
+        if (Object.prototype.hasOwnProperty.call(payload, name)) {
+            return payload[name];
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, String(id))) {
+            return payload[String(id)];
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, id)) {
+            return payload[id];
+        }
+        return undefined;
+    }
+
+    function normalizeIncomingAppMessage(payload) {
+        if (!payload) {
+            return payload;
+        }
+
+        var normalized = {};
+        Object.keys(payload).forEach(function (key) {
+            var name = appMessageKeyNamesById[key] || key;
+            normalized[name] = payload[key];
+        });
+
+        Object.keys(appMessageKeyIdsByName).forEach(function (name) {
+            var value = appMessageValue(payload, name);
+            if (typeof value !== "undefined") {
+                normalized[name] = value;
+            }
+        });
+
+        return normalized;
+    }
+
+    function normalizeOutgoingAppMessage(payload) {
+        if (!payload) {
+            return payload;
+        }
+
+        var normalized = {};
+        Object.keys(payload).forEach(function (key) {
+            var id = appMessageKeyIdsByName[key];
+            normalized[typeof id === "number" ? id : key] = payload[key];
+        });
+
+        return normalized;
+    }
+
+    function deliverIncoming(payload) {
+        if (incomingPort) {
+            incomingPort.send(payload);
+        } else {
+            pendingIncoming.push(payload);
+        }
+    }
+
+    function openConfigurationUrl(url) {
+        if (url && typeof Pebble.openURL === "function") {
+            Pebble.openURL(url);
+        }
+    }
+
+    function handleOutgoing(payload) {
+        if (payload && payload.api === "configuration") {
+            if (payload.op === "open") {
+                openConfigurationUrl((payload.payload && payload.payload.url) || generatedConfigurationUrl);
+            }
+            return;
+        }
+
+        if (payload && payload.api === "appMessage" && payload.op === "send") {
+            Pebble.sendAppMessage(
+                normalizeOutgoingAppMessage(payload.payload || {}),
+                function () {
+                    console.log("Elm companion -> watch", JSON.stringify(payload.payload || {}));
+                },
+                function (error) {
+                    console.log("Elm companion send failed:", JSON.stringify(error));
+                }
+            );
+            return;
+        }
+
+        Pebble.sendAppMessage(
+            normalizeOutgoingAppMessage(payload),
+            function () {
+                console.log("Elm companion -> watch", JSON.stringify(payload));
+            },
+            function (error) {
+                console.log("Elm companion send failed:", JSON.stringify(error));
+            }
+        );
+    }
+
+    function installXmlHttpRequestCompatibility() {
+        if (typeof XMLHttpRequest === "undefined") {
+            return;
+        }
+
+        var proto = XMLHttpRequest.prototype;
+        if (!proto) {
+            return;
+        }
+
+        if (typeof proto.getAllResponseHeaders !== "function") {
+            proto.getAllResponseHeaders = function () {
+                return "";
+            };
+        }
+
+        if (typeof proto.addEventListener !== "function") {
+            proto.addEventListener = function (name, callback) {
+                if (typeof callback !== "function") {
+                    return;
+                }
+
+                var property = "on" + name;
+                var previous = this[property];
+                this[property] = function (event) {
+                    if (
+                        name === "load" &&
+                        typeof this.responseText !== "undefined" &&
+                        (typeof this.response === "undefined" || this.response === null || this.response === "")
+                    ) {
+                        try {
+                            this.response = this.responseText;
+                        } catch (_error) {
+                        }
+                    }
+                    if (typeof previous === "function") {
+                        previous.call(this, event);
+                    }
+                    callback.call(this, event);
+                };
+            };
+        }
+    }
+
+    installXmlHttpRequestCompatibility();
+
+    Pebble.addEventListener("appmessage", function (event) {
+        if (!event || !event.payload) {
+            return;
+        }
+
+        console.log("watch -> Elm companion", JSON.stringify(event.payload));
+        deliverIncoming(normalizeIncomingAppMessage(event.payload));
+    });
+
+    if (generatedConfigurationUrl) {
+        Pebble.addEventListener("showConfiguration", function () {
+            openConfigurationUrl(generatedConfigurationUrl);
+        });
+
+        Pebble.addEventListener("webviewclosed", function (event) {
+            deliverIncoming({
+                event: "configuration.closed",
+                payload: {
+                    response: event && typeof event.response === "string" ? event.response : null
+                }
+            });
+        });
+    }
+
     var elmModule = require("./elm-companion.js");
 
     function bootElmCompanion() {
@@ -833,24 +1092,15 @@ defmodule Ide.PebbleToolchain do
 
         if (app.ports && app.ports.outgoing) {
             app.ports.outgoing.subscribe(function (payload) {
-                Pebble.sendAppMessage(
-                    payload,
-                    function () {
-                        console.log("Elm companion -> watch", JSON.stringify(payload));
-                    },
-                    function (error) {
-                        console.log("Elm companion send failed:", JSON.stringify(error));
-                    }
-                );
+                handleOutgoing(payload);
             });
         }
 
         if (app.ports && app.ports.incoming) {
-            Pebble.addEventListener("appmessage", function (event) {
-                if (event && event.payload) {
-                    app.ports.incoming.send(event.payload);
-                }
-            });
+            incomingPort = app.ports.incoming;
+            while (pendingIncoming.length > 0) {
+                incomingPort.send(pendingIncoming.shift());
+            }
         }
     }
 
@@ -945,10 +1195,26 @@ defmodule Ide.PebbleToolchain do
 
   @spec elm_bin() :: term()
   defp elm_bin do
-    case System.find_executable("elm") do
-      nil -> {:error, :elm_compiler_not_found}
-      path -> {:ok, path}
-    end
+    configured =
+      Application.get_env(:ide, Ide.PebbleToolchain, [])
+      |> Keyword.get(:elm_bin)
+
+    env_bin = System.get_env("ELM_BIN")
+
+    [
+      configured,
+      env_bin,
+      System.find_executable("elm"),
+      Path.expand("../../../elm_pebble_dev/node_modules/.bin/elm", __DIR__)
+    ]
+    |> Enum.find_value(fn
+      path when is_binary(path) and path != "" ->
+        expanded = Path.expand(path)
+        if File.exists?(expanded), do: {:ok, expanded}
+
+      _ ->
+        nil
+    end) || {:error, :elm_compiler_not_found}
   end
 
   @spec template_app_root() :: term()

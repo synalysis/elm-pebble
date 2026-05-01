@@ -8,7 +8,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   def screen_dimensions(runtime, tree \\ nil) do
     raw_model = raw_runtime_model(runtime)
     model = runtime_model(runtime)
-    launch = first_map([map_get_any(model, "launch_context"), map_get_any(raw_model, "launch_context")])
+
+    launch =
+      first_map([map_get_any(model, "launch_context"), map_get_any(raw_model, "launch_context")])
+
     launch_screen = first_map([map_get_any(launch, "screen")])
     tree_box = if is_map(tree), do: first_map([map_get_any(tree, "box")]), else: %{}
 
@@ -31,7 +34,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   def screen_round?(runtime, tree \\ nil) do
     raw_model = raw_runtime_model(runtime)
     model = runtime_model(runtime)
-    launch = first_map([map_get_any(model, "launch_context"), map_get_any(raw_model, "launch_context")])
+
+    launch =
+      first_map([map_get_any(model, "launch_context"), map_get_any(raw_model, "launch_context")])
+
     launch_screen = first_map([map_get_any(launch, "screen")])
 
     round? =
@@ -596,7 +602,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     base = %{kind: :text_label, x: x, y: y, text: text}
 
     case map_integers_required(op, ["w", "h"]) do
-      {:ok, [w, h]} -> Map.merge(base, %{w: w, h: h, text_align: "center"})
+      {:ok, [w, h]} -> Map.merge(base, %{w: w, h: h, text_align: "center", font_size: h})
       :error -> base
     end
   end
@@ -698,7 +704,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
               :pixel
             ] do
     op
-    |> Map.put(:stroke_color, style_color(style, :stroke_color, Map.get(op, :color) || Map.get(op, :fill)))
+    |> Map.put(
+      :stroke_color,
+      style_color(style, :stroke_color, Map.get(op, :color) || Map.get(op, :fill))
+    )
     |> Map.put(:stroke_width, style.stroke_width || 1)
     |> put_common_svg_style(style)
   end
@@ -706,8 +715,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp apply_svg_style(%{kind: kind} = op, style)
        when kind in [:fill_rect, :fill_circle, :path_filled, :fill_radial] do
     op
-    |> Map.put(:fill_color, style_color(style, :fill_color, Map.get(op, :color) || Map.get(op, :fill)))
-    |> Map.put(:stroke_color, style_color(style, :stroke_color, Map.get(op, :color) || Map.get(op, :fill)))
+    |> Map.put(
+      :fill_color,
+      style_color(style, :fill_color, Map.get(op, :color) || Map.get(op, :fill))
+    )
+    |> Map.put(
+      :stroke_color,
+      style_color(style, :stroke_color, Map.get(op, :color) || Map.get(op, :fill))
+    )
     |> Map.put(:stroke_width, style.stroke_width || 1)
     |> put_common_svg_style(style)
   end

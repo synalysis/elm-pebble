@@ -3053,7 +3053,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     last_replay = replay_metadata_at_cursor(events, cursor_seq)
 
     debugger =
-      debugger_assigns(socket.assigns[:debugger_cursor_seq], snapshot_runtime, debugger_state)
+      debugger_assigns(cursor_seq, snapshot_runtime, debugger_state)
 
     socket
     |> Component.assign(:debugger_state, debugger_state)
@@ -3117,7 +3117,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
     debugger =
       debugger_assigns(
-        socket.assigns[:debugger_cursor_seq],
+        normalized_cursor,
         snapshot_runtime,
         socket.assigns[:debugger_state]
       )

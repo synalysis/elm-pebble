@@ -22,8 +22,8 @@ type alias Model =
     , connected : Maybe Bool
     , temperature : Maybe Temperature
     , condition : Maybe WeatherCondition
-    , backgroundColor : Maybe PebbleColor.Color
-    , textColor : Maybe PebbleColor.Color
+    , backgroundColor : Maybe TutorialColor
+    , textColor : Maybe TutorialColor
     , showDate : Maybe Bool
     }
 
@@ -104,10 +104,10 @@ updateFromPhone message model =
             ( { model | condition = Just condition }, Cmd.none )
 
         SetBackgroundColor color ->
-            ( { model | backgroundColor = Just (pebbleColor color) }, Cmd.none )
+            ( { model | backgroundColor = Just color }, Cmd.none )
 
         SetTextColor color ->
-            ( { model | textColor = Just (pebbleColor color) }, Cmd.none )
+            ( { model | textColor = Just color }, Cmd.none )
 
         SetShowDate value ->
             ( { model | showDate = Just value }, Cmd.none )
@@ -162,10 +162,12 @@ view model =
                 h // 28
 
         backgroundColor =
-            Maybe.withDefault PebbleColor.black model.backgroundColor
+            Maybe.withDefault Black model.backgroundColor
+                |> pebbleColor
 
         textColor =
-            Maybe.withDefault PebbleColor.white model.textColor
+            Maybe.withDefault White model.textColor
+                |> pebbleColor
 
         batteryOps =
             case model.batteryLevel of
@@ -208,12 +210,16 @@ view model =
                     []
 
         dateOps =
-            case ( model.showDate, model.currentDateTime ) of
-                ( Just True, Just currentDateTime ) ->
-                    [ drawCentered model textColor dateY 24 (dateString currentDateTime) ]
+            if Maybe.withDefault False model.showDate then
+                case model.currentDateTime of
+                    Just currentDateTime ->
+                        [ drawCentered model textColor dateY 24 (dateString currentDateTime) ]
 
-                _ ->
-                    []
+                    Nothing ->
+                        []
+
+            else
+                []
     in
     [ PebbleUi.clear backgroundColor
     ]
