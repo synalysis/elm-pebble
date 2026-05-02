@@ -3,17 +3,21 @@ module CompanionApp exposing (main)
 import Companion.Phone as CompanionPhone
 import Companion.Types exposing (Location(..), PhoneToWatch(..), Temperature(..), WatchToPhone(..), WeatherCondition(..))
 import CompanionPreferences
+import Companion.GeneratedPreferences as GeneratedPreferences
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Pebble.Companion.AppMessage as RawBridge
-import Pebble.Companion.Preferences as Preferences
 import Platform
 
 
 type alias Model =
     { lastResponse : Int
+    , errors : List String
     }
+
+
+type alias Flags =
+    Decode.Value
 
 
 type alias WeatherReport =
@@ -24,14 +28,27 @@ type alias WeatherReport =
 
 type Msg
     = FromWatch (Result String WatchToPhone)
-    | FromBridge Decode.Value
+    | FromBridge (Result String CompanionPreferences.Settings)
     | WeatherReceived (Result Http.Error WeatherReport)
     | DemoPosted (Result Http.Error String)
 
 
-init : () -> ( Model, Cmd Msg )
-init _ =
-    ( { lastResponse = 0 }, Cmd.none )
+init : Flags -> ( Model, Cmd Msg )
+init flags =
+    case GeneratedPreferences.decodeConfigurationFlags flags of
+        Ok (Just settings) ->
+            ( initialModel, sendSettings settings )
+
+        Ok Nothing ->
+            ( initialModel, Cmd.none )
+
+        Err error ->
+            ( addError ("Initial configuration error: " ++ error) initialModel, Cmd.none )
+
+
+initialModel : Model
+initialModel =
+    { lastResponse = 0, errors = [] }
 
 
 locationQuery : Location -> String
@@ -95,16 +112,14 @@ update msg model =
                 ]
             )
 
-        FromWatch (Err _) ->
-            ( model, Cmd.none )
+        FromWatch (Err error) ->
+            ( addError ("Watch message error: " ++ error) model, Cmd.none )
 
-        FromBridge value ->
-            case decodeConfigurationSaved value of
-                Ok settings ->
-                    ( model, sendSettings settings )
+        FromBridge (Ok settings) ->
+            ( model, sendSettings settings )
 
-                Err _ ->
-                    ( model, Cmd.none )
+        FromBridge (Err error) ->
+            ( addError ("Configuration error: " ++ error) model, Cmd.none )
 
         WeatherReceived result ->
             case result of
@@ -120,50 +135,44 @@ update msg model =
                         ]
                     )
 
-                Err _ ->
+                Err error ->
                     ( { model | lastResponse = 0 }
+                        |> addError ("Weather request error: " ++ httpErrorToString error)
                     , Cmd.batch
                         [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius 0))
                         , CompanionPhone.sendPhoneToWatch (ProvideCondition Clear)
                         ]
                     )
 
-        DemoPosted _ ->
+        DemoPosted (Ok _) ->
             ( model, Cmd.none )
 
-
-decodeConfigurationSaved : Decode.Value -> Result String CompanionPreferences.Settings
-decodeConfigurationSaved value =
-    Decode.decodeValue configurationResponseDecoder value
-        |> Result.mapError Decode.errorToString
-        |> Result.andThen
-            (\response ->
-                Preferences.decodeResponse CompanionPreferences.settings response
-                    |> Result.mapError preferencesErrorToString
-            )
+        DemoPosted (Err error) ->
+            ( addError ("Demo POST error: " ++ httpErrorToString error) model, Cmd.none )
 
 
-configurationResponseDecoder : Decode.Decoder (Maybe String)
-configurationResponseDecoder =
-    Decode.field "event" Decode.string
-        |> Decode.andThen
-            (\event ->
-                if event == "configuration.closed" then
-                    Decode.at [ "payload", "response" ] (Decode.nullable Decode.string)
-
-                else
-                    Decode.fail ("Unexpected bridge event: " ++ event)
-            )
+addError : String -> Model -> Model
+addError error model =
+    { model | errors = model.errors ++ [ error ] }
 
 
-preferencesErrorToString : Preferences.Error -> String
-preferencesErrorToString error =
+httpErrorToString : Http.Error -> String
+httpErrorToString error =
     case error of
-        Preferences.InvalidJson message ->
-            message
+        Http.BadUrl url ->
+            "Bad URL: " ++ url
 
-        Preferences.MissingResponse ->
-            "Configuration closed without a response"
+        Http.Timeout ->
+            "Timed out"
+
+        Http.NetworkError ->
+            "Network error"
+
+        Http.BadStatus status ->
+            "Bad status: " ++ String.fromInt status
+
+        Http.BadBody message ->
+            "Bad body: " ++ message
 
 
 sendSettings : CompanionPreferences.Settings -> Cmd Msg
@@ -234,11 +243,11 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ CompanionPhone.onWatchToPhone FromWatch
-        , RawBridge.onMessage FromBridge
+        , GeneratedPreferences.onConfiguration FromBridge
         ]
 
 
-main : Program () Model Msg
+main : Program Flags Model Msg
 main =
     Platform.worker
         { init = init

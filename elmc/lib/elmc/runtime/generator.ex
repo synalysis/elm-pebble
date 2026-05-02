@@ -1333,9 +1333,7 @@ defmodule Elmc.Runtime.Generator do
       return result;
     }
 
-    ElmcValue *elmc_closure_new(
-        ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count),
-        int capture_count, ElmcValue **captures) {
+    ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int capture_count, ElmcValue **captures) {
       ElmcClosure *clo = (ElmcClosure *)malloc(sizeof(ElmcClosure));
       if (!clo) return NULL;
       clo->fn = fn;

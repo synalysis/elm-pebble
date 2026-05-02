@@ -191,7 +191,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
             </div>
           </.form>
           <p :if={active.read_only} class="text-xs text-zinc-500">
-            This generated resources module is read-only.
+            This generated file is read-only.
           </p>
           <section :if={@debug_mode and @editor_inline_diagnostics != []} class="space-y-2">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">

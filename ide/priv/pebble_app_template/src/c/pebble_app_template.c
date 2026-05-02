@@ -2,7 +2,9 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include "elmc/c/elmc_pebble.h"
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 #include "generated/companion_protocol.h"
+#endif
 #include "generated/resource_ids.h"
 
 static Window *s_main_window;

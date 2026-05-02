@@ -13,6 +13,7 @@ defmodule Ide.Projects do
   alias Ide.ProjectBundle
   alias Ide.ProjectImport
   alias Ide.ProjectTemplates
+  alias Ide.PebblePreferences
   alias Ide.Repo
 
   @default_source_roots ["watch", "protocol", "phone"]
@@ -243,6 +244,7 @@ defmodule Ide.Projects do
   @spec list_source_tree(term()) :: term()
   def list_source_tree(%Project{} = project) do
     FileStore.ensure_roots(project, projects_root())
+    ensure_generated_phone_preferences(project)
     FileStore.list_tree(project, projects_root())
   end
 
@@ -325,6 +327,20 @@ defmodule Ide.Projects do
   @spec ensure_bitmap_generated(term()) :: term()
   def ensure_bitmap_generated(%Project{} = project) do
     ResourceStore.ensure_generated(project)
+  end
+
+  @doc """
+  Ensures the generated phone preferences bridge exists when a phone app declares preferences.
+  """
+  @spec ensure_generated_phone_preferences(term()) :: :ok
+  def ensure_generated_phone_preferences(%Project{} = project) do
+    phone_root = Path.join(project_workspace_path(project), "phone")
+
+    if File.exists?(Path.join(phone_root, "elm.json")) do
+      _ = PebblePreferences.ensure_generated_bridge(phone_root)
+    end
+
+    :ok
   end
 
   @doc """

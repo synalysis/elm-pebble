@@ -314,6 +314,7 @@ defmodule Ide.ProjectsTest do
     assert File.exists?(Path.join(base, "phone/src/Engine.elm"))
     assert File.exists?(Path.join(base, "phone/src/CompanionApp.elm"))
     assert File.exists?(Path.join(base, "phone/src/CompanionPreferences.elm"))
+    assert File.exists?(Path.join(base, "phone/src/Companion/GeneratedPreferences.elm"))
     assert File.exists?(Path.join(base, "phone/src/Pebble/Companion/AppMessage.elm"))
     refute File.exists?(Path.join(base, "phone/src/Companion/Internal.elm"))
     refute File.exists?(Path.join(base, "phone/src/Companion/Http.elm"))
@@ -363,12 +364,23 @@ defmodule Ide.ProjectsTest do
 
     assert String.contains?(companion_app, "import Http")
     assert String.contains?(companion_app, "CompanionPhone.onWatchToPhone FromWatch")
-    assert String.contains?(companion_app, "RawBridge.onMessage FromBridge")
+    assert String.contains?(companion_app, "GeneratedPreferences.onConfiguration FromBridge")
+    assert String.contains?(companion_app, "type alias Flags =")
+    assert String.contains?(companion_app, "init : Flags -> ( Model, Cmd Msg )")
+    assert String.contains?(companion_app, "GeneratedPreferences.decodeConfigurationFlags flags")
+    assert String.contains?(companion_app, "sendSettings settings")
 
     assert String.contains?(
              companion_app,
-             "Preferences.decodeResponse CompanionPreferences.settings"
+             "FromBridge (Result String CompanionPreferences.Settings)"
            )
+
+    assert String.contains?(companion_app, "FromBridge (Ok settings)")
+    assert String.contains?(companion_app, "FromBridge (Err error)")
+    assert String.contains?(companion_app, "errors : List String")
+    assert String.contains?(companion_app, "addError")
+    assert String.contains?(companion_app, "httpErrorToString")
+    refute String.contains?(companion_app, "decodeConfigurationSaved")
 
     assert String.contains?(companion_app, "SetBackgroundColor settings.backgroundColor")
     assert String.contains?(companion_app, "SetTextColor settings.textColor")
@@ -390,6 +402,20 @@ defmodule Ide.ProjectsTest do
     assert String.contains?(companion_preferences, "Preferences.field \"backgroundColor\"")
     assert String.contains?(companion_preferences, "Preferences.field \"textColor\"")
     assert String.contains?(companion_preferences, "Preferences.field \"showDate\"")
+
+    assert {:ok, generated_preferences} =
+             Projects.read_source_file(project, "phone", "src/Companion/GeneratedPreferences.elm")
+
+    assert String.contains?(generated_preferences, "decodeConfigurationSaved")
+    assert String.contains?(generated_preferences, "decodeConfigurationFlags")
+    assert String.contains?(generated_preferences, "configurationFlagsDecoder")
+    assert String.contains?(generated_preferences, "configurationResponseDecoder")
+    assert String.contains?(generated_preferences, "preferencesErrorToString")
+
+    assert String.contains?(
+             generated_preferences,
+             "Preferences.decodeResponse PreferencesSchema.settings"
+           )
 
     assert {:ok, preferences_schema} = Ide.PebblePreferences.extract(Path.join(base, "phone"))
     assert preferences_schema.title == "Tutorial Watchface"

@@ -54,12 +54,12 @@ def build(ctx):
     ctx.env = cached_env
 
     ctx.set_group('bundle')
-    ctx.pbl_bundle(
-        binaries=binaries,
-        js=ctx.path.ant_glob([
+    bundle_args = {'binaries': binaries}
+    if os.path.exists('src/pkjs/index.js'):
+        bundle_args['js'] = ctx.path.ant_glob([
             'src/pkjs/**/*.js',
             'src/pkjs/**/*.json',
             'src/common/**/*.js'
-        ]),
-        js_entry_file='src/pkjs/index.js'
-    )
+        ])
+        bundle_args['js_entry_file'] = 'src/pkjs/index.js'
+    ctx.pbl_bundle(**bundle_args)

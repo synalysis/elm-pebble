@@ -39,4 +39,28 @@ defmodule ElmcTest do
     refute String.contains?(generated, "elmc_fn_CoreCompliance_foldSum")
     refute String.contains?(generated, "elmc_fn_CoreCompliance_resultInc")
   end
+
+  test "runtime pruning keeps closure constructor referenced by generated code" do
+    out_dir = Path.expand("tmp/runtime_pruned_closure", __DIR__)
+    refs_dir = Path.join(out_dir, "refs")
+    runtime_dir = Path.join(out_dir, "runtime")
+
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(refs_dir)
+
+    File.write!(Path.join(refs_dir, "elmc_generated.c"), """
+    #include "elmc_runtime.h"
+
+    ElmcValue *uses_closure(void) {
+      return elmc_closure_new(0, 0, 0);
+    }
+    """)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir, prune_from_dir: refs_dir)
+
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime =~ "ElmcValue *elmc_closure_new"
+    assert runtime =~ "ElmcValue *elmc_alloc"
+  end
 end

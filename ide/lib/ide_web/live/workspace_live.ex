@@ -217,7 +217,7 @@ defmodule IdeWeb.WorkspaceLive do
         {:noreply, put_flash(socket, :error, "Open a file first.")}
 
       {:error, :read_only_file} ->
-        {:noreply, put_flash(socket, :error, "Generated resources module is read-only.")}
+        {:noreply, put_flash(socket, :error, "Generated files are read-only.")}
 
       {:error, :protected_file} ->
         {:noreply,
@@ -264,7 +264,7 @@ defmodule IdeWeb.WorkspaceLive do
             end
 
           {:error, :read_only_file} ->
-            {:noreply, put_flash(socket, :error, "Generated resources module is read-only.")}
+            {:noreply, put_flash(socket, :error, "Generated files are read-only.")}
 
           {:error, :protected_file} ->
             {:noreply,
@@ -429,7 +429,7 @@ defmodule IdeWeb.WorkspaceLive do
           end
 
         if read_only_tab?(tab) do
-          {:noreply, put_flash(socket, :error, "Generated resources module is read-only.")}
+          {:noreply, put_flash(socket, :error, "Generated files are read-only.")}
         else
           if elm_source_file?(tab.rel_path) do
             project = socket.assigns.project
@@ -476,7 +476,7 @@ defmodule IdeWeb.WorkspaceLive do
 
       tab ->
         if read_only_tab?(tab) do
-          {:noreply, put_flash(socket, :error, "Generated resources module is read-only.")}
+          {:noreply, put_flash(socket, :error, "Generated files are read-only.")}
         else
           {content_to_save, flash_message, format_output, auto_format_last_result} =
             prepare_content_for_save(
@@ -793,7 +793,7 @@ defmodule IdeWeb.WorkspaceLive do
              )}
 
           {:error, :read_only_file} ->
-            {:noreply, put_flash(socket, :error, "Generated resources module is read-only.")}
+            {:noreply, put_flash(socket, :error, "Generated files are read-only.")}
 
           {:error, :protected_file} ->
             {:noreply,
@@ -1023,6 +1023,7 @@ defmodule IdeWeb.WorkspaceLive do
     {:noreply,
      socket
      |> assign(:pebble_install_status, :running)
+     |> assign(:pebble_install_output, nil)
      |> start_async(:run_emulator_install, fn ->
        run_emulator_install_flow(
          project,

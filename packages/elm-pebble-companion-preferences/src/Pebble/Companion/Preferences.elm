@@ -173,7 +173,7 @@ section title build (Schema data) =
         start =
             Schema { data | currentSection = Just title, sections = data.sections ++ [ Section title [] ] }
 
-        Schema next =
+        (Schema next) =
             build start
     in
     Schema { next | currentSection = data.currentSection }
@@ -194,9 +194,10 @@ field id (Control definition valueDecoder) (Schema data) =
             }
     in
     Schema
-        { data
-            | sections = addField data.currentSection fieldDefinition data.sections
-            , decoder = Decode.map2 (<|) data.decoder (Decode.field id valueDecoder)
+        { title = data.title
+        , sections = addField data.currentSection fieldDefinition data.sections
+        , currentSection = data.currentSection
+        , decoder = Decode.map2 (<|) data.decoder (Decode.field id valueDecoder)
         }
 
 

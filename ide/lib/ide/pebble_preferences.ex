@@ -9,9 +9,13 @@ defmodule Ide.PebblePreferences do
   alias ElmEx.Frontend.Bridge
   alias ElmEx.IR.Lowerer
 
+  @generated_bridge_rel_path "src/Companion/GeneratedPreferences.elm"
+
   @type schema :: %{
           required(:title) => String.t(),
-          required(:sections) => [section()]
+          required(:sections) => [section()],
+          optional(:module) => String.t(),
+          optional(:value) => String.t()
         }
 
   @type section :: %{
@@ -179,6 +183,112 @@ defmodule Ide.PebblePreferences do
     "data:text/html;charset=utf-8," <> URI.encode(render_html(schema))
   end
 
+  @doc false
+  @spec generated_bridge_rel_path() :: String.t()
+  def generated_bridge_rel_path, do: @generated_bridge_rel_path
+
+  @doc false
+  @spec ensure_generated_bridge(String.t()) :: :ok | {:error, term()}
+  def ensure_generated_bridge(phone_root) when is_binary(phone_root) do
+    with {:ok, schema} <- extract(phone_root),
+         source when is_binary(source) <- generated_bridge_source(schema) do
+      path = Path.join(phone_root, @generated_bridge_rel_path)
+
+      with :ok <- File.mkdir_p(Path.dirname(path)) do
+        File.write(path, source)
+      end
+    else
+      {:ok, nil} -> :ok
+      nil -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc false
+  @spec generated_bridge_source(schema() | nil) :: String.t() | nil
+  def generated_bridge_source(nil), do: nil
+
+  def generated_bridge_source(%{module: module_name, value: value_name})
+      when is_binary(module_name) and is_binary(value_name) do
+    """
+    module Companion.GeneratedPreferences exposing
+        ( configurationResponseDecoder
+        , decodeConfigurationFlags
+        , decodeConfigurationSaved
+        , onConfiguration
+        , preferencesErrorToString
+        )
+
+    {-| Generated bridge for Pebble companion preferences.
+
+    This module is derived from the project's `Pebble.Companion.Preferences`
+    schema. Edit that schema instead of this file.
+    -}
+
+    import #{module_name} as PreferencesSchema
+    import Json.Decode as Decode
+    import Pebble.Companion.AppMessage as RawBridge
+    import Pebble.Companion.Preferences as Preferences
+
+
+    onConfiguration toMsg =
+        RawBridge.onMessage (decodeConfigurationSaved >> toMsg)
+
+
+    decodeConfigurationSaved value =
+        Decode.decodeValue configurationResponseDecoder value
+            |> Result.mapError Decode.errorToString
+            |> Result.andThen
+                (\\response ->
+                    Preferences.decodeResponse PreferencesSchema.#{value_name} response
+                        |> Result.mapError preferencesErrorToString
+                )
+
+
+    decodeConfigurationFlags value =
+        Decode.decodeValue configurationFlagsDecoder value
+            |> Result.mapError Decode.errorToString
+            |> Result.andThen
+                (\\response ->
+                    case response of
+                        Just saved ->
+                            Preferences.decodeResponse PreferencesSchema.#{value_name} (Just saved)
+                                |> Result.map Just
+                                |> Result.mapError preferencesErrorToString
+
+                        Nothing ->
+                            Ok Nothing
+                )
+
+
+    configurationFlagsDecoder =
+        Decode.field "configurationResponse" (Decode.nullable Decode.string)
+
+
+    configurationResponseDecoder =
+        Decode.field "event" Decode.string
+            |> Decode.andThen
+                (\\event ->
+                    if event == "configuration.closed" then
+                        Decode.at [ "payload", "response" ] (Decode.nullable Decode.string)
+
+                    else
+                        Decode.fail ("Unexpected bridge event: " ++ event)
+                )
+
+
+    preferencesErrorToString error =
+        case error of
+            Preferences.InvalidJson message ->
+                message
+
+            Preferences.MissingResponse ->
+                "Configuration closed without a response"
+    """
+  end
+
+  def generated_bridge_source(_schema), do: nil
+
   @spec validate_elm_project(String.t()) :: :ok | {:error, term()}
   defp validate_elm_project(project_root) do
     case Bridge.load_project(project_root) do
@@ -212,6 +322,9 @@ defmodule Ide.PebblePreferences do
 
   @spec parse_source(String.t()) :: {:ok, schema()} | {:error, term()}
   defp parse_source(source) do
+    module_name = module_name(source)
+    value_name = schema_value_name(source)
+
     title =
       case Regex.run(~r/Preferences\.schema\s+"([^"]+)"/, source) do
         [_, value] -> unescape_elm_string(value)
@@ -238,7 +351,32 @@ defmodule Ide.PebblePreferences do
         end
       end)
 
-    {:ok, %{title: title, sections: sections}}
+    {:ok, %{title: title, sections: sections, module: module_name, value: value_name}}
+  end
+
+  @spec module_name(String.t()) :: String.t()
+  defp module_name(source) do
+    case Regex.run(~r/^module\s+([A-Z][A-Za-z0-9_.]*)\s+exposing\b/m, source) do
+      [_, name] -> name
+      _ -> "CompanionPreferences"
+    end
+  end
+
+  @spec schema_value_name(String.t()) :: String.t()
+  defp schema_value_name(source) do
+    case Regex.run(
+           ~r/^([a-z][A-Za-z0-9_]*)\s*:\s*Preferences\.Schema\b[\s\S]*?\n\1\s*=\s*\n\s+Preferences\.schema\b/m,
+           source
+         ) do
+      [_, name] ->
+        name
+
+      _ ->
+        case Regex.run(~r/^([a-z][A-Za-z0-9_]*)\s*=\s*\n\s+Preferences\.schema\b/m, source) do
+          [_, name] -> name
+          _ -> "settings"
+        end
+    end
   end
 
   @spec parse_field(String.t(), String.t()) :: field()

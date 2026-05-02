@@ -90,6 +90,11 @@ defmodule Ide.PebbleToolchainTest do
       assert source =~ "webviewclosed"
       assert source =~ "configuration.closed"
       assert source =~ "openConfigurationUrl"
+      assert source =~ "configurationStorageKey"
+      assert source =~ "readStoredConfigurationResponse"
+      assert source =~ "writeStoredConfigurationResponse"
+      assert source =~ "configurationResponse: readStoredConfigurationResponse()"
+      assert source =~ "elmRoot.CompanionApp.init({ flags: companionFlags() })"
     end
   end
 
@@ -123,5 +128,100 @@ defmodule Ide.PebbleToolchainTest do
 
     assert source =~ "Jason.encode!(preferences_url)"
     refute source =~ "generatedConfigurationUrl = \#{inspect(preferences_url)}"
+  end
+
+  test "Pebble bundle includes JavaScript only when PKJS exists" do
+    wscript = File.read!("priv/pebble_app_template/wscript")
+    app_template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert wscript =~ "if os.path.exists('src/pkjs/index.js')"
+    assert wscript =~ "ctx.pbl_bundle(**bundle_args)"
+
+    assert app_template =~
+             "#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS"
+  end
+
+  test "emulator install wipes before installing" do
+    source = File.read!("lib/ide/pebble_toolchain.ex")
+
+    assert source =~ ~S|run_pebble_with_timeout(["wipe"], timeout_seconds, cwd: cwd)|
+    assert source =~ ~S|["install", "--emulator", emulator_target, package_path]|
+    assert source =~ "ensure_successful_wipe"
+  end
+
+  test "deterministic package UUIDs set RFC4122 version and variant bits" do
+    source = File.read!("lib/ide/pebble_toolchain.ex")
+
+    assert source =~ "List.update_at(6, &((&1 &&& 0x0F) ||| 0x40))"
+    assert source =~ "List.update_at(8, &((&1 &&& 0x3F) ||| 0x80))"
+  end
+
+  test "watch-only watchfaces package without a companion protocol schema" do
+    slug = "toolchain-analog-watchface-#{System.unique_integer([:positive])}"
+
+    previous_config = Application.get_env(:ide, Ide.PebbleToolchain, [])
+
+    pebble_bin =
+      Path.join(
+        System.tmp_dir!(),
+        "fake_pebble_#{System.unique_integer([:positive])}.sh"
+      )
+
+    File.write!(pebble_bin, """
+    #!/usr/bin/env bash
+    set -e
+    if [ "$1" = "build" ]; then
+      mkdir -p build
+      touch build/app.pbw
+    fi
+    """)
+
+    File.chmod!(pebble_bin, 0o755)
+
+    Application.put_env(
+      :ide,
+      Ide.PebbleToolchain,
+      Keyword.put(previous_config, :pebble_bin, pebble_bin)
+    )
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.PebbleToolchain, previous_config)
+      File.rm(pebble_bin)
+    end)
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Toolchain Analog Watchface",
+               "slug" => slug,
+               "target_type" => "app",
+               "template" => "watchface-analog"
+             })
+
+    workspace_root = Projects.project_workspace_path(project)
+    on_exit(fn -> Projects.delete_project(project) end)
+
+    refute File.exists?(Path.join(workspace_root, "protocol/src/Companion/Types.elm"))
+    refute File.exists?(Path.join(workspace_root, "phone/elm.json"))
+
+    assert {:ok, package} =
+             PebbleToolchain.package(slug,
+               workspace_root: workspace_root,
+               target_type: project.target_type,
+               project_name: project.name,
+               target_platforms: ["chalk"]
+             )
+
+    assert {:ok, package_json} =
+             package.app_root
+             |> Path.join("package.json")
+             |> File.read!()
+             |> Jason.decode()
+
+    refute get_in(package_json, ["pebble", "enableMultiJS"])
+    refute get_in(package_json, ["pebble", "messageKeys"])
+    refute File.exists?(Path.join(package.app_root, "src/pkjs/index.js"))
+    refute File.exists?(Path.join(package.app_root, "src/pkjs/companion-protocol.js"))
+    refute File.exists?(Path.join(package.app_root, "src/c/generated/companion_protocol.h"))
+    refute File.exists?(Path.join(package.app_root, "src/c/generated/companion_protocol.c"))
   end
 end

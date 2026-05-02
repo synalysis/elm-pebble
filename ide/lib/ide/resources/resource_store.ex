@@ -38,8 +38,11 @@ defmodule Ide.Resources.ResourceStore do
   @spec read_only_generated_module?(String.t(), String.t()) :: boolean()
   def read_only_generated_module?(source_root, rel_path)
       when is_binary(source_root) and is_binary(rel_path) do
-    source_root == "watch" and
-      rel_path in ["src/Pebble/Ui/Resources.elm", "src/Pebble/Ui/Bitmap.elm"]
+    {source_root, rel_path} in [
+      {"watch", "src/Pebble/Ui/Resources.elm"},
+      {"watch", "src/Pebble/Ui/Bitmap.elm"},
+      {"phone", "src/Companion/GeneratedPreferences.elm"}
+    ]
   end
 
   @spec list(Project.t()) :: {:ok, [bitmap_entry()]} | {:error, term()}

@@ -21,6 +21,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     "src/Main.elm",
     "src/CompanionApp.elm",
     "src/Companion/Types.elm",
+    "src/Companion/GeneratedPreferences.elm",
     "src/Pebble/Ui/Resources.elm"
   ]
 

@@ -2,6 +2,8 @@ defmodule Ide.PebbleToolchain do
   @moduledoc """
   Boundary for Pebble SDK and emulator command execution.
   """
+  import Bitwise, only: [&&&: 2, |||: 2]
+
   alias Ide.CompanionProtocolGenerator
   alias Ide.PebblePreferences
   alias Ide.Resources.ResourceStore
@@ -134,7 +136,7 @@ defmodule Ide.PebbleToolchain do
   def run_emulator(_project_slug, opts) do
     emulator_target = Keyword.get(opts, :emulator_target, configured_emulator_target())
     package_path = Keyword.get(opts, :package_path)
-    install_timeout_seconds = max(Keyword.get(opts, :install_timeout_seconds, 25), 5)
+    install_timeout_seconds = max(Keyword.get(opts, :install_timeout_seconds, 120), 30)
 
     with {:ok, package_path} <- normalize_package_path(package_path) do
       cwd = Path.dirname(package_path)
@@ -166,16 +168,19 @@ defmodule Ide.PebbleToolchain do
   defp install_on_emulator(cwd, emulator_target, package_path, timeout_seconds)
        when is_binary(cwd) and is_binary(emulator_target) and is_binary(package_path) and
               is_integer(timeout_seconds) and timeout_seconds > 0 do
-    with {:ok, _wipe_result} <- run_pebble_with_timeout(["wipe"], timeout_seconds, cwd: cwd),
-         {:ok, install_result} <-
-           run_pebble_with_timeout(
-             ["install", "--emulator", emulator_target, package_path],
-             timeout_seconds,
-             cwd: cwd
-           ) do
-      {:ok, install_result}
+    with {:ok, wipe_result} <- run_pebble_with_timeout(["wipe"], timeout_seconds, cwd: cwd),
+         :ok <- ensure_successful_wipe(wipe_result) do
+      run_pebble_with_timeout(
+        ["install", "--emulator", emulator_target, package_path],
+        timeout_seconds,
+        cwd: cwd
+      )
     end
   end
+
+  @spec ensure_successful_wipe(term()) :: :ok | {:error, term()}
+  defp ensure_successful_wipe(%{status: :ok}), do: :ok
+  defp ensure_successful_wipe(result), do: {:error, {:pebble_wipe_failed, result}}
 
   @spec attach_emulator_logs(term(), term(), term(), term()) :: term()
   defp attach_emulator_logs(result, emulator_target, cwd, opts) do
@@ -331,10 +336,11 @@ defmodule Ide.PebbleToolchain do
          {:ok, app_root} <- ensure_build_app_root(workspace_root),
          :ok <- ResourceStore.ensure_generated_workspace(workspace_root),
          resolved_target_type <- infer_package_target_type(compile_project_root, target_type),
-         :ok <- copy_pebble_template(template_root, app_root),
+         has_phone_companion <- phone_companion_app_path(workspace_root) != nil,
+         :ok <- copy_pebble_template(template_root, app_root, has_phone_companion),
          {:ok, media_entries} <- stage_project_resources(workspace_root, app_root),
          {:ok, preferences_schema} <- extract_phone_preferences(workspace_root),
-         protocol_elm <- companion_protocol_types_path(workspace_root, template_root),
+         protocol_elm <- companion_protocol_types_path(workspace_root, has_phone_companion),
          {:ok, app_message_keys} <- companion_protocol_message_keys(protocol_elm),
          :ok <-
            write_package_json(
@@ -345,11 +351,13 @@ defmodule Ide.PebbleToolchain do
              opts,
              media_entries,
              app_message_keys,
-             preferences_schema
+             preferences_schema,
+             has_phone_companion
            ),
          :ok <- generate_elmc_sources(compile_project_root, app_root, workspace_root),
          :ok <- generate_companion_protocol(protocol_elm, app_root),
          :ok <- generate_companion_protocol_elm_internal(protocol_elm),
+         :ok <- write_generated_preferences_bridge(workspace_root, preferences_schema),
          :ok <- write_preferences_config(app_root, preferences_schema),
          :ok <- compile_phone_companion(workspace_root, app_root),
          :ok <- write_companion_index(workspace_root, app_root, preferences_schema) do
@@ -447,14 +455,25 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec copy_pebble_template(term(), term()) :: term()
-  defp copy_pebble_template(template_root, app_root) do
-    mappings = [
-      {Path.join(template_root, "wscript"), Path.join(app_root, "wscript")},
-      {Path.join(template_root, "src/c/pebble_app_template.c"),
-       Path.join(app_root, "src/c/pebble_app_template.c")},
-      {Path.join(template_root, "src/pkjs/index.js"), Path.join(app_root, "src/pkjs/index.js")}
-    ]
+  @spec copy_pebble_template(term(), term(), boolean()) :: term()
+  defp copy_pebble_template(template_root, app_root, has_phone_companion) do
+    mappings =
+      [
+        {Path.join(template_root, "wscript"), Path.join(app_root, "wscript")},
+        {Path.join(template_root, "src/c/pebble_app_template.c"),
+         Path.join(app_root, "src/c/pebble_app_template.c")}
+      ]
+      |> then(fn mappings ->
+        if has_phone_companion do
+          mappings ++
+            [
+              {Path.join(template_root, "src/pkjs/index.js"),
+               Path.join(app_root, "src/pkjs/index.js")}
+            ]
+        else
+          mappings
+        end
+      end)
 
     Enum.reduce_while(mappings, :ok, fn {source, target}, _acc ->
       case copy_file(source, target) do
@@ -464,7 +483,17 @@ defmodule Ide.PebbleToolchain do
     end)
   end
 
-  @spec write_package_json(term(), term(), term(), term(), term(), term(), term(), term()) ::
+  @spec write_package_json(
+          term(),
+          term(),
+          term(),
+          term(),
+          term(),
+          term(),
+          term(),
+          term(),
+          boolean()
+        ) ::
           term()
   defp write_package_json(
          app_root,
@@ -474,7 +503,8 @@ defmodule Ide.PebbleToolchain do
          opts,
          media_entries,
          app_message_keys,
-         preferences_schema
+         preferences_schema,
+         has_phone_companion
        ) do
     target_platforms = target_platforms_for_target_type(target_type, opts)
 
@@ -490,16 +520,30 @@ defmodule Ide.PebbleToolchain do
           "displayName" => truncate_display_name(project_name),
           "uuid" => deterministic_uuid(project_slug),
           "sdkVersion" => "3",
-          "enableMultiJS" => true,
           "targetPlatforms" => target_platforms,
           "watchapp" => %{"watchface" => target_type == "watchface"},
-          "messageKeys" => Map.merge(%{"increment" => 1, "decrement" => 2}, app_message_keys),
           "resources" => %{"media" => media_entries}
         }
       }
+      |> maybe_enable_multijs(has_phone_companion)
+      |> maybe_put_message_keys(app_message_keys)
       |> maybe_put_configurable_capability(preferences_schema)
 
     File.write(Path.join(app_root, "package.json"), Jason.encode!(package, pretty: true))
+  end
+
+  @spec maybe_enable_multijs(map(), boolean()) :: map()
+  defp maybe_enable_multijs(package, false), do: package
+
+  defp maybe_enable_multijs(package, true) do
+    put_in(package, ["pebble", "enableMultiJS"], true)
+  end
+
+  @spec maybe_put_message_keys(map(), map()) :: map()
+  defp maybe_put_message_keys(package, app_message_keys) when app_message_keys == %{}, do: package
+
+  defp maybe_put_message_keys(package, app_message_keys) do
+    put_in(package, ["pebble", "messageKeys"], app_message_keys)
   end
 
   @spec maybe_put_configurable_capability(map(), term()) :: map()
@@ -743,9 +787,10 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec companion_protocol_types_path(term(), term()) :: String.t()
-  defp companion_protocol_types_path(workspace_root, template_root) do
-    repo_root = Path.expand("..", template_root)
+  @spec companion_protocol_types_path(term(), boolean()) :: String.t() | nil
+  defp companion_protocol_types_path(_workspace_root, false), do: nil
+
+  defp companion_protocol_types_path(workspace_root, true) do
     protocol_root_types = Path.join(workspace_root, "protocol/src/Companion/Types.elm")
     watch_root_types = Path.join(workspace_root, "watch/src/Companion/Types.elm")
 
@@ -757,11 +802,13 @@ defmodule Ide.PebbleToolchain do
         watch_root_types
 
       true ->
-        Path.join(repo_root, "shared/elm/Companion/Types.elm")
+        nil
     end
   end
 
   @spec companion_protocol_message_keys(term()) :: term()
+  defp companion_protocol_message_keys(nil), do: {:ok, %{}}
+
   defp companion_protocol_message_keys(protocol_elm) do
     case CompanionProtocolGenerator.message_keys(protocol_elm) do
       {:ok, keys} -> {:ok, keys}
@@ -770,6 +817,8 @@ defmodule Ide.PebbleToolchain do
   end
 
   @spec generate_companion_protocol(term(), term()) :: term()
+  defp generate_companion_protocol(nil, _app_root), do: :ok
+
   defp generate_companion_protocol(protocol_elm, app_root) do
     protocol_h = Path.join(app_root, "src/c/generated/companion_protocol.h")
     protocol_c = Path.join(app_root, "src/c/generated/companion_protocol.c")
@@ -782,6 +831,8 @@ defmodule Ide.PebbleToolchain do
   end
 
   @spec generate_companion_protocol_elm_internal(term()) :: term()
+  defp generate_companion_protocol_elm_internal(nil), do: :ok
+
   defp generate_companion_protocol_elm_internal(protocol_elm) do
     internal_elm = Path.join(Path.dirname(protocol_elm), "Internal.elm")
 
@@ -848,6 +899,24 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
+  @spec write_generated_preferences_bridge(term(), term()) :: term()
+  defp write_generated_preferences_bridge(_workspace_root, nil), do: :ok
+
+  defp write_generated_preferences_bridge(workspace_root, preferences_schema) do
+    with phone_root when is_binary(phone_root) <- phone_companion_project_root(workspace_root),
+         source when is_binary(source) <-
+           PebblePreferences.generated_bridge_source(preferences_schema) do
+      path = Path.join(phone_root, PebblePreferences.generated_bridge_rel_path())
+
+      with :ok <- File.mkdir_p(Path.dirname(path)) do
+        File.write(path, source)
+      end
+    else
+      nil -> :ok
+      _ -> :ok
+    end
+  end
+
   @spec phone_companion_app_path(term()) :: String.t() | nil
   defp phone_companion_app_path(workspace_root) do
     path = Path.join([workspace_root, "phone", "src", "CompanionApp.elm"])
@@ -868,15 +937,16 @@ defmodule Ide.PebbleToolchain do
 
   @spec write_companion_index(term(), term(), term()) :: term()
   defp write_companion_index(workspace_root, app_root, preferences_schema) do
-    index_path = Path.join(app_root, "src/pkjs/index.js")
+    case phone_companion_app_path(workspace_root) do
+      nil ->
+        :ok
 
-    source =
-      if phone_companion_app_path(workspace_root),
-        do: elm_companion_index_js(preferences_schema),
-        else: no_phone_companion_index_js()
+      _phone_app ->
+        index_path = Path.join(app_root, "src/pkjs/index.js")
 
-    with :ok <- File.mkdir_p(Path.dirname(index_path)) do
-      File.write(index_path, source)
+        with :ok <- File.mkdir_p(Path.dirname(index_path)) do
+          File.write(index_path, elm_companion_index_js(preferences_schema))
+        end
     end
   end
 
@@ -892,8 +962,39 @@ defmodule Ide.PebbleToolchain do
     var incomingPort = null;
     var protocol = require("./companion-protocol.js");
     var generatedConfigurationUrl = #{Jason.encode!(preferences_url)};
+    var configurationStorageKey = "elm-pebble.configuration.response";
     var appMessageKeyNamesById = {};
     var appMessageKeyIdsByName = {};
+
+    function readStoredConfigurationResponse() {
+        if (typeof localStorage === "undefined" || !localStorage) {
+            return null;
+        }
+
+        try {
+            var response = localStorage.getItem(configurationStorageKey);
+            return typeof response === "string" ? response : null;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    function writeStoredConfigurationResponse(response) {
+        if (typeof localStorage === "undefined" || !localStorage || typeof response !== "string") {
+            return;
+        }
+
+        try {
+            localStorage.setItem(configurationStorageKey, response);
+        } catch (_error) {
+        }
+    }
+
+    function companionFlags() {
+        return {
+            configurationResponse: readStoredConfigurationResponse()
+        };
+    }
 
     Object.keys(protocol).forEach(function (key) {
         if (key.indexOf("KEY_") !== 0 || typeof protocol[key] !== "number") {
@@ -1065,10 +1166,13 @@ defmodule Ide.PebbleToolchain do
         });
 
         Pebble.addEventListener("webviewclosed", function (event) {
+            var response = event && typeof event.response === "string" ? event.response : null;
+            writeStoredConfigurationResponse(response);
+
             deliverIncoming({
                 event: "configuration.closed",
                 payload: {
-                    response: event && typeof event.response === "string" ? event.response : null
+                    response: response
                 }
             });
         });
@@ -1085,7 +1189,7 @@ defmodule Ide.PebbleToolchain do
         }
 
         try {
-            app = elmRoot.CompanionApp.init({ flags: null });
+            app = elmRoot.CompanionApp.init({ flags: companionFlags() });
         } catch (_error) {
             app = elmRoot.CompanionApp.init();
         }
@@ -1111,15 +1215,6 @@ defmodule Ide.PebbleToolchain do
     """
   end
 
-  @spec no_phone_companion_index_js() :: String.t()
-  defp no_phone_companion_index_js do
-    """
-    Pebble.addEventListener("ready", function () {
-        console.log("PKJS ready; no phone companion app configured");
-    });
-    """
-  end
-
   @spec copy_file(term(), term()) :: term()
   defp copy_file(source, target) do
     with :ok <- File.mkdir_p(Path.dirname(target)),
@@ -1140,10 +1235,20 @@ defmodule Ide.PebbleToolchain do
 
   @spec deterministic_uuid(term()) :: term()
   defp deterministic_uuid(seed) do
-    hex =
+    bytes =
       :crypto.hash(:sha256, seed)
+      |> binary_part(0, 16)
+      |> :binary.bin_to_list()
+
+    bytes =
+      bytes
+      |> List.update_at(6, &((&1 &&& 0x0F) ||| 0x40))
+      |> List.update_at(8, &((&1 &&& 0x3F) ||| 0x80))
+
+    hex =
+      bytes
+      |> :binary.list_to_bin()
       |> Base.encode16(case: :lower)
-      |> String.slice(0, 32)
 
     "#{String.slice(hex, 0, 8)}-#{String.slice(hex, 8, 4)}-#{String.slice(hex, 12, 4)}-#{String.slice(hex, 16, 4)}-#{String.slice(hex, 20, 12)}"
   end

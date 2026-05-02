@@ -2,8 +2,39 @@ var pendingIncoming = [];
 var incomingPort = null;
 var protocol = require("./companion-protocol.js");
 var generatedConfigurationUrl = null;
+var configurationStorageKey = "elm-pebble.configuration.response";
 var appMessageKeyNamesById = {};
 var appMessageKeyIdsByName = {};
+
+function readStoredConfigurationResponse() {
+    if (typeof localStorage === "undefined" || !localStorage) {
+        return null;
+    }
+
+    try {
+        var response = localStorage.getItem(configurationStorageKey);
+        return typeof response === "string" ? response : null;
+    } catch (_error) {
+        return null;
+    }
+}
+
+function writeStoredConfigurationResponse(response) {
+    if (typeof localStorage === "undefined" || !localStorage || typeof response !== "string") {
+        return;
+    }
+
+    try {
+        localStorage.setItem(configurationStorageKey, response);
+    } catch (_error) {
+    }
+}
+
+function companionFlags() {
+    return {
+        configurationResponse: readStoredConfigurationResponse()
+    };
+}
 
 Object.keys(protocol).forEach(function (key) {
     if (key.indexOf("KEY_") !== 0 || typeof protocol[key] !== "number") {
@@ -175,10 +206,13 @@ if (generatedConfigurationUrl) {
     });
 
     Pebble.addEventListener("webviewclosed", function (event) {
+        var response = event && typeof event.response === "string" ? event.response : null;
+        writeStoredConfigurationResponse(response);
+
         deliverIncoming({
             event: "configuration.closed",
             payload: {
-                response: event && typeof event.response === "string" ? event.response : null
+                response: response
             }
         });
     });
@@ -195,7 +229,7 @@ Pebble.addEventListener("ready", function () {
     }
 
     try {
-        app = elmRoot.CompanionApp.init({ flags: null });
+        app = elmRoot.CompanionApp.init({ flags: companionFlags() });
     } catch (_error) {
         app = elmRoot.CompanionApp.init();
     }

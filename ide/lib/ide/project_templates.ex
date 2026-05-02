@@ -93,7 +93,8 @@ defmodule Ide.ProjectTemplates do
            copy_file(
              Path.join(source, "CompanionPreferences.elm"),
              Path.join(target, "CompanionPreferences.elm")
-           ) do
+           ),
+         :ok <- Ide.PebblePreferences.ensure_generated_bridge(Path.join(workspace_path, "phone")) do
       :ok
     end
   end
