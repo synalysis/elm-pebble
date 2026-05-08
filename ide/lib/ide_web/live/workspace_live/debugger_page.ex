@@ -1247,6 +1247,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:text, :string, required: true)
   attr(:label, :string, default: "Copy")
   attr(:title, :string, default: "Copy to clipboard")
+  attr(:copy_selector, :string, default: nil)
 
   @spec debugger_copy_button(term()) :: term()
   defp debugger_copy_button(assigns) do
@@ -1256,6 +1257,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       type="button"
       phx-hook="CopyToClipboard"
       data-copy-text={@text}
+      data-copy-selector={@copy_selector}
       title={@title}
       class="shrink-0 rounded bg-zinc-900 px-2 py-1 text-[10px] font-medium text-white hover:bg-zinc-800"
     >
@@ -1848,6 +1850,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     screen_round? = DebuggerPreview.screen_round?(assigns.runtime, tree)
     clip_radius = min(screen_w, screen_h) / 2
     clip_id = debugger_preview_clip_id(assigns, screen_w, screen_h, screen_round?)
+    svg_id = debugger_preview_svg_id(assigns)
 
     svg_ops =
       tree
@@ -1879,25 +1882,36 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       |> assign(:clip_cy, screen_h / 2)
       |> assign(:clip_radius, clip_radius)
       |> assign(:clip_id, clip_id)
+      |> assign(:svg_id, svg_id)
+      |> assign(:preview_svg_class, debugger_preview_svg_class(screen_round?))
       |> assign(:svg_ops, svg_ops)
       |> assign(:unresolved_ops, unresolved_ops)
       |> assign(:hover_box, hover_box)
 
     ~H"""
-    <div class="flex h-full min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2">
-      <p class="mb-2 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-zinc-600">
-        {@title}
-      </p>
+    <div
+      class="flex h-full min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2"
+      data-copy-scope
+    >
+      <div class="mb-2 flex shrink-0 items-center justify-between gap-2">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-600">
+          {@title}
+        </p>
+        <.debugger_copy_button
+          id={"#{@svg_id}-copy"}
+          text=""
+          label="Copy SVG"
+          title="Copy visual preview SVG"
+          copy_selector={"##{@svg_id}"}
+        />
+      </div>
       <div class="mb-2 shrink-0 rounded border border-zinc-200 bg-zinc-100 p-2">
         <svg
+          id={@svg_id}
           viewBox={"0 0 #{@screen_w} #{@screen_h}"}
           role="img"
           aria-label="Watch screen preview"
-          class={[
-            "mx-auto h-52 w-[11.25rem] border border-zinc-700 bg-white shadow-inner object-contain",
-            @screen_round? && "rounded-full",
-            !@screen_round? && "rounded"
-          ]}
+          class={@preview_svg_class}
         >
           <defs :if={@screen_round?}>
             <clipPath id={@clip_id}>
@@ -2435,6 +2449,25 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     }
 
     "debugger-preview-clip-#{:erlang.phash2(key)}"
+  end
+
+  @spec debugger_preview_svg_class(boolean()) :: [String.t()]
+  defp debugger_preview_svg_class(true) do
+    [
+      "mx-auto h-52 w-52 rounded-full border border-zinc-700 bg-white shadow-inner object-contain"
+    ]
+  end
+
+  defp debugger_preview_svg_class(false) do
+    [
+      "mx-auto h-52 w-[11.25rem] rounded border border-zinc-700 bg-white shadow-inner object-contain"
+    ]
+  end
+
+  @spec debugger_preview_svg_id(term()) :: String.t()
+  defp debugger_preview_svg_id(assigns) do
+    key = {Map.get(assigns, :title), Map.get(assigns, :hover_scope)}
+    "debugger-preview-svg-#{:erlang.phash2(key)}"
   end
 
   @spec debugger_arc_path(term()) :: term()

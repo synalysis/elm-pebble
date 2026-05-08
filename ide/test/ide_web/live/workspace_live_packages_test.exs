@@ -312,6 +312,32 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     refute html =~ "Just %{"
   end
 
+  test "debugger watch profile selection survives in-memory debugger restart", %{conn: conn} do
+    slug = "workspace-debugger-watch-profile-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceDebuggerWatchProfile",
+               "slug" => slug,
+               "target_type" => "watchface"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/debugger")
+
+    render_change(view, "debugger-set-watch-profile", %{"watch_profile_id" => "chalk"})
+
+    assert %{"watch_profile_id" => "chalk"} =
+             Projects.get_project_by_slug(project.slug).debugger_settings
+
+    Debugger.forget_project(project.slug)
+
+    assert {:ok, state} = Debugger.snapshot(project.slug, event_limit: 20)
+    assert state.watch_profile_id == "chalk"
+
+    assert {:ok, restarted_view, _html} = live(conn, ~p"/projects/#{project.slug}/debugger")
+    assert has_element?(restarted_view, ~s(option[value="chalk"][selected]))
+  end
+
   test "debugger renders companion configuration under companion model", %{conn: conn} do
     slug = "workspace-debugger-companion-config-#{System.unique_integer([:positive])}"
 
@@ -390,6 +416,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     assert runtime_output_json =~ ~s("color":248,"kind":"text_color")
 
     saved_html = render(view)
+
     assert get_in(saved_state.companion, [:model, "configuration", "values", "backgroundColor"]) ==
              "blue"
 
@@ -406,7 +433,12 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     render_click(view, "debugger-start")
     assert {:ok, restarted_state} = Debugger.snapshot(project.slug, event_limit: 20)
 
-    assert get_in(restarted_state.companion, [:model, "configuration", "values", "backgroundColor"]) ==
+    assert get_in(restarted_state.companion, [
+             :model,
+             "configuration",
+             "values",
+             "backgroundColor"
+           ]) ==
              "blue"
 
     render_click(view, "debugger-reset-configuration")

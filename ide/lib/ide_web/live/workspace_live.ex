@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive do
   alias Ide.Formatter
   alias Ide.Formatter.EditPatch
   alias Ide.GitHub.Push, as: GitHubPush
+  alias Ide.Emulator
   alias Ide.PebbleToolchain
   alias Ide.Packages
   alias Ide.PublishManifest
@@ -87,6 +88,7 @@ defmodule IdeWeb.WorkspaceLive do
          |> maybe_open_editor_default_file(project, previous_pane)
          |> refresh_editor_dependencies()
          |> DebuggerSupport.refresh()
+         |> maybe_check_emulator_installation()
          |> maybe_schedule_debugger_auto_fire_refresh()}
     end
   end
@@ -1034,6 +1036,22 @@ defmodule IdeWeb.WorkspaceLive do
      end)}
   end
 
+  def handle_event("refresh-emulator-installation", _params, socket) do
+    {:noreply, check_emulator_installation(socket)}
+  end
+
+  def handle_event("install-emulator-dependencies", _params, socket) do
+    emulator_target = socket.assigns.selected_emulator_target
+
+    {:noreply,
+     socket
+     |> assign(:emulator_dependency_install_status, :running)
+     |> assign(:emulator_dependency_install_output, nil)
+     |> start_async(:install_emulator_dependencies, fn ->
+       Emulator.install_runtime_dependencies(emulator_target)
+     end)}
+  end
+
   def handle_event("capture-screenshot", _params, socket) do
     project = socket.assigns.project
     emulator_target = socket.assigns.selected_emulator_target
@@ -1384,7 +1402,8 @@ defmodule IdeWeb.WorkspaceLive do
      socket
      |> assign(:project, project)
      |> assign(:selected_emulator_target, target)
-     |> assign(:emulator_form, to_form(%{"target" => target}, as: :emulator))}
+     |> assign(:emulator_form, to_form(%{"target" => target}, as: :emulator))
+     |> check_emulator_installation()}
   end
 
   def handle_event("debugger-start", _params, socket) do
@@ -2039,6 +2058,51 @@ defmodule IdeWeb.WorkspaceLive do
      socket
      |> assign(:pebble_build_status, :error)
      |> assign(:pebble_build_output, "Build task exited: #{inspect(reason)}")}
+  end
+
+  def handle_async(:check_emulator_installation, {:ok, status}, socket) do
+    {:noreply, assign(socket, :emulator_installation_status, status)}
+  end
+
+  def handle_async(:check_emulator_installation, {:exit, reason}, socket) do
+    {:noreply,
+     assign(socket, :emulator_installation_status, %{
+       status: :error,
+       components: [],
+       missing: [],
+       installable: false,
+       error: "Emulator installation check exited: #{inspect(reason)}"
+     })}
+  end
+
+  def handle_async(:install_emulator_dependencies, {:ok, {:ok, result}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_dependency_install_status, result.after.status)
+     |> assign(:emulator_dependency_install_output, result.output)
+     |> assign(:emulator_installation_status, result.after)}
+  end
+
+  def handle_async(:install_emulator_dependencies, {:ok, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_dependency_install_status, :error)
+     |> assign(
+       :emulator_dependency_install_output,
+       "Dependency install failed: #{inspect(reason)}"
+     )
+     |> check_emulator_installation()}
+  end
+
+  def handle_async(:install_emulator_dependencies, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_dependency_install_status, :error)
+     |> assign(
+       :emulator_dependency_install_output,
+       "Dependency install task exited: #{inspect(reason)}"
+     )
+     |> check_emulator_installation()}
   end
 
   def handle_async(:run_emulator_install, {:ok, {:ok, result}}, socket) do
@@ -2850,6 +2914,33 @@ defmodule IdeWeb.WorkspaceLive do
 
   defdelegate run_emulator_install_flow(project, workspace_root, emulator_target, package_path),
     to: BuildFlow
+
+  @spec maybe_check_emulator_installation(Phoenix.LiveView.Socket.t()) ::
+          Phoenix.LiveView.Socket.t()
+  defp maybe_check_emulator_installation(socket) do
+    if socket.assigns[:live_action] == :emulator do
+      check_emulator_installation(socket)
+    else
+      socket
+    end
+  end
+
+  @spec check_emulator_installation(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  defp check_emulator_installation(socket) do
+    emulator_target = socket.assigns[:selected_emulator_target] || default_emulator_target()
+
+    socket
+    |> assign(:emulator_installation_status, %{
+      status: :checking,
+      platform: emulator_target,
+      components: [],
+      missing: [],
+      installable: false
+    })
+    |> start_async(:check_emulator_installation, fn ->
+      Emulator.runtime_status(emulator_target)
+    end)
+  end
 
   @spec debugger_session_active?(term()) :: term()
   defp debugger_session_active?(socket) do

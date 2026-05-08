@@ -84,6 +84,14 @@ defmodule Elmc.CoreDifferentialConformanceTest do
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    pebble_c = File.read!(Path.join(out_dir, "c/elmc_pebble.c"))
+
+    assert pebble_c =~ "#define ELMC_PEBBLE_PLATFORM 1"
+    assert pebble_c =~ "#ifdef ELMC_PEBBLE_PLATFORM"
+    assert pebble_c =~ "#include <pebble.h>"
+    assert pebble_c =~ "#include <time.h>"
+    assert pebble_c =~ "extern long time(long *timer);"
+    refute pebble_c =~ "extern time_t time"
 
     expected_calls = [
       "elmc_basics_clamp(",
@@ -125,7 +133,8 @@ defmodule Elmc.CoreDifferentialConformanceTest do
 
     runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
 
-    assert String.contains?(runtime_c, "#ifdef PBL_PLATFORM")
+    assert String.contains?(runtime_c, "#define ELMC_PEBBLE_PLATFORM 1")
+    assert String.contains?(runtime_c, "#ifdef ELMC_PEBBLE_PLATFORM")
     assert String.contains?(runtime_c, "app_timer_register(")
     assert String.contains?(runtime_c, "app_timer_cancel(")
   end

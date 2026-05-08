@@ -24,14 +24,15 @@ defmodule Ide.CompanionProtocolGenerator do
           wire_type: :int | :bool | :string | {:enum, String.t()} | {:union, String.t()}
         }
 
-  @spec generate(String.t(), String.t(), String.t(), String.t()) :: :ok | {:error, term()}
-  def generate(types_elm, out_h, out_c, out_js) do
+  @spec generate(String.t(), String.t(), String.t(), String.t(), keyword()) ::
+          :ok | {:error, term()}
+  def generate(types_elm, out_h, out_c, out_js, opts \\ []) do
     with {:ok, source} <- File.read(types_elm),
          {:ok, schema} <- schema_from_source(source),
          :ok <- File.mkdir_p(Path.dirname(out_h)),
          :ok <- File.mkdir_p(Path.dirname(out_js)),
          :ok <- File.write(out_h, header(schema)),
-         :ok <- File.write(out_c, source(schema)),
+         :ok <- File.write(out_c, source(schema, opts)),
          :ok <- File.write(out_js, js(schema)) do
       :ok
     end
@@ -254,7 +255,9 @@ defmodule Ide.CompanionProtocolGenerator do
     """
   end
 
-  defp source(schema) do
+  defp source(schema, opts) do
+    runtime_tags = Keyword.get(opts, :runtime_tags, %{})
+
     w2p_cases =
       schema.watch_to_phone
       |> Enum.map_join("\n", fn msg ->
@@ -321,8 +324,10 @@ defmodule Ide.CompanionProtocolGenerator do
     #include "companion_protocol.h"
     #include <string.h>
 
-    static ElmcValue *companion_protocol_new_union_value(int32_t tag, int32_t value) {
-      ElmcValue *tag_value = elmc_new_int(tag + 1);
+    #{c_runtime_tag_helpers(schema, runtime_tags)}
+
+    static ElmcValue *companion_protocol_new_union_value(int32_t runtime_tag, int32_t value) {
+      ElmcValue *tag_value = elmc_new_int(runtime_tag);
       ElmcValue *payload_value = elmc_new_int(value);
       if (!tag_value || !payload_value) {
         if (tag_value) elmc_release(tag_value);
@@ -963,14 +968,54 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_value_expr(%{wire_type: :bool}, index),
     do: "elmc_new_bool(message->bool_fields[#{index}] ? 1 : 0)"
 
-  defp c_value_expr(%{wire_type: {:enum, _type}}, index),
-    do: "elmc_new_int(message->int_fields[#{index}] + 1)"
+  defp c_value_expr(%{wire_type: {:enum, type}}, index),
+    do: "elmc_new_int(#{c_runtime_tag_function(type)}(message->int_fields[#{index}]))"
 
-  defp c_value_expr(%{wire_type: {:union, _type}}, index),
+  defp c_value_expr(%{wire_type: {:union, type}}, index),
     do:
-      "companion_protocol_new_union_value(message->int_fields[#{index}], message->union_value_fields[#{index}])"
+      "companion_protocol_new_union_value(#{c_runtime_tag_function(type)}(message->int_fields[#{index}]), message->union_value_fields[#{index}])"
 
   defp c_value_expr(_field, index), do: "elmc_new_int(message->int_fields[#{index}])"
+
+  defp c_runtime_tag_helpers(schema, runtime_tags) do
+    schema
+    |> c_runtime_tag_types()
+    |> Enum.map_join("\n\n", fn {type, ctors} ->
+      cases =
+        ctors
+        |> Enum.with_index()
+        |> Enum.map_join("\n", fn {ctor, code} ->
+          runtime_tag =
+            runtime_tags
+            |> Map.get(type, %{})
+            |> Map.get(ctor, code + 1)
+
+          "    case #{code}: return #{runtime_tag};"
+        end)
+
+      """
+      static int32_t #{c_runtime_tag_function(type)}(int32_t wire_code) {
+        switch (wire_code) {
+      #{cases}
+          default: return 0;
+        }
+      }
+      """
+    end)
+  end
+
+  defp c_runtime_tag_types(schema) do
+    enum_types = schema.enums
+
+    payload_union_types =
+      schema.payload_unions
+      |> Map.new(fn {type, ctors} -> {type, Enum.map(ctors, & &1.name)} end)
+
+    Map.merge(enum_types, payload_union_types)
+  end
+
+  defp c_runtime_tag_function(type),
+    do: "companion_protocol_runtime_tag_#{macro_name(type)}"
 
   defp c_tuple_chain([single]), do: single
   defp c_tuple_chain([head | rest]), do: "elmc_tuple2(#{head}, #{c_tuple_chain(rest)})"

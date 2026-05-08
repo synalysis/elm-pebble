@@ -145,9 +145,30 @@ defmodule Ide.PebblePreferencesTest do
       })
 
     assert html =~ "pebblejs://close#"
+    assert html =~ "return_to"
     assert html =~ "Show date"
     assert html =~ "\"showDate\""
     assert html =~ "JSON.stringify(values)"
+  end
+
+  test "encodes data URLs without raw fragments" do
+    data_url =
+      PebblePreferences.data_url(%{
+        title: "Settings",
+        sections: [
+          %{
+            title: "Display",
+            fields: [
+              %{id: "showDate", label: "Show date", control: %{type: "toggle", default: true}}
+            ]
+          }
+        ]
+      })
+
+    assert String.starts_with?(data_url, "data:text/html;charset=utf-8,")
+    refute data_url =~ "#"
+    assert data_url =~ "%23f2f2f2"
+    assert URI.decode(data_url) =~ "background:#f2f2f2"
   end
 
   test "enriches configuration fields from explicit companion sendSettings mappings", %{

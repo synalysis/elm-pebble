@@ -265,13 +265,21 @@ defmodule Elmc.Backend.Pebble do
     current_second_helper =
       if tick_constructor_arity > 0 do
         """
-        extern time_t time(time_t *timer);
+        #ifdef ELMC_PEBBLE_PLATFORM
+        extern long time(long *timer);
 
+        static int elmc_current_second(void) {
+          long now = time(NULL);
+          if (now == -1L) return 0;
+          return (int)(now % 60);
+        }
+        #else
         static int elmc_current_second(void) {
           time_t now = time(NULL);
           if (now == (time_t)-1) return 0;
           return (int)(now % 60);
         }
+        #endif
         """
       else
         ""
@@ -297,9 +305,15 @@ defmodule Elmc.Backend.Pebble do
 
     """
     #include "elmc_pebble.h"
+    #include <time.h>
+    #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT)
+    #define ELMC_PEBBLE_PLATFORM 1
+    #endif
+    #ifdef ELMC_PEBBLE_PLATFORM
+    #include <pebble.h>
+    #endif
     #include <stdlib.h>
     #include <string.h>
-    #include <time.h>
 
     #{current_second_helper}
 

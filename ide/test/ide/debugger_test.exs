@@ -1152,9 +1152,11 @@ defmodule Ide.DebuggerTest do
       })
 
     assert {:ok, ticked} = Debugger.tick(slug, %{target: "watch", count: 1})
+    preview = get_in(ticked, [:watch, :model, "debugger_device_current_time_string"]) || %{}
+
     assert is_binary(get_in(ticked, [:watch, :model, "runtime_model", "timeString"]))
-    assert get_in(ticked, [:watch, :model, "runtime_model", "timeString"]) == "--:--"
-    assert is_map(get_in(ticked, [:watch, :model, "debugger_device_current_time_string"]))
+    assert get_in(ticked, [:watch, :model, "runtime_model", "timeString"]) == preview["string"]
+    assert is_map(preview)
 
     assert get_in(ticked, [:watch, :model, "elm_executor", "runtime_model_source"]) ==
              "step_message"
@@ -1447,6 +1449,16 @@ defmodule Ide.DebuggerTest do
     assert get_in(init_event, [:watch, :model, "runtime_model", "hour"]) == 12
     assert get_in(init_event, [:watch, :model, "runtime_model", "minute"]) == 0
 
+    view_output = get_in(reloaded, [:watch, :model, "runtime_view_output"]) || []
+
+    refute Enum.any?(view_output, fn row -> row["kind"] == "unresolved" end)
+    assert Enum.count(view_output, fn row -> row["kind"] == "line" end) == 2
+
+    nodes = collect_view_nodes(reloaded.watch.view_tree)
+    assert Enum.count(nodes, fn node -> node["type"] == "line" end) == 2
+    assert Enum.any?(nodes, fn node -> node["type"] == "circle" end)
+    assert Enum.count(nodes, fn node -> node["type"] == "pixel" end) == 4
+
     assert {:ok, ticked} = Debugger.tick(slug, %{target: "watch", count: 1})
 
     assert String.starts_with?(
@@ -1456,6 +1468,37 @@ defmodule Ide.DebuggerTest do
 
     assert preview["hour"] in 0..23
     assert preview["minute"] in 0..59
+  end
+
+  test "reload applies init current time string response to runtime model and rendered preview" do
+    slug = "sim-init-current-time-string-#{System.unique_integer([:positive])}"
+
+    source =
+      File.read!(Path.join(["priv", "project_templates", "watchface_digital", "src", "Main.elm"]))
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    {:ok, reloaded} =
+      Debugger.reload(slug, %{
+        rel_path: "watch/src/Main.elm",
+        source: source,
+        reason: "init_current_time_string",
+        source_root: "watch"
+      })
+
+    preview = get_in(reloaded, [:watch, :model, "debugger_device_current_time_string"]) || %{}
+    runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
+
+    assert is_binary(preview["string"])
+    assert runtime_model["timeString"] == preview["string"]
+
+    assert get_in(reloaded, [:watch, :view_tree, "type"]) == "windowStack"
+
+    assert reloaded.watch.view_tree
+           |> collect_view_nodes()
+           |> Enum.any?(fn node ->
+             node["type"] == "textLabel" and node["text"] == preview["string"]
+           end)
   end
 
   test "reload refires init current date/time device requests even after previous init response" do
@@ -1947,7 +1990,8 @@ defmodule Ide.DebuggerTest do
         model: reloaded.watch.model
       })
 
-    assert Enum.any?(reload_ops, &(&1.kind == :unresolved and &1.node_type == "line"))
+    refute Enum.any?(reload_ops, &(&1.kind == :unresolved and &1.node_type == "line"))
+    assert Enum.any?(reload_ops, &(&1.kind == :line))
 
     assert {:ok, compiled} =
              Debugger.ingest_elmc_compile(slug, %{
@@ -3047,4 +3091,16 @@ defmodule Ide.DebuggerTest do
   end
 
   defp synthetic_step_protocol_event?(_), do: false
+
+  defp collect_view_nodes(node) when is_map(node) do
+    children =
+      case node["children"] || node[:children] do
+        list when is_list(list) -> list
+        _ -> []
+      end
+
+    [node | Enum.flat_map(children, &collect_view_nodes/1)]
+  end
+
+  defp collect_view_nodes(_node), do: []
 end

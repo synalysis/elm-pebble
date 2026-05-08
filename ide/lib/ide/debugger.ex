@@ -867,7 +867,7 @@ defmodule Ide.Debugger do
     state =
       Agent.get(__MODULE__, fn store ->
         store
-        |> Map.get(project_slug, default_state())
+        |> Map.get(project_slug, default_state(project_slug))
         |> ensure_phone_state()
         |> filter_events_by_types(types)
         |> filter_events_since_seq(since_seq)
@@ -883,7 +883,9 @@ defmodule Ide.Debugger do
 
     updated =
       Agent.get_and_update(__MODULE__, fn store ->
-        current = Map.get(store, project_slug, default_state()) |> ensure_phone_state()
+        current =
+          Map.get(store, project_slug, default_state(project_slug)) |> ensure_phone_state()
+
         next = updater.(current)
         {next, Map.put(store, project_slug, next)}
       end)
@@ -1020,6 +1022,7 @@ defmodule Ide.Debugger do
       model
       |> Map.merge(runtime_patch)
       |> hydrate_runtime_model_for_message(message)
+      |> preserve_protocol_runtime_metadata(model)
       |> Map.put("runtime_last_message", message)
       |> Map.put("runtime_message_source", message_source)
       |> Map.put("runtime_message_cursor", next_cursor)
@@ -1430,6 +1433,35 @@ defmodule Ide.Debugger do
 
   defp protocol_tx_rx_events(_from, _to, _message, _trigger, _message_value), do: []
 
+  @spec preserve_protocol_runtime_metadata(map(), map()) :: map()
+  defp preserve_protocol_runtime_metadata(model, previous_model)
+       when is_map(model) and is_map(previous_model) do
+    runtime_model = Map.get(model, "runtime_model")
+
+    if is_map(runtime_model) do
+      preserved =
+        [
+          "protocol_inbound_count",
+          "protocol_message_count",
+          "protocol_last_inbound_message",
+          "protocol_last_inbound_from"
+        ]
+        |> Enum.reduce(runtime_model, fn key, acc ->
+          value =
+            Map.get(previous_model, key) ||
+              get_in(previous_model, ["runtime_model", key])
+
+          maybe_put_protocol_runtime_value(acc, key, value)
+        end)
+
+      Map.put(model, "runtime_model", preserved)
+    else
+      model
+    end
+  end
+
+  defp preserve_protocol_runtime_metadata(model, _previous_model), do: model
+
   @spec device_response_message(term()) :: String.t() | nil
   defp device_response_message(%{
          response_message: ctor,
@@ -1801,6 +1833,7 @@ defmodule Ide.Debugger do
           runtime_model
           |> merge_matching_preview_fields(preview)
           |> merge_matching_preview_fields(%{"string" => hhmm_text})
+          |> merge_declared_scalar_device_response(model, req, hhmm_text, :string)
 
         {"clock_style_24h", value} when is_boolean(value) ->
           Map.put(runtime_model, "clock_style_24h", value)
@@ -1863,6 +1896,61 @@ defmodule Ide.Debugger do
   end
 
   defp merge_matching_preview_fields(runtime_model, _preview), do: runtime_model
+
+  @spec merge_declared_scalar_device_response(map(), map(), map(), term(), atom()) :: map()
+  defp merge_declared_scalar_device_response(runtime_model, model, req, value, kind)
+       when is_map(runtime_model) and is_map(model) and is_map(req) and
+              kind in [:string, :integer, :boolean] do
+    with true <- device_response_constructor_declared?(model, Map.get(req, :response_message)),
+         {:ok, key} <- unique_scalar_runtime_model_key(model, runtime_model, kind) do
+      Map.put(runtime_model, key, value)
+    else
+      _ -> runtime_model
+    end
+  end
+
+  defp merge_declared_scalar_device_response(runtime_model, _model, _req, _value, _kind),
+    do: runtime_model
+
+  @spec device_response_constructor_declared?(map(), term()) :: boolean()
+  defp device_response_constructor_declared?(model, constructor)
+       when is_map(model) and is_binary(constructor) and constructor != "" do
+    model
+    |> get_in(["elm_introspect", "update_case_branches"])
+    |> case do
+      branches when is_list(branches) ->
+        Enum.any?(branches, fn branch ->
+          is_binary(branch) and message_constructor(branch) == constructor
+        end)
+
+      _ ->
+        false
+    end
+  end
+
+  defp device_response_constructor_declared?(_model, _constructor), do: false
+
+  @spec unique_scalar_runtime_model_key(map(), map(), atom()) :: {:ok, term()} | :error
+  defp unique_scalar_runtime_model_key(model, runtime_model, kind)
+       when is_map(model) and is_map(runtime_model) and kind in [:string, :integer, :boolean] do
+    model
+    |> introspect_init_model()
+    |> Enum.filter(fn {key, value} ->
+      scalar_kind?(value, kind) and Map.has_key?(runtime_model, key)
+    end)
+    |> case do
+      [{key, _value}] -> {:ok, key}
+      _ -> :error
+    end
+  end
+
+  defp unique_scalar_runtime_model_key(_model, _runtime_model, _kind), do: :error
+
+  @spec scalar_kind?(term(), atom()) :: boolean()
+  defp scalar_kind?(value, :string), do: is_binary(value)
+  defp scalar_kind?(value, :integer), do: is_integer(value)
+  defp scalar_kind?(value, :boolean), do: is_boolean(value)
+  defp scalar_kind?(_value, _kind), do: false
 
   @spec matching_model_key(map(), String.t()) :: term()
   defp matching_model_key(model, key_text) when is_map(model) and is_binary(key_text) do
@@ -2348,6 +2436,18 @@ defmodule Ide.Debugger do
       length(get_in(state, [recipient, :protocol_messages]) || [])
     )
     |> put_in([recipient, :model, "protocol_last_trigger"], row["trigger"])
+    |> update_in([recipient, :model, "runtime_model"], fn runtime_model ->
+      runtime_model = if is_map(runtime_model), do: runtime_model, else: %{}
+
+      runtime_model
+      |> Map.put("protocol_last_inbound_message", row["message"])
+      |> Map.put("protocol_last_inbound_from", row["from"])
+      |> Map.put("protocol_inbound_count", inbound_count)
+      |> Map.put(
+        "protocol_message_count",
+        length(get_in(state, [recipient, :protocol_messages]) || [])
+      )
+    end)
     |> put_in([recipient, :model, "runtime_last_message"], row["message"])
     |> put_in([recipient, :model, "runtime_message_source"], "protocol_rx")
   end
@@ -3447,7 +3547,9 @@ defmodule Ide.Debugger do
   @spec runtime_view_output_tree(term(), term()) :: map() | nil
   defp runtime_view_output_tree(model, target)
        when is_map(model) and target in [:watch, :companion, :phone] do
-    case normalize_view_output(Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output)) do
+    case normalize_view_output(
+           Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output)
+         ) do
       [] ->
         nil
 
@@ -3489,14 +3591,22 @@ defmodule Ide.Debugger do
       end
 
     {
-      positive_integer_value(Map.get(runtime_model, "screenW") || Map.get(runtime_model, :screenW), 144),
-      positive_integer_value(Map.get(runtime_model, "screenH") || Map.get(runtime_model, :screenH), 168)
+      positive_integer_value(
+        Map.get(runtime_model, "screenW") || Map.get(runtime_model, :screenW),
+        144
+      ),
+      positive_integer_value(
+        Map.get(runtime_model, "screenH") || Map.get(runtime_model, :screenH),
+        168
+      )
     }
   end
 
   @spec positive_integer_value(term(), pos_integer()) :: pos_integer()
   defp positive_integer_value(value, _fallback) when is_integer(value) and value > 0, do: value
-  defp positive_integer_value(value, _fallback) when is_float(value) and value > 0, do: trunc(value)
+
+  defp positive_integer_value(value, _fallback) when is_float(value) and value > 0,
+    do: trunc(value)
 
   defp positive_integer_value(value, fallback) when is_binary(value) do
     case Integer.parse(value) do
@@ -3539,7 +3649,9 @@ defmodule Ide.Debugger do
         runtime_view_output_nodes_until(remaining, stop_on_pop?, [group | acc])
 
       kind when kind in ["stroke_color", "fill_color", "text_color"] ->
-        runtime_view_output_nodes_until(rest, stop_on_pop?, [runtime_view_output_style_node(row) | acc])
+        runtime_view_output_nodes_until(rest, stop_on_pop?, [
+          runtime_view_output_style_node(row) | acc
+        ])
 
       _ ->
         case runtime_view_output_node(row) do
@@ -3619,6 +3731,50 @@ defmodule Ide.Debugger do
           "fill" => integer_or_zero(map_value(row, "fill"))
         }
 
+      "line" ->
+        %{
+          "type" => "line",
+          "label" => "",
+          "children" => [],
+          "x1" => integer_or_zero(map_value(row, "x1")),
+          "y1" => integer_or_zero(map_value(row, "y1")),
+          "x2" => integer_or_zero(map_value(row, "x2")),
+          "y2" => integer_or_zero(map_value(row, "y2")),
+          "color" => integer_or_zero(map_value(row, "color"))
+        }
+
+      "circle" ->
+        %{
+          "type" => "circle",
+          "label" => "",
+          "children" => [],
+          "cx" => integer_or_zero(map_value(row, "cx")),
+          "cy" => integer_or_zero(map_value(row, "cy")),
+          "r" => integer_or_zero(map_value(row, "r")),
+          "color" => integer_or_zero(map_value(row, "color"))
+        }
+
+      "fill_circle" ->
+        %{
+          "type" => "fillCircle",
+          "label" => "",
+          "children" => [],
+          "cx" => integer_or_zero(map_value(row, "cx")),
+          "cy" => integer_or_zero(map_value(row, "cy")),
+          "r" => integer_or_zero(map_value(row, "r")),
+          "color" => integer_or_zero(map_value(row, "color"))
+        }
+
+      "pixel" ->
+        %{
+          "type" => "pixel",
+          "label" => "",
+          "children" => [],
+          "x" => integer_or_zero(map_value(row, "x")),
+          "y" => integer_or_zero(map_value(row, "y")),
+          "color" => integer_or_zero(map_value(row, "color"))
+        }
+
       "text" ->
         %{
           "type" => "text",
@@ -3628,6 +3784,17 @@ defmodule Ide.Debugger do
           "y" => integer_or_zero(map_value(row, "y")),
           "w" => integer_or_zero(map_value(row, "w")),
           "h" => integer_or_zero(map_value(row, "h")),
+          "font_id" => integer_or_zero(map_value(row, "font_id")),
+          "text" => to_string(map_value(row, "text") || "")
+        }
+
+      "text_label" ->
+        %{
+          "type" => "textLabel",
+          "label" => "",
+          "children" => [],
+          "x" => integer_or_zero(map_value(row, "x")),
+          "y" => integer_or_zero(map_value(row, "y")),
           "font_id" => integer_or_zero(map_value(row, "font_id")),
           "text" => to_string(map_value(row, "text") || "")
         }
@@ -4018,9 +4185,11 @@ defmodule Ide.Debugger do
 
   defp filter_events_since_seq(state, _since_seq), do: state
 
-  @spec default_state() :: runtime_state()
-  defp default_state do
-    watch_profile_id = default_watch_profile_id()
+  @spec default_state(String.t() | nil) :: runtime_state()
+  defp default_state(project_slug) do
+    watch_profile_id =
+      persisted_project_watch_profile_id(project_slug) || default_watch_profile_id()
+
     launch_context = launch_context_for(watch_profile_id, "LaunchUser")
 
     %{
@@ -4039,6 +4208,31 @@ defmodule Ide.Debugger do
       seq: 0
     }
   end
+
+  @spec persisted_project_watch_profile_id(term()) :: String.t() | nil
+  defp persisted_project_watch_profile_id(project_slug) when is_binary(project_slug) do
+    try do
+      with %{debugger_settings: settings} when is_map(settings) <-
+             Projects.get_project_by_slug(project_slug),
+           profile_id when is_binary(profile_id) <- Map.get(settings, "watch_profile_id") do
+        parse_optional_watch_profile_id(profile_id)
+      else
+        _ -> nil
+      end
+    rescue
+      DBConnection.OwnershipError ->
+        nil
+
+      error in RuntimeError ->
+        if String.contains?(Exception.message(error), "could not lookup Ecto repo") do
+          nil
+        else
+          reraise(error, __STACKTRACE__)
+        end
+    end
+  end
+
+  defp persisted_project_watch_profile_id(_project_slug), do: nil
 
   @spec default_auto_tick() :: map()
   defp default_auto_tick do
@@ -4131,7 +4325,8 @@ defmodule Ide.Debugger do
   end
 
   @spec project_debugger_configuration_values(term()) :: map() | nil
-  defp project_debugger_configuration_values(%{debugger_settings: settings}) when is_map(settings) do
+  defp project_debugger_configuration_values(%{debugger_settings: settings})
+       when is_map(settings) do
     case Map.get(settings, "configuration_values") do
       values when is_map(values) -> values
       _ -> nil
@@ -4198,7 +4393,8 @@ defmodule Ide.Debugger do
   defp put_configuration_values_at(model, _path, _values), do: model
 
   @spec put_configuration_values(map(), term()) :: map()
-  defp put_configuration_values(configuration, values) when is_map(configuration) and is_map(values) do
+  defp put_configuration_values(configuration, values)
+       when is_map(configuration) and is_map(values) do
     values = stringify_keys(values)
 
     configuration
@@ -4206,7 +4402,8 @@ defmodule Ide.Debugger do
     |> update_configuration_field_values(values)
   end
 
-  defp put_configuration_values(configuration, _values) when is_map(configuration), do: configuration
+  defp put_configuration_values(configuration, _values) when is_map(configuration),
+    do: configuration
 
   @spec update_configuration_field_values(map(), map()) :: map()
   defp update_configuration_field_values(configuration, values)
@@ -4707,8 +4904,14 @@ defmodule Ide.Debugger do
   defp hydrate_runtime_model_launch_context(runtime_model, model)
        when is_map(runtime_model) and is_map(model) do
     runtime_model
-    |> put_launch_context_value_if_missing("screenW", get_in(model, ["launch_context", "screen", "width"]))
-    |> put_launch_context_value_if_missing("screenH", get_in(model, ["launch_context", "screen", "height"]))
+    |> put_launch_context_value_if_missing(
+      "screenW",
+      get_in(model, ["launch_context", "screen", "width"])
+    )
+    |> put_launch_context_value_if_missing(
+      "screenH",
+      get_in(model, ["launch_context", "screen", "height"])
+    )
     |> put_launch_context_value_if_missing(
       "isRound",
       launch_context_round?(Map.get(model, "launch_context"))
@@ -4719,13 +4922,30 @@ defmodule Ide.Debugger do
   defp put_launch_context_value_if_missing(runtime_model, key, value)
        when is_map(runtime_model) and is_binary(key) and not is_nil(value) do
     case Map.get(runtime_model, key) do
-      nil -> Map.put(runtime_model, key, value)
-      _ -> runtime_model
+      nil ->
+        Map.put(runtime_model, key, value)
+
+      current when is_map(current) ->
+        if unresolved_runtime_value?(current),
+          do: Map.put(runtime_model, key, value),
+          else: runtime_model
+
+      _ ->
+        runtime_model
     end
   end
 
-  defp put_launch_context_value_if_missing(runtime_model, _key, _value) when is_map(runtime_model),
-    do: runtime_model
+  defp put_launch_context_value_if_missing(runtime_model, _key, _value)
+       when is_map(runtime_model),
+       do: runtime_model
+
+  @spec unresolved_runtime_value?(term()) :: boolean()
+  defp unresolved_runtime_value?(%{"$opaque" => true}), do: true
+  defp unresolved_runtime_value?(%{:"$opaque" => true}), do: true
+  defp unresolved_runtime_value?(%{"op" => "field_access"}), do: true
+  defp unresolved_runtime_value?(%{op: "field_access"}), do: true
+  defp unresolved_runtime_value?(%{op: :field_access}), do: true
+  defp unresolved_runtime_value?(_value), do: false
 
   @spec launch_context_round?(term()) :: boolean() | nil
   defp launch_context_round?(%{"screen" => %{} = screen}) do
@@ -5510,7 +5730,12 @@ defmodule Ide.Debugger do
   end
 
   @spec choose_runtime_preview_view_tree(term(), term(), term(), term()) :: term()
-  defp choose_runtime_preview_view_tree(runtime_view_tree, latest_view_tree, snapshot_view_tree, view_output) do
+  defp choose_runtime_preview_view_tree(
+         runtime_view_tree,
+         latest_view_tree,
+         snapshot_view_tree,
+         view_output
+       ) do
     cond do
       concrete_runtime_view_tree?(runtime_view_tree) ->
         runtime_view_tree
@@ -5518,7 +5743,8 @@ defmodule Ide.Debugger do
       has_runtime_view_output?(view_output) and concrete_runtime_view_tree?(latest_view_tree) ->
         latest_view_tree
 
-      concrete_runtime_view_tree?(latest_view_tree) and parser_expression_view_tree?(runtime_view_tree) ->
+      concrete_runtime_view_tree?(latest_view_tree) and
+          parser_expression_view_tree?(runtime_view_tree) ->
         latest_view_tree
 
       is_map(runtime_view_tree) and map_size(runtime_view_tree) > 0 ->
@@ -5548,7 +5774,17 @@ defmodule Ide.Debugger do
 
   @spec parser_expression_root_type?(String.t()) :: boolean()
   defp parser_expression_root_type?(type)
-       when type in ["toUiNode", "append", "List", "call", "expr", "var", "withDefault", "if", "case"],
+       when type in [
+              "toUiNode",
+              "append",
+              "List",
+              "call",
+              "expr",
+              "var",
+              "withDefault",
+              "if",
+              "case"
+            ],
        do: true
 
   defp parser_expression_root_type?(_type), do: false

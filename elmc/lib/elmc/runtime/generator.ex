@@ -559,7 +559,10 @@ defmodule Elmc.Runtime.Generator do
     #include <stdio.h>
     #include <time.h>
     #{JsonSections.runtime_source_includes()}
-    #ifdef PBL_PLATFORM
+    #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT)
+    #define ELMC_PEBBLE_PLATFORM 1
+    #endif
+    #ifdef ELMC_PEBBLE_PLATFORM
     #include <pebble.h>
     #endif
 
@@ -572,7 +575,7 @@ defmodule Elmc.Runtime.Generator do
       int active;
       int64_t pid;
       ElmcValue *task;
-    #ifdef PBL_PLATFORM
+    #ifdef ELMC_PEBBLE_PLATFORM
       AppTimer *timer;
     #else
       void *timer;
@@ -609,7 +612,7 @@ defmodule Elmc.Runtime.Generator do
         elmc_release(slot->task);
         slot->task = NULL;
       }
-    #ifdef PBL_PLATFORM
+    #ifdef ELMC_PEBBLE_PLATFORM
       if (slot->timer) {
         app_timer_cancel(slot->timer);
         slot->timer = NULL;
@@ -619,7 +622,7 @@ defmodule Elmc.Runtime.Generator do
       slot->pid = 0;
     }
 
-    #ifdef PBL_PLATFORM
+    #ifdef ELMC_PEBBLE_PLATFORM
     static void elmc_process_spawn_timer_cb(void *data) {
       ElmcProcessSlot *slot = (ElmcProcessSlot *)data;
       if (!slot || !slot->active) return;
@@ -849,7 +852,7 @@ defmodule Elmc.Runtime.Generator do
       const char *value_cstr = (value_text && value_text->tag == ELMC_TAG_STRING && value_text->payload)
           ? (const char *)value_text->payload
           : "<value>";
-    #ifdef PBL_PLATFORM
+    #ifdef ELMC_PEBBLE_PLATFORM
       APP_LOG(APP_LOG_LEVEL_INFO, "%s: %s", label_cstr, value_cstr);
     #else
       (void)label_cstr;
@@ -1146,7 +1149,7 @@ defmodule Elmc.Runtime.Generator do
       int64_t pid_raw = slot ? slot->pid : 0;
       if (slot) {
         slot->task = elmc_retain(task);
-      #ifdef PBL_PLATFORM
+      #ifdef ELMC_PEBBLE_PLATFORM
         slot->timer = app_timer_register(1, elmc_process_spawn_timer_cb, slot);
       #else
         elmc_process_release_slot(slot);
@@ -1163,7 +1166,7 @@ defmodule Elmc.Runtime.Generator do
       if (timeout < 0) timeout = 0;
       ElmcProcessSlot *slot = elmc_process_alloc_slot();
       if (slot) {
-      #ifdef PBL_PLATFORM
+      #ifdef ELMC_PEBBLE_PLATFORM
         uint32_t ms = (uint32_t)(timeout > 2147483647 ? 2147483647 : timeout);
         slot->timer = app_timer_register(ms, elmc_process_sleep_timer_cb, slot);
       #else
@@ -1904,9 +1907,18 @@ defmodule Elmc.Runtime.Generator do
        ================================================================ */
 
     ElmcValue *elmc_maybe_with_default(ElmcValue *default_val, ElmcValue *maybe) {
-      if (!maybe || maybe->tag != ELMC_TAG_MAYBE) return elmc_retain(default_val);
-      ElmcMaybe *m = (ElmcMaybe *)maybe->payload;
-      if (m->is_just && m->value) return elmc_retain(m->value);
+      if (!maybe) return elmc_retain(default_val);
+      if (maybe->tag == ELMC_TAG_MAYBE) {
+        ElmcMaybe *m = (ElmcMaybe *)maybe->payload;
+        if (m && m->is_just && m->value) return elmc_retain(m->value);
+        return elmc_retain(default_val);
+      }
+      if (maybe->tag == ELMC_TAG_TUPLE2 && maybe->payload) {
+        ElmcTuple2 *pair = (ElmcTuple2 *)maybe->payload;
+        if (pair->first && elmc_as_int(pair->first) == 1 && pair->second) {
+          return elmc_retain(pair->second);
+        }
+      }
       return elmc_retain(default_val);
     }
 

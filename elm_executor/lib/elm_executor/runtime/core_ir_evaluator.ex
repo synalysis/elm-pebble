@@ -208,13 +208,30 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   @spec generic_map_value(term(), term()) :: term()
   defp generic_map_value(map, key) when is_map(map) and is_binary(key) do
-    Map.get(map, key) || Map.get(map, String.to_atom(key))
-  rescue
-    _ -> nil
+    case Map.fetch(map, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        Enum.find_value(map, fn
+          {atom_key, value} when is_atom(atom_key) ->
+            if Atom.to_string(atom_key) == key, do: {:ok, value}, else: nil
+
+          _ ->
+            nil
+        end)
+        |> case do
+          {:ok, value} -> value
+          nil -> nil
+        end
+    end
   end
 
   defp generic_map_value(map, key) when is_map(map) and is_atom(key) do
-    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+    case Map.fetch(map, key) do
+      {:ok, value} -> value
+      :error -> Map.get(map, Atom.to_string(key))
+    end
   end
 
   defp generic_map_value(_map, _key), do: nil
@@ -245,23 +262,23 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   @spec do_evaluate(term(), term(), term(), term()) :: term()
   defp do_evaluate(expr, env, context, stack)
        when is_map(expr) and is_map(env) and is_map(context) do
-    op = expr["op"] || expr[:op]
+    op = expr |> generic_map_value("op") |> normalize_op()
 
     case op do
       :int_literal ->
-        {:ok, expr["value"] || expr[:value]}
+        {:ok, generic_map_value(expr, "value")}
 
       :float_literal ->
-        {:ok, expr["value"] || expr[:value]}
+        {:ok, generic_map_value(expr, "value")}
 
       :bool_literal ->
-        {:ok, expr["value"] || expr[:value]}
+        {:ok, generic_map_value(expr, "value")}
 
       :char_literal ->
-        {:ok, expr["value"] || expr[:value]}
+        {:ok, generic_map_value(expr, "value")}
 
       :string_literal ->
-        {:ok, expr["value"] || expr[:value]}
+        {:ok, generic_map_value(expr, "value")}
 
       :expr ->
         inner =
@@ -524,7 +541,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         end
 
       _ ->
-        value = expr["value"] || expr[:value]
+        value = generic_map_value(expr, "value")
 
         cond do
           is_integer(value) or is_float(value) or is_boolean(value) or is_binary(value) ->
@@ -537,6 +554,15 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   end
 
   defp do_evaluate(_expr, _env, _context, _stack), do: {:error, :invalid_expr}
+
+  @spec normalize_op(term()) :: term()
+  defp normalize_op(op) when is_binary(op) do
+    String.to_existing_atom(op)
+  rescue
+    ArgumentError -> op
+  end
+
+  defp normalize_op(op), do: op
 
   @spec maybe_evaluate(term(), term(), term(), term()) :: term()
   defp maybe_evaluate(expr, env, context, stack) when is_map(expr) do
@@ -3430,13 +3456,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   @spec field_access(term(), term()) :: term()
   defp field_access(base, field) when is_map(base) and is_binary(field) do
-    Map.get(base, field) || Map.get(base, String.to_atom(field))
-  rescue
-    _ -> nil
+    generic_map_value(base, field)
   end
 
   defp field_access(base, field) when is_map(base) and is_atom(field),
-    do: Map.get(base, field) || Map.get(base, Atom.to_string(field))
+    do: generic_map_value(base, field)
 
   defp field_access(_base, _field), do: nil
 

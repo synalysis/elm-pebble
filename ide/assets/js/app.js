@@ -296,7 +296,7 @@ Hooks.CopyToClipboard = {
     this.defaultLabel = this.el.textContent
 
     this.onClick = async () => {
-      const text = this.el.dataset.copyText || ""
+      const text = this.copyText()
       if (!text) return
 
       try {
@@ -323,6 +323,23 @@ Hooks.CopyToClipboard = {
     }, 1500)
   },
 
+  copyText() {
+    const selector = this.el.dataset.copySelector
+    if (!selector) return this.el.dataset.copyText || ""
+
+    const scope = this.el.closest("[data-copy-scope]") || document
+    const target = scope.querySelector(selector) || document.querySelector(selector)
+    if (!target) return ""
+
+    if (target.namespaceURI === "http://www.w3.org/2000/svg") {
+      const clone = target.cloneNode(true)
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg")
+      return clone.outerHTML
+    }
+
+    return target.outerHTML || target.textContent || ""
+  },
+
   fallbackCopy(text) {
     const textarea = document.createElement("textarea")
     textarea.value = text
@@ -345,6 +362,10 @@ Hooks.EmbeddedEmulator = {
   mounted() {
     this.host = new EmbeddedEmulatorHost(this)
     this.host.mount()
+  },
+
+  updated() {
+    if (this.host) this.host.updated()
   },
 
   destroyed() {

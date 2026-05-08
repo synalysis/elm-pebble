@@ -2,6 +2,7 @@ defmodule IdeWeb.EmulatorController do
   use IdeWeb, :controller
 
   alias Ide.Emulator
+  alias Ide.PebblePreferences
   alias Ide.Projects
   alias IdeWeb.WorkspaceLive.BuildFlow
 
@@ -73,6 +74,32 @@ defmodule IdeWeb.EmulatorController do
     """)
   end
 
+  @spec companion_preferences(term(), term()) :: term()
+  def companion_preferences(conn, %{"slug" => slug}) do
+    with project when not is_nil(project) <- Projects.get_project_by_slug(slug),
+         phone_root <- Path.join(Projects.project_workspace_path(project), "phone"),
+         true <- File.exists?(Path.join(phone_root, "elm.json")),
+         {:ok, schema} when is_map(schema) <- PebblePreferences.extract(phone_root) do
+      html(conn, PebblePreferences.render_html(schema))
+    else
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Project not found"})
+
+      false ->
+        conn |> put_status(:not_found) |> json(%{error: "This project has no companion app."})
+
+      {:ok, nil} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "This companion app does not declare preferences."})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "Could not render companion preferences: #{inspect(reason)}"})
+    end
+  end
+
   @spec artifact(term(), term()) :: term()
   def artifact(conn, %{"id" => id}) do
     with {:ok, pid} <- Emulator.lookup(id),
@@ -95,9 +122,11 @@ defmodule IdeWeb.EmulatorController do
 
   defp proxy(conn, id, kind) do
     with {:ok, info} <- Emulator.info(id),
-         {:ok, url} <- proxy_url(info, kind) do
+         {:ok, target} <- proxy_target(info, kind) do
       conn
-      |> WebSockAdapter.upgrade(IdeWeb.EmulatorProxySocket, %{url: url}, timeout: 86_400_000)
+      |> WebSockAdapter.upgrade(IdeWeb.EmulatorProxySocket, %{target: target},
+        timeout: 86_400_000
+      )
       |> halt()
     else
       {:error, :not_found} ->
@@ -108,21 +137,21 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  defp proxy_url(%{backend_enabled: false}, _kind),
+  defp proxy_target(%{backend_enabled: false}, _kind),
     do: {:error, :embedded_emulator_backend_disabled}
 
-  defp proxy_url(%{id: id}, :vnc) do
+  defp proxy_target(%{id: id}, :vnc) do
     with {:ok, pid} <- Emulator.lookup(id),
          port <- Ide.Emulator.Session.local_port(pid, :vnc),
          true <- Ide.Emulator.Session.tcp_port_open?(port) do
-      {:ok, "ws://127.0.0.1:#{port}/"}
+      {:ok, {:tcp, "127.0.0.1", port}}
     else
       false -> {:error, :emulator_vnc_not_ready}
       error -> error
     end
   end
 
-  defp proxy_url(%{id: id}, :phone) do
+  defp proxy_target(%{id: id}, :phone) do
     with {:ok, pid} <- Emulator.lookup(id),
          port <- Ide.Emulator.Session.local_port(pid, :phone),
          true <- Ide.Emulator.Session.tcp_port_open?(port) do
@@ -149,7 +178,8 @@ defmodule IdeWeb.EmulatorController do
 
   defp launch_error_message(reason), do: inspect(reason)
 
-  defp install_error_message(:artifact_not_found), do: "PBW artifact not found for this emulator session."
+  defp install_error_message(:artifact_not_found),
+    do: "PBW artifact not found for this emulator session."
 
   defp install_error_message(:embedded_protocol_router_not_started),
     do: "Embedded emulator protocol router is not running."

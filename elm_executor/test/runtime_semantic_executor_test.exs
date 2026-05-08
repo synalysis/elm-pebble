@@ -3,6 +3,86 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
 
   alias ElmExecutor.Runtime.SemanticExecutor
 
+  test "source fallback derives CoreIR for helper-returned point tuples in preview lines" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Ui as PebbleUi
+    import Pebble.Ui.Color as PebbleColor
+
+    type alias Model =
+        { screenW : Int
+        , screenH : Int
+        }
+
+    type Msg
+        = Tick
+
+    init _ =
+        ( { screenW = 144, screenH = 168 }, Cmd.none )
+
+    update msg model =
+        case msg of
+            Tick ->
+                ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view model =
+        let
+            centerX =
+                model.screenW // 2
+
+            centerY =
+                model.screenH // 2
+
+            ( x2, y2 ) =
+                endPoint centerX centerY
+        in
+        PebbleUi.windowStack
+            [ PebbleUi.window 1
+                [ PebbleUi.canvasLayer 1
+                    [ PebbleUi.line { x = centerX, y = centerY } { x = x2, y = y2 } PebbleColor.black
+                    ]
+                ]
+            ]
+
+    endPoint x y =
+        ( x + 10, y - 10 )
+
+    main : Program Decode.Value Model Msg
+    main =
+        PebblePlatform.watchface
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: source,
+      introspect: %{},
+      current_model: %{"runtime_model" => %{"screenW" => 144, "screenH" => 168}},
+      current_view_tree: %{},
+      message: nil
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    refute Enum.any?(result.view_output, fn row -> row["kind"] == "unresolved" end)
+
+    assert Enum.any?(result.view_output, fn row ->
+             row["kind"] == "line" and row["x1"] == 72 and row["y1"] == 84 and
+               row["x2"] == 82 and row["y2"] == 74 and row["color"] == 0xC0
+           end)
+  end
+
   test "executes step mutation contract without elmc dependency" do
     request = %{
       source_root: "watch",
@@ -353,6 +433,270 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
              "ctor" => "Just",
              "args" => [%{"ctor" => "Celsius", "args" => [21]}]
            }
+  end
+
+  test "runtime resolves decoded CoreIR init screen fields before drawing preview primitives" do
+    model_screen_w = %{
+      "op" => "field_access",
+      "arg" => %{"op" => "var", "name" => "model"},
+      "field" => "screenW"
+    }
+
+    model_time_string = %{
+      "op" => "field_access",
+      "arg" => %{"op" => "var", "name" => "model"},
+      "field" => "timeString"
+    }
+
+    centered_x = %{
+      "op" => "call",
+      "name" => "__idiv__",
+      "args" => [
+        %{
+          "op" => "call",
+          "name" => "__sub__",
+          "args" => [model_screen_w, %{"op" => "int_literal", "value" => 100}]
+        },
+        %{"op" => "int_literal", "value" => 2}
+      ]
+    }
+
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Main",
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "init",
+              "params" => ["launch"],
+              "expr" => %{
+                "op" => "tuple2",
+                "left" => %{
+                  "op" => "record_literal",
+                  "fields" => [
+                    %{
+                      "name" => "timeString",
+                      "expr" => %{"op" => "string_literal", "value" => "--:--"}
+                    },
+                    %{
+                      "name" => "screenW",
+                      "expr" => %{
+                        "op" => "field_access",
+                        "arg" => %{
+                          "op" => "field_access",
+                          "arg" => %{"op" => "var", "name" => "launch"},
+                          "field" => "screen"
+                        },
+                        "field" => "width"
+                      }
+                    },
+                    %{
+                      "name" => "screenH",
+                      "expr" => %{
+                        "op" => "field_access",
+                        "arg" => %{
+                          "op" => "field_access",
+                          "arg" => %{"op" => "var", "name" => "launch"},
+                          "field" => "screen"
+                        },
+                        "field" => "height"
+                      }
+                    },
+                    %{
+                      "name" => "isRound",
+                      "expr" => %{
+                        "op" => "field_access",
+                        "arg" => %{
+                          "op" => "field_access",
+                          "arg" => %{"op" => "var", "name" => "launch"},
+                          "field" => "screen"
+                        },
+                        "field" => "isRound"
+                      }
+                    }
+                  ]
+                },
+                "right" => %{"kind" => "cmd.none"}
+              }
+            },
+            %{
+              "kind" => "function",
+              "name" => "view",
+              "params" => ["model"],
+              "expr" => %{
+                "op" => "qualified_call",
+                "target" => "Pebble.Ui.windowStack",
+                "args" => [
+                  %{
+                    "op" => "list_literal",
+                    "items" => [
+                      %{
+                        "op" => "qualified_call",
+                        "target" => "Pebble.Ui.window",
+                        "args" => [
+                          %{"op" => "int_literal", "value" => 1},
+                          %{
+                            "op" => "list_literal",
+                            "items" => [
+                              %{
+                                "op" => "qualified_call",
+                                "target" => "Pebble.Ui.canvasLayer",
+                                "args" => [
+                                  %{"op" => "int_literal", "value" => 1},
+                                  %{
+                                    "op" => "list_literal",
+                                    "items" => [
+                                      %{
+                                        "op" => "qualified_call",
+                                        "target" => "Pebble.Ui.clear",
+                                        "args" => [%{"op" => "int_literal", "value" => 255}]
+                                      },
+                                      %{
+                                        "op" => "qualified_call",
+                                        "target" => "Pebble.Ui.roundRect",
+                                        "args" => [
+                                          %{
+                                            "op" => "record_literal",
+                                            "fields" => [
+                                              %{"name" => "x", "expr" => centered_x},
+                                              %{
+                                                "name" => "y",
+                                                "expr" => %{"op" => "int_literal", "value" => 62}
+                                              },
+                                              %{
+                                                "name" => "w",
+                                                "expr" => %{"op" => "int_literal", "value" => 100}
+                                              },
+                                              %{
+                                                "name" => "h",
+                                                "expr" => %{"op" => "int_literal", "value" => 44}
+                                              }
+                                            ]
+                                          },
+                                          %{"op" => "int_literal", "value" => 6},
+                                          %{"op" => "int_literal", "value" => 192}
+                                        ]
+                                      },
+                                      %{
+                                        "op" => "qualified_call",
+                                        "target" => "Pebble.Ui.textLabel",
+                                        "args" => [
+                                          %{"op" => "int_literal", "value" => 0},
+                                          %{
+                                            "op" => "record_literal",
+                                            "fields" => [
+                                              %{
+                                                "name" => "x",
+                                                "expr" => %{"op" => "int_literal", "value" => 44}
+                                              },
+                                              %{
+                                                "name" => "y",
+                                                "expr" => %{"op" => "int_literal", "value" => 90}
+                                              }
+                                            ]
+                                          },
+                                          model_time_string
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            %{
+              "kind" => "function",
+              "name" => "update",
+              "params" => ["msg", "model"],
+              "expr" => %{
+                "op" => "case",
+                "subject" => %{"op" => "var", "name" => "msg"},
+                "branches" => [
+                  %{
+                    "pattern" => %{
+                      "kind" => "constructor",
+                      "name" => "CurrentTimeString",
+                      "bind" => "value"
+                    },
+                    "expr" => %{
+                      "op" => "tuple2",
+                      "left" => %{
+                        "op" => "record_update",
+                        "base" => %{"op" => "var", "name" => "model"},
+                        "fields" => [
+                          %{
+                            "name" => "timeString",
+                            "expr" => %{"op" => "var", "name" => "value"}
+                          }
+                        ]
+                      },
+                      "right" => %{"kind" => "cmd.none"}
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: "",
+      introspect: %{
+        "init_model" => %{
+          "screenW" => %{"$opaque" => true, "op" => "field_access"},
+          "screenH" => %{"$opaque" => true, "op" => "field_access"},
+          "isRound" => %{"$opaque" => true, "op" => "field_access"}
+        },
+        "view_tree" => %{"type" => "root", "children" => []}
+      },
+      current_model: %{
+        "launch_context" => %{
+          "screen" => %{"width" => 144, "height" => 168, "isRound" => false}
+        }
+      },
+      current_view_tree: %{},
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+    runtime_model = result.model_patch["runtime_model"]
+
+    assert runtime_model["screenW"] == 144
+    assert runtime_model["screenH"] == 168
+    assert runtime_model["isRound"] == false
+
+    refute Enum.any?(result.view_output, &(&1["kind"] == "unresolved"))
+
+    assert Enum.any?(result.view_output, fn row ->
+             row["kind"] == "round_rect" and row["x"] == 22 and row["w"] == 100
+           end)
+
+    assert Enum.any?(result.view_output, fn row ->
+             row["kind"] == "text_label" and row["text"] == "--:--"
+           end)
+
+    updated_request = Map.merge(request, %{message: "CurrentTimeString \"20:33\""})
+
+    assert {:ok, updated} = SemanticExecutor.execute(updated_request)
+    updated_model = updated.model_patch["runtime_model"]
+
+    assert updated_model["timeString"] == "20:33"
+
+    assert Enum.any?(updated.view_output, fn row ->
+             row["kind"] == "text_label" and row["text"] == "20:33"
+           end)
   end
 
   test "core update applies structured CurrentDateTime payload and preserves model fields" do

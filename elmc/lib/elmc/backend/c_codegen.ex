@@ -1011,6 +1011,9 @@ defmodule Elmc.Backend.CCodegen do
   defp special_value_from_target("Pebble.Ui.Color.green", []),
     do: %{op: :int_literal, value: 0xCC}
 
+  defp special_value_from_target("Pebble.Ui.Color.blue", []),
+    do: %{op: :int_literal, value: 0xC3}
+
   defp special_value_from_target("Pebble.Time.Monday", []), do: %{op: :int_literal, value: 0}
   defp special_value_from_target("Pebble.Time.Tuesday", []), do: %{op: :int_literal, value: 1}
   defp special_value_from_target("Pebble.Time.Wednesday", []), do: %{op: :int_literal, value: 2}

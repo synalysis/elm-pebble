@@ -355,7 +355,7 @@ defmodule Ide.PebbleToolchain do
              has_phone_companion
            ),
          :ok <- generate_elmc_sources(compile_project_root, app_root, workspace_root),
-         :ok <- generate_companion_protocol(protocol_elm, app_root),
+         :ok <- generate_companion_protocol(protocol_elm, app_root, compile_project_root),
          :ok <- generate_companion_protocol_elm_internal(protocol_elm),
          :ok <- write_generated_preferences_bridge(workspace_root, preferences_schema),
          :ok <- write_preferences_config(app_root, preferences_schema),
@@ -816,18 +816,73 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec generate_companion_protocol(term(), term()) :: term()
-  defp generate_companion_protocol(nil, _app_root), do: :ok
+  @spec generate_companion_protocol(term(), term(), term()) :: term()
+  defp generate_companion_protocol(nil, _app_root, _compile_project_root), do: :ok
 
-  defp generate_companion_protocol(protocol_elm, app_root) do
+  defp generate_companion_protocol(protocol_elm, app_root, compile_project_root) do
     protocol_h = Path.join(app_root, "src/c/generated/companion_protocol.h")
     protocol_c = Path.join(app_root, "src/c/generated/companion_protocol.c")
     protocol_js = Path.join(app_root, "src/pkjs/companion-protocol.js")
 
-    case CompanionProtocolGenerator.generate(protocol_elm, protocol_h, protocol_c, protocol_js) do
+    opts = [runtime_tags: companion_protocol_runtime_tags(compile_project_root)]
+
+    case CompanionProtocolGenerator.generate(
+           protocol_elm,
+           protocol_h,
+           protocol_c,
+           protocol_js,
+           opts
+         ) do
       :ok -> :ok
       {:error, reason} -> {:error, {:companion_protocol_generation_failed, reason}}
     end
+  end
+
+  defp companion_protocol_runtime_tags(project_root) when is_binary(project_root) do
+    with {:ok, project} <- Bridge.load_project(project_root),
+         {:ok, ir} <- Lowerer.lower_project(project) do
+      constructor_lookup = unqualified_constructor_runtime_tags(project)
+
+      ir.modules
+      |> Enum.find(&(&1.name == "Companion.Types"))
+      |> case do
+        nil ->
+          %{}
+
+        mod ->
+          mod.unions
+          |> Enum.map(fn {type, union} ->
+            tags =
+              union
+              |> Map.get(:tags, %{})
+              |> Map.new(fn {constructor, local_tag} ->
+                {constructor, Map.get(constructor_lookup, constructor, local_tag)}
+              end)
+
+            {type, tags}
+          end)
+          |> Map.new()
+      end
+    else
+      _ -> %{}
+    end
+  end
+
+  defp companion_protocol_runtime_tags(_project_root), do: %{}
+
+  defp unqualified_constructor_runtime_tags(project) do
+    project.modules
+    |> Enum.flat_map(fn frontend_module ->
+      frontend_module.declarations
+      |> Enum.filter(&(&1.kind == :union))
+      |> Enum.flat_map(fn union ->
+        union
+        |> Map.get(:constructors, [])
+        |> Enum.with_index(1)
+        |> Enum.map(fn {constructor, index} -> {constructor.name, index} end)
+      end)
+    end)
+    |> Map.new()
   end
 
   @spec generate_companion_protocol_elm_internal(term()) :: term()
@@ -1060,15 +1115,18 @@ defmodule Ide.PebbleToolchain do
     }
 
     function deliverIncoming(payload) {
+        console.log("bridge -> Elm companion", JSON.stringify(payload));
         if (incomingPort) {
             incomingPort.send(payload);
         } else {
+            console.log("bridge queued incoming for Elm companion");
             pendingIncoming.push(payload);
         }
     }
 
     function openConfigurationUrl(url) {
         if (url && typeof Pebble.openURL === "function") {
+            console.log("opening companion configuration", url);
             Pebble.openURL(url);
         }
     }
@@ -1076,12 +1134,14 @@ defmodule Ide.PebbleToolchain do
     function handleOutgoing(payload) {
         if (payload && payload.api === "configuration") {
             if (payload.op === "open") {
+                console.log("Elm companion requested configuration", JSON.stringify(payload.payload || {}));
                 openConfigurationUrl((payload.payload && payload.payload.url) || generatedConfigurationUrl);
             }
             return;
         }
 
         if (payload && payload.api === "appMessage" && payload.op === "send") {
+            console.log("Elm companion sendAppMessage payload", JSON.stringify(payload.payload || {}));
             Pebble.sendAppMessage(
                 normalizeOutgoingAppMessage(payload.payload || {}),
                 function () {
@@ -1094,6 +1154,7 @@ defmodule Ide.PebbleToolchain do
             return;
         }
 
+        console.log("Elm companion sendAppMessage payload", JSON.stringify(payload));
         Pebble.sendAppMessage(
             normalizeOutgoingAppMessage(payload),
             function () {
@@ -1162,11 +1223,13 @@ defmodule Ide.PebbleToolchain do
 
     if (generatedConfigurationUrl) {
         Pebble.addEventListener("showConfiguration", function () {
+            console.log("Pebble showConfiguration event");
             openConfigurationUrl(generatedConfigurationUrl);
         });
 
         Pebble.addEventListener("webviewclosed", function (event) {
             var response = event && typeof event.response === "string" ? event.response : null;
+            console.log("Pebble webviewclosed response", response);
             writeStoredConfigurationResponse(response);
 
             deliverIncoming({

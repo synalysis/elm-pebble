@@ -65,7 +65,13 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       File.mkdir_p!(Path.dirname(types))
       File.write!(types, @types)
 
-      assert :ok = CompanionProtocolGenerator.generate(types, header, source, js)
+      assert :ok =
+               CompanionProtocolGenerator.generate(types, header, source, js,
+                 runtime_tags: %{
+                   "Temperature" => %{"Celsius" => 41, "Fahrenheit" => 42},
+                   "TutorialColor" => %{"Black" => 51, "White" => 52}
+                 }
+               )
 
       assert File.read!(header) =~ "COMPANION_PROTOCOL_ENUM_LOCATION_CURRENT_LOCATION 0"
       assert File.read!(header) =~ "COMPANION_PROTOCOL_TAG_REQUEST_WEATHER 2"
@@ -73,6 +79,9 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert File.read!(source) =~ "ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET"
       assert File.read!(source) =~ "companion_protocol_new_union_value"
       assert File.read!(source) =~ "companion_protocol_new_phone_to_watch_message"
+      assert File.read!(source) =~ "case 0: return 41;"
+      assert File.read!(source) =~ "case 1: return 52;"
+      refute File.read!(source) =~ "tag + 1"
       assert File.read!(header) =~ "COMPANION_PROTOCOL_KEY_PROVIDE_TEMPERATURE_FIELD1_TAG"
       assert File.read!(header) =~ "COMPANION_PROTOCOL_KEY_PROVIDE_TEMPERATURE_FIELD1_VALUE"
       assert File.read!(js) =~ "decodeWatchToPhonePayload"

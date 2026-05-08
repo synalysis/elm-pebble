@@ -43,12 +43,13 @@ defmodule Ide.Emulator.SessionTest do
     assert ["-machine", "pebble-snowy-bb", "-cpu", "cortex-m4"] ==
              Enum.take(Session.machine_args("basalt", "/tmp/spi.bin"), 4)
 
-    assert "-kernel" in args
+    assert "-pflash" in args
     assert "-L" in args
     assert "-vnc" in args
-    assert ":7,websocket=12002" in args
+    assert ":7" in args
+    refute ":7,websocket=12002" in args
     assert "tcp:127.0.0.1:12000,server=on,wait=off" in args
-    assert "if=none,id=spi-flash,file=/tmp/spi.bin,format=raw" in args
+    assert "/tmp/spi.bin" in args
   end
 
   test "qemu readiness uses vnc websocket port and leaves bluetooth port for pypkjs" do
@@ -64,16 +65,17 @@ defmodule Ide.Emulator.SessionTest do
     args = Session.qemu_args(state)
 
     assert "tcp:127.0.0.1:12000,server=on,wait=off" in args
-    assert ":7,websocket=12002" in args
+    assert ":7" in args
+    refute ":7,websocket=12002" in args
   end
 
-  test "modern qemu-pebble models use mtd flash for newer platforms" do
+  test "emery qemu args match the SDK emulator launcher" do
     args = Session.machine_args("emery", "/tmp/spi.bin")
 
-    assert ["-machine", "pebble-emery", "-cpu", "cortex-m33"] == Enum.take(args, 4)
-    assert "-drive" in args
-    assert "if=mtd,format=raw,file=/tmp/spi.bin" in args
-    assert "driver=none,id=audio0" in args
+    assert ["-machine", "pebble-snowy-emery-bb", "-cpu", "cortex-m4"] == Enum.take(args, 4)
+    assert "-pflash" in args
+    assert "/tmp/spi.bin" in args
+    refute "-audio" in args
   end
 
   test "pypkjs arguments include qemu bridge, websocket port, and persist dir" do
@@ -126,5 +128,108 @@ defmodule Ide.Emulator.SessionTest do
     assert String.ends_with?(wrapper, "priv/python/embedded_pypkjs.py")
 
     File.rm(script)
+  end
+
+  test "runtime status reports disabled embedded emulator before launch" do
+    previous = Application.get_env(:ide, Ide.Emulator.Session)
+    Application.put_env(:ide, Ide.Emulator.Session, enabled: false)
+
+    try do
+      status = Session.runtime_status("basalt")
+
+      assert status.status == :warning
+
+      assert %{id: :embedded_emulator, status: :missing, installable: false} =
+               Enum.find(status.components, &(&1.id == :embedded_emulator))
+    after
+      Application.put_env(:ide, Ide.Emulator.Session, previous)
+    end
+  end
+
+  test "runtime status discovers qemu and images from sdk roots" do
+    previous = Application.get_env(:ide, Ide.Emulator.Session)
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-runtime-sdk-root-test-#{System.unique_integer([:positive])}"
+      )
+
+    sdk_root = Path.join(root, "SDKs/current")
+    qemu_bin = Path.join(sdk_root, "toolchain/bin/qemu-pebble")
+    qemu_dir = Path.join(sdk_root, "sdk-core/pebble/basalt/qemu")
+
+    File.mkdir_p!(Path.dirname(qemu_bin))
+    File.mkdir_p!(qemu_dir)
+    File.write!(qemu_bin, "#!/bin/sh\necho qemu-pebble test\n")
+    File.chmod!(qemu_bin, 0o755)
+    File.write!(Path.join(qemu_dir, "qemu_micro_flash.bin"), "")
+    File.write!(Path.join(qemu_dir, "qemu_spi_flash.bin.bz2"), "")
+
+    Application.put_env(:ide, Ide.Emulator.Session,
+      enabled: true,
+      sdk_roots: [sdk_root],
+      qemu_image_root: nil
+    )
+
+    try do
+      status = Session.runtime_status("basalt")
+
+      assert %{id: :qemu, status: :ok, detail: ^qemu_bin} =
+               Enum.find(status.components, &(&1.id == :qemu))
+
+      assert %{id: :qemu_micro_flash, status: :ok} =
+               Enum.find(status.components, &(&1.id == :qemu_micro_flash))
+
+      assert %{id: :qemu_spi_flash, status: :ok} =
+               Enum.find(status.components, &(&1.id == :qemu_spi_flash))
+    after
+      Application.put_env(:ide, Ide.Emulator.Session, previous)
+      File.rm_rf!(root)
+    end
+  end
+
+  test "runtime status reports qemu dynamic library failures" do
+    previous = Application.get_env(:ide, Ide.Emulator.Session)
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-runtime-qemu-health-test-#{System.unique_integer([:positive])}"
+      )
+
+    sdk_root = Path.join(root, "SDKs/current")
+    qemu_bin = Path.join(sdk_root, "toolchain/bin/qemu-pebble")
+
+    File.mkdir_p!(Path.dirname(qemu_bin))
+
+    File.write!(qemu_bin, """
+    #!/bin/sh
+    echo "Library not loaded: /usr/local/opt/pixman/lib/libpixman-1.0.dylib"
+    exit 134
+    """)
+
+    File.chmod!(qemu_bin, 0o755)
+
+    Application.put_env(:ide, Ide.Emulator.Session,
+      enabled: true,
+      sdk_roots: [sdk_root],
+      qemu_image_root: nil
+    )
+
+    try do
+      status = Session.runtime_status("basalt")
+
+      assert status.status == :warning
+
+      assert %{id: :qemu, status: :missing, installable: false, detail: detail} =
+               Enum.find(status.components, &(&1.id == :qemu))
+
+      assert detail =~ "missing x86_64 Homebrew pixman"
+      assert detail =~ "arch -x86_64 /usr/local/bin/brew install pixman"
+    after
+      Application.put_env(:ide, Ide.Emulator.Session, previous)
+      File.rm_rf!(root)
+    end
   end
 end

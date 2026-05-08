@@ -22,6 +22,13 @@ defmodule Ide.Emulator do
     end
   end
 
+  @spec runtime_status(term()) :: map()
+  def runtime_status(platform \\ nil), do: Session.runtime_status(platform)
+
+  @spec install_runtime_dependencies(term()) :: {:ok, map()} | {:error, term()}
+  def install_runtime_dependencies(platform \\ nil),
+    do: Session.install_runtime_dependencies(platform)
+
   @spec lookup(String.t()) :: {:ok, pid()} | {:error, :not_found}
   def lookup(id) when is_binary(id) do
     case Registry.lookup(Ide.Emulator.Registry, id) do

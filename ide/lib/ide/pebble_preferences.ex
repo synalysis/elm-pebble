@@ -160,6 +160,15 @@ defmodule Ide.PebblePreferences do
           host.appendChild(label);
         }
         fields.forEach(addField);
+        function closeWithResponse(response) {
+          var returnTo = new URLSearchParams(window.location.search).get("return_to");
+          if (returnTo) {
+            var separator = returnTo.indexOf("?") >= 0 && !returnTo.endsWith("?") && !returnTo.endsWith("&") ? "&" : "";
+            document.location = returnTo + separator + "response=" + encodeURIComponent(response);
+          } else {
+            document.location = "pebblejs://close#" + encodeURIComponent(response);
+          }
+        }
         document.getElementById("save").addEventListener("click", function() {
           var values = {};
           fields.forEach(function(field) {
@@ -169,7 +178,7 @@ defmodule Ide.PebblePreferences do
             else if (control.type === "number" || control.type === "slider") values[field.id] = Number(input.value);
             else values[field.id] = input.value;
           });
-          document.location = "pebblejs://close#" + encodeURIComponent(JSON.stringify(values));
+          closeWithResponse(JSON.stringify(values));
         });
       </script>
     </body>
@@ -180,7 +189,7 @@ defmodule Ide.PebblePreferences do
   @doc false
   @spec data_url(schema()) :: String.t()
   def data_url(schema) do
-    "data:text/html;charset=utf-8," <> URI.encode(render_html(schema))
+    "data:text/html;charset=utf-8," <> URI.encode(render_html(schema), &URI.char_unreserved?/1)
   end
 
   @doc false

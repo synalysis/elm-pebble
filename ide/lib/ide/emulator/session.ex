@@ -21,6 +21,7 @@ defmodule Ide.Emulator.Session do
           bt_port: pos_integer(),
           protocol_proxy_port: pos_integer(),
           phone_ws_port: pos_integer(),
+          vnc_port: pos_integer(),
           vnc_display: non_neg_integer(),
           vnc_ws_port: pos_integer(),
           protocol_router_pid: pid() | nil,
@@ -59,6 +60,73 @@ defmodule Ide.Emulator.Session do
     :ok
   catch
     :exit, _ -> :ok
+  end
+
+  @spec runtime_status(term()) :: map()
+  def runtime_status(platform \\ nil) do
+    platform = normalize_platform(platform)
+
+    components = [
+      component(
+        :embedded_emulator,
+        "Embedded emulator",
+        enabled?(),
+        if(enabled?(), do: "enabled", else: "disabled by configuration"),
+        false
+      ),
+      command_component(:pebble_cli, "Pebble CLI", pebble_bin(), true),
+      qemu_component(qemu_bin()),
+      command_component(:pypkjs, "pypkjs bridge", pypkjs_bin(), true),
+      component(
+        :qemu_micro_flash,
+        "QEMU micro flash image",
+        qemu_micro_flash_path(platform),
+        qemu_image_dir(platform),
+        true
+      ),
+      component(
+        :qemu_spi_flash,
+        "QEMU SPI flash image",
+        qemu_spi_flash_available?(platform),
+        qemu_image_dir(platform),
+        true
+      )
+    ]
+
+    missing = Enum.filter(components, &(&1.status == :missing))
+
+    %{
+      status: if(missing == [], do: :ok, else: :warning),
+      platform: platform,
+      components: components,
+      missing: missing,
+      installable: Enum.any?(missing, & &1.installable)
+    }
+  end
+
+  @spec install_runtime_dependencies(term()) :: {:ok, map()} | {:error, term()}
+  def install_runtime_dependencies(platform \\ nil) do
+    platform = normalize_platform(platform)
+    before_status = runtime_status(platform)
+
+    steps =
+      before_status.missing
+      |> Enum.map(& &1.id)
+      |> Enum.uniq()
+      |> Enum.flat_map(&install_steps_for_component(&1, platform))
+      |> Enum.uniq_by(& &1.name)
+
+    results = Enum.map(steps, &run_install_step/1)
+    after_status = runtime_status(platform)
+
+    {:ok,
+     %{
+       platform: platform,
+       before: before_status,
+       after: after_status,
+       results: results,
+       output: render_install_results(results, after_status)
+     }}
   end
 
   @impl true
@@ -101,7 +169,7 @@ defmodule Ide.Emulator.Session do
     {:reply, result, state}
   end
 
-  def handle_call({:local_port, :vnc}, _from, state), do: {:reply, state.vnc_ws_port, state}
+  def handle_call({:local_port, :vnc}, _from, state), do: {:reply, state.vnc_port, state}
   def handle_call({:local_port, :phone}, _from, state), do: {:reply, state.phone_ws_port, state}
 
   def handle_call(:ping, _from, state) do
@@ -150,14 +218,14 @@ defmodule Ide.Emulator.Session do
       "tcp:127.0.0.1:#{state.bt_port},server=on,wait=off",
       "-serial",
       "tcp:127.0.0.1:#{state.console_port},server=on,wait=off",
-      "-kernel",
+      "-pflash",
       micro_flash,
       "-monitor",
       "stdio",
       "-L",
       pc_bios_dir(),
       "-vnc",
-      ":#{state.vnc_display},websocket=#{state.vnc_ws_port}"
+      ":#{state.vnc_display}"
     ]
 
     base ++ machine_args(state.platform, state.spi_image_path)
@@ -178,32 +246,27 @@ defmodule Ide.Emulator.Session do
 
   @spec machine_args(String.t(), String.t() | nil) :: [String.t()]
   def machine_args(platform, spi_image_path) do
-    spi_drive = ["-drive", "if=none,id=spi-flash,file=#{spi_image_path},format=raw"]
-    mtd_drive = ["-drive", "if=mtd,format=raw,file=#{spi_image_path}"]
-
     case platform do
       "aplite" ->
         ["-machine", "pebble-bb2", "-mtdblock", spi_image_path, "-cpu", "cortex-m3"]
 
       "basalt" ->
-        ["-machine", "pebble-snowy-bb", "-cpu", "cortex-m4"] ++ spi_drive
+        ["-machine", "pebble-snowy-bb", "-cpu", "cortex-m4", "-pflash", spi_image_path]
 
       "chalk" ->
-        ["-machine", "pebble-s4-bb", "-cpu", "cortex-m4"] ++ spi_drive
+        ["-machine", "pebble-s4-bb", "-cpu", "cortex-m4", "-pflash", spi_image_path]
 
       "diorite" ->
         ["-machine", "pebble-silk-bb", "-mtdblock", spi_image_path, "-cpu", "cortex-m4"]
 
       "emery" ->
-        ["-machine", "pebble-emery", "-cpu", "cortex-m33"] ++
-          mtd_drive ++ ["-audio", "driver=none,id=audio0"]
+        ["-machine", "pebble-snowy-emery-bb", "-cpu", "cortex-m4", "-pflash", spi_image_path]
 
       "flint" ->
-        ["-machine", "pebble-flint", "-cpu", "cortex-m4"] ++
-          mtd_drive ++ ["-audio", "driver=none,id=audio0"]
+        ["-machine", "pebble-silk-bb", "-cpu", "cortex-m4", "-mtdblock", spi_image_path]
 
       "gabbro" ->
-        ["-machine", "pebble-gabbro", "-cpu", "cortex-m33"] ++ mtd_drive
+        ["-machine", "pebble-snowy-emery-bb", "-cpu", "cortex-m4", "-pflash", spi_image_path]
 
       _ ->
         machine_args(WatchModels.default_id(), spi_image_path)
@@ -229,6 +292,7 @@ defmodule Ide.Emulator.Session do
          bt_port: bt_port,
          protocol_proxy_port: protocol_proxy_port,
          phone_ws_port: phone_ws_port,
+         vnc_port: vnc_port,
          vnc_display: max(vnc_port - 5900, 0),
          vnc_ws_port: vnc_ws_port,
          protocol_router_pid: nil,
@@ -492,7 +556,14 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  defp qemu_image_dir(platform), do: Path.join(config(:qemu_image_root, ""), "#{platform}/qemu")
+  defp qemu_image_dir(platform) do
+    qemu_image_roots()
+    |> Enum.find(fn root -> SdkImages.images_present?(root, platform) end)
+    |> case do
+      root when is_binary(root) -> Path.join([root, platform, "qemu"])
+      nil -> Path.join([preferred_qemu_image_root(), platform, "qemu"])
+    end
+  end
 
   defp pc_bios_dir do
     Enum.find_value(qemu_data_roots(), fn root ->
@@ -528,6 +599,10 @@ defmodule Ide.Emulator.Session do
 
   defp pypkjs_bin do
     resolve_bin(config(:pypkjs_bin, nil), ["pypkjs"], pypkjs_candidates(), :pypkjs_not_found)
+  end
+
+  defp pebble_bin do
+    resolve_bin(config(:pebble_bin, nil), ["pebble"], pebble_candidates(), :pebble_cli_not_found)
   end
 
   defp resolve_bin(configured, fallbacks, candidates, error) do
@@ -569,6 +644,15 @@ defmodule Ide.Emulator.Session do
     ]
   end
 
+  defp pebble_candidates do
+    [
+      Path.expand(".local/share/uv/tools/pebble-tool/bin/pebble", System.user_home!()),
+      Path.expand(".local/bin/pebble", System.user_home!()),
+      "/opt/pipx/venvs/pebble-tool/bin/pebble",
+      "/usr/local/bin/pebble"
+    ]
+  end
+
   @spec pypkjs_command(String.t()) :: {:ok, String.t(), [String.t()]} | {:error, term()}
   def pypkjs_command(pypkjs_bin) do
     wrapper_path = Path.expand("../../../priv/python/embedded_pypkjs.py", __DIR__)
@@ -594,13 +678,23 @@ defmodule Ide.Emulator.Session do
   end
 
   defp sdk_roots do
-    home = System.user_home!()
+    case config(:sdk_roots, nil) do
+      roots when is_list(roots) ->
+        Enum.filter(roots, &is_binary/1)
 
-    [
-      Path.expand(".pebble-sdk/SDKs/current", home),
-      Path.expand(".pebble-sdk/SDKs/4.9.169", home),
-      Path.expand(".pebble-sdk/SDKs/4.9.148", home)
-    ]
+      _ ->
+        home = System.user_home!()
+
+        [
+          Path.expand(".pebble-sdk/SDKs/current", home),
+          Path.expand(".pebble-sdk/SDKs/4.9.169", home),
+          Path.expand(".pebble-sdk/SDKs/4.9.148", home),
+          Path.expand("Library/Application Support/Pebble SDK/SDKs/current", home),
+          Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.169", home),
+          Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.148", home),
+          Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.77", home)
+        ]
+    end
   end
 
   defp validate_runtime_requirements(platform) do
@@ -615,14 +709,10 @@ defmodule Ide.Emulator.Session do
         case maybe_download_qemu_images(platform) do
           :ok ->
             missing =
-              []
-              |> maybe_missing(qemu_bin(), "qemu-pebble or qemu-system-arm")
-              |> maybe_missing(pypkjs_bin(), "pypkjs")
-              |> maybe_missing(qemu_micro_flash_path(platform), "qemu_micro_flash.bin")
-              |> maybe_missing(
-                qemu_spi_flash_available?(platform),
-                "qemu_spi_flash.bin or qemu_spi_flash.bin.bz2"
-              )
+              platform
+              |> runtime_status()
+              |> Map.fetch!(:missing)
+              |> Enum.map(&component_missing_detail/1)
 
             case missing do
               [] -> :ok
@@ -635,18 +725,191 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  defp maybe_missing(missing, {:ok, _}, _label), do: missing
-  defp maybe_missing(missing, true, _label), do: missing
-  defp maybe_missing(missing, _missing, label), do: [label | missing]
+  defp component_missing_detail(%{label: label, detail: detail})
+       when is_binary(label) and is_binary(detail) do
+    "#{label}: #{detail}"
+  end
+
+  defp component_missing_detail(%{label: label}) when is_binary(label), do: label
+  defp component_missing_detail(component), do: inspect(component)
+
+  defp component(id, label, true, detail, installable),
+    do: %{id: id, label: label, status: :ok, detail: detail, installable: installable}
+
+  defp component(id, label, _present, detail, installable),
+    do: %{id: id, label: label, status: :missing, detail: detail, installable: installable}
+
+  defp command_component(id, label, {:ok, path}, installable),
+    do: component(id, label, true, path, installable)
+
+  defp command_component(id, label, {:error, reason}, installable),
+    do: component(id, label, false, inspect(reason), installable)
+
+  defp qemu_component({:ok, path}) do
+    case qemu_health(path) do
+      :ok ->
+        component(:qemu, "Pebble QEMU", true, path, true)
+
+      {:error, detail} ->
+        component(:qemu, "Pebble QEMU", false, detail, false)
+    end
+  end
+
+  defp qemu_component({:error, reason}) do
+    component(:qemu, "Pebble QEMU", false, inspect(reason), true)
+  end
+
+  defp qemu_health(path) do
+    case System.cmd(path, ["--version"], stderr_to_stdout: true) do
+      {_output, 0} ->
+        :ok
+
+      {output, exit_code} ->
+        {:error, qemu_health_detail(path, output, exit_code)}
+    end
+  rescue
+    error -> {:error, "not runnable: #{Exception.message(error)}"}
+  end
+
+  defp qemu_health_detail(path, output, exit_code) do
+    output = String.trim(output || "")
+
+    cond do
+      String.contains?(output, "libpixman-1.0.dylib") ->
+        "#{path} is not runnable: missing x86_64 Homebrew pixman at /usr/local/opt/pixman. " <>
+          "Install Rosetta and x86_64 Homebrew pixman with: arch -x86_64 /usr/local/bin/brew install pixman"
+
+      String.contains?(output, "libSDL2-2.0.0.dylib") ->
+        "#{path} is not runnable: missing x86_64 Homebrew sdl2 at /usr/local/opt/sdl2. " <>
+          "Install Rosetta and x86_64 Homebrew sdl2 with: arch -x86_64 /usr/local/bin/brew install sdl2"
+
+      String.contains?(output, "libgthread-2.0.0.dylib") ->
+        "#{path} is not runnable: missing x86_64 Homebrew glib at /usr/local/opt/glib. " <>
+          "Install Rosetta and x86_64 Homebrew glib with: arch -x86_64 /usr/local/bin/brew install glib"
+
+      String.contains?(output, "Library not loaded") ->
+        "#{path} is not runnable: #{single_line(output)}"
+
+      output != "" ->
+        "#{path} exited with #{exit_code}: #{single_line(output)}"
+
+      true ->
+        "#{path} exited with #{exit_code}"
+    end
+  end
+
+  defp single_line(output) do
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.join(" ")
+  end
+
+  defp install_steps_for_component(id, platform)
+       when id in [:qemu, :qemu_micro_flash, :qemu_spi_flash] do
+    [
+      %{name: :pebble_sdk, fun: fn -> install_pebble_sdk() end},
+      %{name: :qemu_images, fun: fn -> install_qemu_images(platform) end}
+    ]
+  end
+
+  defp install_steps_for_component(:pypkjs, _platform) do
+    [%{name: :pypkjs, fun: &install_pypkjs/0}]
+  end
+
+  defp install_steps_for_component(:pebble_cli, _platform) do
+    [%{name: :pebble_tool, fun: &install_pypkjs/0}]
+  end
+
+  defp install_steps_for_component(_id, _platform), do: []
+
+  defp run_install_step(%{name: name, fun: fun}) do
+    case fun.() do
+      {:ok, output} -> %{name: name, status: :ok, output: output}
+      {:error, reason} -> %{name: name, status: :error, output: inspect(reason)}
+    end
+  rescue
+    error -> %{name: name, status: :error, output: Exception.message(error)}
+  end
+
+  defp install_pebble_sdk do
+    version = config(:sdk_core_version, "4.9.148")
+
+    with {:ok, pebble_bin} <- pebble_bin(),
+         {:ok, install_output} <- run_command(pebble_bin, ["sdk", "install", version]),
+         {:ok, activate_output} <- run_command(pebble_bin, ["sdk", "activate", version]) do
+      {:ok, String.trim(install_output <> "\n" <> activate_output)}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp install_qemu_images(platform) do
+    image_root = preferred_qemu_image_root()
+
+    opts =
+      [
+        image_root: image_root,
+        sdk_version: config(:sdk_core_version, "4.9.148")
+      ]
+      |> maybe_put_metadata_url(config(:sdk_core_metadata_url, nil))
+
+    case SdkImages.ensure_platform_images(platform, opts) do
+      :ok -> {:ok, "QEMU images are available in #{Path.join(image_root, platform)}."}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp install_pypkjs do
+    cond do
+      uv = System.find_executable("uv") ->
+        run_command(uv, ["tool", "install", "pebble-tool"])
+
+      pipx = System.find_executable("pipx") ->
+        run_command(pipx, ["install", "pebble-tool"])
+
+      true ->
+        {:error, :uv_or_pipx_not_found}
+    end
+  end
+
+  defp run_command(command, args) do
+    {output, exit_code} = System.cmd(command, args, stderr_to_stdout: true)
+
+    if exit_code == 0 do
+      {:ok, output}
+    else
+      {:error, %{command: Enum.join([command | args], " "), exit_code: exit_code, output: output}}
+    end
+  end
+
+  defp render_install_results(results, after_status) do
+    result_lines =
+      Enum.map(results, fn result ->
+        "[#{result.status}] #{result.name}\n#{String.trim(result.output || "")}"
+      end)
+
+    missing_lines =
+      after_status.missing
+      |> Enum.map(&"- #{&1.label}: #{&1.detail}")
+
+    """
+    #{Enum.join(result_lines, "\n\n")}
+
+    Current status: #{after_status.status}
+    #{if missing_lines == [], do: "All embedded emulator dependencies are present.", else: "Still missing:\n" <> Enum.join(missing_lines, "\n")}
+    """
+    |> String.trim()
+  end
 
   defp maybe_download_qemu_images(platform) do
-    image_root = config(:qemu_image_root, "")
+    image_root = preferred_qemu_image_root()
 
     cond do
       config(:download_images, true) != true ->
         :ok
 
-      SdkImages.images_present?(image_root, platform) ->
+      Enum.any?(qemu_image_roots(), &SdkImages.images_present?(&1, platform)) ->
         :ok
 
       true ->
@@ -680,6 +943,57 @@ defmodule Ide.Emulator.Session do
   defp qemu_spi_flash_available?(platform) do
     raw = Path.join(qemu_image_dir(platform), "qemu_spi_flash.bin")
     File.exists?(raw) or File.exists?(raw <> ".bz2")
+  end
+
+  defp qemu_image_roots do
+    configured_root = config(:qemu_image_root, nil)
+
+    configured_roots =
+      if is_binary(configured_root) and configured_root != "", do: [configured_root], else: []
+
+    sdk_roots = Enum.map(sdk_roots(), &Path.join(&1, "sdk-core/pebble"))
+
+    (qemu_bin_image_roots() ++ configured_roots ++ sdk_roots)
+    |> Enum.uniq()
+  end
+
+  defp preferred_qemu_image_root do
+    case config(:qemu_image_root, nil) do
+      root when is_binary(root) and root != "" ->
+        root
+
+      _ ->
+        qemu_image_roots()
+        |> List.first()
+        |> case do
+          root when is_binary(root) -> root
+          nil -> ""
+        end
+    end
+  end
+
+  defp qemu_bin_image_roots do
+    case qemu_bin() do
+      {:ok, path} ->
+        path
+        |> qemu_bin_sdk_root()
+        |> case do
+          nil -> []
+          root -> [Path.join(root, "sdk-core/pebble")]
+        end
+
+      {:error, _reason} ->
+        []
+    end
+  end
+
+  defp qemu_bin_sdk_root(path) when is_binary(path) do
+    marker = "/toolchain/bin/"
+
+    case String.split(path, marker, parts: 2) do
+      [root, _bin] when root != "" -> root
+      _ -> nil
+    end
   end
 
   defp normalize_platform(platform) when is_binary(platform) do

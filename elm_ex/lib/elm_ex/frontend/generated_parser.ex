@@ -35,23 +35,36 @@ defmodule ElmEx.Frontend.GeneratedParser do
 
   @spec parse_file(String.t()) :: {:ok, ElmEx.Frontend.Module.t()} | {:error, map()}
   def parse_file(path) do
-    with {:ok, source} <- File.read(path),
-         {:ok, metadata} <- parse_metadata(source) do
-      module_name = metadata.module
-      imports = metadata.imports
-      full_imports = (imports ++ ElmEx.Frontend.DefaultImports.module_names()) |> Enum.uniq()
+    with {:ok, source} <- File.read(path) do
+      parse_source(path, source)
+    end
+  end
 
-      module =
-        GeneratedContractBuilder.build(path, source, module_name, full_imports)
-        |> Map.put(:module_exposing, metadata.module_exposing)
-        |> Map.put(:import_entries, metadata.import_entries)
-        |> Map.put(:port_module, metadata.port_module)
-        |> Map.put(:ports, metadata.ports)
+  @spec parse_source(String.t(), String.t()) :: {:ok, ElmEx.Frontend.Module.t()} | {:error, map()}
+  def parse_source(path, source) when is_binary(path) and is_binary(source) do
+    with {:ok, metadata} <- parse_metadata(source) do
+      module_from_source(path, source, metadata)
+    end
+  end
 
-      case AstContract.validate_module(module) do
-        :ok -> {:ok, module}
-        {:error, reason} -> {:error, reason}
-      end
+  @spec module_from_source(String.t(), String.t(), map()) ::
+          {:ok, ElmEx.Frontend.Module.t()} | {:error, map()}
+  defp module_from_source(path, source, metadata)
+       when is_binary(path) and is_binary(source) and is_map(metadata) do
+    module_name = metadata.module
+    imports = metadata.imports
+    full_imports = (imports ++ ElmEx.Frontend.DefaultImports.module_names()) |> Enum.uniq()
+
+    module =
+      GeneratedContractBuilder.build(path, source, module_name, full_imports)
+      |> Map.put(:module_exposing, metadata.module_exposing)
+      |> Map.put(:import_entries, metadata.import_entries)
+      |> Map.put(:port_module, metadata.port_module)
+      |> Map.put(:ports, metadata.ports)
+
+    case AstContract.validate_module(module) do
+      :ok -> {:ok, module}
+      {:error, reason} -> {:error, reason}
     end
   end
 

@@ -100,15 +100,18 @@ function normalizeOutgoingAppMessage(payload) {
 }
 
 function deliverIncoming(payload) {
+    console.log("bridge -> Elm companion", JSON.stringify(payload));
     if (incomingPort) {
         incomingPort.send(payload);
     } else {
+        console.log("bridge queued incoming for Elm companion");
         pendingIncoming.push(payload);
     }
 }
 
 function openConfigurationUrl(url) {
     if (url && typeof Pebble.openURL === "function") {
+        console.log("opening companion configuration", url);
         Pebble.openURL(url);
     }
 }
@@ -116,12 +119,14 @@ function openConfigurationUrl(url) {
 function handleOutgoing(payload) {
     if (payload && payload.api === "configuration") {
         if (payload.op === "open") {
+            console.log("Elm companion requested configuration", JSON.stringify(payload.payload || {}));
             openConfigurationUrl((payload.payload && payload.payload.url) || generatedConfigurationUrl);
         }
         return;
     }
 
     if (payload && payload.api === "appMessage" && payload.op === "send") {
+        console.log("Elm companion sendAppMessage payload", JSON.stringify(payload.payload || {}));
         Pebble.sendAppMessage(
             normalizeOutgoingAppMessage(payload.payload || {}),
             function () {
@@ -134,6 +139,7 @@ function handleOutgoing(payload) {
         return;
     }
 
+    console.log("Elm companion sendAppMessage payload", JSON.stringify(payload));
     Pebble.sendAppMessage(
         normalizeOutgoingAppMessage(payload),
         function () {
@@ -202,11 +208,13 @@ Pebble.addEventListener("appmessage", function (event) {
 
 if (generatedConfigurationUrl) {
     Pebble.addEventListener("showConfiguration", function () {
+        console.log("Pebble showConfiguration event");
         openConfigurationUrl(generatedConfigurationUrl);
     });
 
     Pebble.addEventListener("webviewclosed", function (event) {
         var response = event && typeof event.response === "string" ? event.response : null;
+        console.log("Pebble webviewclosed response", response);
         writeStoredConfigurationResponse(response);
 
         deliverIncoming({

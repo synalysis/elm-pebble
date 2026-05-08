@@ -1,6 +1,7 @@
 #include <pebble.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include "elmc/c/elmc_pebble.h"
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 #include "generated/companion_protocol.h"
@@ -10,9 +11,10 @@
 static Window *s_main_window;
 static Layer *s_draw_layer;
 static GFont s_font;
-static ElmcPebbleApp s_elm_app = {0};
-static ElmcPebbleDrawCmd s_draw_cmds[16];
+static ElmcPebbleApp s_elm_app;
+static ElmcPebbleDrawCmd *s_draw_cmds = NULL;
 static int s_draw_count = 0;
+static int s_draw_capacity = 0;
 static AppTimer *s_timer = NULL;
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
 static bool s_pending_companion_request = false;
@@ -37,6 +39,22 @@ static ElmcValue *build_launch_context(AppLaunchReason launch);
 static bool send_companion_request(int request_tag, int request_value);
 static void flush_pending_companion_request(void);
 #endif
+
+static bool ensure_draw_capacity(int capacity) {
+  if (capacity <= s_draw_capacity) {
+    return true;
+  }
+
+  ElmcPebbleDrawCmd *next = realloc(s_draw_cmds, sizeof(ElmcPebbleDrawCmd) * capacity);
+  if (!next) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "draw buffer resize failed capacity=%d", capacity);
+    return false;
+  }
+
+  s_draw_cmds = next;
+  s_draw_capacity = capacity;
+  return true;
+}
 
 static GFont system_font_for_height(int64_t requested_height) {
   if (requested_height <= 22) return fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
@@ -683,7 +701,21 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
 }
 
 static void render_model(void) {
-  int rc = elmc_pebble_view_commands(&s_elm_app, s_draw_cmds, (int)(sizeof(s_draw_cmds) / sizeof(s_draw_cmds[0])));
+  if (!ensure_draw_capacity(s_draw_capacity > 0 ? s_draw_capacity : 16)) {
+    s_draw_count = 0;
+    layer_mark_dirty(s_draw_layer);
+    return;
+  }
+
+  int rc = elmc_pebble_view_commands(&s_elm_app, s_draw_cmds, s_draw_capacity);
+  while (rc == s_draw_capacity) {
+    int next_capacity = s_draw_capacity * 2;
+    if (next_capacity <= s_draw_capacity || !ensure_draw_capacity(next_capacity)) {
+      APP_LOG(APP_LOG_LEVEL_WARNING, "draw command buffer full capacity=%d", s_draw_capacity);
+      break;
+    }
+    rc = elmc_pebble_view_commands(&s_elm_app, s_draw_cmds, s_draw_capacity);
+  }
   int64_t value = elmc_pebble_model_as_int(&s_elm_app);
 
   if (rc > 0) {
@@ -1016,6 +1048,10 @@ static void deinit(void) {
   connection_service_unsubscribe();
 #endif
   elmc_pebble_deinit(&s_elm_app);
+  free(s_draw_cmds);
+  s_draw_cmds = NULL;
+  s_draw_capacity = 0;
+  s_draw_count = 0;
   window_destroy(s_main_window);
 }
 

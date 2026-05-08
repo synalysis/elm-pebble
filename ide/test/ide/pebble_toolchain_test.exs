@@ -63,6 +63,9 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "elm_pebble_font_resource_height"
     assert template =~ "resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING"
     assert template =~ "font_from_id_for_height"
+    assert template =~ "static ElmcPebbleDrawCmd *s_draw_cmds = NULL;"
+    assert template =~ "ensure_draw_capacity"
+    assert template =~ "realloc(s_draw_cmds"
     refute template =~ "resource_id == 0"
   end
 

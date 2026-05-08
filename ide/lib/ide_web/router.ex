@@ -41,6 +41,7 @@ defmodule IdeWeb.Router do
     post "/emulator/:id/install", EmulatorController, :install
     post "/emulator/:id/kill", EmulatorController, :kill
     get "/emulator/config-return", EmulatorController, :config_return
+    get "/projects/:slug/companion/preferences", EmulatorController, :companion_preferences
     get "/emulator/:id/artifact", EmulatorController, :artifact
     get "/emulator/:id/ws/vnc", EmulatorController, :ws_vnc
     get "/emulator/:id/ws/phone", EmulatorController, :ws_phone

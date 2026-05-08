@@ -7,6 +7,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   """
   @dialyzer :no_match
 
+  alias ElmEx.CoreIR
+  alias ElmEx.Frontend.GeneratedParser
+  alias ElmEx.Frontend.Project
+  alias ElmEx.IR.Lowerer
   alias ElmExecutor.Runtime.CoreIREvaluator
 
   @doc """
@@ -38,8 +42,11 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     current_view_tree = if is_map(current_view_tree), do: current_view_tree, else: %{}
     message = map_value(request, :message)
     message_value = map_value(request, :message_value)
-    core_ir = map_value(request, :elm_executor_core_ir)
+
+    artifact_core_ir = map_value(request, :elm_executor_core_ir)
+    core_ir = source_core_ir_fallback(artifact_core_ir, source, rel_path)
     eval_context = evaluator_context(core_ir)
+    artifact_eval_context = evaluator_context(artifact_core_ir)
 
     base_runtime_model =
       case map_value(current_model, :runtime_model) do
@@ -47,7 +54,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
           model
 
         _ ->
-          evaluated_init_model(core_ir, eval_context, current_model) ||
+          evaluated_init_model(artifact_core_ir, artifact_eval_context, current_model) ||
             map_value(introspect, :init_model) ||
             %{}
       end
@@ -56,8 +63,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       case message do
         msg when is_binary(msg) and msg != "" ->
           case evaluate_update_from_core_ir(
-                 core_ir,
-                 eval_context,
+                 artifact_core_ir,
+                 artifact_eval_context,
                  msg,
                  message_value,
                  base_runtime_model
@@ -1077,6 +1084,36 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     do: runtime_model
 
   defp enrich_runtime_model_for_view(_runtime_model, _current_model), do: %{}
+
+  @spec source_core_ir_fallback(term(), term(), term()) :: term()
+  defp source_core_ir_fallback(core_ir, _source, _rel_path) when is_map(core_ir), do: core_ir
+
+  defp source_core_ir_fallback(_core_ir, source, rel_path)
+       when is_binary(source) and byte_size(source) > 0 do
+    path =
+      case rel_path do
+        value when is_binary(value) and value != "" -> value
+        _ -> "Main.elm"
+      end
+
+    with {:ok, module} <- GeneratedParser.parse_source(path, source),
+         project <- %Project{
+           project_dir: path |> Path.dirname() |> Path.expand(),
+           elm_json: %{},
+           modules: [module],
+           diagnostics: []
+         },
+         {:ok, ir} <- Lowerer.lower_project(project),
+         {:ok, core_ir} <- CoreIR.from_ir(ir) do
+      core_ir
+    else
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp source_core_ir_fallback(_core_ir, _source, _rel_path), do: nil
 
   @spec derive_view_output(term(), term(), term()) :: term()
   defp derive_view_output(view_tree, runtime_model, eval_context)

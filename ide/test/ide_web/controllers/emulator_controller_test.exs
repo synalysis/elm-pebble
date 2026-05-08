@@ -2,7 +2,25 @@ defmodule IdeWeb.EmulatorControllerTest do
   use IdeWeb.ConnCase, async: false
 
   alias Ide.Emulator
+  alias Ide.Projects
   alias Ide.TestSupport.{EmulatorLaunch, EmulatorSessionEnv}
+
+  setup do
+    previous = Application.get_env(:ide, Ide.Projects)
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "emulator-controller-test-#{System.unique_integer([:positive])}"
+      )
+
+    Application.put_env(:ide, Ide.Projects, projects_root: root)
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.Projects, previous)
+      File.rm_rf(root)
+    end)
+  end
 
   test "ping returns alive for an existing session", %{conn: conn} do
     EmulatorSessionEnv.run(fn ->
@@ -58,5 +76,28 @@ defmodule IdeWeb.EmulatorControllerTest do
     conn = get(conn, ~p"/api/emulator/config-return?foo=bar")
 
     assert html_response(conn, 200) =~ "Configuration response received"
+  end
+
+  test "companion preferences renders project preference HTML", %{conn: conn} do
+    slug = "controller-preferences-#{System.unique_integer([:positive])}"
+
+    assert {:ok, _project} =
+             Projects.create_project(%{
+               "name" => "ControllerPreferences",
+               "slug" => slug,
+               "target_type" => "app",
+               "template" => "watchface-tutorial-complete"
+             })
+
+    response =
+      conn
+      |> get(
+        ~p"/api/projects/#{slug}/companion/preferences?return_to=/api/emulator/config-return"
+      )
+      |> html_response(200)
+
+    assert response =~ "Tutorial Watchface"
+    assert response =~ "showDate"
+    assert response =~ "return_to"
   end
 end
