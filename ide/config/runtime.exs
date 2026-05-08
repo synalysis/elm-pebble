@@ -24,6 +24,22 @@ github_oauth_client_id = System.get_env("GITHUB_OAUTH_CLIENT_ID")
 
 config :ide, Ide.GitHub, oauth_client_id: github_oauth_client_id
 
+config :ide, Ide.Emulator.Session,
+  enabled: System.get_env("ELM_PEBBLE_EMBEDDED_EMULATOR", "true") not in ~w(0 false no off),
+  qemu_bin: System.get_env("ELM_PEBBLE_QEMU_BIN"),
+  qemu_image_root:
+    System.get_env("ELM_PEBBLE_QEMU_IMAGE_ROOT") ||
+      Path.expand(".pebble-sdk/SDKs/current/sdk-core/pebble", System.user_home!()),
+  qemu_data_root: System.get_env("ELM_PEBBLE_QEMU_DATA_ROOT"),
+  download_images:
+    System.get_env("ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES", "true") not in ~w(0 false no off),
+  sdk_core_version: System.get_env("ELM_PEBBLE_SDK_CORE_VERSION") || "4.9.148",
+  sdk_core_metadata_url: System.get_env("ELM_PEBBLE_SDK_CORE_METADATA_URL"),
+  pypkjs_bin: System.get_env("ELM_PEBBLE_PYPKJS_BIN"),
+  idle_timeout_ms:
+    System.get_env("ELM_PEBBLE_EMULATOR_IDLE_TIMEOUT_MS", "300000")
+    |> String.to_integer()
+
 if config_env() == :prod do
   data_root = System.get_env("IDE_DATA_ROOT") || "/var/lib/ide"
   projects_root = System.get_env("PROJECTS_ROOT") || Path.join(data_root, "workspace_projects")

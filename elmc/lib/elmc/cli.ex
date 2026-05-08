@@ -75,20 +75,6 @@ defmodule Elmc.CLI do
             {Enum.uniq(Enum.reverse(supported)), Enum.uniq(Enum.reverse(excluded))}
           end)
 
-        dependency_warnings =
-          compatibility
-          |> Enum.filter(&(&1["status"] == "blocked"))
-          |> Enum.map(fn row ->
-            %{
-              "type" => "package-compatibility",
-              "code" => row["reason_code"],
-              "severity" => "warning",
-              "source" => "manifest/deps",
-              "message" => row["message"],
-              "package" => row["package"]
-            }
-          end)
-
         manifest = %{
           supported_packages: supported_packages,
           excluded_packages: excluded_packages,
@@ -96,7 +82,6 @@ defmodule Elmc.CLI do
           dependency_compatibility: compatibility
         }
 
-        print_warnings(dependency_warnings)
         IO.puts(Jason.encode!(manifest, pretty: true))
 
       {:error, error} ->

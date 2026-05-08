@@ -1,0 +1,158 @@
+defmodule IdeWeb.EmulatorController do
+  use IdeWeb, :controller
+
+  alias Ide.Emulator
+  alias Ide.Projects
+  alias IdeWeb.WorkspaceLive.BuildFlow
+
+  @spec launch(term(), term()) :: term()
+  def launch(conn, %{"slug" => slug} = params) do
+    platform = Map.get(params, "platform")
+
+    with project when not is_nil(project) <- Projects.get_project_by_slug(slug),
+         workspace_root <- Projects.project_workspace_path(project),
+         {:ok, artifact_path} <-
+           BuildFlow.package_for_emulator_target(project, workspace_root, platform),
+         {:ok, info} <-
+           Emulator.launch(
+             project_slug: project.slug,
+             platform: platform,
+             artifact_path: artifact_path
+           ) do
+      json(conn, info)
+    else
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Project not found"})
+
+      {:error, reason} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: launch_error_message(reason)})
+    end
+  end
+
+  def launch(conn, _params) do
+    conn |> put_status(:bad_request) |> json(%{error: "Expected slug and platform"})
+  end
+
+  @spec ping(term(), term()) :: term()
+  def ping(conn, %{"id" => id}) do
+    case Emulator.ping(id) do
+      {:ok, info} -> json(conn, Map.put(info, :alive, true))
+      {:error, _reason} -> json(conn, %{alive: false})
+    end
+  end
+
+  @spec kill(term(), term()) :: term()
+  def kill(conn, %{"id" => id}) do
+    _ = Emulator.kill(id)
+    json(conn, %{status: "ok"})
+  end
+
+  @spec install(term(), term()) :: term()
+  def install(conn, %{"id" => id}) do
+    case Emulator.install(id) do
+      {:ok, result} ->
+        json(conn, %{status: "ok", result: result})
+
+      {:error, :not_found} ->
+        conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
+
+      {:error, reason} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: install_error_message(reason)})
+    end
+  end
+
+  @spec config_return(term(), term()) :: term()
+  def config_return(conn, _params) do
+    html(conn, """
+    <!doctype html>
+    <html>
+      <body style="font-family: sans-serif; padding: 1rem;">
+        <p>Configuration response received. You can close this window.</p>
+      </body>
+    </html>
+    """)
+  end
+
+  @spec artifact(term(), term()) :: term()
+  def artifact(conn, %{"id" => id}) do
+    with {:ok, pid} <- Emulator.lookup(id),
+         path when is_binary(path) <- Ide.Emulator.Session.artifact_file_path(pid),
+         true <- File.exists?(path) do
+      send_download(conn, {:file, path},
+        filename: Path.basename(path),
+        content_type: "application/octet-stream"
+      )
+    else
+      _ -> conn |> put_status(:not_found) |> json(%{error: "Artifact not found"})
+    end
+  end
+
+  @spec ws_vnc(term(), term()) :: term()
+  def ws_vnc(conn, %{"id" => id}), do: proxy(conn, id, :vnc)
+
+  @spec ws_phone(term(), term()) :: term()
+  def ws_phone(conn, %{"id" => id}), do: proxy(conn, id, :phone)
+
+  defp proxy(conn, id, kind) do
+    with {:ok, info} <- Emulator.info(id),
+         {:ok, url} <- proxy_url(info, kind) do
+      conn
+      |> WebSockAdapter.upgrade(IdeWeb.EmulatorProxySocket, %{url: url}, timeout: 86_400_000)
+      |> halt()
+    else
+      {:error, :not_found} ->
+        conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
+
+      {:error, reason} ->
+        conn |> put_status(:bad_request) |> json(%{error: inspect(reason)})
+    end
+  end
+
+  defp proxy_url(%{backend_enabled: false}, _kind),
+    do: {:error, :embedded_emulator_backend_disabled}
+
+  defp proxy_url(%{id: id}, :vnc) do
+    with {:ok, pid} <- Emulator.lookup(id),
+         port <- Ide.Emulator.Session.local_port(pid, :vnc),
+         true <- Ide.Emulator.Session.tcp_port_open?(port) do
+      {:ok, "ws://127.0.0.1:#{port}/"}
+    else
+      false -> {:error, :emulator_vnc_not_ready}
+      error -> error
+    end
+  end
+
+  defp proxy_url(%{id: id}, :phone) do
+    with {:ok, pid} <- Emulator.lookup(id),
+         port <- Ide.Emulator.Session.local_port(pid, :phone),
+         true <- Ide.Emulator.Session.tcp_port_open?(port) do
+      {:ok, "ws://127.0.0.1:#{port}/"}
+    else
+      false -> {:error, :emulator_phone_not_ready}
+      error -> error
+    end
+  end
+
+  defp launch_error_message({:embedded_emulator_unavailable, missing}) when is_list(missing) do
+    "Embedded emulator dependencies are missing: #{Enum.join(missing, ", ")}. " <>
+      "Install Pebble QEMU/pypkjs or set ELM_PEBBLE_QEMU_BIN, ELM_PEBBLE_PYPKJS_BIN, and ELM_PEBBLE_QEMU_IMAGE_ROOT."
+  end
+
+  defp launch_error_message(:embedded_emulator_disabled) do
+    "Embedded emulator is disabled by ELM_PEBBLE_EMBEDDED_EMULATOR."
+  end
+
+  defp launch_error_message({:embedded_emulator_image_download_failed, reason}) do
+    "Could not download Pebble QEMU flash images: #{inspect(reason)}. " <>
+      "Check network access or set ELM_PEBBLE_QEMU_IMAGE_ROOT to a directory that already contains <platform>/qemu images."
+  end
+
+  defp launch_error_message(reason), do: inspect(reason)
+
+  defp install_error_message(:artifact_not_found), do: "PBW artifact not found for this emulator session."
+
+  defp install_error_message(:embedded_protocol_router_not_started),
+    do: "Embedded emulator protocol router is not running."
+
+  defp install_error_message(reason), do: inspect(reason)
+end

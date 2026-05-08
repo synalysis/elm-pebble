@@ -18,7 +18,9 @@ defmodule IdeWeb do
   """
 
   @spec static_paths() :: term()
-  def static_paths, do: ~w(assets fonts images screenshots favicon.ico robots.txt)
+  def static_paths,
+    do:
+      ~w(assets fonts images screenshots favicon.ico favicon.svg favicon-96x96.png apple-touch-icon.png site.webmanifest web-app-manifest-192x192.png web-app-manifest-512x512.png robots.txt)
 
   @spec router() :: term()
   def router do

@@ -16,6 +16,8 @@ defmodule Ide.Application do
       Ide.Mcp.CheckCache,
       Ide.Acp.AgentSupervisor,
       Ide.Debugger,
+      {Registry, keys: :unique, name: Ide.Emulator.Registry},
+      {DynamicSupervisor, strategy: :one_for_one, name: Ide.Emulator.SessionSupervisor},
       {DNSCluster, query: Application.get_env(:ide, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Ide.PubSub},
       # Start the Finch HTTP client for sending emails

@@ -888,7 +888,8 @@ defmodule ElmEx.IR.Lowerer do
 
   @spec rewrite_pattern(map() | nil, lookup()) :: map() | nil
   defp rewrite_pattern(%{kind: :constructor, name: name} = pattern, lookup) do
-    tag = resolve_constructor_tag(name, lookup)
+    resolved_name = resolve_alias(name, lookup)
+    tag = resolve_constructor_tag(resolved_name, lookup)
 
     arg_pattern =
       case pattern[:arg_pattern] do
@@ -898,6 +899,7 @@ defmodule ElmEx.IR.Lowerer do
 
     pattern
     |> Map.put(:tag, tag)
+    |> Map.put(:resolved_name, resolved_name)
     |> Map.put(:arg_pattern, arg_pattern)
   end
 
@@ -1323,7 +1325,8 @@ defmodule ElmEx.IR.Lowerer do
          function_name,
          line
        ) do
-    expected_kind = resolve_constructor_payload_kind(name, lookup)
+    resolved_name = Map.get(pattern, :resolved_name, name)
+    expected_kind = resolve_constructor_payload_kind(resolved_name, lookup)
 
     has_arg_pattern =
       case pattern do
@@ -1343,11 +1346,11 @@ defmodule ElmEx.IR.Lowerer do
               module: module_name,
               function: function_name,
               line: line,
-              constructor: name,
+              constructor: resolved_name,
               expected_kind: :none,
               has_arg_pattern: true,
               message:
-                "Constructor #{name} is used with an argument pattern, but its payload kind is none."
+                "Constructor #{resolved_name} is used with an argument pattern, but its payload kind is none."
             }
           ]
 
@@ -1360,11 +1363,11 @@ defmodule ElmEx.IR.Lowerer do
               module: module_name,
               function: function_name,
               line: line,
-              constructor: name,
+              constructor: resolved_name,
               expected_kind: kind,
               has_arg_pattern: false,
               message:
-                "Constructor #{name} expects a payload pattern (kind #{kind}), but no argument pattern was provided."
+                "Constructor #{resolved_name} expects a payload pattern (kind #{kind}), but no argument pattern was provided."
             }
           ]
 

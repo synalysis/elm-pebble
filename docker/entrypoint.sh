@@ -46,5 +46,11 @@ if [ "$INSTALL_PEBBLE_SDK" = "1" ]; then
   fi
 fi
 
+export ELM_PEBBLE_QEMU_BIN="${ELM_PEBBLE_QEMU_BIN:-$DATA_ROOT/.pebble-sdk/SDKs/current/toolchain/bin/qemu-pebble}"
+export ELM_PEBBLE_PYPKJS_BIN="${ELM_PEBBLE_PYPKJS_BIN:-/opt/pipx/venvs/pebble-tool/bin/pypkjs}"
+export ELM_PEBBLE_QEMU_IMAGE_ROOT="${ELM_PEBBLE_QEMU_IMAGE_ROOT:-$DATA_ROOT/.pebble-sdk/SDKs/current/sdk-core/pebble}"
+export ELM_PEBBLE_QEMU_DATA_ROOT="${ELM_PEBBLE_QEMU_DATA_ROOT:-/usr/share/qemu}"
+export ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES="${ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES:-1}"
+
 /opt/ide/bin/ide eval "Ide.Release.migrate"
 exec /opt/ide/bin/ide start

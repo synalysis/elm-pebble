@@ -589,6 +589,89 @@ defmodule Elmc.IRLowererTest do
     assert length(pattern_payload_arity) == 1
   end
 
+  test "pattern payload diagnostics use unqualified import resolution under name collisions" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{},
+      modules: [
+        %FrontendModule{
+          name: "Companion.Types",
+          path: "/tmp/Companion/Types.elm",
+          imports: [],
+          module_exposing: ["WeatherCondition(..)"],
+          declarations: [
+            %{
+              kind: :union,
+              name: "WeatherCondition",
+              constructors: [%{name: "Clear", arg: nil}],
+              span: %{start_line: 1, end_line: 2}
+            }
+          ]
+        },
+        %FrontendModule{
+          name: "Pebble.Ui",
+          path: "/tmp/Pebble/Ui.elm",
+          imports: [],
+          module_exposing: ["RenderOp(..)"],
+          declarations: [
+            %{
+              kind: :union,
+              name: "RenderOp",
+              constructors: [%{name: "Clear", arg: "Int"}],
+              span: %{start_line: 1, end_line: 2}
+            }
+          ]
+        },
+        %FrontendModule{
+          name: "Main",
+          path: "/tmp/Main.elm",
+          imports: ["Companion.Types", "Pebble.Ui"],
+          import_entries: [
+            %{"module" => "Companion.Types", "exposing" => ["WeatherCondition(..)"]},
+            %{"module" => "Pebble.Ui", "as" => "PebbleUi"}
+          ],
+          declarations: [
+            %{
+              kind: :function_signature,
+              name: "conditionString",
+              type: "WeatherCondition -> String",
+              span: %{start_line: 5, end_line: 5}
+            },
+            %{
+              kind: :function_definition,
+              name: "conditionString",
+              args: ["condition"],
+              body: "case condition of Clear -> \"Clear\"",
+              span: %{start_line: 6, end_line: 8},
+              expr: %{
+                op: :case,
+                subject: "condition",
+                branches: [
+                  %{
+                    pattern: %{kind: :constructor, name: "Clear"},
+                    expr: %{op: :string_literal, value: "Clear"}
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    refute Enum.any?(
+             ir.diagnostics,
+             &(&1.code == "constructor_payload_arity" and &1.constructor == "Pebble.Ui.Clear")
+           )
+
+    refute Enum.any?(
+             ir.diagnostics,
+             &(&1.code == "constructor_payload_arity" and &1.function == "conditionString")
+           )
+  end
+
   test "lowerer resolves tags for qualified and local constructors in fixture flow" do
     project_dir = Path.expand("fixtures/qualified_constructor_project", __DIR__)
     {:ok, project} = Bridge.load_project(project_dir)

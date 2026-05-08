@@ -27,8 +27,10 @@ RUN apt-get update && \
       openssl \
       libncurses6 \
       ca-certificates \
+      bzip2 \
       python3 \
       pipx \
+      qemu-system-data \
       nodejs \
       npm && \
     PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install pebble-tool && \
@@ -46,6 +48,11 @@ ENV PROJECTS_ROOT=/var/lib/ide/workspace_projects
 ENV SETTINGS_FILE=/var/lib/ide/config/settings.json
 ENV PEBBLE_SDK_VERSION=latest
 ENV INSTALL_PEBBLE_SDK=1
+ENV ELM_PEBBLE_QEMU_BIN=/var/lib/ide/.pebble-sdk/SDKs/current/toolchain/bin/qemu-pebble
+ENV ELM_PEBBLE_PYPKJS_BIN=/opt/pipx/venvs/pebble-tool/bin/pypkjs
+ENV ELM_PEBBLE_QEMU_IMAGE_ROOT=/var/lib/ide/.pebble-sdk/SDKs/current/sdk-core/pebble
+ENV ELM_PEBBLE_QEMU_DATA_ROOT=/usr/share/qemu
+ENV ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES=1
 ENV SECRET_KEY_BASE=8eXjTGrTXoJHN8S-sqKoLrXp1xQ8vlqv2Ryr_5wPjMz5f4lAQ9S3v5dvU7uIGrYb
 
 WORKDIR /opt/ide

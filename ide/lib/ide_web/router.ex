@@ -36,6 +36,14 @@ defmodule IdeWeb.Router do
 
     post "/mcp", McpController, :create
     post "/tokenize", TokenizerController, :create
+    post "/emulator/launch", EmulatorController, :launch
+    post "/emulator/:id/ping", EmulatorController, :ping
+    post "/emulator/:id/install", EmulatorController, :install
+    post "/emulator/:id/kill", EmulatorController, :kill
+    get "/emulator/config-return", EmulatorController, :config_return
+    get "/emulator/:id/artifact", EmulatorController, :artifact
+    get "/emulator/:id/ws/vnc", EmulatorController, :ws_vnc
+    get "/emulator/:id/ws/phone", EmulatorController, :ws_phone
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

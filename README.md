@@ -31,6 +31,8 @@ Container image includes required toolchain binaries:
 
 - `elm` (installed globally via npm)
 - `pebble` CLI (`pebble-tool`)
+- embedded emulator runtime support (`qemu-pebble` from the installed SDK,
+  `pypkjs` from `pebble-tool`, QEMU keymap data, and bzip2 for flash images)
 
 On first startup, the container installs/activates the Pebble SDK automatically
 (`PEBBLE_SDK_VERSION=latest` by default). To pin a specific SDK version, set:
@@ -40,6 +42,15 @@ PEBBLE_SDK_VERSION=4.9.148 docker compose up -d
 ```
 
 The first startup can take a few minutes while SDK/toolchain artifacts download.
+The embedded emulator uses these container paths by default:
+
+- `ELM_PEBBLE_QEMU_BIN=/var/lib/ide/.pebble-sdk/SDKs/current/toolchain/bin/qemu-pebble`
+- `ELM_PEBBLE_PYPKJS_BIN=/opt/pipx/venvs/pebble-tool/bin/pypkjs`
+- `ELM_PEBBLE_QEMU_IMAGE_ROOT=/var/lib/ide/.pebble-sdk/SDKs/current/sdk-core/pebble`
+- `ELM_PEBBLE_QEMU_DATA_ROOT=/usr/share/qemu`
+
+If QEMU flash images are not present in the active SDK, the IDE downloads them
+on demand into `ELM_PEBBLE_QEMU_IMAGE_ROOT`.
 
 To skip automatic SDK installation/activation:
 

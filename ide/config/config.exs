@@ -33,6 +33,20 @@ config :ide, Ide.PebbleToolchain,
   emulator_target: "basalt",
   emulator_targets: ~w(aplite basalt chalk diorite emery flint gabbro)
 
+config :ide, Ide.Emulator.Session,
+  enabled: System.get_env("ELM_PEBBLE_EMBEDDED_EMULATOR", "true") not in ~w(0 false no off),
+  qemu_bin: System.get_env("ELM_PEBBLE_QEMU_BIN"),
+  qemu_image_root:
+    System.get_env("ELM_PEBBLE_QEMU_IMAGE_ROOT") ||
+      Path.expand(".pebble-sdk/SDKs/current/sdk-core/pebble", System.user_home!()),
+  qemu_data_root: System.get_env("ELM_PEBBLE_QEMU_DATA_ROOT"),
+  download_images:
+    System.get_env("ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES", "true") not in ~w(0 false no off),
+  sdk_core_version: System.get_env("ELM_PEBBLE_SDK_CORE_VERSION") || "4.9.148",
+  sdk_core_metadata_url: System.get_env("ELM_PEBBLE_SDK_CORE_METADATA_URL"),
+  pypkjs_bin: System.get_env("ELM_PEBBLE_PYPKJS_BIN"),
+  idle_timeout_ms: 5 * 60 * 1000
+
 config :ide, Ide.Screenshots,
   storage_root: Path.expand("../priv/static/screenshots", __DIR__),
   public_prefix: "/screenshots"
@@ -82,7 +96,7 @@ config :esbuild,
   version: "0.17.11",
   ide: [
     args:
-      ~w(js/app.js --bundle --format=esm --splitting --target=es2017 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
+      ~w(js/app.js --bundle --format=esm --splitting --target=es2022 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]
