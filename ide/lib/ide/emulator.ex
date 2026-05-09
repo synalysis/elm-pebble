@@ -8,7 +8,8 @@ defmodule Ide.Emulator do
   @type launch_opts :: [
           project_slug: String.t(),
           platform: String.t(),
-          artifact_path: String.t() | nil
+          artifact_path: String.t() | nil,
+          has_phone_companion: boolean()
         ]
 
   @spec launch(launch_opts()) :: {:ok, map()} | {:error, term()}

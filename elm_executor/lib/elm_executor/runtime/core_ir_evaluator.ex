@@ -10,6 +10,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       maybe_tail_ctor: 1,
       maybe_map_get_ctor: 2,
       maybe_extreme_ctor: 2,
+      maybe_value: 1,
+      maybe_ctor_like: 2,
       with_default_maybe_or_result: 2
     ]
 
@@ -56,6 +58,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder
 
+  @max_function_recursion_depth 128
+
   @type function_def :: %{
           module: String.t(),
           name: String.t(),
@@ -92,16 +96,16 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   def index_functions(%{"modules" => modules}) when is_list(modules) do
     Enum.reduce(modules, %{}, fn mod, acc ->
-      module_name = to_string(mod["name"] || mod[:name] || "Main")
-      decls = mod["declarations"] || mod[:declarations] || []
+      module_name = to_string(generic_map_value(mod, "name") || "Main")
+      decls = generic_map_value(mod, "declarations") || []
 
       Enum.reduce(decls, acc, fn decl, a ->
-        if to_string(decl["kind"] || decl[:kind] || "") == "function" do
-          name = to_string(decl["name"] || decl[:name] || "")
-          body = decl["expr"] || decl[:expr]
+        if to_string(generic_map_value(decl, "kind") || "") == "function" do
+          name = to_string(generic_map_value(decl, "name") || "")
+          body = generic_map_value(decl, "expr")
 
           params =
-            normalize_params(decl["params"] || decl[:params] || decl["args"] || decl[:args])
+            normalize_params(generic_map_value(decl, "params") || generic_map_value(decl, "args"))
 
           Map.put(a, {module_name, name, length(params)}, %{
             module: module_name,
@@ -124,14 +128,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   def index_record_aliases(%{"modules" => modules}) when is_list(modules) do
     Enum.reduce(modules, %{}, fn mod, acc ->
-      module_name = to_string(mod["name"] || mod[:name] || "Main")
-      decls = mod["declarations"] || mod[:declarations] || []
+      module_name = to_string(generic_map_value(mod, "name") || "Main")
+      decls = generic_map_value(mod, "declarations") || []
 
       Enum.reduce(decls, acc, fn decl, a ->
-        kind = to_string(decl["kind"] || decl[:kind] || "")
-        name = to_string(decl["name"] || decl[:name] || "")
-        expr = decl["expr"] || decl[:expr] || %{}
-        fields = expr["fields"] || expr[:fields] || []
+        kind = to_string(generic_map_value(decl, "kind") || "")
+        name = to_string(generic_map_value(decl, "name") || "")
+        expr = generic_map_value(decl, "expr") || %{}
+        fields = generic_map_value(expr, "fields") || []
 
         if kind == "type_alias" and record_alias_expr?(expr) and is_list(fields) do
           Map.put(a, {module_name, name}, Enum.map(fields, &to_string/1))
@@ -150,8 +154,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   def index_constructor_tags(%{"modules" => modules}) when is_list(modules) do
     Enum.flat_map(modules, fn mod ->
-      module_name = to_string(mod["name"] || mod[:name] || "Main")
-      unions = mod["unions"] || mod[:unions] || %{}
+      module_name = to_string(generic_map_value(mod, "name") || "Main")
+      unions = generic_map_value(mod, "unions") || %{}
       update_module? = module_has_update?(mod)
 
       Enum.flat_map(unions, fn {union_name, union} ->
@@ -208,6 +212,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   @spec generic_map_value(term(), term()) :: term()
   defp generic_map_value(map, key) when is_map(map) and is_binary(key) do
+    map = if Map.has_key?(map, :__struct__), do: Map.from_struct(map), else: map
+
     case Map.fetch(map, key) do
       {:ok, value} ->
         value
@@ -1028,6 +1034,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       {"pebble.ui.group", [{:ui_context, style, ops}]} ->
         {:ok, ui_group_node(style, ops)}
 
+      {"pebble.ui.touinode", [ops]} when is_list(ops) ->
+        {:ok, ui_node("group", ui_children_from_value(ops))}
+
       {"pebble.ui.canvaslayer", [z, ops]} ->
         {:ok, ui_node("canvasLayer", [expr_node(z)] ++ ui_children_from_value(ops))}
 
@@ -1144,17 +1153,90 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           task_builtin_ops(env, context, stack)
         )
 
+      "random" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Random.eval(
+          function_name,
+          values,
+          random_builtin_ops(env, context, stack)
+        )
+
+      "elm.kernel.random" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Random.eval(
+          function_name,
+          values,
+          random_builtin_ops(env, context, stack)
+        )
+
       "cmd" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd.eval(function_name, values)
+
+      "sub" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd.eval(function_name, values)
+
+      "platform.cmd" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd.eval(function_name, values)
+
+      "platform.sub" ->
         ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd.eval(function_name, values)
 
       "http" ->
         ElmExecutor.Runtime.CoreIREvaluator.Builtins.Http.eval(function_name, values)
 
+      "pebble.storage" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
+
+      "pebble.time" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
+
+      "pebble.watchinfo" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
+
+      "pebble.cmd" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
+
+      "elm.kernel.pebblewatch" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
+
       "companion.phone" ->
-        eval_protocol_builtin("phone_to_watch", function_name, values, context)
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
 
       "companion.watch" ->
-        eval_protocol_builtin("watch_to_phone", function_name, values, context)
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
 
       "basics" ->
         ElmExecutor.Runtime.CoreIREvaluator.Builtins.Basics.eval(
@@ -1170,10 +1252,18 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         ElmExecutor.Runtime.CoreIREvaluator.Builtins.Bitwise.eval(function_name, values)
 
       "string" ->
-        ElmExecutor.Runtime.CoreIREvaluator.Builtins.String.eval(function_name, values)
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.String.eval(
+          function_name,
+          values,
+          string_builtin_ops(env, context, stack)
+        )
 
       "dict" ->
-        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Dict.eval(function_name, values)
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Dict.eval(
+          function_name,
+          values,
+          dict_builtin_ops(env, context, stack)
+        )
 
       "array" ->
         ElmExecutor.Runtime.CoreIREvaluator.Builtins.Array.eval(
@@ -1183,10 +1273,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         )
 
       "set" ->
-        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Set.eval(function_name, values)
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Set.eval(
+          function_name,
+          values,
+          set_builtin_ops(env, context, stack)
+        )
 
       "char" ->
-        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Empty.eval(function_name, values)
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Char.eval(function_name, values)
 
       "url" ->
         ElmExecutor.Runtime.CoreIREvaluator.Builtins.Url.eval(function_name, values)
@@ -1219,10 +1313,19 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         )
 
       "tuple" ->
-        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Empty.eval(function_name, values)
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Tuple.eval(
+          function_name,
+          values,
+          tuple_builtin_ops(env, context, stack)
+        )
 
       "pebble.ui" ->
-        eval_ui_builtin(normalized_full, values)
+        if function_name == "touinode" and
+             indexed_function_defined?(context, "Pebble.Ui", function_name, length(values)) do
+          :no_builtin
+        else
+          eval_ui_builtin(normalized_full, values)
+        end
 
       "pebble.ui.color" ->
         eval_ui_color_builtin(function_name, values)
@@ -1253,47 +1356,138 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
+  defp indexed_function_defined?(context, module_name, function_name, arity)
+       when is_map(context) and is_binary(module_name) and is_binary(function_name) and
+              is_integer(arity) do
+    context
+    |> Map.get(:functions, %{})
+    |> Enum.any?(fn
+      {{^module_name, name, ^arity}, _def} when is_binary(name) ->
+        normalize_builtin_name(name) == function_name
+
+      _ ->
+        false
+    end)
+  end
+
   @spec list_builtin_ops(map(), map(), list()) :: map()
   defp list_builtin_ops(env, context, stack) do
     %{
       map_dispatch: &map_dispatch(&1, &2, env, context, stack),
       list_map2: &list_map2_with_callable(&1, &2, &3, env, context, stack),
+      indexed_map: &indexed_map_with_callable(&1, &2, env, context, stack),
+      concat_map: &concat_map_with_callable(&1, &2, env, context, stack),
       foldl: &foldl_with_callable(&1, &2, &3, env, context, stack),
       foldr: &foldr_with_callable(&1, &2, &3, env, context, stack),
-      filter: &filter_with_callable(&1, &2, env, context, stack)
+      filter: &filter_with_callable(&1, &2, env, context, stack),
+      all: &all_with_callable(&1, &2, env, context, stack),
+      any: &any_with_callable(&1, &2, env, context, stack),
+      partition: &partition_with_callable(&1, &2, env, context, stack),
+      sort_by: &sort_by_with_callable(&1, &2, env, context, stack),
+      sort_with: &sort_with_callable(&1, &2, env, context, stack),
+      head: &{:ok, maybe_head_ctor(&1)},
+      tail: &{:ok, maybe_tail_ctor(&1)},
+      maximum: &{:ok, maybe_extreme_ctor(&1, :max)},
+      minimum: &{:ok, maybe_extreme_ctor(&1, :min)},
+      call: &call_callable(&1, &2, env, context, stack)
+    }
+  end
+
+  @spec string_builtin_ops(map(), map(), list()) :: map()
+  defp string_builtin_ops(env, context, stack) do
+    call = callable_runner(env, context, stack)
+
+    %{
+      string_map: &HigherOrder.string_map_with_callable(&1, &2, call),
+      string_filter: &HigherOrder.string_filter_with_callable(&1, &2, call),
+      string_foldl: &HigherOrder.string_foldl_with_callable(&1, &2, &3, call),
+      string_foldr: &HigherOrder.string_foldr_with_callable(&1, &2, &3, call),
+      string_any: &HigherOrder.string_any_with_callable(&1, &2, call),
+      string_all: &HigherOrder.string_all_with_callable(&1, &2, call)
+    }
+  end
+
+  @spec dict_builtin_ops(map(), map(), list()) :: map()
+  defp dict_builtin_ops(env, context, stack) do
+    %{
+      call: &call_callable(&1, &2, env, context, stack)
+    }
+  end
+
+  @spec set_builtin_ops(map(), map(), list()) :: map()
+  defp set_builtin_ops(env, context, stack) do
+    %{
+      call: &call_callable(&1, &2, env, context, stack)
+    }
+  end
+
+  @spec tuple_builtin_ops(map(), map(), list()) :: map()
+  defp tuple_builtin_ops(env, context, stack) do
+    %{
+      call: &call_callable(&1, &2, env, context, stack)
     }
   end
 
   @spec result_builtin_ops(map(), map(), list()) :: map()
   defp result_builtin_ops(env, context, stack) do
     %{
+      map: &HigherOrder.result_map_with_callable(&1, &2, callable_runner(env, context, stack)),
       and_then:
         &HigherOrder.result_and_then_with_callable(&1, &2, callable_runner(env, context, stack)),
-      map2_dispatch: &map2_dispatch(&1, &2, &3, env, context, stack)
+      map2_dispatch: &map2_dispatch(&1, &2, &3, env, context, stack),
+      call: &call_callable(&1, &2, env, context, stack)
     }
   end
 
   @spec maybe_builtin_ops(map(), map(), list()) :: map()
   defp maybe_builtin_ops(env, context, stack) do
     %{
+      map: &HigherOrder.maybe_map_with_callable(&1, &2, callable_runner(env, context, stack)),
+      and_then: &maybe_and_then_with_callable(&1, &2, env, context, stack),
       map2_dispatch: &map2_dispatch(&1, &2, &3, env, context, stack)
     }
   end
 
   @spec task_builtin_ops(map(), map(), list()) :: map()
   defp task_builtin_ops(env, context, stack) do
-    %{map2_dispatch: &map2_dispatch(&1, &2, &3, env, context, stack)}
+    %{
+      map: &task_map_with_callable(&1, &2, env, context, stack),
+      map2_dispatch: &map2_dispatch(&1, &2, &3, env, context, stack),
+      sequence: &task_sequence/1,
+      call: &call_callable(&1, &2, env, context, stack)
+    }
+  end
+
+  @spec random_builtin_ops(map(), map(), list()) :: map()
+  defp random_builtin_ops(env, context, stack) do
+    %{
+      call: &call_callable(&1, &2, env, context, stack)
+    }
+  end
+
+  @spec package_builtin_ops(map(), map(), list()) :: map()
+  defp package_builtin_ops(env, context, stack) do
+    %{
+      call: &call_callable(&1, &2, env, context, stack),
+      debug_to_string: &elm_debug_to_string/1,
+      normalize_union_value: &normalize_union_value(&1, &2, context)
+    }
   end
 
   @spec basics_builtin_ops(map(), map(), list()) :: map()
   defp basics_builtin_ops(env, context, stack) do
-    %{map2_dispatch: &map2_dispatch(&1, &2, &3, env, context, stack)}
+    %{
+      map2_dispatch: &map2_dispatch(&1, &2, &3, env, context, stack),
+      compare: &compare_ctor/2
+    }
   end
 
   @spec array_builtin_ops(map(), map(), list()) :: map()
   defp array_builtin_ops(env, context, stack) do
     %{
       slice: &list_slice/3,
+      map: &map_with_callable(&1, &2, env, context, stack),
+      indexed_map: &indexed_map_with_callable(&1, &2, env, context, stack),
       foldl: &foldl_with_callable(&1, &2, &3, env, context, stack),
       foldr: &foldr_with_callable(&1, &2, &3, env, context, stack),
       initialize: &initialize_with_callable(&1, &2, env, context, stack),
@@ -1336,34 +1530,6 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       call: &call_callable(&1, &2, env, context, stack),
       collect_ok: &collect_ok/1,
       result_ctor: &result_ctor/1
-    }
-  end
-
-  @spec eval_protocol_builtin(String.t(), String.t(), list(), map()) :: {:ok, map()} | :no_builtin
-  defp eval_protocol_builtin(direction, "sendphonetowatch", [message], context)
-       when direction == "phone_to_watch" and is_map(context) do
-    {:ok, protocol_command(direction, "companion", "watch", "PhoneToWatch", message, context)}
-  end
-
-  defp eval_protocol_builtin(direction, "sendwatchtophone", [message], context)
-       when direction == "watch_to_phone" and is_map(context) do
-    {:ok, protocol_command(direction, "watch", "companion", "WatchToPhone", message, context)}
-  end
-
-  defp eval_protocol_builtin(_direction, _function_name, _values, _context), do: :no_builtin
-
-  @spec protocol_command(String.t(), String.t(), String.t(), String.t(), term(), map()) :: map()
-  defp protocol_command(direction, from, to, union, message, context) do
-    message_value = normalize_union_value(message, union, context)
-
-    %{
-      "kind" => "protocol",
-      "package" => "companion-protocol",
-      "direction" => direction,
-      "from" => from,
-      "to" => to,
-      "message" => elm_debug_to_string(message_value),
-      "message_value" => message_value
     }
   end
 
@@ -1435,8 +1601,21 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       {"__mul__", [a, b]} when is_number(a) and is_number(b) ->
         {:ok, a * b}
 
+      {"__append__", [a, b]} when is_binary(a) and is_binary(b) ->
+        {:ok, a <> b}
+
+      {"__append__", [a, b]} when is_list(a) and is_list(b) ->
+        {:ok, a ++ b}
+
       {"__pow__", [a, b]} when is_number(a) and is_integer(b) ->
         {:ok, pow_number(a, b)}
+
+      {op, [left, right]}
+      when op in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] ->
+        {:ok, compare(comparison_operator_kind(op), left, right)}
+
+      {op, [left]} when op in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] ->
+        {:ok, {:builtin_partial, op, [left]}}
 
       {"__fdiv__", [_a, 0]} ->
         {:ok, :nan}
@@ -2129,6 +2308,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp task_map_with_callable(_fun, _task, _env, _context, _stack), do: :no_builtin
 
+  defp maybe_and_then_with_callable(fun, maybe, env, context, stack) do
+    case maybe_value(maybe) do
+      {:just, value} -> call_callable(fun, [value], env, context, stack)
+      :nothing -> {:ok, maybe_ctor_like(maybe, :nothing)}
+      :invalid -> :no_builtin
+    end
+  end
+
   @spec task_sequence(term()) :: term()
   defp task_sequence(tasks) when is_list(tasks) do
     Enum.reduce_while(tasks, {:ok, []}, fn task, {:ok, acc} ->
@@ -2773,19 +2960,25 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   @spec normalize_font_id(term()) :: {:ok, integer()} | :error
   defp normalize_font_id(value) when is_integer(value), do: {:ok, value}
 
+  defp normalize_font_id({:function_ref, "Pebble.Ui.Resources.DefaultFont"}), do: {:ok, 1}
+  defp normalize_font_id({:function_ref, "Resources.DefaultFont"}), do: {:ok, 1}
+
   defp normalize_font_id(%{"tag" => tag}) when is_integer(tag), do: {:ok, tag}
   defp normalize_font_id(%{tag: tag}) when is_integer(tag), do: {:ok, tag}
 
   defp normalize_font_id(%{"ctor" => _ctor, "args" => []} = value) when is_map(value) do
-    case Map.get(value, "tag") do
-      tag when is_integer(tag) -> {:ok, tag}
+    case {Map.get(value, "ctor"), Map.get(value, "tag")} do
+      {"DefaultFont", _} -> {:ok, 1}
+      {_ctor, tag} when is_integer(tag) -> {:ok, tag}
       _ -> :error
     end
   end
 
   defp normalize_font_id(%{ctor: _ctor, args: []} = value) when is_map(value) do
-    case Map.get(value, :tag) do
-      tag when is_integer(tag) -> {:ok, tag}
+    case {Map.get(value, :ctor), Map.get(value, :tag)} do
+      {"DefaultFont", _} -> {:ok, 1}
+      {:DefaultFont, _} -> {:ok, 1}
+      {_ctor, tag} when is_integer(tag) -> {:ok, tag}
       _ -> :error
     end
   end
@@ -2972,7 +3165,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     key = {module_name, function_name, length(values)}
 
     cond do
-      key in stack ->
+      function_recursion_depth(stack, key) >= @max_function_recursion_depth ->
         {:error, {:recursive_loop_detected, key}}
 
       is_map(functions[key]) ->
@@ -3058,6 +3251,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp module_name_candidates(module_name, _functions) when is_binary(module_name),
     do: [module_name]
+
+  @spec function_recursion_depth(term(), term()) :: non_neg_integer()
+  defp function_recursion_depth(stack, key) when is_list(stack),
+    do: Enum.count(stack, &(&1 == key))
+
+  defp function_recursion_depth(_stack, _key), do: 0
 
   @spec compact_module_name(String.t()) :: String.t()
   defp compact_module_name(module_name) when is_binary(module_name) do
@@ -3390,6 +3589,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       false when name == "False" ->
         {:ok, %{}}
 
+      [] when short_name == "[]" ->
+        {:ok, %{}}
+
+      [head | tail] when short_name == "::" ->
+        match_constructor_args(pattern, arg_pattern, bind_name, [head, tail])
+
       0 when short_name == "Nothing" ->
         {:ok, %{}}
 
@@ -3426,6 +3631,15 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         with {:ok, bindings} <- match_pattern(arg_pattern, hd(args)) do
           if is_binary(bind_name) and bind_name != "" do
             {:ok, Map.put(bindings, bind_name, hd(args))}
+          else
+            {:ok, bindings}
+          end
+        end
+
+      is_map(arg_pattern) and length(args) > 1 ->
+        with {:ok, bindings} <- match_pattern(arg_pattern, List.to_tuple(args)) do
+          if is_binary(bind_name) and bind_name != "" do
+            {:ok, Map.put(bindings, bind_name, List.to_tuple(args))}
           else
             {:ok, bindings}
           end
@@ -3532,4 +3746,13 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       _ -> false
     end
   end
+
+  @spec comparison_operator_kind(String.t()) :: atom()
+  defp comparison_operator_kind("__eq__"), do: :eq
+  defp comparison_operator_kind("__neq__"), do: :neq
+  defp comparison_operator_kind("__lt__"), do: :lt
+  defp comparison_operator_kind("__lte__"), do: :lte
+  defp comparison_operator_kind("__gt__"), do: :gt
+  defp comparison_operator_kind("__gte__"), do: :gte
+  defp comparison_operator_kind(_), do: :eq
 end

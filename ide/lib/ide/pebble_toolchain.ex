@@ -76,7 +76,8 @@ defmodule Ide.PebbleToolchain do
          status: build_result.status,
          artifact_path: artifact_path,
          build_result: build_result,
-         app_root: app_root
+        app_root: app_root,
+        has_phone_companion: package_has_phone_companion?(app_root)
        }}
     end
   end
@@ -530,6 +531,19 @@ defmodule Ide.PebbleToolchain do
       |> maybe_put_configurable_capability(preferences_schema)
 
     File.write(Path.join(app_root, "package.json"), Jason.encode!(package, pretty: true))
+  end
+
+  @spec package_has_phone_companion?(String.t()) :: boolean()
+  defp package_has_phone_companion?(app_root) do
+    package_path = Path.join(app_root, "package.json")
+
+    with {:ok, source} <- File.read(package_path),
+         {:ok, package} <- Jason.decode(source) do
+      get_in(package, ["pebble", "enableMultiJS"]) == true or
+        File.exists?(Path.join(app_root, "src/pkjs/index.js"))
+    else
+      _ -> false
+    end
   end
 
   @spec maybe_enable_multijs(map(), boolean()) :: map()

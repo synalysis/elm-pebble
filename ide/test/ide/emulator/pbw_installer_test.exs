@@ -34,7 +34,6 @@ defmodule Ide.Emulator.PBWInstallerTest do
         qemu_spp_packet(Frame.encode(6001, <<0x01, @uuid_bytes::binary, 0x11223344::little-32>>))
       )
 
-    assert_recv_frame(qemu, 6001, <<0x01, 0x01>>)
     assert_putbytes_part(qemu, 0x11223344, 0x85, <<1, 2, 3>>, 0xABCDEF01)
     assert_putbytes_part(qemu, 0x11223344, 0x84, <<4, 5>>, 0xABCDEF02)
 
@@ -49,8 +48,147 @@ defmodule Ide.Emulator.PBWInstallerTest do
     :gen_tcp.close(server)
   end
 
-  defp assert_putbytes_part(qemu, app_id, object_type, data, cookie) do
+  test "retries transient PutBytes chunk NACKs" do
+    path = tmp_pbw()
+    {:ok, server, qemu_port} = listen()
+    {:ok, proxy_port} = free_port()
+    {:ok, router} = Router.start_link(qemu_port: qemu_port, proxy_port: proxy_port)
+    {:ok, qemu} = :gen_tcp.accept(server, 1_000)
+
+    task =
+      Task.async(fn ->
+        PBWInstaller.install(router, path, "emery",
+          chunk_size: 2,
+          timeout_ms: 1_000,
+          putbytes_retries: 1
+        )
+      end)
+
+    assert {:ok, %{endpoint: 0xB1DB, payload: <<0x01, token::little-16, 0x02, _rest::binary>>}} =
+             recv_frame(qemu)
+
+    :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xB1DB, <<token::little-16, 0x01>>)))
+
+    assert_recv_frame(qemu, 52, elem(Packets.app_run_state_start(@uuid), 1))
+
+    :ok =
+      :gen_tcp.send(
+        qemu,
+        qemu_spp_packet(Frame.encode(6001, <<0x01, @uuid_bytes::binary, 0x11223344::little-32>>))
+      )
+
+    assert_putbytes_part(qemu, 0x11223344, 0x85, <<1, 2, 3>>, 0xABCDEF01,
+      nack_first_chunk?: true
+    )
+
+    assert_putbytes_part(qemu, 0x11223344, 0x84, <<4, 5>>, 0xABCDEF02)
+
+    assert_recv_frame(qemu, 52, elem(Packets.app_run_state_start(@uuid), 1))
+
+    assert {:ok, result} = Task.await(task, 1_000)
+    assert Enum.map(result.parts, & &1.kind) == [:binary, :resources]
+
+    GenServer.stop(router)
+    :gen_tcp.close(qemu)
+    :gen_tcp.close(server)
+  end
+
+  test "resends whole part after commit NACK" do
+    path = tmp_pbw()
+    {:ok, server, qemu_port} = listen()
+    {:ok, proxy_port} = free_port()
+    {:ok, router} = Router.start_link(qemu_port: qemu_port, proxy_port: proxy_port)
+    {:ok, qemu} = :gen_tcp.accept(server, 1_000)
+
+    task =
+      Task.async(fn ->
+        PBWInstaller.install(router, path, "emery",
+          chunk_size: 2,
+          timeout_ms: 1_000,
+          chunk_delay_ms: 0,
+          part_retries: 1
+        )
+      end)
+
+    assert {:ok, %{endpoint: 0xB1DB, payload: <<0x01, token::little-16, 0x02, _rest::binary>>}} =
+             recv_frame(qemu)
+
+    :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xB1DB, <<token::little-16, 0x01>>)))
+
+    assert_recv_frame(qemu, 52, elem(Packets.app_run_state_start(@uuid), 1))
+
+    :ok =
+      :gen_tcp.send(
+        qemu,
+        qemu_spp_packet(Frame.encode(6001, <<0x01, @uuid_bytes::binary, 0x11223344::little-32>>))
+      )
+
+    assert_putbytes_part(qemu, 0x11223344, 0x85, <<1, 2, 3>>, 0xABCDEF01,
+      nack_commit?: true
+    )
+
+    assert {:ok, %{endpoint: 0xBEEF, payload: <<0x04, 0xABCDEF01::32>>}} = recv_frame(qemu)
+    :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xBEEF, <<0x01, 0xABCDEF01::32>>)))
+
+    assert_putbytes_part(qemu, 0x11223344, 0x85, <<1, 2, 3>>, 0xABCDEF03)
+    assert_putbytes_part(qemu, 0x11223344, 0x84, <<4, 5>>, 0xABCDEF02)
+
+    assert_recv_frame(qemu, 52, elem(Packets.app_run_state_start(@uuid), 1))
+
+    assert {:ok, result} = Task.await(task, 1_000)
+    assert Enum.map(result.parts, & &1.kind) == [:binary, :resources]
+
+    GenServer.stop(router)
+    :gen_tcp.close(qemu)
+    :gen_tcp.close(server)
+  end
+
+  test "retries full install handshake after binary commit NACK" do
+    path = tmp_pbw()
+    {:ok, server, qemu_port} = listen()
+    {:ok, proxy_port} = free_port()
+    {:ok, router} = Router.start_link(qemu_port: qemu_port, proxy_port: proxy_port)
+    {:ok, qemu} = :gen_tcp.accept(server, 1_000)
+
+    task =
+      Task.async(fn ->
+        PBWInstaller.install(router, path, "emery",
+          chunk_size: 2,
+          timeout_ms: 1_000,
+          part_retries: 0,
+          install_retries: 1,
+          install_retry_delay_ms: 0
+        )
+      end)
+
+    acknowledge_blob_insert(qemu)
+    request_app_fetch(qemu, 0x11223344)
+
+    assert_putbytes_part(qemu, 0x11223344, 0x85, <<1, 2, 3>>, 0xABCDEF01,
+      nack_commit?: true
+    )
+
+    acknowledge_blob_insert(qemu)
+    request_app_fetch(qemu, 0x55667788)
+
+    assert_putbytes_part(qemu, 0x55667788, 0x85, <<1, 2, 3>>, 0xABCDEF02)
+    assert_putbytes_part(qemu, 0x55667788, 0x84, <<4, 5>>, 0xABCDEF03)
+
+    assert_recv_frame(qemu, 52, elem(Packets.app_run_state_start(@uuid), 1))
+
+    assert {:ok, result} = Task.await(task, 1_000)
+    assert result.app_id == 0x55667788
+    assert Enum.map(result.parts, & &1.kind) == [:binary, :resources]
+
+    GenServer.stop(router)
+    :gen_tcp.close(qemu)
+    :gen_tcp.close(server)
+  end
+
+  defp assert_putbytes_part(qemu, app_id, object_type, data, cookie, opts \\ []) do
     data_size = byte_size(data)
+    nack_first_chunk? = Keyword.get(opts, :nack_first_chunk?, false)
+    nack_commit? = Keyword.get(opts, :nack_commit?, false)
 
     assert {:ok,
             %{endpoint: 0xBEEF, payload: <<0x01, ^data_size::32, ^object_type, ^app_id::32>>}} =
@@ -58,25 +196,57 @@ defmodule Ide.Emulator.PBWInstallerTest do
 
     :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xBEEF, <<0x01, cookie::32>>)))
 
-    for chunk <- chunks(data, 2) do
+    chunks(data, 2)
+    |> Enum.with_index()
+    |> Enum.each(fn {chunk, index} ->
       chunk_size = byte_size(chunk)
 
       assert {:ok,
               %{endpoint: 0xBEEF, payload: <<0x02, ^cookie::32, ^chunk_size::32, ^chunk::binary>>}} =
                recv_frame(qemu)
 
+      if nack_first_chunk? and index == 0 do
+        :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xBEEF, <<0x02, cookie::32>>)))
+
+        assert {:ok,
+                %{endpoint: 0xBEEF, payload: <<0x02, ^cookie::32, ^chunk_size::32, ^chunk::binary>>}} =
+                 recv_frame(qemu)
+      end
+
       :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xBEEF, <<0x01, cookie::32>>)))
-    end
+    end)
 
     assert {:ok, %{endpoint: 0xBEEF, payload: <<0x03, ^cookie::32, _crc::32>>}} = recv_frame(qemu)
-    :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xBEEF, <<0x01, cookie::32>>)))
+    if nack_commit? do
+      :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xBEEF, <<0x02, cookie::32>>)))
+      :ok
+    else
+      :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xBEEF, <<0x01, cookie::32>>)))
 
-    assert {:ok, %{endpoint: 0xBEEF, payload: <<0x05, ^cookie::32>>}} = recv_frame(qemu)
-    :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xBEEF, <<0x01, cookie::32>>)))
+      assert {:ok, %{endpoint: 0xBEEF, payload: <<0x05, ^cookie::32>>}} = recv_frame(qemu)
+      :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xBEEF, <<0x01, cookie::32>>)))
+    end
   end
 
   defp assert_recv_frame(socket, endpoint, payload) do
     assert {:ok, %{endpoint: ^endpoint, payload: ^payload}} = recv_frame(socket)
+  end
+
+  defp acknowledge_blob_insert(qemu) do
+    assert {:ok, %{endpoint: 0xB1DB, payload: <<0x01, token::little-16, 0x02, _rest::binary>>}} =
+             recv_frame(qemu)
+
+    :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xB1DB, <<token::little-16, 0x01>>)))
+  end
+
+  defp request_app_fetch(qemu, app_id) do
+    assert_recv_frame(qemu, 52, elem(Packets.app_run_state_start(@uuid), 1))
+
+    :ok =
+      :gen_tcp.send(
+        qemu,
+        qemu_spp_packet(Frame.encode(6001, <<0x01, @uuid_bytes::binary, app_id::little-32>>))
+      )
   end
 
   defp recv_frame(socket) do

@@ -55,7 +55,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   @spec svg_ops(term(), term()) :: term()
   def svg_ops(tree, runtime) when is_map(tree) do
-    runtime_ops = runtime_view_output(runtime)
+    runtime_ops = runtime_compact_scene_output(runtime)
 
     if runtime_ops != [] do
       runtime_ops
@@ -69,7 +69,66 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  def svg_ops(_tree, runtime), do: runtime_view_output(runtime)
+  def svg_ops(_tree, runtime), do: runtime_compact_scene_output(runtime)
+
+  @spec compact_scene(term()) :: map()
+  def compact_scene(runtime) when is_map(runtime) do
+    model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
+
+    case Map.get(model, "compact_scene") || Map.get(model, :compact_scene) ||
+           Map.get(model, "runtime_compact_scene") || Map.get(model, :runtime_compact_scene) do
+      scene when is_map(scene) ->
+        normalize_compact_scene(scene)
+
+      _ ->
+        ops =
+          model
+          |> runtime_view_output_rows()
+          |> Enum.map(&normalize_svg_op/1)
+          |> Enum.reject(&is_nil/1)
+
+        build_compact_scene(ops)
+    end
+  end
+
+  def compact_scene(_runtime), do: build_compact_scene([])
+
+  @spec compact_scene_diff(term(), term()) :: map()
+  def compact_scene_diff(previous, current) do
+    previous_scene = normalize_compact_scene_map(previous)
+    current_scene = normalize_compact_scene_map(current)
+
+    previous_ops = Map.get(previous_scene, :ops, [])
+    current_ops = Map.get(current_scene, :ops, [])
+    max_count = max(length(previous_ops), length(current_ops))
+
+    dirty_bounds =
+      0..max(max_count - 1, 0)
+      |> Enum.flat_map(fn index ->
+        previous_op = Enum.at(previous_ops, index)
+        current_op = Enum.at(current_ops, index)
+
+        cond do
+          previous_op == nil and current_op == nil ->
+            []
+
+          op_hash(previous_op) == op_hash(current_op) ->
+            []
+
+          true ->
+            [op_bounds(previous_op), op_bounds(current_op)]
+            |> Enum.filter(&is_map/1)
+        end
+      end)
+      |> merge_dirty_bounds()
+
+    %{
+      changed?: Map.get(previous_scene, :hash) != Map.get(current_scene, :hash),
+      dirty_bounds: dirty_bounds,
+      previous_hash: Map.get(previous_scene, :hash),
+      current_hash: Map.get(current_scene, :hash)
+    }
+  end
 
   @spec unresolved_summary(term()) :: term()
   def unresolved_summary(rows) when is_list(rows) and rows != [] do
@@ -343,20 +402,276 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp pebble_angle_to_rad(_), do: -:math.pi() / 2.0
 
-  @spec runtime_view_output(term()) :: term()
-  defp runtime_view_output(runtime) when is_map(runtime) do
-    model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
-    ops = Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output) || []
-
-    ops
-    |> List.wrap()
+  @spec runtime_compact_scene_output(term()) :: [map()]
+  defp runtime_compact_scene_output(runtime) do
+    runtime
+    |> compact_scene()
+    |> Map.get(:ops, [])
+    |> Enum.map(&Map.get(&1, :op))
     |> Enum.filter(&is_map/1)
-    |> Enum.map(&normalize_svg_op/1)
-    |> Enum.reject(&is_nil/1)
     |> apply_svg_style_state()
   end
 
-  defp runtime_view_output(_runtime), do: []
+  @spec runtime_view_output_rows(term()) :: [map()]
+  defp runtime_view_output_rows(model) when is_map(model) do
+    model
+    |> Map.get("runtime_view_output", Map.get(model, :runtime_view_output, []))
+    |> List.wrap()
+    |> Enum.filter(&is_map/1)
+  end
+
+  defp runtime_view_output_rows(_model), do: []
+
+  @spec normalize_compact_scene(map()) :: map()
+  defp normalize_compact_scene(scene) when is_map(scene) do
+    ops =
+      scene
+      |> Map.get(:ops, Map.get(scene, "ops", []))
+      |> List.wrap()
+      |> Enum.map(fn
+        %{op: op} = row when is_map(op) ->
+          %{op: op, bounds: Map.get(row, :bounds), hash: Map.get(row, :hash) || stable_hash(op)}
+
+        %{"op" => op} = row when is_map(op) ->
+          op = atomize_known_op(op)
+          %{op: op, bounds: Map.get(row, "bounds"), hash: Map.get(row, "hash") || stable_hash(op)}
+
+        op when is_map(op) ->
+          op = atomize_known_op(op)
+          %{op: op, bounds: compact_op_bounds(op), hash: stable_hash(op)}
+
+        _ ->
+          nil
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    %{
+      version: Map.get(scene, :version, Map.get(scene, "version", 1)),
+      ops: ops,
+      hash: stable_hash(Enum.map(ops, & &1.hash))
+    }
+  end
+
+  @spec normalize_compact_scene_map(term()) :: map()
+  defp normalize_compact_scene_map(%{version: _, ops: _} = scene),
+    do: normalize_compact_scene(scene)
+
+  defp normalize_compact_scene_map(%{"version" => _, "ops" => _} = scene),
+    do: normalize_compact_scene(scene)
+
+  defp normalize_compact_scene_map(%{ops: _} = scene), do: normalize_compact_scene(scene)
+  defp normalize_compact_scene_map(%{"ops" => _} = scene), do: normalize_compact_scene(scene)
+  defp normalize_compact_scene_map(runtime) when is_map(runtime), do: compact_scene(runtime)
+  defp normalize_compact_scene_map(_), do: build_compact_scene([])
+
+  @spec build_compact_scene([map()]) :: map()
+  defp build_compact_scene(ops) when is_list(ops) do
+    rows =
+      Enum.map(ops, fn op ->
+        %{op: op, bounds: compact_op_bounds(op), hash: stable_hash(op)}
+      end)
+
+    %{version: 1, ops: rows, hash: stable_hash(Enum.map(rows, & &1.hash))}
+  end
+
+  @spec atomize_known_op(map()) :: map()
+  defp atomize_known_op(op) when is_map(op) do
+    Enum.reduce(op, %{}, fn
+      {"kind", value}, acc -> Map.put(acc, :kind, normalize_kind_atom(value))
+      {key, value}, acc when is_binary(key) -> Map.put(acc, compact_key_atom(key) || key, value)
+      {key, value}, acc -> Map.put(acc, key, value)
+    end)
+  end
+
+  @spec normalize_kind_atom(term()) :: atom() | term()
+  defp normalize_kind_atom(value) when is_atom(value), do: value
+
+  defp normalize_kind_atom(value) when is_binary(value) do
+    value
+    |> String.replace("-", "_")
+    |> compact_kind_atom()
+    |> case do
+      nil -> value
+      atom -> atom
+    end
+  end
+
+  defp normalize_kind_atom(value), do: value
+
+  @spec compact_key_atom(String.t()) :: atom() | nil
+  defp compact_key_atom(key) do
+    case key do
+      "x" -> :x
+      "y" -> :y
+      "w" -> :w
+      "h" -> :h
+      "x1" -> :x1
+      "y1" -> :y1
+      "x2" -> :x2
+      "y2" -> :y2
+      "cx" -> :cx
+      "cy" -> :cy
+      "r" -> :r
+      "fill" -> :fill
+      "color" -> :color
+      "radius" -> :radius
+      "text" -> :text
+      "points" -> :points
+      "offset_x" -> :offset_x
+      "offset_y" -> :offset_y
+      "rotation" -> :rotation
+      "start_angle" -> :start_angle
+      "end_angle" -> :end_angle
+      "bitmap_id" -> :bitmap_id
+      "src_w" -> :src_w
+      "src_h" -> :src_h
+      "angle" -> :angle
+      "center_x" -> :center_x
+      "center_y" -> :center_y
+      "value" -> :value
+      "text_align" -> :text_align
+      "font_size" -> :font_size
+      _ -> nil
+    end
+  end
+
+  @spec compact_kind_atom(String.t()) :: atom() | nil
+  defp compact_kind_atom(kind) do
+    case kind do
+      "push_context" -> :push_context
+      "pop_context" -> :pop_context
+      "stroke_width" -> :stroke_width
+      "antialiased" -> :antialiased
+      "stroke_color" -> :stroke_color
+      "fill_color" -> :fill_color
+      "text_color" -> :text_color
+      "compositing_mode" -> :compositing_mode
+      "clear" -> :clear
+      "round_rect" -> :round_rect
+      "rect" -> :rect
+      "fill_rect" -> :fill_rect
+      "line" -> :line
+      "arc" -> :arc
+      "fill_radial" -> :fill_radial
+      "path_filled" -> :path_filled
+      "path_outline" -> :path_outline
+      "path_outline_open" -> :path_outline_open
+      "circle" -> :circle
+      "fill_circle" -> :fill_circle
+      "pixel" -> :pixel
+      "bitmap_in_rect" -> :bitmap_in_rect
+      "rotated_bitmap" -> :rotated_bitmap
+      "text_int" -> :text_int
+      "text_label" -> :text_label
+      "text" -> :text
+      "unresolved" -> :unresolved
+      _ -> nil
+    end
+  end
+
+  @spec compact_op_bounds(map()) :: map() | nil
+  defp compact_op_bounds(%{kind: kind})
+       when kind in [
+              :push_context,
+              :pop_context,
+              :stroke_width,
+              :antialiased,
+              :stroke_color,
+              :fill_color,
+              :text_color,
+              :compositing_mode
+            ],
+       do: nil
+
+  defp compact_op_bounds(%{kind: :clear}), do: nil
+
+  defp compact_op_bounds(%{kind: kind, x: x, y: y, w: w, h: h})
+       when kind in [
+              :rect,
+              :fill_rect,
+              :round_rect,
+              :arc,
+              :fill_radial,
+              :bitmap_in_rect,
+              :text_label
+            ] do
+    bounds_map(x, y, w, h)
+  end
+
+  defp compact_op_bounds(%{kind: kind, x: x, y: y})
+       when kind in [:text_int, :text_label, :text] do
+    bounds_map(x, y, 144, 24)
+  end
+
+  defp compact_op_bounds(%{kind: kind, cx: cx, cy: cy, r: r})
+       when kind in [:circle, :fill_circle] do
+    bounds_map(cx - r, cy - r, r * 2, r * 2)
+  end
+
+  defp compact_op_bounds(%{kind: :pixel, x: x, y: y}), do: bounds_map(x, y, 1, 1)
+
+  defp compact_op_bounds(%{kind: :line, x1: x1, y1: y1, x2: x2, y2: y2}) do
+    x = min(x1, x2)
+    y = min(y1, y2)
+    bounds_map(x, y, abs(x2 - x1) + 1, abs(y2 - y1) + 1)
+  end
+
+  defp compact_op_bounds(%{points: points, offset_x: ox, offset_y: oy}) when is_list(points) do
+    coords =
+      points
+      |> Enum.filter(&is_map/1)
+      |> Enum.map(fn point -> {map_get_any(point, "x") || 0, map_get_any(point, "y") || 0} end)
+
+    case coords do
+      [] ->
+        nil
+
+      _ ->
+        xs = Enum.map(coords, fn {x, _y} -> x + ox end)
+        ys = Enum.map(coords, fn {_x, y} -> y + oy end)
+        min_x = Enum.min(xs)
+        max_x = Enum.max(xs)
+        min_y = Enum.min(ys)
+        max_y = Enum.max(ys)
+        bounds_map(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+    end
+  end
+
+  defp compact_op_bounds(_op), do: nil
+
+  @spec op_hash(term()) :: term()
+  defp op_hash(%{hash: hash}), do: hash
+  defp op_hash(%{"hash" => hash}), do: hash
+  defp op_hash(_), do: nil
+
+  @spec op_bounds(term()) :: term()
+  defp op_bounds(%{bounds: bounds}), do: bounds
+  defp op_bounds(%{"bounds" => bounds}), do: bounds
+  defp op_bounds(_), do: nil
+
+  @spec merge_dirty_bounds([map()]) :: [map()]
+  defp merge_dirty_bounds([]), do: []
+
+  defp merge_dirty_bounds(bounds) when is_list(bounds) do
+    Enum.map(bounds, fn bounds ->
+      %{
+        x: Map.get(bounds, :x, Map.get(bounds, "x", 0)),
+        y: Map.get(bounds, :y, Map.get(bounds, "y", 0)),
+        w: Map.get(bounds, :w, Map.get(bounds, "w", 0)),
+        h: Map.get(bounds, :h, Map.get(bounds, "h", 0))
+      }
+    end)
+  end
+
+  @spec bounds_map(term(), term(), term(), term()) :: map()
+  defp bounds_map(x, y, w, h), do: %{x: x || 0, y: y || 0, w: max(w || 0, 0), h: max(h || 0, 0)}
+
+  @spec stable_hash(term()) :: String.t()
+  defp stable_hash(value) do
+    :sha256
+    |> :crypto.hash(:erlang.term_to_binary(value))
+    |> Base.encode16(case: :lower)
+  end
 
   @spec normalize_svg_op(term()) :: term()
   defp normalize_svg_op(op) when is_map(op) do

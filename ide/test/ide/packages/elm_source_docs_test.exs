@@ -38,6 +38,6 @@ defmodule Ide.Packages.ElmSourceDocsTest do
     assert markdown =~ "# `Pebble.Platform`"
     assert markdown =~ "## Union types"
     assert markdown =~ "### `LaunchReason`"
-    assert markdown =~ "### `worker`"
+    assert markdown =~ "### `application`"
   end
 end

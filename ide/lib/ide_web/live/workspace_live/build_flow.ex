@@ -395,6 +395,13 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
   @spec package_for_emulator_target(term(), term(), term()) :: term()
   def package_for_emulator_target(project, workspace_root, emulator_target) do
+    with {:ok, packaged} <- package_for_emulator_session(project, workspace_root, emulator_target) do
+      {:ok, packaged.artifact_path}
+    end
+  end
+
+  @spec package_for_emulator_session(term(), term(), term()) :: term()
+  def package_for_emulator_session(project, workspace_root, emulator_target) do
     with {:ok, packaged} <-
            PebbleToolchain.package(project.slug,
              workspace_root: workspace_root,
@@ -402,7 +409,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
              project_name: project.name,
              target_platforms: [emulator_target]
            ) do
-      {:ok, packaged.artifact_path}
+      {:ok, packaged}
     end
   end
 

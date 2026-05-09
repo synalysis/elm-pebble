@@ -47,6 +47,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     core_ir = source_core_ir_fallback(artifact_core_ir, source, rel_path)
     eval_context = evaluator_context(core_ir)
     artifact_eval_context = evaluator_context(artifact_core_ir)
+    static_init_model = map_value(introspect, :init_model)
 
     base_runtime_model =
       case map_value(current_model, :runtime_model) do
@@ -54,8 +55,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
           model
 
         _ ->
-          evaluated_init_model(artifact_core_ir, artifact_eval_context, current_model) ||
-            map_value(introspect, :init_model) ||
+          evaluated_init_model_if_static_unresolved(
+            core_ir,
+            eval_context,
+            current_model,
+            static_init_model
+          ) ||
+            static_init_model ||
             %{}
       end
 
@@ -99,10 +105,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
           end
 
         _ ->
-          {base_runtime_model, "init_model", nil, "init_model", %{}, []}
+          init_commands = init_runtime_commands(eval_context, current_model)
+
+          {base_runtime_model, "init_model", nil, "init_model", %{}, init_commands}
       end
 
     runtime_model_for_view = enrich_runtime_model_for_view(runtime_model, current_model)
+    init_execution? = not (is_binary(message) and message != "")
 
     runtime_view_tree =
       derive_view_tree(
@@ -138,6 +147,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       "active_target_key" => Map.get(key_provenance, "active_key"),
       "active_target_key_source" => Map.get(key_provenance, "active_key_source"),
       "followup_message_count" => length(followup_messages),
+      "init_cmd_count" => if(init_execution?, do: meaningful_init_cmd_count(introspect), else: 0),
       "view_output_count" => length(view_output),
       "runtime_model_entry_count" => map_size(runtime_model),
       "view_tree_node_count" => view_tree_node_count(runtime_view_tree),
@@ -171,9 +181,54 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     Map.get(map, atom_key) || Map.get(map, Atom.to_string(atom_key))
   end
 
+  @spec generic_map_value(term(), String.t()) :: term()
+  defp generic_map_value(map, key) when is_map(map) and is_binary(key) do
+    map = if Map.has_key?(map, :__struct__), do: Map.from_struct(map), else: map
+
+    case Map.fetch(map, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        Enum.find_value(map, fn
+          {atom_key, value} when is_atom(atom_key) ->
+            if Atom.to_string(atom_key) == key, do: {:ok, value}, else: nil
+
+          _ ->
+            nil
+        end)
+        |> case do
+          {:ok, value} -> value
+          nil -> nil
+        end
+    end
+  end
+
+  defp generic_map_value(_map, _key), do: nil
+
   @spec list_count(term()) :: non_neg_integer()
   defp list_count(value) when is_list(value), do: length(value)
   defp list_count(_), do: 0
+
+  @spec meaningful_init_cmd_count(term()) :: non_neg_integer()
+  defp meaningful_init_cmd_count(introspect) do
+    introspect
+    |> map_value(:init_cmd_calls)
+    |> case do
+      calls when is_list(calls) -> calls
+      _ -> []
+    end
+    |> Enum.count(&meaningful_init_cmd_call?/1)
+  end
+
+  @spec meaningful_init_cmd_call?(term()) :: boolean()
+  defp meaningful_init_cmd_call?(call) when is_map(call) do
+    target = map_value(call, :target)
+    name = map_value(call, :name)
+    not (target in ["Cmd.none", "Platform.Cmd.none"] or name in ["none", "None", nil])
+  end
+
+  defp meaningful_init_cmd_call?(_call), do: false
 
   @spec evaluate_update_from_core_ir(term(), term(), term(), term(), term()) ::
           {:ok, map(), [map()], atom() | nil, String.t(), map()} | :error
@@ -181,12 +236,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
        when is_map(eval_context) and is_binary(message) and is_map(runtime_model) do
     with %{} = update_expr <- update_function_expr_from_core_ir(core_ir),
          {:ok, msg_value} <- parse_message_value(message, message_value),
-         {:ok, result} <-
-           CoreIREvaluator.evaluate(
-             update_expr,
-             %{"msg" => msg_value, "model" => runtime_model},
-             eval_context
-           ),
+         env = %{"msg" => msg_value, "model" => runtime_model},
+         {:ok, result} <- evaluate_model_command_result(update_expr, env, eval_context),
          {:ok, result_model} <- update_result_model(result) do
       next_model = Map.merge(runtime_model, result_model)
       {op, operation_source} = operation_from_model_delta(runtime_model, next_model)
@@ -206,6 +257,40 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
        ),
        do: :error
 
+  @spec evaluated_init_model_if_static_unresolved(term(), term(), term(), term()) :: map() | nil
+  defp evaluated_init_model_if_static_unresolved(
+         core_ir,
+         eval_context,
+         current_model,
+         static_init_model
+       )
+       when is_map(static_init_model) do
+    if unresolved_runtime_value?(static_init_model) do
+      evaluated_init_model(core_ir, eval_context, current_model)
+    end
+  end
+
+  defp evaluated_init_model_if_static_unresolved(
+         core_ir,
+         eval_context,
+         current_model,
+         _static_init_model
+       ),
+       do: evaluated_init_model(core_ir, eval_context, current_model)
+
+  defp unresolved_runtime_value?(%{"$opaque" => true}), do: true
+  defp unresolved_runtime_value?(%{:"$opaque" => true}), do: true
+  defp unresolved_runtime_value?(%{"$var" => name}) when is_binary(name), do: true
+  defp unresolved_runtime_value?(%{:"$var" => name}) when is_binary(name), do: true
+
+  defp unresolved_runtime_value?(value) when is_map(value),
+    do: Enum.any?(value, fn {_key, nested} -> unresolved_runtime_value?(nested) end)
+
+  defp unresolved_runtime_value?(value) when is_list(value),
+    do: Enum.any?(value, &unresolved_runtime_value?/1)
+
+  defp unresolved_runtime_value?(_value), do: false
+
   @spec update_function_expr_from_core_ir(term()) :: map() | nil
   defp update_function_expr_from_core_ir(%{modules: modules}) when is_list(modules),
     do: update_function_expr_from_core_ir(%{"modules" => modules})
@@ -213,15 +298,15 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp update_function_expr_from_core_ir(%{"modules" => modules}) when is_list(modules) do
     modules
     |> Enum.find_value(fn module ->
-      declarations = module["declarations"] || module[:declarations] || []
+      declarations = generic_map_value(module, "declarations") || []
 
       declarations
       |> Enum.find_value(fn decl ->
-        name = decl["name"] || decl[:name]
-        kind = decl["kind"] || decl[:kind]
+        name = generic_map_value(decl, "name")
+        kind = generic_map_value(decl, "kind")
 
         if name == "update" and (kind == "function" or kind == :function) do
-          expr = decl["expr"] || decl[:expr]
+          expr = generic_map_value(decl, "expr")
           if is_map(expr), do: expr, else: nil
         else
           nil
@@ -235,22 +320,14 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   @spec evaluated_init_model(term(), term(), term()) :: map() | nil
   defp evaluated_init_model(_core_ir, eval_context, current_model)
        when is_map(eval_context) and is_map(current_model) do
-    launch_context = map_value(current_model, :launch_context) || %{}
+    launch_context = current_model |> map_value(:launch_context) |> normalize_launch_context()
 
-    candidates =
-      if map_size(launch_context) > 0 do
-        [
-          %{"op" => :qualified_call, "target" => "Main.init", "args" => [launch_context]},
-          %{"op" => :qualified_call, "target" => "init", "args" => [launch_context]},
-          %{"op" => :qualified_call, "target" => "Main.init", "args" => []},
-          %{"op" => :qualified_call, "target" => "init", "args" => []}
-        ]
-      else
-        [
-          %{"op" => :qualified_call, "target" => "Main.init", "args" => []},
-          %{"op" => :qualified_call, "target" => "init", "args" => []}
-        ]
-      end
+    candidates = [
+      %{"op" => :qualified_call, "target" => "Main.init", "args" => [launch_context]},
+      %{"op" => :qualified_call, "target" => "init", "args" => [launch_context]},
+      %{"op" => :qualified_call, "target" => "Main.init", "args" => []},
+      %{"op" => :qualified_call, "target" => "init", "args" => []}
+    ]
 
     Enum.find_value(candidates, fn expr ->
       with {:ok, result} <- CoreIREvaluator.evaluate(expr, %{}, eval_context),
@@ -260,10 +337,204 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       else
         _ -> nil
       end
-    end)
+    end) || evaluated_init_model_from_projected_expr(eval_context, launch_context)
   end
 
   defp evaluated_init_model(_core_ir, _eval_context, _current_model), do: nil
+
+  @spec evaluated_init_model_from_projected_expr(term(), term()) :: map() | nil
+  defp evaluated_init_model_from_projected_expr(eval_context, launch_context)
+       when is_map(eval_context) and is_map(launch_context) do
+    eval_context
+    |> function_defs_named("init")
+    |> Enum.find_value(fn %{params: params, body: body} ->
+      values = if params == [], do: [], else: [launch_context]
+      env = Enum.zip(params, values) |> Map.new()
+
+      with %{} = model_expr <- project_model_result_expr(body),
+           {:ok, model} <- CoreIREvaluator.evaluate(model_expr, env, eval_context),
+           true <- is_map(model) and map_size(model) > 0 do
+        model
+      else
+        _ -> nil
+      end
+    end)
+  end
+
+  defp evaluated_init_model_from_projected_expr(_eval_context, _launch_context), do: nil
+
+  @spec init_runtime_commands(term(), map()) :: [map()]
+  defp init_runtime_commands(eval_context, current_model)
+       when is_map(eval_context) and is_map(current_model) do
+    launch_context = current_model |> map_value(:launch_context) |> normalize_launch_context()
+
+    candidates = [
+      %{"op" => :qualified_call, "target" => "Main.init", "args" => [launch_context]},
+      %{"op" => :qualified_call, "target" => "init", "args" => [launch_context]},
+      %{"op" => :qualified_call, "target" => "Main.init", "args" => []},
+      %{"op" => :qualified_call, "target" => "init", "args" => []}
+    ]
+
+    Enum.find_value(candidates, fn expr ->
+      with {:ok, result} <- CoreIREvaluator.evaluate(expr, %{}, eval_context),
+           cmds when cmds != [] <- update_result_commands(result) do
+        cmds
+      else
+        _ -> nil
+      end
+    end) || init_runtime_commands_from_projected_expr(eval_context, launch_context)
+  end
+
+  defp init_runtime_commands(_eval_context, _current_model), do: []
+
+  @spec init_runtime_commands_from_projected_expr(term(), term()) :: [map()]
+  defp init_runtime_commands_from_projected_expr(eval_context, launch_context)
+       when is_map(eval_context) and is_map(launch_context) do
+    eval_context
+    |> function_defs_named("init")
+    |> Enum.find_value(fn %{params: params, body: body} ->
+      values = if params == [], do: [], else: [launch_context]
+      env = Enum.zip(params, values) |> Map.new()
+
+      case CoreIREvaluator.evaluate(body, env, eval_context) do
+        {:ok, result} ->
+          case update_result_commands(result) do
+            [] -> nil
+            cmds -> cmds
+          end
+
+        {:error, _} ->
+          with %{} = cmd_expr <- project_cmd_result_expr(body),
+               {:ok, cmd} <- CoreIREvaluator.evaluate(cmd_expr, env, eval_context),
+               cmds when cmds != [] <- flatten_runtime_commands(cmd) do
+            cmds
+          else
+            _ -> nil
+          end
+      end
+    end) || []
+  end
+
+  defp init_runtime_commands_from_projected_expr(_eval_context, _launch_context), do: []
+
+  @spec project_cmd_result_expr(term()) :: map() | nil
+  defp project_cmd_result_expr(%{"op" => "tuple2", "right" => right}) when is_map(right),
+    do: right
+
+  defp project_cmd_result_expr(%{"op" => :tuple2, "right" => right}) when is_map(right), do: right
+  defp project_cmd_result_expr(%{op: :tuple2, right: right}) when is_map(right), do: right
+
+  defp project_cmd_result_expr(%{"op" => "tuple", "elements" => [_model, cmd | _]})
+       when is_map(cmd),
+       do: cmd
+
+  defp project_cmd_result_expr(%{op: :tuple, elements: [_model, cmd | _]}) when is_map(cmd),
+    do: cmd
+
+  defp project_cmd_result_expr(_expr), do: nil
+
+  @spec evaluate_model_command_result(term(), term(), term()) :: {:ok, term()} | {:error, term()}
+  defp evaluate_model_command_result(expr, env, eval_context)
+       when is_map(expr) and is_map(env) and is_map(eval_context) do
+    case CoreIREvaluator.evaluate(expr, env, eval_context) do
+      {:ok, result} ->
+        {:ok, result}
+
+      {:error, _reason} = error ->
+        case project_model_result_expr(expr) do
+          %{} = model_expr -> CoreIREvaluator.evaluate(model_expr, env, eval_context)
+          _ -> error
+        end
+    end
+  end
+
+  @spec function_defs_named(term(), String.t()) :: [map()]
+  defp function_defs_named(eval_context, name) when is_map(eval_context) and is_binary(name) do
+    eval_context
+    |> Map.get(:functions, %{})
+    |> Map.values()
+    |> Enum.filter(&(Map.get(&1, :name) == name))
+    |> Enum.sort_by(&(length(Map.get(&1, :params, [])) != 1))
+  end
+
+  @spec project_model_result_expr(term()) :: map() | nil
+  defp project_model_result_expr(%{"op" => :tuple2, "left" => left}) when is_map(left), do: left
+  defp project_model_result_expr(%{op: :tuple2, left: left}) when is_map(left), do: left
+
+  defp project_model_result_expr(%{"op" => :tuple, "elements" => [first | _]}) when is_map(first),
+    do: first
+
+  defp project_model_result_expr(%{op: :tuple, elements: [first | _]}) when is_map(first),
+    do: first
+
+  defp project_model_result_expr(%{"op" => :case, "branches" => branches} = expr)
+       when is_list(branches) do
+    Map.put(expr, "branches", Enum.map(branches, &project_case_branch_model_result/1))
+  end
+
+  defp project_model_result_expr(%{op: :case, branches: branches} = expr)
+       when is_list(branches) do
+    Map.put(expr, :branches, Enum.map(branches, &project_case_branch_model_result/1))
+  end
+
+  defp project_model_result_expr(%{"op" => :let_in, "in_expr" => in_expr} = expr)
+       when is_map(in_expr) do
+    case project_model_result_expr(in_expr) do
+      %{} = projected -> Map.put(expr, "in_expr", projected)
+      _ -> expr
+    end
+  end
+
+  defp project_model_result_expr(%{op: :let_in, in_expr: in_expr} = expr) when is_map(in_expr) do
+    case project_model_result_expr(in_expr) do
+      %{} = projected -> Map.put(expr, :in_expr, projected)
+      _ -> expr
+    end
+  end
+
+  defp project_model_result_expr(%{"op" => :if} = expr) do
+    expr
+    |> maybe_project_branch_expr("then_expr")
+    |> maybe_project_branch_expr("else_expr")
+  end
+
+  defp project_model_result_expr(%{op: :if} = expr) do
+    expr
+    |> maybe_project_branch_expr(:then_expr)
+    |> maybe_project_branch_expr(:else_expr)
+  end
+
+  defp project_model_result_expr(expr) when is_map(expr), do: expr
+  defp project_model_result_expr(_expr), do: nil
+
+  defp project_case_branch_model_result(%{"expr" => expr} = branch) when is_map(expr) do
+    case project_model_result_expr(expr) do
+      %{} = projected -> Map.put(branch, "expr", projected)
+      _ -> branch
+    end
+  end
+
+  defp project_case_branch_model_result(%{expr: expr} = branch) when is_map(expr) do
+    case project_model_result_expr(expr) do
+      %{} = projected -> Map.put(branch, :expr, projected)
+      _ -> branch
+    end
+  end
+
+  defp project_case_branch_model_result(branch), do: branch
+
+  defp maybe_project_branch_expr(expr, key) when is_map(expr) do
+    case Map.get(expr, key) do
+      branch_expr when is_map(branch_expr) ->
+        case project_model_result_expr(branch_expr) do
+          %{} = projected -> Map.put(expr, key, projected)
+          _ -> expr
+        end
+
+      _ ->
+        expr
+    end
+  end
 
   @spec parse_message_value(term(), term()) :: {:ok, term()} | :error
   defp parse_message_value(_message, %{} = message_value), do: {:ok, message_value}
@@ -405,6 +676,26 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp flatten_runtime_commands(%{"kind" => "protocol"} = command), do: [command]
 
   defp flatten_runtime_commands(%{kind: "protocol"} = command),
+    do: [stringify_command_keys(command)]
+
+  defp flatten_runtime_commands(%{"kind" => "cmd.random.generate"} = command), do: [command]
+
+  defp flatten_runtime_commands(%{kind: "cmd.random.generate"} = command),
+    do: [stringify_command_keys(command)]
+
+  defp flatten_runtime_commands(%{"kind" => "cmd.storage." <> _rest} = command), do: [command]
+
+  defp flatten_runtime_commands(%{kind: "cmd.storage." <> _rest} = command),
+    do: [stringify_command_keys(command)]
+
+  defp flatten_runtime_commands(%{"kind" => "cmd.device." <> _rest} = command), do: [command]
+
+  defp flatten_runtime_commands(%{kind: "cmd.device." <> _rest} = command),
+    do: [stringify_command_keys(command)]
+
+  defp flatten_runtime_commands(%{"kind" => "cmd.unsupported"} = command), do: [command]
+
+  defp flatten_runtime_commands(%{kind: "cmd.unsupported"} = command),
     do: [stringify_command_keys(command)]
 
   defp flatten_runtime_commands(commands) when is_list(commands),
@@ -1114,6 +1405,58 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   end
 
   defp source_core_ir_fallback(_core_ir, _source, _rel_path), do: nil
+
+  @spec normalize_launch_context(term()) :: map()
+  defp normalize_launch_context(context) when is_map(context) do
+    reason =
+      case map_value(context, :reason) do
+        %{"ctor" => _} = value -> value
+        %{ctor: _} = value -> value
+        value when is_binary(value) -> %{"ctor" => value, "args" => []}
+        _ -> launch_reason_value(map_value(context, :launch_reason))
+      end
+
+    screen =
+      case map_value(context, :screen) do
+        value when is_map(value) ->
+          %{
+            "width" => map_value(value, :width) || map_value(context, :screenW) || 144,
+            "height" => map_value(value, :height) || map_value(context, :screenH) || 168,
+            "isColor" => map_value(value, :is_color) || map_value(value, :isColor) || true,
+            "isRound" => map_value(value, :is_round) || map_value(value, :isRound) || false
+          }
+
+        _ ->
+          %{
+            "width" => map_value(context, :screenW) || 144,
+            "height" => map_value(context, :screenH) || 168,
+            "isColor" => map_value(context, :is_color) || true,
+            "isRound" => map_value(context, :is_round) || false
+          }
+      end
+
+    context
+    |> Map.put("reason", reason)
+    |> Map.put(
+      "watchModel",
+      map_value(context, :watch_model) || map_value(context, :watchModel) || "Basalt"
+    )
+    |> Map.put(
+      "watchProfileId",
+      map_value(context, :watch_profile_id) || map_value(context, :watchProfileId) || "basalt"
+    )
+    |> Map.put("screen", screen)
+  end
+
+  defp normalize_launch_context(_context) do
+    normalize_launch_context(%{})
+  end
+
+  @spec launch_reason_value(term()) :: map()
+  defp launch_reason_value(value) when is_binary(value) and value != "",
+    do: %{"ctor" => value, "args" => []}
+
+  defp launch_reason_value(_value), do: %{"ctor" => "LaunchUser", "args" => []}
 
   @spec derive_view_output(term(), term(), term()) :: term()
   defp derive_view_output(view_tree, runtime_model, eval_context)
@@ -2504,15 +2847,80 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp package_followup_messages(commands, source_root)
        when is_list(commands) and is_binary(source_root) do
     commands
-    |> Enum.filter(&http_command?/1)
-    |> Enum.map(fn command ->
-      %{
-        "message" => http_command_display(command),
-        "source_root" => source_root,
-        "source" => "http_command",
-        "package" => "elm/http",
-        "command" => command
-      }
+    |> Enum.flat_map(fn command ->
+      cond do
+        http_command?(command) ->
+          [
+            %{
+              "message" => http_command_display(command),
+              "source_root" => source_root,
+              "source" => "http_command",
+              "package" => "elm/http",
+              "command" => command
+            }
+          ]
+
+        random_command?(command) ->
+          [
+            %{
+              "message" => map_value(command, :message) || "RandomGenerated",
+              "message_value" => map_value(command, :message_value),
+              "source_root" => source_root,
+              "source" => "random_command",
+              "package" => "elm/random",
+              "command" => command
+            }
+          ]
+
+        storage_read_command?(command) ->
+          [
+            %{
+              "message" => map_value(command, :message) || "StorageLoaded",
+              "message_value" => map_value(command, :message_value),
+              "source_root" => source_root,
+              "source" => "storage_command",
+              "package" => "elm-pebble/elm-watch",
+              "command" => command
+            }
+          ]
+
+        storage_write_command?(command) or storage_delete_command?(command) ->
+          [
+            %{
+              "message" => nil,
+              "source_root" => source_root,
+              "source" => "storage_command",
+              "package" => "elm-pebble/elm-watch",
+              "command" => command
+            }
+          ]
+
+        device_command?(command) ->
+          [
+            %{
+              "message" => map_value(command, :message) || "DeviceLoaded",
+              "message_value" => map_value(command, :message_value),
+              "source_root" => source_root,
+              "source" => "device_command",
+              "package" => "elm-pebble/elm-watch",
+              "command" => command
+            }
+          ]
+
+        unsupported_command?(command) ->
+          [
+            %{
+              "message" => "Unsupported command",
+              "source_root" => source_root,
+              "source" => "unsupported_command",
+              "package" => map_value(command, :package) || "unknown",
+              "command" => command
+            }
+          ]
+
+        true ->
+          []
+      end
     end)
   end
 
@@ -2522,6 +2930,36 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp http_command?(%{"kind" => "http"}), do: true
   defp http_command?(%{kind: "http"}), do: true
   defp http_command?(_), do: false
+
+  @spec random_command?(term()) :: boolean()
+  defp random_command?(%{"kind" => "cmd.random.generate"}), do: true
+  defp random_command?(%{kind: "cmd.random.generate"}), do: true
+  defp random_command?(_), do: false
+
+  @spec storage_read_command?(term()) :: boolean()
+  defp storage_read_command?(%{"kind" => "cmd.storage.read_" <> _rest}), do: true
+  defp storage_read_command?(%{kind: "cmd.storage.read_" <> _rest}), do: true
+  defp storage_read_command?(_), do: false
+
+  @spec storage_write_command?(term()) :: boolean()
+  defp storage_write_command?(%{"kind" => "cmd.storage.write_" <> _rest}), do: true
+  defp storage_write_command?(%{kind: "cmd.storage.write_" <> _rest}), do: true
+  defp storage_write_command?(_), do: false
+
+  @spec storage_delete_command?(term()) :: boolean()
+  defp storage_delete_command?(%{"kind" => "cmd.storage.delete"}), do: true
+  defp storage_delete_command?(%{kind: "cmd.storage.delete"}), do: true
+  defp storage_delete_command?(_), do: false
+
+  @spec device_command?(term()) :: boolean()
+  defp device_command?(%{"kind" => "cmd.device." <> _rest}), do: true
+  defp device_command?(%{kind: "cmd.device." <> _rest}), do: true
+  defp device_command?(_), do: false
+
+  @spec unsupported_command?(term()) :: boolean()
+  defp unsupported_command?(%{"kind" => "cmd.unsupported"}), do: true
+  defp unsupported_command?(%{kind: "cmd.unsupported"}), do: true
+  defp unsupported_command?(_), do: false
 
   @spec http_command_display(term()) :: String.t()
   defp http_command_display(command) when is_map(command) do

@@ -7,8 +7,6 @@ module Pebble.WatchInfo exposing
     , getModel
     )
 
-import Elm.Kernel.PebbleWatch
-
 {-| Access information about the watch itself.
 
 This API mirrors Pebble's C `WatchInfo` module and provides information such as
@@ -21,6 +19,7 @@ watch model, watch color, and firmware version.
 @docs getModel, getFirmwareVersion, getColor
 
 -}
+import Elm.Kernel.PebbleWatch
 
 
 {-| The model of the watch.

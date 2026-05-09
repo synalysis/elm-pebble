@@ -55,7 +55,7 @@ defmodule Elmc.FrontendAstContractTest do
   end
 
   test "generated parser emits spans for signatures, aliases and unions" do
-    fixture = Path.expand("fixtures/simple_project/src/Pebble/Ui.elm", __DIR__)
+    fixture = Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Ui.elm", __DIR__)
     assert {:ok, module} = GeneratedParser.parse_file(fixture)
 
     covered =

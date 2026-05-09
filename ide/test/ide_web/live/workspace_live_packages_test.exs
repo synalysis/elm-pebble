@@ -406,7 +406,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     assert get_in(saved_state.watch, [:view_tree, "type"]) == "windowStack"
     view_tree_json = Jason.encode!(saved_state.watch.view_tree)
     assert view_tree_json =~ ~s("text":"0C Clear")
-    assert view_tree_json =~ ~s("text":"Thu Apr 30")
+    assert view_tree_json =~ ~r/"text":"[A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2}"/
     assert view_tree_json =~ ~s("text_color":248)
 
     runtime_output = get_in(saved_state.watch, [:model, "runtime_view_output"]) || []
@@ -524,7 +524,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     assert watch_model["last_path"] == "src/Main.elm"
     assert watch_model["source_root"] == "watch"
-    assert get_in(state.companion, [:model, "elm_executor_core_ir_b64"])
+    assert get_in(state.companion, [:model, "elm_executor", "execution_backend"]) == "external"
 
     timeline =
       state.debugger_timeline
@@ -533,7 +533,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     assert {"watch", "init"} in timeline
     assert Enum.any?(timeline, &(&1 == {"watch", "init_device_data"}))
-    assert Enum.any?(timeline, &(&1 == {"protocol", "runtime_followup"}))
+    assert Enum.any?(timeline, &(&1 == {"protocol", "protocol_rx"}))
   end
 
   test "editor opens watch Main elm by default", %{conn: conn} do

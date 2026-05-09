@@ -5,7 +5,7 @@ defmodule Ide.Emulator.Session do
 
   require Logger
 
-  alias Ide.Emulator.SdkImages
+  alias Ide.Emulator.{PBW, SdkImages}
   alias Ide.Emulator.PebbleProtocol.Router
   alias Ide.WatchModels
 
@@ -17,6 +17,8 @@ defmodule Ide.Emulator.Session do
           project_slug: String.t(),
           platform: String.t(),
           artifact_path: String.t() | nil,
+          app_uuid: String.t() | nil,
+          has_phone_companion: boolean(),
           console_port: pos_integer(),
           bt_port: pos_integer(),
           protocol_proxy_port: pos_integer(),
@@ -199,8 +201,6 @@ defmodule Ide.Emulator.Session do
     cleanup_process(state.qemu_pid)
     cleanup_process(state.pypkjs_pid)
     cleanup_process(state.protocol_router_pid)
-    cleanup_path(state.spi_image_path)
-    cleanup_dir(state.persist_dir)
     :ok
   end
 
@@ -208,8 +208,8 @@ defmodule Ide.Emulator.Session do
   def qemu_args(state) do
     image_dir = qemu_image_dir(state.platform)
     micro_flash = Path.join(image_dir, "qemu_micro_flash.bin")
-    qemu_features = qemu_features()
-    tcp_opts = if qemu_features.new_qemu?, do: "server=on,wait=off", else: "server,nowait"
+    qemu_features = Map.get(state, :qemu_features) || %{new_qemu?: false, machines: MapSet.new()}
+    tcp_opts = "server=on,wait=off"
 
     firmware_args =
       if qemu_features.new_qemu?, do: ["-kernel", micro_flash], else: ["-pflash", micro_flash]
@@ -318,19 +318,23 @@ defmodule Ide.Emulator.Session do
 
   defp build_state(opts) do
     platform = Keyword.fetch!(opts, :platform)
+    project_slug = Keyword.get(opts, :project_slug, "")
+    artifact_path = Keyword.get(opts, :artifact_path)
 
     with {:ok, ports} <- allocate_ports(6),
-         {:ok, spi_image_path} <- make_spi_image(platform),
-         {:ok, persist_dir} <- make_persist_dir() do
+         {:ok, spi_image_path} <- make_spi_image(platform, project_slug),
+         {:ok, persist_dir} <- make_persist_dir(platform, project_slug) do
       [console_port, bt_port, protocol_proxy_port, phone_ws_port, vnc_port, vnc_ws_port] = ports
 
       {:ok,
        %{
          id: Keyword.fetch!(opts, :id),
          token: random_token(),
-         project_slug: Keyword.get(opts, :project_slug, ""),
+         project_slug: project_slug,
          platform: platform,
-         artifact_path: Keyword.get(opts, :artifact_path),
+         artifact_path: artifact_path,
+         app_uuid: app_uuid(artifact_path, platform),
+         has_phone_companion: Keyword.get(opts, :has_phone_companion, false),
          console_port: console_port,
          bt_port: bt_port,
          protocol_proxy_port: protocol_proxy_port,
@@ -341,6 +345,7 @@ defmodule Ide.Emulator.Session do
          protocol_router_pid: nil,
          qemu_pid: nil,
          pypkjs_pid: nil,
+         qemu_features: qemu_features(),
          spi_image_path: spi_image_path,
          persist_dir: persist_dir,
          last_ping_ms: now_ms(),
@@ -378,7 +383,8 @@ defmodule Ide.Emulator.Session do
            {:ok, command, args_prefix} <- pypkjs_command(pypkjs_bin),
            {:ok, pid} <-
              start_daemon(command, args_prefix ++ pypkjs_args(state), "pypkjs:#{state.id}"),
-           :ok <- wait_for_daemon(pid, state.phone_ws_port, 10_000) do
+           :ok <-
+             wait_for_daemon(pid, state.phone_ws_port, config(:pypkjs_ready_timeout_ms, 30_000)) do
         {:ok, %{state | pypkjs_pid: pid}}
       end
     else
@@ -512,6 +518,8 @@ defmodule Ide.Emulator.Session do
       project_slug: state.project_slug,
       platform: state.platform,
       artifact_path: "/api/emulator/#{state.id}/artifact",
+      app_uuid: state.app_uuid,
+      has_phone_companion: state.has_phone_companion,
       install_path: "/api/emulator/#{state.id}/install",
       vnc_path: "/api/emulator/#{state.id}/ws/vnc",
       phone_path: "/api/emulator/#{state.id}/ws/phone",
@@ -541,27 +549,78 @@ defmodule Ide.Emulator.Session do
     error -> {:error, {:port_allocation_failed, error}}
   end
 
-  defp make_spi_image(platform) do
+  defp make_spi_image(platform, project_slug) do
     source_dir = qemu_image_dir(platform)
     raw = Path.join(source_dir, "qemu_spi_flash.bin")
     bz2 = raw <> ".bz2"
+    path = Path.join(emulator_state_dir(project_slug, platform), "qemu_spi_flash.bin")
 
-    with {:ok, path} <- temp_path("spi-#{platform}", ".bin") do
-      cond do
-        File.exists?(raw) ->
-          File.cp(raw, path)
-          {:ok, path}
+    cond do
+      File.exists?(path) ->
+        {:ok, path}
 
-        File.exists?(bz2) ->
-          decompress_bzip2(bz2, path)
+      true ->
+        with :ok <- File.mkdir_p(Path.dirname(path)) do
+          cond do
+            File.exists?(raw) ->
+              File.cp(raw, path)
+              {:ok, path}
 
-        start_processes?() ->
-          {:error, {:qemu_flash_image_not_found, source_dir}}
+            File.exists?(bz2) ->
+              decompress_bzip2(bz2, path)
 
-        true ->
-          {:ok, path}
-      end
+            start_processes?() ->
+              {:error, {:qemu_flash_image_not_found, source_dir}}
+
+            true ->
+              File.touch(path)
+              {:ok, path}
+          end
+        end
     end
+  end
+
+  defp app_uuid(path, platform) when is_binary(path) do
+    case PBW.load(path, platform) do
+      {:ok, %{uuid: uuid}} ->
+        uuid
+
+      {:error, reason} ->
+        Logger.debug("could not read emulator app uuid from #{path}: #{inspect(reason)}")
+        nil
+    end
+  end
+
+  defp app_uuid(_path, _platform), do: nil
+
+  defp make_persist_dir(platform, project_slug) do
+    dir = Path.join(emulator_state_dir(project_slug, platform), "pypkjs")
+
+    case File.mkdir_p(dir) do
+      :ok -> {:ok, dir}
+      {:error, reason} -> {:error, {:persist_dir_failed, reason}}
+    end
+  end
+
+  defp emulator_state_dir(project_slug, platform) do
+    root = config(:state_root, Path.join(System.tmp_dir!(), "elm-pebble-emulator-state"))
+
+    Path.join([
+      root,
+      safe_path_fragment(project_slug, "project"),
+      safe_path_fragment(platform, "platform")
+    ])
+  end
+
+  defp safe_path_fragment(value, fallback) do
+    value
+    |> to_string()
+    |> String.trim()
+    |> then(fn
+      "" -> fallback
+      text -> text
+    end)
+    |> String.replace(~r/[^A-Za-z0-9_.-]+/, "-")
   end
 
   defp decompress_bzip2(source, target) do
@@ -578,24 +637,6 @@ defmodule Ide.Emulator.Session do
         else
           {:error, {:bzip2_failed, data}}
         end
-    end
-  end
-
-  defp make_persist_dir do
-    dir = Path.join(System.tmp_dir!(), "elm-pebble-pypkjs-#{random_id()}")
-
-    case File.mkdir_p(dir) do
-      :ok -> {:ok, dir}
-      {:error, reason} -> {:error, {:persist_dir_failed, reason}}
-    end
-  end
-
-  defp temp_path(prefix, suffix) do
-    path = Path.join(System.tmp_dir!(), "#{prefix}-#{random_id()}#{suffix}")
-
-    case File.touch(path) do
-      :ok -> {:ok, path}
-      {:error, reason} -> {:error, {:temp_path_failed, reason}}
     end
   end
 
@@ -1066,6 +1107,9 @@ defmodule Ide.Emulator.Session do
     [
       chunk_size: config(:native_install_chunk_size, 1_000),
       timeout_ms: config(:native_install_timeout_ms, 30_000),
+      putbytes_retries: config(:native_install_putbytes_retries, 2),
+      chunk_delay_ms: config(:native_install_chunk_delay_ms, 10),
+      part_retries: config(:native_install_part_retries, 1),
       part_delay_ms: config(:native_install_part_delay_ms, 0)
     ]
   end
@@ -1148,12 +1192,6 @@ defmodule Ide.Emulator.Session do
 
   defp cleanup_process(nil), do: :ok
   defp cleanup_process(pid) when is_pid(pid), do: Process.exit(pid, :normal)
-
-  defp cleanup_path(nil), do: :ok
-  defp cleanup_path(path), do: File.rm(path)
-
-  defp cleanup_dir(nil), do: :ok
-  defp cleanup_dir(path), do: File.rm_rf(path)
 
   defp random_id, do: Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
   defp random_token, do: Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)

@@ -24,6 +24,7 @@ defmodule Elmc.BackendCoverageGateTest do
                    :tuple2,
                    :list_literal,
                    :record_literal,
+                   :record_update,
                    :field_access,
                    :field_call,
                    :lambda,

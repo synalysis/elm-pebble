@@ -303,26 +303,36 @@ choiceOption value encoded label =
     ChoiceOption value { value = encoded, label = label }
 
 
+{-| Black color swatch.
+-}
 black : Color
 black =
     "#000000"
 
 
+{-| White color swatch.
+-}
 white : Color
 white =
     "#FFFFFF"
 
 
+{-| Green color swatch.
+-}
 green : Color
 green =
     "#55AA55"
 
 
+{-| Blue color swatch.
+-}
 blue : Color
 blue =
     "#5555FF"
 
 
+{-| Yellow color swatch.
+-}
 yellow : Color
 yellow =
     "#FFFF55"

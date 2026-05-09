@@ -82,12 +82,16 @@ defmodule Ide.Resources.ResourceStore do
          basename <- "#{unique_ctor}#{Path.extname(safe_name)}",
          asset_path <- Path.join(assets_dir, basename),
          :ok <- File.write(asset_path, bytes) do
+      {width, height} = bitmap_dimensions(bytes, mime)
+
       entry = %{
         "id" => "bitmap_" <> String.downcase(unique_ctor),
         "ctor" => unique_ctor,
         "filename" => basename,
         "mime" => mime,
-        "bytes" => byte_size(bytes)
+        "bytes" => byte_size(bytes),
+        "width" => width,
+        "height" => height
       }
 
       entries =
@@ -334,18 +338,18 @@ defmodule Ide.Resources.ResourceStore do
 
   @spec generated_module_source(term(), term()) :: term()
   defp generated_module_source(bitmap_entries, font_entries) do
-    bitmap_ctors =
+    bitmap_rows =
       bitmap_entries
-      |> Enum.map(&Map.get(&1, "ctor", ""))
-      |> Enum.filter(&(&1 != ""))
+      |> Enum.map(&normalize_bitmap_row/1)
+      |> Enum.reject(&(&1.ctor == ""))
 
-    font_ctors =
+    font_rows =
       font_entries
-      |> Enum.map(&Map.get(&1, "ctor", ""))
-      |> Enum.filter(&(&1 != ""))
+      |> Enum.map(&normalize_font_row/1)
+      |> Enum.reject(&(&1.ctor == ""))
 
     {bitmap_type_decl, bitmap_all_decl} =
-      case bitmap_ctors do
+      case Enum.map(bitmap_rows, & &1.ctor) do
         [] ->
           {"type Bitmap\n    = NoBitmap",
            "allBitmaps : List Bitmap\nallBitmaps =\n    [ NoBitmap ]"}
@@ -358,8 +362,50 @@ defmodule Ide.Resources.ResourceStore do
            "allBitmaps : List Bitmap\nallBitmaps =\n    [ #{all_rows} ]"}
       end
 
+    bitmap_info_decl =
+      case bitmap_rows do
+        [] ->
+          """
+          type alias BitmapInfo =
+              { bitmap : Bitmap
+              , name : String
+              , width : Int
+              , height : Int
+              }
+
+          bitmapInfo : Bitmap -> BitmapInfo
+          bitmapInfo bitmap =
+              case bitmap of
+                  NoBitmap ->
+                      { bitmap = NoBitmap, name = "NoBitmap", width = 0, height = 0 }
+          """
+
+        rows ->
+          cases =
+            Enum.map_join(rows, "\n", fn row ->
+              """
+                  #{row.ctor} ->
+                      { bitmap = #{row.ctor}, name = "#{elm_string(row.name)}", width = #{row.width}, height = #{row.height} }
+              """
+            end)
+
+          """
+          type alias BitmapInfo =
+              { bitmap : Bitmap
+              , name : String
+              , width : Int
+              , height : Int
+              }
+
+          bitmapInfo : Bitmap -> BitmapInfo
+          bitmapInfo bitmap =
+              case bitmap of
+          #{cases}
+          """
+      end
+
     {font_type_decl, font_all_decl} =
-      case font_ctors do
+      case Enum.map(font_rows, & &1.ctor) do
         [] ->
           {"type Font\n    = DefaultFont",
            "allFonts : List Font\nallFonts =\n    [ DefaultFont ]"}
@@ -372,17 +418,91 @@ defmodule Ide.Resources.ResourceStore do
            "allFonts : List Font\nallFonts =\n    [ #{all_rows} ]"}
       end
 
+    font_info_decl =
+      case font_rows do
+        [] ->
+          """
+          type alias FontInfo =
+              { font : Font
+              , name : String
+              , height : Int
+              }
+
+          fontInfo : Font -> FontInfo
+          fontInfo font =
+              case font of
+                  DefaultFont ->
+                      { font = DefaultFont, name = "DefaultFont", height = 0 }
+          """
+
+        rows ->
+          cases =
+            Enum.map_join(rows, "\n", fn row ->
+              """
+                  #{row.ctor} ->
+                      { font = #{row.ctor}, name = "#{elm_string(row.name)}", height = #{row.height} }
+              """
+            end)
+
+          """
+          type alias FontInfo =
+              { font : Font
+              , name : String
+              , height : Int
+              }
+
+          fontInfo : Font -> FontInfo
+          fontInfo font =
+              case font of
+          #{cases}
+          """
+      end
+
     """
-    module Pebble.Ui.Resources exposing (Bitmap(..), Font(..), allBitmaps, allFonts)
+    module Pebble.Ui.Resources exposing (Bitmap(..), BitmapInfo, Font(..), FontInfo, allBitmaps, allFonts, bitmapInfo, fontInfo)
 
     #{bitmap_type_decl}
 
     #{bitmap_all_decl}
 
+    #{bitmap_info_decl}
+
     #{font_type_decl}
 
     #{font_all_decl}
+
+    #{font_info_decl}
     """
+  end
+
+  @spec normalize_bitmap_row(map()) :: map()
+  defp normalize_bitmap_row(row) do
+    ctor = to_string(Map.get(row, "ctor", ""))
+
+    %{
+      ctor: ctor,
+      name: to_string(Map.get(row, "name", ctor)),
+      width: integer_or_zero(Map.get(row, "width", 0)),
+      height: integer_or_zero(Map.get(row, "height", 0))
+    }
+  end
+
+  @spec normalize_font_row(map()) :: map()
+  defp normalize_font_row(row) do
+    ctor = to_string(Map.get(row, "ctor", ""))
+
+    %{
+      ctor: ctor,
+      name: to_string(Map.get(row, "name", ctor)),
+      height: positive_integer_or_default(Map.get(row, "height", 0), 0)
+    }
+  end
+
+  @spec elm_string(String.t()) :: String.t()
+  defp elm_string(value) do
+    value
+    |> String.replace("\\", "\\\\")
+    |> String.replace("\"", "\\\"")
   end
 
   @spec normalized_filename_and_mime(term()) :: term()
@@ -484,6 +604,28 @@ defmodule Ide.Resources.ResourceStore do
       ctor
     end
   end
+
+  @spec bitmap_dimensions(binary(), String.t()) :: {non_neg_integer(), non_neg_integer()}
+  defp bitmap_dimensions(
+         <<0x89, "PNG\r\n", 0x1A, "\n", _len::32, "IHDR", width::32, height::32, _::binary>>,
+         "image/png"
+       ),
+       do: {width, height}
+
+  defp bitmap_dimensions(_bytes, _mime), do: {0, 0}
+
+  @spec positive_integer_or_default(term(), integer()) :: integer()
+  defp positive_integer_or_default(value, _default) when is_integer(value) and value > 0,
+    do: value
+
+  defp positive_integer_or_default(value, default) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} when int > 0 -> int
+      _ -> default
+    end
+  end
+
+  defp positive_integer_or_default(_value, default), do: default
 
   @spec integer_or_zero(term()) :: term()
   defp integer_or_zero(value) when is_integer(value) and value >= 0, do: value

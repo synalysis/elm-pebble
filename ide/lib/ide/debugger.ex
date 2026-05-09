@@ -43,6 +43,7 @@ defmodule Ide.Debugger do
           watch: map(),
           companion: map(),
           phone: map(),
+          storage: map(),
           auto_tick: map(),
           events: [runtime_event()],
           debugger_timeline: [debugger_event()],
@@ -87,6 +88,7 @@ defmodule Ide.Debugger do
           revision: nil,
           watch_profile_id: watch_profile_id,
           launch_context: launch_context,
+          storage: Map.get(state, :storage, %{}),
           watch: default_watch_runtime(launch_context),
           companion: default_companion_runtime(),
           phone: default_phone_runtime(),
@@ -629,6 +631,7 @@ defmodule Ide.Debugger do
     target = normalize_step_target(Map.get(attrs, :target) || Map.get(attrs, "target"))
     trigger = to_string(Map.get(attrs, :trigger) || Map.get(attrs, "trigger") || "trigger")
     requested_message = Map.get(attrs, :message) || Map.get(attrs, "message")
+    requested_message_value = Map.get(attrs, :message_value) || Map.get(attrs, "message_value")
 
     update(project_slug, fn state ->
       if Map.get(state, :running, false) do
@@ -642,10 +645,14 @@ defmodule Ide.Debugger do
           resolved_message =
             trigger_message_for_surface(state, target, trigger, requested_message)
 
+          resolved_message_value =
+            subscription_trigger_message_value(resolved_message, requested_message_value)
+
           apply_step_once(
             state,
             target,
             resolved_message,
+            resolved_message_value,
             "subscription_trigger",
             "subscription_trigger"
           )
@@ -655,6 +662,30 @@ defmodule Ide.Debugger do
       end
     end)
   end
+
+  @spec subscription_trigger_message_value(term(), term()) :: term()
+  defp subscription_trigger_message_value(message, %{} = value) when is_binary(message) do
+    cond do
+      Map.has_key?(value, "ctor") or Map.has_key?(value, :ctor) ->
+        value
+
+      true ->
+        constructor =
+          message
+          |> String.trim()
+          |> String.split(~r/\s+/, parts: 2)
+          |> List.first()
+          |> to_string()
+
+        if constructor == "" do
+          value
+        else
+          %{"ctor" => constructor, "args" => [value]}
+        end
+    end
+  end
+
+  defp subscription_trigger_message_value(_message, _value), do: nil
 
   @doc """
   Enables or disables a single parsed subscription trigger.
@@ -1070,6 +1101,7 @@ defmodule Ide.Debugger do
         message_source: message_source
       })
       |> append_debugger_event("update", target, message, message_source)
+      |> maybe_append_runtime_status_debugger_event(target)
       |> append_protocol_events(protocol_events)
       |> apply_protocol_state_effects(protocol_events)
       |> append_event("debugger.view_render", %{target: target_name, root: root})
@@ -1438,20 +1470,35 @@ defmodule Ide.Debugger do
        when is_map(model) and is_map(previous_model) do
     runtime_model = Map.get(model, "runtime_model")
 
+    protocol_metadata_keys = [
+      "protocol_inbound_count",
+      "protocol_message_count",
+      "protocol_last_inbound_message",
+      "protocol_last_inbound_from"
+    ]
+
+    model =
+      Enum.reduce(protocol_metadata_keys, model, fn key, acc ->
+        maybe_put_protocol_runtime_value(
+          acc,
+          key,
+          protocol_runtime_metadata_value(previous_model, key)
+        )
+      end)
+
     if is_map(runtime_model) do
       preserved =
-        [
-          "protocol_inbound_count",
-          "protocol_message_count",
-          "protocol_last_inbound_message",
-          "protocol_last_inbound_from"
-        ]
-        |> Enum.reduce(runtime_model, fn key, acc ->
-          value =
-            Map.get(previous_model, key) ||
-              get_in(previous_model, ["runtime_model", key])
-
-          maybe_put_protocol_runtime_value(acc, key, value)
+        Enum.reduce(protocol_metadata_keys, runtime_model, fn key, acc ->
+          if Map.has_key?(runtime_model, key) or
+               Map.has_key?(Map.get(previous_model, "runtime_model") || %{}, key) do
+            maybe_put_protocol_runtime_value(
+              acc,
+              key,
+              protocol_runtime_metadata_value(previous_model, key)
+            )
+          else
+            acc
+          end
         end)
 
       Map.put(model, "runtime_model", preserved)
@@ -1461,6 +1508,11 @@ defmodule Ide.Debugger do
   end
 
   defp preserve_protocol_runtime_metadata(model, _previous_model), do: model
+
+  defp protocol_runtime_metadata_value(previous_model, key) when is_map(previous_model) do
+    Map.get(previous_model, key) ||
+      get_in(previous_model, ["runtime_model", key])
+  end
 
   @spec device_response_message(term()) :: String.t() | nil
   defp device_response_message(%{
@@ -1557,16 +1609,19 @@ defmodule Ide.Debugger do
       package = Map.get(row, "package") || Map.get(row, :package)
       command = Map.get(row, "command") || Map.get(row, :command)
 
-      if is_map(command) do
-        apply_runtime_http_followup(acc, target, target_name, package, command, followup_message)
-      else
-        acc
-        |> append_event("debugger.package_cmd", %{
-          target: target_name,
-          package: package,
-          response_message: followup_message
-        })
-        |> apply_step_once(target, followup_message, "runtime_followup", "runtime_followup")
+      cond do
+        package == "elm/http" and is_map(command) ->
+          apply_runtime_http_followup(
+            acc,
+            target,
+            target_name,
+            package,
+            command,
+            followup_message
+          )
+
+        true ->
+          apply_runtime_package_followup(acc, target, target_name, package, row)
       end
     end)
   end
@@ -1612,6 +1667,46 @@ defmodule Ide.Debugger do
 
   defp apply_runtime_http_followup(state, _target, _target_name, _package, _command, _message),
     do: state
+
+  @spec apply_runtime_package_followup(term(), term(), term(), term(), term()) :: term()
+  defp apply_runtime_package_followup(state, target, target_name, package, row)
+       when target in [:watch, :companion, :phone] and is_map(row) do
+    case Ide.Debugger.PackageCommandHandler.handle(state, target_name, package, row) do
+      {:handled, next_state, event_payload, %{message: message, message_value: message_value}} ->
+        next_state
+        |> append_event("debugger.package_cmd", event_payload)
+        |> apply_step_once(
+          target,
+          message,
+          message_value,
+          "runtime_followup",
+          "runtime_followup"
+        )
+
+      {:handled, next_state, event_payload, nil} ->
+        append_event(next_state, "debugger.package_cmd", event_payload)
+
+      :unhandled ->
+        followup_message = Map.get(row, "message") || Map.get(row, :message)
+        followup_message_value = Map.get(row, "message_value") || Map.get(row, :message_value)
+
+        state
+        |> append_event("debugger.package_cmd", %{
+          target: target_name,
+          package: package,
+          response_message: followup_message
+        })
+        |> apply_step_once(
+          target,
+          followup_message,
+          followup_message_value,
+          "runtime_followup",
+          "runtime_followup"
+        )
+    end
+  end
+
+  defp apply_runtime_package_followup(state, _target, _target_name, _package, _row), do: state
 
   @spec device_requests_for_model(term(), term()) :: term()
   defp device_requests_for_model(model, current_message)
@@ -2300,10 +2395,14 @@ defmodule Ide.Debugger do
        when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(meta) do
     case protocol_rx_subscription_message(state, recipient, meta) do
       {message, message_value} when is_binary(message) and message != "" ->
-        apply_step_once(state, recipient, message, message_value, "protocol_rx", "protocol_rx")
+        state
+        |> apply_step_once(recipient, message, message_value, "protocol_rx", "protocol_rx")
+        |> restore_protocol_rx_metadata(recipient, meta)
 
       message when is_binary(message) and message != "" ->
-        apply_step_once(state, recipient, message, "protocol_rx", "protocol_rx")
+        state
+        |> apply_step_once(recipient, message, "protocol_rx", "protocol_rx")
+        |> restore_protocol_rx_metadata(recipient, meta)
 
       _ ->
         state
@@ -2311,6 +2410,28 @@ defmodule Ide.Debugger do
   end
 
   defp maybe_apply_protocol_rx_subscription(state, _recipient, _meta), do: state
+
+  defp restore_protocol_rx_metadata(state, recipient, meta)
+       when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(meta) do
+    state =
+      state
+      |> put_in([recipient, :model, "protocol_last_inbound_message"], Map.get(meta, :message))
+      |> put_in([recipient, :model, "protocol_last_inbound_from"], Map.get(meta, :from))
+      |> put_in([recipient, :model, "protocol_inbound_count"], Map.get(meta, :inbound_count))
+
+    if recipient in [:companion, :phone] do
+      update_in(state, [recipient, :model, "runtime_model"], fn runtime_model ->
+        runtime_model = if is_map(runtime_model), do: runtime_model, else: %{}
+
+        runtime_model
+        |> Map.put("protocol_last_inbound_message", Map.get(meta, :message))
+        |> Map.put("protocol_last_inbound_from", Map.get(meta, :from))
+        |> Map.put("protocol_inbound_count", Map.get(meta, :inbound_count))
+      end)
+    else
+      state
+    end
+  end
 
   @spec protocol_rx_subscription_message(term(), term(), term()) ::
           {String.t(), term()} | String.t() | nil
@@ -2436,7 +2557,16 @@ defmodule Ide.Debugger do
       length(get_in(state, [recipient, :protocol_messages]) || [])
     )
     |> put_in([recipient, :model, "protocol_last_trigger"], row["trigger"])
-    |> update_in([recipient, :model, "runtime_model"], fn runtime_model ->
+    |> maybe_update_protocol_runtime_model(recipient, row, inbound_count)
+    |> put_in([recipient, :model, "runtime_last_message"], row["message"])
+    |> put_in([recipient, :model, "runtime_message_source"], "protocol_rx")
+  end
+
+  defp maybe_update_protocol_runtime_model(state, :watch, _row, _inbound_count), do: state
+
+  defp maybe_update_protocol_runtime_model(state, recipient, row, inbound_count)
+       when recipient in [:companion, :phone] do
+    update_in(state, [recipient, :model, "runtime_model"], fn runtime_model ->
       runtime_model = if is_map(runtime_model), do: runtime_model, else: %{}
 
       runtime_model
@@ -2448,8 +2578,6 @@ defmodule Ide.Debugger do
         length(get_in(state, [recipient, :protocol_messages]) || [])
       )
     end)
-    |> put_in([recipient, :model, "runtime_last_message"], row["message"])
-    |> put_in([recipient, :model, "runtime_message_source"], "protocol_rx")
   end
 
   @spec update_recipient_protocol_view_tree(term(), term(), term()) :: term()
@@ -2508,15 +2636,18 @@ defmodule Ide.Debugger do
         label = Map.get(op, "label") || Map.get(op, "name") || trigger
         callback = Map.get(op, "callback_constructor")
         message = callback || best_message_for_trigger(known_messages, to_string(trigger || ""))
+        trigger_id = normalize_trigger_id(trigger)
+        metadata = button_subscription_metadata(op)
 
         %{
-          id: "#{target_name}:#{normalize_trigger_id(trigger)}",
+          id: "#{target_name}:#{trigger_id}:#{normalize_trigger_id(message)}",
           label: normalize_trigger_label(label),
           trigger: to_string(trigger || "trigger"),
           target: target_name,
           message: message,
           source: "subscription"
         }
+        |> Map.merge(metadata)
       end)
 
     op_rows =
@@ -2555,11 +2686,70 @@ defmodule Ide.Debugger do
     primary_rows = if call_rows == [], do: op_rows, else: call_rows
 
     (primary_rows ++ if(primary_rows == [], do: fallback_rows, else: []))
-    |> Enum.uniq_by(fn row -> {row.target, row.trigger} end)
+    |> Enum.uniq_by(fn row -> {row.target, row.trigger, row.message} end)
     |> Enum.filter(fn row -> is_binary(row.message) and row.message != "" end)
   end
 
   defp trigger_candidates_for_surface(_state, _target), do: []
+
+  @spec button_subscription_metadata(term()) :: map()
+  defp button_subscription_metadata(%{"target" => target, "arg_snippets" => [button, event | _]})
+       when is_binary(target) and is_binary(button) and is_binary(event) do
+    case subscription_target_name(target) do
+      "on" ->
+        %{
+          button: normalize_button_subscription_arg(button),
+          button_event: normalize_button_subscription_arg(event)
+        }
+
+      name ->
+        button_event_metadata(name, button)
+    end
+  end
+
+  defp button_subscription_metadata(%{"target" => target, "arg_snippets" => [button | _]})
+       when is_binary(target) and is_binary(button) do
+    button_event_metadata(subscription_target_name(target), button)
+  end
+
+  defp button_subscription_metadata(_op), do: %{}
+
+  defp button_event_metadata(target_name, button) do
+    case target_name do
+      "onPress" ->
+        %{button: normalize_button_subscription_arg(button), button_event: "pressed"}
+
+      "onRelease" ->
+        %{button: normalize_button_subscription_arg(button), button_event: "released"}
+
+      "onLongPress" ->
+        %{button: normalize_button_subscription_arg(button), button_event: "longpressed"}
+
+      _ ->
+        %{}
+    end
+  end
+
+  @spec subscription_target_name(term()) :: String.t()
+  defp subscription_target_name(target) when is_binary(target) do
+    target
+    |> String.split(".")
+    |> List.last()
+    |> to_string()
+  end
+
+  defp subscription_target_name(_target), do: ""
+
+  @spec normalize_button_subscription_arg(term()) :: String.t()
+  defp normalize_button_subscription_arg(value) when is_binary(value) do
+    value
+    |> String.split(".")
+    |> List.last()
+    |> to_string()
+    |> String.downcase()
+  end
+
+  defp normalize_button_subscription_arg(_value), do: ""
 
   @spec subscription_call_fireable?(term()) :: boolean()
   defp subscription_call_fireable?(call) when is_map(call) do
@@ -4104,6 +4294,7 @@ defmodule Ide.Debugger do
               Map.get(row, "branch_constructor") || Map.get(row, :branch_constructor),
             "event_kind" => Map.get(row, "event_kind") || Map.get(row, :event_kind),
             "label" => Map.get(row, "label") || Map.get(row, :label),
+            "arg_snippets" => Map.get(row, "arg_snippets") || Map.get(row, :arg_snippets) || [],
             "arg_kinds" => Map.get(row, "arg_kinds") || Map.get(row, :arg_kinds) || []
           }
         end)
@@ -4200,6 +4391,7 @@ defmodule Ide.Debugger do
       watch: default_watch_runtime(launch_context),
       companion: default_companion_runtime(),
       phone: default_phone_runtime(),
+      storage: %{},
       auto_tick: default_auto_tick(),
       disabled_subscriptions: [],
       events: [],
@@ -4723,6 +4915,7 @@ defmodule Ide.Debugger do
     |> Map.put_new(:debugger_timeline, [])
     |> Map.put_new(:debugger_seq, 0)
     |> Map.put_new(:disabled_subscriptions, [])
+    |> Map.put_new(:storage, %{})
     |> ensure_protocol_surface_runtime_model(:companion)
     |> ensure_protocol_surface_runtime_model(:phone)
     |> Map.put(:watch_profile_id, watch_profile_id)
@@ -5997,6 +6190,11 @@ defmodule Ide.Debugger do
           view_case_branch_count: runtime["view_case_branch_count"],
           runtime_model_source: runtime["runtime_model_source"],
           view_tree_source: runtime["view_tree_source"],
+          execution_backend: runtime["execution_backend"],
+          runtime_mode: runtime["runtime_mode"],
+          external_fallback_reason: runtime["external_fallback_reason"],
+          followup_message_count: runtime["followup_message_count"],
+          init_cmd_count: runtime["init_cmd_count"],
           runtime_model_entry_count: runtime["runtime_model_entry_count"],
           view_tree_node_count: runtime["view_tree_node_count"],
           runtime_model_sha256: runtime["runtime_model_sha256"],
@@ -6009,6 +6207,126 @@ defmodule Ide.Debugger do
       state
     end
   end
+
+  @spec maybe_append_runtime_status_debugger_event(map(), :watch | :companion | :phone) :: map()
+  defp maybe_append_runtime_status_debugger_event(state, target)
+       when is_map(state) and target in [:watch, :companion, :phone] do
+    runtime = get_in(state, [target, :model, "elm_executor"])
+
+    case runtime_status_message(runtime) do
+      nil ->
+        state
+
+      message ->
+        append_debugger_event(state, "runtime", target, message, "runtime_status")
+    end
+  end
+
+  defp maybe_append_runtime_status_debugger_event(state, _target), do: state
+
+  @spec maybe_append_runtime_status_debugger_event(
+          map(),
+          :watch | :companion | :phone,
+          term(),
+          term()
+        ) ::
+          map()
+  defp maybe_append_runtime_status_debugger_event(state, target, execution, introspect)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_map(execution) do
+    runtime =
+      case Map.get(execution, :runtime) || Map.get(execution, "runtime") do
+        value when is_map(value) -> value
+        _ -> get_in(state, [target, :model, "elm_executor"]) || %{}
+      end
+      |> Map.put("init_cmd_count", meaningful_init_cmd_count(introspect))
+      |> Map.put(
+        "followup_message_count",
+        execution
+        |> execution_followup_messages()
+        |> normalize_followup_messages()
+        |> length()
+      )
+
+    case runtime_status_message(runtime) do
+      nil ->
+        state
+
+      message ->
+        state
+        |> append_event("debugger.runtime_status", %{
+          target: source_root_for_target(target),
+          message: message,
+          execution_backend: runtime["execution_backend"],
+          runtime_mode: runtime["runtime_mode"],
+          external_fallback_reason: runtime["external_fallback_reason"],
+          followup_message_count: runtime["followup_message_count"],
+          init_cmd_count: runtime["init_cmd_count"]
+        })
+        |> append_debugger_event("runtime", target, message, "runtime_status")
+    end
+  end
+
+  defp maybe_append_runtime_status_debugger_event(state, _target, _execution, _introspect),
+    do: state
+
+  @spec execution_followup_messages(term()) :: list()
+  defp execution_followup_messages(execution) when is_map(execution) do
+    case Map.get(execution, :followup_messages) || Map.get(execution, "followup_messages") do
+      messages when is_list(messages) -> messages
+      _ -> []
+    end
+  end
+
+  defp execution_followup_messages(_execution), do: []
+
+  @spec meaningful_init_cmd_count(term()) :: non_neg_integer()
+  defp meaningful_init_cmd_count(introspect) do
+    introspect
+    |> introspect_cmd_calls("init_cmd_calls")
+    |> Enum.count(&meaningful_init_cmd_call?/1)
+  end
+
+  @spec meaningful_init_cmd_call?(term()) :: boolean()
+  defp meaningful_init_cmd_call?(call) when is_map(call) do
+    target = Map.get(call, "target") || Map.get(call, :target)
+    name = Map.get(call, "name") || Map.get(call, :name)
+    not (target in ["Cmd.none", "Platform.Cmd.none"] or name in ["none", "None", nil])
+  end
+
+  defp meaningful_init_cmd_call?(_call), do: false
+
+  @spec runtime_status_message(term()) :: String.t() | nil
+  defp runtime_status_message(runtime) when is_map(runtime) do
+    backend = runtime["execution_backend"]
+    reason = runtime["external_fallback_reason"]
+    followup_count = runtime["followup_message_count"]
+    init_cmd_count = runtime["init_cmd_count"]
+
+    cond do
+      is_binary(reason) and reason != "" ->
+        "runtime fallback #{backend || "unknown"}: #{reason}"
+
+      backend in ["fallback_default", "legacy_default", "default"] ->
+        "runtime fallback #{backend}"
+
+      runtime_init_execution?(runtime) and is_integer(init_cmd_count) and init_cmd_count > 0 and
+          followup_count in [0, nil] ->
+        "runtime no followups for #{init_cmd_count} init cmd(s)"
+
+      true ->
+        nil
+    end
+  end
+
+  defp runtime_status_message(_runtime), do: nil
+
+  @spec runtime_init_execution?(term()) :: boolean()
+  defp runtime_init_execution?(runtime) when is_map(runtime) do
+    runtime["operation_source"] in ["init_model", nil] and
+      runtime["runtime_model_source"] in ["init_model", nil]
+  end
+
+  defp runtime_init_execution?(_runtime), do: false
 
   @spec introspect_event_worth_logging?(term()) :: boolean()
   defp introspect_event_worth_logging?(ei) when is_map(ei) do
@@ -6449,6 +6767,13 @@ defmodule Ide.Debugger do
       message_source: "init"
     })
     |> append_debugger_event("init", target, "init", "init")
+    |> maybe_append_runtime_status_debugger_event(target, execution, ei)
+    |> maybe_apply_runtime_followups(
+      target,
+      "init",
+      "init",
+      normalize_followup_messages(execution_followup_messages(execution))
+    )
   end
 
   @spec introspect_view_usable?(term()) :: boolean()

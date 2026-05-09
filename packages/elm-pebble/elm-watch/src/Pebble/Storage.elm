@@ -1,8 +1,6 @@
-module Pebble.Storage exposing (delete, readInt, writeInt)
+module Pebble.Storage exposing (writeInt, readInt, writeString, readString, delete)
 
-import Elm.Kernel.PebbleWatch
-
-{-| Watch-local integer key/value storage commands.
+{-| Watch-local key/value storage commands.
 
 The watch runtime exposes a lightweight integer key/value store.
 
@@ -14,10 +12,14 @@ The watch runtime exposes a lightweight integer key/value store.
     loadCounter =
         readInt 1 CounterLoaded
 
+
 # Operations
-@docs writeInt, readInt, delete
+
+@docs writeInt, readInt, writeString, readString, delete
 
 -}
+
+import Elm.Kernel.PebbleWatch
 
 
 {-| Store an integer value under an integer key.
@@ -32,6 +34,20 @@ writeInt =
 readInt : Int -> (Int -> msg) -> Cmd msg
 readInt =
     Elm.Kernel.PebbleWatch.storageReadInt
+
+
+{-| Store a string value under an integer key.
+-}
+writeString : Int -> String -> Cmd msg
+writeString =
+    Elm.Kernel.PebbleWatch.storageWriteString
+
+
+{-| Read a string by key and send it to `toMsg`.
+-}
+readString : Int -> (String -> msg) -> Cmd msg
+readString =
+    Elm.Kernel.PebbleWatch.storageReadString
 
 
 {-| Remove a stored value at `key`.

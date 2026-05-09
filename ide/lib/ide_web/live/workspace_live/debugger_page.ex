@@ -218,6 +218,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               runtime={@debugger_watch_view_runtime}
               project={@project}
               title="Visual preview"
+              show_watch_buttons={true}
+              watch_trigger_buttons={@debugger_watch_trigger_buttons}
+              disabled_subscriptions={@debugger_disabled_subscriptions}
               hover_scope="watch-live"
               hovered_rendered_scope={@debugger_hovered_rendered_scope}
               hovered_rendered_path={@debugger_hovered_rendered_path}
@@ -1838,6 +1841,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:runtime, :any, required: true)
   attr(:project, :any, default: nil)
   attr(:title, :string, default: "Visual preview")
+  attr(:show_watch_buttons, :boolean, default: false)
+  attr(:watch_trigger_buttons, :list, default: [])
+  attr(:disabled_subscriptions, :list, default: [])
   attr(:hover_scope, :string, default: nil)
   attr(:hovered_rendered_scope, :any, default: nil)
   attr(:hovered_rendered_path, :any, default: nil)
@@ -1887,6 +1893,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       |> assign(:svg_ops, svg_ops)
       |> assign(:unresolved_ops, unresolved_ops)
       |> assign(:hover_box, hover_box)
+      |> assign(
+        :watch_button_controls,
+        debugger_watch_button_controls(
+          assigns.watch_trigger_buttons,
+          assigns.disabled_subscriptions
+        )
+      )
+      |> assign(
+        :accel_control,
+        debugger_accel_control(assigns.watch_trigger_buttons, assigns.disabled_subscriptions)
+      )
 
     ~H"""
     <div
@@ -1906,195 +1923,206 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         />
       </div>
       <div class="mb-2 shrink-0 rounded border border-zinc-200 bg-zinc-100 p-2">
-        <svg
-          id={@svg_id}
-          viewBox={"0 0 #{@screen_w} #{@screen_h}"}
-          role="img"
-          aria-label="Watch screen preview"
-          class={@preview_svg_class}
-        >
-          <defs :if={@screen_round?}>
-            <clipPath id={@clip_id}>
-              <circle cx={@clip_cx} cy={@clip_cy} r={@clip_radius} />
-            </clipPath>
-          </defs>
-          <g clip-path={if @screen_round?, do: "url(##{@clip_id})", else: nil}>
-            <rect x="0" y="0" width={@screen_w} height={@screen_h} fill="white" />
-            <%= for op <- @svg_ops do %>
+        <div class={[
+          if(@show_watch_buttons, do: "grid grid-cols-[auto_minmax(0,1fr)_auto]", else: "block"),
+          "items-center gap-2"
+        ]}>
+          <.debugger_watch_button :if={@show_watch_buttons} button={@watch_button_controls.back} />
+          <svg
+            id={@svg_id}
+            viewBox={"0 0 #{@screen_w} #{@screen_h}"}
+            role="img"
+            aria-label="Watch screen preview"
+            class={@preview_svg_class}
+          >
+            <defs :if={@screen_round?}>
+              <clipPath id={@clip_id}>
+                <circle cx={@clip_cx} cy={@clip_cy} r={@clip_radius} />
+              </clipPath>
+            </defs>
+            <g clip-path={if @screen_round?, do: "url(##{@clip_id})", else: nil}>
+              <rect x="0" y="0" width={@screen_w} height={@screen_h} fill="white" />
+              <%= for op <- @svg_ops do %>
+                <rect
+                  :if={op.kind == :clear}
+                  x="0"
+                  y="0"
+                  width={@screen_w}
+                  height={@screen_h}
+                  fill={debugger_svg_color(op.color, "white")}
+                />
+                <image
+                  :if={op.kind == :bitmap_in_rect and is_binary(op[:href])}
+                  x={op.x}
+                  y={op.y}
+                  width={op.w}
+                  height={op.h}
+                  href={op.href}
+                  preserveAspectRatio="none"
+                />
+                <image
+                  :if={op.kind == :rotated_bitmap and is_binary(op[:href])}
+                  x={op.center_x - div(op.src_w, 2)}
+                  y={op.center_y - div(op.src_h, 2)}
+                  width={op.src_w}
+                  height={op.src_h}
+                  href={op.href}
+                  transform={"rotate(#{debugger_pebble_angle_deg(op.angle)} #{op.center_x} #{op.center_y})"}
+                  preserveAspectRatio="none"
+                />
+                <rect
+                  :if={op.kind == :round_rect}
+                  x={op.x}
+                  y={op.y}
+                  width={op.w}
+                  height={op.h}
+                  rx={op.radius}
+                  ry={op.radius}
+                  fill="none"
+                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                  stroke-width={op.stroke_width || 1}
+                />
+                <rect
+                  :if={op.kind == :rect}
+                  x={op.x}
+                  y={op.y}
+                  width={op.w}
+                  height={op.h}
+                  fill="none"
+                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                  stroke-width={op.stroke_width || 1}
+                />
+                <rect
+                  :if={op.kind == :fill_rect}
+                  x={op.x}
+                  y={op.y}
+                  width={op.w}
+                  height={op.h}
+                  fill={debugger_svg_color(op.fill_color, "#111111")}
+                  stroke={
+                    debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
+                  }
+                  stroke-width={op.stroke_width || 1}
+                />
+                <line
+                  :if={op.kind == :line}
+                  x1={op.x1}
+                  y1={op.y1}
+                  x2={op.x2}
+                  y2={op.y2}
+                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                  stroke-width={op.stroke_width || 1}
+                />
+                <path
+                  :if={op.kind == :arc}
+                  d={debugger_arc_path(op)}
+                  fill="none"
+                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                  stroke-width={op.stroke_width || 1}
+                />
+                <path
+                  :if={op.kind == :fill_radial}
+                  d={debugger_arc_sector_path(op)}
+                  fill={debugger_svg_color(op.fill_color, "#111111")}
+                  stroke={
+                    debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
+                  }
+                  stroke-width={op.stroke_width || 1}
+                />
+                <path
+                  :if={op.kind == :path_filled}
+                  d={debugger_path_d(op, true)}
+                  fill={debugger_svg_color(op.fill_color, "#111111")}
+                  stroke={
+                    debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
+                  }
+                  stroke-width={op.stroke_width || 1}
+                />
+                <path
+                  :if={op.kind == :path_outline}
+                  d={debugger_path_d(op, true)}
+                  fill="none"
+                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                  stroke-width={op.stroke_width || 1}
+                />
+                <path
+                  :if={op.kind == :path_outline_open}
+                  d={debugger_path_d(op, false)}
+                  fill="none"
+                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                  stroke-width={op.stroke_width || 1}
+                />
+                <circle
+                  :if={op.kind == :circle}
+                  cx={op.cx}
+                  cy={op.cy}
+                  r={op.r}
+                  fill="none"
+                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                  stroke-width={op.stroke_width || 1}
+                />
+                <circle
+                  :if={op.kind == :fill_circle}
+                  cx={op.cx}
+                  cy={op.cy}
+                  r={op.r}
+                  fill={debugger_svg_color(op.fill_color, "#111111")}
+                  stroke={
+                    debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
+                  }
+                  stroke-width={op.stroke_width || 1}
+                />
+                <rect
+                  :if={op.kind == :pixel}
+                  x={op.x}
+                  y={op.y}
+                  width="1"
+                  height="1"
+                  fill={debugger_svg_color(op.stroke_color, "#111111")}
+                />
+                <text
+                  :if={op.kind == :text_int}
+                  x={op.x}
+                  y={op.y}
+                  font-size="14"
+                  font-family="monospace"
+                  fill={debugger_svg_color(op.text_color, "#111111")}
+                >
+                  {op.text}
+                </text>
+                <text
+                  :if={op.kind == :text_label}
+                  x={debugger_text_svg_x(op)}
+                  y={debugger_text_svg_y(op)}
+                  font-size={debugger_text_svg_font_size(op)}
+                  font-family="sans-serif"
+                  text-anchor={debugger_text_svg_anchor(op)}
+                  dominant-baseline={debugger_text_svg_baseline(op)}
+                  fill={debugger_svg_color(op.text_color, "#111111")}
+                >
+                  {op.text}
+                </text>
+              <% end %>
               <rect
-                :if={op.kind == :clear}
-                x="0"
-                y="0"
-                width={@screen_w}
-                height={@screen_h}
-                fill={debugger_svg_color(op.color, "white")}
+                :if={is_map(@hover_box)}
+                x={@hover_box.x}
+                y={@hover_box.y}
+                width={@hover_box.w}
+                height={@hover_box.h}
+                fill="rgba(59, 130, 246, 0.12)"
+                stroke="#2563eb"
+                stroke-width="1.5"
+                stroke-dasharray="3 2"
+                pointer-events="none"
               />
-              <image
-                :if={op.kind == :bitmap_in_rect and is_binary(op[:href])}
-                x={op.x}
-                y={op.y}
-                width={op.w}
-                height={op.h}
-                href={op.href}
-                preserveAspectRatio="none"
-              />
-              <image
-                :if={op.kind == :rotated_bitmap and is_binary(op[:href])}
-                x={op.center_x - div(op.src_w, 2)}
-                y={op.center_y - div(op.src_h, 2)}
-                width={op.src_w}
-                height={op.src_h}
-                href={op.href}
-                transform={"rotate(#{debugger_pebble_angle_deg(op.angle)} #{op.center_x} #{op.center_y})"}
-                preserveAspectRatio="none"
-              />
-              <rect
-                :if={op.kind == :round_rect}
-                x={op.x}
-                y={op.y}
-                width={op.w}
-                height={op.h}
-                rx={op.radius}
-                ry={op.radius}
-                fill="none"
-                stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                stroke-width={op.stroke_width || 1}
-              />
-              <rect
-                :if={op.kind == :rect}
-                x={op.x}
-                y={op.y}
-                width={op.w}
-                height={op.h}
-                fill="none"
-                stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                stroke-width={op.stroke_width || 1}
-              />
-              <rect
-                :if={op.kind == :fill_rect}
-                x={op.x}
-                y={op.y}
-                width={op.w}
-                height={op.h}
-                fill={debugger_svg_color(op.fill_color, "#111111")}
-                stroke={
-                  debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
-                }
-                stroke-width={op.stroke_width || 1}
-              />
-              <line
-                :if={op.kind == :line}
-                x1={op.x1}
-                y1={op.y1}
-                x2={op.x2}
-                y2={op.y2}
-                stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                stroke-width={op.stroke_width || 1}
-              />
-              <path
-                :if={op.kind == :arc}
-                d={debugger_arc_path(op)}
-                fill="none"
-                stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                stroke-width={op.stroke_width || 1}
-              />
-              <path
-                :if={op.kind == :fill_radial}
-                d={debugger_arc_sector_path(op)}
-                fill={debugger_svg_color(op.fill_color, "#111111")}
-                stroke={
-                  debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
-                }
-                stroke-width={op.stroke_width || 1}
-              />
-              <path
-                :if={op.kind == :path_filled}
-                d={debugger_path_d(op, true)}
-                fill={debugger_svg_color(op.fill_color, "#111111")}
-                stroke={
-                  debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
-                }
-                stroke-width={op.stroke_width || 1}
-              />
-              <path
-                :if={op.kind == :path_outline}
-                d={debugger_path_d(op, true)}
-                fill="none"
-                stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                stroke-width={op.stroke_width || 1}
-              />
-              <path
-                :if={op.kind == :path_outline_open}
-                d={debugger_path_d(op, false)}
-                fill="none"
-                stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                stroke-width={op.stroke_width || 1}
-              />
-              <circle
-                :if={op.kind == :circle}
-                cx={op.cx}
-                cy={op.cy}
-                r={op.r}
-                fill="none"
-                stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                stroke-width={op.stroke_width || 1}
-              />
-              <circle
-                :if={op.kind == :fill_circle}
-                cx={op.cx}
-                cy={op.cy}
-                r={op.r}
-                fill={debugger_svg_color(op.fill_color, "#111111")}
-                stroke={
-                  debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
-                }
-                stroke-width={op.stroke_width || 1}
-              />
-              <rect
-                :if={op.kind == :pixel}
-                x={op.x}
-                y={op.y}
-                width="1"
-                height="1"
-                fill={debugger_svg_color(op.stroke_color, "#111111")}
-              />
-              <text
-                :if={op.kind == :text_int}
-                x={op.x}
-                y={op.y}
-                font-size="14"
-                font-family="monospace"
-                fill={debugger_svg_color(op.text_color, "#111111")}
-              >
-                {op.text}
-              </text>
-              <text
-                :if={op.kind == :text_label}
-                x={debugger_text_svg_x(op)}
-                y={debugger_text_svg_y(op)}
-                font-size={debugger_text_svg_font_size(op)}
-                font-family="sans-serif"
-                text-anchor={debugger_text_svg_anchor(op)}
-                dominant-baseline={debugger_text_svg_baseline(op)}
-                fill={debugger_svg_color(op.text_color, "#111111")}
-              >
-                {op.text}
-              </text>
-            <% end %>
-            <rect
-              :if={is_map(@hover_box)}
-              x={@hover_box.x}
-              y={@hover_box.y}
-              width={@hover_box.w}
-              height={@hover_box.h}
-              fill="rgba(59, 130, 246, 0.12)"
-              stroke="#2563eb"
-              stroke-width="1.5"
-              stroke-dasharray="3 2"
-              pointer-events="none"
-            />
-          </g>
-        </svg>
+            </g>
+          </svg>
+          <div :if={@show_watch_buttons} class="flex flex-col items-stretch gap-2">
+            <.debugger_watch_button button={@watch_button_controls.up} />
+            <.debugger_watch_button button={@watch_button_controls.select} />
+            <.debugger_watch_button button={@watch_button_controls.down} />
+          </div>
+        </div>
         <p :if={@svg_ops == []} class="mt-1 text-center text-[10px] text-zinc-500">
           No drawable primitives found in this snapshot.
         </p>
@@ -2102,47 +2130,202 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
           {debugger_unresolved_svg_summary(@unresolved_ops)}
         </p>
       </div>
-      <div
-        :if={@tree}
-        class="min-h-0 flex-1 overflow-auto rounded border border-zinc-200 bg-white p-2"
-      >
-        <.debugger_view_node node={@tree} />
-      </div>
-      <p :if={!@tree} class="text-[11px] text-zinc-500">No view tree in this snapshot.</p>
+      <.debugger_accel_control :if={@accel_control} control={@accel_control} />
     </div>
     """
   end
 
-  attr(:node, :map, required: true)
+  attr(:control, :map, required: true)
 
-  @spec debugger_view_node(term()) :: term()
-  defp debugger_view_node(assigns) do
-    node = assigns.node
-    type = Map.get(node, "type") || Map.get(node, :type) || "node"
-    label = Map.get(node, "label") || Map.get(node, :label) || ""
-    children = Map.get(node, "children") || Map.get(node, :children) || []
-    box_style = debugger_preview_box_style(node)
-    tone = debugger_preview_tone(type)
-
-    assigns =
-      assigns
-      |> assign(:type, type)
-      |> assign(:label, label)
-      |> assign(:children, children)
-      |> assign(:box_style, box_style)
-      |> assign(:tone, tone)
-
+  @spec debugger_accel_control(term()) :: term()
+  defp debugger_accel_control(assigns) do
     ~H"""
-    <div class={["inline-block rounded border p-1 align-top shadow-sm", @tone]} style={@box_style}>
-      <div class="max-w-[10rem] truncate px-0.5 text-[9px] font-mono text-zinc-700">
-        {@type}<span :if={@label != ""} class="text-zinc-500"> · {@label}</span>
+    <div class="min-h-0 flex-1 rounded border border-zinc-200 bg-white p-2">
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-600">
+          Accelerometer
+        </p>
+        <p class="text-[10px] text-zinc-500" data-accel-readout>
+          x 0 · y 0 · z 1000
+        </p>
       </div>
-      <div :if={@children != []} class="mt-1 flex flex-col gap-0.5 border-t border-zinc-200/80 pt-1">
-        <.debugger_view_node :for={child <- @children} node={child} />
+      <div
+        id="debugger-accel-pad"
+        phx-hook="DebuggerAccelPad"
+        data-trigger={@control.trigger}
+        data-target={@control.target}
+        data-message={@control.message}
+        class="mt-2 flex justify-center"
+      >
+        <svg
+          viewBox="0 0 120 120"
+          role="application"
+          aria-label="Accelerometer input pad"
+          class="h-32 w-32 cursor-crosshair select-none"
+        >
+          <circle cx="60" cy="60" r="50" fill="#f8fafc" stroke="#71717a" stroke-width="1.5" />
+          <line x1="10" y1="60" x2="110" y2="60" stroke="#d4d4d8" stroke-width="1" />
+          <line x1="60" y1="10" x2="60" y2="110" stroke="#d4d4d8" stroke-width="1" />
+          <g data-accel-cross transform="translate(60 60)">
+            <line x1="-6" y1="0" x2="6" y2="0" stroke="#18181b" stroke-width="2" />
+            <line x1="0" y1="-6" x2="0" y2="6" stroke="#18181b" stroke-width="2" />
+            <circle cx="0" cy="0" r="3" fill="#18181b" />
+          </g>
+        </svg>
       </div>
+      <p class="mt-1 text-center text-[10px] text-zinc-500">
+        Click or drag inside the circle to send an accel sample.
+      </p>
     </div>
     """
   end
+
+  attr(:button, :map, required: true)
+
+  @spec debugger_watch_button(term()) :: term()
+  defp debugger_watch_button(assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-click="debugger-inject-trigger"
+      phx-value-trigger={@button.trigger}
+      phx-value-target={@button.target}
+      phx-value-message={@button.message}
+      disabled={!@button.enabled}
+      title={@button.title}
+      data-testid={"debugger-watch-button-#{@button.id}"}
+      class={[
+        "min-w-12 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide shadow-sm transition",
+        if(@button.enabled,
+          do: "border-zinc-500 bg-zinc-800 text-white hover:bg-zinc-700",
+          else: "cursor-not-allowed border-zinc-200 bg-zinc-200 text-zinc-400"
+        )
+      ]}
+    >
+      {@button.label}
+    </button>
+    """
+  end
+
+  @spec debugger_watch_button_controls(term(), term()) :: map()
+  defp debugger_watch_button_controls(rows, disabled_subscriptions) when is_list(rows) do
+    [:back, :up, :select, :down]
+    |> Map.new(fn button ->
+      row = debugger_watch_button_row(rows, button)
+      {button, debugger_watch_button_control(button, row, disabled_subscriptions)}
+    end)
+  end
+
+  defp debugger_watch_button_controls(_rows, disabled_subscriptions),
+    do: debugger_watch_button_controls([], disabled_subscriptions)
+
+  @spec debugger_accel_control(term(), term()) :: map() | nil
+  defp debugger_accel_control(rows, disabled_subscriptions) when is_list(rows) do
+    rows
+    |> Enum.find(&accel_trigger_row?/1)
+    |> case do
+      %{} = row ->
+        target = Map.get(row, :target) || Map.get(row, "target") || "watch"
+        trigger = Map.get(row, :trigger) || Map.get(row, "trigger") || "on_accel"
+        message = Map.get(row, :message) || Map.get(row, "message")
+
+        if is_binary(message) and message != "" and
+             subscription_trigger_enabled?(disabled_subscriptions, target, trigger) do
+          %{
+            trigger: trigger,
+            target: target,
+            message: message
+          }
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp debugger_accel_control(_rows, _disabled_subscriptions), do: nil
+
+  @spec accel_trigger_row?(term()) :: boolean()
+  defp accel_trigger_row?(row) when is_map(row) do
+    trigger = Map.get(row, :trigger) || Map.get(row, "trigger")
+    trigger in ["on_accel", "on_accel_data"]
+  end
+
+  defp accel_trigger_row?(_row), do: false
+
+  @spec debugger_watch_button_control(atom(), term(), term()) :: map()
+  defp debugger_watch_button_control(button, row, disabled_subscriptions) when is_map(row) do
+    enabled? =
+      subscription_trigger_enabled?(
+        disabled_subscriptions,
+        Map.get(row, :target) || Map.get(row, "target") || "watch",
+        Map.get(row, :trigger) || Map.get(row, "trigger") || ""
+      )
+
+    %{
+      id: Atom.to_string(button),
+      label: debugger_watch_button_label(button),
+      trigger: Map.get(row, :trigger) || Map.get(row, "trigger"),
+      target: Map.get(row, :target) || Map.get(row, "target") || "watch",
+      message: Map.get(row, :message) || Map.get(row, "message"),
+      enabled: enabled?,
+      title: "Trigger #{debugger_watch_button_label(button)} button event"
+    }
+  end
+
+  defp debugger_watch_button_control(button, _row, _disabled_subscriptions) do
+    label = debugger_watch_button_label(button)
+
+    %{
+      id: Atom.to_string(button),
+      label: label,
+      trigger: "",
+      target: "watch",
+      message: "",
+      enabled: false,
+      title: "#{label} button is not subscribed in this snapshot"
+    }
+  end
+
+  @spec debugger_watch_button_row([map()], atom()) :: map() | nil
+  defp debugger_watch_button_row(rows, button) when is_list(rows) do
+    button_name = Atom.to_string(button)
+
+    Enum.find(rows, &watch_button_metadata_match?(&1, button_name, "pressed")) ||
+      Enum.find(rows, &watch_button_metadata_match?(&1, button_name, nil)) ||
+      Enum.find(rows, &watch_button_trigger_match?(&1, button_name))
+  end
+
+  @spec watch_button_metadata_match?(term(), String.t(), String.t() | nil) :: boolean()
+  defp watch_button_metadata_match?(row, button_name, event_name) when is_map(row) do
+    row_button = Map.get(row, :button) || Map.get(row, "button")
+    row_event = Map.get(row, :button_event) || Map.get(row, "button_event")
+
+    row_button == button_name and (is_nil(event_name) or row_event == event_name)
+  end
+
+  defp watch_button_metadata_match?(_row, _button_name, _event_name), do: false
+
+  @spec watch_button_trigger_match?(term(), String.t()) :: boolean()
+  defp watch_button_trigger_match?(row, button_name) when is_map(row) do
+    trigger = Map.get(row, :trigger) || Map.get(row, "trigger")
+    trigger in watch_button_trigger_names(button_name)
+  end
+
+  defp watch_button_trigger_match?(_row, _button_name), do: false
+
+  @spec watch_button_trigger_names(String.t()) :: [String.t()]
+  defp watch_button_trigger_names("back"), do: ["button_back", "on_button_back"]
+  defp watch_button_trigger_names("up"), do: ["button_up", "on_button_up"]
+  defp watch_button_trigger_names("select"), do: ["button_select", "on_button_select"]
+  defp watch_button_trigger_names("down"), do: ["button_down", "on_button_down"]
+  defp watch_button_trigger_names(_button), do: []
+
+  @spec debugger_watch_button_label(atom()) :: String.t()
+  defp debugger_watch_button_label(:back), do: "Back"
+  defp debugger_watch_button_label(:up), do: "Up"
+  defp debugger_watch_button_label(:select), do: "Select"
+  defp debugger_watch_button_label(:down), do: "Down"
 
   attr(:id, :string, required: true)
   attr(:scope, :string, required: true)
@@ -2332,34 +2515,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         "#{file}:#{line}:#{col}"
     end
   end
-
-  @spec debugger_preview_box_style(term()) :: term()
-  defp debugger_preview_box_style(node) when is_map(node) do
-    box = Map.get(node, "box") || Map.get(node, :box)
-
-    if is_map(box) do
-      w = Map.get(box, "w") || Map.get(box, :w) || 1
-      h = Map.get(box, "h") || Map.get(box, :h) || 1
-      scale = 0.38
-      "min-width:#{max(round(w * scale), 20)}px;min-height:#{max(round(h * scale), 12)}px"
-    else
-      "min-width:3rem;min-height:1.25rem"
-    end
-  end
-
-  @spec debugger_preview_tone(term()) :: term()
-  defp debugger_preview_tone("Window"), do: "bg-zinc-100 border-zinc-400"
-  defp debugger_preview_tone("TextLayer"), do: "bg-sky-50 border-sky-300"
-  defp debugger_preview_tone("Rect"), do: "bg-amber-50 border-amber-300"
-  defp debugger_preview_tone("Layer"), do: "bg-violet-50 border-violet-200"
-  defp debugger_preview_tone("CompanionRoot"), do: "bg-emerald-50 border-emerald-300"
-  defp debugger_preview_tone("Status"), do: "bg-slate-50 border-slate-300"
-  defp debugger_preview_tone("ProtocolLog"), do: "bg-teal-50 border-teal-300"
-  defp debugger_preview_tone("PhoneRoot"), do: "bg-indigo-50 border-indigo-300"
-  defp debugger_preview_tone("AppBar"), do: "bg-indigo-100 border-indigo-400"
-  defp debugger_preview_tone("Scroll"), do: "bg-blue-50 border-blue-200"
-  defp debugger_preview_tone("Card"), do: "bg-orange-50 border-orange-200"
-  defp debugger_preview_tone(_), do: "bg-white border-zinc-300"
 
   @spec debugger_watch_svg_ops(term(), term()) :: term()
   defp debugger_watch_svg_ops(tree, runtime), do: DebuggerPreview.svg_ops(tree, runtime)

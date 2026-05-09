@@ -1,8 +1,11 @@
 module Main exposing (coveredSurfaceFunctions, main)
 
 import Json.Decode as Decode
+import Pebble.Accel as PebbleAccel
+import Pebble.Button as PebbleButton
 import Pebble.Cmd as PebbleCmd
 import Pebble.Events as PebbleEvents
+import Pebble.Frame as PebbleFrame
 import Pebble.Light as PebbleLight
 import Pebble.Log as PebbleLog
 import Pebble.Platform as PebblePlatform
@@ -42,6 +45,11 @@ type Msg
     | GotTimezoneIsSet Bool
     | GotTimezone String
     | GotStoredInt Int
+    | GotStorageString String
+    | FrameTick PebbleFrame.Frame
+    | UpPressed
+    | UpReleased
+    | AccelData PebbleAccel.Sample
     | GotWatchModel PebbleWatchInfo.WatchModel
     | GotWatchColor PebbleWatchInfo.WatchColor
     | GotFirmwareVersion PebbleWatchInfo.FirmwareVersion
@@ -51,20 +59,22 @@ type Msg
 
 coveredSurfaceFunctions : List String
 coveredSurfaceFunctions =
-    [ "Pebble.Cmd.getCurrentDateTime"
+    [ "Pebble.Accel.defaultConfig"
+    , "Pebble.Accel.onData"
+    , "Pebble.Accel.onTap"
+    , "Pebble.Button.on"
+    , "Pebble.Button.onLongPress"
+    , "Pebble.Button.onPress"
+    , "Pebble.Button.onRelease"
+    , "Pebble.Cmd.getCurrentDateTime"
     , "Pebble.Cmd.none"
     , "Pebble.Cmd.timerAfter"
     , "Pebble.Events.batch"
-    , "Pebble.Events.onAccelTap"
-    , "Pebble.Events.onButtonDown"
-    , "Pebble.Events.onButtonLongDown"
-    , "Pebble.Events.onButtonLongSelect"
-    , "Pebble.Events.onButtonLongUp"
     , "Pebble.Events.onHourChange"
     , "Pebble.Events.onMinuteChange"
-    , "Pebble.Events.onButtonSelect"
-    , "Pebble.Events.onButtonUp"
     , "Pebble.Events.onTick"
+    , "Pebble.Frame.atFps"
+    , "Pebble.Frame.every"
     , "Pebble.Light.disable"
     , "Pebble.Light.enable"
     , "Pebble.Light.interaction"
@@ -73,7 +83,9 @@ coveredSurfaceFunctions =
     , "Pebble.Log.warnCode"
     , "Pebble.Storage.delete"
     , "Pebble.Storage.readInt"
+    , "Pebble.Storage.readString"
     , "Pebble.Storage.writeInt"
+    , "Pebble.Storage.writeString"
     , "Pebble.System.batteryLevel"
     , "Pebble.System.connectionStatus"
     , "Pebble.System.onBatteryChange"
@@ -123,6 +135,8 @@ init launchContext =
         , PebbleTime.timezone GotTimezone
         , PebbleStorage.writeInt 7 42
         , PebbleStorage.readInt 7 GotStoredInt
+        , PebbleStorage.writeString 8 "saved"
+        , PebbleStorage.readString 8 GotStorageString
         , PebbleStorage.delete 7
         , PebbleWatchInfo.getModel GotWatchModel
         , PebbleWatchInfo.getColor GotWatchColor
@@ -203,12 +217,33 @@ update msg model =
         GotStoredInt value ->
             ( { model | ticks = value }, Cmd.none )
 
+        GotStorageString value ->
+            ( { model | latestTime = value }, Cmd.none )
+
+        FrameTick frame ->
+            ( { model | ticks = frame.frame }, Cmd.none )
+
+        UpPressed ->
+            ( { model | ticks = model.ticks + 1 }, Cmd.none )
+
+        UpReleased ->
+            ( model, Cmd.none )
+
+        AccelData sample ->
+            ( { model | ticks = sample.x + sample.y + sample.z }, Cmd.none )
+
         GotBatteryLevel value ->
-            let _ = value in
+            let
+                _ =
+                    value
+            in
             ( model, Cmd.none )
 
         GotConnectionStatus value ->
-            let _ = value in
+            let
+                _ =
+                    value
+            in
             ( model, Cmd.none )
 
         GotClockStyle24h _ ->
@@ -234,17 +269,23 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     PebbleEvents.batch
         [ PebbleEvents.onTick Tick
-        , PebbleEvents.onButtonUp ButtonUp
-        , PebbleEvents.onButtonSelect ButtonSelect
-        , PebbleEvents.onButtonDown ButtonDown
-        , PebbleEvents.onButtonLongUp ButtonLongUp
-        , PebbleEvents.onButtonLongSelect ButtonLongSelect
-        , PebbleEvents.onButtonLongDown ButtonLongDown
+        , PebbleButton.onPress PebbleButton.Up ButtonUp
+        , PebbleButton.onPress PebbleButton.Select ButtonSelect
+        , PebbleButton.onPress PebbleButton.Down ButtonDown
+        , PebbleButton.onLongPress PebbleButton.Up ButtonLongUp
+        , PebbleButton.onLongPress PebbleButton.Select ButtonLongSelect
+        , PebbleButton.onLongPress PebbleButton.Down ButtonLongDown
         , PebbleEvents.onHourChange HourChanged
         , PebbleEvents.onMinuteChange MinuteChanged
-        , PebbleEvents.onAccelTap AccelTap
+        , PebbleAccel.onTap AccelTap
         , PebbleSystem.onBatteryChange BatteryChanged
         , PebbleSystem.onConnectionChange ConnectionChanged
+        , PebbleFrame.every 33 FrameTick
+        , PebbleFrame.atFps 30 FrameTick
+        , PebbleButton.on PebbleButton.Up PebbleButton.Pressed UpPressed
+        , PebbleButton.on PebbleButton.Up PebbleButton.Released UpReleased
+        , PebbleButton.onRelease PebbleButton.Up UpReleased
+        , PebbleAccel.onData PebbleAccel.defaultConfig AccelData
         ]
 
 

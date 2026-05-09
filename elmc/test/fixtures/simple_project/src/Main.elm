@@ -5,6 +5,8 @@ module Main exposing (Model, Msg, headOrZero, main, update, view)
 import Companion.Types exposing (Location(..), Temperature(..), WatchToPhone(..))
 import Companion.Watch as CompanionWatch
 import Json.Decode as Decode
+import Pebble.Accel as PebbleAccel
+import Pebble.Button as PebbleButton
 import Pebble.Cmd
 import Pebble.Events as PebbleEvents
 import Pebble.Platform as PebblePlatform
@@ -179,7 +181,7 @@ handlePlatformMsg msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    PebbleEvents.batch [ PebbleEvents.onTick Tick, PebbleEvents.onButtonUp UpPressed, PebbleEvents.onButtonSelect SelectPressed, PebbleEvents.onButtonDown DownPressed, PebbleEvents.onAccelTap AccelTap ]
+    PebbleEvents.batch [ PebbleEvents.onTick Tick, PebbleButton.onPress PebbleButton.Up UpPressed, PebbleButton.onPress PebbleButton.Select SelectPressed, PebbleButton.onPress PebbleButton.Down DownPressed, PebbleAccel.onTap AccelTap ]
 
 
 {-| Produce the retained virtual UI tree for rendering. -}

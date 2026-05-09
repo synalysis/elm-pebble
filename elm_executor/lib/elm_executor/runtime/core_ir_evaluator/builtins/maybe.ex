@@ -7,6 +7,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Maybe do
   def eval("withdefault", [default, maybe_or_result], _ops),
     do: {:ok, MaybeResult.with_default(default, maybe_or_result)}
 
+  def eval("map", [fun, maybe], ops), do: ops.map.(fun, maybe)
   def eval("map2", [a, b, c], ops), do: ops.map2_dispatch.(a, b, c)
+  def eval("andthen", [fun, maybe], ops), do: ops.and_then.(fun, maybe)
   def eval(_function_name, _values, _ops), do: :no_builtin
 end

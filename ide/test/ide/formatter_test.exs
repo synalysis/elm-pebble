@@ -862,7 +862,7 @@ defmodule Ide.FormatterTest do
     module Main exposing (subs)
 
     subs =
-        PebbleEvents.batch [ PebbleEvents.onTick Tick, PebbleEvents.onButtonUp UpPressed, PebbleEvents.onButtonSelect SelectPressed, PebbleEvents.onButtonDown DownPressed, PebbleEvents.onAccelTap AccelTap ]
+        PebbleEvents.batch [ PebbleEvents.onTick Tick, PebbleButton.onPress PebbleButton.Up UpPressed, PebbleButton.onPress PebbleButton.Select SelectPressed, PebbleButton.onPress PebbleButton.Down DownPressed, PebbleAccel.onTap AccelTap ]
     """
 
     assert {:ok, result} = Formatter.format(source)
@@ -872,7 +872,7 @@ defmodule Ide.FormatterTest do
              "    PebbleEvents.batch\n        [ PebbleEvents.onTick Tick"
            )
 
-    assert String.contains?(result.formatted_source, "        , PebbleEvents.onAccelTap AccelTap")
+    assert String.contains?(result.formatted_source, "        , PebbleAccel.onTap AccelTap")
     assert String.contains?(result.formatted_source, "        ]")
   end
 
@@ -881,10 +881,10 @@ defmodule Ide.FormatterTest do
     module Main exposing (subs)
 
     subs =
-        PebbleEvents.batch [ PebbleEvents.onTick Tick, PebbleEvents.onButtonUp UpPressed
-           , PebbleEvents.onButtonSelect SelectPressed
-           , PebbleEvents.onButtonDown DownPressed
-           , PebbleEvents.onAccelTap AccelTap ]
+        PebbleEvents.batch [ PebbleEvents.onTick Tick, PebbleButton.onPress PebbleButton.Up UpPressed
+           , PebbleButton.onPress PebbleButton.Select SelectPressed
+           , PebbleButton.onPress PebbleButton.Down DownPressed
+           , PebbleAccel.onTap AccelTap ]
     """
 
     assert {:ok, result} = Formatter.format(source)
@@ -896,7 +896,7 @@ defmodule Ide.FormatterTest do
 
     assert String.contains?(
              result.formatted_source,
-             "        , PebbleEvents.onButtonUp UpPressed"
+             "        , PebbleButton.onPress PebbleButton.Up UpPressed"
            )
   end
 
@@ -907,15 +907,15 @@ defmodule Ide.FormatterTest do
     subs =
         PebbleEvents.batch
             [ PebbleEvents.onTick Tick
-            , PebbleEvents.onButtonUp UpPressed
-            , PebbleEvents.onAccelTap AccelTap ]
+            , PebbleButton.onPress PebbleButton.Up UpPressed
+            , PebbleAccel.onTap AccelTap ]
     """
 
     assert {:ok, result} = Formatter.format(source)
 
     assert String.contains?(
              result.formatted_source,
-             "        , PebbleEvents.onAccelTap AccelTap\n        ]"
+             "        , PebbleAccel.onTap AccelTap\n        ]"
            )
   end
 

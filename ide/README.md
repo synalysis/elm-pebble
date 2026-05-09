@@ -7,7 +7,7 @@ Implemented in this phase:
 - Project CRUD and active project switching (`Ide.Projects`)
 - Project-local source roots (`watch`, `protocol`, `phone`) with file operations
 - Multi-file editor basics (tree, tabs, open/edit/save/create/rename/delete)
-- Project templates on create (`starter`, `smoke-demo`)
+- Project templates on create (`starter`, watchfaces, games)
 - Existing local project import flow with automatic root mapping (`watch/protocol/phone`)
 - Tokenizer seam for parser-backed editing groundwork (`POST /api/tokenize`) and editor token diagnostics
 - Shell panes/routes for Projects, Editor, Build, Emulator

@@ -1,8 +1,10 @@
 defmodule IdeWeb.SettingsLive do
   use IdeWeb, :live_view
 
+  alias Ide.Emulator
   alias Ide.GitHub.AuthFlow
   alias Ide.Settings
+  alias IdeWeb.WorkspaceLive.ToolchainPresenter
 
   @impl true
   @spec mount(term(), term(), term()) :: term()
@@ -16,6 +18,12 @@ defmodule IdeWeb.SettingsLive do
      |> assign(:github_status, AuthFlow.status())
      |> assign(:github_oauth_ready, AuthFlow.oauth_client_configured?())
      |> assign(:github_flow, nil)
+     |> assign(:emulator_targets, ToolchainPresenter.emulator_targets())
+     |> assign(:selected_emulator_target, default_emulator_target())
+     |> assign(:emulator_installation_status, nil)
+     |> assign(:emulator_dependency_install_status, :idle)
+     |> assign(:emulator_dependency_install_output, nil)
+     |> check_emulator_installation()
      |> assign(:settings, settings)
      |> assign_snippet_state("generic_http_mcp", settings)
      |> assign(:form, settings_form(settings))}
@@ -86,6 +94,36 @@ defmodule IdeWeb.SettingsLive do
 
   def handle_event("select-snippet-target", %{"snippet_target" => target}, socket) do
     {:noreply, assign_snippet_state(socket, target, socket.assigns.settings)}
+  end
+
+  def handle_event(
+        "set-emulator-setup-target",
+        %{"emulator_setup" => %{"target" => target}},
+        socket
+      ) do
+    target = normalize_emulator_target(target)
+
+    {:noreply,
+     socket
+     |> assign(:selected_emulator_target, target)
+     |> assign(:emulator_dependency_install_output, nil)
+     |> check_emulator_installation()}
+  end
+
+  def handle_event("refresh-emulator-installation", _params, socket) do
+    {:noreply, check_emulator_installation(socket)}
+  end
+
+  def handle_event("install-emulator-dependencies", _params, socket) do
+    emulator_target = socket.assigns.selected_emulator_target
+
+    {:noreply,
+     socket
+     |> assign(:emulator_dependency_install_status, :running)
+     |> assign(:emulator_dependency_install_output, nil)
+     |> start_async(:install_emulator_dependencies, fn ->
+       Emulator.install_runtime_dependencies(emulator_target)
+     end)}
   end
 
   def handle_event("github-connect", _params, socket) do
@@ -211,6 +249,51 @@ defmodule IdeWeb.SettingsLive do
   end
 
   @impl true
+  def handle_async(:check_emulator_installation, {:ok, status}, socket) do
+    {:noreply, assign(socket, :emulator_installation_status, status)}
+  end
+
+  def handle_async(:check_emulator_installation, {:exit, reason}, socket) do
+    {:noreply,
+     assign(socket, :emulator_installation_status, %{
+       status: :error,
+       components: [],
+       missing: [],
+       error: "Could not check embedded emulator setup: #{inspect(reason)}"
+     })}
+  end
+
+  def handle_async(:install_emulator_dependencies, {:ok, {:ok, result}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_dependency_install_status, result.after.status)
+     |> assign(:emulator_dependency_install_output, result.output)
+     |> assign(:emulator_installation_status, result.after)}
+  end
+
+  def handle_async(:install_emulator_dependencies, {:ok, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_dependency_install_status, :error)
+     |> assign(
+       :emulator_dependency_install_output,
+       "Dependency install failed: #{inspect(reason)}"
+     )
+     |> check_emulator_installation()}
+  end
+
+  def handle_async(:install_emulator_dependencies, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_dependency_install_status, :error)
+     |> assign(
+       :emulator_dependency_install_output,
+       "Dependency install task exited: #{inspect(reason)}"
+     )
+     |> check_emulator_installation()}
+  end
+
+  @impl true
   @spec render(term()) :: term()
   def render(assigns) do
     ~H"""
@@ -300,6 +383,85 @@ defmodule IdeWeb.SettingsLive do
           >
             Last error: {@github_flow["last_error"]}
           </p>
+        </div>
+      </section>
+
+      <section class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-base font-semibold">Embedded Emulator Setup</h2>
+            <p class="mt-1 text-sm text-zinc-600">
+              Configure the shared emulator runtime used by all projects.
+            </p>
+            <p class="mt-2 text-xs text-zinc-600">
+              {emulator_installation_summary(@emulator_installation_status)}
+            </p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <.button
+              phx-click="install-emulator-dependencies"
+              disabled={
+                @emulator_dependency_install_status == :running or
+                  not emulator_installable?(@emulator_installation_status)
+              }
+              class="!bg-blue-700 hover:!bg-blue-600"
+            >
+              {if @emulator_dependency_install_status == :running,
+                do: "Installing...",
+                else: "Install missing dependencies"}
+            </.button>
+            <button
+              type="button"
+              phx-click="refresh-emulator-installation"
+              class="rounded bg-white px-3 py-2 text-xs font-semibold text-zinc-800 ring-1 ring-zinc-200 hover:bg-zinc-50"
+            >
+              Recheck
+            </button>
+          </div>
+        </div>
+
+        <label class="mt-4 flex flex-col gap-2">
+          <span class="block text-sm font-semibold leading-6 text-zinc-800">
+            Emulator target to check
+          </span>
+          <select
+            name="emulator_setup[target]"
+            phx-change="set-emulator-setup-target"
+            class="block w-full rounded-md border border-gray-300 bg-white shadow-sm focus:border-zinc-400 focus:ring-0 sm:text-sm"
+          >
+            <option
+              :for={target <- @emulator_targets}
+              value={target}
+              selected={target == @selected_emulator_target}
+            >
+              {target}
+            </option>
+          </select>
+        </label>
+
+        <div class={emulator_installation_class(@emulator_installation_status)}>
+          <ul
+            :if={emulator_components(@emulator_installation_status) != []}
+            class="grid gap-1 text-xs md:grid-cols-2"
+          >
+            <li
+              :for={component <- emulator_components(@emulator_installation_status)}
+              class="rounded bg-white/70 px-2 py-1"
+            >
+              <span class="font-semibold">{component.label}</span>
+              <span class={emulator_component_class(component.status)}>
+                {emulator_component_status(component.status)}
+              </span>
+              <span class="ml-1 text-zinc-600">{component.detail}</span>
+            </li>
+          </ul>
+          <p :if={emulator_components(@emulator_installation_status) == []} class="text-xs">
+            {emulator_installation_summary(@emulator_installation_status)}
+          </p>
+          <pre
+            :if={@emulator_dependency_install_output}
+            class="mt-3 max-h-48 overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100"
+          ><%= @emulator_dependency_install_output %></pre>
         </div>
       </section>
 
@@ -882,6 +1044,89 @@ defmodule IdeWeb.SettingsLive do
   defp github_connect_error_message(reason) do
     "Could not start GitHub connect flow: #{inspect(reason)}"
   end
+
+  @spec check_emulator_installation(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  defp check_emulator_installation(socket) do
+    emulator_target = socket.assigns[:selected_emulator_target] || default_emulator_target()
+
+    socket
+    |> assign(:emulator_installation_status, %{
+      status: :checking,
+      platform: emulator_target,
+      components: [],
+      missing: [],
+      installable: false
+    })
+    |> start_async(:check_emulator_installation, fn ->
+      Emulator.runtime_status(emulator_target)
+    end)
+  end
+
+  @spec default_emulator_target() :: String.t()
+  defp default_emulator_target do
+    Application.get_env(:ide, Ide.PebbleToolchain, [])
+    |> Keyword.get(:emulator_target, "basalt")
+    |> normalize_emulator_target()
+  end
+
+  @spec normalize_emulator_target(term()) :: String.t()
+  defp normalize_emulator_target(target) when is_binary(target) do
+    target = String.trim(target)
+    targets = ToolchainPresenter.emulator_targets()
+
+    cond do
+      target in targets -> target
+      "basalt" in targets -> "basalt"
+      targets != [] -> hd(targets)
+      true -> "basalt"
+    end
+  end
+
+  defp normalize_emulator_target(_), do: normalize_emulator_target("basalt")
+
+  @spec emulator_installation_class(term()) :: String.t()
+  defp emulator_installation_class(%{status: :ok}),
+    do: "mt-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-900"
+
+  defp emulator_installation_class(%{status: :checking}),
+    do: "mt-4 rounded border border-blue-200 bg-blue-50 p-3 text-blue-900"
+
+  defp emulator_installation_class(_),
+    do: "mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-amber-900"
+
+  @spec emulator_installation_summary(term()) :: String.t()
+  defp emulator_installation_summary(%{status: :checking, platform: platform}),
+    do: "Checking embedded emulator dependencies for #{platform}..."
+
+  defp emulator_installation_summary(%{status: :ok, platform: platform}),
+    do: "All embedded emulator dependencies are present for #{platform}."
+
+  defp emulator_installation_summary(%{status: :warning, platform: platform, missing: missing}) do
+    labels = missing |> List.wrap() |> Enum.map(& &1.label) |> Enum.join(", ")
+    "Embedded emulator setup needs attention for #{platform}: #{labels}."
+  end
+
+  defp emulator_installation_summary(%{error: error}) when is_binary(error), do: error
+  defp emulator_installation_summary(_), do: "Embedded emulator setup needs attention."
+
+  @spec emulator_components(term()) :: [map()]
+  defp emulator_components(%{components: components}) when is_list(components), do: components
+  defp emulator_components(_), do: []
+
+  @spec emulator_installable?(term()) :: boolean()
+  defp emulator_installable?(%{installable: true, missing: missing}) when is_list(missing),
+    do: missing != []
+
+  defp emulator_installable?(_), do: false
+
+  @spec emulator_component_class(term()) :: String.t()
+  defp emulator_component_class(:ok), do: "ml-2 font-mono text-[11px] text-emerald-700"
+  defp emulator_component_class(_), do: "ml-2 font-mono text-[11px] text-amber-700"
+
+  @spec emulator_component_status(term()) :: String.t()
+  defp emulator_component_status(:ok), do: "ok"
+  defp emulator_component_status(:missing), do: "missing"
+  defp emulator_component_status(status), do: to_string(status || "unknown")
 
   @spec schedule_info_flash_clear(term()) :: term()
   defp schedule_info_flash_clear(socket) do

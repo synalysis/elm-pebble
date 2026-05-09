@@ -21,10 +21,41 @@ defmodule Ide.Emulator.SessionTest do
       assert info.vnc_path == "/api/emulator/#{info.id}/ws/vnc"
       assert info.phone_path == "/api/emulator/#{info.id}/ws/phone"
       assert info.install_path == "/api/emulator/#{info.id}/install"
+      assert info.app_uuid == nil
       assert "button_select" in info.controls
       assert "battery" in info.controls
 
       assert :ok = Emulator.kill(info.id)
+    end)
+  end
+
+  test "launch stores emulator state by project and platform" do
+    EmulatorSessionEnv.run(fn ->
+      root =
+        Path.join(
+          System.tmp_dir!(),
+          "elm-pebble-emulator-state-test-#{System.unique_integer([:positive])}"
+        )
+
+      previous = Application.get_env(:ide, Ide.Emulator.Session)
+      Application.put_env(:ide, Ide.Emulator.Session, Keyword.put(previous, :state_root, root))
+
+      try do
+        assert {:ok, info} =
+                 EmulatorLaunch.launch(
+                   project_slug: "my game",
+                   platform: "basalt",
+                   artifact_path: nil
+                 )
+
+        assert :ok = Emulator.kill(info.id)
+
+        assert File.exists?(Path.join(root, "my-game/basalt/qemu_spi_flash.bin"))
+        assert File.dir?(Path.join(root, "my-game/basalt/pypkjs"))
+      after
+        Application.put_env(:ide, Ide.Emulator.Session, previous)
+        File.rm_rf!(root)
+      end
     end)
   end
 

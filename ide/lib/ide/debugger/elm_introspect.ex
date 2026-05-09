@@ -681,6 +681,7 @@ defmodule Ide.Debugger.ElmIntrospect do
         "event_kind" => subscription_event_kind(target),
         "callback_constructor" => callback_constructor_from_args(args, bindings),
         "label" => subscription_item_label(%{op: :qualified_call, target: target, args: args}),
+        "arg_snippets" => Enum.map(args, &subscription_arg_snippet/1),
         "arg_kinds" => Enum.map(args, &expr_arg_kind/1)
       }
     ]
@@ -783,7 +784,9 @@ defmodule Ide.Debugger.ElmIntrospect do
   @spec callback_constructor_from_args(term(), term()) :: term()
   defp callback_constructor_from_args(args, bindings)
        when is_list(args) and is_map(bindings) do
-    Enum.find_value(args, &callback_constructor_from_expr(&1, bindings, MapSet.new(), 0))
+    args
+    |> Enum.reverse()
+    |> Enum.find_value(&callback_constructor_from_expr(&1, bindings, MapSet.new(), 0))
   end
 
   defp callback_constructor_from_args(_, _), do: nil
@@ -1698,6 +1701,7 @@ defmodule Ide.Debugger.ElmIntrospect do
         Ide.InternalPackages.pebble_companion_core_elm_src_abs(),
         Ide.InternalPackages.companion_protocol_elm_src_abs(),
         Ide.InternalPackages.elm_time_elm_src_abs(),
+        Ide.InternalPackages.elm_random_elm_src_abs(),
         Ide.InternalPackages.shared_elm_abs(),
         Ide.InternalPackages.shared_elm_companion_abs()
       ]

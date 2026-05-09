@@ -224,7 +224,7 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   end
 
   defp handle_qemu_packet(%{raw: raw, protocol: @qemu_protocol_spp, payload: payload}, state) do
-    if state.pypkjs, do: :gen_tcp.send(state.pypkjs, raw)
+    if state.pypkjs && !state.locked?, do: :gen_tcp.send(state.pypkjs, raw)
 
     {frames, frame_buffer} = Frame.parse_many(payload)
 
@@ -245,7 +245,7 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   end
 
   defp handle_qemu_packet(%{raw: raw}, state) do
-    if state.pypkjs, do: :gen_tcp.send(state.pypkjs, raw)
+    if state.pypkjs && !state.locked?, do: :gen_tcp.send(state.pypkjs, raw)
     state
   end
 

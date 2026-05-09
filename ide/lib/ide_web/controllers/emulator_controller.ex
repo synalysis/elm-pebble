@@ -13,13 +13,14 @@ defmodule IdeWeb.EmulatorController do
 
     with project when not is_nil(project) <- Projects.get_project_by_slug(slug),
          workspace_root <- Projects.project_workspace_path(project),
-         {:ok, artifact_path, launch_platform} <-
+         {:ok, package_result, launch_platform} <-
            package_for_launch(project, workspace_root, platform),
          {:ok, info} <-
            Emulator.launch(
              project_slug: project.slug,
              platform: launch_platform,
-             artifact_path: artifact_path
+             artifact_path: package_result.artifact_path,
+             has_phone_companion: package_result.has_phone_companion
            ) do
       json(conn, info)
     else
@@ -36,17 +37,17 @@ defmodule IdeWeb.EmulatorController do
   end
 
   defp package_for_launch(project, workspace_root, platform) do
-    case BuildFlow.package_for_emulator_target(project, workspace_root, platform) do
-      {:ok, artifact_path} ->
-        {:ok, artifact_path, platform}
+    case BuildFlow.package_for_emulator_session(project, workspace_root, platform) do
+      {:ok, package_result} ->
+        {:ok, package_result, platform}
 
       {:error, reason} ->
         fallback_platform = WatchModels.default_id()
 
         if aplite_app_overflow?(platform, reason) and platform != fallback_platform do
-          with {:ok, artifact_path} <-
-                 BuildFlow.package_for_emulator_target(project, workspace_root, fallback_platform) do
-            {:ok, artifact_path, fallback_platform}
+          with {:ok, package_result} <-
+                 BuildFlow.package_for_emulator_session(project, workspace_root, fallback_platform) do
+            {:ok, package_result, fallback_platform}
           end
         else
           {:error, reason}

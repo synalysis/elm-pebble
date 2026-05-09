@@ -166,6 +166,62 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert socket.assigns.debugger_companion_trigger_buttons == []
   end
 
+  test "refresh keeps game button subscriptions as distinct preview controls" do
+    slug = "support-debugger-game-buttons-#{System.unique_integer([:positive])}"
+
+    source = """
+    module GameButtons exposing (..)
+
+    import Pebble.Button as Button
+
+    type Msg
+      = LeftPressed
+      | UpPressed
+      | DownPressed
+      | SelectPressed
+
+    init _ =
+      ( {}, Cmd.none )
+
+    update msg model =
+      ( model, Cmd.none )
+
+    subscriptions _ =
+      Sub.batch
+        [ Button.onPress Button.Back LeftPressed
+        , Button.onPress Button.Up UpPressed
+        , Button.onPress Button.Down DownPressed
+        , Button.onPress Button.Select SelectPressed
+        ]
+    """
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    {:ok, _} =
+      Debugger.reload(slug, %{
+        rel_path: "watch/GameButtons.elm",
+        source: source,
+        reason: "support_game_button_controls"
+      })
+
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> DebuggerSupport.assign_defaults()
+      |> Phoenix.Component.assign(:project, %{slug: slug})
+      |> DebuggerSupport.refresh()
+
+    rows = socket.assigns.debugger_watch_trigger_buttons
+
+    assert Enum.any?(rows, &(&1.trigger == "on_press" and &1.message == "LeftPressed"))
+    assert Enum.any?(rows, &(&1.trigger == "on_press" and &1.message == "UpPressed"))
+    assert Enum.any?(rows, &(&1.trigger == "on_press" and &1.message == "DownPressed"))
+    assert Enum.any?(rows, &(&1.trigger == "on_press" and &1.message == "SelectPressed"))
+    assert Enum.any?(rows, &(&1.button == "back" and &1.button_event == "pressed"))
+    assert Enum.any?(rows, &(&1.button == "up" and &1.button_event == "pressed"))
+    assert Enum.any?(rows, &(&1.button == "down" and &1.button_event == "pressed"))
+    assert Enum.any?(rows, &(&1.button == "select" and &1.button_event == "pressed"))
+  end
+
   test "debugger_rows derives selected and paired watch companion snapshots" do
     events = [
       %{
@@ -566,6 +622,91 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert visible.text_color == 255
     assert default.kind == :text_label
     assert default.text_color == nil
+  end
+
+  test "debugger preview derives compact scene from runtime_view_output" do
+    runtime = %{
+      model: %{
+        "runtime_view_output" => [
+          %{"kind" => "fill_rect", "x" => 1, "y" => 2, "w" => 3, "h" => 4, "fill" => 1},
+          %{"kind" => "text", "x" => 5, "y" => 6, "w" => 20, "h" => 12, "text" => "ok"}
+        ]
+      }
+    }
+
+    scene = DebuggerPreview.compact_scene(runtime)
+
+    assert scene.version == 1
+    assert is_binary(scene.hash)
+
+    assert [%{bounds: %{x: 1, y: 2, w: 3, h: 4}}, %{bounds: %{x: 5, y: 6, w: 20, h: 12}}] =
+             scene.ops
+
+    [rect, text] = DebuggerPreview.svg_ops(nil, runtime)
+    assert rect.kind == :fill_rect
+    assert text.kind == :text_label
+    assert text.text == "ok"
+  end
+
+  test "debugger preview can consume precomputed compact scene" do
+    runtime = %{
+      model: %{
+        "compact_scene" => %{
+          "version" => 1,
+          "ops" => [
+            %{
+              "op" => %{
+                "kind" => "fill_rect",
+                "x" => 2,
+                "y" => 3,
+                "w" => 4,
+                "h" => 5,
+                "fill" => 1
+              }
+            }
+          ]
+        }
+      }
+    }
+
+    [rect] = DebuggerPreview.svg_ops(nil, runtime)
+
+    assert rect.kind == :fill_rect
+    assert rect.x == 2
+    assert rect.y == 3
+  end
+
+  test "compact scene diff reports changed dirty bounds" do
+    previous =
+      DebuggerPreview.compact_scene(%{
+        model: %{
+          "runtime_view_output" => [
+            %{"kind" => "fill_rect", "x" => 1, "y" => 2, "w" => 3, "h" => 4, "fill" => 1},
+            %{"kind" => "fill_rect", "x" => 9, "y" => 10, "w" => 11, "h" => 12, "fill" => 1}
+          ]
+        }
+      })
+
+    current =
+      DebuggerPreview.compact_scene(%{
+        model: %{
+          "runtime_view_output" => [
+            %{"kind" => "fill_rect", "x" => 1, "y" => 2, "w" => 3, "h" => 4, "fill" => 1},
+            %{"kind" => "fill_rect", "x" => 20, "y" => 21, "w" => 22, "h" => 23, "fill" => 1}
+          ]
+        }
+      })
+
+    diff = DebuggerPreview.compact_scene_diff(previous, current)
+
+    assert diff.changed?
+
+    assert diff.dirty_bounds == [
+             %{x: 9, y: 10, w: 11, h: 12},
+             %{x: 20, y: 21, w: 22, h: 23}
+           ]
+
+    refute DebuggerPreview.compact_scene_diff(current, current).changed?
   end
 
   test "debugger preview preserves text bounds for centered SVG text" do

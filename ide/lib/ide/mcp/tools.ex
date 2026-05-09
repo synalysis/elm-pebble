@@ -419,10 +419,13 @@ defmodule Ide.Mcp.Tools do
             type: "string",
             enum: [
               "starter",
-              "smoke-demo",
               "watchface-digital",
               "watchface-analog",
-              "watchface-tutorial-complete"
+              "watchface-tutorial-complete",
+              "game-basic",
+              "game-tiny-bird",
+              "game-greeneys-run",
+              "game-2048"
             ]
           }
         }

@@ -678,11 +678,212 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
     assert command["body"]["body"] == "payload"
   end
 
+  test "evaluates expanded elm core module builtins directly" do
+    assert {:ok, 5} =
+             CoreIREvaluator.evaluate(qcall("Basics.clamp", [int(0), int(10), int(5)]))
+
+    assert {:ok, "007"} =
+             CoreIREvaluator.evaluate(qcall("String.padLeft", [int(3), string("0"), string("7")]))
+
+    assert {:ok, %{"ctor" => "Just", "args" => [42]}} =
+             CoreIREvaluator.evaluate(qcall("String.toInt", [string("42")]))
+
+    assert {:ok, "A"} = CoreIREvaluator.evaluate(qcall("Char.fromCode", [int(65)]))
+    assert {:ok, true} = CoreIREvaluator.evaluate(qcall("Char.isDigit", [string("7")]))
+
+    inc = lambda(["x"], call("__add__", [var("x"), int(1)]))
+    double = lambda(["x"], call("__mul__", [var("x"), int(2)]))
+
+    assert {:ok, [2, 3, 4]} =
+             CoreIREvaluator.evaluate(qcall("Array.map", [inc, list([1, 2, 3])]))
+
+    assert {:ok, [1, 3]} =
+             CoreIREvaluator.evaluate(
+               qcall("List.map2", [
+                 lambda(["a", "b"], call("__add__", [var("a"), var("b")])),
+                 list([1, 2]),
+                 list([0, 1])
+               ])
+             )
+
+    assert {:ok, %{"ctor" => "Just", "args" => [3]}} =
+             CoreIREvaluator.evaluate(qcall("Maybe.map", [inc, ctor("Just", [int(2)])]))
+
+    assert {:ok, %{"ctor" => "Err", "args" => ["bad!"]}} =
+             CoreIREvaluator.evaluate(
+               qcall("Result.mapError", [
+                 lambda(["e"], qcall("String.append", [var("e"), string("!")])),
+                 ctor("Err", [string("bad")])
+               ])
+             )
+
+    assert {:ok, {2, 6}} =
+             CoreIREvaluator.evaluate(
+               qcall("Tuple.mapBoth", [inc, double, tuple2(int(1), int(3))])
+             )
+
+    assert {:ok, %{1 => "one", 2 => "two"}} =
+             CoreIREvaluator.evaluate(
+               qcall("Dict.insert", [int(2), string("two"), var("dict")]),
+               %{"dict" => %{1 => "one"}}
+             )
+
+    assert {:ok, [2, 4, 6]} =
+             CoreIREvaluator.evaluate(qcall("Set.map", [double, list([1, 2, 3])]))
+
+    assert {:ok, {:task, :ok, 3}} =
+             CoreIREvaluator.evaluate(
+               qcall("Task.andThen", [
+                 lambda(["x"], qcall("Task.succeed", [call("__add__", [var("x"), int(1)])])),
+                 qcall("Task.succeed", [int(2)])
+               ])
+             )
+  end
+
+  test "evaluates dictionary and set higher-order core helpers" do
+    keep_even_key =
+      lambda(["key", "_value"], compare(:eq, call("modBy", [int(2), var("key")]), int(0)))
+
+    assert {:ok, {%{2 => "b"}, %{1 => "a"}}} =
+             CoreIREvaluator.evaluate(
+               qcall("Dict.partition", [keep_even_key, var("dict")]),
+               %{"dict" => %{1 => "a", 2 => "b"}}
+             )
+
+    assert {:ok, {[2], [1, 3]}} =
+             CoreIREvaluator.evaluate(
+               qcall("Set.partition", [
+                 lambda(["x"], compare(:eq, call("modBy", [int(2), var("x")]), int(0))),
+                 list([1, 2, 3])
+               ])
+             )
+  end
+
+  test "matches Elm list constructor patterns against native lists" do
+    expr = %{
+      "op" => :case,
+      "subject" => list([2, 2, 4]),
+      "branches" => [
+        %{
+          "pattern" =>
+            cons_pattern(var_pattern("a"), cons_pattern(var_pattern("b"), var_pattern("rest"))),
+          "expr" => %{
+            "op" => :record_literal,
+            "fields" => [
+              %{"name" => "a", "expr" => var("a")},
+              %{"name" => "b", "expr" => var("b")},
+              %{"name" => "rest", "expr" => var("rest")}
+            ]
+          }
+        },
+        %{
+          "pattern" => %{"kind" => :wildcard},
+          "expr" => string("fallback")
+        }
+      ]
+    }
+
+    assert {:ok, %{"a" => 2, "b" => 2, "rest" => [4]}} = CoreIREvaluator.evaluate(expr)
+  end
+
+  test "matches Elm empty list constructor pattern" do
+    expr = %{
+      "op" => :case,
+      "subject" => list([]),
+      "branches" => [
+        %{
+          "pattern" => %{"kind" => :constructor, "name" => "[]"},
+          "expr" => string("empty")
+        },
+        %{
+          "pattern" => cons_pattern(var_pattern("head"), var_pattern("tail")),
+          "expr" => string("nonempty")
+        }
+      ]
+    }
+
+    assert {:ok, "empty"} = CoreIREvaluator.evaluate(expr)
+  end
+
+  test "allows bounded structural recursion in indexed functions" do
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Main",
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "sum",
+              "args" => ["values"],
+              "expr" => %{
+                "op" => :case,
+                "subject" => var("values"),
+                "branches" => [
+                  %{
+                    "pattern" => cons_pattern(var_pattern("head"), var_pattern("tail")),
+                    "expr" =>
+                      call("__add__", [
+                        var("head"),
+                        qcall("Main.sum", [var("tail")])
+                      ])
+                  },
+                  %{
+                    "pattern" => %{"kind" => :constructor, "name" => "[]"},
+                    "expr" => int(0)
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    context = %{
+      functions: CoreIREvaluator.index_functions(core_ir),
+      module: "Main",
+      source_module: "Main"
+    }
+
+    assert {:ok, 10} =
+             CoreIREvaluator.evaluate(qcall("Main.sum", [list([1, 2, 3, 4])]), %{}, context)
+  end
+
+  test "evaluates comparison operator sections through list filters" do
+    non_zero = call("__neq__", [int(0)])
+    non_negative = call("__lte__", [int(0)])
+
+    assert {:ok, [2, 4]} =
+             CoreIREvaluator.evaluate(qcall("List.filter", [non_zero, list([0, 2, 0, 4])]))
+
+    assert {:ok, [0, 2, 4]} =
+             CoreIREvaluator.evaluate(qcall("List.filter", [non_negative, list([-1, 0, 2, 4])]))
+  end
+
   defp call(name, args), do: %{"op" => :call, "name" => name, "args" => args}
+  defp qcall(name, args), do: %{"op" => :qualified_call, "target" => name, "args" => args}
 
   defp compare(kind, left, right),
     do: %{"op" => :compare, "kind" => kind, "left" => left, "right" => right}
 
   defp int(value), do: %{"op" => :int_literal, "value" => value}
+  defp string(value), do: %{"op" => :string_literal, "value" => value}
   defp var(name), do: %{"op" => :var, "name" => name}
+  defp list(values), do: %{"op" => :list_literal, "items" => Enum.map(values, &literal/1)}
+  defp tuple2(left, right), do: %{"op" => :tuple2, "left" => left, "right" => right}
+  defp lambda(params, body), do: %{"op" => :lambda, "params" => params, "body" => body}
+  defp ctor(name, args), do: %{"op" => :constructor_call, "target" => name, "args" => args}
+  defp var_pattern(name), do: %{"kind" => :var, "name" => name}
+
+  defp cons_pattern(head, tail) do
+    %{
+      "kind" => :constructor,
+      "name" => "::",
+      "arg_pattern" => %{"kind" => :tuple, "elements" => [head, tail]}
+    }
+  end
+
+  defp literal(value) when is_integer(value), do: int(value)
+  defp literal(value) when is_binary(value), do: string(value)
+  defp literal(value), do: value
 end

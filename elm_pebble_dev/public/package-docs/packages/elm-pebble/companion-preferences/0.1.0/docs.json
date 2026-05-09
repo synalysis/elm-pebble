@@ -1,0 +1,169 @@
+[
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "A visual group of fields.",
+        "name": "Section",
+        "type": "{ title : String\n, fields : List FieldDefinition\n}"
+      },
+      {
+        "args": [],
+        "comment": "Pebble configuration color value encoded as a CSS hex string.",
+        "name": "Color",
+        "type": "String"
+      }
+    ],
+    "binops": [],
+    "comment": "Typed declarations for Pebble companion preference pages.\n\nThe same schema describes the generated, Slate-like configuration page and the\ndecoder used when Pebble returns saved values.\n\n    type alias Settings =\n        { showDate : Bool\n        , units : Units\n        }\n\n    type Units\n        = Celsius\n        | Fahrenheit\n\n    settings : Schema Settings\n    settings =\n        schema \"Settings\" Settings\n            |> section \"Display\"\n                (\\s ->\n                    s\n                        |> field \"showDate\" (toggle \"Show date\" True)\n                        |> field \"units\"\n                            (choice \"Units\"\n                                [ choiceOption Celsius \"c\" \"Celsius\"\n                                , choiceOption Fahrenheit \"f\" \"Fahrenheit\"\n                                ]\n                            )\n                )\n\n# Schemas\n@docs Schema, Error, schema, section, field, decoder, decodeString, decodeResponse\n\n# Controls\n@docs Control, Field, Section, toggle, text, number, slider, color, choice, ChoiceOption, choiceOption, sendToWatch\n\n# Colors\n@docs Color, black, white, green, blue, yellow",
+    "name": "Pebble.Companion.Preferences",
+    "unions": [
+      {
+        "args": [
+          "settings"
+        ],
+        "cases": [],
+        "comment": "Opaque preference schema that decodes to `settings`.",
+        "name": "Schema"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "InvalidJson",
+            [
+              "String"
+            ]
+          ],
+          [
+            "MissingResponse",
+            []
+          ]
+        ],
+        "comment": "Decode errors from a saved configuration payload.",
+        "name": "Error"
+      },
+      {
+        "args": [
+          "value"
+        ],
+        "cases": [],
+        "comment": "A typed control for a single field.",
+        "name": "Control"
+      },
+      {
+        "args": [
+          "value"
+        ],
+        "cases": [],
+        "comment": "A typed field. The generator uses the definition; Elm code uses the decoder.",
+        "name": "Field"
+      },
+      {
+        "args": [
+          "value"
+        ],
+        "cases": [],
+        "comment": "A choice option mapping an encoded webview value to a real Elm value.",
+        "name": "ChoiceOption"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Start a schema with a record or custom type constructor.",
+        "name": "schema",
+        "type": "String -> settings -> Schema settings"
+      },
+      {
+        "comment": "Add a visual section. Fields added inside the callback are grouped under the section title.",
+        "name": "section",
+        "type": "String -> (Schema partial -> Schema next) -> Schema partial -> Schema next"
+      },
+      {
+        "comment": "Add a typed field to the schema.\n\nFields are decoded in the order they are added, so this works naturally with\nElm record constructors and normal pipeline style.",
+        "name": "field",
+        "type": "String -> Control value -> Schema (value -> next) -> Schema next"
+      },
+      {
+        "comment": "Decode the saved Pebble webview payload.",
+        "name": "decoder",
+        "type": "Schema settings -> Decoder settings"
+      },
+      {
+        "comment": "Decode a saved JSON string into typed settings.",
+        "name": "decodeString",
+        "type": "Schema settings -> String -> Result Error settings"
+      },
+      {
+        "comment": "Decode Pebble's optional `webviewclosed` response into typed settings.",
+        "name": "decodeResponse",
+        "type": "Schema settings -> Maybe String -> Result Error settings"
+      },
+      {
+        "comment": "A boolean toggle.",
+        "name": "toggle",
+        "type": "String -> Bool -> Control Bool"
+      },
+      {
+        "comment": "A text input.",
+        "name": "text",
+        "type": "String -> String -> Control String"
+      },
+      {
+        "comment": "A numeric input.",
+        "name": "number",
+        "type": "String -> Float -> Control Float"
+      },
+      {
+        "comment": "A slider with minimum, maximum, step, and default values.",
+        "name": "slider",
+        "type": "String -> { min : Float, max : Float, step : Float, default : Float } -> Control Float"
+      },
+      {
+        "comment": "A color picker encoded as a CSS hex string.",
+        "name": "color",
+        "type": "String -> Color -> Control Color"
+      },
+      {
+        "comment": "A select/radio-style choice that decodes to real Elm values.",
+        "name": "choice",
+        "type": "String -> List (ChoiceOption value) -> Control value"
+      },
+      {
+        "comment": "Define one encoded choice value and the Elm value it represents.",
+        "name": "choiceOption",
+        "type": "value -> String -> String -> ChoiceOption value"
+      },
+      {
+        "comment": "Declare the phone-to-watch message constructor emitted when this preference is saved.\n\nThis is debugger/build metadata; the typed decoder still determines the Elm value\nseen by the companion app.",
+        "name": "sendToWatch",
+        "type": "String -> Control value -> Control value"
+      },
+      {
+        "comment": "Black color swatch.",
+        "name": "black",
+        "type": "Color"
+      },
+      {
+        "comment": "White color swatch.",
+        "name": "white",
+        "type": "Color"
+      },
+      {
+        "comment": "Green color swatch.",
+        "name": "green",
+        "type": "Color"
+      },
+      {
+        "comment": "Blue color swatch.",
+        "name": "blue",
+        "type": "Color"
+      },
+      {
+        "comment": "Yellow color swatch.",
+        "name": "yellow",
+        "type": "Color"
+      }
+    ]
+  }
+]

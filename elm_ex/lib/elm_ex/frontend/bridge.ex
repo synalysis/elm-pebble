@@ -91,7 +91,8 @@ defmodule ElmEx.Frontend.Bridge do
 
   @spec discover_module_paths(String.t(), map()) :: {:ok, [String.t()]} | {:error, map()}
   defp discover_module_paths(project_dir, elm_json) do
-    source_dirs = Map.get(elm_json, "source-directories", ["src"])
+    source_dirs =
+      Map.get(elm_json, "source-directories", ["src"]) ++ builtin_source_dirs(elm_json)
 
     module_paths =
       source_dirs
@@ -108,6 +109,30 @@ defmodule ElmEx.Frontend.Bridge do
 
     {:ok, module_paths}
   end
+
+  @spec builtin_source_dirs(map()) :: [String.t()]
+  defp builtin_source_dirs(elm_json) when is_map(elm_json) do
+    deps =
+      elm_json
+      |> Map.get("dependencies", %{})
+      |> dependency_names()
+
+    if "elm/random" in deps do
+      [Path.expand("../../../../ide/priv/internal_packages/elm-random/src", __DIR__)]
+    else
+      []
+    end
+  end
+
+  defp builtin_source_dirs(_), do: []
+
+  @spec dependency_names(term()) :: [String.t()]
+  defp dependency_names(%{"direct" => direct, "indirect" => indirect}) do
+    dependency_names(direct) ++ dependency_names(indirect)
+  end
+
+  defp dependency_names(deps) when is_map(deps), do: Map.keys(deps)
+  defp dependency_names(_), do: []
 
   @spec load_modules([String.t()]) :: {:ok, [ElmEx.Frontend.Module.t()]} | {:error, map()}
   defp load_modules(module_paths) do

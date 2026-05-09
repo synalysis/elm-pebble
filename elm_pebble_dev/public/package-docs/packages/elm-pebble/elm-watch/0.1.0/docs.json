@@ -3,6 +3,139 @@
     "aliases": [
       {
         "args": [],
+        "comment": "Accelerometer sampling configuration.",
+        "name": "Config",
+        "type": "{ samplesPerUpdate : Int\n, samplingRate : SamplingRate\n}"
+      },
+      {
+        "args": [],
+        "comment": "One accelerometer sample.",
+        "name": "Sample",
+        "type": "{ x : Int\n, y : Int\n, z : Int\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Accelerometer subscriptions for Pebble watches.\n\n# Types\n@docs Config, Sample, SamplingRate\n\n# Defaults\n@docs defaultConfig\n\n# Subscriptions\n@docs onData, onTap",
+    "name": "Pebble.Accel",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Hz10",
+            []
+          ],
+          [
+            "Hz25",
+            []
+          ],
+          [
+            "Hz50",
+            []
+          ],
+          [
+            "Hz100",
+            []
+          ]
+        ],
+        "comment": "Accelerometer sampling rate.",
+        "name": "SamplingRate"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Default configuration for interactive apps.",
+        "name": "defaultConfig",
+        "type": "Config"
+      },
+      {
+        "comment": "Receive accelerometer samples.",
+        "name": "onData",
+        "type": "Config -> (Sample -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive an accelerometer tap gesture.",
+        "name": "onTap",
+        "type": "msg -> Sub msg"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Button subscriptions for Pebble watches.\n\n# Types\n@docs Button, Event\n\n# Subscriptions\n@docs on, onPress, onRelease, onLongPress",
+    "name": "Pebble.Button",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Back",
+            []
+          ],
+          [
+            "Up",
+            []
+          ],
+          [
+            "Select",
+            []
+          ],
+          [
+            "Down",
+            []
+          ]
+        ],
+        "comment": "Physical buttons available on a Pebble watch.",
+        "name": "Button"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "Pressed",
+            []
+          ],
+          [
+            "Released",
+            []
+          ],
+          [
+            "LongPressed",
+            []
+          ]
+        ],
+        "comment": "Button event edge to subscribe to.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Subscribe to a specific button event.",
+        "name": "on",
+        "type": "Button -> Event -> msg -> Sub msg"
+      },
+      {
+        "comment": "Subscribe to a button press.",
+        "name": "onPress",
+        "type": "Button -> msg -> Sub msg"
+      },
+      {
+        "comment": "Subscribe to a button release.",
+        "name": "onRelease",
+        "type": "Button -> msg -> Sub msg"
+      },
+      {
+        "comment": "Subscribe to a long button press.",
+        "name": "onLongPress",
+        "type": "Button -> msg -> Sub msg"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
         "comment": "Structured local time/date information from the watch runtime.",
         "name": "CurrentDateTime",
         "type": "{ year : Int\n, month : Int\n, day : Int\n, dayOfWeek : Weekday\n, hour : Int\n, minute : Int\n, second : Int\n, utcOffsetMinutes : Int\n}"
@@ -33,7 +166,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Subscriptions for watch-side hardware and button events.\n\nEach helper turns a platform event into a regular Elm `Sub msg`.\n\n# Tick\n@docs onTick, onHourChange, onMinuteChange\n\n# Buttons\n@docs onButtonUp, onButtonSelect, onButtonDown, onButtonLongUp, onButtonLongSelect, onButtonLongDown\n\n# Sensors\n@docs onAccelTap\n\n# Composition\n@docs batch",
+    "comment": "Generic watch-side event subscriptions.\n\nEach helper turns a platform event into a regular Elm `Sub msg`.\n\n# Tick\n@docs onTick, onHourChange, onMinuteChange\n\n# Composition\n@docs batch",
     "name": "Pebble.Events",
     "unions": [],
     "values": [
@@ -53,44 +186,159 @@
         "type": "(Int -> msg) -> Sub msg"
       },
       {
-        "comment": "Receive a message when the Up button is pressed.",
-        "name": "onButtonUp",
-        "type": "msg -> Sub msg"
-      },
-      {
-        "comment": "Receive a message when the Select button is pressed.",
-        "name": "onButtonSelect",
-        "type": "msg -> Sub msg"
-      },
-      {
-        "comment": "Receive a message when the Down button is pressed.",
-        "name": "onButtonDown",
-        "type": "msg -> Sub msg"
-      },
-      {
-        "comment": "Receive a message when the Up button is long-pressed.",
-        "name": "onButtonLongUp",
-        "type": "msg -> Sub msg"
-      },
-      {
-        "comment": "Receive a message when the Select button is long-pressed.",
-        "name": "onButtonLongSelect",
-        "type": "msg -> Sub msg"
-      },
-      {
-        "comment": "Receive a message when the Down button is long-pressed.",
-        "name": "onButtonLongDown",
-        "type": "msg -> Sub msg"
-      },
-      {
-        "comment": "Receive a message when an accelerometer tap gesture fires.",
-        "name": "onAccelTap",
-        "type": "msg -> Sub msg"
-      },
-      {
         "comment": "Combine multiple Pebble subscriptions into one.",
         "name": "batch",
         "type": "List (Sub msg) -> Sub msg"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Information delivered with each frame.",
+        "name": "Frame",
+        "type": "{ dtMs : Int\n, elapsedMs : Int\n, frame : Int\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Fixed-interval frame subscriptions.\n\nThese subscriptions are useful for games, animations, and any watch app that\nneeds a regular update loop.\n\n# Types\n@docs Frame\n\n# Subscriptions\n@docs every, atFps",
+    "name": "Pebble.Frame",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Receive a frame message every `intervalMs` milliseconds.",
+        "name": "every",
+        "type": "Int -> (Frame -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive frame messages at the requested frames per second.",
+        "name": "atFps",
+        "type": "Int -> (Frame -> msg) -> Sub msg"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Axis-aligned rectangle bounds.",
+        "name": "Rect",
+        "type": "{ x : Int\n, y : Int\n, w : Int\n, h : Int\n}"
+      },
+      {
+        "args": [],
+        "comment": "Circle bounds with integer center and radius.",
+        "name": "Circle",
+        "type": "{ x : Int\n, y : Int\n, r : Int\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Small collision helpers for simple 2D watch games.\n\n# Shapes\n@docs Rect, Circle\n\n# Tests\n@docs rectRect, pointInRect, circleCircle",
+    "name": "Pebble.Game.Collision",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Check whether two axis-aligned rectangles overlap.",
+        "name": "rectRect",
+        "type": "Rect -> Rect -> Bool"
+      },
+      {
+        "comment": "Check whether a point is inside a rectangle.",
+        "name": "pointInRect",
+        "type": "{ x : Int, y : Int } -> Rect -> Bool"
+      },
+      {
+        "comment": "Check whether two circles overlap.",
+        "name": "circleCircle",
+        "type": "Circle -> Circle -> Bool"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Two-dimensional floating-point vector.",
+        "name": "Vec2",
+        "type": "{ x : Float\n, y : Float\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Small math helpers for game and animation code.\n\n# Vectors\n@docs Vec2, vec2, add, sub, scale, lengthSquared, distanceSquared\n\n# Scalars\n@docs clamp",
+    "name": "Pebble.Game.Math",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Construct a vector from x/y components.",
+        "name": "vec2",
+        "type": "Float -> Float -> Vec2"
+      },
+      {
+        "comment": "Add two vectors.",
+        "name": "add",
+        "type": "Vec2 -> Vec2 -> Vec2"
+      },
+      {
+        "comment": "Subtract the second vector from the first.",
+        "name": "sub",
+        "type": "Vec2 -> Vec2 -> Vec2"
+      },
+      {
+        "comment": "Scale a vector by a scalar factor.",
+        "name": "scale",
+        "type": "Float -> Vec2 -> Vec2"
+      },
+      {
+        "comment": "Squared vector length.\n\nUse this when comparing distances without needing the square root.",
+        "name": "lengthSquared",
+        "type": "Vec2 -> Float"
+      },
+      {
+        "comment": "Squared distance between two vectors.",
+        "name": "distanceSquared",
+        "type": "Vec2 -> Vec2 -> Float"
+      },
+      {
+        "comment": "Clamp a value between lower and upper bounds.",
+        "name": "clamp",
+        "type": "comparable -> comparable -> comparable -> comparable"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Bitmap sprite with integer bounds.",
+        "name": "Sprite",
+        "type": "{ bitmap : Ui.Bitmap\n, x : Int\n, y : Int\n, w : Int\n, h : Int\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Lightweight sprite helpers built on top of `Pebble.Ui`.\n\n# Sprites\n@docs Sprite, sprite, view\n\n# Helpers\n@docs parallaxBitmap, tileMap",
+    "name": "Pebble.Game.Sprite",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Construct a sprite from a bitmap and rectangle.",
+        "name": "sprite",
+        "type": "Ui.Bitmap -> Ui.Rect -> Sprite"
+      },
+      {
+        "comment": "Render a sprite as a bitmap draw operation.",
+        "name": "view",
+        "type": "Sprite -> Ui.RenderOp"
+      },
+      {
+        "comment": "Draw a horizontally wrapping bitmap strip for parallax backgrounds.",
+        "name": "parallaxBitmap",
+        "type": "Ui.Bitmap -> { x : Int, y : Int, w : Int, h : Int } -> Int -> List Ui.RenderOp"
+      },
+      {
+        "comment": "Draw a tile map from tile coordinates, a camera offset, and bitmap resources.",
+        "name": "tileMap",
+        "type": "{ tileSize : Int\n, cameraX : Int\n, cameraY : Int\n, tiles : List ( Int, Int, Ui.Bitmap )\n}\n-> List Ui.RenderOp"
       }
     ]
   },
@@ -403,7 +651,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Watch-local integer key/value storage commands.\n\nThe watch runtime exposes a lightweight integer key/value store.\n\n    saveCounter : Cmd msg\n    saveCounter =\n        writeInt 1 42\n\n    loadCounter : Cmd Msg\n    loadCounter =\n        readInt 1 CounterLoaded\n\n# Operations\n@docs writeInt, readInt, delete",
+    "comment": "Watch-local key/value storage commands.\n\nThe watch runtime exposes a lightweight integer key/value store.\n\n    saveCounter : Cmd msg\n    saveCounter =\n        writeInt 1 42\n\n    loadCounter : Cmd Msg\n    loadCounter =\n        readInt 1 CounterLoaded\n\n\n# Operations\n\n@docs writeInt, readInt, writeString, readString, delete",
     "name": "Pebble.Storage",
     "unions": [],
     "values": [
@@ -416,6 +664,16 @@
         "comment": "Read an integer by key and send it to `toMsg`.",
         "name": "readInt",
         "type": "Int -> (Int -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Store a string value under an integer key.",
+        "name": "writeString",
+        "type": "Int -> String -> Cmd msg"
+      },
+      {
+        "comment": "Read a string by key and send it to `toMsg`.",
+        "name": "readString",
+        "type": "Int -> (String -> msg) -> Cmd msg"
       },
       {
         "comment": "Remove a stored value at `key`.",

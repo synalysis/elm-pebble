@@ -178,6 +178,9 @@ defmodule Ide.Packages do
   defp builtin_docs_source_root("elm/time"),
     do: {:ok, Ide.InternalPackages.elm_time_elm_src_abs()}
 
+  defp builtin_docs_source_root("elm/random"),
+    do: {:ok, Ide.InternalPackages.elm_random_elm_src_abs()}
+
   defp builtin_docs_source_root(_), do: {:error, :not_builtin_source_backed}
 
   @spec doc_registry_version(term()) :: term()
@@ -220,7 +223,7 @@ defmodule Ide.Packages do
   so they must not be removed from `elm.json`.
 
   Includes the Pebble bindings packages and core runtime dependencies
-  (`elm/core`, `elm/json`, `elm/time`).
+  (`elm/core`, `elm/json`, `elm/random`, `elm/time`).
   """
   @spec pebble_builtin_packages() :: [String.t()]
   def pebble_builtin_packages do
@@ -230,6 +233,7 @@ defmodule Ide.Packages do
       "elm-pebble/companion-preferences",
       "elm/core",
       "elm/json",
+      "elm/random",
       "elm/time"
     ]
   end
@@ -371,6 +375,7 @@ defmodule Ide.Packages do
   @spec doc_catalog_builtin_label(term()) :: term()
   defp doc_catalog_builtin_label("elm/core"), do: "elm/core (required runtime)"
   defp doc_catalog_builtin_label("elm/json"), do: "elm/json (required program flags runtime)"
+  defp doc_catalog_builtin_label("elm/random"), do: "elm/random (required random runtime)"
   defp doc_catalog_builtin_label("elm/time"), do: "elm/time (required time runtime)"
 
   defp doc_catalog_builtin_label("elm-pebble/elm-watch"),
@@ -394,7 +399,7 @@ defmodule Ide.Packages do
   defp builtin_doc_packages(opts) do
     case opts[:platform_target] do
       :watch ->
-        ["elm-pebble/elm-watch", "elm/core", "elm/json", "elm/time"]
+        ["elm-pebble/elm-watch", "elm/core", "elm/json", "elm/random", "elm/time"]
 
       :phone ->
         [
@@ -404,6 +409,7 @@ defmodule Ide.Packages do
           "elm-pebble/companion-internal",
           "elm/core",
           "elm/json",
+          "elm/random",
           "elm/time"
         ]
 
@@ -411,12 +417,12 @@ defmodule Ide.Packages do
         pebble_builtin_packages()
 
       :none ->
-        ["elm/core", "elm/json", "elm/time"]
+        ["elm/core", "elm/json", "elm/random", "elm/time"]
 
       _ ->
         if Keyword.get(opts, :include_pebble_platform, true),
-          do: ["elm-pebble/elm-watch", "elm/core", "elm/json", "elm/time"],
-          else: ["elm/core", "elm/json", "elm/time"]
+          do: ["elm-pebble/elm-watch", "elm/core", "elm/json", "elm/random", "elm/time"],
+          else: ["elm/core", "elm/json", "elm/random", "elm/time"]
     end
   end
 
@@ -501,6 +507,13 @@ defmodule Ide.Packages do
 
   defp fallback_builtin_source_modules("elm/time") do
     case ElmSourceDocs.list_modules(Ide.InternalPackages.elm_time_elm_src_abs()) do
+      {:ok, modules} -> modules
+      _ -> []
+    end
+  end
+
+  defp fallback_builtin_source_modules("elm/random") do
+    case ElmSourceDocs.list_modules(Ide.InternalPackages.elm_random_elm_src_abs()) do
       {:ok, modules} -> modules
       _ -> []
     end

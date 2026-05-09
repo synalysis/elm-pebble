@@ -123,6 +123,145 @@ defmodule Ide.DebuggerTest do
     end
   end
 
+  defmodule InitRandomFollowupRuntimeExecutor do
+    @moduledoc false
+
+    def execute(%{
+          message: "RandomGenerated",
+          message_value: %{"ctor" => "RandomGenerated"} = value
+        }) do
+      {:ok,
+       %{
+         model_patch: %{
+           "runtime_model" => %{
+             "cells" => [0, 2],
+             "seed" => value["args"] |> List.first()
+           }
+         },
+         view_tree: %{"type" => "root", "children" => []},
+         view_output: [],
+         protocol_events: [],
+         followup_messages: []
+       }}
+    end
+
+    def execute(_request) do
+      {:ok,
+       %{
+         model_patch: %{"runtime_model" => %{"cells" => [], "seed" => 0}},
+         view_tree: %{"type" => "root", "children" => []},
+         view_output: [],
+         protocol_events: [],
+         followup_messages: [
+           %{
+             "source" => "random_command",
+             "package" => "elm/random",
+             "message" => "RandomGenerated",
+             "message_value" => %{"ctor" => "RandomGenerated", "args" => [42]},
+             "command" => %{"kind" => "cmd.random.generate"}
+           }
+         ]
+       }}
+    end
+  end
+
+  defmodule StorageFollowupRuntimeExecutor do
+    @moduledoc false
+
+    def execute(%{message: "SaveBest"}) do
+      {:ok,
+       %{
+         model_patch: %{"runtime_model" => %{"best" => 9124}},
+         view_tree: %{"type" => "root", "children" => []},
+         view_output: [],
+         protocol_events: [],
+         followup_messages: [
+           %{
+             "source" => "storage_command",
+             "package" => "elm-pebble/elm-watch",
+             "message" => nil,
+             "command" => %{
+               "kind" => "cmd.storage.write_string",
+               "key" => 2048,
+               "value" => "9124"
+             }
+           }
+         ]
+       }}
+    end
+
+    def execute(%{
+          message: "BestLoaded",
+          message_value: %{"ctor" => "BestLoaded", "args" => [value]}
+        }) do
+      best =
+        case Integer.parse(to_string(value || "0")) do
+          {parsed, _rest} -> parsed
+          :error -> 0
+        end
+
+      {:ok,
+       %{
+         model_patch: %{"runtime_model" => %{"best" => best}},
+         view_tree: %{"type" => "root", "children" => []},
+         view_output: [],
+         protocol_events: [],
+         followup_messages: []
+       }}
+    end
+
+    def execute(_request) do
+      {:ok,
+       %{
+         model_patch: %{"runtime_model" => %{"best" => 0}},
+         view_tree: %{"type" => "root", "children" => []},
+         view_output: [],
+         protocol_events: [],
+         followup_messages: [
+           %{
+             "source" => "storage_command",
+             "package" => "elm-pebble/elm-watch",
+             "message" => "BestLoaded",
+             "message_value" => %{"ctor" => "BestLoaded", "args" => [""]},
+             "command" => %{
+               "kind" => "cmd.storage.read_string",
+               "key" => 2048,
+               "value" => "",
+               "message" => "BestLoaded",
+               "message_value" => %{"ctor" => "BestLoaded", "args" => [""]}
+             }
+           }
+         ]
+       }}
+    end
+  end
+
+  defmodule FailingExternalRuntimeExecutor do
+    @moduledoc false
+
+    def execute(_request), do: {:error, :forced_runtime_failure}
+  end
+
+  defmodule InitNoFollowupRuntimeExecutor do
+    @moduledoc false
+
+    def execute(_request) do
+      {:ok,
+       %{
+         model_patch: %{"runtime_model" => %{}},
+         view_tree: %{"type" => "root", "children" => []},
+         view_output: [],
+         runtime: %{
+           "execution_backend" => "external",
+           "followup_message_count" => 0,
+           "init_cmd_count" => 1
+         },
+         protocol_events: [],
+         followup_messages: []
+       }}
+    end
+  end
+
   defmodule NilMaybeRuntimeExecutor do
     @moduledoc false
 
@@ -174,6 +313,34 @@ defmodule Ide.DebuggerTest do
            "runtime_model_source" => "maybe_shape_test"
          },
          view_tree: %{"type" => "maybe-shape-runtime", "children" => []},
+         view_output: []
+       }}
+    end
+  end
+
+  defmodule AccelRuntimeExecutor do
+    @moduledoc false
+
+    def execute(%{message_value: %{"ctor" => "AccelData", "args" => [%{} = sample]}}) do
+      {:ok,
+       %{
+         model_patch: %{
+           "runtime_model" => %{
+             "x" => sample["x"],
+             "y" => sample["y"],
+             "z" => sample["z"]
+           }
+         },
+         view_tree: %{"type" => "runtime-root", "children" => []},
+         view_output: []
+       }}
+    end
+
+    def execute(_request) do
+      {:ok,
+       %{
+         model_patch: %{"runtime_model" => %{"x" => 0, "y" => 0, "z" => 1000}},
+         view_tree: %{"type" => "runtime-root", "children" => []},
          view_output: []
        }}
     end
@@ -2060,6 +2227,85 @@ defmodule Ide.DebuggerTest do
     assert Enum.any?(triggered.events, &(&1.type == "debugger.view_render"))
   end
 
+  test "inject_trigger applies structured accelerometer subscription payload" do
+    previous_config = Application.get_env(:ide, Debugger, [])
+
+    Application.put_env(
+      :ide,
+      Debugger,
+      Keyword.put(previous_config, :runtime_executor_module, AccelRuntimeExecutor)
+    )
+
+    on_exit(fn -> Application.put_env(:ide, Debugger, previous_config) end)
+
+    slug = "sim-accel-trigger-#{System.unique_integer([:positive])}"
+
+    source = """
+    module AccelTrigger exposing (..)
+
+    import Json.Decode as Decode
+    import Pebble.Accel as Accel
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Model =
+        { x : Int
+        , y : Int
+        , z : Int
+        }
+
+    type Msg
+        = AccelData Accel.Sample
+
+    init _ =
+        ( { x = 0, y = 0, z = 1000 }, Cmd.none )
+
+    update msg model =
+        case msg of
+            AccelData sample ->
+                ( { model | x = sample.x, y = sample.y, z = sample.z }, Cmd.none )
+
+    subscriptions _ =
+        Accel.onData Accel.defaultConfig AccelData
+
+    view _ =
+        Ui.toUiNode [ Ui.clear Color.white ]
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    {:ok, _} =
+      Debugger.reload(slug, %{
+        rel_path: "watch/AccelTrigger.elm",
+        source: source,
+        reason: "accel_trigger_base"
+      })
+
+    assert {:ok, triggered} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "on_accel",
+               message: "AccelData",
+               message_value: %{"x" => 120, "y" => -340, "z" => 930}
+             })
+
+    runtime_model = get_in(triggered, [:watch, :model, "runtime_model"]) || %{}
+    assert runtime_model["x"] == 120
+    assert runtime_model["y"] == -340
+    assert runtime_model["z"] == 930
+    assert get_in(triggered, [:watch, :model, "runtime_last_message"]) == "AccelData"
+  end
+
   test "disabled subscription trigger cannot be injected until re-enabled" do
     slug = "sim-disabled-subscription-#{System.unique_integer([:positive])}"
 
@@ -3058,6 +3304,197 @@ defmodule Ide.DebuggerTest do
                event.payload.target == "protocol" and
                event.payload.package == "elm/http" and
                String.starts_with?(event.payload.response_message, "WeatherReceived ")
+           end)
+  end
+
+  test "init runtime followups are applied and shown in debugger timeline" do
+    previous_debugger_config = Application.get_env(:ide, Debugger, [])
+
+    Application.put_env(
+      :ide,
+      Debugger,
+      Keyword.put(
+        previous_debugger_config,
+        :runtime_executor_module,
+        InitRandomFollowupRuntimeExecutor
+      )
+    )
+
+    on_exit(fn ->
+      Application.put_env(:ide, Debugger, previous_debugger_config)
+    end)
+
+    slug = "sim-init-random-followup-#{System.unique_integer([:positive])}"
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: "module Main exposing (..)",
+               reason: "init_random_followup",
+               source_root: "watch"
+             })
+
+    assert get_in(reloaded.watch.model, ["runtime_model", "seed"]) == 42
+
+    timeline =
+      reloaded.debugger_timeline
+      |> Enum.map(&{&1.target, &1.message, &1.message_source})
+
+    assert {"watch", "init", "init"} in timeline
+    assert {"watch", "RandomGenerated", "runtime_followup"} in timeline
+
+    assert Enum.any?(reloaded.events, fn event ->
+             event.type == "debugger.package_cmd" and
+               event.payload.target == "watch" and
+               event.payload.package == "elm/random" and
+               event.payload.response_message == "RandomGenerated"
+           end)
+  end
+
+  test "runtime storage writes are read again after debugger restart" do
+    previous_debugger_config = Application.get_env(:ide, Debugger, [])
+
+    Application.put_env(
+      :ide,
+      Debugger,
+      Keyword.put(
+        previous_debugger_config,
+        :runtime_executor_module,
+        StorageFollowupRuntimeExecutor
+      )
+    )
+
+    on_exit(fn ->
+      Application.put_env(:ide, Debugger, previous_debugger_config)
+    end)
+
+    slug = "sim-storage-followup-#{System.unique_integer([:positive])}"
+
+    source = """
+    module Main exposing (..)
+
+    type Msg
+        = SaveBest
+        | BestLoaded String
+    """
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, loaded} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: source,
+               reason: "storage_followup",
+               source_root: "watch"
+             })
+
+    assert get_in(loaded.watch.model, ["runtime_model", "best"]) == 0
+
+    assert {:ok, saved} = Debugger.step(slug, %{target: "watch", message: "SaveBest"})
+    assert get_in(saved.watch.model, ["runtime_model", "best"]) == 9124
+    assert get_in(saved, [:storage, "watch", "2048", "value"]) == "9124"
+
+    assert {:ok, _restarted} = Debugger.start_session(slug)
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: source,
+               reason: "storage_followup_restart",
+               source_root: "watch"
+             })
+
+    assert get_in(reloaded.watch.model, ["runtime_model", "best"]) == 9124
+  end
+
+  test "runtime executor fallback is visible in debugger timeline" do
+    previous_debugger_config = Application.get_env(:ide, Debugger, [])
+    previous_runtime_executor_config = Application.get_env(:ide, RuntimeExecutor, [])
+
+    Application.put_env(
+      :ide,
+      Debugger,
+      Keyword.put(previous_debugger_config, :runtime_executor_module, RuntimeExecutor)
+    )
+
+    Application.put_env(:ide, RuntimeExecutor,
+      external_executor_module: FailingExternalRuntimeExecutor,
+      external_executor_strict: false
+    )
+
+    on_exit(fn ->
+      Application.put_env(:ide, Debugger, previous_debugger_config)
+      Application.put_env(:ide, RuntimeExecutor, previous_runtime_executor_config)
+    end)
+
+    slug = "sim-runtime-fallback-visible-#{System.unique_integer([:positive])}"
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: """
+               module Main exposing (..)
+
+               init _ =
+                   ( { n = 0 }, Cmd.none )
+               """,
+               reason: "runtime_fallback_visible",
+               source_root: "watch"
+             })
+
+    assert get_in(reloaded.watch.model, ["elm_executor", "execution_backend"]) ==
+             "fallback_default"
+
+    assert get_in(reloaded.watch.model, ["elm_executor", "external_fallback_reason"]) =~
+             "forced_runtime_failure"
+
+    assert Enum.any?(reloaded.debugger_timeline, fn row ->
+             row.target == "watch" and row.message_source == "runtime_status" and
+               String.contains?(row.message, "runtime fallback fallback_default")
+           end)
+  end
+
+  test "init commands without runtime followups are visible in debugger timeline" do
+    previous_debugger_config = Application.get_env(:ide, Debugger, [])
+
+    Application.put_env(
+      :ide,
+      Debugger,
+      Keyword.put(
+        previous_debugger_config,
+        :runtime_executor_module,
+        InitNoFollowupRuntimeExecutor
+      )
+    )
+
+    on_exit(fn ->
+      Application.put_env(:ide, Debugger, previous_debugger_config)
+    end)
+
+    slug = "sim-init-no-followup-visible-#{System.unique_integer([:positive])}"
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: """
+               module Main exposing (..)
+
+               init _ =
+                   ( { n = 0 }, Random.generate GotSeed (Random.int 1 10) )
+               """,
+               reason: "init_no_followup_visible",
+               source_root: "watch"
+             })
+
+    assert Enum.any?(reloaded.debugger_timeline, fn row ->
+             row.target == "watch" and row.message_source == "runtime_status" and
+               row.message == "runtime no followups for 1 init cmd(s)"
            end)
   end
 

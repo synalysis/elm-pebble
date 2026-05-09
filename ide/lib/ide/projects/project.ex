@@ -7,7 +7,7 @@ defmodule Ide.Projects.Project do
   import Ecto.Changeset
 
   @target_types ~w(app watchface companion)
-  @template_keys ~w(starter smoke-demo watchface-digital watchface-analog watchface-tutorial-complete)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete game-basic game-tiny-bird game-greeneys-run game-2048)
 
   @type t :: %__MODULE__{
           id: integer() | nil,

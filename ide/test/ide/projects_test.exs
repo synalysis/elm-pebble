@@ -117,14 +117,38 @@ defmodule Ide.ProjectsTest do
     assert {:ok, source} = File.read(generated)
     assert String.contains?(source, "type Bitmap")
     assert String.contains?(source, "Logo")
+    assert String.contains?(source, "type alias BitmapInfo")
+    assert String.contains?(source, "bitmapInfo")
     assert String.contains?(source, "type Font")
     assert String.contains?(source, "Menu")
+    assert String.contains?(source, "type alias FontInfo")
+    assert String.contains?(source, "fontInfo")
     refute String.contains?(source, "toResourceId")
 
     assert {:ok, _} = Projects.delete_bitmap_resource(project, "Logo")
     assert {:ok, []} = Projects.list_bitmap_resources(project)
     assert {:ok, _} = Projects.delete_font_resource(project, "Menu")
     assert {:ok, []} = Projects.list_font_resources(project)
+  end
+
+  test "game templates seed app projects with Elm game APIs" do
+    for template <- ["game-basic", "game-tiny-bird", "game-greeneys-run", "game-2048"] do
+      slug = "#{template}-#{System.unique_integer([:positive])}"
+
+      assert {:ok, project} =
+               Projects.create_project(%{
+                 "name" => template,
+                 "slug" => slug,
+                 "target_type" => "watchface",
+                 "template" => template
+               })
+
+      assert project.target_type == "app"
+      base = Projects.project_workspace_path(project)
+      assert File.exists?(Path.join(base, "watch/src/Main.elm"))
+      assert {:ok, main} = File.read(Path.join(base, "watch/src/Main.elm"))
+      assert String.contains?(main, "Pebble.Frame") or String.contains?(main, "Pebble.Button")
+    end
   end
 
   test "starter watch template only places user sources under watch/src" do
@@ -229,28 +253,6 @@ defmodule Ide.ProjectsTest do
     refute "src/Companion/Watch.elm" in tree_rel_paths(protocol_tree.nodes)
     refute "src/Companion/Internal.elm" in tree_rel_paths(protocol_tree.nodes)
     assert "src/Companion/Types.elm" in tree_rel_paths(protocol_tree.nodes)
-  end
-
-  test "smoke-demo template seeds protocol and phone surfaces" do
-    assert {:ok, project} =
-             Projects.create_project(%{
-               "name" => "SmokeTemplate",
-               "slug" => "smoke-template",
-               "target_type" => "app",
-               "template" => "smoke-demo"
-             })
-
-    base = Projects.project_workspace_path(project)
-    assert File.exists?(Path.join(base, "protocol/elm.json"))
-    assert File.exists?(Path.join(base, "phone/elm.json"))
-
-    assert {:ok, protocol_types} =
-             Projects.read_source_file(project, "protocol", "src/Companion/Types.elm")
-
-    assert String.contains?(protocol_types, "module Companion.Types")
-
-    assert {:ok, phone_engine} = Projects.read_source_file(project, "phone", "src/Engine.elm")
-    assert String.contains?(phone_engine, "module Engine")
   end
 
   test "watchface templates seed watch-only starter apps" do

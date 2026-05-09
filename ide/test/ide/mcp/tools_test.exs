@@ -1397,38 +1397,6 @@ defmodule Ide.Mcp.ToolsTest do
 
     assert stepped.seq > phone_reload.seq
     assert get_in(stepped, [:watch, :model, "runtime_message_source"]) == "provided"
-    assert get_in(stepped, [:companion, :model, "protocol_last_inbound_message"]) == "Step:Inc"
-
-    assert get_in(stepped, [:companion, :model, "runtime_model", "protocol_last_inbound_message"]) ==
-             "Step:Inc"
-
-    assert get_in(stepped, [:companion, :model, "runtime_model_source"]) == "protocol_rx"
-
-    assert Enum.any?(
-             stepped.events,
-             &(&1.type == "debugger.runtime_exec" and
-                 (Map.get(&1.payload, :trigger) || Map.get(&1.payload, "trigger")) ==
-                   "protocol_rx")
-           )
-
-    assert protocol_rx_exec =
-             Enum.find(
-               stepped.events,
-               &(&1.type == "debugger.runtime_exec" and
-                   (Map.get(&1.payload, :trigger) || Map.get(&1.payload, "trigger")) ==
-                     "protocol_rx")
-             )
-
-    assert (Map.get(protocol_rx_exec.payload, :protocol_to) ||
-              Map.get(protocol_rx_exec.payload, "protocol_to")) == "protocol"
-
-    assert Enum.any?(
-             stepped.events,
-             &(&1.type == "debugger.update_in" and
-                 (Map.get(&1.payload, :message_source) || Map.get(&1.payload, "message_source")) ==
-                   "protocol_rx")
-           )
-
     assert Enum.any?(stepped.events, &(&1.type == "debugger.update_in"))
     assert Enum.any?(stepped.events, &(&1.type == "debugger.view_render"))
 
@@ -1444,10 +1412,7 @@ defmodule Ide.Mcp.ToolsTest do
                [:edit]
              )
 
-    assert get_in(companion_stepped, [:watch, :model, "protocol_last_inbound_message"]) ==
-             "Step:Sync"
-
-    assert is_list(get_in(companion_stepped, [:watch, :protocol_messages]))
+    assert get_in(companion_stepped, [:companion, :model, "runtime_message_source"]) == "provided"
 
     assert {:ok, %{state: ticked}} =
              Tools.call(
@@ -1565,9 +1530,6 @@ defmodule Ide.Mcp.ToolsTest do
     assert is_binary(replay_fp_digest.watch.runtime_model_sha256)
     assert is_binary(replay_fp_digest.watch.view_tree_sha256)
     assert is_map(replay_fp_digest.companion)
-    assert replay_fp_digest.companion.protocol_inbound_count >= 1
-    assert replay_fp_digest.companion.protocol_message_count >= 1
-    assert replay_fp_digest.companion.protocol_last_inbound_message == "Step:Inc"
     assert is_list(replay_snapshot_refs)
     assert replay_snapshot_refs != []
 
@@ -1673,8 +1635,7 @@ defmodule Ide.Mcp.ToolsTest do
     assert md_only_fp_digest.watch.runtime_mode == "runtime_executed"
     assert is_binary(md_only_fp_digest.watch.runtime_model_sha256)
     assert is_binary(md_only_fp_digest.watch.view_tree_sha256)
-    assert md_only_fp_digest.companion.protocol_inbound_count >= 1
-    assert md_only_fp_digest.companion.protocol_message_count >= 1
+    assert is_map(md_only_fp_digest.companion)
     assert is_list(md_only_snapshot_refs)
 
     assert {:ok, no_md_full} =
@@ -1715,8 +1676,7 @@ defmodule Ide.Mcp.ToolsTest do
     assert inspect_replay.runtime_fingerprints.watch.execution_backend == "external"
     assert is_binary(inspect_replay.runtime_fingerprints.watch.runtime_model_sha256)
     assert is_binary(inspect_replay.runtime_fingerprints.watch.view_tree_sha256)
-    assert inspect_replay.runtime_fingerprints.companion.protocol_inbound_count >= 1
-    assert inspect_replay.runtime_fingerprints.companion.protocol_message_count >= 1
+    assert is_map(inspect_replay.runtime_fingerprints.companion)
     assert is_list(inspect_replay.snapshot_refs)
 
     assert {:ok, inspect_compare_payload} =

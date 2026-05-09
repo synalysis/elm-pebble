@@ -257,6 +257,78 @@ Hooks.PreserveRenderedDetails = {
   }
 }
 
+Hooks.DebuggerAccelPad = {
+  mounted() {
+    this.dragging = false
+    this.lastSentAt = 0
+    this.svg = this.el.querySelector("svg")
+    this.cross = this.el.querySelector("[data-accel-cross]")
+    this.readout = this.el.closest("[data-copy-scope]")?.querySelector("[data-accel-readout]")
+
+    this.onPointerDown = (event) => {
+      this.dragging = true
+      this.svg?.setPointerCapture?.(event.pointerId)
+      this.updateFromEvent(event, true)
+    }
+
+    this.onPointerMove = (event) => {
+      if (!this.dragging) return
+      this.updateFromEvent(event, false)
+    }
+
+    this.onPointerUp = (event) => {
+      if (!this.dragging) return
+      this.dragging = false
+      this.updateFromEvent(event, true)
+      this.svg?.releasePointerCapture?.(event.pointerId)
+    }
+
+    this.svg?.addEventListener("pointerdown", this.onPointerDown)
+    this.svg?.addEventListener("pointermove", this.onPointerMove)
+    this.svg?.addEventListener("pointerup", this.onPointerUp)
+    this.svg?.addEventListener("pointercancel", this.onPointerUp)
+  },
+
+  destroyed() {
+    this.svg?.removeEventListener("pointerdown", this.onPointerDown)
+    this.svg?.removeEventListener("pointermove", this.onPointerMove)
+    this.svg?.removeEventListener("pointerup", this.onPointerUp)
+    this.svg?.removeEventListener("pointercancel", this.onPointerUp)
+  },
+
+  updateFromEvent(event, forceSend) {
+    event.preventDefault()
+    if (!this.svg) return
+
+    const rect = this.svg.getBoundingClientRect()
+    const scale = 120 / Math.max(rect.width || 1, rect.height || 1)
+    const rawDx = (event.clientX - rect.left) * scale - 60
+    const rawDy = (event.clientY - rect.top) * scale - 60
+    const distance = Math.sqrt(rawDx * rawDx + rawDy * rawDy)
+    const radius = 50
+    const clamp = distance > radius ? radius / distance : 1
+    const dx = rawDx * clamp
+    const dy = rawDy * clamp
+    const x = Math.round(dx / radius * 1000)
+    const y = Math.round(-dy / radius * 1000)
+    const z = Math.round(Math.sqrt(Math.max(0, 1000000 - x * x - y * y)))
+
+    this.cross?.setAttribute("transform", `translate(${60 + dx} ${60 + dy})`)
+    if (this.readout) this.readout.textContent = `x ${x} · y ${y} · z ${z}`
+
+    const now = Date.now()
+    if (!forceSend && now - this.lastSentAt < 80) return
+    this.lastSentAt = now
+
+    this.pushEvent("debugger-inject-trigger", {
+      trigger: this.el.dataset.trigger,
+      target: this.el.dataset.target,
+      message: this.el.dataset.message,
+      message_value: {x, y, z}
+    })
+  }
+}
+
 Hooks.AutoDismissFlash = {
   mounted() {
     this.scheduleDismiss()

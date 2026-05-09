@@ -14,57 +14,23 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
         Pebble SDK emulator: choose a watch model, install the generated `.pbw` artifact, then capture screenshots for publishing.
       </p>
       <div
-        :if={@emulator_installation_status}
-        class={emulator_installation_class(@emulator_installation_status)}
+        :if={emulator_setup_needs_attention?(@emulator_installation_status)}
+        class="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-amber-900"
       >
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 class="text-sm font-semibold">Embedded Emulator Setup</h3>
+            <h3 class="text-sm font-semibold">Embedded emulator setup needs attention</h3>
             <p class="mt-1 text-xs">
               {emulator_installation_summary(@emulator_installation_status)}
             </p>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <.button
-              phx-click="install-emulator-dependencies"
-              disabled={
-                @emulator_dependency_install_status == :running or
-                  not emulator_installable?(@emulator_installation_status)
-              }
-              class="!bg-blue-700 hover:!bg-blue-600"
-            >
-              {if @emulator_dependency_install_status == :running,
-                do: "Installing...",
-                else: "Install missing dependencies"}
-            </.button>
-            <button
-              type="button"
-              phx-click="refresh-emulator-installation"
-              class="rounded bg-white px-3 py-2 text-xs font-semibold text-zinc-800 ring-1 ring-zinc-200 hover:bg-zinc-50"
-            >
-              Recheck
-            </button>
-          </div>
-        </div>
-        <ul
-          :if={emulator_components(@emulator_installation_status) != []}
-          class="mt-3 grid gap-1 text-xs md:grid-cols-2"
-        >
-          <li
-            :for={component <- emulator_components(@emulator_installation_status)}
-            class="rounded bg-white/70 px-2 py-1"
+          <.link
+            navigate={emulator_settings_path(@project)}
+            class="rounded bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-700"
           >
-            <span class="font-semibold">{component.label}</span>
-            <span class={emulator_component_class(component.status)}>
-              {emulator_component_status(component.status)}
-            </span>
-            <span class="ml-1 text-zinc-600">{component.detail}</span>
-          </li>
-        </ul>
-        <pre
-          :if={@emulator_dependency_install_output}
-          class="mt-3 max-h-48 overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100"
-        ><%= @emulator_dependency_install_output %></pre>
+            Open Settings
+          </.link>
+        </div>
       </div>
       <.form for={@emulator_form} phx-change="set-emulator-target" class="mt-3">
         <.input
@@ -225,6 +191,73 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             </div>
           </div>
         </div>
+        <div class="mt-4 rounded border border-zinc-200 bg-white p-3">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h4 class="text-sm font-semibold text-zinc-900">Storage</h4>
+              <p class="mt-1 text-xs text-zinc-600">
+                Shows Pebble.Storage keys observed in emulator logs. Edit values, add a key, or delete all known keys for testing.
+              </p>
+            </div>
+            <button
+              type="button"
+              data-emulator-storage-reset
+              disabled
+              class="rounded bg-rose-100 px-3 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Reset known keys
+            </button>
+          </div>
+          <div class="mt-3 overflow-x-auto">
+            <table class="min-w-full text-left text-xs">
+              <thead class="border-b border-zinc-200 text-[11px] uppercase tracking-wide text-zinc-500">
+                <tr>
+                  <th class="py-1 pr-2">Key</th>
+                  <th class="py-1 pr-2">Type</th>
+                  <th class="py-1 pr-2">Value</th>
+                  <th class="py-1 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody data-emulator-storage-rows>
+                <tr data-emulator-storage-empty>
+                  <td colspan="4" class="py-3 text-zinc-500">
+                    No storage keys observed yet. Launch the app or add a test key below.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mt-3 grid gap-2 md:grid-cols-[8rem_7rem_1fr_auto]">
+            <input
+              data-emulator-storage-new-key
+              type="number"
+              min="0"
+              placeholder="Key"
+              class="rounded border border-zinc-300 px-2 py-1 text-xs"
+            />
+            <select
+              data-emulator-storage-new-type
+              class="rounded border border-zinc-300 px-2 py-1 text-xs"
+            >
+              <option value="string">String</option>
+              <option value="int">Int</option>
+            </select>
+            <input
+              data-emulator-storage-new-value
+              type="text"
+              placeholder="Value"
+              class="rounded border border-zinc-300 px-2 py-1 text-xs"
+            />
+            <button
+              type="button"
+              data-emulator-storage-add
+              disabled
+              class="rounded bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Save key
+            </button>
+          </div>
+        </div>
         <pre
           data-emulator-log
           class="mt-3 max-h-48 overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100"
@@ -382,16 +415,6 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   defp check_status_label(:ok), do: "ok"
   defp check_status_label(:error), do: "error"
 
-  @spec emulator_installation_class(term()) :: String.t()
-  defp emulator_installation_class(%{status: :ok}),
-    do: "mt-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-900"
-
-  defp emulator_installation_class(%{status: :checking}),
-    do: "mt-4 rounded border border-blue-200 bg-blue-50 p-3 text-blue-900"
-
-  defp emulator_installation_class(_),
-    do: "mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-amber-900"
-
   @spec emulator_installation_summary(term()) :: String.t()
   defp emulator_installation_summary(%{status: :checking, platform: platform}),
     do: "Checking embedded emulator dependencies for #{platform}..."
@@ -407,22 +430,17 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   defp emulator_installation_summary(%{error: error}) when is_binary(error), do: error
   defp emulator_installation_summary(_), do: "Embedded emulator setup needs attention."
 
-  @spec emulator_components(term()) :: [map()]
-  defp emulator_components(%{components: components}) when is_list(components), do: components
-  defp emulator_components(_), do: []
+  @spec emulator_setup_needs_attention?(term()) :: boolean()
+  defp emulator_setup_needs_attention?(%{status: status}) when status in [:warning, :error],
+    do: true
 
-  @spec emulator_installable?(term()) :: boolean()
-  defp emulator_installable?(%{installable: true, missing: missing}) when is_list(missing),
-    do: missing != []
+  defp emulator_setup_needs_attention?(%{error: error}) when is_binary(error), do: true
+  defp emulator_setup_needs_attention?(_), do: false
 
-  defp emulator_installable?(_), do: false
+  @spec emulator_settings_path(term()) :: String.t()
+  defp emulator_settings_path(%{slug: slug}) when is_binary(slug) do
+    "/settings?return_to=" <> URI.encode_www_form("/projects/#{slug}/emulator")
+  end
 
-  @spec emulator_component_class(term()) :: String.t()
-  defp emulator_component_class(:ok), do: "ml-2 font-mono text-[11px] text-emerald-700"
-  defp emulator_component_class(_), do: "ml-2 font-mono text-[11px] text-amber-700"
-
-  @spec emulator_component_status(term()) :: String.t()
-  defp emulator_component_status(:ok), do: "ok"
-  defp emulator_component_status(:missing), do: "missing"
-  defp emulator_component_status(status), do: to_string(status || "unknown")
+  defp emulator_settings_path(_), do: "/settings"
 end

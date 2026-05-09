@@ -517,8 +517,8 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert {:ok, expr24b} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("\"a\" ++ String.fromInt n")
 
-    assert expr24b[:op] == :qualified_call
-    assert expr24b[:target] == "String.append"
+    assert expr24b[:op] == :call
+    assert expr24b[:name] == "__append__"
     assert length(expr24b[:args]) == 2
 
     assert {:ok, expr24b2} =
@@ -526,8 +526,8 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
                "\"x\" ++ case context of\n[] -> \"!\"\n_ -> \"?\""
              )
 
-    assert expr24b2[:op] == :qualified_call
-    assert expr24b2[:target] == "String.append"
+    assert expr24b2[:op] == :call
+    assert expr24b2[:name] == "__append__"
     assert Enum.at(expr24b2[:args], 1)[:op] == :case
 
     assert {:ok, expr24m} =

@@ -6,7 +6,7 @@ defmodule Ide.ProjectTemplates do
   alias Ide.InternalPackages
   alias Ide.CompanionProtocolGenerator
 
-  @template_keys ~w(starter smoke-demo watchface-digital watchface-analog watchface-tutorial-complete)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete game-basic game-tiny-bird game-greeneys-run game-2048)
 
   @doc """
   Returns available template keys.
@@ -31,10 +31,13 @@ defmodule Ide.ProjectTemplates do
   def options do
     [
       {"Starter (watch, protocol, phone)", "starter"},
-      {"Smoke demo (same multi-root scaffold)", "smoke-demo"},
       {"Watchface: Digital (watch-only)", "watchface-digital"},
       {"Watchface: Analog (watch-only)", "watchface-analog"},
-      {"Watchface tutorial: Complete", "watchface-tutorial-complete"}
+      {"Watchface tutorial: Complete", "watchface-tutorial-complete"},
+      {"Game: Basic", "game-basic"},
+      {"Game: Tiny Bird", "game-tiny-bird"},
+      {"Game: Greeney's Run", "game-greeneys-run"},
+      {"Game: 2048", "game-2048"}
     ]
   end
 
@@ -47,9 +50,6 @@ defmodule Ide.ProjectTemplates do
       "starter" ->
         seed_multi_root_workspace(workspace_path)
 
-      "smoke-demo" ->
-        seed_multi_root_workspace(workspace_path)
-
       "watchface-digital" ->
         seed_watch_only_workspace(workspace_path, "watchface_digital")
 
@@ -58,6 +58,18 @@ defmodule Ide.ProjectTemplates do
 
       "watchface-tutorial-complete" ->
         seed_watchface_tutorial_workspace(workspace_path)
+
+      "game-basic" ->
+        seed_watch_only_workspace(workspace_path, "game_basic")
+
+      "game-tiny-bird" ->
+        seed_watch_only_workspace(workspace_path, "game_tiny_bird")
+
+      "game-greeneys-run" ->
+        seed_watch_only_workspace(workspace_path, "game_greeneys_run")
+
+      "game-2048" ->
+        seed_watch_only_workspace(workspace_path, "game_2048")
     end
   end
 
@@ -107,6 +119,7 @@ defmodule Ide.ProjectTemplates do
       %{
         "elm/core" => "1.0.5",
         "elm/json" => "1.1.3",
+        "elm/random" => "1.0.0",
         "elm/time" => "1.0.0"
       }
 
@@ -177,6 +190,7 @@ defmodule Ide.ProjectTemplates do
         "direct" => %{
           "elm/core" => "1.0.5",
           "elm/json" => "1.1.3",
+          "elm/random" => "1.0.0",
           "elm/time" => "1.0.0"
         },
         "indirect" => %{}

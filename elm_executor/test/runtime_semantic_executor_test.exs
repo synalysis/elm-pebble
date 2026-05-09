@@ -207,6 +207,151 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert command["expect"]["kind"] == "string"
   end
 
+  test "init evaluation surfaces elm/random followups when message is empty" do
+    core_ir = %ElmEx.IR{
+      modules: [
+        %ElmEx.IR.Module{
+          name: "Main",
+          imports: [],
+          declarations: [
+            %ElmEx.IR.Declaration{
+              kind: :function,
+              name: "init",
+              args: [],
+              ownership: [],
+              expr: %{
+                "op" => :tuple2,
+                "left" => %{
+                  "op" => :record_literal,
+                  "fields" => [
+                    %{"name" => "n", "expr" => %{"op" => :int_literal, "value" => 0}}
+                  ]
+                },
+                "right" => %{
+                  "op" => :qualified_call,
+                  "target" => "Random.generate",
+                  "args" => [
+                    %{"op" => :var, "name" => "GotSeed"},
+                    %{
+                      "op" => :qualified_call,
+                      "target" => "Random.int",
+                      "args" => [
+                        %{"op" => :int_literal, "value" => 1},
+                        %{"op" => :int_literal, "value" => 10}
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    request = %{
+      source_root: "watch",
+      source: "module Main exposing (..)",
+      introspect: %{"view_tree" => %{"type" => "root", "children" => []}},
+      current_model: %{},
+      current_view_tree: %{"type" => "root", "children" => []},
+      message: nil,
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert [followup] = result.followup_messages
+    assert followup["source"] == "random_command"
+    assert followup["package"] == "elm/random"
+    assert followup["message"] == "GotSeed"
+    assert is_map(followup["message_value"])
+
+    assert result.runtime["followup_message_count"] == 1
+  end
+
+  test "init evaluation preserves storage and random commands in a batch" do
+    core_ir = %ElmEx.IR{
+      modules: [
+        %ElmEx.IR.Module{
+          name: "Main",
+          imports: [],
+          declarations: [
+            %ElmEx.IR.Declaration{
+              kind: :function,
+              name: "init",
+              args: [],
+              ownership: [],
+              expr: %{
+                "op" => :tuple2,
+                "left" => %{
+                  "op" => :record_literal,
+                  "fields" => [
+                    %{"name" => "seed", "expr" => %{"op" => :int_literal, "value" => 0}},
+                    %{"name" => "best", "expr" => %{"op" => :int_literal, "value" => 0}}
+                  ]
+                },
+                "right" => %{
+                  "op" => :qualified_call,
+                  "target" => "Cmd.batch",
+                  "args" => [
+                    %{
+                      "op" => :list_literal,
+                      "items" => [
+                        %{
+                          "op" => :qualified_call,
+                          "target" => "Pebble.Storage.readString",
+                          "args" => [
+                            %{"op" => :int_literal, "value" => 2048},
+                            %{"op" => :var, "name" => "BestLoaded"}
+                          ]
+                        },
+                        %{
+                          "op" => :qualified_call,
+                          "target" => "Random.generate",
+                          "args" => [
+                            %{"op" => :var, "name" => "RandomGenerated"},
+                            %{
+                              "op" => :qualified_call,
+                              "target" => "Random.int",
+                              "args" => [
+                                %{"op" => :int_literal, "value" => 1},
+                                %{"op" => :int_literal, "value" => 10}
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    request = %{
+      source_root: "watch",
+      source: "module Main exposing (..)",
+      introspect: %{"view_tree" => %{"type" => "root", "children" => []}},
+      current_model: %{},
+      current_view_tree: %{"type" => "root", "children" => []},
+      message: nil,
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert [
+             %{"source" => "storage_command", "message" => "BestLoaded"},
+             %{"source" => "random_command", "message" => "RandomGenerated"}
+           ] = result.followup_messages
+
+    assert result.runtime["followup_message_count"] == 2
+  end
+
   test "core update matches structured protocol payloads with nested constructors" do
     core_ir = %{
       "modules" => [
@@ -433,6 +578,108 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
              "ctor" => "Just",
              "args" => [%{"ctor" => "Celsius", "args" => [21]}]
            }
+  end
+
+  test "reload path evaluates source-derived CoreIR init model with list helpers" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Resources as Resources
+
+    type alias Model =
+        { cells : List Int
+        , score : Int
+        }
+
+    init _ =
+        ( { cells = insertTile 0 emptyBoard, score = 0 }, Cmd.none )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view model =
+        Ui.toUiNode (List.indexedMap drawCell model.cells)
+
+    emptyBoard : List Int
+    emptyBoard =
+        List.repeat 16 0
+
+    insertTile : Int -> List Int -> List Int
+    insertTile turn cells =
+        let
+            index =
+                modBy 16 (turn * 5 + 1)
+        in
+        List.indexedMap
+            (\\i value ->
+                if i == index && value == 0 then
+                    2
+
+                else
+                    value
+            )
+            cells
+
+    drawCell index value =
+        Ui.text Resources.DefaultFont { x = index, y = 0, w = 10, h = 10 } (String.fromInt value)
+
+    main : Program Decode.Value Model msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: source,
+      introspect: %{
+        "init_model" => %{
+          "cells" => %{"$opaque" => true, "op" => "call"},
+          "score" => 0
+        }
+      },
+      current_model: %{},
+      current_view_tree: %{},
+      message: nil
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert result.model_patch["runtime_model"]["cells"] == [
+             0,
+             2,
+             0,
+             0,
+             0,
+             0,
+             0,
+             0,
+             0,
+             0,
+             0,
+             0,
+             0,
+             0,
+             0,
+             0
+           ]
+
+    assert result.model_patch["runtime_model_source"] == "init_model"
+
+    assert Enum.any?(result.view_output, fn row ->
+             row["kind"] == "text" and row["font_id"] == 1 and row["text"] == "2"
+           end)
   end
 
   test "runtime resolves decoded CoreIR init screen fields before drawing preview primitives" do

@@ -47,10 +47,6 @@ module Pebble.Ui exposing
     , windowStack
     )
 
-import Pebble.Ui.Color as UiColor
-import Pebble.Ui.Resources as UiResources
-
-
 {-| Retained virtual UI model for Pebble rendering.
 
 `Pebble.Ui` provides a declarative scene graph for watch windows, layers,
@@ -88,6 +84,8 @@ render bridge to keep view logic in pure Elm.
 @docs ContextSetting, strokeWidth, antialiased, strokeColor, fillColor, textColor, compositingMode
 
 -}
+import Pebble.Ui.Color as UiColor
+import Pebble.Ui.Resources as UiResources
 
 
 {-| Root virtual UI node.
@@ -117,7 +115,7 @@ type RenderOp
     | Clear Int
     | Pixel Int Int Int
     | Line Int Int Int Int Int
-    | Rect Int Int Int Int Int
+    | RectOp Int Int Int Int Int
     | FillRect Int Int Int Int Int
     | Circle Int Int Int Int
     | FillCircle Int Int Int Int
@@ -294,7 +292,7 @@ line startPos endPos color =
 -}
 rect : Rect -> UiColor.Color -> RenderOp
 rect bounds color =
-    Rect bounds.x bounds.y bounds.w bounds.h (UiColor.toInt color)
+    RectOp bounds.x bounds.y bounds.w bounds.h (UiColor.toInt color)
 
 
 {-| Draw a circle outline with a color.

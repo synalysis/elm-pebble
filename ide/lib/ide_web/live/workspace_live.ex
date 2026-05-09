@@ -1680,7 +1680,8 @@ defmodule IdeWeb.WorkspaceLive do
         attrs = %{
           trigger: trigger,
           target: Map.get(params, "target"),
-          message: Map.get(params, "message")
+          message: Map.get(params, "message"),
+          message_value: Map.get(params, "message_value")
         }
 
         {:ok, _state} = Ide.Debugger.inject_trigger(project.slug, attrs)

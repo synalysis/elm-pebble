@@ -5,10 +5,16 @@ defmodule Elmc.PebbleSurfaceCoverageTest do
   @fixture_project Path.expand("fixtures/pebble_surface_project", __DIR__)
 
   @api_modules %{
+    "Pebble.Accel" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Accel.elm", __DIR__),
+    "Pebble.Button" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Button.elm", __DIR__),
     "Pebble.Cmd" =>
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Cmd.elm", __DIR__),
     "Pebble.Events" =>
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Events.elm", __DIR__),
+    "Pebble.Frame" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Frame.elm", __DIR__),
     "Pebble.Light" =>
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Light.elm", __DIR__),
     "Pebble.Log" =>

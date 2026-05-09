@@ -78,6 +78,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     |> Component.assign(:debugger_types, [])
     |> Component.assign(:debugger_filter_form, filter_form([], nil))
     |> Component.assign(:debugger_cursor_seq, nil)
+    |> Component.assign(:debugger_follow_latest, true)
     |> Component.assign(:debugger_selected_event, nil)
     |> Component.assign(:debugger_newer_event, nil)
     |> Component.assign(:debugger_older_event, nil)
@@ -237,7 +238,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   @spec refresh_following_debugger_latest(socket()) :: socket()
   def refresh_following_debugger_latest(socket) do
-    follow_latest? = debugger_cursor_at_latest?(socket)
+    follow_latest? =
+      Map.get(socket.assigns, :debugger_follow_latest, debugger_cursor_at_latest?(socket))
+
     socket = refresh(socket)
 
     if follow_latest? do
@@ -258,8 +261,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   @spec set_debugger_cursor_seq(socket(), term()) :: socket()
   def set_debugger_cursor_seq(socket, value) do
     case parse_since_seq(value) do
-      nil -> socket
-      seq -> assign_debugger_cursor(socket, seq)
+      nil ->
+        socket
+
+      seq ->
+        socket
+        |> assign_debugger_cursor(seq)
+        |> Component.assign(:debugger_follow_latest, false)
     end
   end
 
@@ -3038,7 +3046,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   @spec assign_timeline(socket(), map()) :: socket()
   defp assign_timeline(socket, debugger_state) do
     events = Map.get(debugger_state, :events, [])
-    cursor_seq = normalize_cursor_seq(events, socket.assigns[:debugger_cursor_seq])
+
+    cursor_seq =
+      normalize_debugger_cursor_seq(debugger_state, events, socket.assigns[:debugger_cursor_seq])
 
     compare_baseline_seq =
       normalize_optional_cursor_seq(events, socket.assigns[:debugger_compare_baseline_seq])
@@ -3192,33 +3202,50 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   @spec jump_latest_debugger(socket()) :: socket()
   defp jump_latest_debugger(socket) do
-    rows =
+    latest_seq =
       case socket.assigns[:debugger_state] do
-        %{} = debugger_state -> debugger_rows(debugger_state, 1)
-        _ -> []
+        %{} = debugger_state -> latest_debugger_seq(debugger_state)
+        _ -> nil
       end
 
-    case rows do
-      [%{seq: seq} | _] -> assign_debugger_cursor(socket, seq)
-      _ -> socket
+    case latest_seq do
+      seq when is_integer(seq) ->
+        socket
+        |> assign_debugger_cursor(seq)
+        |> Component.assign(:debugger_follow_latest, true)
+
+      _ ->
+        socket
     end
   end
 
   @spec debugger_cursor_at_latest?(socket()) :: boolean()
   defp debugger_cursor_at_latest?(socket) do
-    rows =
+    latest_seq =
       case socket.assigns[:debugger_state] do
-        %{} = debugger_state -> debugger_rows(debugger_state, 1)
-        _ -> []
+        %{} = debugger_state -> latest_debugger_seq(debugger_state)
+        _ -> nil
       end
 
-    case rows do
-      [%{seq: latest_seq} | _] ->
+    case latest_seq do
+      seq when is_integer(seq) ->
         cursor_seq = socket.assigns[:debugger_cursor_seq]
-        is_nil(cursor_seq) or cursor_seq == latest_seq
+        is_nil(cursor_seq) or cursor_seq == seq
 
       _ ->
-        true
+        is_nil(socket.assigns[:debugger_cursor_seq])
+    end
+  end
+
+  @spec latest_debugger_seq(map()) :: maybe_non_neg_integer()
+  defp latest_debugger_seq(debugger_state) when is_map(debugger_state) do
+    debugger_state
+    |> debugger_rows()
+    |> Enum.map(&Map.get(&1, :seq))
+    |> Enum.filter(&is_integer/1)
+    |> case do
+      [] -> nil
+      seqs -> Enum.max(seqs)
     end
   end
 
@@ -3278,6 +3305,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   @spec normalize_cursor_seq([map()], maybe_non_neg_integer()) :: maybe_non_neg_integer()
   defp normalize_cursor_seq(events, cursor_seq) do
     CursorSeq.resolve_at_or_before(events, cursor_seq)
+  end
+
+  defp normalize_debugger_cursor_seq(debugger_state, events, cursor_seq) do
+    case normalize_cursor_seq(events, cursor_seq) do
+      seq when is_integer(seq) ->
+        seq
+
+      _ ->
+        debugger_state
+        |> debugger_rows(500)
+        |> CursorSeq.resolve_at_or_before(cursor_seq)
+    end
   end
 
   @spec normalize_optional_cursor_seq([map()], maybe_non_neg_integer()) :: maybe_non_neg_integer()
@@ -3351,7 +3390,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         trigger: Map.get(row, :trigger) || Map.get(row, "trigger"),
         target: Map.get(row, :target) || Map.get(row, "target"),
         message: Map.get(row, :message) || Map.get(row, "message"),
-        source: Map.get(row, :source) || Map.get(row, "source")
+        source: Map.get(row, :source) || Map.get(row, "source"),
+        button: Map.get(row, :button) || Map.get(row, "button"),
+        button_event: Map.get(row, :button_event) || Map.get(row, "button_event")
       }
     end)
     |> Enum.filter(fn row ->
@@ -3373,7 +3414,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         trigger: Map.get(row, :trigger) || Map.get(row, "trigger"),
         target: Map.get(row, :target) || Map.get(row, "target"),
         message: Map.get(row, :message) || Map.get(row, "message"),
-        source: Map.get(row, :source) || Map.get(row, "source")
+        source: Map.get(row, :source) || Map.get(row, "source"),
+        button: Map.get(row, :button) || Map.get(row, "button"),
+        button_event: Map.get(row, :button_event) || Map.get(row, "button_event")
       }
     end)
     |> Enum.filter(fn row ->

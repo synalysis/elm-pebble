@@ -60,12 +60,23 @@ defmodule Ide.InternalPackages do
     Path.join(ide_root(), "priv/internal_packages/elm-time/src") |> Path.expand()
   end
 
+  @doc false
+  @spec elm_random_elm_src_abs() :: String.t()
+  def elm_random_elm_src_abs do
+    Path.join(ide_root(), "priv/internal_packages/elm-random/src") |> Path.expand()
+  end
+
   @doc """
   Absolute paths for extra `source-directories` on watch apps (after `"src"`).
   """
   @spec watch_elm_json_extra_source_dirs_abs() :: [String.t()]
   def watch_elm_json_extra_source_dirs_abs do
-    [pebble_elm_src_abs(), companion_protocol_elm_src_abs(), elm_time_elm_src_abs()]
+    [
+      pebble_elm_src_abs(),
+      companion_protocol_elm_src_abs(),
+      elm_time_elm_src_abs(),
+      elm_random_elm_src_abs()
+    ]
   end
 
   @doc """
@@ -73,7 +84,12 @@ defmodule Ide.InternalPackages do
   """
   @spec watchface_elm_json_extra_source_dirs_abs() :: [String.t()]
   def watchface_elm_json_extra_source_dirs_abs do
-    [pebble_elm_src_abs(), companion_protocol_elm_src_abs(), elm_time_elm_src_abs()]
+    [
+      pebble_elm_src_abs(),
+      companion_protocol_elm_src_abs(),
+      elm_time_elm_src_abs(),
+      elm_random_elm_src_abs()
+    ]
   end
 
   @doc """
@@ -86,7 +102,8 @@ defmodule Ide.InternalPackages do
       pebble_companion_preferences_elm_src_abs(),
       shared_elm_abs(),
       shared_elm_companion_abs(),
-      elm_time_elm_src_abs()
+      elm_time_elm_src_abs(),
+      elm_random_elm_src_abs()
     ]
   end
 end

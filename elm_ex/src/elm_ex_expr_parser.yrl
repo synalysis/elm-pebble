@@ -167,6 +167,12 @@ atom -> lparen plus rparen : build_operator_section(plus).
 atom -> lparen minus rparen : build_operator_section(minus).
 atom -> lparen times rparen : build_operator_section(times).
 atom -> lparen pow rparen : build_operator_section(pow).
+atom -> lparen eqeq rparen : build_operator_section(eqeq).
+atom -> lparen neq rparen : build_operator_section(neq).
+atom -> lparen lt rparen : build_operator_section(lt).
+atom -> lparen lte rparen : build_operator_section(lte).
+atom -> lparen gt rparen : build_operator_section(gt).
+atom -> lparen gte rparen : build_operator_section(gte).
 atom -> lparen shl rparen : build_operator_section(shl).
 atom -> lparen shr rparen : build_operator_section(shr).
 atom -> lparen cons rparen : build_operator_section(cons).
@@ -250,7 +256,7 @@ build_cons_expr(Head, Tail) ->
   #{op => qualified_call, target => <<"List.cons">>, args => [Head, Tail]}.
 
 build_append_expr(Left, Right) ->
-  #{op => qualified_call, target => <<"String.append">>, args => [Left, Right]}.
+  #{op => call, name => <<"__append__">>, args => [Left, Right]}.
 
 build_app(Base, Args) ->
   case Base of
@@ -643,6 +649,18 @@ build_operator_section(times) ->
   #{op => var, name => <<"__mul__">>};
 build_operator_section(pow) ->
   #{op => var, name => <<"^">>};
+build_operator_section(eqeq) ->
+  #{op => var, name => <<"__eq__">>};
+build_operator_section(neq) ->
+  #{op => var, name => <<"__neq__">>};
+build_operator_section(lt) ->
+  #{op => var, name => <<"__lt__">>};
+build_operator_section(lte) ->
+  #{op => var, name => <<"__lte__">>};
+build_operator_section(gt) ->
+  #{op => var, name => <<"__gt__">>};
+build_operator_section(gte) ->
+  #{op => var, name => <<"__gte__">>};
 build_operator_section(shl) ->
   #{op => var, name => <<"<<">>};
 build_operator_section(shr) ->

@@ -1,7 +1,9 @@
+import json
 import sys
+from uuid import UUID
 
-from libpebble2.services.appmessage import AppMessageService
-from pypkjs.runner.websocket import run_tool
+from libpebble2.services.appmessage import AppMessageService, CString, Int32, Uint32
+from pypkjs.runner.websocket import run_tool, WebsocketRunner
 
 
 MAX_EARLY_APPMESSAGES = 20
@@ -40,6 +42,45 @@ def patch_early_appmessage_replay():
 
 
 patch_early_appmessage_replay()
+
+
+def patch_debug_appmessage_send():
+    original_on_message = WebsocketRunner.on_message
+
+    def appmessage_value(entry):
+        value_type = entry.get("type")
+        value = entry.get("value")
+
+        if value_type == "string":
+            return CString(str(value or ""))
+        if value_type == "int":
+            return Int32(int(value or 0))
+        return Uint32(int(value or 0))
+
+    def on_message(runner, ws, message):
+        if not isinstance(message, (bytearray, bytes)) or len(message) == 0 or message[0] != 0x0D:
+            return original_on_message(runner, ws, message)
+
+        if runner.requires_auth and not ws.authed:
+            return
+
+        try:
+            payload = json.loads(bytes(message[1:]).decode("utf-8"))
+            app_uuid = UUID(payload["uuid"])
+            dictionary = {
+                int(entry["key"]): appmessage_value(entry)
+                for entry in payload.get("entries", [])
+            }
+            runner.appmessage.send_message(app_uuid, dictionary)
+            ws.send(bytearray([0x0D, 0x00]))
+        except Exception as exc:
+            runner.log_output("Debug AppMessage send failed: %s: %s" % (type(exc).__name__, exc))
+            ws.send(bytearray([0x0D, 0x01]))
+
+    WebsocketRunner.on_message = on_message
+
+
+patch_debug_appmessage_send()
 
 if __name__ == "__main__":
     sys.exit(run_tool())

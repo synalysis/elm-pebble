@@ -238,15 +238,23 @@ defmodule ElmEx.IR.Validation do
   # Standard library modules whose functions are handled by codegen intrinsics
   @stdlib_modules ~w(
     Basics List Maybe Result String Char Tuple Dict Set Array
-    Debug Bitwise Task Process Platform Cmd Sub
+    Debug Bitwise Task Process Platform Cmd Sub Random
     Json.Decode Json.Encode
-    Pebble.Cmd Pebble.Events Pebble.Platform Pebble.Ui PebbleCmd PebbleEvents PebbleUi PebblePlatform
+    Elm.Kernel.PebbleWatch Elm.Kernel.Random
+    Pebble.Cmd Pebble.Events Pebble.Platform Pebble.Storage Pebble.Ui PebbleCmd PebbleEvents PebbleUi PebblePlatform PebbleStorage
   )
 
   @intrinsic_functions MapSet.new([
                          "__add__",
                          "__sub__",
                          "__mul__",
+                         "__append__",
+                         "__eq__",
+                         "__neq__",
+                         "__lt__",
+                         "__lte__",
+                         "__gt__",
+                         "__gte__",
                          "__fdiv__",
                          "__idiv__"
                        ])

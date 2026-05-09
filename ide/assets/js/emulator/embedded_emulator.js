@@ -11,6 +11,19 @@ const CONFIG_RETURN_PATH = "/api/emulator/config-return"
 const MAX_LOG_LINES = 300
 const MAX_LOG_CHARS = 40000
 const PUTBYTES_SUMMARY_INTERVAL = 25
+const ENDPOINT_APP_LOG = 0x07d6
+const ENDPOINT_DATA_LOGGING = 0x1a7a
+const DEBUG_STORAGE = {
+  op: 0x454c4d00,
+  key: 0x454c4d01,
+  type: 0x454c4d02,
+  intValue: 0x454c4d03,
+  stringValue: 0x454c4d04,
+  opWrite: 1,
+  opDelete: 2,
+  typeInt: 1,
+  typeString: 2
+}
 
 const csrfToken = () => document.querySelector("meta[name='csrf-token']")?.getAttribute("content") || ""
 let rfbModulePromise = null
@@ -57,6 +70,8 @@ export class EmbeddedEmulatorHost {
     this.pendingPypkjsInstall = null
     this.currentStatus = null
     this.logLines = []
+    this.storageEntries = new Map()
+    this.logFlushScheduled = false
     this.suppressedPutBytesFrames = 0
     this.handleConfigKeyDown = event => {
       if (event.key === "Escape" && this.configPanel && !this.configPanel.classList.contains("hidden")) {
@@ -77,10 +92,18 @@ export class EmbeddedEmulatorHost {
     this.installButton = this.el.querySelector("[data-emulator-install]")
     this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
     this.stopButton = this.el.querySelector("[data-emulator-stop]")
+    this.storageRows = this.el.querySelector("[data-emulator-storage-rows]")
+    this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
+    this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
+    this.storageNewKey = this.el.querySelector("[data-emulator-storage-new-key]")
+    this.storageNewType = this.el.querySelector("[data-emulator-storage-new-type]")
+    this.storageNewValue = this.el.querySelector("[data-emulator-storage-new-value]")
     this.launchButton?.addEventListener("click", () => this.launch())
     this.stopButton?.addEventListener("click", () => this.stop())
     this.installButton?.addEventListener("click", () => this.install())
     this.preferencesButton?.addEventListener("click", () => this.loadCompanionPreferences())
+    this.storageResetButton?.addEventListener("click", () => this.resetStorage())
+    this.storageAddButton?.addEventListener("click", () => this.saveNewStorageEntry())
     this.el.querySelector("[data-emulator-screenshot]")?.addEventListener("click", () => this.captureScreenshot())
     this.el.querySelector("[data-emulator-config-cancel]")?.addEventListener("click", () => this.cancelConfig())
     this.configPanel?.addEventListener("click", event => {
@@ -120,10 +143,14 @@ export class EmbeddedEmulatorHost {
     this.installButton = this.el.querySelector("[data-emulator-install]")
     this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
     this.stopButton = this.el.querySelector("[data-emulator-stop]")
+    this.storageRows = this.el.querySelector("[data-emulator-storage-rows]")
+    this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
+    this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
 
     if (this.status && this.currentStatus) {
       this.status.textContent = this.currentStatus
     }
+    this.renderStorage()
     this.updateControlButtons()
   }
 
@@ -199,6 +226,7 @@ export class EmbeddedEmulatorHost {
     this.phoneSocket.addEventListener("open", () => {
       this.phoneOpenedAt = Date.now()
       this.appendLog("phone websocket open")
+      window.setTimeout(() => this.enableAppLogs(), 250)
     })
     this.phoneSocket.addEventListener("close", () => this.appendLog("phone websocket closed"))
   }
@@ -257,17 +285,24 @@ export class EmbeddedEmulatorHost {
         this.appendLog(this.compactPhoneLog(new TextDecoder().decode(data.slice(1))))
         break
       case 0x05:
-        this.finishPypkjsInstall(data[data.length - 1] === 0)
-        this.setStatus(data[data.length - 1] === 0 ? "PBW installed on embedded emulator" : "PBW install failed")
+        if (this.pendingPypkjsInstall) {
+          this.finishPypkjsInstall(data[data.length - 1] === 0)
+          this.setStatus(data[data.length - 1] === 0 ? "PBW installed on embedded emulator" : "PBW install failed")
+        }
         break
       case 0x08:
         this.appendLog(data[1] === 0xff ? "phone bridge connected to watch" : "phone bridge disconnected")
+        if (data[1] === 0xff) this.enableAppLogs()
         break
       case 0x09:
         this.appendLog(data[1] === 0 ? "phone bridge authenticated" : "phone bridge authentication failed")
+        if (data[1] === 0) this.enableAppLogs()
         break
       case 0x0a:
         this.handleConfigFrame(data)
+        break
+      case 0x0d:
+        this.appendLog(data[1] === 0 ? "debug storage command sent" : "debug storage command failed")
         break
       default:
         this.appendLog(`phone frame ${data.byteLength} bytes`)
@@ -298,8 +333,30 @@ export class EmbeddedEmulatorHost {
     this.phoneSocket.send(new Uint8Array([0x0b, protocol, ...payload]))
   }
 
+  sendPebbleFrame(endpoint, payload) {
+    if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) return false
+    const frame = new Uint8Array(5 + payload.length)
+    const view = new DataView(frame.buffer)
+    frame[0] = 0x01
+    view.setUint16(1, payload.length, false)
+    view.setUint16(3, endpoint, false)
+    frame.set(payload, 5)
+    this.phoneSocket.send(frame)
+    return true
+  }
+
+  enableAppLogs() {
+    if (this.sendPebbleFrame(ENDPOINT_APP_LOG, new Uint8Array([1]))) {
+      this.appendLog("requested watch AppLog shipping")
+    }
+  }
+
   async loadPbwIntoPhoneBridge() {
     if (!this.session?.artifact_path) return
+    if (!this.session?.has_phone_companion) {
+      this.appendLog("skipped companion JS load: app has no phone companion")
+      return
+    }
     if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) {
       this.appendLog("skipped companion JS load: phone bridge websocket is not open")
       return
@@ -389,8 +446,74 @@ export class EmbeddedEmulatorHost {
     const endpointName = this.endpointName(endpoint)
 
     if (endpoint === 0xbeef && payload[0] === 0x02) return null
+    if (endpoint === ENDPOINT_APP_LOG) return this.describeAppLogFrame(direction, payload)
 
     return `${direction} ${endpointName} endpoint=0x${endpoint.toString(16).padStart(4, "0")} payload=${length} bytes ${this.hexPreview(payload)}`
+  }
+
+  describeAppLogFrame(direction, payload) {
+    if (payload.length >= 40) {
+      const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
+      const level = this.appLogLevelName(payload[20])
+      const messageLength = payload[21]
+      const line = view.getUint16(22, false)
+      const filename = this.cString(payload.slice(24, 40))
+      const message = this.cString(payload.slice(40, 40 + messageLength))
+      const source = filename ? `${filename}:${line}` : `line=${line}`
+      return `${direction} AppLog ${level} ${source}: ${message || this.hexPreview(payload)}`
+    }
+
+    const strings = this.printableStrings(payload)
+    const text = strings.length > 0 ? strings.join(" | ") : this.hexPreview(payload)
+    return `${direction} AppLog: ${text}`
+  }
+
+  appLogLevelName(level) {
+    switch (level) {
+      case 1:
+        return "error"
+      case 2:
+      case 50:
+        return "warning"
+      case 3:
+      case 100:
+        return "info"
+      case 4:
+      case 200:
+        return "debug"
+      case 5:
+      case 255:
+        return "verbose"
+      default:
+        return `level=${level ?? "?"}`
+    }
+  }
+
+  printableStrings(bytes) {
+    const strings = []
+    let current = []
+
+    const flush = () => {
+      if (current.length >= 2) strings.push(new TextDecoder().decode(new Uint8Array(current)))
+      current = []
+    }
+
+    for (const byte of bytes) {
+      if (byte >= 0x20 && byte <= 0x7e) {
+        current.push(byte)
+      } else {
+        flush()
+      }
+    }
+    flush()
+
+    return strings
+  }
+
+  cString(bytes) {
+    const end = bytes.indexOf(0)
+    const slice = end >= 0 ? bytes.slice(0, end) : bytes
+    return new TextDecoder().decode(slice).trim()
   }
 
   endpointName(endpoint) {
@@ -401,8 +524,10 @@ export class EmbeddedEmulatorHost {
         return "App run state"
       case 0x1771:
         return "App fetch"
-      case 0x1a7a:
-        return "App log"
+      case ENDPOINT_APP_LOG:
+        return "AppLog"
+      case ENDPOINT_DATA_LOGGING:
+        return "Data logging"
       case 0xb1db:
         return "BlobDB"
       case 0xbeef:
@@ -538,6 +663,172 @@ export class EmbeddedEmulatorHost {
     this.configPopupTimer = null
   }
 
+  storageKeyFromInput(input) {
+    const key = parseInt(input?.value || "", 10)
+    return Number.isInteger(key) && key >= 0 ? key : null
+  }
+
+  saveNewStorageEntry() {
+    const key = this.storageKeyFromInput(this.storageNewKey)
+    if (key === null) {
+      this.setStatus("Storage key must be a non-negative integer.")
+      return
+    }
+    const type = this.storageNewType?.value === "int" ? "int" : "string"
+    const value = this.storageNewValue?.value || ""
+    this.saveStorageEntry(key, type, value)
+  }
+
+  saveStorageEntry(key, type, value) {
+    if (!this.sendDebugStorageWrite(key, type, value)) return
+    this.upsertStorageEntry({key, type, value: type === "int" ? String(parseInt(value || "0", 10) || 0) : value})
+    this.setStatus(`Saved storage key ${key}`)
+  }
+
+  deleteStorageEntry(key) {
+    if (!this.sendDebugStorageDelete(key)) return
+    this.storageEntries.delete(String(key))
+    this.renderStorage()
+    this.setStatus(`Deleted storage key ${key}`)
+  }
+
+  resetStorage() {
+    const keys = Array.from(this.storageEntries.keys())
+    if (keys.length === 0) return
+    let sent = 0
+    keys.forEach(key => {
+      if (this.sendDebugStorageDelete(parseInt(key, 10), {quiet: true})) sent += 1
+    })
+    if (sent > 0) {
+      this.storageEntries.clear()
+      this.renderStorage()
+      this.setStatus(`Reset ${sent} known storage key${sent === 1 ? "" : "s"}`)
+    }
+  }
+
+  sendDebugStorageWrite(key, type, value) {
+    const entries = [
+      {key: DEBUG_STORAGE.op, type: "uint", value: DEBUG_STORAGE.opWrite},
+      {key: DEBUG_STORAGE.key, type: "uint", value: key},
+      {key: DEBUG_STORAGE.type, type: "uint", value: type === "int" ? DEBUG_STORAGE.typeInt : DEBUG_STORAGE.typeString}
+    ]
+    if (type === "int") {
+      entries.push({key: DEBUG_STORAGE.intValue, type: "int", value: parseInt(value || "0", 10) || 0})
+    } else {
+      entries.push({key: DEBUG_STORAGE.stringValue, type: "string", value})
+    }
+    return this.sendDebugAppMessage(entries)
+  }
+
+  sendDebugStorageDelete(key, options = {}) {
+    return this.sendDebugAppMessage(
+      [
+        {key: DEBUG_STORAGE.op, type: "uint", value: DEBUG_STORAGE.opDelete},
+        {key: DEBUG_STORAGE.key, type: "uint", value: key}
+      ],
+      options
+    )
+  }
+
+  sendDebugAppMessage(entries, options = {}) {
+    if (!this.session?.app_uuid) {
+      if (!options.quiet) this.setStatus("Storage editing needs a launched PBW with an app UUID.")
+      return false
+    }
+    if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) {
+      if (!options.quiet) this.setStatus("Phone bridge is not ready for storage editing.")
+      return false
+    }
+
+    const payload = new TextEncoder().encode(JSON.stringify({uuid: this.session.app_uuid, entries}))
+    const out = new Uint8Array(1 + payload.length)
+    out[0] = 0x0d
+    out.set(payload, 1)
+    this.phoneSocket.send(out)
+    return true
+  }
+
+  upsertStorageEntry(entry) {
+    this.storageEntries.set(String(entry.key), {
+      key: entry.key,
+      type: entry.type || "string",
+      value: entry.value ?? "",
+      updatedAt: Date.now()
+    })
+    this.renderStorage()
+  }
+
+  observeStorageLog(message) {
+    const match = message.match(/(?:cmd|debug) storage_(read|write)(?:_string)? key=(\d+)(?: value=(.*?)(?: status=| rc=|$))?/)
+    if (match) {
+      const operation = match[1]
+      const key = parseInt(match[2], 10)
+      const stringLike = message.includes("storage_read_string") || message.includes("storage_write_string")
+      const value = typeof match[3] === "string" ? match[3] : ""
+      this.upsertStorageEntry({key, type: stringLike ? "string" : "int", value})
+      if (operation === "read" && typeof match[3] !== "string") this.renderStorage()
+      return
+    }
+
+    const deleted = message.match(/(?:cmd|debug) storage_delete key=(\d+)/)
+    if (deleted) {
+      this.storageEntries.delete(deleted[1])
+      this.renderStorage()
+    }
+  }
+
+  renderStorage() {
+    if (!this.storageRows) return
+    const entries = Array.from(this.storageEntries.values()).sort((a, b) => a.key - b.key)
+    if (entries.length === 0) {
+      this.storageRows.innerHTML = `<tr data-emulator-storage-empty><td colspan="4" class="py-3 text-zinc-500">No storage keys observed yet. Launch the app or add a test key below.</td></tr>`
+      this.updateControlButtons()
+      return
+    }
+
+    this.storageRows.replaceChildren(...entries.map(entry => this.storageRow(entry)))
+    this.updateControlButtons()
+  }
+
+  storageRow(entry) {
+    const row = document.createElement("tr")
+    row.className = "border-b border-zinc-100 last:border-0"
+    row.innerHTML = `
+      <td class="py-2 pr-2 font-mono text-zinc-800"></td>
+      <td class="py-2 pr-2"></td>
+      <td class="py-2 pr-2"></td>
+      <td class="py-2 text-right"></td>
+    `
+    row.children[0].textContent = String(entry.key)
+
+    const type = document.createElement("select")
+    type.className = "rounded border border-zinc-300 px-2 py-1 text-xs"
+    type.innerHTML = `<option value="string">String</option><option value="int">Int</option>`
+    type.value = entry.type
+    row.children[1].append(type)
+
+    const value = document.createElement("input")
+    value.type = "text"
+    value.value = entry.value
+    value.className = "w-full rounded border border-zinc-300 px-2 py-1 text-xs"
+    row.children[2].append(value)
+
+    const save = document.createElement("button")
+    save.type = "button"
+    save.className = "rounded bg-zinc-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+    save.textContent = "Save"
+    save.addEventListener("click", () => this.saveStorageEntry(entry.key, type.value, value.value))
+
+    const del = document.createElement("button")
+    del.type = "button"
+    del.className = "ml-2 rounded bg-rose-100 px-2 py-1 text-[11px] font-semibold text-rose-800 hover:bg-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
+    del.textContent = "Delete"
+    del.addEventListener("click", () => this.deleteStorageEntry(entry.key))
+
+    row.children[3].append(save, del)
+    return row
+  }
+
   captureScreenshot() {
     if (!this.canvas) return
     const canvas = this.canvas.querySelector("canvas")
@@ -577,14 +868,25 @@ export class EmbeddedEmulatorHost {
   appendLog(message, options = {}) {
     if (!this.log) return
     if (options.flushTransfers !== false) this.flushPutBytesSummary()
+    this.observeStorageLog(message)
     this.logLines.unshift(`${new Date().toLocaleTimeString()} ${message}`)
     this.logLines = this.logLines.slice(0, MAX_LOG_LINES)
-    this.log.textContent = this.logLines.join("\n").slice(0, MAX_LOG_CHARS)
+    this.scheduleLogFlush()
+  }
+
+  scheduleLogFlush() {
+    if (this.logFlushScheduled) return
+    this.logFlushScheduled = true
+    window.requestAnimationFrame(() => {
+      this.logFlushScheduled = false
+      if (this.log) this.log.textContent = this.logLines.join("\n").slice(0, MAX_LOG_CHARS)
+    })
   }
 
   clearLog() {
     this.logLines = []
     this.suppressedPutBytesFrames = 0
+    this.logFlushScheduled = false
     if (this.log) this.log.textContent = ""
   }
 
@@ -610,6 +912,8 @@ export class EmbeddedEmulatorHost {
     this.setButtonDisabled(this.installButton, this.launching || this.installing || this.stopping || !hasSession)
     this.setButtonDisabled(this.preferencesButton, this.launching || this.stopping || !hasSession)
     this.setButtonDisabled(this.stopButton, this.launching || this.stopping || !hasSession)
+    this.setButtonDisabled(this.storageAddButton, this.launching || this.stopping || !hasSession)
+    this.setButtonDisabled(this.storageResetButton, this.launching || this.stopping || !hasSession || this.storageEntries.size === 0)
 
     if (this.launchButton) this.launchButton.textContent = this.launching ? "Launching..." : "Launch"
     if (this.installButton) this.installButton.textContent = this.installing ? "Sending..." : "Send PBW"

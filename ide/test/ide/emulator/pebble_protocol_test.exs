@@ -87,8 +87,7 @@ defmodule Ide.Emulator.PebbleProtocolTest do
     end
 
     test "golden PutBytes sequences (aligned with libpebble2.PutBytesApp serialisation)" do
-      {_, p1} =
-        Packets.putbytes_app_init(100, Bitwise.bor(Packets.object_type(:binary), 0x80), 42)
+      {_, p1} = Packets.putbytes_app_init(100, Packets.object_type(:binary), 42)
 
       assert Base.encode16(p1, case: :lower) == "0100000064850000002a"
 

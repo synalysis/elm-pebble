@@ -65,7 +65,12 @@ defmodule ElmExecutor.Runtime.Worker do
     scheduler =
       state.scheduler
       |> Scheduler.enqueue("dispatch", message, %{})
-      |> run_scheduler(state.module, state.request_template, state.current_model, state.current_view_tree)
+      |> run_scheduler(
+        state.module,
+        state.request_template,
+        state.current_model,
+        state.current_view_tree
+      )
 
     case List.first(scheduler.history) do
       nil ->
@@ -81,7 +86,12 @@ defmodule ElmExecutor.Runtime.Worker do
     scheduler =
       state.scheduler
       |> Scheduler.enqueue("tick", "Tick", payload)
-      |> run_scheduler(state.module, state.request_template, state.current_model, state.current_view_tree)
+      |> run_scheduler(
+        state.module,
+        state.request_template,
+        state.current_model,
+        state.current_view_tree
+      )
 
     case List.first(scheduler.history) do
       nil ->
@@ -112,18 +122,33 @@ defmodule ElmExecutor.Runtime.Worker do
   end
 
   @spec run_scheduler_loop(term(), term(), term(), term(), term(), term()) :: term()
-  defp run_scheduler_loop(scheduler, _module, _request_template, _current_model, _current_view_tree, steps)
+  defp run_scheduler_loop(
+         scheduler,
+         _module,
+         _request_template,
+         _current_model,
+         _current_view_tree,
+         steps
+       )
        when steps >= @max_scheduler_steps do
     scheduler
   end
 
-  defp run_scheduler_loop(scheduler, module, request_template, current_model, current_view_tree, steps) do
+  defp run_scheduler_loop(
+         scheduler,
+         module,
+         request_template,
+         current_model,
+         current_view_tree,
+         steps
+       ) do
     case Scheduler.dequeue(scheduler) do
       {:ok, event, scheduler_after_dequeue} ->
         request =
           request_template
           |> Map.put(:message, event.message)
           |> Map.put(:message_source, Map.get(event.payload, :message_source))
+          |> Map.put(:message_value, Map.get(event.payload, :message_value))
           |> Map.put(:current_model, current_model)
           |> Map.put(:current_view_tree, current_view_tree)
 
@@ -143,7 +168,14 @@ defmodule ElmExecutor.Runtime.Worker do
         next_model = extract_runtime_model(result, current_model)
         next_view_tree = extract_view_tree(result, current_view_tree)
 
-        run_scheduler_loop(scheduler, module, request_template, next_model, next_view_tree, steps + 1)
+        run_scheduler_loop(
+          scheduler,
+          module,
+          request_template,
+          next_model,
+          next_view_tree,
+          steps + 1
+        )
 
       :empty ->
         scheduler
@@ -163,7 +195,14 @@ defmodule ElmExecutor.Runtime.Worker do
       source = Map.get(row, "source") || Map.get(row, :source) || "runtime_followup"
 
       if is_binary(message) and String.trim(message) != "" do
-        Scheduler.enqueue(acc, "runtime_followup", message, %{message_source: source})
+        payload =
+          %{message_source: source}
+          |> Map.put(
+            :message_value,
+            Map.get(row, "message_value") || Map.get(row, :message_value)
+          )
+
+        Scheduler.enqueue(acc, "runtime_followup", message, payload)
       else
         acc
       end
@@ -234,5 +273,4 @@ defmodule ElmExecutor.Runtime.Worker do
   @impl true
   @spec code_change(term(), term(), term()) :: term()
   def code_change(_old_vsn, state, _extra), do: {:ok, state}
-
 end

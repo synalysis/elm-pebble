@@ -1,8 +1,6 @@
 defmodule Ide.Emulator.PebbleProtocol.Packets do
   @moduledoc false
 
-  import Bitwise, only: [bor: 2]
-
   alias Ide.Emulator.PebbleProtocol.Frame
 
   @endpoint_app_run_state 52
@@ -59,7 +57,9 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
   @spec putbytes_app_init(non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
           {non_neg_integer(), binary()}
   def putbytes_app_init(size, object_type, app_id) do
-    {@endpoint_put_bytes, <<0x01, size::32, bor(object_type, 0x80), app_id::32>>}
+    # Modern app installs use libpebble2's PutBytesAppInit variant:
+    # object_type has bit 7 set and the app install id is 32-bit.
+    {@endpoint_put_bytes, <<0x01, size::32, Bitwise.bor(object_type, 0x80), app_id::32>>}
   end
 
   @spec putbytes_put(non_neg_integer(), binary()) :: {non_neg_integer(), binary()}

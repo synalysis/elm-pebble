@@ -306,22 +306,53 @@ defmodule Ide.Compiler do
   @spec build_elm_executor_artifacts(term()) :: term()
   defp build_elm_executor_artifacts(project_dir) when is_binary(project_dir) do
     with {:ok, project} <- Bridge.load_project(project_dir),
-         {:ok, ir} <- Lowerer.lower_project(project),
-         {:ok, core_ir} <- CoreIR.from_ir(ir, strict?: true) do
-      {:ok,
-       %{
-         core_ir: core_ir,
-         metadata: %{
-           "compiler" => "elm_executor",
-           "contract" => "elm_executor.runtime_executor.v1",
-           "mode" => "ide_runtime",
-           "entry_module" => "Main"
-         }
-       }}
+         {:ok, ir} <- Lowerer.lower_project(project) do
+      build_core_ir_artifact(ir)
     else
       _ -> {:error, :elm_executor_artifacts_unavailable}
     end
   end
+
+  @spec build_core_ir_artifact(term()) :: term()
+  defp build_core_ir_artifact(ir) do
+    case CoreIR.from_ir(ir, strict?: true) do
+      {:ok, core_ir} ->
+        {:ok, %{core_ir: core_ir, metadata: elm_executor_artifact_metadata("strict", [])}}
+
+      {:error, error} ->
+        with {:ok, core_ir} <- CoreIR.from_ir(ir) do
+          {:ok,
+           %{
+             core_ir: core_ir,
+             metadata:
+               elm_executor_artifact_metadata(
+                 "non_strict",
+                 core_ir_validation_diagnostics(error)
+               )
+           }}
+        else
+          _ -> {:error, :elm_executor_artifacts_unavailable}
+        end
+    end
+  end
+
+  @spec elm_executor_artifact_metadata(String.t(), [map()]) :: map()
+  defp elm_executor_artifact_metadata(validation_mode, diagnostics) do
+    %{
+      "compiler" => "elm_executor",
+      "contract" => "elm_executor.runtime_executor.v1",
+      "mode" => "ide_runtime",
+      "entry_module" => "Main",
+      "core_ir_validation" => validation_mode,
+      "core_ir_diagnostics" => diagnostics
+    }
+  end
+
+  @spec core_ir_validation_diagnostics(term()) :: [map()]
+  defp core_ir_validation_diagnostics(%{diagnostics: diagnostics}) when is_list(diagnostics),
+    do: diagnostics
+
+  defp core_ir_validation_diagnostics(_error), do: []
 
   @spec run_elmc_manifest(String.t(), String.t(), boolean()) ::
           {:ok, manifest_result()} | {:error, term()}

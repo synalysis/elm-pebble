@@ -5,6 +5,118 @@ defmodule Elmc.Backend.Pebble do
 
   alias ElmEx.IR
 
+  @draw_kinds [
+    none: 0,
+    clear: 2,
+    pixel: 3,
+    line: 4,
+    rect: 5,
+    fill_rect: 6,
+    circle: 7,
+    fill_circle: 8,
+    push_context: 10,
+    pop_context: 11,
+    stroke_width: 12,
+    antialiased: 13,
+    stroke_color: 14,
+    fill_color: 15,
+    text_color: 16,
+    round_rect: 17,
+    arc: 18,
+    context_group: 19,
+    path_filled: 20,
+    path_outline: 21,
+    path_outline_open: 22,
+    fill_radial: 23,
+    compositing_mode: 24,
+    bitmap_in_rect: 25,
+    rotated_bitmap: 26,
+    text_int_with_font: 27,
+    text_label_with_font: 28,
+    text: 29
+  ]
+
+  @command_kinds [
+    none: 0,
+    timer_after_ms: 1,
+    storage_write_int: 2,
+    storage_read_int: 3,
+    storage_delete: 4,
+    companion_send: 5,
+    backlight: 6,
+    get_current_time_string: 7,
+    get_clock_style_24h: 8,
+    get_timezone_is_set: 9,
+    get_timezone: 10,
+    get_watch_model: 11,
+    get_firmware_version: 12,
+    vibes_cancel: 13,
+    vibes_short_pulse: 14,
+    vibes_long_pulse: 15,
+    vibes_double_pulse: 16,
+    get_watch_color: 17,
+    wakeup_schedule_after_seconds: 18,
+    wakeup_cancel: 19,
+    log_info_code: 20,
+    log_warn_code: 21,
+    log_error_code: 22,
+    get_current_date_time: 23,
+    get_battery_level: 24,
+    get_connection_status: 25,
+    storage_write_string: 26,
+    storage_read_string: 27,
+    random_generate: 28
+  ]
+
+  @run_modes [
+    app: 0,
+    watchface: 1
+  ]
+
+  @button_ids [
+    back: 0,
+    up: 1,
+    select: 2,
+    down: 3
+  ]
+
+  @accel_axes [
+    x: 1,
+    y: 2,
+    z: 3
+  ]
+
+  @ui_node_kinds [
+    window_stack: 1000,
+    window_node: 1001,
+    canvas_layer: 1002
+  ]
+
+  @draw_kind_ids Map.new(@draw_kinds)
+  @command_kind_ids Map.new(@command_kinds)
+  @run_mode_ids Map.new(@run_modes)
+  @button_id_ids Map.new(@button_ids)
+  @accel_axis_ids Map.new(@accel_axes)
+  @ui_node_kind_ids Map.new(@ui_node_kinds)
+
+  @spec draw_kind_id!(atom()) :: non_neg_integer()
+  def draw_kind_id!(kind), do: Map.fetch!(@draw_kind_ids, kind)
+
+  @spec command_kind_id!(atom()) :: non_neg_integer()
+  def command_kind_id!(kind), do: Map.fetch!(@command_kind_ids, kind)
+
+  @spec run_mode_id!(atom()) :: non_neg_integer()
+  def run_mode_id!(mode), do: Map.fetch!(@run_mode_ids, mode)
+
+  @spec button_id!(atom()) :: non_neg_integer()
+  def button_id!(button), do: Map.fetch!(@button_id_ids, button)
+
+  @spec accel_axis_id!(atom()) :: non_neg_integer()
+  def accel_axis_id!(axis), do: Map.fetch!(@accel_axis_ids, axis)
+
+  @spec ui_node_kind_id!(atom()) :: non_neg_integer()
+  def ui_node_kind_id!(kind), do: Map.fetch!(@ui_node_kind_ids, kind)
+
   @spec write_pebble_shim(IR.t(), String.t(), String.t()) :: :ok | {:error, term()}
   def write_pebble_shim(%IR{} = ir, out_dir, entry_module) do
     c_dir = Path.join(out_dir, "c")
@@ -15,6 +127,7 @@ defmodule Elmc.Backend.Pebble do
     watch_color_tags = union_constructors(ir, "Pebble.WatchInfo", "WatchColor")
     has_view = has_view?(ir, entry_module)
     feature_flags = feature_flags(ir, msg_constructors)
+    random_generate_tag = random_generate_target_tag(ir, msg_constructors)
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <-
@@ -31,7 +144,13 @@ defmodule Elmc.Backend.Pebble do
          :ok <-
            File.write(
              Path.join(c_dir, "elmc_pebble.c"),
-             pebble_source(msg_constructors, msg_constructor_arities, has_view, entry_module)
+             pebble_source(
+               msg_constructors,
+               msg_constructor_arities,
+               has_view,
+               entry_module,
+               random_generate_tag
+             )
            ) do
       :ok
     end
@@ -60,6 +179,12 @@ defmodule Elmc.Backend.Pebble do
     watch_model_macros = constructor_tag_macros("ELMC_PEBBLE_WATCH_MODEL", watch_model_tags)
     watch_color_macros = constructor_tag_macros("ELMC_PEBBLE_WATCH_COLOR", watch_color_tags)
     feature_macros = feature_flag_macros(feature_flags)
+    run_mode_enum = c_enum("ElmcPebbleRunMode", "ELMC_PEBBLE_MODE", @run_modes)
+    button_id_enum = c_enum("ElmcPebbleButtonId", "ELMC_PEBBLE_BUTTON", @button_ids)
+    accel_axis_enum = c_enum("ElmcPebbleAccelAxis", "ELMC_PEBBLE_ACCEL_AXIS", @accel_axes)
+    draw_kind_enum = c_enum("ElmcPebbleDrawKind", "ELMC_PEBBLE_DRAW", @draw_kinds)
+    command_kind_enum = c_enum("ElmcPebbleCommandKind", "ELMC_PEBBLE_CMD", @command_kinds)
+    ui_node_kind_enum = c_enum("ElmcPebbleUiNodeKind", "ELMC_PEBBLE_UI", @ui_node_kinds)
 
     phone_to_watch_target =
       phone_to_watch_msg_target(msg_constructors, msg_constructor_payload_specs)
@@ -70,6 +195,17 @@ defmodule Elmc.Backend.Pebble do
 
     #include "elmc_worker.h"
 
+    #{feature_macros}
+
+    typedef struct {
+      unsigned char *bytes;
+      int byte_count;
+      int byte_capacity;
+      int command_count;
+      uint64_t hash;
+      int dirty;
+    } ElmcPebbleSceneBuffer;
+
     typedef struct {
       ElmcWorkerState worker;
       int initialized;
@@ -78,12 +214,11 @@ defmodule Elmc.Backend.Pebble do
       int64_t prev_window_id;
       int64_t prev_layer_id;
       uint64_t prev_ops_hash;
+      ElmcValue *stream_view_result;
+      ElmcPebbleSceneBuffer scene;
     } ElmcPebbleApp;
 
-    typedef enum {
-      ELMC_PEBBLE_MODE_APP = 0,
-      ELMC_PEBBLE_MODE_WATCHFACE = 1
-    } ElmcPebbleRunMode;
+    #{run_mode_enum}
 
     typedef enum {
       ELMC_PEBBLE_MSG_UNKNOWN = 0,
@@ -92,32 +227,26 @@ defmodule Elmc.Backend.Pebble do
 
     #{msg_presence_macros}
 
-    typedef enum {
-      ELMC_PEBBLE_BUTTON_UP = 1,
-      ELMC_PEBBLE_BUTTON_SELECT = 2,
-      ELMC_PEBBLE_BUTTON_DOWN = 3
-    } ElmcPebbleButtonId;
+    #{button_id_enum}
 
-    typedef enum {
-      ELMC_PEBBLE_ACCEL_AXIS_X = 1,
-      ELMC_PEBBLE_ACCEL_AXIS_Y = 2,
-      ELMC_PEBBLE_ACCEL_AXIS_Z = 3
-    } ElmcPebbleAccelAxis;
+    #{accel_axis_enum}
 
     typedef struct {
-      int64_t kind;
-      int64_t p0;
-      int64_t p1;
-      int64_t p2;
-      int64_t p3;
-      int64_t p4;
-      int64_t p5;
-      int64_t path_point_count;
-      int64_t path_offset_x;
-      int64_t path_offset_y;
-      int64_t path_rotation;
-      int64_t path_x[16];
-      int64_t path_y[16];
+      int32_t kind;
+      int32_t p0;
+      int32_t p1;
+      int32_t p2;
+      int32_t p3;
+      int32_t p4;
+      int32_t p5;
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+      int32_t path_point_count;
+      int32_t path_offset_x;
+      int32_t path_offset_y;
+      int32_t path_rotation;
+      int16_t path_x[16];
+      int16_t path_y[16];
+    #endif
       char text[64];
     } ElmcPebbleDrawCmd;
 
@@ -129,65 +258,15 @@ defmodule Elmc.Backend.Pebble do
       int64_t p3;
       int64_t p4;
       int64_t p5;
+      char text[128];
     } ElmcPebbleCmd;
 
-    #define ELMC_PEBBLE_DRAW_NONE 0
-    #define ELMC_PEBBLE_DRAW_TEXT_INT 1
-    #define ELMC_PEBBLE_DRAW_CLEAR 2
-    #define ELMC_PEBBLE_DRAW_PIXEL 3
-    #define ELMC_PEBBLE_DRAW_LINE 4
-    #define ELMC_PEBBLE_DRAW_RECT 5
-    #define ELMC_PEBBLE_DRAW_FILL_RECT 6
-    #define ELMC_PEBBLE_DRAW_CIRCLE 7
-    #define ELMC_PEBBLE_DRAW_FILL_CIRCLE 8
-    #define ELMC_PEBBLE_DRAW_TEXT_LABEL 9
-    #define ELMC_PEBBLE_DRAW_PUSH_CONTEXT 10
-    #define ELMC_PEBBLE_DRAW_POP_CONTEXT 11
-    #define ELMC_PEBBLE_DRAW_STROKE_WIDTH 12
-    #define ELMC_PEBBLE_DRAW_ANTIALIASED 13
-    #define ELMC_PEBBLE_DRAW_STROKE_COLOR 14
-    #define ELMC_PEBBLE_DRAW_FILL_COLOR 15
-    #define ELMC_PEBBLE_DRAW_TEXT_COLOR 16
-    #define ELMC_PEBBLE_DRAW_ROUND_RECT 17
-    #define ELMC_PEBBLE_DRAW_ARC 18
-    #define ELMC_PEBBLE_DRAW_CONTEXT_GROUP 19
-    #define ELMC_PEBBLE_DRAW_PATH_FILLED 20
-    #define ELMC_PEBBLE_DRAW_PATH_OUTLINE 21
-    #define ELMC_PEBBLE_DRAW_PATH_OUTLINE_OPEN 22
-    #define ELMC_PEBBLE_DRAW_FILL_RADIAL 23
-    #define ELMC_PEBBLE_DRAW_COMPOSITING_MODE 24
-    #define ELMC_PEBBLE_DRAW_BITMAP_IN_RECT 25
-    #define ELMC_PEBBLE_DRAW_ROTATED_BITMAP 26
-    #define ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT 27
-    #define ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT 28
-    #define ELMC_PEBBLE_DRAW_TEXT 29
-    #define ELMC_PEBBLE_CMD_NONE 0
-    #define ELMC_PEBBLE_CMD_TIMER_AFTER_MS 1
-    #define ELMC_PEBBLE_CMD_STORAGE_WRITE_INT 2
-    #define ELMC_PEBBLE_CMD_STORAGE_READ_INT 3
-    #define ELMC_PEBBLE_CMD_STORAGE_DELETE 4
-    #define ELMC_PEBBLE_CMD_COMPANION_SEND 5
-    #define ELMC_PEBBLE_CMD_BACKLIGHT 6
-    #define ELMC_PEBBLE_CMD_GET_CURRENT_TIME_STRING 7
-    #define ELMC_PEBBLE_CMD_GET_CLOCK_STYLE_24H 8
-    #define ELMC_PEBBLE_CMD_GET_TIMEZONE_IS_SET 9
-    #define ELMC_PEBBLE_CMD_GET_TIMEZONE 10
-    #define ELMC_PEBBLE_CMD_GET_WATCH_MODEL 11
-    #define ELMC_PEBBLE_CMD_GET_FIRMWARE_VERSION 12
-    #define ELMC_PEBBLE_CMD_VIBES_CANCEL 13
-    #define ELMC_PEBBLE_CMD_VIBES_SHORT_PULSE 14
-    #define ELMC_PEBBLE_CMD_VIBES_LONG_PULSE 15
-    #define ELMC_PEBBLE_CMD_VIBES_DOUBLE_PULSE 16
-    #define ELMC_PEBBLE_CMD_GET_WATCH_COLOR 17
-    #define ELMC_PEBBLE_CMD_WAKEUP_SCHEDULE_AFTER_SECONDS 18
-    #define ELMC_PEBBLE_CMD_WAKEUP_CANCEL 19
-    #define ELMC_PEBBLE_CMD_LOG_INFO_CODE 20
-    #define ELMC_PEBBLE_CMD_LOG_WARN_CODE 21
-    #define ELMC_PEBBLE_CMD_LOG_ERROR_CODE 22
-    #define ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME 23
-    #define ELMC_PEBBLE_CMD_GET_BATTERY_LEVEL 24
-    #define ELMC_PEBBLE_CMD_GET_CONNECTION_STATUS 25
-    #{feature_macros}
+    #{draw_kind_enum}
+
+    #{command_kind_enum}
+
+    #{ui_node_kind_enum}
+
     #define ELMC_PEBBLE_MSG_CURRENT_TIME_TARGET #{Map.get(feature_flags, :msg_current_time_target, -1)}
     #define ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET #{Map.get(feature_flags, :msg_current_date_time_target, -1)}
     #define ELMC_PEBBLE_MSG_BATTERY_LEVEL_TARGET #{Map.get(feature_flags, :msg_battery_level_target, -1)}
@@ -205,9 +284,9 @@ defmodule Elmc.Backend.Pebble do
     #define ELMC_PEBBLE_SUB_HOUR (1 << 10)
     #define ELMC_PEBBLE_SUB_MINUTE (1 << 11)
     #define ELMC_PEBBLE_SUB_APPMESSAGE (1 << 12)
-    #define ELMC_PEBBLE_UI_WINDOW_STACK 1000
-    #define ELMC_PEBBLE_UI_WINDOW_NODE 1001
-    #define ELMC_PEBBLE_UI_CANVAS_LAYER 1002
+    #define ELMC_PEBBLE_SUB_FRAME (1 << 13)
+    #define ELMC_PEBBLE_SUB_BUTTON_RAW (1 << 14)
+    #define ELMC_PEBBLE_SUB_ACCEL_DATA (1 << 15)
 
     int elmc_pebble_init(ElmcPebbleApp *app, ElmcValue *flags);
     int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mode);
@@ -226,14 +305,24 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_dispatch_appmessage(ElmcPebbleApp *app, int32_t key, int32_t value);
     int elmc_pebble_button_to_tag(int32_t button_id, int64_t *out_tag);
     int elmc_pebble_dispatch_button(ElmcPebbleApp *app, int32_t button_id);
+    int elmc_pebble_dispatch_button_raw(ElmcPebbleApp *app, int32_t button_id, int32_t pressed);
     int elmc_pebble_dispatch_accel_tap(ElmcPebbleApp *app, int32_t axis, int32_t direction);
+    int elmc_pebble_dispatch_accel_data(ElmcPebbleApp *app, int32_t x, int32_t y, int32_t z);
+    int elmc_pebble_dispatch_storage_string(ElmcPebbleApp *app, const char *value);
+    int elmc_pebble_dispatch_random_int(ElmcPebbleApp *app, int32_t value);
     int elmc_pebble_dispatch_battery(ElmcPebbleApp *app, int level);
     int elmc_pebble_dispatch_connection(ElmcPebbleApp *app, int connected);
+    int elmc_pebble_dispatch_frame(ElmcPebbleApp *app, int64_t dt_ms, int64_t elapsed_ms, int64_t frame);
     int elmc_pebble_dispatch_hour(ElmcPebbleApp *app, int hour);
     int elmc_pebble_dispatch_minute(ElmcPebbleApp *app, int minute);
     int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd);
     int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd);
     int elmc_pebble_view_commands(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
+    int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
+    int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
+    int elmc_pebble_ensure_scene(ElmcPebbleApp *app);
+    int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
+    void elmc_pebble_clear_view_cache(ElmcPebbleApp *app);
     int elmc_pebble_tick(ElmcPebbleApp *app);
     int64_t elmc_pebble_active_subscriptions(ElmcPebbleApp *app);
     int64_t elmc_pebble_model_as_int(ElmcPebbleApp *app);
@@ -244,8 +333,14 @@ defmodule Elmc.Backend.Pebble do
     """
   end
 
-  @spec pebble_source([map()], map(), boolean(), String.t()) :: String.t()
-  defp pebble_source(msg_constructors, msg_constructor_arities, has_view, entry_module) do
+  @spec pebble_source([map()], map(), boolean(), String.t(), integer()) :: String.t()
+  defp pebble_source(
+         msg_constructors,
+         msg_constructor_arities,
+         has_view,
+         entry_module,
+         random_generate_tag
+       ) do
     value_decode_cases =
       msg_constructors
       |> Enum.map_join("\n", fn {name, tag} ->
@@ -285,9 +380,20 @@ defmodule Elmc.Backend.Pebble do
         ""
       end
 
+    button_back_tag = pick_tag(msg_constructors, ["BackPressed", "LeftPressed"])
     button_up_tag = pick_tag(msg_constructors, ["UpPressed", "Increment"])
-    button_select_tag = pick_tag(msg_constructors, ["SelectPressed", "Increment"])
+    button_select_tag = pick_tag(msg_constructors, ["SelectPressed", "RightPressed", "Increment"])
     button_down_tag = pick_tag(msg_constructors, ["DownPressed", "Decrement"])
+    button_back_released_tag = pick_tag(msg_constructors, ["BackReleased", "LeftReleased"])
+    button_up_released_tag = pick_tag(msg_constructors, ["UpReleased"])
+    button_select_released_tag = pick_tag(msg_constructors, ["SelectReleased"])
+    button_down_released_tag = pick_tag(msg_constructors, ["DownReleased"])
+    frame_tag = pick_tag(msg_constructors, ["FrameTick", "Frame", "GameFrame"])
+    accel_data_tag = pick_tag(msg_constructors, ["AccelData", "AccelSample", "GotAccel"])
+
+    storage_string_tag =
+      pick_tag(msg_constructors, ["StorageStringLoaded", "GotStorageString", "GotString"])
+
     accel_tap_tag = pick_tag(msg_constructors, ["Shake", "AccelTap", "Tapped", "Increment"])
 
     battery_tag =
@@ -303,7 +409,9 @@ defmodule Elmc.Backend.Pebble do
     hour_tag = pick_tag(msg_constructors, ["HourChanged"])
     minute_tag = pick_tag(msg_constructors, ["MinuteChanged"])
     direct_view_macro = direct_command_macro(entry_module, "view")
-    entry_view_commands = "elmc_fn_#{String.replace(entry_module, ".", "_")}_view_commands"
+
+    entry_view_commands_from =
+      "elmc_fn_#{String.replace(entry_module, ".", "_")}_view_commands_from"
 
     """
     #include "elmc_pebble.h"
@@ -359,12 +467,6 @@ defmodule Elmc.Backend.Pebble do
     #endif
       out_cmd->text[0] = '\\0';
       if (!value) return -2;
-
-      if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) {
-        out_cmd->kind = ELMC_PEBBLE_DRAW_TEXT_INT;
-        out_cmd->p2 = elmc_as_int(value);
-        return 0;
-      }
 
       if (value->tag == ELMC_TAG_TUPLE2 && value->payload != NULL) {
         ElmcTuple2 *tuple = (ElmcTuple2 *)value->payload;
@@ -504,8 +606,272 @@ defmodule Elmc.Backend.Pebble do
       }
     }
 
-    static int elmc_append_draw_cmd_from_value(ElmcValue *value, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int *count, int depth) {
-      if (!value || !out_cmds || !count) return -1;
+    static void elmc_draw_cmd_init(ElmcPebbleDrawCmd *cmd, int32_t kind) {
+      if (!cmd) return;
+      cmd->kind = kind;
+      cmd->p0 = 0;
+      cmd->p1 = 0;
+      cmd->p2 = 0;
+      cmd->p3 = 0;
+      cmd->p4 = 0;
+      cmd->p5 = 0;
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+      cmd->path_point_count = 0;
+      cmd->path_offset_x = 0;
+      cmd->path_offset_y = 0;
+      cmd->path_rotation = 0;
+      for (int i = 0; i < 16; i++) {
+        cmd->path_x[i] = 0;
+        cmd->path_y[i] = 0;
+      }
+    #endif
+      cmd->text[0] = '\\0';
+    }
+
+    static void elmc_pebble_scene_reset(ElmcPebbleApp *app) {
+      if (!app) return;
+      app->scene.byte_count = 0;
+      app->scene.command_count = 0;
+      app->scene.hash = 1469598103934665603ULL;
+    }
+
+    static void elmc_pebble_scene_free(ElmcPebbleApp *app) {
+      if (!app) return;
+      if (app->scene.bytes) {
+        free(app->scene.bytes);
+      }
+      app->scene.bytes = NULL;
+      app->scene.byte_count = 0;
+      app->scene.byte_capacity = 0;
+      app->scene.command_count = 0;
+      app->scene.hash = 0;
+      app->scene.dirty = 1;
+    }
+
+    static void elmc_pebble_mark_scene_dirty(ElmcPebbleApp *app) {
+      if (!app) return;
+      app->scene.dirty = 1;
+    }
+
+    static int elmc_pebble_scene_reserve(ElmcPebbleApp *app, int extra) {
+      if (!app || extra < 0) return -1;
+      int needed = app->scene.byte_count + extra;
+      if (needed <= app->scene.byte_capacity) return 0;
+      int next_capacity = app->scene.byte_capacity > 0 ? app->scene.byte_capacity : 512;
+      while (next_capacity < needed) {
+        next_capacity *= 2;
+      }
+      unsigned char *next = (unsigned char *)realloc(app->scene.bytes, (size_t)next_capacity);
+      if (!next) return -2;
+      app->scene.bytes = next;
+      app->scene.byte_capacity = next_capacity;
+      return 0;
+    }
+
+    static void elmc_pebble_scene_hash_byte(ElmcPebbleApp *app, unsigned char byte) {
+      app->scene.hash ^= (uint64_t)byte;
+      app->scene.hash *= 1099511628211ULL;
+    }
+
+    static int elmc_pebble_scene_put_u8(ElmcPebbleApp *app, unsigned char value) {
+      int rc = elmc_pebble_scene_reserve(app, 1);
+      if (rc != 0) return rc;
+      app->scene.bytes[app->scene.byte_count++] = value;
+      elmc_pebble_scene_hash_byte(app, value);
+      return 0;
+    }
+
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+    static int elmc_pebble_scene_put_i16(ElmcPebbleApp *app, int32_t value) {
+      if (value < -32768) value = -32768;
+      if (value > 32767) value = 32767;
+      uint16_t raw = (uint16_t)((int16_t)value);
+      int rc = elmc_pebble_scene_reserve(app, 2);
+      if (rc != 0) return rc;
+      unsigned char b0 = (unsigned char)(raw & 0xff);
+      unsigned char b1 = (unsigned char)((raw >> 8) & 0xff);
+      app->scene.bytes[app->scene.byte_count++] = b0;
+      app->scene.bytes[app->scene.byte_count++] = b1;
+      elmc_pebble_scene_hash_byte(app, b0);
+      elmc_pebble_scene_hash_byte(app, b1);
+      return 0;
+    }
+    #endif
+
+    static int elmc_pebble_scene_put_i32(ElmcPebbleApp *app, int32_t value) {
+      uint32_t raw = (uint32_t)value;
+      int rc = elmc_pebble_scene_reserve(app, 4);
+      if (rc != 0) return rc;
+      for (int i = 0; i < 4; i++) {
+        unsigned char byte = (unsigned char)((raw >> (i * 8)) & 0xff);
+        app->scene.bytes[app->scene.byte_count++] = byte;
+        elmc_pebble_scene_hash_byte(app, byte);
+      }
+      return 0;
+    }
+
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+    static int32_t elmc_pebble_scene_read_i16(const unsigned char *bytes, int *offset, int limit) {
+      if (!bytes || !offset || *offset + 2 > limit) return 0;
+      uint16_t raw = (uint16_t)bytes[*offset] | ((uint16_t)bytes[*offset + 1] << 8);
+      *offset += 2;
+      return (int32_t)((int16_t)raw);
+    }
+    #endif
+
+    static int32_t elmc_pebble_scene_read_i32(const unsigned char *bytes, int *offset, int limit) {
+      if (!bytes || !offset || *offset + 4 > limit) return 0;
+      uint32_t raw = 0;
+      for (int i = 0; i < 4; i++) {
+        raw |= ((uint32_t)bytes[*offset + i]) << (i * 8);
+      }
+      *offset += 4;
+      return (int32_t)raw;
+    }
+
+    static int elmc_pebble_scene_cmd_extra_size(const ElmcPebbleDrawCmd *cmd) {
+      if (!cmd) return 0;
+      int extra = 0;
+      if (cmd->kind == ELMC_PEBBLE_DRAW_TEXT) {
+        int text_len = 0;
+        while (text_len < (int)sizeof(cmd->text) && cmd->text[text_len] != '\\0') text_len++;
+        extra += 1 + text_len;
+      }
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+      if (cmd->kind == ELMC_PEBBLE_DRAW_PATH_FILLED ||
+          cmd->kind == ELMC_PEBBLE_DRAW_PATH_OUTLINE ||
+          cmd->kind == ELMC_PEBBLE_DRAW_PATH_OUTLINE_OPEN) {
+        int count = cmd->path_point_count;
+        if (count < 0) count = 0;
+        if (count > 16) count = 16;
+        extra += 7 + (count * 4);
+      }
+    #endif
+      return extra;
+    }
+
+    static int elmc_pebble_scene_encode_cmd(ElmcPebbleApp *app, const ElmcPebbleDrawCmd *cmd) {
+      if (!app || !cmd) return -1;
+      int payload_len = 24 + elmc_pebble_scene_cmd_extra_size(cmd);
+      if (payload_len > 255) return -2;
+      int rc = elmc_pebble_scene_put_u8(app, (unsigned char)cmd->kind);
+      if (rc != 0) return rc;
+      rc = elmc_pebble_scene_put_u8(app, (unsigned char)payload_len);
+      if (rc != 0) return rc;
+      rc = elmc_pebble_scene_put_i32(app, cmd->p0); if (rc != 0) return rc;
+      rc = elmc_pebble_scene_put_i32(app, cmd->p1); if (rc != 0) return rc;
+      rc = elmc_pebble_scene_put_i32(app, cmd->p2); if (rc != 0) return rc;
+      rc = elmc_pebble_scene_put_i32(app, cmd->p3); if (rc != 0) return rc;
+      rc = elmc_pebble_scene_put_i32(app, cmd->p4); if (rc != 0) return rc;
+      rc = elmc_pebble_scene_put_i32(app, cmd->p5); if (rc != 0) return rc;
+      if (cmd->kind == ELMC_PEBBLE_DRAW_TEXT) {
+        int text_len = 0;
+        while (text_len < (int)sizeof(cmd->text) && cmd->text[text_len] != '\\0') text_len++;
+        rc = elmc_pebble_scene_put_u8(app, (unsigned char)text_len);
+        if (rc != 0) return rc;
+        rc = elmc_pebble_scene_reserve(app, text_len);
+        if (rc != 0) return rc;
+        for (int i = 0; i < text_len; i++) {
+          unsigned char byte = (unsigned char)cmd->text[i];
+          app->scene.bytes[app->scene.byte_count++] = byte;
+          elmc_pebble_scene_hash_byte(app, byte);
+        }
+      }
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+      if (cmd->kind == ELMC_PEBBLE_DRAW_PATH_FILLED ||
+          cmd->kind == ELMC_PEBBLE_DRAW_PATH_OUTLINE ||
+          cmd->kind == ELMC_PEBBLE_DRAW_PATH_OUTLINE_OPEN) {
+        int count = cmd->path_point_count;
+        if (count < 0) count = 0;
+        if (count > 16) count = 16;
+        rc = elmc_pebble_scene_put_u8(app, (unsigned char)count); if (rc != 0) return rc;
+        rc = elmc_pebble_scene_put_i16(app, cmd->path_offset_x); if (rc != 0) return rc;
+        rc = elmc_pebble_scene_put_i16(app, cmd->path_offset_y); if (rc != 0) return rc;
+        rc = elmc_pebble_scene_put_i16(app, cmd->path_rotation); if (rc != 0) return rc;
+        for (int i = 0; i < count; i++) {
+          rc = elmc_pebble_scene_put_i16(app, cmd->path_x[i]); if (rc != 0) return rc;
+          rc = elmc_pebble_scene_put_i16(app, cmd->path_y[i]); if (rc != 0) return rc;
+        }
+      }
+    #endif
+      app->scene.command_count += 1;
+      return 0;
+    }
+
+    static int elmc_pebble_scene_decode_record(
+        const unsigned char *bytes,
+        int byte_count,
+        int *offset,
+        ElmcPebbleDrawCmd *out_cmd) {
+      if (!bytes || !offset || !out_cmd || *offset + 2 > byte_count) return -1;
+      int kind = bytes[*offset];
+      int payload_len = bytes[*offset + 1];
+      *offset += 2;
+      int payload_end = *offset + payload_len;
+      if (payload_end > byte_count) return -2;
+      elmc_draw_cmd_init(out_cmd, kind);
+      out_cmd->p0 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
+      out_cmd->p1 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
+      out_cmd->p2 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
+      out_cmd->p3 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
+      out_cmd->p4 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
+      out_cmd->p5 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
+      if (kind == ELMC_PEBBLE_DRAW_TEXT && *offset < payload_end) {
+        int text_len = bytes[*offset];
+        *offset += 1;
+        if (text_len > (int)sizeof(out_cmd->text) - 1) text_len = (int)sizeof(out_cmd->text) - 1;
+        if (*offset + text_len <= payload_end) {
+          memcpy(out_cmd->text, bytes + *offset, (size_t)text_len);
+          out_cmd->text[text_len] = '\\0';
+        }
+      }
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+      if ((kind == ELMC_PEBBLE_DRAW_PATH_FILLED ||
+           kind == ELMC_PEBBLE_DRAW_PATH_OUTLINE ||
+           kind == ELMC_PEBBLE_DRAW_PATH_OUTLINE_OPEN) &&
+          *offset < payload_end) {
+        int count = bytes[*offset];
+        *offset += 1;
+        if (count < 0) count = 0;
+        if (count > 16) count = 16;
+        out_cmd->path_point_count = count;
+        out_cmd->path_offset_x = elmc_pebble_scene_read_i16(bytes, offset, payload_end);
+        out_cmd->path_offset_y = elmc_pebble_scene_read_i16(bytes, offset, payload_end);
+        out_cmd->path_rotation = elmc_pebble_scene_read_i16(bytes, offset, payload_end);
+        for (int i = 0; i < count; i++) {
+          out_cmd->path_x[i] = (int16_t)elmc_pebble_scene_read_i16(bytes, offset, payload_end);
+          out_cmd->path_y[i] = (int16_t)elmc_pebble_scene_read_i16(bytes, offset, payload_end);
+        }
+      }
+    #endif
+      *offset = payload_end;
+      return 0;
+    }
+
+    static void elmc_emit_draw_cmd(
+        const ElmcPebbleDrawCmd *cmd,
+        ElmcPebbleDrawCmd *out_cmds,
+        int max_cmds,
+        int *count,
+        int *emitted,
+        int skip) {
+      if (!cmd || !out_cmds || !count || !emitted) return;
+      if (*emitted >= skip && *count < max_cmds) {
+        out_cmds[*count] = *cmd;
+        *count += 1;
+      }
+      *emitted += 1;
+    }
+
+    static int elmc_append_draw_cmd_from_value_window(
+        ElmcValue *value,
+        ElmcPebbleDrawCmd *out_cmds,
+        int max_cmds,
+        int *count,
+        int *emitted,
+        int skip,
+        int depth) {
+      if (!value || !out_cmds || !count || !emitted) return -1;
       if (depth > 32) return -2;
       if (*count >= max_cmds) return 0;
 
@@ -516,33 +882,17 @@ defmodule Elmc.Backend.Pebble do
           ElmcTuple2 *ctx = (ElmcTuple2 *)tuple->second->payload;
           if (!ctx->first || !ctx->second) return -4;
 
-          if (*count < max_cmds) {
-            out_cmds[*count].kind = ELMC_PEBBLE_DRAW_PUSH_CONTEXT;
-            out_cmds[*count].p0 = 0;
-            out_cmds[*count].p1 = 0;
-            out_cmds[*count].p2 = 0;
-            out_cmds[*count].p3 = 0;
-            out_cmds[*count].p4 = 0;
-            out_cmds[*count].p5 = 0;
-    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
-            out_cmds[*count].path_point_count = 0;
-            out_cmds[*count].path_offset_x = 0;
-            out_cmds[*count].path_offset_y = 0;
-            out_cmds[*count].path_rotation = 0;
-            for (int i = 0; i < 16; i++) {
-              out_cmds[*count].path_x[i] = 0;
-              out_cmds[*count].path_y[i] = 0;
-            }
-    #endif
-            out_cmds[*count].text[0] = '\\0';
-            *count += 1;
-          }
+          ElmcPebbleDrawCmd push_cmd;
+          elmc_draw_cmd_init(&push_cmd, ELMC_PEBBLE_DRAW_PUSH_CONTEXT);
+          elmc_emit_draw_cmd(&push_cmd, out_cmds, max_cmds, count, emitted, skip);
+          if (*count >= max_cmds) return 0;
 
           ElmcValue *setting_cursor = ctx->first;
           while (setting_cursor && setting_cursor->tag == ELMC_TAG_LIST && setting_cursor->payload != NULL && *count < max_cmds) {
             ElmcCons *node = (ElmcCons *)setting_cursor->payload;
-            if (elmc_draw_setting_cmd_from_value(node->head, &out_cmds[*count]) == 0) {
-              *count += 1;
+            ElmcPebbleDrawCmd setting_cmd;
+            if (elmc_draw_setting_cmd_from_value(node->head, &setting_cmd) == 0) {
+              elmc_emit_draw_cmd(&setting_cmd, out_cmds, max_cmds, count, emitted, skip);
             }
             setting_cursor = node->tail;
           }
@@ -550,37 +900,20 @@ defmodule Elmc.Backend.Pebble do
           ElmcValue *cmd_cursor = ctx->second;
           while (cmd_cursor && cmd_cursor->tag == ELMC_TAG_LIST && cmd_cursor->payload != NULL && *count < max_cmds) {
             ElmcCons *node = (ElmcCons *)cmd_cursor->payload;
-            elmc_append_draw_cmd_from_value(node->head, out_cmds, max_cmds, count, depth + 1);
+            elmc_append_draw_cmd_from_value_window(node->head, out_cmds, max_cmds, count, emitted, skip, depth + 1);
             cmd_cursor = node->tail;
           }
 
-          if (*count < max_cmds) {
-            out_cmds[*count].kind = ELMC_PEBBLE_DRAW_POP_CONTEXT;
-            out_cmds[*count].p0 = 0;
-            out_cmds[*count].p1 = 0;
-            out_cmds[*count].p2 = 0;
-            out_cmds[*count].p3 = 0;
-            out_cmds[*count].p4 = 0;
-            out_cmds[*count].p5 = 0;
-    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
-            out_cmds[*count].path_point_count = 0;
-            out_cmds[*count].path_offset_x = 0;
-            out_cmds[*count].path_offset_y = 0;
-            out_cmds[*count].path_rotation = 0;
-            for (int i = 0; i < 16; i++) {
-              out_cmds[*count].path_x[i] = 0;
-              out_cmds[*count].path_y[i] = 0;
-            }
-    #endif
-            out_cmds[*count].text[0] = '\\0';
-            *count += 1;
-          }
+          ElmcPebbleDrawCmd pop_cmd;
+          elmc_draw_cmd_init(&pop_cmd, ELMC_PEBBLE_DRAW_POP_CONTEXT);
+          elmc_emit_draw_cmd(&pop_cmd, out_cmds, max_cmds, count, emitted, skip);
           return 0;
         }
       }
 
-      if (elmc_draw_cmd_from_value(value, &out_cmds[*count]) == 0) {
-        *count += 1;
+      ElmcPebbleDrawCmd cmd;
+      if (elmc_draw_cmd_from_value(value, &cmd) == 0) {
+        elmc_emit_draw_cmd(&cmd, out_cmds, max_cmds, count, emitted, skip);
       }
       return 0;
     }
@@ -594,6 +927,7 @@ defmodule Elmc.Backend.Pebble do
       out_cmd->p3 = 0;
       out_cmd->p4 = 0;
       out_cmd->p5 = 0;
+      out_cmd->text[0] = '\\0';
       if (!value) return -2;
 
       if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) {
@@ -605,6 +939,23 @@ defmodule Elmc.Backend.Pebble do
         ElmcTuple2 *tuple = (ElmcTuple2 *)value->payload;
         if (!tuple->first || !tuple->second) return -3;
         out_cmd->kind = elmc_as_int(tuple->first);
+        if (out_cmd->kind == ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING &&
+            tuple->second->tag == ELMC_TAG_TUPLE2 &&
+            tuple->second->payload != NULL) {
+          ElmcTuple2 *payload_tuple = (ElmcTuple2 *)tuple->second->payload;
+          if (!payload_tuple->first || !payload_tuple->second) return -3;
+          out_cmd->p0 = elmc_as_int(payload_tuple->first);
+          ElmcValue *text_value = payload_tuple->second;
+          while (text_value && text_value->tag == ELMC_TAG_TUPLE2 && text_value->payload != NULL) {
+            ElmcTuple2 *nested = (ElmcTuple2 *)text_value->payload;
+            text_value = nested->first;
+          }
+          if (text_value && text_value->tag == ELMC_TAG_STRING && text_value->payload) {
+            strncpy(out_cmd->text, (const char *)text_value->payload, sizeof(out_cmd->text) - 1);
+            out_cmd->text[sizeof(out_cmd->text) - 1] = '\\0';
+          }
+          return 0;
+        }
         int64_t payload[6] = {0, 0, 0, 0, 0, 0};
         if (elmc_unpack_draw_payload(tuple->second, payload) == 0) {
           out_cmd->p0 = payload[0];
@@ -775,6 +1126,13 @@ defmodule Elmc.Backend.Pebble do
       return (active & flag) != 0;
     }
 
+    static int elmc_pebble_finish_dispatch(ElmcPebbleApp *app, int rc) {
+      if (rc == 0) {
+        elmc_pebble_mark_scene_dirty(app);
+      }
+      return rc;
+    }
+
     int elmc_pebble_init(ElmcPebbleApp *app, ElmcValue *flags) {
       return elmc_pebble_init_with_mode(app, flags, ELMC_PEBBLE_MODE_APP);
     }
@@ -787,6 +1145,13 @@ defmodule Elmc.Backend.Pebble do
       app->prev_window_id = 0;
       app->prev_layer_id = 0;
       app->prev_ops_hash = 0;
+      app->stream_view_result = NULL;
+      app->scene.bytes = NULL;
+      app->scene.byte_count = 0;
+      app->scene.byte_capacity = 0;
+      app->scene.command_count = 0;
+      app->scene.hash = 0;
+      app->scene.dirty = 1;
       int rc = elmc_worker_init(&app->worker, flags);
       if (rc == 0) app->initialized = 1;
       return rc;
@@ -798,7 +1163,7 @@ defmodule Elmc.Backend.Pebble do
       if (!msg) return -2;
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return rc;
+      return elmc_pebble_finish_dispatch(app, rc);
     }
 
     int elmc_pebble_dispatch_tag_value(ElmcPebbleApp *app, int64_t tag, int64_t value) {
@@ -818,7 +1183,7 @@ defmodule Elmc.Backend.Pebble do
 
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return rc;
+      return elmc_pebble_finish_dispatch(app, rc);
     }
 
     int elmc_pebble_dispatch_tag_bool(ElmcPebbleApp *app, int64_t tag, int value) {
@@ -838,7 +1203,7 @@ defmodule Elmc.Backend.Pebble do
 
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return rc;
+      return elmc_pebble_finish_dispatch(app, rc);
     }
 
     int elmc_pebble_dispatch_tag_string(ElmcPebbleApp *app, int64_t tag, const char *value) {
@@ -858,7 +1223,7 @@ defmodule Elmc.Backend.Pebble do
 
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return rc;
+      return elmc_pebble_finish_dispatch(app, rc);
     }
 
     int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload) {
@@ -873,7 +1238,7 @@ defmodule Elmc.Backend.Pebble do
 
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return rc;
+      return elmc_pebble_finish_dispatch(app, rc);
     }
 
     int elmc_pebble_dispatch_tag_record_int_fields(
@@ -922,7 +1287,7 @@ defmodule Elmc.Backend.Pebble do
 
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return rc;
+      return elmc_pebble_finish_dispatch(app, rc);
 
     cleanup_values:
       for (int i = 0; i < built; i++) {
@@ -997,6 +1362,26 @@ defmodule Elmc.Backend.Pebble do
       return elmc_pebble_dispatch_int(app, tag);
     }
 
+    int elmc_pebble_dispatch_button_raw(ElmcPebbleApp *app, int32_t button_id, int32_t pressed) {
+      if (!app || !app->initialized) return -1;
+      if (app->run_mode == ELMC_PEBBLE_MODE_WATCHFACE) return -9;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_BUTTON_RAW)) return -8;
+      int64_t tag = 0;
+      if (button_id == ELMC_PEBBLE_BUTTON_BACK) {
+        tag = pressed ? #{button_back_tag} : #{button_back_released_tag};
+      } else if (button_id == ELMC_PEBBLE_BUTTON_UP) {
+        tag = pressed ? #{button_up_tag} : #{button_up_released_tag};
+      } else if (button_id == ELMC_PEBBLE_BUTTON_SELECT) {
+        tag = pressed ? #{button_select_tag} : #{button_select_released_tag};
+      } else if (button_id == ELMC_PEBBLE_BUTTON_DOWN) {
+        tag = pressed ? #{button_down_tag} : #{button_down_released_tag};
+      } else {
+        return -3;
+      }
+      if (tag <= 0) return 1;
+      return elmc_pebble_dispatch_int(app, tag);
+    }
+
     int elmc_pebble_dispatch_accel_tap(ElmcPebbleApp *app, int32_t axis, int32_t direction) {
       (void)axis;
       (void)direction;
@@ -1005,6 +1390,38 @@ defmodule Elmc.Backend.Pebble do
       if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_ACCEL_TAP)) return -8;
       if (#{accel_tap_tag} <= 0) return -6;
       return elmc_pebble_dispatch_int(app, #{accel_tap_tag});
+    }
+
+    int elmc_pebble_dispatch_accel_data(ElmcPebbleApp *app, int32_t x, int32_t y, int32_t z) {
+      if (!app || !app->initialized) return -1;
+      if (app->run_mode == ELMC_PEBBLE_MODE_WATCHFACE) return -9;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_ACCEL_DATA)) return -8;
+      if (#{accel_data_tag} <= 0) return -6;
+      const char *names[] = {"x", "y", "z"};
+      const int64_t values[] = {x, y, z};
+      return elmc_pebble_dispatch_tag_record_int_fields(app, #{accel_data_tag}, 3, names, values);
+    }
+
+    int elmc_pebble_dispatch_frame(ElmcPebbleApp *app, int64_t dt_ms, int64_t elapsed_ms, int64_t frame) {
+      if (!app || !app->initialized) return -1;
+      if (app->run_mode == ELMC_PEBBLE_MODE_WATCHFACE) return -9;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_FRAME)) return -8;
+      if (#{frame_tag} <= 0) return -6;
+      const char *names[] = {"dtMs", "elapsedMs", "frame"};
+      const int64_t values[] = {dt_ms, elapsed_ms, frame};
+      return elmc_pebble_dispatch_tag_record_int_fields(app, #{frame_tag}, 3, names, values);
+    }
+
+    int elmc_pebble_dispatch_storage_string(ElmcPebbleApp *app, const char *value) {
+      if (!app || !app->initialized) return -1;
+      if (#{storage_string_tag} <= 0) return -6;
+      return elmc_pebble_dispatch_tag_string(app, #{storage_string_tag}, value ? value : "");
+    }
+
+    int elmc_pebble_dispatch_random_int(ElmcPebbleApp *app, int32_t value) {
+      if (!app || !app->initialized) return -1;
+      if (#{random_generate_tag} <= 0) return -6;
+      return elmc_pebble_dispatch_tag_value(app, #{random_generate_tag}, value);
     }
 
     int elmc_pebble_dispatch_battery(ElmcPebbleApp *app, int level) {
@@ -1046,6 +1463,9 @@ defmodule Elmc.Backend.Pebble do
       return rc;
     }
 
+    static int elmc_pebble_view_commands_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe);
+    static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe);
+
     int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd) {
       int count = elmc_pebble_view_commands(app, out_cmd, 1);
       if (count < 0) return count;
@@ -1054,54 +1474,185 @@ defmodule Elmc.Backend.Pebble do
     }
 
     int elmc_pebble_view_commands(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds) {
-      if (!app || !app->initialized || !out_cmds || max_cmds <= 0) return -1;
+      return elmc_pebble_view_commands_impl(app, out_cmds, max_cmds, 0, 1);
+    }
+
+    int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip) {
+      return elmc_pebble_view_commands_impl(app, out_cmds, max_cmds, skip, 0);
+    }
+
+    void elmc_pebble_clear_view_cache(ElmcPebbleApp *app) {
+      if (!app) return;
+      if (app->stream_view_result) {
+        elmc_release(app->stream_view_result);
+        app->stream_view_result = NULL;
+      }
+    }
+
+    int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
+      if (!app || !app->initialized) return -1;
+      if (!app->scene.dirty) return 0;
+      elmc_pebble_scene_reset(app);
+      enum {
+        BUILD_STACK_CHUNK_CAPACITY = 4,
+        BUILD_HEAP_CHUNK_CAPACITY = 64,
+        BUILD_SMALL_HEAP_CHUNK_CAPACITY = 16,
+        BUILD_CHUNK_GUARD = 256
+      };
+      ElmcPebbleDrawCmd stack_cmds[BUILD_STACK_CHUNK_CAPACITY];
+      int build_chunk_capacity = BUILD_HEAP_CHUNK_CAPACITY;
+      ElmcPebbleDrawCmd *cmds =
+          (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * build_chunk_capacity);
+      if (!cmds) {
+        build_chunk_capacity = BUILD_SMALL_HEAP_CHUNK_CAPACITY;
+        cmds = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * build_chunk_capacity);
+      }
+      if (!cmds) {
+        build_chunk_capacity = BUILD_STACK_CHUNK_CAPACITY;
+        cmds = stack_cmds;
+      }
+      int skip = 0;
+      for (int chunk = 0; chunk < BUILD_CHUNK_GUARD; chunk++) {
+        int count = elmc_pebble_view_commands_raw_impl(app, cmds, build_chunk_capacity, skip, 0);
+        if (count < 0) {
+          elmc_pebble_clear_view_cache(app);
+          if (cmds != stack_cmds) free(cmds);
+          return count;
+        }
+        if (count == 0) break;
+        for (int i = 0; i < count; i++) {
+          int rc = elmc_pebble_scene_encode_cmd(app, &cmds[i]);
+          if (rc != 0) {
+            elmc_pebble_clear_view_cache(app);
+            if (cmds != stack_cmds) free(cmds);
+            return rc;
+          }
+        }
+        skip += count;
+        if (count < build_chunk_capacity) break;
+      }
+      elmc_pebble_clear_view_cache(app);
+      if (cmds != stack_cmds) free(cmds);
+      app->scene.dirty = 0;
+      return 0;
+    }
+
+    int elmc_pebble_scene_command_count(ElmcPebbleApp *app) {
+      if (elmc_pebble_ensure_scene(app) != 0) return 0;
+      return app->scene.command_count;
+    }
+
+    int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip) {
+      if (!app || !out_cmds || max_cmds <= 0 || skip < 0) return -1;
+      int rc = elmc_pebble_ensure_scene(app);
+      if (rc != 0) return rc;
+      int byte_offset = 0;
+      int emitted = 0;
       int count = 0;
+      while (byte_offset < app->scene.byte_count && count < max_cmds) {
+        ElmcPebbleDrawCmd cmd;
+        rc = elmc_pebble_scene_decode_record(app->scene.bytes, app->scene.byte_count, &byte_offset, &cmd);
+        if (rc != 0) return rc;
+        if (emitted >= skip) {
+          out_cmds[count++] = cmd;
+        }
+        emitted += 1;
+      }
+      return count;
+    }
+
+    static int elmc_pebble_view_commands_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe) {
+      if (!app || !app->initialized || !out_cmds || max_cmds <= 0) return -1;
+      if (skip < 0) return -1;
+      int rc = elmc_pebble_ensure_scene(app);
+      if (rc != 0) return rc;
+      if (skip == 0 && dedupe && app->scene.command_count < max_cmds) {
+        if (app->has_prev_ui && app->prev_ops_hash == app->scene.hash) {
+          return 0;
+        }
+        app->has_prev_ui = 1;
+        app->prev_window_id = 0;
+        app->prev_layer_id = 0;
+        app->prev_ops_hash = app->scene.hash;
+      }
+      return elmc_pebble_scene_commands_from(app, out_cmds, max_cmds, skip);
+    }
+
+    static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe) {
+      if (!app || !app->initialized || !out_cmds || max_cmds <= 0) return -1;
+      if (skip < 0) return -1;
+      int count = 0;
+      ElmcValue *result = NULL;
+      int result_is_cached = dedupe ? 0 : 1;
+      if (!dedupe && skip == 0) {
+        elmc_pebble_clear_view_cache(app);
+      }
     #{if has_view do
       """
       #if defined(#{direct_view_macro})
             ElmcValue *direct_model = elmc_worker_model(&app->worker);
             if (!direct_model) return -2;
             ElmcValue *direct_args[] = { direct_model };
-            int direct_count = #{entry_view_commands}(direct_args, 1, out_cmds, max_cmds);
+            int direct_count = #{entry_view_commands_from}(direct_args, 1, out_cmds, max_cmds, skip);
             elmc_release(direct_model);
             if (direct_count < 0) return direct_count;
-            uint64_t direct_hash = 1469598103934665603ULL;
-            for (int i = 0; i < direct_count; i++) {
-              direct_hash ^= (uint64_t)out_cmds[i].kind;
-              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p0;
-              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p1;
-              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p2;
-              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p3;
-              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p4;
-              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p5;
-              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_point_count;
-              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_offset_x;
-              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_offset_y;
-              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_rotation;
-              for (int j = 0; j < out_cmds[i].path_point_count && j < 16; j++) {
-                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_x[j];
-                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_y[j];
+            if (skip == 0 && dedupe) {
+              uint64_t direct_hash = 1469598103934665603ULL;
+              for (int i = 0; i < direct_count; i++) {
+                direct_hash ^= (uint64_t)out_cmds[i].kind;
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p0;
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p1;
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p2;
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p3;
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p4;
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p5;
+      #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_point_count;
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_offset_x;
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_offset_y;
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_rotation;
+                for (int j = 0; j < out_cmds[i].path_point_count && j < 16; j++) {
+                  direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_x[j];
+                  direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_y[j];
+                }
+      #endif
+              }
+              if (direct_count < max_cmds) {
+                if (app->has_prev_ui && app->prev_ops_hash == direct_hash) {
+                  return 0;
+                }
+                app->has_prev_ui = 1;
+                app->prev_window_id = 0;
+                app->prev_layer_id = 0;
+                app->prev_ops_hash = direct_hash;
               }
             }
-            if (app->has_prev_ui && app->prev_ops_hash == direct_hash) {
-              return 0;
-            }
-            app->has_prev_ui = 1;
-            app->prev_window_id = 0;
-            app->prev_layer_id = 0;
-            app->prev_ops_hash = direct_hash;
             return direct_count;
       #endif
-            ElmcValue *model = elmc_worker_model(&app->worker);
-            if (!model) return -2;
-            ElmcValue *args[] = { model };
-            ElmcValue *result = elmc_fn_#{String.replace(entry_module, ".", "_")}_view(args, 1);
-            elmc_release(model);
+            if (!dedupe && app->stream_view_result) {
+              result = app->stream_view_result;
+            } else {
+              ElmcValue *model = elmc_worker_model(&app->worker);
+              if (!model) return -2;
+              ElmcValue *args[] = { model };
+              result = elmc_fn_#{String.replace(entry_module, ".", "_")}_view(args, 1);
+              elmc_release(model);
+              if (!dedupe) {
+                app->stream_view_result = result;
+              }
+            }
       """
     else
       """
-            ElmcValue *result = elmc_worker_model(&app->worker);
-            if (!result) return -2;
+            if (!dedupe && app->stream_view_result) {
+              result = app->stream_view_result;
+            } else {
+              result = elmc_worker_model(&app->worker);
+              if (!result) return -2;
+              if (!dedupe) {
+                app->stream_view_result = result;
+              }
+            }
       """
     end}
 
@@ -1115,16 +1666,18 @@ defmodule Elmc.Backend.Pebble do
 
       if (ops->tag == ELMC_TAG_LIST) {
         ElmcValue *cursor = ops;
+        int emitted = 0;
         while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL && count < max_cmds) {
           ElmcCons *node = (ElmcCons *)cursor->payload;
-          elmc_append_draw_cmd_from_value(node->head, out_cmds, max_cmds, &count, 0);
+          elmc_append_draw_cmd_from_value_window(node->head, out_cmds, max_cmds, &count, &emitted, skip, 0);
           cursor = node->tail;
         }
       } else {
-        elmc_append_draw_cmd_from_value(ops, out_cmds, max_cmds, &count, 0);
+        int emitted = 0;
+        elmc_append_draw_cmd_from_value_window(ops, out_cmds, max_cmds, &count, &emitted, skip, 0);
       }
 
-      if (extracted == 0) {
+      if (skip == 0 && dedupe && extracted == 0 && count < max_cmds) {
         uint64_t next_hash = elmc_hash_value(ops, 0);
         if (app->has_prev_ui &&
             app->prev_window_id == window_id &&
@@ -1138,7 +1691,9 @@ defmodule Elmc.Backend.Pebble do
         app->prev_ops_hash = next_hash;
       }
 
-      elmc_release(result);
+      if (!result_is_cached) {
+        elmc_release(result);
+      }
       return count;
     }
 
@@ -1180,6 +1735,8 @@ defmodule Elmc.Backend.Pebble do
 
     void elmc_pebble_deinit(ElmcPebbleApp *app) {
       if (!app) return;
+      elmc_pebble_clear_view_cache(app);
+      elmc_pebble_scene_free(app);
       if (app->initialized) {
         elmc_worker_deinit(&app->worker);
       }
@@ -1240,6 +1797,62 @@ defmodule Elmc.Backend.Pebble do
       {Map.get(constructor, :name), Map.get(constructor, :arg)}
     end)
   end
+
+  @spec random_generate_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
+  defp random_generate_target_tag(%IR{} = ir, msg_constructors) do
+    ir.modules
+    |> Enum.flat_map(fn mod -> Map.get(mod, :declarations, []) end)
+    |> Enum.flat_map(fn declaration ->
+      random_generate_target_names(Map.get(declaration, :expr) || Map.get(declaration, :body))
+    end)
+    |> Enum.find_value(-1, fn
+      {:tag, tag} when is_integer(tag) ->
+        tag
+
+      name ->
+        Enum.find_value(msg_constructors, fn
+          {^name, tag} -> tag
+          _ -> nil
+        end)
+    end)
+  end
+
+  defp random_generate_target_names(%{
+         op: :qualified_call,
+         target: target,
+         args: [to_msg, _generator]
+       })
+       when target in ["Random.generate", "Elm.Kernel.Random.generate"] do
+    random_generate_tagger_name(to_msg)
+  end
+
+  defp random_generate_target_names(%{} = node) do
+    node
+    |> Map.values()
+    |> Enum.flat_map(&random_generate_target_names/1)
+  end
+
+  defp random_generate_target_names(list) when is_list(list),
+    do: Enum.flat_map(list, &random_generate_target_names/1)
+
+  defp random_generate_target_names(_), do: []
+
+  defp random_generate_tagger_name(%{op: :var, name: name}) when is_binary(name), do: [name]
+
+  defp random_generate_tagger_name(%{op: :int_literal, value: tag}) when is_integer(tag),
+    do: [{:tag, tag}]
+
+  defp random_generate_tagger_name(%{op: :qualified_var, target: target})
+       when is_binary(target) do
+    [target |> String.split(".") |> List.last()]
+  end
+
+  defp random_generate_tagger_name(%{op: :qualified_call, target: target, args: []})
+       when is_binary(target) do
+    [target |> String.split(".") |> List.last()]
+  end
+
+  defp random_generate_tagger_name(_), do: []
 
   @spec phone_to_watch_msg_target([{String.t(), non_neg_integer()}], map()) :: integer()
   defp phone_to_watch_msg_target(msg_constructors, payload_specs) do
@@ -1310,6 +1923,21 @@ defmodule Elmc.Backend.Pebble do
     end)
   end
 
+  @spec c_enum(String.t(), String.t(), keyword(non_neg_integer())) :: String.t()
+  defp c_enum(type_name, prefix, entries) do
+    members =
+      entries
+      |> Enum.map_join(",\n", fn {name, value} ->
+        "  #{prefix}_#{macro_name(Atom.to_string(name))} = #{value}"
+      end)
+
+    """
+    typedef enum {
+    #{members}
+    } #{type_name};
+    """
+  end
+
   @spec feature_flags(IR.t(), [{String.t(), non_neg_integer()}]) :: map()
   defp feature_flags(ir, msg_constructors) do
     targets = call_targets(ir)
@@ -1327,9 +1955,22 @@ defmodule Elmc.Backend.Pebble do
           pick_tag(msg_constructors, ["Tick", "Increment", "UpPressed"], fallback: -1) > 0,
       hour_events: uses_target?(targets, "Pebble.Events.onHourChange"),
       minute_events: uses_target?(targets, "Pebble.Events.onMinuteChange"),
+      frame_events:
+        uses_target?(targets, "Pebble.Frame.every") or
+          uses_target?(targets, "Pebble.Frame.atFps") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onFrame"),
       button_events:
         has_any_constructor?(msg_constructors, ["UpPressed", "SelectPressed", "DownPressed"]),
+      raw_button_events:
+        uses_target?(targets, "Pebble.Button.on") or
+          uses_target?(targets, "Pebble.Button.onPress") or
+          uses_target?(targets, "Pebble.Button.onRelease") or
+          uses_target?(targets, "Pebble.Button.onLongPress") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onButtonRaw"),
       accel_events: has_any_constructor?(msg_constructors, ["Shake", "AccelTap", "Tapped"]),
+      accel_data_events:
+        uses_target?(targets, "Pebble.Accel.onData") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onAccelData"),
       battery_events:
         has_any_constructor?(msg_constructors, [
           "BatteryLevelChanged",
@@ -1374,8 +2015,11 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_TICK_EVENTS", flags[:tick_events]},
       {"ELMC_PEBBLE_FEATURE_HOUR_EVENTS", flags[:hour_events]},
       {"ELMC_PEBBLE_FEATURE_MINUTE_EVENTS", flags[:minute_events]},
+      {"ELMC_PEBBLE_FEATURE_FRAME_EVENTS", flags[:frame_events]},
       {"ELMC_PEBBLE_FEATURE_BUTTON_EVENTS", flags[:button_events]},
+      {"ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS", flags[:raw_button_events]},
       {"ELMC_PEBBLE_FEATURE_ACCEL_EVENTS", flags[:accel_events]},
+      {"ELMC_PEBBLE_FEATURE_ACCEL_DATA_EVENTS", flags[:accel_data_events]},
       {"ELMC_PEBBLE_FEATURE_BATTERY_EVENTS", flags[:battery_events]},
       {"ELMC_PEBBLE_FEATURE_CONNECTION_EVENTS", flags[:connection_events]},
       {"ELMC_PEBBLE_FEATURE_INBOX_EVENTS", flags[:inbox_events]},
@@ -1383,6 +2027,9 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_CMD_TIMER_AFTER_MS", flags[:cmd_timer_after_ms]},
       {"ELMC_PEBBLE_FEATURE_CMD_STORAGE_WRITE_INT", flags[:cmd_storage_write_int]},
       {"ELMC_PEBBLE_FEATURE_CMD_STORAGE_READ_INT", flags[:cmd_storage_read_int]},
+      {"ELMC_PEBBLE_FEATURE_CMD_STORAGE_WRITE_STRING", flags[:cmd_storage_write_string]},
+      {"ELMC_PEBBLE_FEATURE_CMD_STORAGE_READ_STRING", flags[:cmd_storage_read_string]},
+      {"ELMC_PEBBLE_FEATURE_CMD_RANDOM_GENERATE", flags[:cmd_random_generate]},
       {"ELMC_PEBBLE_FEATURE_CMD_STORAGE_DELETE", flags[:cmd_storage_delete]},
       {"ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND", flags[:cmd_companion_send]},
       {"ELMC_PEBBLE_FEATURE_CMD_BACKLIGHT", flags[:cmd_backlight]},
@@ -1472,9 +2119,23 @@ defmodule Elmc.Backend.Pebble do
       cmd_timer_after_ms: uses_target?(targets, "Pebble.Cmd.timerAfter"),
       cmd_storage_write_int: uses_target?(targets, "Pebble.Cmd.storageWriteInt"),
       cmd_storage_read_int: uses_target?(targets, "Pebble.Cmd.storageReadInt"),
+      cmd_storage_write_string:
+        uses_target?(targets, "Pebble.Storage.writeString") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.storageWriteString"),
+      cmd_storage_read_string:
+        uses_target?(targets, "Pebble.Storage.readString") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.storageReadString"),
+      cmd_random_generate:
+        uses_target?(targets, "Random.generate") or
+          uses_target?(targets, "Elm.Kernel.Random.generate"),
       cmd_storage_delete: uses_target?(targets, "Pebble.Cmd.storageDelete"),
       cmd_companion_send: uses_target?(targets, "Pebble.Internal.Companion.companionSend"),
-      cmd_backlight: uses_target?(targets, "Pebble.Cmd.backlight"),
+      cmd_backlight:
+        uses_target?(targets, "Pebble.Cmd.backlight") or
+          uses_target?(targets, "Pebble.Light.interaction") or
+          uses_target?(targets, "Pebble.Light.disable") or
+          uses_target?(targets, "Pebble.Light.enable") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.backlight"),
       cmd_get_current_time_string: uses_target?(targets, "Pebble.Cmd.getCurrentTimeString"),
       cmd_get_current_date_time:
         uses_target?(targets, "Pebble.Cmd.getCurrentDateTime") or

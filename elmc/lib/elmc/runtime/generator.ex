@@ -300,6 +300,7 @@ defmodule Elmc.Runtime.Generator do
 
     typedef struct ElmcClosure {
       ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count);
+      int arity;
       int capture_count;
       ElmcValue **captures;
     } ElmcClosure;
@@ -320,6 +321,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_tuple2(ElmcValue *first, ElmcValue *second);
 
     elmc_int_t elmc_as_int(ElmcValue *value);
+    int elmc_value_equal(ElmcValue *left, ElmcValue *right);
     int elmc_string_length(ElmcValue *value);
     ElmcValue *elmc_list_head(ElmcValue *list);
     ElmcValue *elmc_tuple_first(ElmcValue *tuple);
@@ -543,7 +545,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_record_get(ElmcValue *record, const char *field_name);
     ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value);
 
-    ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int capture_count, ElmcValue **captures);
+    ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
     ElmcValue *elmc_closure_call(ElmcValue *closure, ElmcValue **args, int argc);
 
     uint64_t elmc_rc_allocated_count(void);
@@ -760,6 +762,89 @@ defmodule Elmc.Runtime.Generator do
     elmc_int_t elmc_as_int(ElmcValue *value) {
       if (!value || (value->tag != ELMC_TAG_INT && value->tag != ELMC_TAG_BOOL)) return 0;
       return *((elmc_int_t *)value->payload);
+    }
+
+    int elmc_value_equal(ElmcValue *left, ElmcValue *right) {
+      if (left == right) return 1;
+      if (!left || !right) return 0;
+      if (left->tag != right->tag) {
+        if ((left->tag == ELMC_TAG_INT || left->tag == ELMC_TAG_BOOL) &&
+            (right->tag == ELMC_TAG_INT || right->tag == ELMC_TAG_BOOL)) {
+          return elmc_as_int(left) == elmc_as_int(right);
+        }
+        return 0;
+      }
+
+      switch (left->tag) {
+        case ELMC_TAG_INT:
+        case ELMC_TAG_BOOL:
+          return elmc_as_int(left) == elmc_as_int(right);
+
+        case ELMC_TAG_FLOAT:
+          return elmc_as_float(left) == elmc_as_float(right);
+
+        case ELMC_TAG_STRING:
+          if (!left->payload || !right->payload) return left->payload == right->payload;
+          return strcmp((const char *)left->payload, (const char *)right->payload) == 0;
+
+        case ELMC_TAG_LIST: {
+          ElmcValue *a = left;
+          ElmcValue *b = right;
+          while (a && b && a->tag == ELMC_TAG_LIST && b->tag == ELMC_TAG_LIST) {
+            if (!a->payload || !b->payload) return a->payload == b->payload;
+            ElmcCons *ca = (ElmcCons *)a->payload;
+            ElmcCons *cb = (ElmcCons *)b->payload;
+            if (!elmc_value_equal(ca->head, cb->head)) return 0;
+            a = ca->tail;
+            b = cb->tail;
+          }
+          return 0;
+        }
+
+        case ELMC_TAG_TUPLE2: {
+          if (!left->payload || !right->payload) return left->payload == right->payload;
+          ElmcTuple2 *a = (ElmcTuple2 *)left->payload;
+          ElmcTuple2 *b = (ElmcTuple2 *)right->payload;
+          return elmc_value_equal(a->first, b->first) && elmc_value_equal(a->second, b->second);
+        }
+
+        case ELMC_TAG_MAYBE: {
+          if (!left->payload || !right->payload) return left->payload == right->payload;
+          ElmcMaybe *a = (ElmcMaybe *)left->payload;
+          ElmcMaybe *b = (ElmcMaybe *)right->payload;
+          if (a->is_just != b->is_just) return 0;
+          return !a->is_just || elmc_value_equal(a->value, b->value);
+        }
+
+        case ELMC_TAG_RESULT: {
+          if (!left->payload || !right->payload) return left->payload == right->payload;
+          ElmcResult *a = (ElmcResult *)left->payload;
+          ElmcResult *b = (ElmcResult *)right->payload;
+          return a->is_ok == b->is_ok && elmc_value_equal(a->value, b->value);
+        }
+
+        case ELMC_TAG_RECORD: {
+          if (!left->payload || !right->payload) return left->payload == right->payload;
+          ElmcRecord *a = (ElmcRecord *)left->payload;
+          ElmcRecord *b = (ElmcRecord *)right->payload;
+          if (a->field_count != b->field_count) return 0;
+          for (int i = 0; i < a->field_count; i++) {
+            int found = 0;
+            for (int j = 0; j < b->field_count; j++) {
+              if (strcmp(a->field_names[i], b->field_names[j]) == 0) {
+                if (!elmc_value_equal(a->field_values[i], b->field_values[j])) return 0;
+                found = 1;
+                break;
+              }
+            }
+            if (!found) return 0;
+          }
+          return 1;
+        }
+
+        default:
+          return left->payload == right->payload;
+      }
     }
 
     int elmc_string_length(ElmcValue *value) {
@@ -1354,10 +1439,11 @@ defmodule Elmc.Runtime.Generator do
       return result;
     }
 
-    ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int capture_count, ElmcValue **captures) {
+    ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures) {
       ElmcClosure *clo = (ElmcClosure *)malloc(sizeof(ElmcClosure));
       if (!clo) return NULL;
       clo->fn = fn;
+      clo->arity = arity;
       clo->capture_count = capture_count;
       clo->captures = NULL;
       if (capture_count > 0) {
@@ -1373,7 +1459,17 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_closure_call(ElmcValue *closure, ElmcValue **args, int argc) {
       if (!closure || closure->tag != ELMC_TAG_CLOSURE || !closure->payload) return elmc_new_int(0);
       ElmcClosure *clo = (ElmcClosure *)closure->payload;
-      return clo->fn(args, argc, clo->captures, clo->capture_count);
+      int consumed = argc;
+      if (clo->arity > 0 && argc > clo->arity) {
+        consumed = clo->arity;
+      }
+      ElmcValue *result = clo->fn(args, consumed, clo->captures, clo->capture_count);
+      if (consumed < argc) {
+        ElmcValue *next = elmc_closure_call(result, args + consumed, argc - consumed);
+        elmc_release(result);
+        return next;
+      }
+      return result;
     }
 
     /* ================================================================

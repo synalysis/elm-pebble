@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "elm/core": "1.0.0 <= v < 2.0.0",
+    "elm/json": "1.0.0 <= v < 2.0.0"
+  },
+  "elm-version": "0.19.0 <= v < 0.20.0",
+  "exposed-modules": [
+    "Pebble.Companion.Preferences"
+  ],
+  "license": "MIT",
+  "name": "elm-pebble/companion-preferences",
+  "summary": "Typed, Slate-like configuration schemas for Pebble companion apps",
+  "test-dependencies": {},
+  "type": "package",
+  "version": "0.1.0"
+}

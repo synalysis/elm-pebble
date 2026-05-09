@@ -1,30 +1,17 @@
 module Pebble.Events exposing
     ( batch
-    , onAccelTap
-    , onButtonDown
-    , onButtonLongDown
-    , onButtonLongSelect
-    , onButtonLongUp
-    , onButtonSelect
-    , onButtonUp
     , onHourChange
     , onMinuteChange
     , onTick
     )
 
 
-{-| Subscriptions for watch-side hardware and button events.
+{-| Generic watch-side event subscriptions.
 
 Each helper turns a platform event into a regular Elm `Sub msg`.
 
 # Tick
 @docs onTick, onHourChange, onMinuteChange
-
-# Buttons
-@docs onButtonUp, onButtonSelect, onButtonDown, onButtonLongUp, onButtonLongSelect, onButtonLongDown
-
-# Sensors
-@docs onAccelTap
 
 # Composition
 @docs batch
@@ -56,55 +43,6 @@ onHourChange =
 onMinuteChange : (Int -> msg) -> Sub msg
 onMinuteChange =
     Elm.Kernel.PebbleWatch.onMinuteChange
-
-
-{-| Receive a message when the Up button is pressed.
--}
-onButtonUp : msg -> Sub msg
-onButtonUp =
-    Elm.Kernel.PebbleWatch.onButtonUp
-
-
-{-| Receive a message when the Select button is pressed.
--}
-onButtonSelect : msg -> Sub msg
-onButtonSelect =
-    Elm.Kernel.PebbleWatch.onButtonSelect
-
-
-{-| Receive a message when the Down button is pressed.
--}
-onButtonDown : msg -> Sub msg
-onButtonDown =
-    Elm.Kernel.PebbleWatch.onButtonDown
-
-
-{-| Receive a message when an accelerometer tap gesture fires.
--}
-onAccelTap : msg -> Sub msg
-onAccelTap =
-    Elm.Kernel.PebbleWatch.onAccelTap
-
-
-{-| Receive a message when the Up button is long-pressed.
--}
-onButtonLongUp : msg -> Sub msg
-onButtonLongUp =
-    Elm.Kernel.PebbleWatch.onButtonLongUp
-
-
-{-| Receive a message when the Select button is long-pressed.
--}
-onButtonLongSelect : msg -> Sub msg
-onButtonLongSelect =
-    Elm.Kernel.PebbleWatch.onButtonLongSelect
-
-
-{-| Receive a message when the Down button is long-pressed.
--}
-onButtonLongDown : msg -> Sub msg
-onButtonLongDown =
-    Elm.Kernel.PebbleWatch.onButtonLongDown
 
 
 {-| Combine multiple Pebble subscriptions into one.

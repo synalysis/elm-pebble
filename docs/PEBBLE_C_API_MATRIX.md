@@ -8,9 +8,12 @@ This matrix tracks the app-focused subset for Foundation, Graphics, and User Int
 | --- | --- | --- | --- |
 | App / Launch reason | `Pebble.Platform` | implemented | typed enum via `LaunchReason` |
 | AppMessage (phone bridge) | `Companion.Watch` | implemented (typed protocol) | command encoding + dispatch tag/value hidden behind protocol helpers |
-| Event Service (tick/buttons/accel) | `Pebble.Events` | implemented | subscription bitmask |
+| Event Service (tick) | `Pebble.Events` | implemented | subscription bitmask |
+| Button input | `Pebble.Button` | implemented | subscription bitmask + typed button/event selectors |
+| Accelerometer | `Pebble.Accel` | implemented | subscription bitmask + typed sample dispatch |
+| Frame loop | `Pebble.Frame` | implemented | subscription bitmask + typed frame dispatch |
 | Event Service (battery/connection) | `Pebble.System` | implemented | subscription bitmask |
-| Storage (watch int) | `Pebble.Storage` | implemented | command encoding |
+| Storage (watch int/string) | `Pebble.Storage` | implemented | command encoding |
 | Timer | `Pebble.Cmd` | implemented | command encoding |
 | Wakeup | `Pebble.Wakeup` | implemented | command encoding |
 | Wall Time | `Pebble.Time` | implemented | command encoding + typed callbacks |
