@@ -38,6 +38,8 @@ defmodule Elmc.Backend.CCodegen do
 
   @spec header(ElmEx.IR.t()) :: String.t()
   defp header(ir) do
+    direct_cmd_decls = direct_command_decls(ir)
+
     function_decls =
       ir.modules
       |> Enum.flat_map(fn mod ->
@@ -58,6 +60,7 @@ defmodule Elmc.Backend.CCodegen do
     #include "../ports/elmc_ports.h"
 
     #{function_decls}
+    #{direct_cmd_decls}
 
     #endif
     """
@@ -87,6 +90,8 @@ defmodule Elmc.Backend.CCodegen do
       end)
       |> Enum.join("\n")
 
+    direct_command_defs = direct_command_defs(ir)
+
     lambda_defs =
       Process.get(:elmc_lambdas, [])
       |> Enum.reverse()
@@ -98,9 +103,13 @@ defmodule Elmc.Backend.CCodegen do
     """
     #include "elmc_generated.h"
 
+    #{direct_command_prelude(direct_command_defs != "")}
+
     #{lambda_defs}
 
     #{function_defs}
+
+    #{direct_command_defs}
     """
   end
 
@@ -298,30 +307,35 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp compile_expr(%{op: :list_literal, items: items}, env, counter) do
+    {item_code, item_vars, counter} =
+      Enum.reduce(items, {"", [], counter}, fn item, {acc_code, vars, c} ->
+        {code, var, c1} = compile_expr(item, env, c)
+        {acc_code <> "\n  " <> code, vars ++ [var], c1}
+      end)
+
     next = counter + 1
-    base = "tmp_#{next}"
+    out = "tmp_#{next}"
+    count = length(item_vars)
+    array_name = "list_items_#{next}"
+    item_list = Enum.join(item_vars, ", ")
 
-    {code, out, final_counter} =
-      Enum.reduce(
-        Enum.reverse(items),
-        {"ElmcValue *#{base} = elmc_list_nil();", base, next},
-        fn item, {acc_code, acc_list, c} ->
-          {item_code, item_var, c1} = compile_expr(item, env, c)
-          c2 = c1 + 1
-          new_list = "tmp_#{c2}"
+    releases =
+      item_vars
+      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
 
-          step = """
-          #{item_code}
-            ElmcValue *#{new_list} = elmc_list_cons(#{item_var}, #{acc_list});
-            elmc_release(#{item_var});
-            elmc_release(#{acc_list});
-          """
+    code =
+      if count == 0 do
+        "ElmcValue *#{out} = elmc_list_nil();"
+      else
+        """
+        #{item_code}
+          ElmcValue *#{array_name}[#{count}] = { #{item_list} };
+          ElmcValue *#{out} = elmc_list_from_values(#{array_name}, #{count});
+          #{releases}
+        """
+      end
 
-          {acc_code <> "\n  " <> step, new_list, c2}
-        end
-      )
-
-    {code, out, final_counter}
+    {code, out, next}
   end
 
   defp compile_expr(%{op: :tuple_second, arg: arg}, env, counter) do
@@ -874,6 +888,924 @@ defmodule Elmc.Backend.CCodegen do
     next = counter + 1
     var = "tmp_#{next}"
     {"ElmcValue *#{var} = elmc_new_int(0);", var, next}
+  end
+
+  @spec direct_command_decls(ElmEx.IR.t()) :: String.t()
+  defp direct_command_decls(ir) do
+    ir
+    |> direct_command_targets()
+    |> Enum.map(fn {module_name, decl_name} ->
+      c_name = module_fn_name(module_name, decl_name)
+      macro = direct_command_macro(module_name, decl_name)
+
+      """
+      #define #{macro} 1
+      int #{c_name}_commands(ElmcValue **args, int argc, void *out_cmds, int max_cmds);
+      """
+    end)
+    |> Enum.join("\n")
+  end
+
+  @spec direct_command_defs(ElmEx.IR.t()) :: String.t()
+  defp direct_command_defs(ir) do
+    targets = direct_command_targets(ir)
+
+    if MapSet.size(targets) == 0 do
+      ""
+    else
+      decls =
+        ir.modules
+        |> Enum.flat_map(fn mod ->
+          mod.declarations
+          |> Enum.filter(&(&1.kind == :function && MapSet.member?(targets, {mod.name, &1.name})))
+          |> Enum.map(fn decl -> {mod, decl} end)
+        end)
+
+      prototypes =
+        decls
+        |> Enum.map_join("\n", fn {mod, decl} ->
+          c_name = module_fn_name(mod.name, decl.name)
+
+          "static int #{c_name}_commands_append(ElmcValue **args, int argc, ElmcGeneratedPebbleDrawCmd *out_cmds, int max_cmds, int *count);"
+        end)
+
+      defs =
+        decls
+        |> Enum.map_join("\n", fn {mod, decl} ->
+          direct_command_def(mod, decl, targets)
+        end)
+
+      prototypes <> "\n\n" <> defs
+    end
+  end
+
+  @spec direct_command_prelude(boolean()) :: String.t()
+  defp direct_command_prelude(false), do: ""
+
+  defp direct_command_prelude(true) do
+    """
+    typedef struct {
+      int64_t kind;
+      int64_t p0;
+      int64_t p1;
+      int64_t p2;
+      int64_t p3;
+      int64_t p4;
+      int64_t p5;
+      int64_t path_point_count;
+      int64_t path_offset_x;
+      int64_t path_offset_y;
+      int64_t path_rotation;
+      int64_t path_x[16];
+      int64_t path_y[16];
+      char text[64];
+    } ElmcGeneratedPebbleDrawCmd;
+
+    static void elmc_generated_draw_init(ElmcGeneratedPebbleDrawCmd *cmd, int64_t kind) {
+      cmd->kind = kind;
+      cmd->p0 = 0;
+      cmd->p1 = 0;
+      cmd->p2 = 0;
+      cmd->p3 = 0;
+      cmd->p4 = 0;
+      cmd->p5 = 0;
+      cmd->path_point_count = 0;
+      cmd->path_offset_x = 0;
+      cmd->path_offset_y = 0;
+      cmd->path_rotation = 0;
+      for (int i = 0; i < 16; i++) {
+        cmd->path_x[i] = 0;
+        cmd->path_y[i] = 0;
+      }
+      cmd->text[0] = '\\0';
+    }
+    """
+  end
+
+  defp direct_command_targets(ir) do
+    decl_map =
+      ir.modules
+      |> Enum.flat_map(fn mod ->
+        mod.declarations
+        |> Enum.filter(&(&1.kind == :function))
+        |> Enum.map(fn decl -> {{mod.name, decl.name}, decl} end)
+      end)
+      |> Map.new()
+
+    candidates =
+      Enum.reduce(decl_map, MapSet.new(), fn {{module_name, decl_name}, decl}, acc ->
+        if direct_supported?(decl.expr, module_name, decl_map, MapSet.new()) do
+          MapSet.put(acc, {module_name, decl_name})
+        else
+          acc
+        end
+      end)
+
+    candidates
+    |> filter_direct_targets(decl_map)
+    |> filter_direct_targets(decl_map)
+  end
+
+  defp filter_direct_targets(targets, decl_map) do
+    Enum.reduce(targets, MapSet.new(), fn {module_name, _decl_name} = target, acc ->
+      decl = Map.fetch!(decl_map, target)
+
+      if direct_supported?(decl.expr, module_name, decl_map, MapSet.new()) do
+        env =
+          (decl.args || [])
+          |> Enum.reduce(%{__module__: module_name, __direct_targets__: targets}, fn arg, env ->
+            Map.put(env, arg, arg)
+          end)
+
+        case direct_emit_expr(decl.expr, env, 0) do
+          {:ok, _code, _counter} -> MapSet.put(acc, target)
+          :error -> acc
+        end
+      else
+        acc
+      end
+    end)
+  end
+
+  defp direct_supported?(expr, module_name, decl_map, seen) do
+    case expr do
+      %{op: :list_literal, items: items} ->
+        Enum.all?(items, &direct_supported?(&1, module_name, decl_map, seen))
+
+      %{op: :let_in, value_expr: value_expr, in_expr: in_expr} ->
+        (scalar_supported?(value_expr) or
+           direct_supported?(value_expr, module_name, decl_map, seen)) and
+          direct_supported?(in_expr, module_name, decl_map, seen)
+
+      %{op: :case, branches: branches} ->
+        Enum.all?(branches, &direct_supported?(&1.expr, module_name, decl_map, seen))
+
+      %{op: :if, then_expr: then_expr, else_expr: else_expr} ->
+        direct_supported?(then_expr, module_name, decl_map, seen) and
+          direct_supported?(else_expr, module_name, decl_map, seen)
+
+      %{op: :call, name: name} ->
+        target = {module_name, name}
+
+        Map.has_key?(decl_map, target) and not MapSet.member?(seen, target) and
+          direct_supported?(
+            decl_map[target].expr,
+            module_name,
+            decl_map,
+            MapSet.put(seen, target)
+          )
+
+      %{op: :var} ->
+        true
+
+      %{op: :qualified_call, target: target, args: args} ->
+        direct_qualified_supported?(
+          normalize_special_target(target),
+          args,
+          module_name,
+          decl_map,
+          seen
+        )
+
+      _ ->
+        false
+    end
+  end
+
+  defp direct_qualified_supported?(target, args, module_name, decl_map, seen) do
+    case {target, args} do
+      {"Pebble.Ui.toUiNode", [expr]} ->
+        direct_supported?(expr, module_name, decl_map, seen)
+
+      {"Pebble.Ui.windowStack", [%{op: :list_literal, items: items}]} ->
+        Enum.all?(items, &direct_supported?(&1, module_name, decl_map, seen))
+
+      {"Pebble.Ui.window", [_id, %{op: :list_literal, items: items}]} ->
+        Enum.all?(items, &direct_supported?(&1, module_name, decl_map, seen))
+
+      {"Pebble.Ui.canvasLayer", [_id, %{op: :list_literal, items: items}]} ->
+        Enum.all?(items, &direct_supported?(&1, module_name, decl_map, seen))
+
+      {"Pebble.Ui.group", [%{op: :qualified_call, target: ctx_target, args: ctx_args}]} ->
+        direct_context_supported?(
+          normalize_special_target(ctx_target),
+          ctx_args,
+          module_name,
+          decl_map,
+          seen
+        )
+
+      {"String.append", [left, right]} ->
+        direct_supported?(left, module_name, decl_map, seen) and
+          direct_supported?(right, module_name, decl_map, seen)
+
+      {target, _args}
+      when target in [
+             "Pebble.Ui.clear",
+             "Pebble.Ui.pixel",
+             "Pebble.Ui.line",
+             "Pebble.Ui.rect",
+             "Pebble.Ui.fillRect",
+             "Pebble.Ui.circle",
+             "Pebble.Ui.fillCircle",
+             "Pebble.Ui.textInt",
+             "Pebble.Ui.textLabel",
+             "Pebble.Ui.text",
+             "Pebble.Ui.roundRect",
+             "Pebble.Ui.arc",
+             "Pebble.Ui.fillRadial",
+             "Pebble.Ui.drawBitmapInRect",
+             "Pebble.Ui.drawRotatedBitmap"
+           ] ->
+        true
+
+      {target, [%{op: :qualified_call, target: path_target, args: path_args}]}
+      when target in [
+             "Pebble.Ui.pathFilled",
+             "Pebble.Ui.pathOutline",
+             "Pebble.Ui.pathOutlineOpen"
+           ] ->
+        direct_path_supported?(normalize_special_target(path_target), path_args)
+
+      _ ->
+        false
+    end
+  end
+
+  defp direct_context_supported?(
+         "Pebble.Ui.context",
+         [%{op: :list_literal, items: settings}, %{op: :list_literal, items: commands}],
+         module_name,
+         decl_map,
+         seen
+       ) do
+    Enum.all?(settings, &direct_setting_supported?/1) and
+      Enum.all?(commands, &direct_supported?(&1, module_name, decl_map, seen))
+  end
+
+  defp direct_context_supported?(_, _, _, _, _), do: false
+
+  defp direct_setting_supported?(%{op: :qualified_call, target: target, args: [_]}) do
+    normalize_special_target(target) in [
+      "Pebble.Ui.strokeWidth",
+      "Pebble.Ui.antialiased",
+      "Pebble.Ui.strokeColor",
+      "Pebble.Ui.fillColor",
+      "Pebble.Ui.textColor",
+      "Pebble.Ui.compositingMode"
+    ]
+  end
+
+  defp direct_setting_supported?(_), do: false
+
+  defp direct_path_supported?("Pebble.Ui.path", [
+         %{op: :list_literal, items: points},
+         offset,
+         rotation
+       ]) do
+    length(points) <= 16 and
+      Enum.all?(points, &(record_field_expr(&1, "x") && record_field_expr(&1, "y"))) and
+      record_field_expr(offset, "x") && record_field_expr(offset, "y") &&
+      scalar_supported?(rotation)
+  end
+
+  defp direct_path_supported?(_, _), do: false
+
+  defp scalar_supported?(_expr), do: true
+
+  defp direct_command_def(mod, decl, targets) do
+    c_name = module_fn_name(mod.name, decl.name)
+    arg_names = decl.args || []
+
+    arg_bindings =
+      arg_names
+      |> Enum.with_index()
+      |> Enum.map_join("\n  ", fn {arg, index} ->
+        "ElmcValue *#{arg} = (argc > #{index}) ? args[#{index}] : NULL;"
+      end)
+
+    unused_casts =
+      arg_names
+      |> Enum.map_join("\n  ", fn name -> "(void)#{name};" end)
+
+    env =
+      arg_names
+      |> Enum.reduce(%{__module__: mod.name, __direct_targets__: targets}, fn arg, acc ->
+        Map.put(acc, arg, arg)
+      end)
+
+    {:ok, body_code, _counter} = direct_emit_expr(decl.expr, env, 0)
+
+    """
+    static int #{c_name}_commands_append(ElmcValue **args, int argc, ElmcGeneratedPebbleDrawCmd *out_cmds, int max_cmds, int *count) {
+      (void)args;
+      (void)argc;
+      #{arg_bindings}
+      #{unused_casts}
+      if (!out_cmds || !count || max_cmds <= 0) return -1;
+      #{body_code}
+      return 0;
+    }
+
+    int #{c_name}_commands(ElmcValue **args, int argc, void *out_cmds, int max_cmds) {
+      int count = 0;
+      if (!out_cmds || max_cmds <= 0) return -1;
+      int rc = #{c_name}_commands_append(args, argc, (ElmcGeneratedPebbleDrawCmd *)out_cmds, max_cmds, &count);
+      return rc < 0 ? rc : count;
+    }
+    """
+  end
+
+  defp direct_emit_expr(%{op: :list_literal, items: items}, env, counter) do
+    Enum.reduce_while(items, {:ok, "", counter}, fn item, {:ok, acc, c} ->
+      case direct_emit_expr(item, env, c) do
+        {:ok, code, c2} -> {:cont, {:ok, acc <> "\n" <> code, c2}}
+        :error -> {:halt, :error}
+      end
+    end)
+  end
+
+  defp direct_emit_expr(
+         %{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr},
+         env,
+         counter
+       ) do
+    if direct_fragment_expr?(value_expr, env) do
+      direct_emit_expr(in_expr, Map.put(env, name, {:direct_fragment, value_expr}), counter)
+    else
+      {value_code, value_var, counter} = compile_expr(value_expr, env, counter)
+
+      case direct_emit_expr(in_expr, Map.put(env, name, value_var), counter) do
+        {:ok, body_code, counter} ->
+          {:ok,
+           """
+           #{value_code}
+             #{body_code}
+             elmc_release(#{value_var});
+           """, counter}
+
+        :error ->
+          :error
+      end
+    end
+  end
+
+  defp direct_emit_expr(
+         %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
+         env,
+         counter
+       ) do
+    {cond_code, cond_var, counter} = compile_expr(cond_expr, env, counter)
+
+    with {:ok, then_code, counter} <- direct_emit_expr(then_expr, env, counter),
+         {:ok, else_code, counter} <- direct_emit_expr(else_expr, env, counter) do
+      {:ok,
+       """
+       #{cond_code}
+         if (elmc_as_int(#{cond_var}) != 0) {
+       #{indent(then_code, 4)}
+         } else {
+       #{indent(else_code, 4)}
+         }
+         elmc_release(#{cond_var});
+       """, counter}
+    else
+      _ -> :error
+    end
+  end
+
+  defp direct_emit_expr(%{op: :case, subject: subject, branches: branches}, env, counter) do
+    subject_ref = Map.get(env, subject, subject)
+
+    result =
+      Enum.reduce_while(branches, {:ok, "", counter}, fn branch, {:ok, acc, c} ->
+        branch_env =
+          env
+          |> bind_pattern(branch.pattern, subject_ref)
+          |> Map.put(:__direct_targets__, Map.get(env, :__direct_targets__, MapSet.new()))
+
+        case direct_emit_expr(branch.expr, branch_env, c) do
+          {:ok, expr_code, c2} ->
+            cond_code = pattern_condition(subject_ref, branch.pattern)
+
+            snippet = """
+            #{if acc == "", do: "if", else: "else if"} (#{cond_code}) {
+            #{indent(expr_code, 4)}
+            }
+            """
+
+            {:cont, {:ok, acc <> snippet, c2}}
+
+          :error ->
+            {:halt, :error}
+        end
+      end)
+
+    case result do
+      {:ok, branch_code, counter} -> {:ok, branch_code, counter}
+      :error -> :error
+    end
+  end
+
+  defp direct_emit_expr(%{op: :call, name: name, args: args}, env, counter) do
+    module_name = Map.get(env, :__module__, "Main")
+    targets = Map.get(env, :__direct_targets__, MapSet.new())
+
+    if MapSet.member?(targets, {module_name, name}) do
+      {arg_code, arg_vars, counter} =
+        Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
+          {code, var, c2} = compile_expr(arg_expr, env, c)
+          {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
+        end)
+
+      next = counter + 1
+      args_var = "direct_call_args_#{next}"
+      argc = length(arg_vars)
+      arg_list = Enum.join(arg_vars, ", ")
+      c_name = module_fn_name(module_name, name)
+
+      releases =
+        arg_vars
+        |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+
+      {:ok,
+       """
+       #{arg_code}
+         ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
+         int direct_rc_#{next} = #{c_name}_commands_append(#{args_var}, #{argc}, out_cmds, max_cmds, count);
+         #{releases}
+         if (direct_rc_#{next} < 0) return direct_rc_#{next};
+       """, next}
+    else
+      :error
+    end
+  end
+
+  defp direct_emit_expr(%{op: :var, name: name}, env, counter) do
+    case Map.get(env, name) do
+      {:direct_fragment, expr} -> direct_emit_expr(expr, Map.delete(env, name), counter)
+      _ -> :error
+    end
+  end
+
+  defp direct_emit_expr(%{op: :qualified_call, target: target, args: args}, env, counter) do
+    direct_emit_qualified(normalize_special_target(target), args, env, counter)
+  end
+
+  defp direct_emit_expr(_expr, _env, _counter), do: :error
+
+  defp direct_fragment_expr?(%{op: :list_literal}, _env), do: true
+  defp direct_fragment_expr?(%{op: :case}, _env), do: true
+
+  defp direct_fragment_expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, env),
+    do: direct_fragment_expr?(then_expr, env) and direct_fragment_expr?(else_expr, env)
+
+  defp direct_fragment_expr?(%{op: :call, name: name}, env) do
+    module_name = Map.get(env, :__module__, "Main")
+    targets = Map.get(env, :__direct_targets__, MapSet.new())
+    MapSet.member?(targets, {module_name, name})
+  end
+
+  defp direct_fragment_expr?(%{op: :qualified_call, target: target}, _env) do
+    normalize_special_target(target) in [
+      "Pebble.Ui.toUiNode",
+      "String.append",
+      "Pebble.Ui.clear",
+      "Pebble.Ui.pixel",
+      "Pebble.Ui.line",
+      "Pebble.Ui.rect",
+      "Pebble.Ui.fillRect",
+      "Pebble.Ui.circle",
+      "Pebble.Ui.fillCircle",
+      "Pebble.Ui.textInt",
+      "Pebble.Ui.textLabel",
+      "Pebble.Ui.text",
+      "Pebble.Ui.group",
+      "Pebble.Ui.pathFilled",
+      "Pebble.Ui.pathOutline",
+      "Pebble.Ui.pathOutlineOpen",
+      "Pebble.Ui.roundRect",
+      "Pebble.Ui.arc",
+      "Pebble.Ui.fillRadial",
+      "Pebble.Ui.drawBitmapInRect",
+      "Pebble.Ui.drawRotatedBitmap"
+    ]
+  end
+
+  defp direct_fragment_expr?(_, _env), do: false
+
+  defp direct_emit_qualified("Pebble.Ui.toUiNode", [expr], env, counter),
+    do: direct_emit_expr(expr, env, counter)
+
+  defp direct_emit_qualified("String.append", [left, right], env, counter) do
+    with {:ok, left_code, counter} <- direct_emit_expr(left, env, counter),
+         {:ok, right_code, counter} <- direct_emit_expr(right, env, counter) do
+      {:ok, left_code <> right_code, counter}
+    else
+      _ -> :error
+    end
+  end
+
+  defp direct_emit_qualified(
+         "Pebble.Ui.windowStack",
+         [%{op: :list_literal, items: items}],
+         env,
+         counter
+       ),
+       do: direct_emit_expr(%{op: :list_literal, items: items}, env, counter)
+
+  defp direct_emit_qualified(
+         "Pebble.Ui.window",
+         [_id, %{op: :list_literal, items: items}],
+         env,
+         counter
+       ),
+       do: direct_emit_expr(%{op: :list_literal, items: items}, env, counter)
+
+  defp direct_emit_qualified(
+         "Pebble.Ui.canvasLayer",
+         [_id, %{op: :list_literal, items: items}],
+         env,
+         counter
+       ),
+       do: direct_emit_expr(%{op: :list_literal, items: items}, env, counter)
+
+  defp direct_emit_qualified(
+         "Pebble.Ui.group",
+         [%{op: :qualified_call, target: ctx_target, args: ctx_args}],
+         env,
+         counter
+       ) do
+    case {normalize_special_target(ctx_target), ctx_args} do
+      {"Pebble.Ui.context",
+       [%{op: :list_literal, items: settings}, %{op: :list_literal, items: commands}]} ->
+        with {:ok, push_code, counter} <- direct_append_command(10, [], env, counter),
+             {:ok, settings_code, counter} <- direct_emit_settings(settings, env, counter),
+             {:ok, command_code, counter} <-
+               direct_emit_expr(%{op: :list_literal, items: commands}, env, counter),
+             {:ok, pop_code, counter} <- direct_append_command(11, [], env, counter) do
+          {:ok, push_code <> settings_code <> command_code <> pop_code, counter}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp direct_emit_qualified("Pebble.Ui.clear", [color], env, counter),
+    do: direct_append_command(2, [color], env, counter)
+
+  defp direct_emit_qualified("Pebble.Ui.pixel", [pos, color], env, counter),
+    do:
+      direct_append_command(
+        3,
+        [record_field_expr(pos, "x"), record_field_expr(pos, "y"), color],
+        env,
+        counter
+      )
+
+  defp direct_emit_qualified("Pebble.Ui.line", [start_pos, end_pos, color], env, counter),
+    do:
+      direct_append_command(
+        4,
+        [
+          record_field_expr(start_pos, "x"),
+          record_field_expr(start_pos, "y"),
+          record_field_expr(end_pos, "x"),
+          record_field_expr(end_pos, "y"),
+          color
+        ],
+        env,
+        counter
+      )
+
+  defp direct_emit_qualified("Pebble.Ui.rect", [bounds, color], env, counter),
+    do: direct_bounds_command(5, bounds, [color], env, counter)
+
+  defp direct_emit_qualified("Pebble.Ui.fillRect", [bounds, color], env, counter),
+    do: direct_bounds_command(6, bounds, [color], env, counter)
+
+  defp direct_emit_qualified("Pebble.Ui.circle", [center, radius, color], env, counter),
+    do:
+      direct_append_command(
+        7,
+        [record_field_expr(center, "x"), record_field_expr(center, "y"), radius, color],
+        env,
+        counter
+      )
+
+  defp direct_emit_qualified("Pebble.Ui.fillCircle", [center, radius, color], env, counter),
+    do:
+      direct_append_command(
+        8,
+        [record_field_expr(center, "x"), record_field_expr(center, "y"), radius, color],
+        env,
+        counter
+      )
+
+  defp direct_emit_qualified("Pebble.Ui.textInt", [font, pos, value], env, counter),
+    do:
+      direct_append_command(
+        27,
+        [font, record_field_expr(pos, "x"), record_field_expr(pos, "y"), value],
+        env,
+        counter
+      )
+
+  defp direct_emit_qualified("Pebble.Ui.textLabel", [font, pos, label], env, counter),
+    do:
+      direct_append_command(
+        28,
+        [font, record_field_expr(pos, "x"), record_field_expr(pos, "y"), label],
+        env,
+        counter
+      )
+
+  defp direct_emit_qualified("Pebble.Ui.text", [font, bounds, value], env, counter),
+    do:
+      direct_append_text_command(
+        29,
+        [
+          font,
+          record_field_expr(bounds, "x"),
+          record_field_expr(bounds, "y"),
+          record_field_expr(bounds, "w"),
+          record_field_expr(bounds, "h")
+        ],
+        value,
+        env,
+        counter
+      )
+
+  defp direct_emit_qualified("Pebble.Ui.roundRect", [bounds, radius, color], env, counter),
+    do: direct_bounds_command(17, bounds, [radius, color], env, counter)
+
+  defp direct_emit_qualified("Pebble.Ui.arc", [bounds, start_angle, end_angle], env, counter),
+    do: direct_bounds_command(18, bounds, [start_angle, end_angle], env, counter)
+
+  defp direct_emit_qualified(
+         "Pebble.Ui.fillRadial",
+         [bounds, start_angle, end_angle],
+         env,
+         counter
+       ),
+       do: direct_bounds_command(23, bounds, [start_angle, end_angle], env, counter)
+
+  defp direct_emit_qualified("Pebble.Ui.drawBitmapInRect", [bitmap, bounds], env, counter),
+    do:
+      direct_append_command(
+        25,
+        [
+          bitmap,
+          record_field_expr(bounds, "x"),
+          record_field_expr(bounds, "y"),
+          record_field_expr(bounds, "w"),
+          record_field_expr(bounds, "h")
+        ],
+        env,
+        counter
+      )
+
+  defp direct_emit_qualified("Pebble.Ui.drawRotatedBitmap", args, env, counter),
+    do: direct_append_command(26, args, env, counter)
+
+  defp direct_emit_qualified("Pebble.Ui.pathFilled", [path], env, counter),
+    do: direct_path_command(20, path, env, counter)
+
+  defp direct_emit_qualified("Pebble.Ui.pathOutline", [path], env, counter),
+    do: direct_path_command(21, path, env, counter)
+
+  defp direct_emit_qualified("Pebble.Ui.pathOutlineOpen", [path], env, counter),
+    do: direct_path_command(22, path, env, counter)
+
+  defp direct_emit_qualified(_, _, _, _), do: :error
+
+  defp direct_emit_settings(settings, env, counter) do
+    Enum.reduce_while(settings, {:ok, "", counter}, fn setting, {:ok, acc, c} ->
+      case direct_setting_command(setting, env, c) do
+        {:ok, code, c2} -> {:cont, {:ok, acc <> code, c2}}
+        :error -> {:halt, :error}
+      end
+    end)
+  end
+
+  defp direct_setting_command(%{op: :qualified_call, target: target, args: [value]}, env, counter) do
+    kind =
+      case normalize_special_target(target) do
+        "Pebble.Ui.strokeWidth" -> 12
+        "Pebble.Ui.antialiased" -> 13
+        "Pebble.Ui.strokeColor" -> 14
+        "Pebble.Ui.fillColor" -> 15
+        "Pebble.Ui.textColor" -> 16
+        "Pebble.Ui.compositingMode" -> 24
+        _ -> nil
+      end
+
+    if kind, do: direct_append_command(kind, [value], env, counter), else: :error
+  end
+
+  defp direct_setting_command(_, _, _), do: :error
+
+  defp direct_bounds_command(kind, bounds, extra_args, env, counter) do
+    direct_append_command(
+      kind,
+      [
+        record_field_expr(bounds, "x"),
+        record_field_expr(bounds, "y"),
+        record_field_expr(bounds, "w"),
+        record_field_expr(bounds, "h")
+      ] ++ extra_args,
+      env,
+      counter
+    )
+  end
+
+  defp direct_append_command(kind, args, env, counter) do
+    {code, values, counter} =
+      Enum.reduce(args, {"", [], counter}, fn arg, {acc, vars, c} ->
+        {arg_code, value_ref, c2} = direct_int_value(arg, env, c)
+        {acc <> arg_code, vars ++ [value_ref], c2}
+      end)
+
+    next = counter + 1
+
+    assignments =
+      values
+      |> Enum.with_index()
+      |> Enum.map_join("\n  ", fn {value, index} -> "out_cmds[*count].p#{index} = #{value};" end)
+
+    {:ok,
+     """
+     #{code}
+       if (*count < max_cmds) {
+         elmc_generated_draw_init(&out_cmds[*count], #{kind});
+         #{assignments}
+         *count += 1;
+       }
+     """, next}
+  end
+
+  defp direct_append_text_command(kind, args, text_expr, env, counter) do
+    {code, values, counter} =
+      Enum.reduce(args, {"", [], counter}, fn arg, {acc, vars, c} ->
+        {arg_code, value_ref, c2} = direct_int_value(arg, env, c)
+        {acc <> arg_code, vars ++ [value_ref], c2}
+      end)
+
+    {text_code, text_var, counter} = compile_expr(text_expr, env, counter)
+
+    assignments =
+      values
+      |> Enum.with_index()
+      |> Enum.map_join("\n  ", fn {value, index} -> "out_cmds[*count].p#{index} = #{value};" end)
+
+    {:ok,
+     """
+     #{code}
+     #{text_code}
+       if (*count < max_cmds) {
+         elmc_generated_draw_init(&out_cmds[*count], #{kind});
+         #{assignments}
+         if (#{text_var} && #{text_var}->tag == ELMC_TAG_STRING && #{text_var}->payload) {
+           const char *direct_text = (const char *)#{text_var}->payload;
+           int direct_text_i = 0;
+           while (direct_text[direct_text_i] && direct_text_i < 63) {
+             out_cmds[*count].text[direct_text_i] = direct_text[direct_text_i];
+             direct_text_i++;
+           }
+           out_cmds[*count].text[direct_text_i] = '\\0';
+         }
+         *count += 1;
+       }
+       elmc_release(#{text_var});
+     """, counter}
+  end
+
+  defp direct_path_command(kind, %{op: :qualified_call, target: target, args: args}, env, counter) do
+    with "Pebble.Ui.path" <- normalize_special_target(target),
+         [%{op: :list_literal, items: points}, offset, rotation] <- args,
+         true <- length(points) <= 16 do
+      {code, point_assignments, counter} =
+        points
+        |> Enum.with_index()
+        |> Enum.reduce({"", [], counter}, fn {point, index}, {acc, assignments, c} ->
+          {x_code, x_ref, c} = direct_int_value(record_field_expr(point, "x"), env, c)
+          {y_code, y_ref, c} = direct_int_value(record_field_expr(point, "y"), env, c)
+
+          assignment = """
+              out_cmds[*count].path_x[#{index}] = #{x_ref};
+              out_cmds[*count].path_y[#{index}] = #{y_ref};
+          """
+
+          {acc <> x_code <> y_code, assignments ++ [assignment], c}
+        end)
+
+      {offset_x_code, offset_x, counter} =
+        direct_int_value(record_field_expr(offset, "x"), env, counter)
+
+      {offset_y_code, offset_y, counter} =
+        direct_int_value(record_field_expr(offset, "y"), env, counter)
+
+      {rotation_code, rotation_ref, counter} = direct_int_value(rotation, env, counter)
+
+      {:ok,
+       """
+       #{code}
+       #{offset_x_code}
+       #{offset_y_code}
+       #{rotation_code}
+         if (*count < max_cmds) {
+           elmc_generated_draw_init(&out_cmds[*count], #{kind});
+           out_cmds[*count].path_point_count = #{length(points)};
+           out_cmds[*count].path_offset_x = #{offset_x};
+           out_cmds[*count].path_offset_y = #{offset_y};
+           out_cmds[*count].path_rotation = #{rotation_ref};
+       #{Enum.join(point_assignments, "\n")}
+           *count += 1;
+         }
+       """, counter}
+    else
+      _ -> :error
+    end
+  end
+
+  defp direct_path_command(_, _, _, _), do: :error
+
+  defp direct_int_value(nil, _env, counter), do: {"", "0", counter}
+
+  defp direct_int_value(%{op: :int_literal, value: value}, _env, counter),
+    do: {"", "#{value}", counter}
+
+  defp direct_int_value(%{op: :char_literal, value: value}, _env, counter),
+    do: {"", "#{value}", counter}
+
+  defp direct_int_value(%{op: :qualified_call, target: target, args: args}, env, counter) do
+    case special_value_from_target(target, args) do
+      %{op: :int_literal, value: value} ->
+        {"", "#{value}", counter}
+
+      %{op: :field_access} = field ->
+        direct_int_value(field, env, counter)
+
+      nil ->
+        direct_runtime_int_value(%{op: :qualified_call, target: target, args: args}, env, counter)
+
+      expr ->
+        direct_int_value(expr, env, counter)
+    end
+  end
+
+  defp direct_int_value(%{op: :field_access, arg: arg, field: field}, env, counter) do
+    case record_field_expr(arg, field) do
+      nil -> direct_runtime_int_value(%{op: :field_access, arg: arg, field: field}, env, counter)
+      expr -> direct_int_value(expr, env, counter)
+    end
+  end
+
+  defp direct_int_value(expr, env, counter), do: direct_runtime_int_value(expr, env, counter)
+
+  defp direct_runtime_int_value(expr, env, counter) do
+    {expr_code, expr_var, counter} = compile_expr(expr, env, counter)
+    next = counter + 1
+    int_var = "direct_i_#{next}"
+
+    {
+      """
+      #{expr_code}
+        int64_t #{int_var} = elmc_as_int(#{expr_var});
+        elmc_release(#{expr_var});
+      """,
+      int_var,
+      next
+    }
+  end
+
+  defp record_field_expr(%{op: :record_literal, fields: fields}, field) do
+    fields
+    |> Enum.find(&(&1.name == field))
+    |> case do
+      nil -> nil
+      %{expr: expr} -> expr
+    end
+  end
+
+  defp record_field_expr(%{op: :var}, _field), do: nil
+
+  defp record_field_expr(expr, field) when is_map(expr) do
+    %{op: :field_access, arg: expr, field: field}
+  end
+
+  defp record_field_expr(_expr, _field), do: nil
+
+  defp direct_command_macro(module_name, decl_name) do
+    safe =
+      "#{module_name}_#{decl_name}"
+      |> String.replace(~r/[^A-Za-z0-9_]/, "_")
+      |> String.upcase()
+
+    "ELMC_HAVE_DIRECT_COMMANDS_#{safe}"
   end
 
   @spec special_value_from_target(String.t(), [map()]) :: map() | nil
@@ -3222,7 +4154,7 @@ defmodule Elmc.Backend.CCodegen do
     code = """
     #{left_code}
       #{right_code}
-      int64_t __den_#{next} = elmc_as_int(#{right_var});
+      elmc_int_t __den_#{next} = elmc_as_int(#{right_var});
       ElmcValue *#{out} = elmc_new_int(__den_#{next} == 0 ? 0 : (elmc_as_int(#{left_var}) / __den_#{next}));
       elmc_release(#{left_var});
       elmc_release(#{right_var});

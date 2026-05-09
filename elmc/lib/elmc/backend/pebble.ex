@@ -302,6 +302,8 @@ defmodule Elmc.Backend.Pebble do
 
     hour_tag = pick_tag(msg_constructors, ["HourChanged"])
     minute_tag = pick_tag(msg_constructors, ["MinuteChanged"])
+    direct_view_macro = direct_command_macro(entry_module, "view")
+    entry_view_commands = "elmc_fn_#{String.replace(entry_module, ".", "_")}_view_commands"
 
     """
     #include "elmc_pebble.h"
@@ -1056,6 +1058,40 @@ defmodule Elmc.Backend.Pebble do
       int count = 0;
     #{if has_view do
       """
+      #if defined(#{direct_view_macro})
+            ElmcValue *direct_model = elmc_worker_model(&app->worker);
+            if (!direct_model) return -2;
+            ElmcValue *direct_args[] = { direct_model };
+            int direct_count = #{entry_view_commands}(direct_args, 1, out_cmds, max_cmds);
+            elmc_release(direct_model);
+            if (direct_count < 0) return direct_count;
+            uint64_t direct_hash = 1469598103934665603ULL;
+            for (int i = 0; i < direct_count; i++) {
+              direct_hash ^= (uint64_t)out_cmds[i].kind;
+              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p0;
+              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p1;
+              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p2;
+              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p3;
+              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p4;
+              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].p5;
+              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_point_count;
+              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_offset_x;
+              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_offset_y;
+              direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_rotation;
+              for (int j = 0; j < out_cmds[i].path_point_count && j < 16; j++) {
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_x[j];
+                direct_hash = (direct_hash << 5) - direct_hash + (uint64_t)out_cmds[i].path_y[j];
+              }
+            }
+            if (app->has_prev_ui && app->prev_ops_hash == direct_hash) {
+              return 0;
+            }
+            app->has_prev_ui = 1;
+            app->prev_window_id = 0;
+            app->prev_layer_id = 0;
+            app->prev_ops_hash = direct_hash;
+            return direct_count;
+      #endif
             ElmcValue *model = elmc_worker_model(&app->worker);
             if (!model) return -2;
             ElmcValue *args[] = { model };
@@ -1524,6 +1560,16 @@ defmodule Elmc.Backend.Pebble do
     name
     |> String.replace(~r/[^A-Za-z0-9]/, "_")
     |> String.upcase()
+  end
+
+  @spec direct_command_macro(String.t(), String.t()) :: String.t()
+  defp direct_command_macro(module_name, decl_name) do
+    safe =
+      "#{module_name}_#{decl_name}"
+      |> String.replace(~r/[^A-Za-z0-9_]/, "_")
+      |> String.upcase()
+
+    "ELMC_HAVE_DIRECT_COMMANDS_#{safe}"
   end
 
   @spec payload_arity_for_spec(String.t() | nil) :: non_neg_integer()

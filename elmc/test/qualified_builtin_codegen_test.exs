@@ -28,7 +28,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    assert generated_c =~ "elmc_list_cons"
+    assert generated_c =~ "elmc_list_from_values"
 
     File.write!(Path.join(out_dir, "c/cmd_batch_harness.c"), cmd_batch_harness_source())
 

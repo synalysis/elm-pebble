@@ -246,6 +246,12 @@ defmodule Elmc.Runtime.Generator do
     #include <stdint.h>
     #include <stddef.h>
 
+    #if defined(ELMC_PEBBLE_INT32) || defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT)
+    typedef int32_t elmc_int_t;
+    #else
+    typedef int64_t elmc_int_t;
+    #endif
+
     typedef enum {
       ELMC_TAG_INT = 1,
       ELMC_TAG_BOOL = 2,
@@ -300,19 +306,20 @@ defmodule Elmc.Runtime.Generator do
 
     typedef void (*ElmcPortCallback)(ElmcValue *value, void *context);
 
-    ElmcValue *elmc_new_int(int64_t value);
+    ElmcValue *elmc_new_int(elmc_int_t value);
     ElmcValue *elmc_new_bool(int value);
-    ElmcValue *elmc_new_char(int64_t value);
+    ElmcValue *elmc_new_char(elmc_int_t value);
     ElmcValue *elmc_new_string(const char *value);
     ElmcValue *elmc_list_nil(void);
     ElmcValue *elmc_list_cons(ElmcValue *head, ElmcValue *tail);
+    ElmcValue *elmc_list_from_values(ElmcValue **items, int count);
     ElmcValue *elmc_maybe_nothing(void);
     ElmcValue *elmc_maybe_just(ElmcValue *value);
     ElmcValue *elmc_result_ok(ElmcValue *value);
     ElmcValue *elmc_result_err(ElmcValue *value);
     ElmcValue *elmc_tuple2(ElmcValue *first, ElmcValue *second);
 
-    int64_t elmc_as_int(ElmcValue *value);
+    elmc_int_t elmc_as_int(ElmcValue *value);
     int elmc_string_length(ElmcValue *value);
     ElmcValue *elmc_list_head(ElmcValue *list);
     ElmcValue *elmc_tuple_first(ElmcValue *tuple);
@@ -661,21 +668,21 @@ defmodule Elmc.Runtime.Generator do
       return out;
     }
 
-    ElmcValue *elmc_new_int(int64_t value) {
-      int64_t *ptr = (int64_t *)malloc(sizeof(int64_t));
+    ElmcValue *elmc_new_int(elmc_int_t value) {
+      elmc_int_t *ptr = (elmc_int_t *)malloc(sizeof(elmc_int_t));
       if (!ptr) return NULL;
       *ptr = value;
       return elmc_alloc(ELMC_TAG_INT, ptr);
     }
 
     ElmcValue *elmc_new_bool(int value) {
-      int64_t *ptr = (int64_t *)malloc(sizeof(int64_t));
+      elmc_int_t *ptr = (elmc_int_t *)malloc(sizeof(elmc_int_t));
       if (!ptr) return NULL;
       *ptr = value;
       return elmc_alloc(ELMC_TAG_BOOL, ptr);
     }
 
-    ElmcValue *elmc_new_char(int64_t value) {
+    ElmcValue *elmc_new_char(elmc_int_t value) {
       return elmc_new_int(value);
     }
 
@@ -697,6 +704,17 @@ defmodule Elmc.Runtime.Generator do
       node->head = elmc_retain(head);
       node->tail = elmc_retain(tail);
       return elmc_alloc(ELMC_TAG_LIST, node);
+    }
+
+    ElmcValue *elmc_list_from_values(ElmcValue **items, int count) {
+      ElmcValue *out = elmc_list_nil();
+      if (!items || count <= 0) return out;
+      for (int i = count - 1; i >= 0; i--) {
+        ElmcValue *next = elmc_list_cons(items[i], out);
+        elmc_release(out);
+        out = next;
+      }
+      return out;
     }
 
     ElmcValue *elmc_maybe_nothing(void) {
@@ -739,9 +757,9 @@ defmodule Elmc.Runtime.Generator do
       return elmc_alloc(ELMC_TAG_TUPLE2, tuple);
     }
 
-    int64_t elmc_as_int(ElmcValue *value) {
+    elmc_int_t elmc_as_int(ElmcValue *value) {
       if (!value || (value->tag != ELMC_TAG_INT && value->tag != ELMC_TAG_BOOL)) return 0;
-      return *((int64_t *)value->payload);
+      return *((elmc_int_t *)value->payload);
     }
 
     int elmc_string_length(ElmcValue *value) {
@@ -775,31 +793,31 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_basics_max(ElmcValue *left, ElmcValue *right) {
-      int64_t a = elmc_as_int(left);
-      int64_t b = elmc_as_int(right);
+      elmc_int_t a = elmc_as_int(left);
+      elmc_int_t b = elmc_as_int(right);
       return elmc_new_int(a > b ? a : b);
     }
 
     ElmcValue *elmc_basics_min(ElmcValue *left, ElmcValue *right) {
-      int64_t a = elmc_as_int(left);
-      int64_t b = elmc_as_int(right);
+      elmc_int_t a = elmc_as_int(left);
+      elmc_int_t b = elmc_as_int(right);
       return elmc_new_int(a < b ? a : b);
     }
 
     ElmcValue *elmc_basics_clamp(ElmcValue *low, ElmcValue *high, ElmcValue *value) {
-      int64_t lo = elmc_as_int(low);
-      int64_t hi = elmc_as_int(high);
-      int64_t v = elmc_as_int(value);
+      elmc_int_t lo = elmc_as_int(low);
+      elmc_int_t hi = elmc_as_int(high);
+      elmc_int_t v = elmc_as_int(value);
       if (v < lo) v = lo;
       if (v > hi) v = hi;
       return elmc_new_int(v);
     }
 
     ElmcValue *elmc_basics_mod_by(ElmcValue *base, ElmcValue *value) {
-      int64_t b = elmc_as_int(base);
-      int64_t v = elmc_as_int(value);
+      elmc_int_t b = elmc_as_int(base);
+      elmc_int_t v = elmc_as_int(value);
       if (b == 0) return elmc_new_int(0);
-      int64_t result = v % b;
+      elmc_int_t result = v % b;
       if (result < 0) result += (b < 0 ? -b : b);
       return elmc_new_int(result);
     }
@@ -2767,8 +2785,8 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_basics_remainder_by(ElmcValue *base, ElmcValue *value) {
-      int64_t b = elmc_as_int(base);
-      int64_t v = elmc_as_int(value);
+      elmc_int_t b = elmc_as_int(base);
+      elmc_int_t v = elmc_as_int(value);
       if (b == 0) return elmc_new_int(0);
       return elmc_new_int(v % b);
     }
