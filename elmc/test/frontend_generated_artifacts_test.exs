@@ -134,7 +134,9 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert expr[:var] == "value"
     assert expr[:value] == 2
 
-    assert {:ok, tokens2, _} = :elm_ex_expr_lexer.string(String.to_charlist("Pebble.Draw.clear 0"))
+    assert {:ok, tokens2, _} =
+             :elm_ex_expr_lexer.string(String.to_charlist("Pebble.Draw.clear 0"))
+
     assert {:ok, expr2} = :elm_ex_expr_parser.parse(tokens2)
     assert expr2[:op] == :qualified_call
     assert expr2[:target] == "Pebble.Draw.clear"
@@ -284,7 +286,8 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
                "{ model | value = model.value + 1, values = model.values }"
              )
 
-    assert expr11[:op] == :record_literal
+    assert expr11[:op] == :record_update
+    assert expr11[:base] == %{op: :var, name: "model"}
     assert Enum.map(expr11[:fields], & &1[:name]) == ["value", "values"]
 
     assert {:ok, expr12} =

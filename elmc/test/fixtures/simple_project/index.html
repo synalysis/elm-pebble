@@ -2370,6 +2370,43 @@ function _Platform_mergeExportsDebug(moduleName, obj, exports)
 			: (obj[name] = exports[name]);
 	}
 }
+
+
+
+var _Bitwise_and = F2(function(a, b)
+{
+	return a & b;
+});
+
+var _Bitwise_or = F2(function(a, b)
+{
+	return a | b;
+});
+
+var _Bitwise_xor = F2(function(a, b)
+{
+	return a ^ b;
+});
+
+function _Bitwise_complement(a)
+{
+	return ~a;
+};
+
+var _Bitwise_shiftLeftBy = F2(function(offset, a)
+{
+	return a << offset;
+});
+
+var _Bitwise_shiftRightBy = F2(function(offset, a)
+{
+	return a >> offset;
+});
+
+var _Bitwise_shiftRightZfBy = F2(function(offset, a)
+{
+	return a >>> offset;
+});
 var $elm$core$List$cons = _List_cons;
 var $elm$core$Elm$JsArray$foldr = _JsArray_foldr;
 var $elm$core$Array$foldr = F3(
@@ -2450,8 +2487,6 @@ var $elm$core$Set$toList = function (_v0) {
 var $elm$core$Basics$EQ = {$: 'EQ'};
 var $elm$core$Basics$GT = {$: 'GT'};
 var $elm$core$Basics$LT = {$: 'LT'};
-var $author$project$Companion$Types$Berlin = {$: 'Berlin'};
-var $elm$core$Maybe$Nothing = {$: 'Nothing'};
 var $elm$core$Result$Err = function (a) {
 	return {$: 'Err', a: a};
 };
@@ -2478,6 +2513,7 @@ var $elm$core$Basics$add = _Basics_add;
 var $elm$core$Maybe$Just = function (a) {
 	return {$: 'Just', a: a};
 };
+var $elm$core$Maybe$Nothing = {$: 'Nothing'};
 var $elm$core$String$all = _String_all;
 var $elm$core$Basics$and = _Basics_and;
 var $elm$core$Basics$append = _Utils_append;
@@ -2846,6 +2882,87 @@ var $elm$core$Result$isOk = function (result) {
 		return false;
 	}
 };
+var $elm$json$Json$Decode$decodeValue = _Json_run;
+var $author$project$Pebble$Platform$LaunchUser = {$: 'LaunchUser'};
+var $author$project$Pebble$Platform$defaultScreen = {height: 168, isColor: true, isRound: false, width: 144};
+var $author$project$Pebble$Platform$defaultContext = {reason: $author$project$Pebble$Platform$LaunchUser, screen: $author$project$Pebble$Platform$defaultScreen, watchModel: 'Pebble Time Steel', watchProfileId: 'basalt'};
+var $elm$json$Json$Decode$field = _Json_decodeField;
+var $elm$json$Json$Decode$oneOf = _Json_oneOf;
+var $elm$json$Json$Decode$succeed = _Json_succeed;
+var $author$project$Pebble$Platform$decodeFieldWithDefault = F3(
+	function (name, decoder, fallback) {
+		return $elm$json$Json$Decode$oneOf(
+			_List_fromArray(
+				[
+					A2($elm$json$Json$Decode$field, name, decoder),
+					$elm$json$Json$Decode$succeed(fallback)
+				]));
+	});
+var $author$project$Pebble$Platform$LaunchPhone = {$: 'LaunchPhone'};
+var $author$project$Pebble$Platform$LaunchQuickLaunch = {$: 'LaunchQuickLaunch'};
+var $author$project$Pebble$Platform$LaunchSmartstrap = {$: 'LaunchSmartstrap'};
+var $author$project$Pebble$Platform$LaunchSystem = {$: 'LaunchSystem'};
+var $author$project$Pebble$Platform$LaunchTimelineAction = {$: 'LaunchTimelineAction'};
+var $author$project$Pebble$Platform$LaunchUnknown = {$: 'LaunchUnknown'};
+var $author$project$Pebble$Platform$LaunchWakeup = {$: 'LaunchWakeup'};
+var $author$project$Pebble$Platform$LaunchWorker = {$: 'LaunchWorker'};
+var $author$project$Pebble$Platform$launchReasonFromString = function (value) {
+	return (value === 'LaunchSystem') ? $author$project$Pebble$Platform$LaunchSystem : ((value === 'LaunchUser') ? $author$project$Pebble$Platform$LaunchUser : ((value === 'LaunchPhone') ? $author$project$Pebble$Platform$LaunchPhone : ((value === 'LaunchWakeup') ? $author$project$Pebble$Platform$LaunchWakeup : ((value === 'LaunchWorker') ? $author$project$Pebble$Platform$LaunchWorker : ((value === 'LaunchQuickLaunch') ? $author$project$Pebble$Platform$LaunchQuickLaunch : ((value === 'LaunchTimelineAction') ? $author$project$Pebble$Platform$LaunchTimelineAction : ((value === 'LaunchSmartstrap') ? $author$project$Pebble$Platform$LaunchSmartstrap : $author$project$Pebble$Platform$LaunchUnknown)))))));
+};
+var $elm$json$Json$Decode$map = _Json_map1;
+var $elm$json$Json$Decode$string = _Json_decodeString;
+var $author$project$Pebble$Platform$launchReasonDecoder = A2($elm$json$Json$Decode$map, $author$project$Pebble$Platform$launchReasonFromString, $elm$json$Json$Decode$string);
+var $elm$json$Json$Decode$map4 = _Json_map4;
+var $elm$json$Json$Decode$bool = _Json_decodeBool;
+var $elm$json$Json$Decode$int = _Json_decodeInt;
+var $author$project$Pebble$Platform$screenDecoder = A5(
+	$elm$json$Json$Decode$map4,
+	F4(
+		function (width, height, isColor, isRound) {
+			return {height: height, isColor: isColor, isRound: isRound, width: width};
+		}),
+	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'width', $elm$json$Json$Decode$int, $author$project$Pebble$Platform$defaultScreen.width),
+	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'height', $elm$json$Json$Decode$int, $author$project$Pebble$Platform$defaultScreen.height),
+	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'is_color', $elm$json$Json$Decode$bool, $author$project$Pebble$Platform$defaultScreen.isColor),
+	A2(
+		$elm$json$Json$Decode$map,
+		function (shape) {
+			return shape === 'round';
+		},
+		A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'shape', $elm$json$Json$Decode$string, 'rect')));
+var $author$project$Pebble$Platform$contextObjectDecoder = A5(
+	$elm$json$Json$Decode$map4,
+	F4(
+		function (reason, watchModel, watchProfileId, screen) {
+			return {reason: reason, screen: screen, watchModel: watchModel, watchProfileId: watchProfileId};
+		}),
+	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'launch_reason', $author$project$Pebble$Platform$launchReasonDecoder, $author$project$Pebble$Platform$defaultContext.reason),
+	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'watch_model', $elm$json$Json$Decode$string, $author$project$Pebble$Platform$defaultContext.watchModel),
+	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'watch_profile_id', $elm$json$Json$Decode$string, $author$project$Pebble$Platform$defaultContext.watchProfileId),
+	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'screen', $author$project$Pebble$Platform$screenDecoder, $author$project$Pebble$Platform$defaultContext.screen));
+var $author$project$Pebble$Platform$launchContextDecoder = $author$project$Pebble$Platform$contextObjectDecoder;
+var $author$project$Pebble$Platform$decodeLaunchContext = function (flags) {
+	var _v0 = A2($elm$json$Json$Decode$decodeValue, $author$project$Pebble$Platform$launchContextDecoder, flags);
+	if (_v0.$ === 'Ok') {
+		var context = _v0.a;
+		return context;
+	} else {
+		return $author$project$Pebble$Platform$defaultContext;
+	}
+};
+var $elm$core$Platform$worker = _Platform_worker;
+var $author$project$Pebble$Platform$application = function (config) {
+	return $elm$core$Platform$worker(
+		{
+			init: function (flags) {
+				return config.init(
+					$author$project$Pebble$Platform$decodeLaunchContext(flags));
+			},
+			subscriptions: config.subscriptions,
+			update: config.update
+		});
+};
+var $author$project$Companion$Types$Berlin = {$: 'Berlin'};
 var $elm$core$Platform$Cmd$batch = _Platform_batch;
 var $elm$core$Basics$negate = function (n) {
 	return -n;
@@ -2952,11 +3069,14 @@ var $author$project$Elm$Kernel$PebbleWatch$companionSend = F2(
 		return $elm$core$Platform$Cmd$none;
 	});
 var $author$project$Pebble$Cmd$companionSend = $author$project$Elm$Kernel$PebbleWatch$companionSend;
+var $author$project$Pebble$Internal$Companion$companionSend = $author$project$Pebble$Cmd$companionSend;
 var $author$project$Companion$Internal$watchToPhoneTag = function (message) {
 	return 2;
 };
-var $author$project$Companion$Internal$locationToCode = function (location) {
-	switch (location.$) {
+var $author$project$Companion$Internal$encodeLocationCode = function (value) {
+	switch (value.$) {
+		case 'CurrentLocation':
+			return 0;
 		case 'Berlin':
 			return 1;
 		case 'Zurich':
@@ -2966,12 +3086,12 @@ var $author$project$Companion$Internal$locationToCode = function (location) {
 	}
 };
 var $author$project$Companion$Internal$watchToPhoneValue = function (message) {
-	var location = message.a;
-	return $author$project$Companion$Internal$locationToCode(location);
+	var field1 = message.a;
+	return $author$project$Companion$Internal$encodeLocationCode(field1);
 };
 var $author$project$Companion$Watch$sendWatchToPhone = function (message) {
 	return A2(
-		$author$project$Pebble$Cmd$companionSend,
+		$author$project$Pebble$Internal$Companion$companionSend,
 		$author$project$Companion$Internal$watchToPhoneTag(message),
 		$author$project$Companion$Internal$watchToPhoneValue(message));
 };
@@ -2993,7 +3113,9 @@ var $author$project$Main$init = function (launchContext) {
 var $author$project$Main$AccelTap = {$: 'AccelTap'};
 var $author$project$Main$DownPressed = {$: 'DownPressed'};
 var $author$project$Main$SelectPressed = {$: 'SelectPressed'};
-var $author$project$Main$Tick = {$: 'Tick'};
+var $author$project$Main$Tick = function (a) {
+	return {$: 'Tick', a: a};
+};
 var $author$project$Main$UpPressed = {$: 'UpPressed'};
 var $elm$core$Platform$Sub$batch = _Platform_batch;
 var $elm$core$Platform$Sub$none = $elm$core$Platform$Sub$batch(_List_Nil);
@@ -3174,88 +3296,422 @@ var $author$project$Main$update = F2(
 		}
 	});
 var $elm$json$Json$Decode$value = _Json_decodeValue;
-var $elm$json$Json$Decode$decodeValue = _Json_run;
-var $author$project$Pebble$Platform$LaunchUser = {$: 'LaunchUser'};
-var $author$project$Pebble$Platform$defaultScreen = {height: 168, isColor: true, isRound: false, width: 144};
-var $author$project$Pebble$Platform$defaultContext = {reason: $author$project$Pebble$Platform$LaunchUser, screen: $author$project$Pebble$Platform$defaultScreen, watchModel: 'Pebble Time Steel', watchProfileId: 'basalt'};
-var $elm$json$Json$Decode$field = _Json_decodeField;
-var $elm$json$Json$Decode$oneOf = _Json_oneOf;
-var $elm$json$Json$Decode$succeed = _Json_succeed;
-var $author$project$Pebble$Platform$decodeFieldWithDefault = F3(
-	function (name, decoder, fallback) {
-		return $elm$json$Json$Decode$oneOf(
-			_List_fromArray(
-				[
-					A2($elm$json$Json$Decode$field, name, decoder),
-					$elm$json$Json$Decode$succeed(fallback)
-				]));
-	});
-var $author$project$Pebble$Platform$LaunchPhone = {$: 'LaunchPhone'};
-var $author$project$Pebble$Platform$LaunchQuickLaunch = {$: 'LaunchQuickLaunch'};
-var $author$project$Pebble$Platform$LaunchSmartstrap = {$: 'LaunchSmartstrap'};
-var $author$project$Pebble$Platform$LaunchSystem = {$: 'LaunchSystem'};
-var $author$project$Pebble$Platform$LaunchTimelineAction = {$: 'LaunchTimelineAction'};
-var $author$project$Pebble$Platform$LaunchUnknown = {$: 'LaunchUnknown'};
-var $author$project$Pebble$Platform$LaunchWakeup = {$: 'LaunchWakeup'};
-var $author$project$Pebble$Platform$LaunchWorker = {$: 'LaunchWorker'};
-var $author$project$Pebble$Platform$launchReasonFromString = function (value) {
-	return (value === 'LaunchSystem') ? $author$project$Pebble$Platform$LaunchSystem : ((value === 'LaunchUser') ? $author$project$Pebble$Platform$LaunchUser : ((value === 'LaunchPhone') ? $author$project$Pebble$Platform$LaunchPhone : ((value === 'LaunchWakeup') ? $author$project$Pebble$Platform$LaunchWakeup : ((value === 'LaunchWorker') ? $author$project$Pebble$Platform$LaunchWorker : ((value === 'LaunchQuickLaunch') ? $author$project$Pebble$Platform$LaunchQuickLaunch : ((value === 'LaunchTimelineAction') ? $author$project$Pebble$Platform$LaunchTimelineAction : ((value === 'LaunchSmartstrap') ? $author$project$Pebble$Platform$LaunchSmartstrap : $author$project$Pebble$Platform$LaunchUnknown)))))));
+var $author$project$Pebble$Ui$Antialiased = function (a) {
+	return {$: 'Antialiased', a: a};
 };
-var $elm$json$Json$Decode$map = _Json_map1;
-var $elm$json$Json$Decode$string = _Json_decodeString;
-var $author$project$Pebble$Platform$launchReasonDecoder = A2($elm$json$Json$Decode$map, $author$project$Pebble$Platform$launchReasonFromString, $elm$json$Json$Decode$string);
-var $elm$json$Json$Decode$map4 = _Json_map4;
-var $elm$json$Json$Decode$bool = _Json_decodeBool;
-var $elm$json$Json$Decode$int = _Json_decodeInt;
-var $author$project$Pebble$Platform$screenDecoder = A5(
-	$elm$json$Json$Decode$map4,
-	F4(
-		function (width, height, isColor, isRound) {
-			return {height: height, isColor: isColor, isRound: isRound, width: width};
-		}),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'width', $elm$json$Json$Decode$int, $author$project$Pebble$Platform$defaultScreen.width),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'height', $elm$json$Json$Decode$int, $author$project$Pebble$Platform$defaultScreen.height),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'is_color', $elm$json$Json$Decode$bool, $author$project$Pebble$Platform$defaultScreen.isColor),
-	A2(
-		$elm$json$Json$Decode$map,
-		function (shape) {
-			return shape === 'round';
-		},
-		A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'shape', $elm$json$Json$Decode$string, 'rect')));
-var $author$project$Pebble$Platform$contextObjectDecoder = A5(
-	$elm$json$Json$Decode$map4,
-	F4(
-		function (reason, watchModel, watchProfileId, screen) {
-			return {reason: reason, screen: screen, watchModel: watchModel, watchProfileId: watchProfileId};
-		}),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'launch_reason', $author$project$Pebble$Platform$launchReasonDecoder, $author$project$Pebble$Platform$defaultContext.reason),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'watch_model', $elm$json$Json$Decode$string, $author$project$Pebble$Platform$defaultContext.watchModel),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'watch_profile_id', $elm$json$Json$Decode$string, $author$project$Pebble$Platform$defaultContext.watchProfileId),
-	A3($author$project$Pebble$Platform$decodeFieldWithDefault, 'screen', $author$project$Pebble$Platform$screenDecoder, $author$project$Pebble$Platform$defaultContext.screen));
-var $author$project$Pebble$Platform$launchContextDecoder = $author$project$Pebble$Platform$contextObjectDecoder;
-var $author$project$Pebble$Platform$decodeLaunchContext = function (flags) {
-	var _v0 = A2($elm$json$Json$Decode$decodeValue, $author$project$Pebble$Platform$launchContextDecoder, flags);
-	if (_v0.$ === 'Ok') {
-		var context = _v0.a;
-		return context;
+var $author$project$Pebble$Ui$antialiased = function (enabled) {
+	return $author$project$Pebble$Ui$Antialiased(enabled);
+};
+var $author$project$Pebble$Ui$Arc = F6(
+	function (a, b, c, d, e, f) {
+		return {$: 'Arc', a: a, b: b, c: c, d: d, e: e, f: f};
+	});
+var $author$project$Pebble$Ui$arc = F3(
+	function (bounds, angleStart, angleEnd) {
+		return A6($author$project$Pebble$Ui$Arc, bounds.x, bounds.y, bounds.w, bounds.h, angleStart, angleEnd);
+	});
+var $author$project$Pebble$Ui$Color$Indexed = function (a) {
+	return {$: 'Indexed', a: a};
+};
+var $author$project$Pebble$Ui$Color$indexed = function (code) {
+	return $author$project$Pebble$Ui$Color$Indexed(code);
+};
+var $author$project$Pebble$Ui$Color$black = $author$project$Pebble$Ui$Color$indexed(192);
+var $author$project$Pebble$Ui$CanvasLayer = F2(
+	function (a, b) {
+		return {$: 'CanvasLayer', a: a, b: b};
+	});
+var $author$project$Pebble$Ui$canvasLayer = F2(
+	function (id, ops) {
+		return A2($author$project$Pebble$Ui$CanvasLayer, id, ops);
+	});
+var $author$project$Pebble$Ui$Clear = function (a) {
+	return {$: 'Clear', a: a};
+};
+var $elm$core$Basics$min = F2(
+	function (x, y) {
+		return (_Utils_cmp(x, y) < 0) ? x : y;
+	});
+var $author$project$Pebble$Ui$Color$clampInt = F3(
+	function (low, high, value) {
+		return A2(
+			$elm$core$Basics$max,
+			low,
+			A2($elm$core$Basics$min, high, value));
+	});
+var $author$project$Pebble$Ui$Color$channelTo2Bit = function (channel) {
+	return (((A3($author$project$Pebble$Ui$Color$clampInt, 0, 255, channel) * 3) + 127) / 255) | 0;
+};
+var $elm$core$Bitwise$or = _Bitwise_or;
+var $elm$core$Bitwise$shiftLeftBy = _Bitwise_shiftLeftBy;
+var $author$project$Pebble$Ui$Color$toInt = function (color) {
+	if (color.$ === 'Indexed') {
+		var code = color.a;
+		return A3($author$project$Pebble$Ui$Color$clampInt, 0, 255, code);
 	} else {
-		return $author$project$Pebble$Platform$defaultContext;
+		var r = color.a;
+		var g = color.b;
+		var b = color.c;
+		var a = color.d;
+		var rr = $author$project$Pebble$Ui$Color$channelTo2Bit(r);
+		var gg = $author$project$Pebble$Ui$Color$channelTo2Bit(g);
+		var bb = $author$project$Pebble$Ui$Color$channelTo2Bit(b);
+		var aa = $author$project$Pebble$Ui$Color$channelTo2Bit(a);
+		return (aa << 6) | ((rr << 4) | ((gg << 2) | bb));
 	}
 };
-var $elm$core$Platform$worker = _Platform_worker;
-var $author$project$Pebble$Platform$worker = function (config) {
-	return $elm$core$Platform$worker(
-		{
-			init: function (flags) {
-				return config.init(
-					$author$project$Pebble$Platform$decodeLaunchContext(flags));
-			},
-			subscriptions: config.subscriptions,
-			update: config.update
-		});
+var $author$project$Pebble$Ui$clear = function (color) {
+	return $author$project$Pebble$Ui$Clear(
+		$author$project$Pebble$Ui$Color$toInt(color));
 };
-var $author$project$Main$main = $author$project$Pebble$Platform$worker(
-	{init: $author$project$Main$init, subscriptions: $author$project$Main$subscriptions, update: $author$project$Main$update});
+var $author$project$Pebble$Ui$context = F2(
+	function (settings, commands) {
+		return _Utils_Tuple2(settings, commands);
+	});
+var $author$project$Pebble$Ui$Resources$DefaultFont = {$: 'DefaultFont'};
+var $author$project$Pebble$Ui$TextInt = F4(
+	function (a, b, c, d) {
+		return {$: 'TextInt', a: a, b: b, c: c, d: d};
+	});
+var $author$project$Pebble$Ui$textInt = F3(
+	function (font, pos, value) {
+		return A4($author$project$Pebble$Ui$TextInt, font, pos.x, pos.y, value);
+	});
+var $author$project$Main$counterDraw = function (model) {
+	var counter = $author$project$Main$counterOf(model);
+	return A3(
+		$author$project$Pebble$Ui$textInt,
+		$author$project$Pebble$Ui$Resources$DefaultFont,
+		{x: 0, y: 56},
+		counter);
+};
+var $author$project$Pebble$Ui$FillColor = function (a) {
+	return {$: 'FillColor', a: a};
+};
+var $author$project$Pebble$Ui$fillColor = function (color) {
+	return $author$project$Pebble$Ui$FillColor(
+		$author$project$Pebble$Ui$Color$toInt(color));
+};
+var $author$project$Pebble$Ui$Group = function (a) {
+	return {$: 'Group', a: a};
+};
+var $author$project$Pebble$Ui$group = function (ctx) {
+	return $author$project$Pebble$Ui$Group(ctx);
+};
+var $author$project$Pebble$Ui$Line = F5(
+	function (a, b, c, d, e) {
+		return {$: 'Line', a: a, b: b, c: c, d: d, e: e};
+	});
+var $author$project$Pebble$Ui$line = F3(
+	function (startPos, endPos, color) {
+		return A5(
+			$author$project$Pebble$Ui$Line,
+			startPos.x,
+			startPos.y,
+			endPos.x,
+			endPos.y,
+			$author$project$Pebble$Ui$Color$toInt(color));
+	});
+var $elm$core$List$foldrHelper = F4(
+	function (fn, acc, ctr, ls) {
+		if (!ls.b) {
+			return acc;
+		} else {
+			var a = ls.a;
+			var r1 = ls.b;
+			if (!r1.b) {
+				return A2(fn, a, acc);
+			} else {
+				var b = r1.a;
+				var r2 = r1.b;
+				if (!r2.b) {
+					return A2(
+						fn,
+						a,
+						A2(fn, b, acc));
+				} else {
+					var c = r2.a;
+					var r3 = r2.b;
+					if (!r3.b) {
+						return A2(
+							fn,
+							a,
+							A2(
+								fn,
+								b,
+								A2(fn, c, acc)));
+					} else {
+						var d = r3.a;
+						var r4 = r3.b;
+						var res = (ctr > 500) ? A3(
+							$elm$core$List$foldl,
+							fn,
+							acc,
+							$elm$core$List$reverse(r4)) : A4($elm$core$List$foldrHelper, fn, acc, ctr + 1, r4);
+						return A2(
+							fn,
+							a,
+							A2(
+								fn,
+								b,
+								A2(
+									fn,
+									c,
+									A2(fn, d, res))));
+					}
+				}
+			}
+		}
+	});
+var $elm$core$List$foldr = F3(
+	function (fn, acc, ls) {
+		return A4($elm$core$List$foldrHelper, fn, acc, 0, ls);
+	});
+var $elm$core$List$map = F2(
+	function (f, xs) {
+		return A3(
+			$elm$core$List$foldr,
+			F2(
+				function (x, acc) {
+					return A2(
+						$elm$core$List$cons,
+						f(x),
+						acc);
+				}),
+			_List_Nil,
+			xs);
+	});
+var $author$project$Pebble$Ui$rotationToPebbleAngle = function (_v0) {
+	var angle = _v0.a;
+	return angle;
+};
+var $author$project$Pebble$Ui$path = F3(
+	function (points, offset, rotation) {
+		return _Utils_Tuple3(
+			A2(
+				$elm$core$List$map,
+				function (p) {
+					return _Utils_Tuple2(p.x, p.y);
+				},
+				points),
+			_Utils_Tuple2(offset.x, offset.y),
+			$author$project$Pebble$Ui$rotationToPebbleAngle(rotation));
+	});
+var $author$project$Pebble$Ui$PathFilled = function (a) {
+	return {$: 'PathFilled', a: a};
+};
+var $author$project$Pebble$Ui$pathFilled = function (value) {
+	return $author$project$Pebble$Ui$PathFilled(value);
+};
+var $author$project$Pebble$Ui$PathOutline = function (a) {
+	return {$: 'PathOutline', a: a};
+};
+var $author$project$Pebble$Ui$pathOutline = function (value) {
+	return $author$project$Pebble$Ui$PathOutline(value);
+};
+var $author$project$Pebble$Ui$PathOutlineOpen = function (a) {
+	return {$: 'PathOutlineOpen', a: a};
+};
+var $author$project$Pebble$Ui$pathOutlineOpen = function (value) {
+	return $author$project$Pebble$Ui$PathOutlineOpen(value);
+};
+var $author$project$Pebble$Ui$Pixel = F3(
+	function (a, b, c) {
+		return {$: 'Pixel', a: a, b: b, c: c};
+	});
+var $author$project$Pebble$Ui$pixel = F2(
+	function (pos, color) {
+		return A3(
+			$author$project$Pebble$Ui$Pixel,
+			pos.x,
+			pos.y,
+			$author$project$Pebble$Ui$Color$toInt(color));
+	});
+var $author$project$Pebble$Ui$Rotation = function (a) {
+	return {$: 'Rotation', a: a};
+};
+var $author$project$Pebble$Ui$rotationFromPebbleAngle = function (angle) {
+	return $author$project$Pebble$Ui$Rotation(angle);
+};
+var $author$project$Pebble$Ui$RoundRect = F6(
+	function (a, b, c, d, e, f) {
+		return {$: 'RoundRect', a: a, b: b, c: c, d: d, e: e, f: f};
+	});
+var $author$project$Pebble$Ui$roundRect = F3(
+	function (bounds, radius, color) {
+		return A6(
+			$author$project$Pebble$Ui$RoundRect,
+			bounds.x,
+			bounds.y,
+			bounds.w,
+			bounds.h,
+			radius,
+			$author$project$Pebble$Ui$Color$toInt(color));
+	});
+var $author$project$Pebble$Ui$WaitingForCompanion = {$: 'WaitingForCompanion'};
+var $author$project$Main$temperatureValue = function (temperature) {
+	if (temperature.$ === 'Celsius') {
+		var value = temperature.a;
+		return value;
+	} else {
+		var value = temperature.a;
+		return value;
+	}
+};
+var $author$project$Pebble$Ui$TextLabel = F4(
+	function (a, b, c, d) {
+		return {$: 'TextLabel', a: a, b: b, c: c, d: d};
+	});
+var $author$project$Pebble$Ui$textLabel = F3(
+	function (font, pos, label) {
+		return A4($author$project$Pebble$Ui$TextLabel, font, pos.x, pos.y, label);
+	});
+var $author$project$Main$statusDraw = function (model) {
+	var maybeTemp = $author$project$Main$temperatureOf(model);
+	if (maybeTemp.$ === 'Just') {
+		var temperature = maybeTemp.a;
+		return A3(
+			$author$project$Pebble$Ui$textInt,
+			$author$project$Pebble$Ui$Resources$DefaultFont,
+			{x: 0, y: 28},
+			$author$project$Main$temperatureValue(temperature));
+	} else {
+		return A3(
+			$author$project$Pebble$Ui$textLabel,
+			$author$project$Pebble$Ui$Resources$DefaultFont,
+			{x: 0, y: 28},
+			$author$project$Pebble$Ui$WaitingForCompanion);
+	}
+};
+var $author$project$Pebble$Ui$StrokeColor = function (a) {
+	return {$: 'StrokeColor', a: a};
+};
+var $author$project$Pebble$Ui$strokeColor = function (color) {
+	return $author$project$Pebble$Ui$StrokeColor(
+		$author$project$Pebble$Ui$Color$toInt(color));
+};
+var $author$project$Pebble$Ui$StrokeWidth = function (a) {
+	return {$: 'StrokeWidth', a: a};
+};
+var $author$project$Pebble$Ui$strokeWidth = function (width) {
+	return $author$project$Pebble$Ui$StrokeWidth(width);
+};
+var $author$project$Pebble$Ui$TextColor = function (a) {
+	return {$: 'TextColor', a: a};
+};
+var $author$project$Pebble$Ui$textColor = function (color) {
+	return $author$project$Pebble$Ui$TextColor(
+		$author$project$Pebble$Ui$Color$toInt(color));
+};
+var $author$project$Pebble$Ui$Color$white = $author$project$Pebble$Ui$Color$indexed(255);
+var $author$project$Pebble$Ui$WindowNode = F2(
+	function (a, b) {
+		return {$: 'WindowNode', a: a, b: b};
+	});
+var $author$project$Pebble$Ui$window = F2(
+	function (id, layers) {
+		return A2($author$project$Pebble$Ui$WindowNode, id, layers);
+	});
+var $author$project$Pebble$Ui$WindowStack = function (a) {
+	return {$: 'WindowStack', a: a};
+};
+var $author$project$Pebble$Ui$windowStack = function (windows) {
+	return $author$project$Pebble$Ui$WindowStack(windows);
+};
+var $author$project$Main$view = function (model) {
+	return $author$project$Pebble$Ui$windowStack(
+		_List_fromArray(
+			[
+				A2(
+				$author$project$Pebble$Ui$window,
+				1,
+				_List_fromArray(
+					[
+						A2(
+						$author$project$Pebble$Ui$canvasLayer,
+						1,
+						_List_fromArray(
+							[
+								$author$project$Pebble$Ui$clear($author$project$Pebble$Ui$Color$white),
+								$author$project$Pebble$Ui$group(
+								A2(
+									$author$project$Pebble$Ui$context,
+									_List_fromArray(
+										[
+											$author$project$Pebble$Ui$strokeWidth(3),
+											$author$project$Pebble$Ui$antialiased(1),
+											$author$project$Pebble$Ui$strokeColor($author$project$Pebble$Ui$Color$black),
+											$author$project$Pebble$Ui$fillColor($author$project$Pebble$Ui$Color$black),
+											$author$project$Pebble$Ui$textColor($author$project$Pebble$Ui$Color$black)
+										]),
+									_List_fromArray(
+										[
+											A3(
+											$author$project$Pebble$Ui$roundRect,
+											{h: 70, w: 132, x: 6, y: 6},
+											6,
+											$author$project$Pebble$Ui$Color$black),
+											A3(
+											$author$project$Pebble$Ui$arc,
+											{h: 36, w: 36, x: 20, y: 16},
+											0,
+											45000),
+											$author$project$Pebble$Ui$pathOutline(
+											A3(
+												$author$project$Pebble$Ui$path,
+												_List_fromArray(
+													[
+														{x: 0, y: 0},
+														{x: 10, y: 4},
+														{x: 16, y: 14},
+														{x: 8, y: 24},
+														{x: 0, y: 18}
+													]),
+												{x: 86, y: 16},
+												$author$project$Pebble$Ui$rotationFromPebbleAngle(0))),
+											$author$project$Pebble$Ui$pathFilled(
+											A3(
+												$author$project$Pebble$Ui$path,
+												_List_fromArray(
+													[
+														{x: 0, y: 0},
+														{x: 8, y: 6},
+														{x: 6, y: 14},
+														{x: 2, y: 20},
+														{x: 0, y: 14}
+													]),
+												{x: 108, y: 26},
+												$author$project$Pebble$Ui$rotationFromPebbleAngle(0))),
+											$author$project$Pebble$Ui$pathOutlineOpen(
+											A3(
+												$author$project$Pebble$Ui$path,
+												_List_fromArray(
+													[
+														{x: 0, y: 0},
+														{x: 8, y: 4},
+														{x: 16, y: 2},
+														{x: 24, y: 6}
+													]),
+												{x: 10, y: 78},
+												$author$project$Pebble$Ui$rotationFromPebbleAngle(0)))
+										]))),
+								A3(
+								$author$project$Pebble$Ui$line,
+								{x: 0, y: 84},
+								{x: 143, y: 84},
+								$author$project$Pebble$Ui$Color$black),
+								A2(
+								$author$project$Pebble$Ui$pixel,
+								{x: 72, y: 84},
+								$author$project$Pebble$Ui$Color$black),
+								$author$project$Main$statusDraw(model),
+								$author$project$Main$counterDraw(model)
+							]))
+					]))
+			]));
+};
+var $author$project$Main$main = $author$project$Pebble$Platform$application(
+	{init: $author$project$Main$init, subscriptions: $author$project$Main$subscriptions, update: $author$project$Main$update, view: $author$project$Main$view});
 _Platform_export({'Main':{'init':$author$project$Main$main($elm$json$Json$Decode$value)(0)}});}(this));
 
   var app = Elm.Main.init({ node: document.getElementById("elm") });

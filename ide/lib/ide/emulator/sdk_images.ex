@@ -1,7 +1,7 @@
 defmodule Ide.Emulator.SdkImages do
   @moduledoc false
 
-  @default_sdk_version "4.9.148"
+  @default_sdk_version "4.9.169"
 
   @spec ensure_platform_images(String.t(), keyword()) :: :ok | {:error, term()}
   def ensure_platform_images(platform, opts \\ []) when is_binary(platform) do

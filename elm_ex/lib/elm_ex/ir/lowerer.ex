@@ -485,7 +485,12 @@ defmodule ElmEx.IR.Lowerer do
   end
 
   defp rewrite_expr(%{op: :field_access, arg: arg, field: field}, lookup) do
-    %{op: :field_access, arg: rewrite_expr(arg, lookup), field: field}
+    rewritten_arg = rewrite_expr(arg, lookup)
+
+    case {field, rewritten_arg} do
+      {"value", %{op: :tuple2} = tuple_expr} -> %{op: :tuple_first, arg: tuple_expr}
+      _ -> %{op: :field_access, arg: rewritten_arg, field: field}
+    end
   end
 
   defp rewrite_expr(%{op: :list_literal, items: items} = expr, lookup) do
@@ -559,12 +564,6 @@ defmodule ElmEx.IR.Lowerer do
   defp resolve_alias(target, lookup) when is_binary(target) do
     alias_map = Map.get(lookup, :alias_map, %{})
     import_unqualified_map = Map.get(lookup, :import_unqualified_map, %{})
-    current_module = Map.get(lookup, :current_module)
-
-    wildcard_import_modules =
-      Map.get(lookup, :wildcard_import_modules, [])
-      |> Enum.reject(&(&1 == current_module))
-
     local_call_names = Map.get(lookup, :local_call_names, MapSet.new())
 
     case String.split(target, ".", parts: 2) do
@@ -586,10 +585,7 @@ defmodule ElmEx.IR.Lowerer do
               target
 
             _ ->
-              case wildcard_import_modules do
-                [module] when is_binary(module) and module != "" -> "#{module}.#{single}"
-                _ -> target
-              end
+              target
           end
         end
 

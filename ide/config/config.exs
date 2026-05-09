@@ -42,7 +42,7 @@ config :ide, Ide.Emulator.Session,
   qemu_data_root: System.get_env("ELM_PEBBLE_QEMU_DATA_ROOT"),
   download_images:
     System.get_env("ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES", "true") not in ~w(0 false no off),
-  sdk_core_version: System.get_env("ELM_PEBBLE_SDK_CORE_VERSION") || "4.9.148",
+  sdk_core_version: System.get_env("ELM_PEBBLE_SDK_CORE_VERSION") || "4.9.169",
   sdk_core_metadata_url: System.get_env("ELM_PEBBLE_SDK_CORE_METADATA_URL"),
   pypkjs_bin: System.get_env("ELM_PEBBLE_PYPKJS_BIN"),
   idle_timeout_ms: 5 * 60 * 1000

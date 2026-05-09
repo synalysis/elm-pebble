@@ -4,6 +4,7 @@ defmodule IdeWeb.EmulatorController do
   alias Ide.Emulator
   alias Ide.PebblePreferences
   alias Ide.Projects
+  alias Ide.WatchModels
   alias IdeWeb.WorkspaceLive.BuildFlow
 
   @spec launch(term(), term()) :: term()
@@ -12,12 +13,12 @@ defmodule IdeWeb.EmulatorController do
 
     with project when not is_nil(project) <- Projects.get_project_by_slug(slug),
          workspace_root <- Projects.project_workspace_path(project),
-         {:ok, artifact_path} <-
-           BuildFlow.package_for_emulator_target(project, workspace_root, platform),
+         {:ok, artifact_path, launch_platform} <-
+           package_for_launch(project, workspace_root, platform),
          {:ok, info} <-
            Emulator.launch(
              project_slug: project.slug,
-             platform: platform,
+             platform: launch_platform,
              artifact_path: artifact_path
            ) do
       json(conn, info)
@@ -33,6 +34,32 @@ defmodule IdeWeb.EmulatorController do
   def launch(conn, _params) do
     conn |> put_status(:bad_request) |> json(%{error: "Expected slug and platform"})
   end
+
+  defp package_for_launch(project, workspace_root, platform) do
+    case BuildFlow.package_for_emulator_target(project, workspace_root, platform) do
+      {:ok, artifact_path} ->
+        {:ok, artifact_path, platform}
+
+      {:error, reason} ->
+        fallback_platform = WatchModels.default_id()
+
+        if aplite_app_overflow?(platform, reason) and platform != fallback_platform do
+          with {:ok, artifact_path} <-
+                 BuildFlow.package_for_emulator_target(project, workspace_root, fallback_platform) do
+            {:ok, artifact_path, fallback_platform}
+          end
+        else
+          {:error, reason}
+        end
+    end
+  end
+
+  defp aplite_app_overflow?("aplite", {:pebble_build_failed, %{output: output}})
+       when is_binary(output) do
+    String.contains?(output, "region `APP' overflowed")
+  end
+
+  defp aplite_app_overflow?(_platform, _reason), do: false
 
   @spec ping(term(), term()) :: term()
   def ping(conn, %{"id" => id}) do

@@ -332,7 +332,9 @@ defmodule Elmc.Backend.Pebble do
       return 0;
     }
 
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
     static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_cmd);
+    #endif
 
     static int elmc_draw_cmd_from_value(ElmcValue *value, ElmcPebbleDrawCmd *out_cmd) {
       if (!out_cmd) return -1;
@@ -343,6 +345,7 @@ defmodule Elmc.Backend.Pebble do
       out_cmd->p3 = 0;
       out_cmd->p4 = 0;
       out_cmd->p5 = 0;
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
       out_cmd->path_point_count = 0;
       out_cmd->path_offset_x = 0;
       out_cmd->path_offset_y = 0;
@@ -351,6 +354,7 @@ defmodule Elmc.Backend.Pebble do
         out_cmd->path_x[i] = 0;
         out_cmd->path_y[i] = 0;
       }
+    #endif
       out_cmd->text[0] = '\\0';
       if (!value) return -2;
 
@@ -364,11 +368,14 @@ defmodule Elmc.Backend.Pebble do
         ElmcTuple2 *tuple = (ElmcTuple2 *)value->payload;
         if (!tuple->first || !tuple->second) return -3;
         out_cmd->kind = elmc_as_int(tuple->first);
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
         if (out_cmd->kind == ELMC_PEBBLE_DRAW_PATH_FILLED ||
             out_cmd->kind == ELMC_PEBBLE_DRAW_PATH_OUTLINE ||
             out_cmd->kind == ELMC_PEBBLE_DRAW_PATH_OUTLINE_OPEN) {
           return elmc_decode_path_payload(tuple->second, out_cmd);
         }
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
         if (out_cmd->kind == ELMC_PEBBLE_DRAW_TEXT) {
           int64_t payload[5] = {0, 0, 0, 0, 0};
           ElmcValue *current = tuple->second;
@@ -390,6 +397,7 @@ defmodule Elmc.Backend.Pebble do
           }
           return 0;
         }
+    #endif
         int64_t payload[6] = {0, 0, 0, 0, 0, 0};
         if (elmc_unpack_draw_payload(tuple->second, payload) == 0) {
           out_cmd->p0 = payload[0];
@@ -407,6 +415,7 @@ defmodule Elmc.Backend.Pebble do
       return -4;
     }
 
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
     static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_cmd) {
       if (!payload || !out_cmd) return -1;
       if (payload->tag != ELMC_TAG_TUPLE2 || payload->payload == NULL) return -2;
@@ -442,6 +451,7 @@ defmodule Elmc.Backend.Pebble do
       out_cmd->path_point_count = count;
       return count > 0 ? 0 : -8;
     }
+    #endif
 
     static int elmc_draw_setting_cmd_from_value(ElmcValue *value, ElmcPebbleDrawCmd *out_cmd) {
       if (!out_cmd || !value || value->tag != ELMC_TAG_TUPLE2 || value->payload == NULL) return -1;
@@ -458,6 +468,7 @@ defmodule Elmc.Backend.Pebble do
       out_cmd->p3 = 0;
       out_cmd->p4 = 0;
       out_cmd->p5 = 0;
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
       out_cmd->path_point_count = 0;
       out_cmd->path_offset_x = 0;
       out_cmd->path_offset_y = 0;
@@ -466,14 +477,27 @@ defmodule Elmc.Backend.Pebble do
         out_cmd->path_x[i] = 0;
         out_cmd->path_y[i] = 0;
       }
+    #endif
       out_cmd->text[0] = '\\0';
       switch (setting_tag) {
+    #if ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH
         case 1: out_cmd->kind = ELMC_PEBBLE_DRAW_STROKE_WIDTH; return 0;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED
         case 2: out_cmd->kind = ELMC_PEBBLE_DRAW_ANTIALIASED; return 0;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR
         case 3: out_cmd->kind = ELMC_PEBBLE_DRAW_STROKE_COLOR; return 0;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR
         case 4: out_cmd->kind = ELMC_PEBBLE_DRAW_FILL_COLOR; return 0;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR
         case 5: out_cmd->kind = ELMC_PEBBLE_DRAW_TEXT_COLOR; return 0;
+    #endif
+    #if ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
         case 6: out_cmd->kind = ELMC_PEBBLE_DRAW_COMPOSITING_MODE; return 0;
+    #endif
         default: return -3;
       }
     }
@@ -498,6 +522,7 @@ defmodule Elmc.Backend.Pebble do
             out_cmds[*count].p3 = 0;
             out_cmds[*count].p4 = 0;
             out_cmds[*count].p5 = 0;
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
             out_cmds[*count].path_point_count = 0;
             out_cmds[*count].path_offset_x = 0;
             out_cmds[*count].path_offset_y = 0;
@@ -506,6 +531,7 @@ defmodule Elmc.Backend.Pebble do
               out_cmds[*count].path_x[i] = 0;
               out_cmds[*count].path_y[i] = 0;
             }
+    #endif
             out_cmds[*count].text[0] = '\\0';
             *count += 1;
           }
@@ -534,6 +560,7 @@ defmodule Elmc.Backend.Pebble do
             out_cmds[*count].p3 = 0;
             out_cmds[*count].p4 = 0;
             out_cmds[*count].p5 = 0;
+    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
             out_cmds[*count].path_point_count = 0;
             out_cmds[*count].path_offset_x = 0;
             out_cmds[*count].path_offset_y = 0;
@@ -542,6 +569,7 @@ defmodule Elmc.Backend.Pebble do
               out_cmds[*count].path_x[i] = 0;
               out_cmds[*count].path_y[i] = 0;
             }
+    #endif
             out_cmds[*count].text[0] = '\\0';
             *count += 1;
           }
@@ -1250,11 +1278,14 @@ defmodule Elmc.Backend.Pebble do
   defp feature_flags(ir, msg_constructors) do
     targets = call_targets(ir)
     command_flags = command_feature_flags(targets)
+    draw_flags = draw_feature_flags(targets)
 
     uses_time_every =
       uses_target?(targets, "Elm.Kernel.Time.every") or uses_target?(targets, "Time.every")
 
-    Map.merge(command_flags, %{
+    command_flags
+    |> Map.merge(draw_flags)
+    |> Map.merge(%{
       tick_events:
         uses_time_every or
           pick_tag(msg_constructors, ["Tick", "Increment", "UpPressed"], fallback: -1) > 0,
@@ -1338,7 +1369,30 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_CMD_VIBES_CANCEL", flags[:cmd_vibes_cancel]},
       {"ELMC_PEBBLE_FEATURE_CMD_VIBES_SHORT_PULSE", flags[:cmd_vibes_short_pulse]},
       {"ELMC_PEBBLE_FEATURE_CMD_VIBES_LONG_PULSE", flags[:cmd_vibes_long_pulse]},
-      {"ELMC_PEBBLE_FEATURE_CMD_VIBES_DOUBLE_PULSE", flags[:cmd_vibes_double_pulse]}
+      {"ELMC_PEBBLE_FEATURE_CMD_VIBES_DOUBLE_PULSE", flags[:cmd_vibes_double_pulse]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT", flags[:draw_text_int]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_CLEAR", flags[:draw_clear]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_PIXEL", flags[:draw_pixel]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_LINE", flags[:draw_line]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_RECT", flags[:draw_rect]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT", flags[:draw_fill_rect]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_CIRCLE", flags[:draw_circle]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE", flags[:draw_fill_circle]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL", flags[:draw_text_label]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_CONTEXT", flags[:draw_context]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH", flags[:draw_stroke_width]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED", flags[:draw_antialiased]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR", flags[:draw_stroke_color]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR", flags[:draw_fill_color]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR", flags[:draw_text_color]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT", flags[:draw_round_rect]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_ARC", flags[:draw_arc]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_PATH", flags[:draw_path]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL", flags[:draw_fill_radial]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE", flags[:draw_compositing_mode]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT", flags[:draw_bitmap_in_rect]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP", flags[:draw_rotated_bitmap]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_TEXT", flags[:draw_text]}
     ]
     |> Enum.map_join("\n", fn {macro, enabled} ->
       "#define #{macro} #{if(enabled, do: 1, else: 0)}"
@@ -1420,6 +1474,45 @@ defmodule Elmc.Backend.Pebble do
       cmd_vibes_double_pulse:
         uses_target?(targets, "Pebble.Cmd.vibesDoublePulse") or
           uses_target?(targets, "Pebble.Vibes.doublePulse")
+    }
+  end
+
+  @spec draw_feature_flags(MapSet.t(String.t())) :: map()
+  defp draw_feature_flags(targets) do
+    context =
+      uses_target?(targets, "Pebble.Ui.group") or uses_target?(targets, "Pebble.Ui.context")
+
+    text_int = uses_target?(targets, "Pebble.Ui.textInt")
+    text_label = uses_target?(targets, "Pebble.Ui.textLabel")
+
+    %{
+      draw_text_int: text_int,
+      draw_clear: uses_target?(targets, "Pebble.Ui.clear"),
+      draw_pixel: uses_target?(targets, "Pebble.Ui.pixel"),
+      draw_line: uses_target?(targets, "Pebble.Ui.line"),
+      draw_rect: uses_target?(targets, "Pebble.Ui.rect"),
+      draw_fill_rect: uses_target?(targets, "Pebble.Ui.fillRect"),
+      draw_circle: uses_target?(targets, "Pebble.Ui.circle"),
+      draw_fill_circle: uses_target?(targets, "Pebble.Ui.fillCircle"),
+      draw_text_label: text_label,
+      draw_context: context,
+      draw_stroke_width: context and uses_target?(targets, "Pebble.Ui.strokeWidth"),
+      draw_antialiased: context and uses_target?(targets, "Pebble.Ui.antialiased"),
+      draw_stroke_color: context and uses_target?(targets, "Pebble.Ui.strokeColor"),
+      draw_fill_color: context and uses_target?(targets, "Pebble.Ui.fillColor"),
+      draw_text_color: context and uses_target?(targets, "Pebble.Ui.textColor"),
+      draw_round_rect: uses_target?(targets, "Pebble.Ui.roundRect"),
+      draw_arc: uses_target?(targets, "Pebble.Ui.arc"),
+      draw_path:
+        uses_target?(targets, "Pebble.Ui.pathFilled") or
+          uses_target?(targets, "Pebble.Ui.pathOutline") or
+          uses_target?(targets, "Pebble.Ui.pathOutlineOpen"),
+      draw_fill_radial: uses_target?(targets, "Pebble.Ui.fillRadial"),
+      draw_compositing_mode: context and uses_target?(targets, "Pebble.Ui.compositingMode"),
+      draw_bitmap_in_rect: uses_target?(targets, "Pebble.Ui.drawBitmapInRect"),
+      draw_rotated_bitmap: uses_target?(targets, "Pebble.Ui.drawRotatedBitmap"),
+      draw_text: uses_target?(targets, "Pebble.Ui.text"),
+      draw_text_any: text_int or text_label or uses_target?(targets, "Pebble.Ui.text")
     }
   end
 

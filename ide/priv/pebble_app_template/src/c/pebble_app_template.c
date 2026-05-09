@@ -8,6 +8,76 @@
 #endif
 #include "generated/resource_ids.h"
 
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
+#define ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_CLEAR
+#define ELMC_PEBBLE_FEATURE_DRAW_CLEAR 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_PIXEL
+#define ELMC_PEBBLE_FEATURE_DRAW_PIXEL 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_LINE
+#define ELMC_PEBBLE_FEATURE_DRAW_LINE 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_RECT
+#define ELMC_PEBBLE_FEATURE_DRAW_RECT 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT
+#define ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_CIRCLE
+#define ELMC_PEBBLE_FEATURE_DRAW_CIRCLE 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE
+#define ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
+#define ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_CONTEXT
+#define ELMC_PEBBLE_FEATURE_DRAW_CONTEXT 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH
+#define ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED
+#define ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR
+#define ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR
+#define ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR
+#define ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT
+#define ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_ARC
+#define ELMC_PEBBLE_FEATURE_DRAW_ARC 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_PATH
+#define ELMC_PEBBLE_FEATURE_DRAW_PATH 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL
+#define ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
+#define ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT
+#define ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP
+#define ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP 1
+#endif
+#ifndef ELMC_PEBBLE_FEATURE_DRAW_TEXT
+#define ELMC_PEBBLE_FEATURE_DRAW_TEXT 1
+#endif
+
 static Window *s_main_window;
 static Layer *s_draw_layer;
 static GFont s_font;
@@ -63,6 +133,7 @@ static GFont system_font_for_height(int64_t requested_height) {
   return s_font;
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
 static GFont font_from_id(int64_t font_id, bool *should_unload) {
   uint32_t resource_id = elm_pebble_font_resource_id(font_id);
   if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
@@ -72,6 +143,7 @@ static GFont font_from_id(int64_t font_id, bool *should_unload) {
   if (should_unload) *should_unload = true;
   return fonts_load_custom_font(resource_get_handle(resource_id));
 }
+#endif
 
 static GFont font_from_id_for_height(int64_t font_id, int64_t requested_height, bool *should_unload) {
   uint32_t resource_id = elm_pebble_font_resource_id(font_id);
@@ -409,6 +481,7 @@ static GColor color_from_code(int64_t value) {
 #endif
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
 static GCompOp compositing_from_code(int64_t value) {
   switch ((int)value) {
     case 1:
@@ -424,6 +497,7 @@ static GCompOp compositing_from_code(int64_t value) {
       return GCompOpAssign;
   }
 }
+#endif
 
 static DrawStyleState draw_style_default(void) {
   DrawStyleState style = {
@@ -454,7 +528,9 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorWhite);
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
   char text_buf[32];
+#endif
   bool drew_text = false;
   DrawStyleState style_stack[8];
   int style_top = 0;
@@ -464,6 +540,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   for (int i = 0; i < s_draw_count; i++) {
     ElmcPebbleDrawCmd cmd = s_draw_cmds[i];
     switch (cmd.kind) {
+#if ELMC_PEBBLE_FEATURE_DRAW_CONTEXT
       case ELMC_PEBBLE_DRAW_PUSH_CONTEXT:
         if (style_top < (int)(sizeof(style_stack) / sizeof(style_stack[0])) - 1) {
           style_stack[style_top + 1] = style_stack[style_top];
@@ -477,37 +554,53 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
           apply_draw_style(ctx, &style_stack[style_top]);
         }
         break;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_STROKE_WIDTH
       case ELMC_PEBBLE_DRAW_STROKE_WIDTH: {
         uint8_t width = (uint8_t)(cmd.p0 <= 0 ? 1 : cmd.p0);
         style_stack[style_top].stroke_width = width;
         graphics_context_set_stroke_width(ctx, width);
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_ANTIALIASED
       case ELMC_PEBBLE_DRAW_ANTIALIASED:
         style_stack[style_top].antialiased = cmd.p0 != 0;
         graphics_context_set_antialiased(ctx, style_stack[style_top].antialiased);
         break;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR
       case ELMC_PEBBLE_DRAW_STROKE_COLOR:
         style_stack[style_top].stroke_color = color_from_code(cmd.p0);
         graphics_context_set_stroke_color(ctx, style_stack[style_top].stroke_color);
         break;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR
       case ELMC_PEBBLE_DRAW_FILL_COLOR:
         style_stack[style_top].fill_color = color_from_code(cmd.p0);
         graphics_context_set_fill_color(ctx, style_stack[style_top].fill_color);
         break;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR
       case ELMC_PEBBLE_DRAW_TEXT_COLOR:
         style_stack[style_top].text_color = color_from_code(cmd.p0);
         graphics_context_set_text_color(ctx, style_stack[style_top].text_color);
         break;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
       case ELMC_PEBBLE_DRAW_COMPOSITING_MODE:
         style_stack[style_top].compositing_mode = compositing_from_code(cmd.p0);
         graphics_context_set_compositing_mode(ctx, style_stack[style_top].compositing_mode);
         break;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_CLEAR
       case ELMC_PEBBLE_DRAW_CLEAR:
         graphics_context_set_fill_color(ctx, color_from_code(cmd.p0));
         graphics_fill_rect(ctx, bounds, 0, GCornerNone);
         graphics_context_set_fill_color(ctx, style_stack[style_top].fill_color);
         break;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_LINE
       case ELMC_PEBBLE_DRAW_LINE: {
         int16_t x1 = (int16_t)cmd.p0;
         int16_t y1 = (int16_t)cmd.p1;
@@ -516,6 +609,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         graphics_draw_line(ctx, GPoint(x1, y1), GPoint(x2, y2));
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT
       case ELMC_PEBBLE_DRAW_FILL_RECT: {
         int16_t x = (int16_t)cmd.p0;
         int16_t y = (int16_t)cmd.p1;
@@ -524,6 +619,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         graphics_fill_rect(ctx, GRect(x, y, w, h), 0, GCornerNone);
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_RECT
       case ELMC_PEBBLE_DRAW_RECT: {
         int16_t x = (int16_t)cmd.p0;
         int16_t y = (int16_t)cmd.p1;
@@ -532,6 +629,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         graphics_draw_rect(ctx, GRect(x, y, w, h));
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT
       case ELMC_PEBBLE_DRAW_ROUND_RECT: {
         int16_t x = (int16_t)cmd.p0;
         int16_t y = (int16_t)cmd.p1;
@@ -543,6 +642,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         graphics_context_set_stroke_color(ctx, style_stack[style_top].stroke_color);
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_ARC
       case ELMC_PEBBLE_DRAW_ARC: {
         int16_t x = (int16_t)cmd.p0;
         int16_t y = (int16_t)cmd.p1;
@@ -553,6 +654,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         graphics_draw_arc(ctx, GRect(x, y, w, h), GOvalScaleModeFitCircle, angle_start, angle_end);
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL
       case ELMC_PEBBLE_DRAW_FILL_RADIAL: {
         int16_t x = (int16_t)cmd.p0;
         int16_t y = (int16_t)cmd.p1;
@@ -563,6 +666,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         graphics_fill_radial(ctx, GRect(x, y, w, h), GOvalScaleModeFitCircle, 0, angle_start, angle_end);
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_PATH
       case ELMC_PEBBLE_DRAW_PATH_FILLED:
       case ELMC_PEBBLE_DRAW_PATH_OUTLINE:
       case ELMC_PEBBLE_DRAW_PATH_OUTLINE_OPEN: {
@@ -599,6 +704,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         gpath_destroy(path);
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_CIRCLE
       case ELMC_PEBBLE_DRAW_CIRCLE: {
         int16_t x = (int16_t)cmd.p0;
         int16_t y = (int16_t)cmd.p1;
@@ -606,6 +713,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         graphics_draw_circle(ctx, GPoint(x, y), r);
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE
       case ELMC_PEBBLE_DRAW_FILL_CIRCLE: {
         int16_t x = (int16_t)cmd.p0;
         int16_t y = (int16_t)cmd.p1;
@@ -613,12 +722,16 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         graphics_fill_circle(ctx, GPoint(x, y), r);
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_PIXEL
       case ELMC_PEBBLE_DRAW_PIXEL: {
         int16_t x = (int16_t)cmd.p0;
         int16_t y = (int16_t)cmd.p1;
         graphics_draw_pixel(ctx, GPoint(x, y));
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
       case ELMC_PEBBLE_DRAW_TEXT_INT:
         snprintf(text_buf, sizeof(text_buf), "%lld", (long long)cmd.p2);
         graphics_draw_text(ctx, text_buf, s_font,
@@ -639,6 +752,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         drew_text = true;
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
       case ELMC_PEBBLE_DRAW_TEXT_LABEL: {
         const char *label = "Label";
         if (cmd.p2 == 0) {
@@ -666,6 +781,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         drew_text = true;
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
       case ELMC_PEBBLE_DRAW_TEXT: {
         bool should_unload = false;
         GFont font = font_from_id_for_height(cmd.p0, cmd.p4, &should_unload);
@@ -677,6 +794,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         drew_text = true;
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT
       case ELMC_PEBBLE_DRAW_BITMAP_IN_RECT: {
         uint32_t resource_id = elm_pebble_bitmap_resource_id(cmd.p0);
         if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
@@ -691,6 +810,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         gbitmap_destroy(bitmap);
         break;
       }
+#endif
       default:
         break;
     }

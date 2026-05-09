@@ -24,9 +24,14 @@ defmodule Elmc.WorkerAdapterTest do
         if (elmc_worker_init(&state, flags) != 0) return 2;
         elmc_release(flags);
 
-        ElmcValue *init_cmd = elmc_worker_take_cmd(&state);
-        if (!init_cmd) return 21;
-        elmc_release(init_cmd);
+        for (int i = 0; i < 16; i++) {
+          ElmcValue *init_cmd = elmc_worker_take_cmd(&state);
+          if (!init_cmd) return 21;
+          int done = (init_cmd->tag == ELMC_TAG_INT || init_cmd->tag == ELMC_TAG_BOOL) && elmc_as_int(init_cmd) == 0;
+          elmc_release(init_cmd);
+          if (done) break;
+          if (i == 15) return 22;
+        }
 
         ElmcValue *increment = elmc_new_int(1);
         if (elmc_worker_dispatch(&state, increment) != 0) return 3;
@@ -38,10 +43,11 @@ defmodule Elmc.WorkerAdapterTest do
 
         ElmcValue *model = elmc_worker_model(&state);
         if (!model) return 4;
-        if (model->tag != ELMC_TAG_TUPLE2 || model->payload == NULL) return 24;
-        ElmcTuple2 *model_pair = (ElmcTuple2 *)model->payload;
-        if (!model_pair || !model_pair->first) return 25;
-        printf("model=%lld\\n", (long long)elmc_as_int(model_pair->first));
+        if (model->tag != ELMC_TAG_RECORD || model->payload == NULL) return 24;
+        ElmcValue *model_value = elmc_record_get(model, "value");
+        if (!model_value) return 25;
+        printf("model=%lld\\n", (long long)elmc_as_int(model_value));
+        elmc_release(model_value);
         elmc_release(model);
         printf("subs=%lld\\n", (long long)elmc_worker_subscriptions(&state));
 

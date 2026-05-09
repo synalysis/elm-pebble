@@ -4,8 +4,6 @@ defmodule Elmc.Backend.CCodegen do
   """
 
   alias ElmEx.IR
-  @vendored_cjson_c Path.expand("../../../vendor/cjson/cJSON.c", __DIR__)
-  @vendored_cjson_h Path.expand("../../../vendor/cjson/cJSON.h", __DIR__)
 
   @spec write_project(IR.t(), String.t(), map()) :: :ok | {:error, term()}
   def write_project(%IR{} = ir, out_dir, _opts \\ %{}) do
@@ -15,7 +13,6 @@ defmodule Elmc.Backend.CCodegen do
          :ok <- File.write(Path.join(c_dir, "elmc_generated.h"), header(ir)),
          :ok <- File.write(Path.join(c_dir, "elmc_generated.c"), source(ir)),
          :ok <- File.write(Path.join(c_dir, "host_harness.c"), host_harness()),
-         :ok <- write_vendored_cjson(out_dir),
          :ok <- File.write(Path.join(out_dir, "CMakeLists.txt"), cmake()),
          :ok <- File.write(Path.join(out_dir, "Makefile"), makefile()) do
       :ok
@@ -32,7 +29,6 @@ defmodule Elmc.Backend.CCodegen do
          :ok <- File.write(Path.join(c_dir, "elmc_generated.h"), header(ir)),
          :ok <- File.write(Path.join(c_dir, "elmc_generated.c"), source(ir)),
          :ok <- File.write(Path.join(c_dir, "host_harness.c"), host_harness()),
-         :ok <- write_vendored_cjson(out_dir),
          :ok <- File.write(Path.join(out_dir, "CMakeLists.txt"), cmake()),
          :ok <- File.write(Path.join(out_dir, "Makefile"), makefile()),
          :ok <- File.write(Path.join(out_dir, "link_manifest.json"), link_manifest(ir)) do
@@ -114,19 +110,12 @@ defmodule Elmc.Backend.CCodegen do
     cmake_minimum_required(VERSION 3.20)
     project(elmc_generated C)
 
-    set(CJSON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cjson")
-
-    add_library(cjson STATIC "${CJSON_DIR}/cJSON.c")
-    target_include_directories(cjson PUBLIC "${CJSON_DIR}")
-
     add_library(elmc_runtime runtime/elmc_runtime.c)
     add_library(elmc_ports ports/elmc_ports.c)
     add_library(elmc_generated c/elmc_generated.c)
     add_library(elmc_worker c/elmc_worker.c)
     add_library(elmc_pebble c/elmc_pebble.c)
-    target_include_directories(elmc_runtime PUBLIC runtime "${CJSON_DIR}")
-    target_compile_definitions(elmc_runtime PUBLIC ELMC_USE_CJSON=1)
-    target_link_libraries(elmc_runtime PUBLIC cjson)
+    target_include_directories(elmc_runtime PUBLIC runtime)
     target_include_directories(elmc_ports PUBLIC ports runtime)
     target_include_directories(elmc_generated PUBLIC c ports runtime)
     target_include_directories(elmc_worker PUBLIC c ports runtime)
@@ -145,9 +134,8 @@ defmodule Elmc.Backend.CCodegen do
   defp makefile do
     """
     CC ?= cc
-    CJSON_DIR := cjson
-    CFLAGS ?= -std=c11 -Wall -Wextra -Iruntime -Iports -Ic -I$(CJSON_DIR) -DELMC_USE_CJSON=1
-    SOURCES := runtime/elmc_runtime.c ports/elmc_ports.c c/elmc_generated.c c/elmc_worker.c c/elmc_pebble.c c/host_harness.c $(CJSON_DIR)/cJSON.c
+    CFLAGS ?= -std=c11 -Wall -Wextra -Iruntime -Iports -Ic
+    SOURCES := runtime/elmc_runtime.c ports/elmc_ports.c c/elmc_generated.c c/elmc_worker.c c/elmc_pebble.c c/host_harness.c
 
     all: elmc_host
 
@@ -157,17 +145,6 @@ defmodule Elmc.Backend.CCodegen do
     clean:
     \trm -f elmc_host
     """
-  end
-
-  @spec write_vendored_cjson(String.t()) :: :ok | {:error, term()}
-  defp write_vendored_cjson(out_dir) do
-    cjson_out_dir = Path.join(out_dir, "cjson")
-
-    with :ok <- File.mkdir_p(cjson_out_dir),
-         :ok <- File.cp(@vendored_cjson_c, Path.join(cjson_out_dir, "cJSON.c")),
-         :ok <- File.cp(@vendored_cjson_h, Path.join(cjson_out_dir, "cJSON.h")) do
-      :ok
-    end
   end
 
   @spec host_harness() :: String.t()
@@ -265,11 +242,17 @@ defmodule Elmc.Backend.CCodegen do
         {"ElmcValue *#{var} = #{source} ? elmc_retain(#{source}) : elmc_new_int(0);", var, next}
 
       :error ->
-        # Not a local variable – must be a same-module top-level declaration.
-        module_name = Map.get(env, :__module__, "Main")
-        safe_module = String.replace(module_name, ".", "_")
-        c_name = "elmc_fn_#{safe_module}_#{name}"
-        {"ElmcValue *#{var} = #{c_name}(NULL, 0);", var, next}
+        case compile_builtin_operator_call(name, [], env, counter) do
+          nil ->
+            # Not a local variable – must be a same-module top-level declaration.
+            module_name = Map.get(env, :__module__, "Main")
+            safe_module = String.replace(module_name, ".", "_")
+            c_name = "elmc_fn_#{safe_module}_#{name}"
+            {"ElmcValue *#{var} = #{c_name}(NULL, 0);", var, next}
+
+          result ->
+            result
+        end
     end
   end
 
@@ -362,11 +345,15 @@ defmodule Elmc.Backend.CCodegen do
     {code, var, next}
   end
 
-  defp compile_expr(%{op: :tuple_first, arg: arg}, env, counter) do
+  defp compile_expr(%{op: :tuple_first, arg: arg}, env, counter) when is_binary(arg) do
     source = Map.get(env, arg, arg)
     next = counter + 1
     var = "tmp_#{next}"
     {"ElmcValue *#{var} = elmc_tuple_first(#{source});", var, next}
+  end
+
+  defp compile_expr(%{op: :tuple_first, arg: arg_expr}, env, counter) when is_map(arg_expr) do
+    compile_expr(%{op: :tuple_first_expr, arg: arg_expr}, env, counter)
   end
 
   defp compile_expr(%{op: :tuple_first_expr, arg: arg_expr}, env, counter) do
@@ -3038,11 +3025,20 @@ defmodule Elmc.Backend.CCodegen do
   defp compile_builtin_operator_call("__add__", [left, right], env, counter),
     do: compile_int_binop(left, right, "+", env, counter)
 
+  defp compile_builtin_operator_call("__add__", args, env, counter) when length(args) in [0, 1],
+    do: compile_curried_binary_builtin("__add__", args, env, counter)
+
   defp compile_builtin_operator_call("__sub__", [left, right], env, counter),
     do: compile_int_binop(left, right, "-", env, counter)
 
+  defp compile_builtin_operator_call("__sub__", args, env, counter) when length(args) in [0, 1],
+    do: compile_curried_binary_builtin("__sub__", args, env, counter)
+
   defp compile_builtin_operator_call("__mul__", [left, right], env, counter),
     do: compile_int_binop(left, right, "*", env, counter)
+
+  defp compile_builtin_operator_call("__mul__", args, env, counter) when length(args) in [0, 1],
+    do: compile_curried_binary_builtin("__mul__", args, env, counter)
 
   defp compile_builtin_operator_call("__pow__", [base, exponent], env, counter),
     do:
@@ -3052,11 +3048,20 @@ defmodule Elmc.Backend.CCodegen do
         counter
       )
 
+  defp compile_builtin_operator_call("__pow__", args, env, counter) when length(args) in [0, 1],
+    do: compile_curried_binary_builtin("__pow__", args, env, counter)
+
   defp compile_builtin_operator_call("__fdiv__", [left, right], env, counter),
     do: compile_float_div(left, right, env, counter)
 
+  defp compile_builtin_operator_call("__fdiv__", args, env, counter) when length(args) in [0, 1],
+    do: compile_curried_binary_builtin("__fdiv__", args, env, counter)
+
   defp compile_builtin_operator_call("__idiv__", [left, right], env, counter),
     do: compile_int_idiv(left, right, env, counter)
+
+  defp compile_builtin_operator_call("__idiv__", args, env, counter) when length(args) in [0, 1],
+    do: compile_curried_binary_builtin("__idiv__", args, env, counter)
 
   defp compile_builtin_operator_call("__append__", [left, right], env, counter),
     do:
@@ -3065,6 +3070,10 @@ defmodule Elmc.Backend.CCodegen do
         env,
         counter
       )
+
+  defp compile_builtin_operator_call("__append__", args, env, counter)
+       when length(args) in [0, 1],
+       do: compile_curried_binary_builtin("__append__", args, env, counter)
 
   defp compile_builtin_operator_call("modBy", [base, value], env, counter),
     do:
@@ -3155,6 +3164,35 @@ defmodule Elmc.Backend.CCodegen do
       )
 
   defp compile_builtin_operator_call(_name, _args, _env, _counter), do: nil
+
+  @spec compile_curried_binary_builtin(String.t(), [term()], term(), term()) :: term()
+  defp compile_curried_binary_builtin(name, [], env, counter) do
+    compile_expr(
+      %{
+        op: :lambda,
+        args: ["__left", "__right"],
+        body: %{
+          op: :call,
+          name: name,
+          args: [%{op: :var, name: "__left"}, %{op: :var, name: "__right"}]
+        }
+      },
+      env,
+      counter
+    )
+  end
+
+  defp compile_curried_binary_builtin(name, [left], env, counter) do
+    compile_expr(
+      %{
+        op: :lambda,
+        args: ["__right"],
+        body: %{op: :call, name: name, args: [left, %{op: :var, name: "__right"}]}
+      },
+      env,
+      counter
+    )
+  end
 
   @spec compile_int_binop(term(), term(), term(), term(), term()) :: term()
   defp compile_int_binop(left, right, operator, env, counter) do

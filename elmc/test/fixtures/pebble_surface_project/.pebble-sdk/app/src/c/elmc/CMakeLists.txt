@@ -1,19 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 project(elmc_generated C)
 
-set(CJSON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cjson")
-
-add_library(cjson STATIC "${CJSON_DIR}/cJSON.c")
-target_include_directories(cjson PUBLIC "${CJSON_DIR}")
-
 add_library(elmc_runtime runtime/elmc_runtime.c)
 add_library(elmc_ports ports/elmc_ports.c)
 add_library(elmc_generated c/elmc_generated.c)
 add_library(elmc_worker c/elmc_worker.c)
 add_library(elmc_pebble c/elmc_pebble.c)
-target_include_directories(elmc_runtime PUBLIC runtime "${CJSON_DIR}")
-target_compile_definitions(elmc_runtime PUBLIC ELMC_USE_CJSON=1)
-target_link_libraries(elmc_runtime PUBLIC cjson)
+target_include_directories(elmc_runtime PUBLIC runtime)
 target_include_directories(elmc_ports PUBLIC ports runtime)
 target_include_directories(elmc_generated PUBLIC c ports runtime)
 target_include_directories(elmc_worker PUBLIC c ports runtime)

@@ -2,7 +2,7 @@ module Main exposing (Model, Msg, headOrZero, main, update, view)
 
 {-| Fixture application used by compiler and runtime tests. -}
 
-import Companion.Types exposing (Location(..), Temperature, WatchToPhone(..))
+import Companion.Types exposing (Location(..), Temperature(..), WatchToPhone(..))
 import Companion.Watch as CompanionWatch
 import Json.Decode as Decode
 import Pebble.Cmd

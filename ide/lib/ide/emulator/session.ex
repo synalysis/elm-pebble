@@ -208,27 +208,40 @@ defmodule Ide.Emulator.Session do
   def qemu_args(state) do
     image_dir = qemu_image_dir(state.platform)
     micro_flash = Path.join(image_dir, "qemu_micro_flash.bin")
+    qemu_features = qemu_features()
+    tcp_opts = if qemu_features.new_qemu?, do: "server=on,wait=off", else: "server,nowait"
 
-    base = [
-      "-rtc",
-      "base=localtime",
-      "-serial",
-      "null",
-      "-serial",
-      "tcp:127.0.0.1:#{state.bt_port},server=on,wait=off",
-      "-serial",
-      "tcp:127.0.0.1:#{state.console_port},server=on,wait=off",
-      "-pflash",
-      micro_flash,
-      "-monitor",
-      "stdio",
-      "-L",
-      pc_bios_dir(),
-      "-vnc",
-      ":#{state.vnc_display}"
-    ]
+    firmware_args =
+      if qemu_features.new_qemu?, do: ["-kernel", micro_flash], else: ["-pflash", micro_flash]
 
-    base ++ machine_args(state.platform, state.spi_image_path)
+    pc_bios_args =
+      if qemu_features.new_qemu?,
+        do: qemu_keymap_args(state),
+        else: ["-L", pc_bios_dir()]
+
+    base =
+      [
+        "-rtc",
+        "base=localtime",
+        "-serial",
+        "null",
+        "-serial",
+        "tcp:127.0.0.1:#{state.bt_port},#{tcp_opts}",
+        "-serial",
+        "tcp:127.0.0.1:#{state.console_port},#{tcp_opts}"
+      ] ++
+        firmware_args ++
+        [
+          "-monitor",
+          "stdio"
+        ] ++
+        pc_bios_args ++
+        [
+          "-vnc",
+          ":#{state.vnc_display}"
+        ]
+
+    base ++ machine_args(state.platform, state.spi_image_path, qemu_features)
   end
 
   @spec pypkjs_args(map()) :: [String.t()]
@@ -244,32 +257,62 @@ defmodule Ide.Emulator.Session do
     |> maybe_append_layout_arg(state)
   end
 
-  @spec machine_args(String.t(), String.t() | nil) :: [String.t()]
-  def machine_args(platform, spi_image_path) do
+  @spec machine_args(String.t(), String.t() | nil, map()) :: [String.t()]
+  def machine_args(
+        platform,
+        spi_image_path,
+        qemu_features \\ %{new_qemu?: false, machines: MapSet.new()}
+      ) do
+    spi_pflash =
+      if qemu_features.new_qemu? do
+        ["-drive", "if=none,id=spi-flash,file=#{spi_image_path},format=raw"]
+      else
+        ["-pflash", spi_image_path]
+      end
+
+    new_mtd_flash = ["-drive", "if=mtd,format=raw,file=#{spi_image_path}"]
+
+    new_board? =
+      qemu_features.new_qemu? and MapSet.member?(qemu_features.machines, "pebble-emery")
+
+    audio_none = if new_board?, do: ["-audio", "driver=none,id=audio0"], else: []
+
     case platform do
       "aplite" ->
         ["-machine", "pebble-bb2", "-mtdblock", spi_image_path, "-cpu", "cortex-m3"]
 
       "basalt" ->
-        ["-machine", "pebble-snowy-bb", "-cpu", "cortex-m4", "-pflash", spi_image_path]
+        ["-machine", "pebble-snowy-bb", "-cpu", "cortex-m4"] ++ spi_pflash
 
       "chalk" ->
-        ["-machine", "pebble-s4-bb", "-cpu", "cortex-m4", "-pflash", spi_image_path]
+        ["-machine", "pebble-s4-bb", "-cpu", "cortex-m4"] ++ spi_pflash
 
       "diorite" ->
         ["-machine", "pebble-silk-bb", "-mtdblock", spi_image_path, "-cpu", "cortex-m4"]
 
       "emery" ->
-        ["-machine", "pebble-snowy-emery-bb", "-cpu", "cortex-m4", "-pflash", spi_image_path]
+        if new_board? do
+          ["-machine", "pebble-emery", "-cpu", "cortex-m33"] ++ new_mtd_flash ++ audio_none
+        else
+          ["-machine", "pebble-snowy-emery-bb", "-cpu", "cortex-m4"] ++ spi_pflash
+        end
 
       "flint" ->
-        ["-machine", "pebble-silk-bb", "-cpu", "cortex-m4", "-mtdblock", spi_image_path]
+        if new_board? do
+          ["-machine", "pebble-flint", "-cpu", "cortex-m4"] ++ new_mtd_flash ++ audio_none
+        else
+          ["-machine", "pebble-silk-bb", "-cpu", "cortex-m4", "-mtdblock", spi_image_path]
+        end
 
       "gabbro" ->
-        ["-machine", "pebble-snowy-emery-bb", "-cpu", "cortex-m4", "-pflash", spi_image_path]
+        if new_board? do
+          ["-machine", "pebble-gabbro", "-cpu", "cortex-m33"] ++ new_mtd_flash ++ audio_none
+        else
+          ["-machine", "pebble-snowy-emery-bb", "-cpu", "cortex-m4"] ++ spi_pflash
+        end
 
       _ ->
-        machine_args(WatchModels.default_id(), spi_image_path)
+        machine_args(WatchModels.default_id(), spi_image_path, qemu_features)
     end
   end
 
@@ -556,6 +599,84 @@ defmodule Ide.Emulator.Session do
     end
   end
 
+  defp qemu_features do
+    case qemu_bin() do
+      {:ok, qemu_bin} ->
+        %{
+          new_qemu?: qemu_major_version(qemu_bin) >= 7,
+          machines: qemu_machines(qemu_bin)
+        }
+
+      {:error, _reason} ->
+        %{new_qemu?: false, machines: MapSet.new()}
+    end
+  end
+
+  defp qemu_major_version(qemu_bin) do
+    case System.cmd(qemu_bin, ["--version"], stderr_to_stdout: true) do
+      {output, 0} ->
+        case Regex.run(~r/version\s+(\d+)\./, output) do
+          [_, major] -> String.to_integer(major)
+          _ -> 0
+        end
+
+      {_output, _exit_code} ->
+        0
+    end
+  rescue
+    _ -> 0
+  end
+
+  defp qemu_machines(qemu_bin) do
+    case System.cmd(qemu_bin, ["-machine", "help"], stderr_to_stdout: true) do
+      {output, 0} ->
+        output
+        |> String.split("\n")
+        |> Enum.map(fn line ->
+          line |> String.trim() |> String.split(~r/\s+/, parts: 2) |> List.first()
+        end)
+        |> Enum.reject(&(&1 in [nil, "", "Supported"]))
+        |> MapSet.new()
+
+      {_output, _exit_code} ->
+        MapSet.new()
+    end
+  rescue
+    _ -> MapSet.new()
+  end
+
+  defp qemu_keymap_args(state) do
+    root = Path.join(Map.get(state, :persist_dir) || System.tmp_dir!(), "qemu-pc-bios")
+    keymap_dir = Path.join(root, "keymaps")
+    target = Path.join(keymap_dir, "en-us")
+
+    with :ok <- File.mkdir_p(keymap_dir),
+         {:ok, content} <- qemu_keymap_content(),
+         :ok <- File.write(target, content) do
+      ["-L", root]
+    else
+      _ -> []
+    end
+  end
+
+  defp qemu_keymap_content do
+    source = Path.join(pc_bios_dir(), "keymaps/en-us")
+
+    case File.read(source) do
+      {:ok, content} ->
+        content =
+          content
+          |> String.split("\n")
+          |> Enum.reject(&(String.trim(&1) |> String.starts_with?("include ")))
+          |> Enum.join("\n")
+
+        {:ok, content}
+
+      {:error, _reason} ->
+        {:ok, "map 0x409\n"}
+    end
+  end
+
   defp qemu_image_dir(platform) do
     qemu_image_roots()
     |> Enum.find(fn root -> SdkImages.images_present?(root, platform) end)
@@ -577,15 +698,27 @@ defmodule Ide.Emulator.Session do
     configured_roots =
       if is_binary(configured_root) and configured_root != "", do: [configured_root], else: []
 
-    system_roots = ["/usr/share/qemu", "/usr/local/share/qemu"]
-
     sdk_roots =
       Enum.map(sdk_roots(), fn root ->
         path = Path.join(root, "toolchain/lib/pc-bios")
         path
       end)
 
-    configured_roots ++ system_roots ++ sdk_roots
+    qemu_sdk_roots =
+      case qemu_bin() do
+        {:ok, path} ->
+          case qemu_bin_sdk_root(path) do
+            root when is_binary(root) -> [Path.join(root, "toolchain/lib/pc-bios")]
+            nil -> []
+          end
+
+        {:error, _reason} ->
+          []
+      end
+
+    system_roots = ["/usr/share/qemu", "/usr/local/share/qemu"]
+
+    configured_roots ++ qemu_sdk_roots ++ sdk_roots ++ system_roots
   end
 
   defp qemu_bin do
@@ -686,13 +819,13 @@ defmodule Ide.Emulator.Session do
         home = System.user_home!()
 
         [
-          Path.expand(".pebble-sdk/SDKs/current", home),
-          Path.expand(".pebble-sdk/SDKs/4.9.169", home),
-          Path.expand(".pebble-sdk/SDKs/4.9.148", home),
           Path.expand("Library/Application Support/Pebble SDK/SDKs/current", home),
           Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.169", home),
           Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.148", home),
-          Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.77", home)
+          Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.77", home),
+          Path.expand(".pebble-sdk/SDKs/current", home),
+          Path.expand(".pebble-sdk/SDKs/4.9.169", home),
+          Path.expand(".pebble-sdk/SDKs/4.9.148", home)
         ]
     end
   end
@@ -833,7 +966,7 @@ defmodule Ide.Emulator.Session do
   end
 
   defp install_pebble_sdk do
-    version = config(:sdk_core_version, "4.9.148")
+    version = config(:sdk_core_version, "4.9.169")
 
     with {:ok, pebble_bin} <- pebble_bin(),
          {:ok, install_output} <- run_command(pebble_bin, ["sdk", "install", version]),
@@ -850,7 +983,7 @@ defmodule Ide.Emulator.Session do
     opts =
       [
         image_root: image_root,
-        sdk_version: config(:sdk_core_version, "4.9.148")
+        sdk_version: config(:sdk_core_version, "4.9.169")
       ]
       |> maybe_put_metadata_url(config(:sdk_core_metadata_url, nil))
 
@@ -916,7 +1049,7 @@ defmodule Ide.Emulator.Session do
         opts =
           [
             image_root: image_root,
-            sdk_version: config(:sdk_core_version, "4.9.148")
+            sdk_version: config(:sdk_core_version, "4.9.169")
           ]
           |> maybe_put_metadata_url(config(:sdk_core_metadata_url, nil))
 

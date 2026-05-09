@@ -11,7 +11,6 @@ defmodule Elmc.PebbleShimTest do
     File.rm_rf!(project_dir)
     File.rm_rf!(out_dir)
     File.cp_r!(source_fixture, project_dir)
-    write_companion_internal!(project_dir)
     {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/pebble_harness.c")
@@ -187,11 +186,47 @@ defmodule Elmc.PebbleShimTest do
     end)
   end
 
+  test "generated draw feature flags match primitives used by different views" do
+    rich_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    rich_project = Path.expand("tmp/pebble_rich_draw_flags_project", __DIR__)
+    rich_out = Path.expand("tmp/pebble_rich_draw_flags", __DIR__)
+    File.rm_rf!(rich_project)
+    File.rm_rf!(rich_out)
+    File.cp_r!(rich_fixture, rich_project)
+
+    assert {:ok, _} = Elmc.compile(rich_project, %{out_dir: rich_out, entry_module: "Main"})
+
+    rich_header = File.read!(Path.join(rich_out, "c/elmc_pebble.h"))
+    assert draw_feature?(rich_header, "ARC")
+    assert draw_feature?(rich_header, "PATH")
+    assert draw_feature?(rich_header, "TEXT_LABEL")
+
+    minimal_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    minimal_project = Path.expand("tmp/pebble_minimal_draw_flags_project", __DIR__)
+    minimal_out = Path.expand("tmp/pebble_minimal_draw_flags", __DIR__)
+    File.rm_rf!(minimal_project)
+    File.rm_rf!(minimal_out)
+    File.cp_r!(minimal_fixture, minimal_project)
+    write_minimal_watchface!(minimal_project)
+
+    assert {:ok, _} = Elmc.compile(minimal_project, %{out_dir: minimal_out, entry_module: "Main"})
+
+    minimal_header = File.read!(Path.join(minimal_out, "c/elmc_pebble.h"))
+    assert draw_feature?(minimal_header, "CLEAR")
+    refute draw_feature?(minimal_header, "ARC")
+    refute draw_feature?(minimal_header, "PATH")
+    refute draw_feature?(minimal_header, "TEXT_LABEL")
+  end
+
   defp available_c_compilers do
     ["cc", "gcc", "clang"]
     |> Enum.map(fn name -> {name, System.find_executable(name)} end)
     |> Enum.filter(fn {_name, path} -> is_binary(path) end)
     |> Enum.uniq_by(fn {_name, path} -> path end)
+  end
+
+  defp draw_feature?(header, suffix) do
+    String.contains?(header, "#define ELMC_PEBBLE_FEATURE_DRAW_#{suffix} 1")
   end
 
   defp write_minimal_watchface!(project_dir) do
@@ -239,27 +274,6 @@ defmodule Elmc.PebbleShimTest do
                     [ Ui.clear Color.white ]
                 ]
             ]
-    """)
-  end
-
-  defp write_companion_internal!(project_dir) do
-    path = Path.join(project_dir, "src/Companion/Internal.elm")
-    File.mkdir_p!(Path.dirname(path))
-
-    File.write!(path, """
-    module Companion.Internal exposing (watchToPhoneTag, watchToPhoneValue)
-
-    import Companion.Types exposing (WatchToPhone)
-
-
-    watchToPhoneTag : WatchToPhone -> Int
-    watchToPhoneTag _ =
-        2
-
-
-    watchToPhoneValue : WatchToPhone -> Int
-    watchToPhoneValue _ =
-        3
     """)
   end
 end
