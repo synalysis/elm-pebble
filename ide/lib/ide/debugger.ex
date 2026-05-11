@@ -14,6 +14,8 @@ defmodule Ide.Debugger do
 
   @dialyzer :no_match
   @history_limit 500
+  @default_auto_fire_interval_ms 1_000
+  @min_auto_fire_interval_ms 100
 
   @type runtime_event :: %{
           seq: non_neg_integer(),
@@ -2632,12 +2634,15 @@ defmodule Ide.Debugger do
       subscription_calls
       |> Enum.filter(&subscription_call_fireable?/1)
       |> Enum.map(fn op ->
-        trigger = Map.get(op, "event_kind") || Map.get(op, "name") || Map.get(op, "target")
+        trigger = subscription_trigger_for_call(op)
         label = Map.get(op, "label") || Map.get(op, "name") || trigger
         callback = Map.get(op, "callback_constructor")
         message = callback || best_message_for_trigger(known_messages, to_string(trigger || ""))
         trigger_id = normalize_trigger_id(trigger)
-        metadata = button_subscription_metadata(op)
+        metadata =
+          op
+          |> button_subscription_metadata()
+          |> Map.merge(subscription_timing_metadata(op))
 
         %{
           id: "#{target_name}:#{trigger_id}:#{normalize_trigger_id(message)}",
@@ -2729,6 +2734,79 @@ defmodule Ide.Debugger do
         %{}
     end
   end
+
+  @spec subscription_timing_metadata(map()) :: map()
+  defp subscription_timing_metadata(%{"target" => target, "arg_snippets" => snippets})
+       when is_binary(target) and is_list(snippets) do
+    if frame_subscription_target?(target) do
+      case frame_subscription_interval_ms(target, snippets) do
+        interval_ms when is_integer(interval_ms) ->
+          %{
+            interval_ms: clamp_auto_fire_interval_ms(interval_ms),
+            declared_interval_ms: interval_ms
+          }
+
+        _ ->
+          %{}
+      end
+    else
+      %{}
+    end
+  end
+
+  defp subscription_timing_metadata(_op), do: %{}
+
+  @spec frame_subscription_interval_ms(String.t(), [term()]) :: integer() | nil
+  defp frame_subscription_interval_ms(target, snippets) when is_binary(target) and is_list(snippets) do
+    value = snippets |> List.first() |> normalize_integer(0)
+    target_name = target |> subscription_target_name() |> String.downcase()
+
+    cond do
+      value <= 0 ->
+        nil
+
+      target_name == "atfps" ->
+        div(1_000, max(1, value))
+
+      true ->
+        value
+    end
+  end
+
+  @spec clamp_auto_fire_interval_ms(term()) :: pos_integer()
+  defp clamp_auto_fire_interval_ms(interval_ms) when is_integer(interval_ms) do
+    interval_ms
+    |> max(@min_auto_fire_interval_ms)
+    |> min(60_000)
+  end
+
+  defp clamp_auto_fire_interval_ms(_interval_ms), do: @default_auto_fire_interval_ms
+
+  @spec subscription_trigger_for_call(map()) :: String.t() | nil
+  defp subscription_trigger_for_call(%{"target" => target} = op) when is_binary(target) do
+    if frame_subscription_target?(target) do
+      target
+    else
+      Map.get(op, "event_kind") || Map.get(op, "name") || target
+    end
+  end
+
+  defp subscription_trigger_for_call(op) when is_map(op) do
+    Map.get(op, "event_kind") || Map.get(op, "name") || Map.get(op, "target")
+  end
+
+  @spec frame_subscription_target?(term()) :: boolean()
+  defp frame_subscription_target?(target) when is_binary(target) do
+    normalized =
+      target
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9.]+/, "")
+
+    String.contains?(normalized, "frame.") or String.ends_with?(normalized, ".onframe") or
+      String.ends_with?(normalized, "onframe")
+  end
+
+  defp frame_subscription_target?(_target), do: false
 
   @spec subscription_target_name(term()) :: String.t()
   defp subscription_target_name(target) when is_binary(target) do
@@ -2836,6 +2914,10 @@ defmodule Ide.Debugger do
         |> String.replace(~r/[^a-z0-9]/, "")
 
       cond do
+        frame_subscription_trigger?(trigger_like) and
+            subscription_message_arity(state, target, message_text) == 1 ->
+          "#{message_text} #{Jason.encode!(subscription_frame_payload(state, target))}"
+
         (String.contains?(t, "ontick") or String.contains?(t, "tick")) and
             subscription_message_arity(state, target, message_text) == 1 ->
           "#{message_text} #{now.second}"
@@ -2877,6 +2959,45 @@ defmodule Ide.Debugger do
       _ ->
         0
     end
+  end
+
+  @spec frame_subscription_trigger?(term()) :: boolean()
+  defp frame_subscription_trigger?(trigger_like) when is_binary(trigger_like) do
+    normalized =
+      trigger_like
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]+/, "")
+
+    String.contains?(normalized, "frame") or String.contains?(normalized, "onframe")
+  end
+
+  defp frame_subscription_trigger?(_trigger_like), do: false
+
+  @spec subscription_frame_payload(map(), term()) :: map()
+  defp subscription_frame_payload(state, target) when is_map(state) do
+    model =
+      case target do
+        surface when surface in [:watch, :companion, :phone] ->
+          get_in(state, [surface, :model]) || %{}
+
+        _ ->
+          %{}
+      end
+
+    frame =
+      model
+      |> Map.get("_debugger_steps")
+      |> normalize_integer(0)
+      |> max(0)
+      |> Kernel.+(1)
+
+    dt_ms = 16
+
+    %{
+      "dtMs" => dt_ms,
+      "elapsedMs" => frame * dt_ms,
+      "frame" => frame
+    }
   end
 
   @spec subscription_battery_level(map(), term()) :: integer()
@@ -3295,6 +3416,9 @@ defmodule Ide.Debugger do
     clock = auto_fire_clock_for_target(state, target)
 
     cond do
+      frame_subscription_trigger?(trigger) ->
+        true
+
       contains_any?(trigger, ["on_tick", "ontick", "tick"]) ->
         true
 
@@ -3346,7 +3470,7 @@ defmodule Ide.Debugger do
         state
 
       [_ | _] ->
-        interval_ms = 1_000
+        interval_ms = auto_fire_worker_interval_ms(state, targets, subscriptions)
         count = 1
         worker = spawn(fn -> auto_fire_loop(project_slug, interval_ms, targets, 0) end)
 
@@ -3363,6 +3487,38 @@ defmodule Ide.Debugger do
         })
     end
   end
+
+  @spec auto_fire_worker_interval_ms(map(), [:watch | :companion | :phone], [map()]) :: pos_integer()
+  defp auto_fire_worker_interval_ms(state, targets, subscriptions)
+       when is_map(state) and is_list(targets) and is_list(subscriptions) do
+    targets
+    |> Enum.flat_map(&trigger_candidates_for_surface(state, &1))
+    |> Enum.filter(&auto_fire_row_selected?(&1, subscriptions))
+    |> Enum.map(&(Map.get(&1, :interval_ms) || Map.get(&1, "interval_ms")))
+    |> Enum.filter(&is_integer/1)
+    |> case do
+      [] -> @default_auto_fire_interval_ms
+      intervals -> intervals |> Enum.min() |> clamp_auto_fire_interval_ms()
+    end
+  end
+
+  defp auto_fire_worker_interval_ms(_state, _targets, _subscriptions),
+    do: @default_auto_fire_interval_ms
+
+  @spec auto_fire_row_selected?(map(), [map()]) :: boolean()
+  defp auto_fire_row_selected?(row, subscriptions) when is_map(row) and is_list(subscriptions) do
+    row_target = Map.get(row, :target) || Map.get(row, "target")
+    row_trigger = Map.get(row, :trigger) || Map.get(row, "trigger")
+
+    Enum.any?(subscriptions, fn sub ->
+      sub_target = Map.get(sub, "target") || Map.get(sub, :target)
+      sub_trigger = Map.get(sub, "trigger") || Map.get(sub, :trigger)
+
+      sub_target == row_target and (sub_trigger == "*" or sub_trigger == row_trigger)
+    end)
+  end
+
+  defp auto_fire_row_selected?(_row, _subscriptions), do: false
 
   @spec initialize_auto_fire_clock(map(), [:watch | :companion | :phone]) :: map()
   defp initialize_auto_fire_clock(state, targets) when is_map(state) and is_list(targets) do

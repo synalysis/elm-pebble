@@ -74,6 +74,18 @@ defmodule Ide.Debugger.RuntimeExecutorTest do
     end
   end
 
+  defmodule ElmcCandidateLooseViewOutput do
+    def run(_request) do
+      {:ok,
+       %{
+         runtime_model: %{"n" => 12},
+         view_tree: %{"type" => "elmc-loose-output", "children" => []},
+         runtime: %{"engine" => "elmc_runtime_loose_output_v1"},
+         view_output: [%{"kind" => "clear", "color" => 255}]
+       }}
+    end
+  end
+
   defmodule ElmcCandidateContextEcho do
     def execute(request) do
       core_ir = Map.get(request, :elm_executor_core_ir)
@@ -207,9 +219,20 @@ defmodule Ide.Debugger.RuntimeExecutorTest do
     assert payload.runtime["execution_backend"] == "external"
     assert payload.model_patch["runtime_model"]["n"] == 7
     assert payload.view_output == [%{"kind" => "text_label", "x" => 1, "y" => 2, "text" => "ok"}]
+    assert payload.model_patch["runtime_view_output"] == payload.view_output
     assert payload.followup_messages == [%{"message" => "ElmcFollowup"}]
     assert payload.model_patch["runtime_model_source"] == "elmc_runtime"
     assert hd(payload.protocol_events).type == "debugger.protocol_tx"
+  end
+
+  test "elmc adapter stores loose view_output on runtime model patch" do
+    Application.put_env(:ide, ElmcAdapter, candidates: [{ElmcCandidateLooseViewOutput, :run, 1}])
+    Application.put_env(:ide, RuntimeExecutor, external_executor_module: ElmcAdapter)
+
+    assert {:ok, payload} = RuntimeExecutor.execute(step_input())
+    assert payload.runtime["engine"] == "elmc_runtime_loose_output_v1"
+    assert payload.view_output == [%{"kind" => "clear", "color" => 255}]
+    assert payload.model_patch["runtime_view_output"] == payload.view_output
   end
 
   test "elmc adapter normalizes loose runtime_model response shape" do

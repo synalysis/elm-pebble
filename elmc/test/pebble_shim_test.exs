@@ -63,7 +63,8 @@ defmodule Elmc.PebbleShimTest do
         ElmcPebbleCmd cmd = {0};
         if (elmc_pebble_take_cmd(&app, &cmd) != 0) return 3;
         if (cmd.kind != ELMC_PEBBLE_CMD_RANDOM_GENERATE) return 4;
-        if (elmc_pebble_dispatch_random_int(&app, 42) != 0) return 5;
+        if (cmd.p0 != ELMC_PEBBLE_MSG_RANDOMGENERATED) return 8;
+        if (elmc_pebble_dispatch_tag_value(&app, cmd.p0, 42) != 0) return 5;
         if (elmc_pebble_model_as_int(&app) != 42) return 6;
 
         elmc_pebble_deinit(&app);
@@ -73,6 +74,211 @@ defmodule Elmc.PebbleShimTest do
     )
 
     binary_path = Path.join(out_dir, "random_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
+  test "storage read string command carries callback target" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/storage_read_string_project", __DIR__)
+    out_dir = Path.expand("tmp/storage_read_string_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_storage_read_string_app!(project_dir)
+
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    harness_path = Path.join(out_dir, "c/storage_read_string_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        ElmcPebbleCmd cmd = {0};
+        if (elmc_pebble_take_cmd(&app, &cmd) != 0) return 3;
+        if (cmd.kind != ELMC_PEBBLE_CMD_STORAGE_READ_STRING) return 4;
+        if (cmd.p0 != 2048) return 5;
+        if (cmd.p1 != ELMC_PEBBLE_MSG_BESTLOADED) return 6;
+        if (elmc_pebble_dispatch_tag_string(&app, cmd.p1, "144") != 0) return 7;
+        if (elmc_pebble_model_as_int(&app) != 144) return 8;
+
+        elmc_pebble_deinit(&app);
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "storage_read_string_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
+  test "scene command stream supports views larger than prior chunk size" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/scene_stream_project", __DIR__)
+    out_dir = Path.expand("tmp/scene_stream_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_many_draw_commands_app!(project_dir, 99)
+
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    harness_path = Path.join(out_dir, "c/scene_stream_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        ElmcPebbleDrawCmd cmds[128];
+        if (elmc_pebble_scene_command_count(&app) != 99) return 3;
+        if (elmc_pebble_scene_commands_from(&app, cmds, 128, 0) != 99) return 4;
+        if (elmc_pebble_scene_commands_from(&app, cmds, 64, 64) != 35) return 5;
+
+        elmc_pebble_deinit(&app);
+        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 6;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "scene_stream_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
+  test "scene dirty rect tracks moved visual command" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/scene_dirty_rect_project", __DIR__)
+    out_dir = Path.expand("tmp/scene_dirty_rect_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_moving_rect_app!(project_dir)
+
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    harness_path = Path.join(out_dir, "c/scene_dirty_rect_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        if (elmc_pebble_scene_command_count(&app) != 1) return 3;
+
+        ElmcPebbleRect rect = {0};
+        int full = 0;
+        if (elmc_pebble_scene_dirty_rect(&app, &rect, &full) < 0) return 4;
+        if (!full) return 5;
+
+        if (elmc_pebble_dispatch_int(&app, ELMC_PEBBLE_MSG_MOVE) != 0) return 6;
+        if (elmc_pebble_scene_dirty_rect(&app, &rect, &full) < 0) return 7;
+        if (full) return 8;
+        if (rect.x != 10) return 9;
+        if (rect.y != 20) return 10;
+        if (rect.w != 18) return 11;
+        if (rect.h != 6) return 12;
+
+        elmc_pebble_deinit(&app);
+        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 13;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "scene_dirty_rect_harness")
 
     {compile_out, compile_code} =
       System.cmd(cc, [
@@ -290,6 +496,75 @@ defmodule Elmc.PebbleShimTest do
     end)
   end
 
+  test "frame subscription interval codegen stays within pebble int range" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/pebble_frame_project", __DIR__)
+    out_dir = Path.expand("tmp/pebble_frame_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_frame_subscription_app!(project_dir)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    refute String.contains?(generated, "141733928960")
+    assert String.contains?(generated, "elmc_new_int(2170880)")
+
+    harness_path = Path.join(out_dir, "c/frame_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        int64_t subscriptions = elmc_pebble_active_subscriptions(&app);
+        if ((subscriptions & ELMC_PEBBLE_SUB_FRAME) == 0) return 3;
+        if (((subscriptions >> 16) & 0x7fff) != 33) return 4;
+        if (elmc_pebble_dispatch_frame(&app, 33, 33, 1) != 0) return 5;
+
+        elmc_pebble_deinit(&app);
+        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 6;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "frame_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
   test "direct pebble renderer streams indexed mapped model lists" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for pebble shim C test")
@@ -363,6 +638,96 @@ defmodule Elmc.PebbleShimTest do
 
     {_run_out, run_code} = System.cmd(binary_path, [])
     assert run_code == 0
+  end
+
+  test "native renderer and update handle partial predicates and helper record fields" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/pebble_partial_collision_project", __DIR__)
+    out_dir = Path.expand("tmp/pebble_partial_collision_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_partial_collision_view!(project_dir)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert String.contains?(generated, "elmc_partial_ref_")
+    assert String.contains?(generated, "elmc_apply_extra")
+
+    harness_path = Path.join(out_dir, "c/partial_collision_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      static long field_int(ElmcValue *record, const char *field) {
+        ElmcValue *value = elmc_record_get(record, field);
+        long out = (long)elmc_as_int(value);
+        elmc_release(value);
+        return out;
+      }
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        ElmcPebbleDrawCmd cmds[8] = {0};
+        int count = elmc_pebble_view_commands_from(&app, cmds, 8, 0);
+        if (count < 3) return 3;
+        if (cmds[2].kind != ELMC_PEBBLE_DRAW_FILL_RECT) return 4;
+        if (cmds[2].p0 != 30 || cmds[2].p1 != 10 || cmds[2].p2 != 20 || cmds[2].p3 != 4) return 5;
+
+        if (elmc_pebble_dispatch_button_raw(&app, ELMC_PEBBLE_BUTTON_UP, 1) != 0) return 6;
+        if (field_int(app.worker.model, "playerY") != 6) return 7;
+        if (field_int(app.worker.model, "velocityY") != -2) return 8;
+
+        for (int i = 0; i < 8; i++) {
+          if (elmc_pebble_dispatch_frame(&app, 33, 33 * (i + 1), i + 1) != 0) return 20 + i;
+        }
+
+        long y = field_int(app.worker.model, "playerY");
+        long vy = field_int(app.worker.model, "velocityY");
+        if (y != 6) return 40;
+        if (vy != 0) return 41;
+
+        elmc_pebble_deinit(&app);
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "partial_collision_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0, run_out
   end
 
   test "generated draw feature flags match primitives used by different views" do
@@ -613,6 +978,176 @@ defmodule Elmc.PebbleShimTest do
     """)
   end
 
+  defp write_partial_collision_view!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Button as Button
+    import Pebble.Events as Events
+    import Pebble.Frame as Frame
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Tile =
+        { x : Int, y : Int }
+
+    type alias Model =
+        { playerY : Int
+        , velocityY : Int
+        , offset : Int
+        , tiles : List Tile
+        }
+
+    type Msg
+        = FrameTick Frame.Frame
+        | UpPressed
+
+    init _ =
+        ( { playerY = 6
+          , velocityY = 0
+          , offset = 0
+          , tiles = [ { x = 30, y = 10 } ]
+          }
+        , Cmd.none
+        )
+
+    update msg model =
+        case msg of
+            FrameTick _ ->
+                step model
+
+            UpPressed ->
+                ( { model | velocityY = -2 }, Cmd.none )
+
+    step model =
+        let
+            nextOffset =
+                model.offset + 1
+
+            nextY =
+                model.playerY + model.velocityY
+
+            playerBottom =
+                nextY + 4
+
+            landingTile =
+                if model.velocityY >= 0 then
+                    List.filter (landedOnTile nextOffset (model.playerY + 4) playerBottom) model.tiles
+                        |> List.head
+
+                else
+                    Nothing
+
+            fixedY =
+                case landingTile of
+                    Just tile ->
+                        (tileRect nextOffset tile).y - 4
+
+                    Nothing ->
+                        nextY
+        in
+        ( { model
+            | offset = nextOffset
+            , playerY = fixedY
+            , velocityY =
+                if landingTile /= Nothing then
+                    0
+
+                else
+                    min 3 (model.velocityY + 1)
+          }
+        , Cmd.none
+        )
+
+    landedOnTile offset previousBottom playerBottom tile =
+        let
+            rect =
+                tileRect offset tile
+        in
+        previousBottom <= rect.y && playerBottom >= rect.y
+
+    tileRect offset tile =
+        { x = tile.x - offset, y = tile.y, w = 20, h = 4 }
+
+    subscriptions _ =
+        Events.batch
+            [ Frame.every 33 FrameTick
+            , Button.onPress Button.Up UpPressed
+            ]
+
+    view model =
+        Ui.toUiNode
+            ([ Ui.clear Color.white
+             , Ui.fillRect { x = 4, y = model.playerY, w = 4, h = 4 } Color.black
+             ]
+                ++ List.map (drawTile model.offset) model.tiles
+            )
+
+    drawTile offset tile =
+        Ui.fillRect (tileRect offset tile) Color.black
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """)
+  end
+
+  defp write_frame_subscription_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Events as Events
+    import Pebble.Frame as Frame
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        { frame : Int }
+
+
+    type Msg
+        = FrameTick Frame.Frame
+
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { frame = 0 }, Cmd.none )
+
+
+    update msg model =
+        case msg of
+            FrameTick frame ->
+                ( { model | frame = frame.frame }, Cmd.none )
+
+
+    subscriptions _ =
+        Events.batch [ Frame.every 33 FrameTick ]
+
+
+    view _ =
+        Ui.toUiNode [ Ui.clear Color.white ]
+    """)
+  end
+
   defp write_light_command_app!(project_dir) do
     File.write!(Path.join(project_dir, "src/Main.elm"), """
     module Main exposing (main)
@@ -656,6 +1191,146 @@ defmodule Elmc.PebbleShimTest do
 
     view _ =
         Ui.toUiNode [ Ui.clear Color.white ]
+    """)
+  end
+
+  defp write_storage_read_string_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Storage as Storage
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type Msg
+        = BestLoaded String
+
+
+    main : Program Decode.Value Int Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( 0, Storage.readString 2048 BestLoaded )
+
+
+    update msg _ =
+        case msg of
+            BestLoaded value ->
+                ( Maybe.withDefault 0 (String.toInt value), Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode [ Ui.clear Color.white ]
+    """)
+  end
+
+  defp write_many_draw_commands_app!(project_dir, count) do
+    commands =
+      0..(count - 1)
+      |> Enum.map_join("\n            , ", fn index ->
+        x = rem(index * 7, 140)
+        y = rem(index * 5, 160)
+        "Ui.fillRect { x = #{x}, y = #{y}, w = 2, h = 2 } Color.black"
+      end)
+
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type Msg
+        = NoOp
+
+
+    main : Program Decode.Value Int Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( 0, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            [ #{commands}
+            ]
+    """)
+  end
+
+  defp write_moving_rect_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type Msg
+        = Move
+
+
+    main : Program Decode.Value Int Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( 0, Cmd.none )
+
+
+    update msg model =
+        case msg of
+            Move ->
+                ( model + 10, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode
+            [ Ui.fillRect { x = 10 + model, y = 20, w = 8, h = 6 } Color.black
+            ]
     """)
   end
 end

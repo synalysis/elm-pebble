@@ -10,8 +10,6 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   @qemu_header 0xFEED
   @qemu_footer 0xBEEF
   @qemu_protocol_spp 1
-  @debug_log_path "/home/ape/projects/elm-pebble/.cursor/debug-b436e0.log"
-  @debug_session_id "b436e0"
 
   @type frame :: Frame.t()
 
@@ -61,17 +59,6 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
   @impl true
   def handle_call({:send_and_await, endpoint, payload, matcher, timeout}, from, state) do
-    #region agent log
-    debug_log("router_send_and_await", "H1,H2", %{
-      endpoint: endpoint,
-      payload_bytes: byte_size(payload),
-      timeout: timeout,
-      waiters_before: length(state.waiters),
-      locked?: state.locked?
-    })
-
-    #endregion
-
     :ok = :gen_tcp.send(state.qemu, qemu_spp_packet(Frame.encode(endpoint, payload)))
     timer = Process.send_after(self(), {:waiter_timeout, from}, timeout)
     waiter = %{from: from, matcher: matcher, timer: timer}
@@ -79,45 +66,17 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   end
 
   def handle_call({:send_packet, endpoint, payload}, _from, state) do
-    #region agent log
-    debug_log("router_send_packet", "H1,H2,H3", %{
-      endpoint: endpoint,
-      payload_bytes: byte_size(payload),
-      waiters: length(state.waiters),
-      locked?: state.locked?
-    })
-
-    #endregion
-
     :ok = :gen_tcp.send(state.qemu, qemu_spp_packet(Frame.encode(endpoint, payload)))
     {:reply, :ok, state}
   end
 
   def handle_call(:acquire, _from, %{locked?: false} = state) do
-    #region agent log
-    debug_log("router_acquire", "H2,H3", %{
-      waiters: length(state.waiters),
-      queued_pypkjs_chunks: :queue.len(state.pypkjs_queue),
-      pypkjs_connected?: not is_nil(state.pypkjs)
-    })
-
-    #endregion
-
     {:reply, :ok, %{state | locked?: true}}
   end
 
   def handle_call(:acquire, _from, state), do: {:reply, {:error, :busy}, state}
 
   def handle_call(:release, _from, state) do
-    #region agent log
-    debug_log("router_release", "H2,H3", %{
-      waiters: length(state.waiters),
-      queued_pypkjs_chunks: :queue.len(state.pypkjs_queue),
-      pypkjs_connected?: not is_nil(state.pypkjs)
-    })
-
-    #endregion
-
     state = %{state | locked?: false} |> flush_pypkjs_queue()
     {:reply, :ok, state}
   end
@@ -149,15 +108,6 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   def handle_info({:tcp, socket, data}, %{pypkjs: socket} = state) do
     state =
       if state.locked? do
-        #region agent log
-        debug_log("pypkjs_queued_while_locked", "H2,H3", %{
-          bytes: byte_size(data),
-          queued_pypkjs_chunks_before: :queue.len(state.pypkjs_queue),
-          waiters: length(state.waiters)
-        })
-
-        #endregion
-
         %{state | pypkjs_queue: :queue.in(data, state.pypkjs_queue)}
       else
         :ok = :gen_tcp.send(state.qemu, data)
@@ -183,18 +133,6 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
       Process.cancel_timer(waiter.timer)
       GenServer.reply(waiter.from, {:error, :timeout})
     end)
-
-    #region agent log
-    if timed_out != [] do
-      debug_log("waiter_timeout", "H1,H2,H3", %{
-        timed_out_count: length(timed_out),
-        remaining_waiters: length(waiters),
-        locked?: state.locked?,
-        queued_pypkjs_chunks: :queue.len(state.pypkjs_queue)
-      })
-    end
-
-    #endregion
 
     {:noreply, %{state | waiters: waiters}}
   end
@@ -251,21 +189,6 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
   defp handle_qemu_frame(frame, state) do
     {matched, waiters} = Enum.split_with(state.waiters, fn waiter -> waiter.matcher.(frame) end)
-
-    #region agent log
-    if frame.endpoint in [0x4888, 0x4F4F, 0xB1DB] or matched != [] or state.waiters != [] do
-      debug_log("qemu_frame", "H1,H2,H3", %{
-        endpoint: frame.endpoint,
-        payload_bytes: byte_size(frame.payload),
-        matched_waiters: length(matched),
-        waiters_before: length(state.waiters),
-        waiters_after: length(waiters),
-        locked?: state.locked?,
-        queued_pypkjs_chunks: :queue.len(state.pypkjs_queue)
-      })
-    end
-
-    #endregion
 
     case matched do
       [] ->
@@ -330,24 +253,4 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
   defp parse_qemu_packets(buffer, packets), do: {Enum.reverse(packets), buffer}
 
-  #region agent log
-  defp debug_log(message, hypothesis_id, data) do
-    payload =
-      %{
-        sessionId: @debug_session_id,
-        runId: "install-debug",
-        hypothesisId: hypothesis_id,
-        location: "ide/lib/ide/emulator/pebble_protocol/router.ex",
-        message: message,
-        data: data,
-        timestamp: System.system_time(:millisecond)
-      }
-      |> Jason.encode!()
-
-    File.write(@debug_log_path, payload <> "\n", [:append])
-  rescue
-    _ -> :ok
-  end
-
-  #endregion
 end

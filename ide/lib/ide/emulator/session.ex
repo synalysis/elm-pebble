@@ -41,6 +41,15 @@ defmodule Ide.Emulator.Session do
     GenServer.start_link(__MODULE__, Keyword.put(opts, :id, id), name: via(id))
   end
 
+  @spec child_spec(keyword()) :: Supervisor.child_spec()
+  def child_spec(opts) do
+    %{
+      id: {__MODULE__, Keyword.get(opts, :id, make_ref())},
+      start: {__MODULE__, :start_link, [opts]},
+      restart: :temporary
+    }
+  end
+
   @spec info(pid()) :: map()
   def info(pid), do: GenServer.call(pid, :info)
 
@@ -48,20 +57,42 @@ defmodule Ide.Emulator.Session do
   def artifact_file_path(pid), do: GenServer.call(pid, :artifact_file_path)
 
   @spec install(pid()) :: {:ok, map()} | {:error, term()}
-  def install(pid), do: GenServer.call(pid, :install, :infinity)
+  def install(pid) do
+    with {:ok, context} <- GenServer.call(pid, :install_context, 5_000) do
+      Ide.Emulator.PBWInstaller.install(
+        context.protocol_router_pid,
+        context.artifact_path,
+        context.platform,
+        install_opts()
+      )
+    end
+  catch
+    :exit, {:timeout, _} -> {:error, :emulator_session_unresponsive}
+    :exit, _ -> {:error, :emulator_session_unavailable}
+  end
 
   @spec local_port(pid(), :vnc | :phone) :: pos_integer()
   def local_port(pid, kind), do: GenServer.call(pid, {:local_port, kind})
 
-  @spec ping(pid()) :: {:ok, map()}
-  def ping(pid), do: GenServer.call(pid, :ping)
+  @spec ping(pid()) :: {:ok, map()} | {:error, term()}
+  def ping(pid) do
+    GenServer.call(pid, :ping, 1_000)
+  catch
+    :exit, {:timeout, _} -> {:error, :emulator_session_unresponsive}
+    :exit, _ -> {:error, :emulator_session_unavailable}
+  end
 
   @spec kill(pid()) :: :ok
   def kill(pid) do
-    _ = GenServer.stop(pid, :normal, :infinity)
+    _ = GenServer.stop(pid, :normal, 1_000)
     :ok
   catch
-    :exit, _ -> :ok
+    :exit, {:timeout, _} ->
+      Process.exit(pid, :kill)
+      :ok
+
+    :exit, _ ->
+      :ok
   end
 
   @spec runtime_status(term()) :: map()
@@ -153,30 +184,34 @@ defmodule Ide.Emulator.Session do
 
   def handle_call(:artifact_file_path, _from, state), do: {:reply, state.artifact_path, state}
 
-  def handle_call(:install, _from, %{artifact_path: nil} = state),
+  def handle_call(:install_context, _from, %{artifact_path: nil} = state),
     do: {:reply, {:error, :artifact_not_found}, state}
 
-  def handle_call(:install, _from, %{protocol_router_pid: nil} = state),
+  def handle_call(:install_context, _from, %{protocol_router_pid: nil} = state),
     do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
 
-  def handle_call(:install, _from, state) do
-    result =
-      Ide.Emulator.PBWInstaller.install(
-        state.protocol_router_pid,
-        state.artifact_path,
-        state.platform,
-        install_opts()
-      )
-
-    {:reply, result, state}
+  def handle_call(:install_context, _from, state) do
+    {:reply,
+     {:ok,
+      %{
+        protocol_router_pid: state.protocol_router_pid,
+        artifact_path: state.artifact_path,
+        platform: state.platform
+      }}, state}
   end
 
   def handle_call({:local_port, :vnc}, _from, state), do: {:reply, state.vnc_port, state}
   def handle_call({:local_port, :phone}, _from, state), do: {:reply, state.phone_ws_port, state}
 
   def handle_call(:ping, _from, state) do
-    state = %{state | last_ping_ms: now_ms()}
-    {:reply, {:ok, public_info(state)}, state}
+    case session_health(state) do
+      :ok ->
+        state = %{state | last_ping_ms: now_ms()}
+        {:reply, {:ok, public_info(state)}, state}
+
+      {:error, reason} ->
+        {:stop, {:shutdown, reason}, {:error, reason}, state}
+    end
   end
 
   @impl true
@@ -189,9 +224,19 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  def handle_info({:EXIT, _pid, reason}, state) do
-    Logger.debug("embedded emulator child exited: #{inspect(reason)}")
-    {:noreply, state}
+  def handle_info({:EXIT, pid, reason}, state) do
+    case session_child_role(state, pid) do
+      nil when reason in [:normal, :shutdown] ->
+        {:noreply, state}
+
+      nil ->
+        Logger.debug("embedded emulator linked process exited: #{inspect(reason)}")
+        {:noreply, state}
+
+      role ->
+        Logger.debug("embedded emulator #{role} exited: #{inspect(reason)}")
+        {:stop, {:shutdown, {:child_exited, role, reason}}, state}
+    end
   end
 
   def handle_info(_message, state), do: {:noreply, state}
@@ -355,11 +400,28 @@ defmodule Ide.Emulator.Session do
   end
 
   defp maybe_start_qemu(state) do
+    maybe_start_qemu(state, true)
+  end
+
+  defp maybe_start_qemu(state, allow_flash_reset?) do
     if start_processes?() do
       with {:ok, qemu_bin} <- qemu_bin(),
-           {:ok, pid} <- start_daemon(qemu_bin, qemu_args(state), "qemu:#{state.id}"),
-           :ok <- wait_for_qemu_boot(pid, state.console_port, 60_000) do
-        {:ok, %{state | qemu_pid: pid}}
+           {:ok, pid} <- start_daemon(qemu_bin, qemu_args(state), "qemu:#{state.id}") do
+        case wait_for_qemu_boot(pid, state.console_port, 60_000) do
+          :ok ->
+            {:ok, %{state | qemu_pid: pid}}
+
+          {:error, {:qemu_boot_firmware_failure, _tail}} when allow_flash_reset? ->
+            cleanup_process(pid)
+
+            with {:ok, _path} <- reset_spi_image(state.platform, state.spi_image_path) do
+              maybe_start_qemu(state, false)
+            end
+
+          {:error, reason} ->
+            cleanup_process(pid)
+            {:error, reason}
+        end
       end
     else
       {:ok, state}
@@ -448,7 +510,15 @@ defmodule Ide.Emulator.Session do
 
       System.monotonic_time(:millisecond) >= deadline ->
         :gen_tcp.close(socket)
-        {:error, {:qemu_boot_timeout, String.slice(received, -256, 256)}}
+
+        reason =
+          if qemu_firmware_failure?(received) do
+            {:qemu_boot_firmware_failure, console_tail(received)}
+          else
+            {:qemu_boot_timeout, console_tail(received)}
+          end
+
+        {:error, reason}
 
       true ->
         case :gen_tcp.recv(socket, 0, 250) do
@@ -466,7 +536,27 @@ defmodule Ide.Emulator.Session do
   end
 
   defp boot_marker?(data) do
-    String.contains?(data, ["<SDK Home>", "<Launcher>", "Ready for communication"])
+    Enum.any?(["<SDK Home>", "<Launcher>", "Ready for communication"], fn marker ->
+      :binary.match(data, marker) != :nomatch
+    end)
+  end
+
+  defp qemu_firmware_failure?(data) do
+    Enum.any?(["Invalid firmware description", "SAD WATCH"], fn marker ->
+      :binary.match(data, marker) != :nomatch
+    end)
+  end
+
+  defp console_tail(data) when is_binary(data) do
+    size = byte_size(data)
+    tail_size = min(size, 256)
+    tail = binary_part(data, size - tail_size, tail_size)
+
+    if String.valid?(tail) do
+      tail
+    else
+      "base16:" <> Base.encode16(tail, case: :lower)
+    end
   end
 
   defp wait_for_daemon(pid, port, deadline, last_error) do
@@ -577,6 +667,20 @@ defmodule Ide.Emulator.Session do
               {:ok, path}
           end
         end
+    end
+  end
+
+  defp reset_spi_image(platform, path) do
+    source_dir = qemu_image_dir(platform)
+    raw = Path.join(source_dir, "qemu_spi_flash.bin")
+    bz2 = raw <> ".bz2"
+
+    with :ok <- File.mkdir_p(Path.dirname(path)) do
+      cond do
+        File.exists?(raw) -> with :ok <- File.cp(raw, path), do: {:ok, path}
+        File.exists?(bz2) -> decompress_bzip2(bz2, path)
+        true -> {:error, {:qemu_flash_image_not_found, source_dir}}
+      end
     end
   end
 
@@ -1107,6 +1211,8 @@ defmodule Ide.Emulator.Session do
     [
       chunk_size: config(:native_install_chunk_size, 1_000),
       timeout_ms: config(:native_install_timeout_ms, 30_000),
+      install_timeout_ms: config(:native_install_phase_timeout_ms, 120_000),
+      install_transition_timeout_ms: config(:native_install_transition_timeout_ms, 30_000),
       putbytes_retries: config(:native_install_putbytes_retries, 2),
       chunk_delay_ms: config(:native_install_chunk_delay_ms, 10),
       part_retries: config(:native_install_part_retries, 1),
@@ -1192,6 +1298,45 @@ defmodule Ide.Emulator.Session do
 
   defp cleanup_process(nil), do: :ok
   defp cleanup_process(pid) when is_pid(pid), do: Process.exit(pid, :normal)
+
+  defp session_health(state) do
+    cond do
+      not start_processes?() ->
+        :ok
+
+      not live_pid?(state.qemu_pid) ->
+        {:error, {:child_not_running, :qemu}}
+
+      not live_pid?(state.protocol_router_pid) ->
+        {:error, {:child_not_running, :protocol_router}}
+
+      not live_pid?(state.pypkjs_pid) ->
+        {:error, {:child_not_running, :pypkjs}}
+
+      not tcp_port_open?(state.vnc_port) ->
+        {:error, {:port_not_ready, :vnc, state.vnc_port}}
+
+      not tcp_port_open?(state.phone_ws_port) ->
+        {:error, {:port_not_ready, :phone, state.phone_ws_port}}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp session_child_role(state, pid) when is_pid(pid) do
+    cond do
+      pid == state.qemu_pid -> :qemu
+      pid == state.protocol_router_pid -> :protocol_router
+      pid == state.pypkjs_pid -> :pypkjs
+      true -> nil
+    end
+  end
+
+  defp session_child_role(_state, _pid), do: nil
+
+  defp live_pid?(pid) when is_pid(pid), do: Process.alive?(pid)
+  defp live_pid?(_pid), do: false
 
   defp random_id, do: Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
   defp random_token, do: Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)

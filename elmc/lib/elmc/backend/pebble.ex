@@ -197,6 +197,14 @@ defmodule Elmc.Backend.Pebble do
 
     #{feature_macros}
 
+    #ifndef ELMC_PEBBLE_DIRTY_REGION_ENABLED
+    #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
+    #define ELMC_PEBBLE_DIRTY_REGION_ENABLED 0
+    #else
+    #define ELMC_PEBBLE_DIRTY_REGION_ENABLED 1
+    #endif
+    #endif
+
     typedef struct {
       unsigned char *bytes;
       int byte_count;
@@ -205,6 +213,13 @@ defmodule Elmc.Backend.Pebble do
       uint64_t hash;
       int dirty;
     } ElmcPebbleSceneBuffer;
+
+    typedef struct {
+      int x;
+      int y;
+      int w;
+      int h;
+    } ElmcPebbleRect;
 
     typedef struct {
       ElmcWorkerState worker;
@@ -216,6 +231,12 @@ defmodule Elmc.Backend.Pebble do
       uint64_t prev_ops_hash;
       ElmcValue *stream_view_result;
       ElmcPebbleSceneBuffer scene;
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+      ElmcPebbleSceneBuffer prev_scene;
+      ElmcPebbleRect dirty_rect;
+      int dirty_rect_valid;
+      int dirty_rect_full;
+    #endif
     } ElmcPebbleApp;
 
     #{run_mode_enum}
@@ -322,6 +343,7 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip);
     int elmc_pebble_ensure_scene(ElmcPebbleApp *app);
     int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
+    int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
     void elmc_pebble_clear_view_cache(ElmcPebbleApp *app);
     int elmc_pebble_tick(ElmcPebbleApp *app);
     int64_t elmc_pebble_active_subscriptions(ElmcPebbleApp *app);
@@ -416,7 +438,7 @@ defmodule Elmc.Backend.Pebble do
     """
     #include "elmc_pebble.h"
     #include <time.h>
-    #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT)
+    #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
     #define ELMC_PEBBLE_PLATFORM 1
     #endif
     #ifdef ELMC_PEBBLE_PLATFORM
@@ -424,6 +446,14 @@ defmodule Elmc.Backend.Pebble do
     #endif
     #include <stdlib.h>
     #include <string.h>
+
+    #ifndef ELMC_PEBBLE_DIRTY_REGION_ENABLED
+    #if defined(ELMC_PEBBLE_PLATFORM)
+    #define ELMC_PEBBLE_DIRTY_REGION_ENABLED 0
+    #else
+    #define ELMC_PEBBLE_DIRTY_REGION_ENABLED 1
+    #endif
+    #endif
 
     #{current_second_helper}
 
@@ -635,22 +665,64 @@ defmodule Elmc.Backend.Pebble do
       app->scene.hash = 1469598103934665603ULL;
     }
 
+    static void elmc_pebble_scene_buffer_free(ElmcPebbleSceneBuffer *scene) {
+      if (!scene) return;
+      if (scene->bytes) {
+        free(scene->bytes);
+      }
+      scene->bytes = NULL;
+      scene->byte_count = 0;
+      scene->byte_capacity = 0;
+      scene->command_count = 0;
+      scene->hash = 0;
+      scene->dirty = 1;
+    }
+
     static void elmc_pebble_scene_free(ElmcPebbleApp *app) {
       if (!app) return;
-      if (app->scene.bytes) {
-        free(app->scene.bytes);
-      }
-      app->scene.bytes = NULL;
-      app->scene.byte_count = 0;
-      app->scene.byte_capacity = 0;
-      app->scene.command_count = 0;
-      app->scene.hash = 0;
-      app->scene.dirty = 1;
+      elmc_pebble_scene_buffer_free(&app->scene);
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+      elmc_pebble_scene_buffer_free(&app->prev_scene);
+      app->dirty_rect_valid = 0;
+      app->dirty_rect_full = 1;
+    #endif
     }
 
     static void elmc_pebble_mark_scene_dirty(ElmcPebbleApp *app) {
       if (!app) return;
       app->scene.dirty = 1;
+    }
+
+    static void elmc_pebble_prepare_scene_rebuild(ElmcPebbleApp *app) {
+      if (!app) return;
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+      elmc_pebble_scene_buffer_free(&app->prev_scene);
+      app->prev_scene = app->scene;
+      app->scene.bytes = NULL;
+      app->scene.byte_count = 0;
+      app->scene.byte_capacity = 0;
+    #else
+      app->scene.byte_count = 0;
+    #endif
+      app->scene.command_count = 0;
+      app->scene.hash = 0;
+      app->scene.dirty = 1;
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+      app->dirty_rect_valid = 0;
+      app->dirty_rect_full = 1;
+    #endif
+    }
+
+    static void elmc_pebble_scene_mark_full_dirty(ElmcPebbleApp *app) {
+      if (!app) return;
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+      app->dirty_rect_valid = 0;
+      app->dirty_rect_full = 1;
+      app->dirty_rect.x = 0;
+      app->dirty_rect.y = 0;
+      app->dirty_rect.w = 0;
+      app->dirty_rect.h = 0;
+    #endif
     }
 
     static int elmc_pebble_scene_reserve(ElmcPebbleApp *app, int extra) {
@@ -847,6 +919,219 @@ defmodule Elmc.Backend.Pebble do
       *offset = payload_end;
       return 0;
     }
+
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+    static int elmc_pebble_scene_next_record(
+        const unsigned char *bytes,
+        int byte_count,
+        int *offset,
+        const unsigned char **out_record,
+        int *out_record_len,
+        ElmcPebbleDrawCmd *out_cmd) {
+      if (!bytes || !offset || !out_record || !out_record_len || !out_cmd) return -1;
+      if (*offset >= byte_count) return 1;
+      if (*offset + 2 > byte_count) return -2;
+      int start = *offset;
+      int payload_len = bytes[start + 1];
+      int record_len = 2 + payload_len;
+      if (start + record_len > byte_count) return -3;
+      int decode_offset = start;
+      int rc = elmc_pebble_scene_decode_record(bytes, byte_count, &decode_offset, out_cmd);
+      if (rc != 0) return rc;
+      *out_record = bytes + start;
+      *out_record_len = record_len;
+      *offset = start + record_len;
+      return 0;
+    }
+
+    static int elmc_rect_empty(const ElmcPebbleRect *rect) {
+      return !rect || rect->w <= 0 || rect->h <= 0;
+    }
+
+    static void elmc_rect_set(ElmcPebbleRect *rect, int x, int y, int w, int h) {
+      if (!rect) return;
+      rect->x = x;
+      rect->y = y;
+      rect->w = w < 0 ? 0 : w;
+      rect->h = h < 0 ? 0 : h;
+    }
+
+    static int elmc_min_int(int a, int b) { return a < b ? a : b; }
+    static int elmc_max_int(int a, int b) { return a > b ? a : b; }
+
+    static void elmc_rect_union_into(ElmcPebbleRect *acc, const ElmcPebbleRect *rect) {
+      if (!acc || elmc_rect_empty(rect)) return;
+      if (elmc_rect_empty(acc)) {
+        *acc = *rect;
+        return;
+      }
+      int x1 = elmc_min_int(acc->x, rect->x);
+      int y1 = elmc_min_int(acc->y, rect->y);
+      int x2 = elmc_max_int(acc->x + acc->w, rect->x + rect->w);
+      int y2 = elmc_max_int(acc->y + acc->h, rect->y + rect->h);
+      acc->x = x1;
+      acc->y = y1;
+      acc->w = x2 - x1;
+      acc->h = y2 - y1;
+    }
+
+    static int elmc_pebble_cmd_visual_bounds(const ElmcPebbleDrawCmd *cmd, ElmcPebbleRect *out) {
+      if (!cmd || !out) return 0;
+      switch (cmd->kind) {
+        case ELMC_PEBBLE_DRAW_PIXEL:
+          elmc_rect_set(out, cmd->p0, cmd->p1, 1, 1);
+          return 1;
+        case ELMC_PEBBLE_DRAW_LINE: {
+          int x1 = elmc_min_int(cmd->p0, cmd->p2);
+          int y1 = elmc_min_int(cmd->p1, cmd->p3);
+          int x2 = elmc_max_int(cmd->p0, cmd->p2);
+          int y2 = elmc_max_int(cmd->p1, cmd->p3);
+          elmc_rect_set(out, x1, y1, x2 - x1 + 1, y2 - y1 + 1);
+          return 1;
+        }
+        case ELMC_PEBBLE_DRAW_RECT:
+        case ELMC_PEBBLE_DRAW_FILL_RECT:
+        case ELMC_PEBBLE_DRAW_ROUND_RECT:
+        case ELMC_PEBBLE_DRAW_ARC:
+        case ELMC_PEBBLE_DRAW_FILL_RADIAL:
+          elmc_rect_set(out, cmd->p0, cmd->p1, cmd->p2, cmd->p3);
+          return !elmc_rect_empty(out);
+        case ELMC_PEBBLE_DRAW_TEXT:
+        case ELMC_PEBBLE_DRAW_BITMAP_IN_RECT:
+          elmc_rect_set(out, cmd->p1, cmd->p2, cmd->p3, cmd->p4);
+          return !elmc_rect_empty(out);
+        case ELMC_PEBBLE_DRAW_CIRCLE:
+        case ELMC_PEBBLE_DRAW_FILL_CIRCLE: {
+          int r = cmd->p2 < 0 ? 0 : cmd->p2;
+          elmc_rect_set(out, cmd->p0 - r, cmd->p1 - r, r * 2 + 1, r * 2 + 1);
+          return !elmc_rect_empty(out);
+        }
+        default:
+          return 0;
+      }
+    }
+
+    static int elmc_pebble_cmd_is_visual(const ElmcPebbleDrawCmd *cmd) {
+      if (!cmd) return 0;
+      switch (cmd->kind) {
+        case ELMC_PEBBLE_DRAW_CLEAR:
+        case ELMC_PEBBLE_DRAW_PIXEL:
+        case ELMC_PEBBLE_DRAW_LINE:
+        case ELMC_PEBBLE_DRAW_RECT:
+        case ELMC_PEBBLE_DRAW_FILL_RECT:
+        case ELMC_PEBBLE_DRAW_ROUND_RECT:
+        case ELMC_PEBBLE_DRAW_ARC:
+        case ELMC_PEBBLE_DRAW_FILL_RADIAL:
+        case ELMC_PEBBLE_DRAW_CIRCLE:
+        case ELMC_PEBBLE_DRAW_FILL_CIRCLE:
+        case ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT:
+        case ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT:
+        case ELMC_PEBBLE_DRAW_TEXT:
+        case ELMC_PEBBLE_DRAW_BITMAP_IN_RECT:
+        case ELMC_PEBBLE_DRAW_ROTATED_BITMAP:
+      #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+        case ELMC_PEBBLE_DRAW_PATH_FILLED:
+        case ELMC_PEBBLE_DRAW_PATH_OUTLINE:
+        case ELMC_PEBBLE_DRAW_PATH_OUTLINE_OPEN:
+      #endif
+          return 1;
+        default:
+          return 0;
+      }
+    }
+
+    static int elmc_pebble_cmd_requires_full_dirty(const ElmcPebbleDrawCmd *cmd) {
+      if (!cmd) return 1;
+      switch (cmd->kind) {
+        case ELMC_PEBBLE_DRAW_CLEAR:
+        case ELMC_PEBBLE_DRAW_PUSH_CONTEXT:
+        case ELMC_PEBBLE_DRAW_POP_CONTEXT:
+        case ELMC_PEBBLE_DRAW_STROKE_WIDTH:
+        case ELMC_PEBBLE_DRAW_ANTIALIASED:
+        case ELMC_PEBBLE_DRAW_STROKE_COLOR:
+        case ELMC_PEBBLE_DRAW_FILL_COLOR:
+        case ELMC_PEBBLE_DRAW_TEXT_COLOR:
+        case ELMC_PEBBLE_DRAW_CONTEXT_GROUP:
+        case ELMC_PEBBLE_DRAW_COMPOSITING_MODE:
+        case ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT:
+        case ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT:
+        case ELMC_PEBBLE_DRAW_ROTATED_BITMAP:
+      #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+        case ELMC_PEBBLE_DRAW_PATH_FILLED:
+        case ELMC_PEBBLE_DRAW_PATH_OUTLINE:
+        case ELMC_PEBBLE_DRAW_PATH_OUTLINE_OPEN:
+      #endif
+          return 1;
+        default:
+          return 0;
+      }
+    }
+
+    static void elmc_pebble_scene_compute_dirty_rect(ElmcPebbleApp *app) {
+      if (!app) return;
+      app->dirty_rect_valid = 0;
+      app->dirty_rect_full = 1;
+      elmc_rect_set(&app->dirty_rect, 0, 0, 0, 0);
+
+      if (app->prev_scene.hash == app->scene.hash &&
+          app->prev_scene.command_count == app->scene.command_count &&
+          app->prev_scene.byte_count == app->scene.byte_count) {
+        app->dirty_rect_full = 0;
+        app->dirty_rect_valid = 1;
+        return;
+      }
+
+      int old_offset = 0;
+      int new_offset = 0;
+      ElmcPebbleRect union_rect = {0, 0, 0, 0};
+
+      while (old_offset < app->prev_scene.byte_count || new_offset < app->scene.byte_count) {
+        const unsigned char *old_record = NULL;
+        const unsigned char *new_record = NULL;
+        int old_len = 0;
+        int new_len = 0;
+        ElmcPebbleDrawCmd old_cmd;
+        ElmcPebbleDrawCmd new_cmd;
+        int old_rc = elmc_pebble_scene_next_record(app->prev_scene.bytes, app->prev_scene.byte_count,
+                                                   &old_offset, &old_record, &old_len, &old_cmd);
+        int new_rc = elmc_pebble_scene_next_record(app->scene.bytes, app->scene.byte_count,
+                                                   &new_offset, &new_record, &new_len, &new_cmd);
+        if (old_rc < 0 || new_rc < 0) {
+          return;
+        }
+        if (old_rc == 1 && new_rc == 1) {
+          break;
+        }
+        if (old_rc == 0 && new_rc == 0 && old_len == new_len && memcmp(old_record, new_record, (size_t)old_len) == 0) {
+          continue;
+        }
+
+        if ((old_rc == 0 && elmc_pebble_cmd_requires_full_dirty(&old_cmd)) ||
+            (new_rc == 0 && elmc_pebble_cmd_requires_full_dirty(&new_cmd))) {
+          return;
+        }
+
+        if (old_rc == 0 && elmc_pebble_cmd_is_visual(&old_cmd)) {
+          ElmcPebbleRect bounds;
+          if (!elmc_pebble_cmd_visual_bounds(&old_cmd, &bounds)) return;
+          elmc_rect_union_into(&union_rect, &bounds);
+        }
+        if (new_rc == 0 && elmc_pebble_cmd_is_visual(&new_cmd)) {
+          ElmcPebbleRect bounds;
+          if (!elmc_pebble_cmd_visual_bounds(&new_cmd, &bounds)) return;
+          elmc_rect_union_into(&union_rect, &bounds);
+        }
+      }
+
+      app->dirty_rect = union_rect;
+      app->dirty_rect_full = 0;
+      app->dirty_rect_valid = 1;
+    }
+    #else
+    static void elmc_pebble_scene_compute_dirty_rect(ElmcPebbleApp *app) {
+      elmc_pebble_scene_mark_full_dirty(app);
+    }
+    #endif
 
     static void elmc_emit_draw_cmd(
         const ElmcPebbleDrawCmd *cmd,
@@ -1152,6 +1437,20 @@ defmodule Elmc.Backend.Pebble do
       app->scene.command_count = 0;
       app->scene.hash = 0;
       app->scene.dirty = 1;
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+      app->prev_scene.bytes = NULL;
+      app->prev_scene.byte_count = 0;
+      app->prev_scene.byte_capacity = 0;
+      app->prev_scene.command_count = 0;
+      app->prev_scene.hash = 0;
+      app->prev_scene.dirty = 1;
+      app->dirty_rect.x = 0;
+      app->dirty_rect.y = 0;
+      app->dirty_rect.w = 0;
+      app->dirty_rect.h = 0;
+      app->dirty_rect_valid = 0;
+      app->dirty_rect_full = 1;
+    #endif
       int rc = elmc_worker_init(&app->worker, flags);
       if (rc == 0) app->initialized = 1;
       return rc;
@@ -1478,7 +1777,11 @@ defmodule Elmc.Backend.Pebble do
     }
 
     int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip) {
-      return elmc_pebble_view_commands_impl(app, out_cmds, max_cmds, skip, 0);
+      int count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0);
+      if (count < max_cmds) {
+        elmc_pebble_clear_view_cache(app);
+      }
+      return count;
     }
 
     void elmc_pebble_clear_view_cache(ElmcPebbleApp *app) {
@@ -1492,17 +1795,23 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
       if (!app || !app->initialized) return -1;
       if (!app->scene.dirty) return 0;
+      elmc_pebble_prepare_scene_rebuild(app);
       elmc_pebble_scene_reset(app);
       enum {
         BUILD_STACK_CHUNK_CAPACITY = 4,
-        BUILD_HEAP_CHUNK_CAPACITY = 64,
-        BUILD_SMALL_HEAP_CHUNK_CAPACITY = 16,
+        BUILD_HEAP_CHUNK_CAPACITY = 32,
+        BUILD_MEDIUM_HEAP_CHUNK_CAPACITY = 16,
+        BUILD_SMALL_HEAP_CHUNK_CAPACITY = 8,
         BUILD_CHUNK_GUARD = 256
       };
       ElmcPebbleDrawCmd stack_cmds[BUILD_STACK_CHUNK_CAPACITY];
       int build_chunk_capacity = BUILD_HEAP_CHUNK_CAPACITY;
       ElmcPebbleDrawCmd *cmds =
           (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * build_chunk_capacity);
+      if (!cmds) {
+        build_chunk_capacity = BUILD_MEDIUM_HEAP_CHUNK_CAPACITY;
+        cmds = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * build_chunk_capacity);
+      }
       if (!cmds) {
         build_chunk_capacity = BUILD_SMALL_HEAP_CHUNK_CAPACITY;
         cmds = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * build_chunk_capacity);
@@ -1516,6 +1825,7 @@ defmodule Elmc.Backend.Pebble do
         int count = elmc_pebble_view_commands_raw_impl(app, cmds, build_chunk_capacity, skip, 0);
         if (count < 0) {
           elmc_pebble_clear_view_cache(app);
+          elmc_pebble_scene_buffer_free(&app->scene);
           if (cmds != stack_cmds) free(cmds);
           return count;
         }
@@ -1524,6 +1834,7 @@ defmodule Elmc.Backend.Pebble do
           int rc = elmc_pebble_scene_encode_cmd(app, &cmds[i]);
           if (rc != 0) {
             elmc_pebble_clear_view_cache(app);
+            elmc_pebble_scene_buffer_free(&app->scene);
             if (cmds != stack_cmds) free(cmds);
             return rc;
           }
@@ -1534,12 +1845,37 @@ defmodule Elmc.Backend.Pebble do
       elmc_pebble_clear_view_cache(app);
       if (cmds != stack_cmds) free(cmds);
       app->scene.dirty = 0;
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+      if (!app->prev_scene.bytes || app->prev_scene.byte_count <= 0) {
+        elmc_pebble_scene_mark_full_dirty(app);
+      } else {
+        elmc_pebble_scene_compute_dirty_rect(app);
+      }
+    #endif
       return 0;
     }
 
     int elmc_pebble_scene_command_count(ElmcPebbleApp *app) {
       if (elmc_pebble_ensure_scene(app) != 0) return 0;
       return app->scene.command_count;
+    }
+
+    int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full) {
+      if (!app || !out_rect || !out_full) return -1;
+      int rc = elmc_pebble_ensure_scene(app);
+      if (rc != 0) return rc;
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+      *out_full = app->dirty_rect_full || !app->dirty_rect_valid;
+      *out_rect = app->dirty_rect;
+      return app->dirty_rect_valid ? 1 : 0;
+    #else
+      *out_full = 1;
+      out_rect->x = 0;
+      out_rect->y = 0;
+      out_rect->w = 0;
+      out_rect->h = 0;
+      return 0;
+    #endif
     }
 
     int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip) {
@@ -1628,7 +1964,7 @@ defmodule Elmc.Backend.Pebble do
               }
             }
             return direct_count;
-      #endif
+      #else
             if (!dedupe && app->stream_view_result) {
               result = app->stream_view_result;
             } else {
@@ -1641,6 +1977,7 @@ defmodule Elmc.Backend.Pebble do
                 app->stream_view_result = result;
               }
             }
+      #endif
       """
     else
       """

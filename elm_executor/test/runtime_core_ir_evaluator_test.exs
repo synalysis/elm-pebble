@@ -46,6 +46,21 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
     end
   end
 
+  test "compares maybe constructors across runtime representations" do
+    nothing = ctor("Nothing", [])
+    just_two = ctor("Just", [int(2)])
+
+    assert {:ok, true} =
+             CoreIREvaluator.evaluate(
+               call("__eq__", [nothing, %{"ctor" => "Nothing", "args" => []}])
+             )
+
+    assert {:ok, true} = CoreIREvaluator.evaluate(call("__eq__", [nothing, 0]))
+    assert {:ok, false} = CoreIREvaluator.evaluate(call("__neq__", [nothing, 0]))
+    assert {:ok, true} = CoreIREvaluator.evaluate(call("__eq__", [just_two, {1, 2}]))
+    assert {:ok, false} = CoreIREvaluator.evaluate(call("__eq__", [just_two, 0]))
+  end
+
   test "supports case pattern match with constructor payload" do
     expr = %{
       "op" => :case,
@@ -858,6 +873,45 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
 
     assert {:ok, [0, 2, 4]} =
              CoreIREvaluator.evaluate(qcall("List.filter", [non_negative, list([-1, 0, 2, 4])]))
+  end
+
+  test "applies lowered field accessor after local function result" do
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Main",
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "rect",
+              "args" => ["x", "y"],
+              "expr" => %{
+                "op" => :record_literal,
+                "fields" => [
+                  %{"name" => "x", "expr" => var("x")},
+                  %{"name" => "y", "expr" => var("y")}
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    context = %{
+      functions: CoreIREvaluator.index_functions(core_ir),
+      module: "Main",
+      source_module: "Main"
+    }
+
+    expr =
+      call("rect", [
+        int(1),
+        int(2),
+        lambda(["r"], %{"op" => :field_access, "arg" => var("r"), "field" => "y"})
+      ])
+
+    assert {:ok, 2} = CoreIREvaluator.evaluate(expr, %{}, context)
   end
 
   defp call(name, args), do: %{"op" => :call, "name" => name, "args" => args}

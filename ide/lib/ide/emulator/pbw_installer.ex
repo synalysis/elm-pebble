@@ -10,13 +10,13 @@ defmodule Ide.Emulator.PBWInstaller do
 
   @default_chunk_size 1_000
   @default_timeout_ms 30_000
+  @default_install_timeout_ms 120_000
   @default_putbytes_retries 2
   @default_chunk_delay_ms 10
+  @default_install_transition_timeout_ms 30_000
   @default_part_retries 1
   @default_install_retries 2
   @default_install_retry_delay_ms 1_500
-  @debug_log_path "/home/ape/projects/elm-pebble/.cursor/debug-b436e0.log"
-  @debug_session_id "b436e0"
 
   @type install_result :: %{
           uuid: String.t(),
@@ -31,12 +31,19 @@ defmodule Ide.Emulator.PBWInstaller do
       when is_pid(router) and is_binary(pbw_path) and is_binary(platform) do
     chunk_size = Keyword.get(opts, :chunk_size, @default_chunk_size)
     timeout = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
+    install_timeout = Keyword.get(opts, :install_timeout_ms, @default_install_timeout_ms)
     part_delay_ms = Keyword.get(opts, :part_delay_ms, 0)
     putbytes_retries = Keyword.get(opts, :putbytes_retries, @default_putbytes_retries)
     chunk_delay_ms = Keyword.get(opts, :chunk_delay_ms, @default_chunk_delay_ms)
+
+    install_transition_timeout =
+      Keyword.get(opts, :install_transition_timeout_ms, @default_install_transition_timeout_ms)
+
     part_retries = Keyword.get(opts, :part_retries, @default_part_retries)
     install_retries = Keyword.get(opts, :install_retries, @default_install_retries)
-    install_retry_delay_ms = Keyword.get(opts, :install_retry_delay_ms, @default_install_retry_delay_ms)
+
+    install_retry_delay_ms =
+      Keyword.get(opts, :install_retry_delay_ms, @default_install_retry_delay_ms)
 
     with {:ok, pbw} <- PBW.load(pbw_path, platform),
          :ok <- Router.acquire(router, timeout) do
@@ -46,9 +53,11 @@ defmodule Ide.Emulator.PBWInstaller do
           pbw,
           chunk_size,
           timeout,
+          install_timeout,
           part_delay_ms,
           putbytes_retries,
           chunk_delay_ms,
+          install_transition_timeout,
           part_retries,
           install_retries,
           install_retry_delay_ms
@@ -64,9 +73,11 @@ defmodule Ide.Emulator.PBWInstaller do
          pbw,
          chunk_size,
          timeout,
+         install_timeout,
          part_delay_ms,
          putbytes_retries,
          chunk_delay_ms,
+         install_transition_timeout,
          part_retries,
          retries_left,
          retry_delay_ms
@@ -77,26 +88,20 @@ defmodule Ide.Emulator.PBWInstaller do
         pbw,
         chunk_size,
         timeout,
+        install_timeout,
         part_delay_ms,
         putbytes_retries,
         chunk_delay_ms,
+        install_transition_timeout,
         part_retries
       )
 
     case result do
-      {:error, {:putbytes_failed, %{kind: :binary, phase: :commit} = meta, {:nack, cookie}}}
+      {:error, {:putbytes_failed, %{kind: :binary, phase: :commit}, {:nack, cookie}}}
       when retries_left > 0 ->
         Logger.debug(
           "native pbw install binary commit NACK cookie=#{cookie}; retrying full install handshake"
         )
-
-        debug_log("install_retry", "H1,H3,H4", %{
-          reason: :binary_commit_nack,
-          cookie: cookie,
-          crc: Map.get(meta, :crc),
-          retries_left: retries_left,
-          retry_delay_ms: retry_delay_ms
-        })
 
         if retry_delay_ms > 0, do: Process.sleep(retry_delay_ms)
 
@@ -105,9 +110,11 @@ defmodule Ide.Emulator.PBWInstaller do
           pbw,
           chunk_size,
           timeout,
+          install_timeout,
           part_delay_ms,
           putbytes_retries,
           chunk_delay_ms,
+          install_transition_timeout,
           part_retries,
           retries_left - 1,
           retry_delay_ms
@@ -123,29 +130,16 @@ defmodule Ide.Emulator.PBWInstaller do
          pbw,
          chunk_size,
          timeout,
+         install_timeout,
          part_delay_ms,
          putbytes_retries,
          chunk_delay_ms,
+         install_transition_timeout,
          part_retries
        ) do
     Logger.debug(
       "native pbw install start uuid=#{pbw.uuid} variant=#{pbw.variant} parts=#{inspect(Enum.map(pbw.parts, &{&1.kind, &1.size}))}"
     )
-
-    #region agent log
-    debug_log("install_start", "H1,H3,H4", %{
-      uuid: pbw.uuid,
-      variant: pbw.variant,
-      chunk_size: chunk_size,
-      timeout: timeout,
-      putbytes_retries: putbytes_retries,
-      chunk_delay_ms: chunk_delay_ms,
-      part_retries: part_retries,
-      part_delay_ms: part_delay_ms,
-      parts: Enum.map(pbw.parts, &%{kind: &1.kind, object_type: &1.object_type, size: &1.size})
-    })
-
-    #endregion
 
     with :ok <- insert_app_metadata(router, pbw.app_metadata, timeout),
          {:ok, fetch} <- request_app_fetch(router, pbw.uuid, timeout),
@@ -157,14 +151,22 @@ defmodule Ide.Emulator.PBWInstaller do
              fetch.app_id,
              chunk_size,
              timeout,
+             install_timeout,
              part_delay_ms,
              putbytes_retries,
              chunk_delay_ms,
+             install_transition_timeout,
              part_retries
            ),
-         :ok <- send_packet(router, Packets.app_run_state_start(pbw.uuid)) do
+         :ok <- start_installed_app(router, pbw.uuid) do
       {:ok, %{uuid: pbw.uuid, variant: pbw.variant, app_id: fetch.app_id, parts: parts}}
     end
+  end
+
+  defp start_installed_app(router, uuid) do
+    Logger.debug("native pbw install start installed app uuid=#{uuid}")
+    {endpoint, payload} = Packets.app_run_state_start(uuid)
+    Router.send_packet(router, endpoint, payload)
   end
 
   defp insert_app_metadata(router, metadata, timeout) do
@@ -172,19 +174,6 @@ defmodule Ide.Emulator.PBWInstaller do
 
     {endpoint, payload} = Packets.blob_insert_app(token, metadata)
     Logger.debug("native pbw install blobdb insert token=#{token} uuid=#{metadata.uuid}")
-
-    #region agent log
-    debug_log("blobdb_insert", "H1,H4", %{
-      token: token,
-      uuid: metadata.uuid,
-      flags: metadata.flags,
-      icon_resource_id: metadata.icon_resource_id,
-      app_name: metadata.app_name,
-      app_version: [metadata.app_version_major, metadata.app_version_minor],
-      sdk_version: [metadata.sdk_version_major, metadata.sdk_version_minor]
-    })
-
-    #endregion
 
     with {:ok, frame} <-
            Router.send_and_await(
@@ -212,11 +201,6 @@ defmodule Ide.Emulator.PBWInstaller do
     {endpoint, payload} = Packets.app_run_state_start(uuid)
     Logger.debug("native pbw install request app_fetch uuid=#{uuid}")
 
-    #region agent log
-    debug_log("app_fetch_request_start", "H1,H3", %{uuid: uuid, timeout: timeout})
-
-    #endregion
-
     with {:ok, frame} <-
            Router.send_and_await(
              router,
@@ -240,15 +224,22 @@ defmodule Ide.Emulator.PBWInstaller do
          app_id,
          chunk_size,
          timeout,
+         install_timeout,
          part_delay_ms,
          putbytes_retries,
          chunk_delay_ms,
+         install_transition_timeout,
          part_retries
        ) do
-    parts
+    install_parts =
+      parts
+      |> Enum.sort_by(&install_part_order/1)
+
+    install_parts
     |> Enum.with_index()
     |> Enum.reduce_while({:ok, []}, fn {part, index}, {:ok, sent_parts} ->
       maybe_delay_between_parts(index, part_delay_ms)
+      final_part? = index == length(install_parts) - 1
 
       case send_part(
              router,
@@ -256,9 +247,12 @@ defmodule Ide.Emulator.PBWInstaller do
              app_id,
              chunk_size,
              timeout,
+             install_timeout,
              putbytes_retries,
              chunk_delay_ms,
-             part_retries
+             install_transition_timeout,
+             part_retries,
+             final_part?
            ) do
         {:ok, sent_part} -> {:cont, {:ok, [sent_part | sent_parts]}}
         {:error, reason} -> {:halt, {:error, reason}}
@@ -270,17 +264,36 @@ defmodule Ide.Emulator.PBWInstaller do
     end
   end
 
+  defp install_part_order(%{kind: :resources}), do: 0
+  defp install_part_order(%{kind: :worker}), do: 1
+  defp install_part_order(%{kind: :binary}), do: 2
+  defp install_part_order(_part), do: 3
+
   defp send_part(
          router,
          part,
          app_id,
          chunk_size,
          timeout,
+         install_timeout,
          putbytes_retries,
          chunk_delay_ms,
-         retries_left
+         install_transition_timeout,
+         retries_left,
+         install_part?
        ) do
-    case send_part_once(router, part, app_id, chunk_size, timeout, putbytes_retries, chunk_delay_ms) do
+    case send_part_once(
+           router,
+           part,
+           app_id,
+           chunk_size,
+           timeout,
+           install_timeout,
+           putbytes_retries,
+           chunk_delay_ms,
+           install_transition_timeout,
+           install_part?
+         ) do
       {:error, {:putbytes_failed, %{phase: :commit, cookie: cookie} = meta, {:nack, _}}}
       when retries_left > 0 ->
         Logger.debug(
@@ -299,32 +312,43 @@ defmodule Ide.Emulator.PBWInstaller do
 
         Process.sleep(100)
 
-        send_part(router, part, app_id, chunk_size, timeout, putbytes_retries, chunk_delay_ms, retries_left - 1)
+        send_part(
+          router,
+          part,
+          app_id,
+          chunk_size,
+          timeout,
+          install_timeout,
+          putbytes_retries,
+          chunk_delay_ms,
+          install_transition_timeout,
+          retries_left - 1,
+          install_part?
+        )
 
       result ->
         result
     end
   end
 
-  defp send_part_once(router, part, app_id, chunk_size, timeout, putbytes_retries, chunk_delay_ms) do
+  defp send_part_once(
+         router,
+         part,
+         app_id,
+         chunk_size,
+         timeout,
+         install_timeout,
+         putbytes_retries,
+         chunk_delay_ms,
+         install_transition_timeout,
+         install_part?
+       ) do
     object_type = Packets.object_type(part.object_type)
     {init_endpoint, init_payload} = Packets.putbytes_app_init(part.size, object_type, app_id)
 
     Logger.debug(
       "native pbw install part init kind=#{part.kind} size=#{part.size} app_id=#{app_id}"
     )
-
-    #region agent log
-    debug_log("part_start", "H1,H3,H4", %{
-      kind: part.kind,
-      object_type: part.object_type,
-      encoded_object_type: Bitwise.bor(object_type, 0x80),
-      size: part.size,
-      app_id: app_id,
-      init_payload_hex: Base.encode16(init_payload, case: :lower)
-    })
-
-    #endregion
 
     with {:ok, init} <-
            send_putbytes(
@@ -362,15 +386,15 @@ defmodule Ide.Emulator.PBWInstaller do
              timeout,
              putbytes_retries
            ),
-         _ <- Logger.debug("native pbw install part install kind=#{part.kind} cookie=#{cookie}"),
-         {:ok, _install} <-
-           send_putbytes(
+         :ok <-
+           maybe_install_part(
              router,
-             Packets.putbytes_install(cookie),
-             nil,
-             %{phase: :install, kind: part.kind, cookie: cookie},
-             timeout,
-             putbytes_retries
+             part.kind,
+             cookie,
+             install_timeout,
+             putbytes_retries,
+             install_transition_timeout,
+             install_part?
            ) do
       {:ok,
        %{
@@ -383,7 +407,74 @@ defmodule Ide.Emulator.PBWInstaller do
     end
   end
 
-  defp send_chunks(router, kind, data, cookie, chunk_size, timeout, putbytes_retries, chunk_delay_ms) do
+  defp maybe_install_part(
+         router,
+         kind,
+         cookie,
+         install_timeout,
+         putbytes_retries,
+         _install_transition_timeout,
+         true
+       ) do
+    Logger.debug("native pbw install part install kind=#{kind} cookie=#{cookie}")
+
+    with {:ok, _install} <-
+           send_putbytes(
+             router,
+             Packets.putbytes_install(cookie),
+             nil,
+             %{phase: :install, kind: kind, cookie: cookie},
+             install_timeout,
+             putbytes_retries
+           ) do
+      :ok
+    end
+  end
+
+  defp maybe_install_part(
+         router,
+         kind,
+         cookie,
+         _install_timeout,
+         _putbytes_retries,
+         install_transition_timeout,
+         false
+       ) do
+    Logger.debug("native pbw install transition part install kind=#{kind} cookie=#{cookie}")
+
+    case send_putbytes(
+           router,
+           Packets.putbytes_install(cookie),
+           nil,
+           %{phase: :install_transition, kind: kind, cookie: cookie},
+           install_transition_timeout,
+           0
+         ) do
+      {:ok, _install} ->
+        :ok
+
+      {:error, {:putbytes_failed, %{phase: :install_transition}, :timeout}} ->
+        Logger.debug(
+          "native pbw install transition timed out kind=#{kind} cookie=#{cookie}; continuing"
+        )
+
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp send_chunks(
+         router,
+         kind,
+         data,
+         cookie,
+         chunk_size,
+         timeout,
+         putbytes_retries,
+         chunk_delay_ms
+       ) do
     data
     |> chunks(chunk_size)
     |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, sent} ->
@@ -391,7 +482,13 @@ defmodule Ide.Emulator.PBWInstaller do
              router,
              Packets.putbytes_put(cookie, chunk),
              nil,
-             %{phase: :put, kind: kind, cookie: cookie, offset: sent, chunk_size: byte_size(chunk)},
+             %{
+               phase: :put,
+               kind: kind,
+               cookie: cookie,
+               offset: sent,
+               chunk_size: byte_size(chunk)
+             },
              timeout,
              putbytes_retries
            ) do
@@ -399,7 +496,8 @@ defmodule Ide.Emulator.PBWInstaller do
           if chunk_delay_ms > 0, do: Process.sleep(chunk_delay_ms)
           {:cont, {:ok, sent + byte_size(chunk)}}
 
-        {:error, reason} -> {:halt, {:error, reason}}
+        {:error, reason} ->
+          {:halt, {:error, reason}}
       end
     end)
   end
@@ -429,40 +527,17 @@ defmodule Ide.Emulator.PBWInstaller do
   end
 
   defp send_putbytes(router, packet, expected_cookie, meta, timeout, retries_left) do
-    #region agent log
-    log_sample? = meta.phase != :put or rem(Map.get(meta, :offset, 0), 5_000) == 0
-
-    if log_sample? do
-      debug_log(
-        "putbytes_send",
-        "H1,H2,H4",
-        Map.merge(meta, %{expected_cookie: expected_cookie, retries_left: retries_left})
-      )
-    end
-
-    #endregion
-
-    result =
-      do_send_putbytes(router, packet, expected_cookie, meta, timeout, retries_left)
-
-    #region agent log
-    case result do
-      {:ok, response} when log_sample? ->
-        debug_log("putbytes_result", "H1,H2,H4", Map.merge(meta, response))
-
-      {:error, reason} ->
-        debug_log("putbytes_error", "H1,H2,H4", Map.merge(meta, %{reason: inspect(reason)}))
-
-      _ ->
-        :ok
-    end
-
-    #endregion
-
-    result
+    do_send_putbytes(router, packet, expected_cookie, meta, timeout, retries_left)
   end
 
-  defp do_send_putbytes(router, {endpoint, payload} = packet, expected_cookie, meta, timeout, retries_left) do
+  defp do_send_putbytes(
+         router,
+         {endpoint, payload} = packet,
+         expected_cookie,
+         meta,
+         timeout,
+         retries_left
+       ) do
     result =
       with {:ok, frame} <-
              Router.send_and_await(
@@ -493,27 +568,4 @@ defmodule Ide.Emulator.PBWInstaller do
         ok
     end
   end
-
-  defp send_packet(router, {endpoint, payload}), do: Router.send_packet(router, endpoint, payload)
-
-  #region agent log
-  defp debug_log(message, hypothesis_id, data) do
-    payload =
-      %{
-        sessionId: @debug_session_id,
-        runId: "install-debug",
-        hypothesisId: hypothesis_id,
-        location: "ide/lib/ide/emulator/pbw_installer.ex",
-        message: message,
-        data: data,
-        timestamp: System.system_time(:millisecond)
-      }
-      |> Jason.encode!()
-
-    File.write(@debug_log_path, payload <> "\n", [:append])
-  rescue
-    _ -> :ok
-  end
-
-  #endregion
 end

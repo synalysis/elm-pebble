@@ -36,6 +36,7 @@ defmodule IdeWeb.WorkspaceLive do
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
 
   @debugger_auto_fire_refresh_interval_ms 1_000
+  @debugger_auto_fire_min_refresh_interval_ms 100
 
   @impl true
   @spec mount(term(), term(), term()) :: term()
@@ -3494,7 +3495,7 @@ defmodule IdeWeb.WorkspaceLive do
       Process.send_after(
         self(),
         {:debugger_auto_fire_refresh, project.slug},
-        @debugger_auto_fire_refresh_interval_ms
+        debugger_auto_fire_refresh_interval_ms(socket)
       )
 
       assign(socket, :debugger_auto_fire_refresh_scheduled, true)
@@ -3518,6 +3519,29 @@ defmodule IdeWeb.WorkspaceLive do
       |> Map.get(:targets, Map.get(auto_tick, "targets", []))
       |> List.wrap()
       |> Enum.any?()
+  end
+
+  @spec debugger_auto_fire_refresh_interval_ms(term()) :: pos_integer()
+  defp debugger_auto_fire_refresh_interval_ms(socket) do
+    auto_tick =
+      socket.assigns[:debugger_state]
+      |> case do
+        %{auto_tick: auto_tick} when is_map(auto_tick) -> auto_tick
+        %{"auto_tick" => auto_tick} when is_map(auto_tick) -> auto_tick
+        _ -> %{}
+      end
+
+    auto_tick
+    |> Map.get(:interval_ms, Map.get(auto_tick, "interval_ms", @debugger_auto_fire_refresh_interval_ms))
+    |> case do
+      interval_ms when is_integer(interval_ms) ->
+        interval_ms
+        |> max(@debugger_auto_fire_min_refresh_interval_ms)
+        |> min(@debugger_auto_fire_refresh_interval_ms)
+
+      _ ->
+        @debugger_auto_fire_refresh_interval_ms
+    end
   end
 
   @spec debugger_auto_fire_enabled?(Project.t(), term()) :: boolean()

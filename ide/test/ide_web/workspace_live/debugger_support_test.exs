@@ -624,6 +624,194 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert default.text_color == nil
   end
 
+  test "debugger preview resolves structured view tree primitives" do
+    tree = %{
+      "type" => "toUiNode",
+      "children" => [
+        %{
+          "type" => "clear",
+          "arg_names" => ["color"],
+          "children" => [
+            %{"type" => "white", "qualified_target" => "Color.white", "children" => []}
+          ]
+        },
+        %{
+          "type" => "drawBitmapInRect",
+          "arg_names" => ["bitmap", "bounds"],
+          "children" => [
+            %{"type" => "NoBitmap", "qualified_target" => "Resources.NoBitmap", "children" => []},
+            %{
+              "type" => "record",
+              "children" => [
+                %{
+                  "type" => "field",
+                  "label" => "x",
+                  "children" => [%{"type" => "expr", "value" => 0}]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "y",
+                  "children" => [%{"type" => "expr", "value" => 0}]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "w",
+                  "children" => [%{"type" => "expr", "value" => 1}]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "h",
+                  "children" => [%{"type" => "expr", "value" => 1}]
+                }
+              ]
+            }
+          ]
+        },
+        %{
+          "type" => "text",
+          "arg_names" => ["font", "bounds", "value"],
+          "children" => [
+            %{
+              "type" => "DefaultFont",
+              "qualified_target" => "Resources.DefaultFont",
+              "children" => []
+            },
+            %{
+              "type" => "record",
+              "children" => [
+                %{
+                  "type" => "field",
+                  "label" => "x",
+                  "children" => [%{"type" => "expr", "value" => 4}]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "y",
+                  "children" => [%{"type" => "expr", "value" => 4}]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "w",
+                  "children" => [%{"type" => "expr", "value" => 130}]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "h",
+                  "children" => [%{"type" => "expr", "value" => 20}]
+                }
+              ]
+            },
+            %{
+              "type" => "call",
+              "label" => "__append__",
+              "children" => [
+                %{"type" => "expr", "op" => "string_literal", "value" => "Run "},
+                %{
+                  "type" => "fromInt",
+                  "qualified_target" => "String.fromInt",
+                  "children" => [
+                    %{"type" => "expr", "op" => "field_access", "label" => "model.score"}
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        %{
+          "type" => "fillRect",
+          "arg_names" => ["bounds", "color"],
+          "children" => [
+            %{
+              "type" => "record",
+              "children" => [
+                %{
+                  "type" => "field",
+                  "label" => "x",
+                  "children" => [%{"type" => "expr", "value" => 24}]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "y",
+                  "children" => [
+                    %{"type" => "expr", "op" => "field_access", "label" => "model.playerY"}
+                  ]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "w",
+                  "children" => [%{"type" => "expr", "value" => 12}]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "h",
+                  "children" => [%{"type" => "expr", "value" => 14}]
+                }
+              ]
+            },
+            %{"type" => "black", "qualified_target" => "Color.black", "children" => []}
+          ]
+        },
+        %{
+          "type" => "if",
+          "children" => [
+            %{
+              "type" => "List",
+              "children" => [
+                %{
+                  "type" => "text",
+                  "children" => [
+                    %{"type" => "DefaultFont", "qualified_target" => "Resources.DefaultFont"},
+                    %{
+                      "type" => "record",
+                      "children" => [
+                        %{
+                          "type" => "field",
+                          "label" => "x",
+                          "children" => [%{"type" => "expr", "value" => 42}]
+                        },
+                        %{
+                          "type" => "field",
+                          "label" => "y",
+                          "children" => [%{"type" => "expr", "value" => 76}]
+                        },
+                        %{
+                          "type" => "field",
+                          "label" => "w",
+                          "children" => [%{"type" => "expr", "value" => 80}]
+                        },
+                        %{
+                          "type" => "field",
+                          "label" => "h",
+                          "children" => [%{"type" => "expr", "value" => 24}]
+                        }
+                      ]
+                    },
+                    %{"type" => "expr", "op" => "string_literal", "value" => "PAUSED"}
+                  ]
+                }
+              ]
+            },
+            %{"type" => "List", "children" => []}
+          ]
+        }
+      ]
+    }
+
+    runtime = %{model: %{"runtime_model" => %{"playerY" => 84, "score" => 0}}}
+
+    [clear, bitmap, text, rect] = DebuggerPreview.svg_ops(tree, runtime)
+
+    assert clear.kind == :clear
+    assert clear.color == 0xFF
+    assert %{kind: :bitmap_in_rect, bitmap_id: 0, x: 0, y: 0, w: 1, h: 1} = bitmap
+    assert %{kind: :text_label, x: 4, y: 4, w: 130, h: 20, text: "Run 0"} = text
+    assert rect.kind == :fill_rect
+    assert %{x: 24, y: 84, w: 12, h: 14, fill: 0xC0} = rect
+    assert rect.fill_color == 0xC0
+    assert rect.stroke_color == 0xC0
+    assert rect.stroke_width == 1
+  end
+
   test "debugger preview derives compact scene from runtime_view_output" do
     runtime = %{
       model: %{
@@ -646,6 +834,58 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert rect.kind == :fill_rect
     assert text.kind == :text_label
     assert text.text == "ok"
+  end
+
+  test "debugger preview prefers evaluated runtime_view_output over tree fallback" do
+    tree = %{
+      "type" => "root",
+      "children" => [
+        %{
+          "type" => "fillRect",
+          "children" => [
+            %{
+              "type" => "record",
+              "children" => [
+                %{
+                  "type" => "field",
+                  "label" => "x",
+                  "children" => [%{"type" => "expr", "value" => 99}]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "y",
+                  "children" => [%{"type" => "expr", "value" => 99}]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "w",
+                  "children" => [%{"type" => "expr", "value" => 9}]
+                },
+                %{
+                  "type" => "field",
+                  "label" => "h",
+                  "children" => [%{"type" => "expr", "value" => 9}]
+                }
+              ]
+            },
+            %{"type" => "black", "qualified_target" => "Color.black", "children" => []}
+          ]
+        }
+      ]
+    }
+
+    runtime = %{
+      model: %{
+        "runtime_view_output" => [
+          %{"kind" => "fill_rect", "x" => 1, "y" => 2, "w" => 3, "h" => 4, "fill" => 1}
+        ]
+      }
+    }
+
+    [rect] = DebuggerPreview.svg_ops(tree, runtime)
+
+    assert rect.kind == :fill_rect
+    assert %{x: 1, y: 2, w: 3, h: 4} = rect
   end
 
   test "debugger preview can consume precomputed compact scene" do

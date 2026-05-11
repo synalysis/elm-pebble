@@ -46,7 +46,7 @@ defmodule Ide.Emulator.PBW do
     with {:ok, entries} <- read_entries(path),
          {:ok, appinfo} <- read_json(entries, "appinfo.json"),
          {:ok, variant, manifest} <- select_manifest(entries, platform, appinfo),
-         {:ok, parts} <- read_parts(entries, variant, manifest),
+         {:ok, parts} <- read_parts(entries, variant, manifest, appinfo),
          {:ok, app_metadata} <- app_metadata(appinfo, parts),
          {:ok, uuid} <- validate_uuid(appinfo, app_metadata) do
       {:ok,
@@ -62,6 +62,9 @@ defmodule Ide.Emulator.PBW do
        }}
     end
   end
+
+  @spec prune_empty_media_resources(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def prune_empty_media_resources(path) when is_binary(path), do: {:ok, path}
 
   @spec platform_variants(String.t()) :: [String.t()]
   def platform_variants(platform), do: Map.get(@platform_fallbacks, platform, [platform])
@@ -101,7 +104,7 @@ defmodule Ide.Emulator.PBW do
     end
   end
 
-  defp read_parts(entries, variant, manifest) do
+  defp read_parts(entries, variant, manifest, appinfo) do
     definitions =
       [
         {:binary, :binary, get_in(manifest, ["application"])},
@@ -109,6 +112,9 @@ defmodule Ide.Emulator.PBW do
         {:worker, :worker, get_in(manifest, ["worker"])}
       ]
       |> Enum.reject(fn {_kind, _object_type, blob} -> is_nil(blob) end)
+      |> Enum.reject(fn {kind, _object_type, _blob} ->
+        kind == :resources and empty_media_resources?(appinfo)
+      end)
 
     parts =
       Enum.reduce_while(definitions, {:ok, []}, fn {kind, object_type, blob}, {:ok, acc} ->
@@ -200,6 +206,13 @@ defmodule Ide.Emulator.PBW do
     if get_in(appinfo, ["watchapp", "watchface"]) == true, do: 1, else: 0
   end
 
+  defp empty_media_resources?(appinfo) do
+    case get_in(appinfo, ["resources", "media"]) do
+      media when is_list(media) -> media == []
+      _other -> false
+    end
+  end
+
   defp version_pair(version) when is_binary(version) do
     case version |> String.split(".") |> Enum.map(&Integer.parse/1) do
       [{major, _}, {minor, _} | _] -> {major, minor}
@@ -226,5 +239,6 @@ defmodule Ide.Emulator.PBW do
   end
 
   defp entry_path("", file), do: file
+  defp entry_path(".", file), do: file
   defp entry_path(variant, file), do: Path.join(variant, file)
 end

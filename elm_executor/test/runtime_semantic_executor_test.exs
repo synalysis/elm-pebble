@@ -682,6 +682,185 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
            end)
   end
 
+  test "runtime view_output evaluates helper, List.map, if, append, and package render op lists" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+    type alias Item =
+        { x : Int
+        , y : Int
+        }
+
+    type alias Model =
+        { items : List Item
+        , offset : Int
+        , paused : Bool
+        }
+
+    init _ =
+        ( { items = [ { x = 1, y = 40 }, { x = 2, y = 56 } ]
+          , offset = 0
+          , paused = False
+          }
+        , Cmd.none
+        )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view model =
+        Ui.toUiNode
+            ([ Ui.clear Color.white ]
+                ++ parallaxBitmap Resources.NoBitmap { x = 0, y = 100, w = 20, h = 8 } model.offset
+                ++ List.map (drawItem model.offset) model.items
+                ++ (if model.paused then
+                        [ Ui.text Resources.DefaultFont { x = 4, y = 4, w = 40, h = 12 } "PAUSED" ]
+
+                    else
+                        []
+                   )
+            )
+
+    drawItem offset item =
+        Ui.fillRect { x = item.x * 8 - offset, y = item.y, w = 6, h = 6 } Color.black
+
+    parallaxBitmap bitmap bounds offset =
+        let
+            wrapped =
+                modBy bounds.w offset
+        in
+        [ Ui.drawBitmapInRect bitmap { bounds | x = bounds.x - wrapped }
+        , Ui.drawBitmapInRect bitmap { bounds | x = bounds.x - wrapped + bounds.w }
+        ]
+
+    main : Program Decode.Value Model msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: source,
+      introspect: %{},
+      current_model: %{},
+      current_view_tree: %{},
+      message: nil
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+    refute Enum.any?(result.view_output, &(&1["kind"] == "unresolved"))
+
+    assert Enum.any?(result.view_output, &(&1["kind"] == "clear" and &1["color"] == 0xFF))
+
+    assert Enum.count(result.view_output, &(&1["kind"] == "bitmap_in_rect")) == 2
+
+    assert Enum.any?(result.view_output, fn row ->
+             row["kind"] == "fill_rect" and row["x"] == 8 and row["y"] == 40 and
+               row["w"] == 6 and row["h"] == 6 and row["fill"] == 0xC0
+           end)
+
+    assert Enum.any?(result.view_output, fn row ->
+             row["kind"] == "fill_rect" and row["x"] == 16 and row["y"] == 56
+           end)
+
+    refute Enum.any?(result.view_output, &(&1["text"] == "PAUSED"))
+  end
+
+  test "runtime view_output evaluates package helper functions from supplied CoreIR" do
+    sprite_source = """
+    module Pebble.Game.Sprite exposing (parallaxBitmap)
+
+    import Pebble.Ui as Ui
+
+    parallaxBitmap bitmap bounds offset =
+        let
+            wrapped =
+                modBy bounds.w offset
+        in
+        [ Ui.drawBitmapInRect bitmap { bounds | x = bounds.x - wrapped }
+        , Ui.drawBitmapInRect bitmap { bounds | x = bounds.x - wrapped + bounds.w }
+        ]
+    """
+
+    main_source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Game.Sprite
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Resources as Resources
+
+    type alias Model =
+        { offset : Int }
+
+    init _ =
+        ( { offset = 0 }, Cmd.none )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view model =
+        Ui.toUiNode
+            (Pebble.Game.Sprite.parallaxBitmap
+                Resources.NoBitmap
+                { x = 0, y = 100, w = 20, h = 8 }
+                model.offset
+            )
+
+    main : Program Decode.Value Model msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    core_ir =
+      core_ir_from_sources([
+        {"watch/src/Main.elm", main_source},
+        {"watch/src/Pebble/Game/Sprite.elm", sprite_source}
+      ])
+
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: main_source,
+      introspect: %{},
+      current_model: %{},
+      current_view_tree: %{},
+      message: nil,
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert [
+             %{"kind" => "bitmap_in_rect", "bitmap_id" => 0, "x" => 0, "y" => 100},
+             %{"kind" => "bitmap_in_rect", "bitmap_id" => 0, "x" => 20, "y" => 100}
+           ] = result.view_output
+  end
+
   test "runtime resolves decoded CoreIR init screen fields before drawing preview primitives" do
     model_screen_w = %{
       "op" => "field_access",
@@ -2480,5 +2659,24 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
 
     assert {:ok, result} = SemanticExecutor.execute(request)
     assert result.protocol_events == []
+  end
+
+  defp core_ir_from_sources(sources) when is_list(sources) do
+    modules =
+      Enum.map(sources, fn {path, source} ->
+        assert {:ok, module} = ElmEx.Frontend.GeneratedParser.parse_source(path, source)
+        module
+      end)
+
+    project = %ElmEx.Frontend.Project{
+      project_dir: Path.expand("watch/src"),
+      elm_json: %{},
+      modules: modules,
+      diagnostics: []
+    }
+
+    assert {:ok, ir} = ElmEx.IR.Lowerer.lower_project(project)
+    assert {:ok, core_ir} = ElmEx.CoreIR.from_ir(ir)
+    core_ir
   end
 end

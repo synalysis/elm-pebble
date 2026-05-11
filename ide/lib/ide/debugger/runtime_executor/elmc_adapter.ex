@@ -100,10 +100,12 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmcAdapter do
   @spec normalize_result(map(), execution_input()) :: execution_result()
   defp normalize_result(payload, input) do
     if Map.has_key?(payload, :model_patch) or Map.has_key?(payload, "model_patch") do
+      view_output = list_field(payload, :view_output)
+
       %{
-        model_patch: map_field(payload, :model_patch),
+        model_patch: payload |> map_field(:model_patch) |> put_runtime_view_output(view_output),
         view_tree: map_or_nil_field(payload, :view_tree),
-        view_output: list_field(payload, :view_output),
+        view_output: view_output,
         runtime: map_field(payload, :runtime),
         protocol_events: list_field(payload, :protocol_events),
         followup_messages: list_field(payload, :followup_messages)
@@ -111,6 +113,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmcAdapter do
     else
       runtime_model = map_field(payload, :runtime_model)
       runtime_view_tree = map_or_nil_field(payload, :view_tree)
+      view_output = list_field(payload, :view_output)
 
       runtime =
         map_field(payload, :runtime)
@@ -119,14 +122,16 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmcAdapter do
         |> Map.put_new("rel_path", Map.get(input, :rel_path))
 
       %{
-        model_patch: %{
-          "runtime_model" => runtime_model,
-          "elm_executor_mode" => "runtime_executed",
-          "runtime_model_source" => "elmc_runtime",
-          "elm_executor" => runtime
-        },
+        model_patch:
+          %{
+            "runtime_model" => runtime_model,
+            "elm_executor_mode" => "runtime_executed",
+            "runtime_model_source" => "elmc_runtime",
+            "elm_executor" => runtime
+          }
+          |> put_runtime_view_output(view_output),
         view_tree: runtime_view_tree,
-        view_output: list_field(payload, :view_output),
+        view_output: view_output,
         runtime: runtime,
         protocol_events: list_field(payload, :protocol_events),
         followup_messages: list_field(payload, :followup_messages)
@@ -160,4 +165,12 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmcAdapter do
 
     if is_list(value), do: value, else: []
   end
+
+  @spec put_runtime_view_output(map(), list()) :: map()
+  defp put_runtime_view_output(model_patch, [_ | _] = view_output) when is_map(model_patch) do
+    Map.put_new(model_patch, "runtime_view_output", view_output)
+  end
+
+  defp put_runtime_view_output(model_patch, _view_output) when is_map(model_patch),
+    do: model_patch
 end

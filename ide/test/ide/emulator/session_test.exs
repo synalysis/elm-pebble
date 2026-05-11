@@ -59,6 +59,54 @@ defmodule Ide.Emulator.SessionTest do
     end)
   end
 
+  test "session exits when a managed emulator child exits" do
+    EmulatorSessionEnv.run(fn ->
+      assert {:ok, info} =
+               EmulatorLaunch.launch(
+                 project_slug: "wf-analog",
+                 platform: "basalt",
+                 artifact_path: nil
+               )
+
+      assert {:ok, session_pid} = Emulator.lookup(info.id)
+
+      child =
+        spawn(fn ->
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      :sys.replace_state(session_pid, fn state -> %{state | qemu_pid: child} end)
+      send(session_pid, {:EXIT, child, :normal})
+
+      assert wait_until(fn -> not Process.alive?(session_pid) end)
+      assert wait_until(fn -> Emulator.lookup(info.id) == {:error, :not_found} end)
+      send(child, :stop)
+    end)
+  end
+
+  test "ping reports an unresponsive session without blocking the caller" do
+    EmulatorSessionEnv.run(fn ->
+      assert {:ok, info} =
+               EmulatorLaunch.launch(
+                 project_slug: "wf-analog",
+                 platform: "basalt",
+                 artifact_path: nil
+               )
+
+      assert {:ok, session_pid} = Emulator.lookup(info.id)
+      :ok = :sys.suspend(session_pid)
+
+      started_at = System.monotonic_time(:millisecond)
+      assert {:error, :emulator_session_unresponsive} = Emulator.ping(info.id)
+      assert System.monotonic_time(:millisecond) - started_at < 2_000
+
+      assert :ok = Emulator.kill(info.id)
+      assert wait_until(fn -> not Process.alive?(session_pid) end)
+    end)
+  end
+
   test "qemu arguments declare platform-specific machine and local websocket vnc" do
     state = %{
       platform: "basalt",
@@ -261,6 +309,18 @@ defmodule Ide.Emulator.SessionTest do
     after
       Application.put_env(:ide, Ide.Emulator.Session, previous)
       File.rm_rf!(root)
+    end
+  end
+
+  defp wait_until(fun, attempts \\ 20)
+  defp wait_until(_fun, 0), do: false
+
+  defp wait_until(fun, attempts) do
+    if fun.() do
+      true
+    else
+      Process.sleep(20)
+      wait_until(fun, attempts - 1)
     end
   end
 end

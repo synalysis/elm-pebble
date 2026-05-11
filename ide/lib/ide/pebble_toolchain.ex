@@ -70,14 +70,15 @@ defmodule Ide.PebbleToolchain do
          {:ok, build_result} <- build(project_slug, Keyword.put(opts, :app_root, app_root)),
          :ok <- ensure_successful_build(build_result),
          :ok <- ensure_no_forbidden_build_warnings(build_result),
-         {:ok, artifact_path} <- latest_pbw(app_root) do
+         {:ok, artifact_path} <- latest_pbw(app_root),
+         {:ok, artifact_path} <- Ide.Emulator.PBW.prune_empty_media_resources(artifact_path) do
       {:ok,
        %{
          status: build_result.status,
          artifact_path: artifact_path,
          build_result: build_result,
-        app_root: app_root,
-        has_phone_companion: package_has_phone_companion?(app_root)
+         app_root: app_root,
+         has_phone_companion: package_has_phone_companion?(app_root)
        }}
     end
   end

@@ -39,12 +39,15 @@ defmodule Elmc.Backend.CCodegen do
   @spec header(ElmEx.IR.t()) :: String.t()
   defp header(ir) do
     direct_cmd_decls = direct_command_decls(ir)
+    generic_targets = generic_function_targets(ir)
 
     function_decls =
       ir.modules
       |> Enum.flat_map(fn mod ->
         mod.declarations
-        |> Enum.filter(&(&1.kind == :function))
+        |> Enum.filter(
+          &(&1.kind == :function && MapSet.member?(generic_targets, {mod.name, &1.name}))
+        )
         |> Enum.map(fn decl ->
           c_name = module_fn_name(mod.name, decl.name)
           "ElmcValue *#{c_name}(ElmcValue **args, int argc);"
@@ -83,12 +86,15 @@ defmodule Elmc.Backend.CCodegen do
 
     constructor_tags = constructor_tag_map(ir)
     Process.put(:elmc_constructor_tags, constructor_tags)
+    generic_targets = generic_function_targets(ir)
 
     function_defs =
       ir.modules
       |> Enum.flat_map(fn mod ->
         mod.declarations
-        |> Enum.filter(&(&1.kind == :function))
+        |> Enum.filter(
+          &(&1.kind == :function && MapSet.member?(generic_targets, {mod.name, &1.name}))
+        )
         |> Enum.map(fn decl ->
           c_name = module_fn_name(mod.name, decl.name)
 
@@ -297,6 +303,119 @@ defmodule Elmc.Backend.CCodegen do
     ElmcValue *cap_#{next}[1] = { NULL };
       ElmcValue *#{out} = elmc_closure_new(#{closure_fn_name}, #{arity}, 0, cap_#{next});
     """
+
+    {code, out, next}
+  end
+
+  defp partial_function_closure(module_name, name, arity, arg_vars, out, next) do
+    c_name = module_fn_name(module_name, name)
+    closure_id = Process.get(:elmc_lambda_counter, 0) + 1
+    Process.put(:elmc_lambda_counter, closure_id)
+    closure_fn_name = "elmc_partial_ref_#{closure_id}"
+    bound_count = length(arg_vars)
+    remaining = max(arity - bound_count, 0)
+
+    call_bindings =
+      0..(arity - 1)
+      |> Enum.map_join("\n  ", fn index ->
+        cond do
+          index < bound_count ->
+            "call_args[#{index}] = (capture_count > #{index}) ? captures[#{index}] : NULL;"
+
+          true ->
+            rest_index = index - bound_count
+            "call_args[#{index}] = (argc > #{rest_index}) ? args[#{rest_index}] : NULL;"
+        end
+      end)
+
+    closure_fn = """
+    static ElmcValue *#{closure_fn_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+      (void)args;
+      (void)argc;
+      (void)captures;
+      (void)capture_count;
+      ElmcValue *call_args[#{max(arity, 1)}] = {0};
+      #{call_bindings}
+      return #{c_name}(call_args, #{arity});
+    }
+    """
+
+    existing_lambdas = Process.get(:elmc_lambdas, [])
+    Process.put(:elmc_lambdas, [closure_fn | existing_lambdas])
+
+    capture_list =
+      case arg_vars do
+        [] -> "NULL"
+        vars -> Enum.join(vars, ", ")
+      end
+
+    code = """
+    ElmcValue *cap_#{next}[#{max(bound_count, 1)}] = { #{capture_list} };
+      ElmcValue *#{out} = elmc_closure_new(#{closure_fn_name}, #{remaining}, #{bound_count}, cap_#{next});
+    """
+
+    {code, out, next}
+  end
+
+  defp compile_function_call(module_name, name, args, env, counter) do
+    {arg_code, arg_vars, counter} =
+      Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
+        {code, var, c2} = compile_expr(arg_expr, env, c)
+        {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
+      end)
+
+    function_arities = Map.get(env, :__function_arities__, %{})
+    arity = Map.get(function_arities, {module_name, name}, length(arg_vars))
+    c_name = module_fn_name(module_name, name)
+    next = counter + 1
+    out = "tmp_#{next}"
+    argc = length(arg_vars)
+
+    releases =
+      arg_vars
+      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+
+    code =
+      cond do
+        arity > 0 and argc < arity ->
+          {closure_code, _out, _next} =
+            partial_function_closure(module_name, name, arity, arg_vars, out, next)
+
+          """
+          #{arg_code}
+            #{closure_code}
+            #{releases}
+          """
+
+        arity > 0 and argc > arity ->
+          {first_vars, rest_vars} = Enum.split(arg_vars, arity)
+          first_args = Enum.join(first_vars, ", ")
+          rest_args = Enum.join(rest_vars, ", ")
+          head_var = "head_#{next}"
+          first_args_var = "call_args_#{next}"
+          rest_args_var = "extra_args_#{next}"
+
+          """
+          #{arg_code}
+            ElmcValue *#{first_args_var}[#{max(length(first_vars), 1)}] = { #{first_args} };
+            ElmcValue *#{head_var} = #{c_name}(#{first_args_var}, #{length(first_vars)});
+            ElmcValue *#{rest_args_var}[#{max(length(rest_vars), 1)}] = { #{rest_args} };
+            ElmcValue *#{out} = elmc_apply_extra(#{head_var}, #{rest_args_var}, #{length(rest_vars)});
+            elmc_release(#{head_var});
+            #{releases}
+          """
+
+        true ->
+          args_var = "call_args_#{next}"
+          arg_list = Enum.join(arg_vars, ", ")
+
+          """
+          #{arg_code}
+            ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
+            ElmcValue *#{out} = #{c_name}(#{args_var}, #{argc});
+            #{releases}
+          """
+      end
 
     {code, out, next}
   end
@@ -572,32 +691,8 @@ defmodule Elmc.Backend.CCodegen do
   defp compile_expr(%{op: :call, name: name, args: args}, env, counter) do
     case compile_builtin_operator_call(name, args, env, counter) do
       nil ->
-        {arg_code, arg_vars, counter} =
-          Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
-            {code, var, c2} = compile_expr(arg_expr, env, c)
-            {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
-          end)
-
         module_name = Map.get(env, :__module__, "Main")
-        c_name = module_fn_name(module_name, name)
-        next = counter + 1
-        out = "tmp_#{next}"
-        args_var = "call_args_#{next}"
-        argc = length(arg_vars)
-        arg_list = Enum.join(arg_vars, ", ")
-
-        releases =
-          arg_vars
-          |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
-
-        code = """
-        #{arg_code}
-          ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
-          ElmcValue *#{out} = #{c_name}(#{args_var}, #{argc});
-          #{releases}
-        """
-
-        {code, out, next}
+        compile_function_call(module_name, name, args, env, counter)
 
       result ->
         result
@@ -634,7 +729,13 @@ defmodule Elmc.Backend.CCodegen do
          counter
        ) do
     {value_code, value_var, counter} = compile_expr(value_expr, env, counter)
-    {body_code, body_var, counter} = compile_expr(in_expr, Map.put(env, name, value_var), counter)
+
+    body_env =
+      env
+      |> Map.put(name, value_var)
+      |> put_record_shape(name, record_shape(value_expr, env))
+
+    {body_code, body_var, counter} = compile_expr(in_expr, body_env, counter)
 
     code = """
     #{value_code}
@@ -788,9 +889,9 @@ defmodule Elmc.Backend.CCodegen do
       {:ok, source} ->
         next = counter + 1
         var = "tmp_#{next}"
+        getter = record_get_expr(source, field, record_shape_for_var(env, arg))
 
-        {"ElmcValue *#{var} = elmc_record_get(#{source}, \"#{escape_c_string(field)}\");", var,
-         next}
+        {"ElmcValue *#{var} = #{getter};", var, next}
 
       :error ->
         {arg_code, arg_var, counter} = compile_expr(%{op: :var, name: arg}, env, counter)
@@ -812,10 +913,11 @@ defmodule Elmc.Backend.CCodegen do
     {arg_code, arg_var, counter} = compile_expr(arg_expr, env, counter)
     next = counter + 1
     var = "tmp_#{next}"
+    getter = record_get_expr(arg_var, field, record_shape(arg_expr, env))
 
     code = """
     #{arg_code}
-      ElmcValue *#{var} = elmc_record_get(#{arg_var}, "#{escape_c_string(field)}");
+      ElmcValue *#{var} = #{getter};
       elmc_release(#{arg_var});
     """
 
@@ -1027,28 +1129,13 @@ defmodule Elmc.Backend.CCodegen do
   defp direct_command_prelude(true) do
     """
     #include "elmc_pebble.h"
+    #include <string.h>
 
     typedef ElmcPebbleDrawCmd ElmcGeneratedPebbleDrawCmd;
 
     static void elmc_generated_draw_init(ElmcGeneratedPebbleDrawCmd *cmd, int64_t kind) {
+      memset(cmd, 0, sizeof(*cmd));
       cmd->kind = kind;
-      cmd->p0 = 0;
-      cmd->p1 = 0;
-      cmd->p2 = 0;
-      cmd->p3 = 0;
-      cmd->p4 = 0;
-      cmd->p5 = 0;
-    #if ELMC_PEBBLE_FEATURE_DRAW_PATH
-      cmd->path_point_count = 0;
-      cmd->path_offset_x = 0;
-      cmd->path_offset_y = 0;
-      cmd->path_rotation = 0;
-      for (int i = 0; i < 16; i++) {
-        cmd->path_x[i] = 0;
-        cmd->path_y[i] = 0;
-      }
-    #endif
-      cmd->text[0] = '\\0';
     }
     """
   end
@@ -1079,9 +1166,116 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp direct_candidate_module?(module_name) do
-    not String.starts_with?(module_name, "Pebble.") and
+    not core_library_module?(module_name) and
+      not String.starts_with?(module_name, "Pebble.Ui") and
+      not String.starts_with?(module_name, "Pebble.Platform") and
+      not String.starts_with?(module_name, "Pebble.Events") and
+      not String.starts_with?(module_name, "Pebble.Frame") and
+      not String.starts_with?(module_name, "Pebble.Button") and
+      not String.starts_with?(module_name, "Pebble.Storage") and
+      not String.starts_with?(module_name, "Pebble.Cmd") and
       not String.starts_with?(module_name, "Elm.Kernel.")
   end
+
+  defp core_library_module?(module_name) do
+    module_name in [
+      "Basics",
+      "Bitwise",
+      "Char",
+      "Debug",
+      "Dict",
+      "Json.Decode",
+      "Json.Encode",
+      "List",
+      "Maybe",
+      "Platform",
+      "Platform.Cmd",
+      "Platform.Sub",
+      "Random",
+      "Result",
+      "Set",
+      "String",
+      "Sub",
+      "Tuple"
+    ]
+  end
+
+  defp generic_function_targets(ir) do
+    decl_map =
+      ir.modules
+      |> Enum.flat_map(fn mod ->
+        mod.declarations
+        |> Enum.filter(&(&1.kind == :function))
+        |> Enum.map(fn decl -> {{mod.name, decl.name}, decl} end)
+      end)
+      |> Map.new()
+
+    direct_targets = direct_command_targets(ir)
+
+    roots =
+      decl_map
+      |> Map.keys()
+      |> Enum.reject(&MapSet.member?(direct_targets, &1))
+
+    generic_reachable_targets(roots, decl_map, MapSet.new())
+  end
+
+  defp generic_reachable_targets([], _decl_map, seen), do: seen
+
+  defp generic_reachable_targets([target | rest], decl_map, seen) do
+    cond do
+      MapSet.member?(seen, target) ->
+        generic_reachable_targets(rest, decl_map, seen)
+
+      not Map.has_key?(decl_map, target) ->
+        generic_reachable_targets(rest, decl_map, seen)
+
+      true ->
+        decl = Map.fetch!(decl_map, target)
+        callees = generic_expr_callees(decl.expr, elem(target, 0), decl_map)
+        generic_reachable_targets(rest ++ callees, decl_map, MapSet.put(seen, target))
+    end
+  end
+
+  defp generic_expr_callees(expr, module_name, decl_map) do
+    expr
+    |> generic_expr_callees_list(module_name, decl_map)
+    |> Enum.uniq()
+  end
+
+  defp generic_expr_callees_list(expr, module_name, decl_map) when is_map(expr) do
+    own =
+      case expr do
+        %{op: :call, name: name} ->
+          target = {module_name, name}
+          if Map.has_key?(decl_map, target), do: [target], else: []
+
+        %{op: :qualified_call, target: target} ->
+          case split_qualified_function_target(normalize_special_target(target)) do
+            nil ->
+              []
+
+            target_key ->
+              if Map.has_key?(decl_map, target_key), do: [target_key], else: []
+          end
+
+        _ ->
+          []
+      end
+
+    child_callees =
+      expr
+      |> Map.values()
+      |> Enum.flat_map(&generic_expr_callees_list(&1, module_name, decl_map))
+
+    own ++ child_callees
+  end
+
+  defp generic_expr_callees_list(values, module_name, decl_map) when is_list(values) do
+    Enum.flat_map(values, &generic_expr_callees_list(&1, module_name, decl_map))
+  end
+
+  defp generic_expr_callees_list(_value, _module_name, _decl_map), do: []
 
   defp filter_direct_targets(targets, decl_map) do
     Enum.reduce(targets, MapSet.new(), fn {module_name, _decl_name} = target, acc ->
@@ -1184,6 +1378,10 @@ defmodule Elmc.Backend.CCodegen do
         direct_function_target(fun_expr, module_name, decl_map, seen) != nil and
           scalar_supported?(list_expr)
 
+      {"List.map", [fun_expr, list_expr]} ->
+        direct_function_target(fun_expr, module_name, decl_map, seen) != nil and
+          scalar_supported?(list_expr)
+
       {target, _args}
       when target in [
              "Pebble.Ui.clear",
@@ -1212,8 +1410,22 @@ defmodule Elmc.Backend.CCodegen do
            ] ->
         direct_path_supported?(normalize_special_target(path_target), path_args)
 
-      _ ->
-        false
+      {target, args} ->
+        case direct_qualified_function_target(target, decl_map) do
+          nil ->
+            false
+
+          target_key ->
+            Map.has_key?(decl_map, target_key) and
+              not MapSet.member?(seen, target_key) and
+              Enum.all?(args, &scalar_supported?/1) and
+              direct_supported?(
+                decl_map[target_key].expr,
+                elem(target_key, 0),
+                decl_map,
+                MapSet.put(seen, target_key)
+              )
+        end
     end
   end
 
@@ -1264,14 +1476,65 @@ defmodule Elmc.Backend.CCodegen do
     if Map.has_key?(decl_map, target) and
          not MapSet.member?(seen, target) and
          direct_supported?(decl_map[target].expr, module_name, decl_map, MapSet.put(seen, target)) do
-      target
+      {module_name, name, []}
     end
   end
 
-  defp direct_function_target(%{op: :call, name: name}, module_name, decl_map, seen),
-    do: direct_function_target(%{op: :var, name: name}, module_name, decl_map, seen)
+  defp direct_function_target(%{op: :call, name: name, args: args}, module_name, decl_map, seen) do
+    case direct_function_target(%{op: :var, name: name}, module_name, decl_map, seen) do
+      {target_module, target_name, []} -> {target_module, target_name, args}
+      other -> other
+    end
+  end
+
+  defp direct_function_target(
+         %{op: :qualified_call, target: target, args: args},
+         _module_name,
+         decl_map,
+         seen
+       ) do
+    with {target_module, target_name} = target_key <-
+           direct_qualified_function_target(normalize_special_target(target), decl_map),
+         true <- Map.has_key?(decl_map, target_key),
+         true <- not MapSet.member?(seen, target_key),
+         true <-
+           direct_supported?(
+             decl_map[target_key].expr,
+             target_module,
+             decl_map,
+             MapSet.put(seen, target_key)
+           ) do
+      {target_module, target_name, args}
+    else
+      _ -> nil
+    end
+  end
 
   defp direct_function_target(_expr, _module_name, _decl_map, _seen), do: nil
+
+  defp direct_qualified_function_target(target, candidates) when is_binary(target) do
+    candidate_keys =
+      cond do
+        match?(%MapSet{}, candidates) -> MapSet.to_list(candidates)
+        is_map(candidates) -> Map.keys(candidates)
+        true -> Enum.to_list(candidates)
+      end
+
+    Enum.find_value(candidate_keys, fn {module_name, decl_name} = key ->
+      if target == "#{module_name}.#{decl_name}", do: key
+    end)
+  end
+
+  defp split_qualified_function_target(target) when is_binary(target) do
+    case String.split(target, ".") do
+      [_single] ->
+        nil
+
+      parts ->
+        {name_parts, [function_name]} = Enum.split(parts, -1)
+        {Enum.join(name_parts, "."), function_name}
+    end
+  end
 
   defp direct_command_def(mod, decl, targets) do
     c_name = module_fn_name(mod.name, decl.name)
@@ -1530,35 +1793,107 @@ defmodule Elmc.Backend.CCodegen do
     module_name = Map.get(env, :__module__, "Main")
     targets = Map.get(env, :__direct_targets__, MapSet.new())
 
-    with {target_module, target_name} <- direct_emit_function_target(fun_expr, module_name),
+    with {target_module, target_name, prefix_args} <-
+           direct_emit_function_target(fun_expr, module_name),
          true <- MapSet.member?(targets, {target_module, target_name}) do
       {list_code, list_var, counter} = compile_expr(list_expr, env, counter)
+      {prefix_code, prefix_vars, counter} = direct_compile_arg_values(prefix_args, env, counter)
       next = counter + 1
       c_name = module_fn_name(target_module, target_name)
+      prefix_count = length(prefix_vars)
+
+      prefix_bindings =
+        prefix_vars
+        |> Enum.with_index()
+        |> Enum.map_join("\n", fn {var, index} ->
+          "      direct_call_args_#{next}[#{index}] = #{var};"
+        end)
+
+      prefix_releases = direct_release_vars(prefix_vars, "        ")
 
       {:ok,
        """
        #{list_code}
+       #{prefix_code}
          ElmcValue *direct_cursor_#{next} = #{list_var};
          int64_t direct_index_#{next} = 0;
          while (direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
            ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
            ElmcValue *direct_index_value_#{next} = elmc_new_int(direct_index_#{next});
-           ElmcValue *direct_call_args_#{next}[2] = { direct_index_value_#{next}, direct_node_#{next}->head };
-           int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, 2, out_cmds, max_cmds, skip, count, emitted);
+           ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 2, 1)}] = {0};
+       #{prefix_bindings}
+           direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
+           direct_call_args_#{next}[#{prefix_count + 1}] = direct_node_#{next}->head;
+           int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 2}, out_cmds, max_cmds, skip, count, emitted);
            elmc_release(direct_index_value_#{next});
            if (direct_rc_#{next} < 0) {
              elmc_release(#{list_var});
+       #{prefix_releases}
              return direct_rc_#{next};
            }
            if (*count >= max_cmds) {
              elmc_release(#{list_var});
+       #{prefix_releases}
              return 0;
            }
            direct_index_#{next} += 1;
            direct_cursor_#{next} = direct_node_#{next}->tail;
          }
          elmc_release(#{list_var});
+       #{prefix_releases}
+       """, next}
+    else
+      _ -> :error
+    end
+  end
+
+  defp direct_emit_qualified("List.map", [fun_expr, list_expr], env, counter) do
+    module_name = Map.get(env, :__module__, "Main")
+    targets = Map.get(env, :__direct_targets__, MapSet.new())
+
+    with {target_module, target_name, prefix_args} <-
+           direct_emit_function_target(fun_expr, module_name),
+         true <- MapSet.member?(targets, {target_module, target_name}) do
+      {list_code, list_var, counter} = compile_expr(list_expr, env, counter)
+      {prefix_code, prefix_vars, counter} = direct_compile_arg_values(prefix_args, env, counter)
+      next = counter + 1
+      c_name = module_fn_name(target_module, target_name)
+      prefix_count = length(prefix_vars)
+
+      prefix_bindings =
+        prefix_vars
+        |> Enum.with_index()
+        |> Enum.map_join("\n", fn {var, index} ->
+          "      direct_call_args_#{next}[#{index}] = #{var};"
+        end)
+
+      prefix_releases = direct_release_vars(prefix_vars, "        ")
+
+      {:ok,
+       """
+       #{list_code}
+       #{prefix_code}
+         ElmcValue *direct_cursor_#{next} = #{list_var};
+         while (direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+           ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+           ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 1, 1)}] = {0};
+       #{prefix_bindings}
+           direct_call_args_#{next}[#{prefix_count}] = direct_node_#{next}->head;
+           int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 1}, out_cmds, max_cmds, skip, count, emitted);
+           if (direct_rc_#{next} < 0) {
+             elmc_release(#{list_var});
+       #{prefix_releases}
+             return direct_rc_#{next};
+           }
+           if (*count >= max_cmds) {
+             elmc_release(#{list_var});
+       #{prefix_releases}
+             return 0;
+           }
+           direct_cursor_#{next} = direct_node_#{next}->tail;
+         }
+         elmc_release(#{list_var});
+       #{prefix_releases}
        """, next}
     else
       _ -> :error
@@ -1748,11 +2083,62 @@ defmodule Elmc.Backend.CCodegen do
   defp direct_emit_qualified("Pebble.Ui.pathOutlineOpen", [path], env, counter),
     do: direct_path_command(draw_kind(:path_outline_open), path, env, counter)
 
-  defp direct_emit_qualified(_, _, _, _), do: :error
+  defp direct_emit_qualified(target, args, env, counter) do
+    targets = Map.get(env, :__direct_targets__, MapSet.new())
 
-  defp direct_emit_function_target(%{op: :var, name: name}, module_name), do: {module_name, name}
-  defp direct_emit_function_target(%{op: :call, name: name}, module_name), do: {module_name, name}
+    with {target_module, target_name} <- direct_qualified_function_target(target, targets),
+         true <- MapSet.member?(targets, {target_module, target_name}) do
+      {arg_code, arg_vars, counter} = direct_compile_arg_values(args, env, counter)
+      next = counter + 1
+      c_name = module_fn_name(target_module, target_name)
+      argc = length(arg_vars)
+      arg_list = Enum.join(arg_vars, ", ")
+      releases = direct_release_vars(arg_vars, "  ")
+
+      {:ok,
+       """
+       #{arg_code}
+         ElmcValue *direct_call_args_#{next}[#{max(argc, 1)}] = { #{arg_list} };
+         int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{argc}, out_cmds, max_cmds, skip, count, emitted);
+       #{releases}
+         if (direct_rc_#{next} < 0) return direct_rc_#{next};
+       """, next}
+    else
+      _ -> :error
+    end
+  end
+
+  defp direct_emit_function_target(%{op: :var, name: name}, module_name),
+    do: {module_name, name, []}
+
+  defp direct_emit_function_target(%{op: :call, name: name, args: args}, module_name),
+    do: {module_name, name, args}
+
+  defp direct_emit_function_target(
+         %{op: :qualified_call, target: target, args: args},
+         _module_name
+       ) do
+    case split_qualified_function_target(normalize_special_target(target)) do
+      nil -> nil
+      {target_module, target_name} -> {target_module, target_name, args}
+    end
+  end
+
   defp direct_emit_function_target(_expr, _module_name), do: nil
+
+  defp direct_compile_arg_values(args, env, counter) do
+    Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
+      {code, var, c2} = compile_expr(arg_expr, env, c)
+      {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
+    end)
+  end
+
+  defp direct_release_vars([], _indent), do: ""
+
+  defp direct_release_vars(vars, indent) do
+    vars
+    |> Enum.map_join("\n", fn var -> "#{indent}elmc_release(#{var});" end)
+  end
 
   defp direct_emit_settings(settings, env, counter) do
     Enum.reduce_while(settings, {:ok, "", counter}, fn setting, {:ok, acc, c} ->
@@ -1784,10 +2170,10 @@ defmodule Elmc.Backend.CCodegen do
     direct_append_command(
       kind,
       [
-        record_field_expr(bounds, "x"),
-        record_field_expr(bounds, "y"),
-        record_field_expr(bounds, "w"),
-        record_field_expr(bounds, "h")
+        record_field_or_access_expr(bounds, "x"),
+        record_field_or_access_expr(bounds, "y"),
+        record_field_or_access_expr(bounds, "w"),
+        record_field_or_access_expr(bounds, "h")
       ] ++ extra_args,
       env,
       counter
@@ -1828,7 +2214,8 @@ defmodule Elmc.Backend.CCodegen do
         {acc <> arg_code, vars ++ [value_ref], c2}
       end)
 
-    {text_code, text_var, counter} = compile_expr(text_expr, env, counter)
+    {text_code, text_copy_code, text_release_code, counter} =
+      direct_text_copy_code(text_expr, env, counter)
 
     assignments =
       values
@@ -1842,21 +2229,52 @@ defmodule Elmc.Backend.CCodegen do
      #{indent(text_code, 2)}
          elmc_generated_draw_init(&out_cmds[*count], #{kind});
          #{assignments}
-         if (#{text_var} && #{text_var}->tag == ELMC_TAG_STRING && #{text_var}->payload) {
-           const char *direct_text = (const char *)#{text_var}->payload;
-           int direct_text_i = 0;
-           while (direct_text[direct_text_i] && direct_text_i < 63) {
-             out_cmds[*count].text[direct_text_i] = direct_text[direct_text_i];
-             direct_text_i++;
-           }
-           out_cmds[*count].text[direct_text_i] = '\\0';
-         }
+     #{indent(text_copy_code, 4)}
          *count += 1;
-         elmc_release(#{text_var});
+     #{indent(text_release_code, 4)}
        }
        *emitted += 1;
        if (*count >= max_cmds) return 0;
      """, counter}
+  end
+
+  defp direct_text_copy_code(%{op: :string_literal, value: value}, _env, counter) do
+    escaped = escape_c_string(value)
+
+    {"", direct_text_copy_from("\"#{escaped}\""), "", counter}
+  end
+
+  defp direct_text_copy_code(text_expr, env, counter) do
+    {text_code, text_var, counter} = compile_expr(text_expr, env, counter)
+
+    copy_code = """
+    if (#{text_var} && #{text_var}->tag == ELMC_TAG_STRING && #{text_var}->payload) {
+      const char *direct_text = (const char *)#{text_var}->payload;
+    #{indent(direct_text_copy_body(), 2)}
+    }
+    """
+
+    {text_code, copy_code, "elmc_release(#{text_var});", counter}
+  end
+
+  defp direct_text_copy_from(source) do
+    """
+    {
+      const char *direct_text = #{source};
+    #{indent(direct_text_copy_body(), 2)}
+    }
+    """
+  end
+
+  defp direct_text_copy_body do
+    """
+    int direct_text_i = 0;
+    while (direct_text[direct_text_i] && direct_text_i < 63) {
+      out_cmds[*count].text[direct_text_i] = direct_text[direct_text_i];
+      direct_text_i++;
+    }
+    out_cmds[*count].text[direct_text_i] = '\\0';
+    """
   end
 
   defp direct_path_command(kind, %{op: :qualified_call, target: target, args: args}, env, counter) do
@@ -1919,6 +2337,26 @@ defmodule Elmc.Backend.CCodegen do
   defp direct_int_value(%{op: :char_literal, value: value}, _env, counter),
     do: {"", "#{value}", counter}
 
+  defp direct_int_value(%{op: :var, name: name} = expr, env, counter) do
+    case Map.fetch(env, name) do
+      {:ok, {:direct_fragment, fragment}} ->
+        direct_int_value(fragment, env, counter)
+
+      {:ok, source} when is_binary(source) ->
+        {"", "elmc_as_int(#{source})", counter}
+
+      _ ->
+        direct_runtime_int_value(expr, env, counter)
+    end
+  end
+
+  defp direct_int_value(%{op: :call, name: name, args: args} = expr, env, counter) do
+    case direct_int_builtin(name, args, env, counter) do
+      {:ok, code, value, counter} -> {code, value, counter}
+      :error -> direct_runtime_int_value(expr, env, counter)
+    end
+  end
+
   defp direct_int_value(%{op: :qualified_call, target: target, args: args}, env, counter) do
     case special_value_from_target(target, args) do
       %{op: :int_literal, value: value} ->
@@ -1928,7 +2366,17 @@ defmodule Elmc.Backend.CCodegen do
         direct_int_value(field, env, counter)
 
       nil ->
-        direct_runtime_int_value(%{op: :qualified_call, target: target, args: args}, env, counter)
+        with builtin when not is_nil(builtin) <- qualified_builtin_operator_name(target),
+             {:ok, code, value, counter} <- direct_int_builtin(builtin, args, env, counter) do
+          {code, value, counter}
+        else
+          _ ->
+            direct_runtime_int_value(
+              %{op: :qualified_call, target: target, args: args},
+              env,
+              counter
+            )
+        end
 
       expr ->
         direct_int_value(expr, env, counter)
@@ -1936,13 +2384,108 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp direct_int_value(%{op: :field_access, arg: arg, field: field}, env, counter) do
-    case record_field_expr(arg, field) do
+    source =
+      case arg do
+        %{op: :var, name: name} ->
+          case Map.get(env, name) do
+            {:direct_fragment, fragment} -> fragment
+            _ -> arg
+          end
+
+        _ ->
+          arg
+      end
+
+    case record_field_expr(source, field) do
       nil -> direct_runtime_int_value(%{op: :field_access, arg: arg, field: field}, env, counter)
       expr -> direct_int_value(expr, env, counter)
     end
   end
 
   defp direct_int_value(expr, env, counter), do: direct_runtime_int_value(expr, env, counter)
+
+  defp direct_int_builtin(name, [left, right], env, counter)
+       when name in ["__add__", "__sub__", "__mul__"] do
+    op = %{"__add__" => "+", "__sub__" => "-", "__mul__" => "*"}[name]
+    {left_code, left_value, counter} = direct_int_value(left, env, counter)
+    {right_code, right_value, counter} = direct_int_value(right, env, counter)
+    {:ok, left_code <> right_code, "(#{left_value} #{op} #{right_value})", counter}
+  end
+
+  defp direct_int_builtin("__idiv__", [left, right], env, counter) do
+    {left_code, left_value, counter} = direct_int_value(left, env, counter)
+    {right_code, right_value, counter} = direct_int_value(right, env, counter)
+    next = counter + 1
+    denom = "direct_den_#{next}"
+
+    code = """
+    #{left_code}#{right_code}
+      int64_t #{denom} = #{right_value};
+    """
+
+    {:ok, code, "(#{denom} == 0 ? 0 : (#{left_value} / #{denom}))", next}
+  end
+
+  defp direct_int_builtin("modBy", [base, value], env, counter) do
+    {base_code, base_value, counter} = direct_int_value(base, env, counter)
+    {value_code, value_value, counter} = direct_int_value(value, env, counter)
+    next = counter + 1
+    base_var = "direct_mod_base_#{next}"
+
+    code = """
+    #{base_code}#{value_code}
+      int64_t #{base_var} = #{base_value};
+    """
+
+    {:ok, code, "(#{base_var} == 0 ? 0 : (#{value_value} % #{base_var}))", next}
+  end
+
+  defp direct_int_builtin("max", [left, right], env, counter) do
+    direct_int_min_max(left, right, ">=", env, counter)
+  end
+
+  defp direct_int_builtin("min", [left, right], env, counter) do
+    direct_int_min_max(left, right, "<=", env, counter)
+  end
+
+  defp direct_int_builtin("clamp", [low, high, value], env, counter) do
+    {low_code, low_value, counter} = direct_int_value(low, env, counter)
+    {high_code, high_value, counter} = direct_int_value(high, env, counter)
+    {value_code, value_value, counter} = direct_int_value(value, env, counter)
+    next = counter + 1
+    low_var = "direct_low_#{next}"
+    high_var = "direct_high_#{next}"
+    value_var = "direct_value_#{next}"
+
+    code = """
+    #{low_code}#{high_code}#{value_code}
+      int64_t #{low_var} = #{low_value};
+      int64_t #{high_var} = #{high_value};
+      int64_t #{value_var} = #{value_value};
+    """
+
+    {:ok, code,
+     "(#{value_var} < #{low_var} ? #{low_var} : (#{value_var} > #{high_var} ? #{high_var} : #{value_var}))",
+     next}
+  end
+
+  defp direct_int_builtin(_name, _args, _env, _counter), do: :error
+
+  defp direct_int_min_max(left, right, op, env, counter) do
+    {left_code, left_value, counter} = direct_int_value(left, env, counter)
+    {right_code, right_value, counter} = direct_int_value(right, env, counter)
+    next = counter + 1
+    left_var = "direct_left_#{next}"
+    right_var = "direct_right_#{next}"
+
+    code = """
+    #{left_code}#{right_code}
+      int64_t #{left_var} = #{left_value};
+      int64_t #{right_var} = #{right_value};
+    """
+
+    {:ok, code, "(#{left_var} #{op} #{right_var} ? #{left_var} : #{right_var})", next}
+  end
 
   defp direct_runtime_int_value(expr, env, counter) do
     {expr_code, expr_var, counter} = compile_expr(expr, env, counter)
@@ -1969,15 +2512,24 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
+  defp record_field_expr(%{op: :record_update, base: base, fields: fields}, field) do
+    fields
+    |> Enum.find(&(&1.name == field))
+    |> case do
+      nil -> %{op: :field_access, arg: base, field: field}
+      %{expr: expr} -> expr
+    end
+  end
+
   defp record_field_expr(%{op: :var}, _field), do: nil
 
   defp record_field_expr(%{op: :field_access}, _field), do: nil
 
-  defp record_field_expr(expr, field) when is_map(expr) do
-    %{op: :field_access, arg: expr, field: field}
-  end
-
   defp record_field_expr(_expr, _field), do: nil
+
+  defp record_field_or_access_expr(expr, field) do
+    record_field_expr(expr, field) || field_access_expr(expr, field)
+  end
 
   defp direct_command_macro(module_name, decl_name) do
     safe =
@@ -2335,11 +2887,11 @@ defmodule Elmc.Backend.CCodegen do
     do:
       encoded_cmd_expr(command_kind(:storage_read_string), [key, constructor_tag_expr(to_msg)], 2)
 
-  defp special_value_from_target("Random.generate", [_to_msg, _generator]),
-    do: encoded_cmd_expr(command_kind(:random_generate), [], 0)
+  defp special_value_from_target("Random.generate", [to_msg, _generator]),
+    do: encoded_cmd_expr(command_kind(:random_generate), [constructor_tag_expr(to_msg)], 1)
 
-  defp special_value_from_target("Elm.Kernel.Random.generate", [_to_msg, _generator]),
-    do: encoded_cmd_expr(command_kind(:random_generate), [], 0)
+  defp special_value_from_target("Elm.Kernel.Random.generate", [to_msg, _generator]),
+    do: encoded_cmd_expr(command_kind(:random_generate), [constructor_tag_expr(to_msg)], 1)
 
   defp special_value_from_target("Pebble.Internal.Companion.companionSend", args),
     do: encoded_cmd_expr(command_kind(:companion_send), args, 2)
@@ -2492,27 +3044,30 @@ defmodule Elmc.Backend.CCodegen do
 
   defp special_value_from_target("Pebble.Frame.every", [%{op: :int_literal, value: ms}, _to_msg])
        when is_integer(ms),
-       do: %{op: :int_literal, value: 8192 + Bitwise.bsl(max(ms, 1), 32)}
+       do: %{op: :int_literal, value: 8192 + Bitwise.bsl(clamp_frame_interval_ms(ms), 16)}
 
   defp special_value_from_target("Pebble.Frame.every", _args),
-    do: %{op: :int_literal, value: 8192 + Bitwise.bsl(33, 32)}
+    do: %{op: :int_literal, value: 8192 + Bitwise.bsl(33, 16)}
 
   defp special_value_from_target("Pebble.Frame.atFps", [%{op: :int_literal, value: fps}, _to_msg])
        when is_integer(fps),
-       do: %{op: :int_literal, value: 8192 + Bitwise.bsl(div(1000, max(fps, 1)), 32)}
+       do: %{
+         op: :int_literal,
+         value: 8192 + Bitwise.bsl(clamp_frame_interval_ms(div(1000, max(fps, 1))), 16)
+       }
 
   defp special_value_from_target("Pebble.Frame.atFps", _args),
-    do: %{op: :int_literal, value: 8192 + Bitwise.bsl(33, 32)}
+    do: %{op: :int_literal, value: 8192 + Bitwise.bsl(33, 16)}
 
   defp special_value_from_target("Elm.Kernel.PebbleWatch.onFrame", [
          %{op: :int_literal, value: ms},
          _to_msg
        ])
        when is_integer(ms),
-       do: %{op: :int_literal, value: 8192 + Bitwise.bsl(max(ms, 1), 32)}
+       do: %{op: :int_literal, value: 8192 + Bitwise.bsl(clamp_frame_interval_ms(ms), 16)}
 
   defp special_value_from_target("Elm.Kernel.PebbleWatch.onFrame", _args),
-    do: %{op: :int_literal, value: 8192 + Bitwise.bsl(33, 32)}
+    do: %{op: :int_literal, value: 8192 + Bitwise.bsl(33, 16)}
 
   defp special_value_from_target("Pebble.Events.onHourChange", _args),
     do: %{op: :int_literal, value: 1024}
@@ -3847,6 +4402,13 @@ defmodule Elmc.Backend.CCodegen do
 
   defp special_value_from_target(_, _), do: nil
 
+  @spec clamp_frame_interval_ms(integer()) :: pos_integer()
+  defp clamp_frame_interval_ms(ms) when is_integer(ms) do
+    ms
+    |> max(1)
+    |> min(32_767)
+  end
+
   @spec normalize_special_target(term()) :: term()
   defp normalize_special_target(target) when is_binary(target) do
     normalize_bare_special_target(target)
@@ -3918,6 +4480,17 @@ defmodule Elmc.Backend.CCodegen do
   @spec subscription_item_mask(map()) :: non_neg_integer()
   defp subscription_item_mask(%{op: :int_literal, value: value}) when is_integer(value), do: value
 
+  defp subscription_item_mask(%{op: :qualified_call, target: target, args: args})
+       when is_binary(target) and is_list(args) do
+    case special_value_from_target(target, args) do
+      %{op: :int_literal, value: value} when is_integer(value) ->
+        value
+
+      _ ->
+        subscription_item_mask(%{op: :qualified_call, target: target})
+    end
+  end
+
   defp subscription_item_mask(%{op: :qualified_call, target: target}) when is_binary(target) do
     case normalize_special_target(target) do
       "Pebble.Events.onTick" -> 1
@@ -3974,11 +4547,24 @@ defmodule Elmc.Backend.CCodegen do
   defp encoded_text_cmd_expr(_kind, _args), do: %{op: :unsupported}
 
   @spec constructor_tag_expr(map()) :: map()
+  defp constructor_tag_expr(%{op: :int_literal, value: value}) when is_integer(value) do
+    %{op: :int_literal, value: value}
+  end
+
   defp constructor_tag_expr(%{op: :var, name: name}) when is_binary(name) do
     %{op: :int_literal, value: constructor_tag(name)}
   end
 
   defp constructor_tag_expr(%{op: :qualified_ref, target: target}) when is_binary(target) do
+    %{op: :int_literal, value: constructor_tag(target)}
+  end
+
+  defp constructor_tag_expr(%{op: :qualified_var, target: target}) when is_binary(target) do
+    %{op: :int_literal, value: constructor_tag(target)}
+  end
+
+  defp constructor_tag_expr(%{op: :constructor_call, target: target, args: []})
+       when is_binary(target) do
     %{op: :int_literal, value: constructor_tag(target)}
   end
 
@@ -3992,7 +4578,13 @@ defmodule Elmc.Backend.CCodegen do
   @spec constructor_tag(String.t()) :: non_neg_integer()
   defp constructor_tag(name) do
     tags = Process.get(:elmc_constructor_tags, %{})
-    Map.get(tags, name, 0)
+
+    Map.get_lazy(tags, name, fn ->
+      name
+      |> String.split(".")
+      |> List.last()
+      |> then(&Map.get(tags, &1, 0))
+    end)
   end
 
   @spec field_access_expr(map(), String.t()) :: map()
@@ -4244,6 +4836,15 @@ defmodule Elmc.Backend.CCodegen do
 
   defp bind_pattern(env, _pattern, _subject_ref), do: env
 
+  defp put_record_shape(env, _name, nil), do: env
+
+  defp put_record_shape(env, name, fields) when is_binary(name) and is_list(fields) do
+    shapes = Map.get(env, :__record_shapes__, %{})
+    Map.put(env, :__record_shapes__, Map.put(shapes, name, fields))
+  end
+
+  defp put_record_shape(env, _name, _fields), do: env
+
   @spec pattern_subject_ref(term()) :: String.t()
   defp pattern_subject_ref(subject_ref) when is_binary(subject_ref), do: subject_ref
   defp pattern_subject_ref(%{op: :var, name: name}) when is_binary(name), do: name
@@ -4251,6 +4852,38 @@ defmodule Elmc.Backend.CCodegen do
   defp pattern_subject_ref(%{name: name}) when is_binary(name), do: name
   defp pattern_subject_ref(%{"name" => name}) when is_binary(name), do: name
   defp pattern_subject_ref(subject_ref), do: inspect(subject_ref)
+
+  defp record_shape_for_var(env, name) when is_binary(name) do
+    env
+    |> Map.get(:__record_shapes__, %{})
+    |> Map.get(name)
+  end
+
+  defp record_shape(%{op: :record_literal, fields: fields}, _env) when is_list(fields) do
+    fields
+    |> Enum.map(& &1.name)
+    |> Enum.sort()
+  end
+
+  defp record_shape(%{op: :record_update, base: base}, env), do: record_shape(base, env)
+
+  defp record_shape(%{op: :var, name: name}, env), do: record_shape_for_var(env, name)
+
+  defp record_shape(_expr, _env), do: nil
+
+  defp record_get_expr(source, field, fields) when is_list(fields) do
+    case Enum.find_index(fields, &(&1 == field)) do
+      nil ->
+        "elmc_record_get(#{source}, \"#{escape_c_string(field)}\")"
+
+      index ->
+        "elmc_record_get_at(#{source}, #{index}, \"#{escape_c_string(field)}\")"
+    end
+  end
+
+  defp record_get_expr(source, field, _fields) do
+    "elmc_record_get(#{source}, \"#{escape_c_string(field)}\")"
+  end
 
   @spec compile_builtin_operator_call(term(), term(), term(), term()) :: term()
   defp compile_builtin_operator_call("__add__", [left, right], env, counter),
@@ -4493,50 +5126,117 @@ defmodule Elmc.Backend.CCodegen do
 
   @spec compile_compare_operator(term(), term(), String.t(), term(), term()) :: term()
   defp compile_compare_operator(left, right, operator, env, counter) do
+    if int_compare_safe?(operator, left, right) do
+      compile_int_compare_operator(left, right, operator, env, counter)
+    else
+      {left_code, left_var, counter} = compile_expr(left, env, counter)
+      {right_code, right_var, counter} = compile_expr(right, env, counter)
+      next = counter + 1
+      out = "tmp_#{next}"
+
+      code =
+        case operator do
+          "__eq__" ->
+            """
+            #{left_code}
+              #{right_code}
+              ElmcValue *#{out} = elmc_new_bool(elmc_value_equal(#{left_var}, #{right_var}));
+              elmc_release(#{left_var});
+              elmc_release(#{right_var});
+            """
+
+          "__neq__" ->
+            """
+            #{left_code}
+              #{right_code}
+              ElmcValue *#{out} = elmc_new_bool(!elmc_value_equal(#{left_var}, #{right_var}));
+              elmc_release(#{left_var});
+              elmc_release(#{right_var});
+            """
+
+          _ ->
+            comparison =
+              case operator do
+                "__lt__" -> "<"
+                "__lte__" -> "<="
+                "__gt__" -> ">"
+                "__gte__" -> ">="
+              end
+
+            """
+            #{left_code}
+              #{right_code}
+              ElmcValue *__cmp_#{next} = elmc_basics_compare(#{left_var}, #{right_var});
+              ElmcValue *#{out} = elmc_new_bool(elmc_as_int(__cmp_#{next}) #{comparison} 0);
+              elmc_release(__cmp_#{next});
+              elmc_release(#{left_var});
+              elmc_release(#{right_var});
+            """
+        end
+
+      {code, out, next}
+    end
+  end
+
+  defp int_compare_safe?(operator, left, right)
+       when operator in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] do
+    int_expr?(left) and int_expr?(right)
+  end
+
+  defp int_expr?(%{op: op})
+       when op in [:int_literal, :char_literal, :add_const, :sub_const, :add_vars],
+       do: true
+
+  defp int_expr?(%{op: :call, name: name, args: args})
+       when name in ["__add__", "__sub__", "__mul__", "__idiv__", "modBy", "remainderBy"] and
+              length(args) == 2,
+       do: true
+
+  defp int_expr?(%{op: :qualified_call, target: target, args: args}) do
+    case special_value_from_target(target, args) do
+      %{op: op} when op in [:int_literal, :char_literal] ->
+        true
+
+      nil ->
+        qualified_builtin_operator_name(target) in [
+          "__add__",
+          "__sub__",
+          "__mul__",
+          "__idiv__",
+          "modBy",
+          "remainderBy"
+        ] and length(args) == 2
+
+      expr ->
+        int_expr?(expr)
+    end
+  end
+
+  defp int_expr?(_expr), do: false
+
+  defp compile_int_compare_operator(left, right, operator, env, counter) do
     {left_code, left_var, counter} = compile_expr(left, env, counter)
     {right_code, right_var, counter} = compile_expr(right, env, counter)
     next = counter + 1
     out = "tmp_#{next}"
 
-    code =
+    comparison =
       case operator do
-        "__eq__" ->
-          """
-          #{left_code}
-            #{right_code}
-            ElmcValue *#{out} = elmc_new_bool(elmc_value_equal(#{left_var}, #{right_var}));
-            elmc_release(#{left_var});
-            elmc_release(#{right_var});
-          """
-
-        "__neq__" ->
-          """
-          #{left_code}
-            #{right_code}
-            ElmcValue *#{out} = elmc_new_bool(!elmc_value_equal(#{left_var}, #{right_var}));
-            elmc_release(#{left_var});
-            elmc_release(#{right_var});
-          """
-
-        _ ->
-          comparison =
-            case operator do
-              "__lt__" -> "<"
-              "__lte__" -> "<="
-              "__gt__" -> ">"
-              "__gte__" -> ">="
-            end
-
-          """
-          #{left_code}
-            #{right_code}
-            ElmcValue *__cmp_#{next} = elmc_basics_compare(#{left_var}, #{right_var});
-            ElmcValue *#{out} = elmc_new_bool(elmc_as_int(__cmp_#{next}) #{comparison} 0);
-            elmc_release(__cmp_#{next});
-            elmc_release(#{left_var});
-            elmc_release(#{right_var});
-          """
+        "__eq__" -> "=="
+        "__neq__" -> "!="
+        "__lt__" -> "<"
+        "__lte__" -> "<="
+        "__gt__" -> ">"
+        "__gte__" -> ">="
       end
+
+    code = """
+    #{left_code}
+      #{right_code}
+      ElmcValue *#{out} = elmc_new_bool(elmc_as_int(#{left_var}) #{comparison} elmc_as_int(#{right_var}));
+      elmc_release(#{left_var});
+      elmc_release(#{right_var});
+    """
 
     {code, out, next}
   end
@@ -4544,32 +5244,10 @@ defmodule Elmc.Backend.CCodegen do
   @spec compile_cross_module_call(String.t(), [map()], map(), non_neg_integer()) ::
           {String.t(), String.t(), non_neg_integer()}
   defp compile_cross_module_call(target, args, env, counter) do
-    c_name = qualified_to_c_name(target)
-
-    {arg_code, arg_vars, counter} =
-      Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
-        {code, var, c2} = compile_expr(arg_expr, env, c)
-        {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
-      end)
-
-    next = counter + 1
-    out = "tmp_#{next}"
-    args_var = "call_args_#{next}"
-    argc = length(arg_vars)
-    arg_list = Enum.join(arg_vars, ", ")
-
-    releases =
-      arg_vars
-      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
-
-    code = """
-    #{arg_code}
-      ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
-      ElmcValue *#{out} = #{c_name}(#{args_var}, #{argc});
-      #{releases}
-    """
-
-    {code, out, next}
+    case split_qualified_function_target(target) do
+      {module_name, name} -> compile_function_call(module_name, name, args, env, counter)
+      nil -> compile_function_call(target, "", args, env, counter)
+    end
   end
 
   @spec qualified_builtin_operator_name(String.t()) :: String.t() | nil

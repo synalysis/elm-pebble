@@ -12,6 +12,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       maybe_extreme_ctor: 2,
       maybe_value: 1,
       maybe_ctor_like: 2,
+      result_value: 1,
       with_default_maybe_or_result: 2
     ]
 
@@ -2942,15 +2943,18 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp normalize_bitmap_id(%{tag: tag}) when is_integer(tag), do: {:ok, tag}
 
   defp normalize_bitmap_id(%{"ctor" => _ctor, "args" => []} = value) when is_map(value) do
-    case Map.get(value, "tag") do
-      tag when is_integer(tag) -> {:ok, tag}
+    case {Map.get(value, "ctor"), Map.get(value, "tag")} do
+      {"NoBitmap", _} -> {:ok, 0}
+      {_ctor, tag} when is_integer(tag) -> {:ok, tag}
       _ -> :error
     end
   end
 
   defp normalize_bitmap_id(%{ctor: _ctor, args: []} = value) when is_map(value) do
-    case Map.get(value, :tag) do
-      tag when is_integer(tag) -> {:ok, tag}
+    case {Map.get(value, :ctor), Map.get(value, :tag)} do
+      {"NoBitmap", _} -> {:ok, 0}
+      {:NoBitmap, _} -> {:ok, 0}
+      {_ctor, tag} when is_integer(tag) -> {:ok, tag}
       _ -> :error
     end
   end
@@ -3189,42 +3193,98 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
             do_evaluate(body, env, with_function_context(context, module_name), [key | stack])
 
           _ ->
-            zero_arity_def =
-              find_zero_arity_function_def(
+            overapplied_def =
+              find_overapplied_function_def(
                 functions,
                 module_name,
                 function_name,
+                length(values),
                 allow_global_lookup
               )
 
-            zero_arity_key = {module_name, function_name, 0}
+            if is_map(overapplied_def) do
+              %{params: params, body: body} = overapplied_def
+              arity = length(params)
+              {first_values, rest_values} = Enum.split(values, arity)
+              overapplied_key = {module_name, function_name, arity}
+              env = Enum.zip(params, first_values) |> Map.new()
 
-            if is_map(zero_arity_def) and values != [] do
-              %{body: body} = zero_arity_def
-
-              with {:ok, callable} <-
+              with {:ok, head_result} <-
                      do_evaluate(
                        body,
-                       %{},
+                       env,
                        with_function_context(context, module_name),
-                       [zero_arity_key | stack]
-                     ),
-                   {:ok, value} <-
-                     call_callable(
-                       callable,
-                       values,
-                       %{},
-                       with_function_context(context, module_name),
-                       [zero_arity_key | stack]
+                       [overapplied_key | stack]
                      ) do
-                {:ok, value}
-              else
-                _ -> {:error, {:unknown_function, key}}
+                apply_overapplied_result(head_result, rest_values, env, context, stack)
               end
             else
-              {:error, {:unknown_function, key}}
+              partial_def =
+                find_partial_function_def(
+                  functions,
+                  module_name,
+                  function_name,
+                  length(values),
+                  allow_global_lookup
+                )
+
+              case partial_def do
+                %{params: params, body: body} ->
+                  {bound_params, remaining_params} = Enum.split(params, length(values))
+                  closure_env = Enum.zip(bound_params, values) |> Map.new()
+                  {:ok, {:closure, remaining_params, body, closure_env}}
+
+                _ ->
+                  zero_arity_def =
+                    find_zero_arity_function_def(
+                      functions,
+                      module_name,
+                      function_name,
+                      allow_global_lookup
+                    )
+
+                  zero_arity_key = {module_name, function_name, 0}
+
+                  if is_map(zero_arity_def) and values != [] do
+                    %{body: body} = zero_arity_def
+
+                    with {:ok, callable} <-
+                           do_evaluate(
+                             body,
+                             %{},
+                             with_function_context(context, module_name),
+                             [zero_arity_key | stack]
+                           ),
+                         {:ok, value} <-
+                           call_callable(
+                             callable,
+                             values,
+                             %{},
+                             with_function_context(context, module_name),
+                             [zero_arity_key | stack]
+                           ) do
+                      {:ok, value}
+                    else
+                      _ -> {:error, {:unknown_function, key}}
+                    end
+                  else
+                    {:error, {:unknown_function, key}}
+                  end
+              end
             end
         end
+    end
+  end
+
+  defp apply_overapplied_result(head_result, rest_values, env, context, stack)
+       when is_list(rest_values) do
+    case call_callable(head_result, rest_values, env, context, stack) do
+      {:error, {:not_callable, _}} when length(rest_values) == 1 ->
+        [accessor] = rest_values
+        call_callable(accessor, [head_result], env, context, stack)
+
+      other ->
+        other
     end
   end
 
@@ -3349,6 +3409,92 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         end
     end
   end
+
+  @spec find_partial_function_def(map(), String.t(), String.t(), non_neg_integer(), boolean()) ::
+          map() | nil
+  defp find_partial_function_def(
+         functions,
+         module_name,
+         function_name,
+         bound_arity,
+         allow_global_lookup
+       )
+       when is_map(functions) and is_binary(module_name) and is_binary(function_name) and
+              is_integer(bound_arity) and bound_arity >= 0 and is_boolean(allow_global_lookup) do
+    normalized_target = normalize_builtin_short_name(function_name)
+
+    functions
+    |> Enum.filter(fn
+      {{mod, fn_name, fn_arity}, defn}
+      when is_binary(mod) and is_binary(fn_name) and is_integer(fn_arity) and
+             fn_arity > bound_arity and
+             is_map(defn) ->
+        same_name = fn_name == function_name
+        same_normalized = normalize_builtin_short_name(fn_name) == normalized_target
+        same_module = mod == module_name
+        global_match = allow_global_lookup and (same_name or same_normalized)
+
+        ((same_name or same_normalized) and same_module) or global_match
+
+      _ ->
+        false
+    end)
+    |> Enum.sort_by(fn {{mod, _fn_name, fn_arity}, _defn} ->
+      module_rank = if mod == module_name, do: 0, else: 1
+      {module_rank, fn_arity}
+    end)
+    |> case do
+      [{_key, defn} | _] -> defn
+      [] -> nil
+    end
+  end
+
+  @spec find_overapplied_function_def(map(), String.t(), String.t(), pos_integer(), boolean()) ::
+          map() | nil
+  defp find_overapplied_function_def(
+         functions,
+         module_name,
+         function_name,
+         value_count,
+         allow_global_lookup
+       )
+       when is_map(functions) and is_binary(module_name) and is_binary(function_name) and
+              is_integer(value_count) and value_count > 0 and is_boolean(allow_global_lookup) do
+    normalized_target = normalize_builtin_short_name(function_name)
+
+    functions
+    |> Enum.filter(fn
+      {{mod, fn_name, fn_arity}, defn}
+      when is_binary(mod) and is_binary(fn_name) and is_integer(fn_arity) and
+             fn_arity > 0 and fn_arity < value_count and is_map(defn) ->
+        same_name = fn_name == function_name
+        same_normalized = normalize_builtin_short_name(fn_name) == normalized_target
+        same_module = mod == module_name
+        global_match = allow_global_lookup and (same_name or same_normalized)
+
+        ((same_name or same_normalized) and same_module) or global_match
+
+      _ ->
+        false
+    end)
+    |> Enum.sort_by(fn {{mod, _fn_name, fn_arity}, _defn} ->
+      module_rank = if mod == module_name, do: 0, else: 1
+      {module_rank, -fn_arity}
+    end)
+    |> case do
+      [{_key, defn} | _] -> defn
+      [] -> nil
+    end
+  end
+
+  defp find_overapplied_function_def(
+         _functions,
+         _module_name,
+         _function_name,
+         _value_count,
+         _allow
+       ),
+       do: nil
 
   @spec find_zero_arity_function_def(map(), String.t(), String.t(), boolean()) :: map() | nil
   defp find_zero_arity_function_def(functions, module_name, function_name, allow_global_lookup)
@@ -3737,13 +3883,30 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     normalized = kind |> to_string() |> String.downcase()
 
     case normalized do
-      "eq" -> left == right
-      "neq" -> left != right
+      "eq" -> values_equal?(left, right)
+      "neq" -> not values_equal?(left, right)
       "lt" -> left < right
       "lte" -> left <= right
       "gt" -> left > right
       "gte" -> left >= right
       _ -> false
+    end
+  end
+
+  defp values_equal?(left, right) do
+    case {maybe_value(left), maybe_value(right)} do
+      {:invalid, :invalid} ->
+        result_values_equal?(left, right)
+
+      {left_maybe, right_maybe} ->
+        left_maybe == right_maybe
+    end
+  end
+
+  defp result_values_equal?(left, right) do
+    case {result_value(left), result_value(right)} do
+      {:invalid, :invalid} -> left == right
+      {left_result, right_result} -> left_result == right_result
     end
   end
 

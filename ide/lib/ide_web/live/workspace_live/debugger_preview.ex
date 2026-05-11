@@ -66,6 +66,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
       tree
       |> collect_view_nodes()
       |> Enum.flat_map(&svg_op_from_node(&1, primary_int, model))
+      |> apply_svg_style_state()
     end
   end
 
@@ -295,6 +296,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     label = (Map.get(node, "label") || Map.get(node, :label) || "") |> to_string()
 
     cond do
+      label == "__append__" ->
+        values = node_children(node) |> Enum.map(&resolve_text_label_value(&1, env))
+
+        if values != [] and Enum.all?(values, &is_binary/1) do
+          Enum.join(values, "")
+        end
+
+      string_from_int_node?(node) ->
+        node_children(node)
+        |> List.first()
+        |> resolve_raw_value(env)
+        |> normalize_text_value()
+
       normalize_text_value(value) != nil ->
         normalize_text_value(value)
 
@@ -313,6 +327,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   end
 
   defp resolve_text_label_value(_node, _env), do: nil
+
+  @spec string_from_int_node?(term()) :: boolean()
+  defp string_from_int_node?(node) when is_map(node) do
+    target =
+      to_string(Map.get(node, "qualified_target") || Map.get(node, :qualified_target) || "")
+
+    type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
+
+    target in ["String.fromInt", "Basics.String.fromInt"] or type == "fromInt"
+  end
+
+  defp string_from_int_node?(_node), do: false
 
   @spec resolve_field_access_text(map(), map()) :: String.t() | nil
   defp resolve_field_access_text(node, env) when is_map(node) and is_map(env) do
@@ -1193,23 +1219,34 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   @spec collect_view_nodes(term()) :: term()
   defp collect_view_nodes(node) when is_map(node) do
+    type = node |> Map.get("type", Map.get(node, :type, "")) |> to_string()
+
+    if type == "if" do
+      []
+    else
+      collect_view_nodes_in_node(node, type)
+    end
+  end
+
+  defp collect_view_nodes(_), do: []
+
+  @spec collect_view_nodes_in_node(map(), String.t()) :: [map()]
+  defp collect_view_nodes_in_node(node, type) when is_map(node) and is_binary(type) do
     children =
       case node["children"] || node[:children] do
         list when is_list(list) -> list
         _ -> []
       end
 
-    here = if is_binary(node["type"] || node[:type]), do: [node], else: []
+    here = if type != "", do: [node], else: []
     child_nodes = children |> Enum.filter(&is_map/1) |> Enum.flat_map(&collect_view_nodes/1)
     here ++ child_nodes
   end
 
-  defp collect_view_nodes(_), do: []
-
   @spec svg_op_from_node(term(), term(), term()) :: term()
   defp svg_op_from_node(node, primary_int, model) when is_map(node) do
     type = node |> Map.get("type", Map.get(node, :type, "")) |> to_string()
-    ints = node_int_args(node)
+    ints = node_int_args(node, model)
 
     case type do
       "clear" ->
@@ -1524,6 +1561,55 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
             ]
         end
 
+      kind when kind in ["drawBitmapInRect", "bitmapInRect"] ->
+        case node_children(node) do
+          [bitmap_node, bounds_node | _] ->
+            with bitmap_id when is_integer(bitmap_id) <- bitmap_node_id(bitmap_node, model),
+                 {:ok, [x, y, w, h]} <- rect_node_ints(bounds_node, model) do
+              [
+                %{
+                  kind: :bitmap_in_rect,
+                  bitmap_id: bitmap_id,
+                  x: clamp(x, 0, @default_screen_w - 1),
+                  y: clamp(y, 0, @default_screen_h - 1),
+                  w: clamp(w, 1, @default_screen_w),
+                  h: clamp(h, 1, @default_screen_h)
+                }
+              ]
+            else
+              _ ->
+                unresolved_node("bitmapInRect", length(ints), 5)
+            end
+
+          _ ->
+            unresolved_node("bitmapInRect", length(ints), 5)
+        end
+
+      "text" ->
+        case node_children(node) do
+          [_font_node, bounds_node, value_node | _] ->
+            with {:ok, [x, y, w, h]} <- rect_node_ints(bounds_node, model) do
+              [
+                %{
+                  kind: :text_label,
+                  x: clamp(x, 0, @default_screen_w - 1),
+                  y: clamp(y, 0, @default_screen_h),
+                  w: clamp(w, 1, @default_screen_w),
+                  h: clamp(h, 1, @default_screen_h),
+                  font_size: clamp(h, 1, @default_screen_h),
+                  text_align: "center",
+                  text: text_label_from_node(value_node, model)
+                }
+              ]
+            else
+              _ ->
+                unresolved_node("text", length(ints), 6)
+            end
+
+          _ ->
+            unresolved_node("text", length(ints), 6)
+        end
+
       "textInt" ->
         case node_children(node) do
           [_font_node, pos_node, value_node | _] ->
@@ -1603,32 +1689,121 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp svg_op_from_node(_node, _primary_int, _model), do: []
 
-  @spec node_int_args(term()) :: term()
-  defp node_int_args(node) when is_map(node) do
-    label = (Map.get(node, "label") || Map.get(node, :label) || "") |> to_string()
-    from_label = extract_ints(label)
+  @spec unresolved_node(String.t(), non_neg_integer(), pos_integer()) :: [map()]
+  defp unresolved_node(node_type, provided_int_count, required_int_count) do
+    [
+      %{
+        kind: :unresolved,
+        node_type: node_type,
+        provided_int_count: provided_int_count,
+        required_int_count: required_int_count
+      }
+    ]
+  end
 
-    if from_label != [] do
-      from_label
-    else
-      children =
-        case Map.get(node, "children") || Map.get(node, :children) do
-          list when is_list(list) -> list
-          _ -> []
-        end
+  @spec node_int_args(term(), term()) :: [integer()]
+  defp node_int_args(node, model) when is_map(node) do
+    case structured_node_int_args(node, model) do
+      {:ok, values} ->
+        values
 
-      children
-      |> Enum.filter(&is_map/1)
-      |> Enum.map(&node_int_value/1)
-      |> Enum.reject(&is_nil/1)
+      :error ->
+        node
+        |> node_children()
+        |> Enum.map(&node_int_value(&1, model))
+        |> Enum.reject(&is_nil/1)
     end
   end
 
+  defp node_int_args(_node, _model), do: []
+
+  @spec structured_node_int_args(term(), term()) :: {:ok, [integer()]} | :error
+  defp structured_node_int_args(node, model) when is_map(node) do
+    type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
+    children = node_children(node)
+
+    case {type, children} do
+      {"clear", [color_node | _]} ->
+        with color when is_integer(color) <- node_color_value(color_node, model) do
+          {:ok, [color]}
+        else
+          _ -> :error
+        end
+
+      {kind, [bounds_node, color_node | _]} when kind in ["rect", "fillRect"] ->
+        with {:ok, [x, y, w, h]} <- rect_node_ints(bounds_node, model),
+             color when is_integer(color) <- node_color_value(color_node, model) do
+          {:ok, [x, y, w, h, color]}
+        else
+          _ -> :error
+        end
+
+      {"roundRect", [bounds_node, radius_node, color_node | _]} ->
+        with {:ok, [x, y, w, h]} <- rect_node_ints(bounds_node, model),
+             radius when is_integer(radius) <- node_int_value(radius_node, model),
+             color when is_integer(color) <- node_color_value(color_node, model) do
+          {:ok, [x, y, w, h, radius, color]}
+        else
+          _ -> :error
+        end
+
+      {kind, [bounds_node, start_node, end_node | _]} when kind in ["arc", "fillRadial"] ->
+        with {:ok, [x, y, w, h]} <- rect_node_ints(bounds_node, model),
+             start_angle when is_integer(start_angle) <- node_int_value(start_node, model),
+             end_angle when is_integer(end_angle) <- node_int_value(end_node, model) do
+          {:ok, [x, y, w, h, start_angle, end_angle]}
+        else
+          _ -> :error
+        end
+
+      {"pixel", [pos_node, color_node | _]} ->
+        with {:ok, [x, y]} <- point_node_ints(pos_node, model),
+             color when is_integer(color) <- node_color_value(color_node, model) do
+          {:ok, [x, y, color]}
+        else
+          _ -> :error
+        end
+
+      {"line", [start_node, end_node, color_node | _]} ->
+        with {:ok, [x1, y1]} <- point_node_ints(start_node, model),
+             {:ok, [x2, y2]} <- point_node_ints(end_node, model),
+             color when is_integer(color) <- node_color_value(color_node, model) do
+          {:ok, [x1, y1, x2, y2, color]}
+        else
+          _ -> :error
+        end
+
+      {kind, [center_node, radius_node, color_node | _]} when kind in ["circle", "fillCircle"] ->
+        with {:ok, [cx, cy]} <- point_node_ints(center_node, model),
+             radius when is_integer(radius) <- node_int_value(radius_node, model),
+             color when is_integer(color) <- node_color_value(color_node, model) do
+          {:ok, [cx, cy, radius, color]}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp structured_node_int_args(_node, _model), do: :error
+
   @spec node_int_value(term()) :: term()
-  defp node_int_value(node) when is_map(node) do
+  defp node_int_value(node), do: node_int_value(node, %{})
+
+  @spec node_int_value(term(), term()) :: term()
+  defp node_int_value(node, model) when is_map(node) do
+    evaluated = evaluated_node_value(node, model)
     value = Map.get(node, "value") || Map.get(node, :value)
 
     cond do
+      is_integer(evaluated) ->
+        evaluated
+
+      is_float(evaluated) ->
+        trunc(evaluated)
+
       is_integer(value) ->
         value
 
@@ -1648,7 +1823,138 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  defp node_int_value(_node), do: nil
+  defp node_int_value(_node, _model), do: nil
+
+  @spec evaluated_node_value(term(), term()) :: term()
+  defp evaluated_node_value(node, model) when is_map(node) and is_map(model) do
+    ElmExecutor.Runtime.SemanticExecutor.evaluate_view_tree_value(node, model, %{})
+  end
+
+  defp evaluated_node_value(_node, _model), do: nil
+
+  @spec node_color_value(term(), term()) :: integer() | nil
+  defp node_color_value(node, model) when is_map(node) do
+    node_int_value(node, model) || color_constructor_value(node, model)
+  end
+
+  defp node_color_value(_node, _model), do: nil
+
+  @spec bitmap_node_id(term(), term()) :: integer() | nil
+  defp bitmap_node_id(node, model) when is_map(node) do
+    evaluated = evaluated_node_value(node, model)
+
+    target =
+      to_string(Map.get(node, "qualified_target") || Map.get(node, :qualified_target) || "")
+
+    type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
+
+    cond do
+      is_integer(evaluated) ->
+        evaluated
+
+      is_integer(Map.get(node, "tag") || Map.get(node, :tag)) ->
+        Map.get(node, "tag") || Map.get(node, :tag)
+
+      target in ["Resources.NoBitmap", "Pebble.Ui.Resources.NoBitmap"] or type == "NoBitmap" ->
+        0
+
+      true ->
+        nil
+    end
+  end
+
+  defp bitmap_node_id(_node, _model), do: nil
+
+  @spec color_constructor_value(term(), term()) :: integer() | nil
+  defp color_constructor_value(node, model) when is_map(node) do
+    target =
+      to_string(Map.get(node, "qualified_target") || Map.get(node, :qualified_target) || "")
+
+    type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
+    name = target |> String.split(".") |> List.last()
+    name = if name in [nil, ""], do: type, else: name
+
+    case name do
+      "indexed" ->
+        node
+        |> node_children()
+        |> List.first()
+        |> node_int_value(model)
+
+      "clearColor" ->
+        0x00
+
+      "black" ->
+        0xC0
+
+      "red" ->
+        0xF0
+
+      "chromeYellow" ->
+        0xF8
+
+      "green" ->
+        0xCC
+
+      "blue" ->
+        0xC3
+
+      "white" ->
+        0xFF
+
+      _ ->
+        nil
+    end
+  end
+
+  defp color_constructor_value(_node, _model), do: nil
+
+  @spec rect_node_ints(term(), term()) :: {:ok, [integer()]} | :error
+  defp rect_node_ints(node, model), do: record_field_ints(node, ["x", "y", "w", "h"], model)
+
+  @spec point_node_ints(term(), term()) :: {:ok, [integer()]} | :error
+  defp point_node_ints(node, model), do: record_field_ints(node, ["x", "y"], model)
+
+  @spec record_field_ints(term(), [String.t()], term()) :: {:ok, [integer()]} | :error
+  defp record_field_ints(node, keys, model) when is_map(node) and is_list(keys) do
+    evaluated = evaluated_node_value(node, model)
+
+    values =
+      Enum.map(keys, fn key ->
+        field_value =
+          cond do
+            is_map(evaluated) ->
+              Map.get(evaluated, key) || Map.get(evaluated, String.to_atom(key))
+
+            true ->
+              nil
+          end
+
+        if is_integer(field_value) do
+          field_value
+        else
+          node
+          |> field_node(key)
+          |> field_value_int(model)
+        end
+      end)
+
+    if Enum.all?(values, &is_integer/1), do: {:ok, values}, else: :error
+  end
+
+  defp record_field_ints(_node, _keys, _model), do: :error
+
+  @spec field_node(term(), String.t()) :: map() | nil
+  defp field_node(node, key) when is_map(node) and is_binary(key) do
+    node
+    |> node_children()
+    |> Enum.find(fn child ->
+      to_string(Map.get(child, "type") || Map.get(child, :type) || "") == "field" and
+        to_string(Map.get(child, "label") || Map.get(child, :label) || "") == key
+    end)
+  end
+
+  defp field_node(_node, _key), do: nil
 
   @spec node_children(term()) :: [map()]
   defp node_children(node) when is_map(node) do
@@ -1789,14 +2095,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp point_pair_from_point_node(_), do: :error
 
   @spec field_value_int(term()) :: integer() | nil
-  defp field_value_int(field_node) when is_map(field_node) do
+  defp field_value_int(field_node), do: field_value_int(field_node, %{})
+
+  @spec field_value_int(term(), term()) :: integer() | nil
+  defp field_value_int(field_node, model) when is_map(field_node) do
     case node_children(field_node) do
-      [value_node | _] -> node_int_value(value_node)
+      [value_node | _] -> node_int_value(value_node, model)
       _ -> nil
     end
   end
 
-  defp field_value_int(_field_node), do: nil
+  defp field_value_int(_field_node, _model), do: nil
 
   @spec extract_ints(term()) :: term()
   defp extract_ints(text) when is_binary(text) do

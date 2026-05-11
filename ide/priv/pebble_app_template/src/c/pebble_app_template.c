@@ -8,6 +8,16 @@
 #endif
 #include "generated/resource_ids.h"
 
+#ifndef ELMC_PEBBLE_DEBUG_LOGS
+#define ELMC_PEBBLE_DEBUG_LOGS 0
+#endif
+
+#if ELMC_PEBBLE_DEBUG_LOGS
+#define ELMC_PEBBLE_DEBUG_LOG(level, ...) APP_LOG(level, __VA_ARGS__)
+#else
+#define ELMC_PEBBLE_DEBUG_LOG(level, ...) do { } while (0)
+#endif
+
 #ifndef ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
 #define ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT 1
 #endif
@@ -78,15 +88,26 @@
 #define ELMC_PEBBLE_FEATURE_DRAW_TEXT 1
 #endif
 
+#ifndef ELMC_PEBBLE_DIRTY_REGION_ENABLED
+#if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+#define ELMC_PEBBLE_DIRTY_REGION_ENABLED 0
+#else
+#define ELMC_PEBBLE_DIRTY_REGION_ENABLED 1
+#endif
+#endif
+
 static Window *s_main_window;
 static Layer *s_draw_layer;
 static GFont s_font;
 static ElmcPebbleApp s_elm_app;
 static AppTimer *s_timer = NULL;
+#if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
 static AppTimer *s_frame_timer = NULL;
 static int64_t s_frame_count = 0;
 static int64_t s_frame_elapsed_ms = 0;
 static uint32_t s_frame_interval_ms = 33;
+static bool s_frame_timer_started = false;
+#endif
 static bool s_logged_first_draw = false;
 
 enum {
@@ -147,10 +168,13 @@ static void flush_pending_companion_request(void);
 #endif
 
 static GFont system_font_for_height(int64_t requested_height) {
-  if (requested_height <= 22) return fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
-  if (requested_height <= 28) return fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
-  if (requested_height <= 36) return fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
-  return s_font;
+  GFont font = NULL;
+  if (requested_height <= 22) font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  if (!font && requested_height <= 28) font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  if (!font && requested_height <= 36) font = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
+  if (!font) font = s_font;
+  if (!font) font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
+  return font;
 }
 
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
@@ -215,12 +239,28 @@ static void timer_cmd_callback(void *data) {
 #endif
 
 #if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
+static void frame_timer_callback(void *data);
+
 static uint32_t frame_interval_from_subscriptions(void) {
   int64_t subscriptions = elmc_pebble_active_subscriptions(&s_elm_app);
-  int64_t encoded = subscriptions >> 32;
+  int64_t encoded = (subscriptions >> 16) & 0x7fff;
   if (encoded <= 0) return 33;
   if (encoded > 1000) return 1000;
   return (uint32_t)encoded;
+}
+
+static void schedule_frame_timer_if_needed(void) {
+  if (s_run_mode != ELMC_PEBBLE_MODE_APP || s_frame_timer) {
+    return;
+  }
+  if ((elmc_pebble_active_subscriptions(&s_elm_app) & ELMC_PEBBLE_SUB_FRAME) == 0) {
+    return;
+  }
+  s_frame_timer = app_timer_register(s_frame_interval_ms, frame_timer_callback, NULL);
+  if (!s_frame_timer_started) {
+    s_frame_timer_started = true;
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "frame timer scheduled interval_ms=%lu", (unsigned long)s_frame_interval_ms);
+  }
 }
 
 static void frame_timer_callback(void *data) {
@@ -233,7 +273,7 @@ static void frame_timer_callback(void *data) {
     apply_pending_cmd();
     render_model();
   }
-  s_frame_timer = app_timer_register(s_frame_interval_ms, frame_timer_callback, NULL);
+  schedule_frame_timer_if_needed();
 }
 #endif
 
@@ -241,10 +281,10 @@ static void apply_pending_cmd(void) {
   for (int cmd_guard = 0; cmd_guard < 32; cmd_guard++) {
     ElmcPebbleCmd cmd = {0};
     if (elmc_pebble_take_cmd(&s_elm_app, &cmd) != 0 || cmd.kind == ELMC_PEBBLE_CMD_NONE) {
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd drain complete count=%d", cmd_guard);
+      ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "cmd drain complete count=%d", cmd_guard);
       return;
     }
-    APP_LOG(APP_LOG_LEVEL_INFO, "cmd drain kind=%lld p0=%lld", (long long)cmd.kind, (long long)cmd.p0);
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "cmd drain kind=%lld p0=%lld", (long long)cmd.kind, (long long)cmd.p0);
 
     switch (cmd.kind) {
 #if ELMC_PEBBLE_FEATURE_CMD_TIMER_AFTER_MS
@@ -312,8 +352,12 @@ static void apply_pending_cmd(void) {
       if (s_random_seed <= 0) {
         s_random_seed = 1;
       }
-      int rc = elmc_pebble_dispatch_random_int(&s_elm_app, s_random_seed);
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd random_generate value=%ld rc=%d", (long)s_random_seed, rc);
+      int64_t target = cmd.p0;
+      int rc = target > 0
+                   ? elmc_pebble_dispatch_tag_value(&s_elm_app, target, s_random_seed)
+                   : elmc_pebble_dispatch_random_int(&s_elm_app, s_random_seed);
+      ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "cmd random_generate target=%lld value=%ld rc=%d",
+              (long long)target, (long)s_random_seed, rc);
       break;
     }
 #endif
@@ -606,13 +650,137 @@ static void apply_draw_style(GContext *ctx, const DrawStyleState *style) {
   graphics_context_set_text_color(ctx, style->text_color);
   graphics_context_set_compositing_mode(ctx, style->compositing_mode);
   graphics_context_set_stroke_width(ctx, style->stroke_width > 0 ? style->stroke_width : 1);
-  graphics_context_set_antialiased(ctx, style->antialiased);
 }
 
+#if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+static int min_int(int a, int b) {
+  return a < b ? a : b;
+}
+
+static int max_int(int a, int b) {
+  return a > b ? a : b;
+}
+
+static bool rect_is_empty(GRect rect) {
+  return rect.size.w <= 0 || rect.size.h <= 0;
+}
+
+static bool rects_intersect(GRect a, GRect b) {
+  if (rect_is_empty(a) || rect_is_empty(b)) return false;
+  return a.origin.x < b.origin.x + b.size.w &&
+         b.origin.x < a.origin.x + a.size.w &&
+         a.origin.y < b.origin.y + b.size.h &&
+         b.origin.y < a.origin.y + a.size.h;
+}
+
+static GRect rect_intersection(GRect a, GRect b) {
+  int x1 = max_int(a.origin.x, b.origin.x);
+  int y1 = max_int(a.origin.y, b.origin.y);
+  int x2 = min_int(a.origin.x + a.size.w, b.origin.x + b.size.w);
+  int y2 = min_int(a.origin.y + a.size.h, b.origin.y + b.size.h);
+  if (x2 <= x1 || y2 <= y1) return GRect(0, 0, 0, 0);
+  return GRect((int16_t)x1, (int16_t)y1, (int16_t)(x2 - x1), (int16_t)(y2 - y1));
+}
+
+static bool draw_cmd_bounds(const ElmcPebbleDrawCmd *cmd, GRect *out_rect) {
+  if (!cmd || !out_rect) return false;
+  switch (cmd->kind) {
+  case ELMC_PEBBLE_DRAW_PIXEL:
+    *out_rect = GRect((int16_t)cmd->p0, (int16_t)cmd->p1, 1, 1);
+    return true;
+  case ELMC_PEBBLE_DRAW_LINE: {
+    int x1 = min_int(cmd->p0, cmd->p2);
+    int y1 = min_int(cmd->p1, cmd->p3);
+    int x2 = max_int(cmd->p0, cmd->p2);
+    int y2 = max_int(cmd->p1, cmd->p3);
+    *out_rect = GRect((int16_t)x1, (int16_t)y1, (int16_t)(x2 - x1 + 1), (int16_t)(y2 - y1 + 1));
+    return true;
+  }
+  case ELMC_PEBBLE_DRAW_RECT:
+  case ELMC_PEBBLE_DRAW_FILL_RECT:
+  case ELMC_PEBBLE_DRAW_ROUND_RECT:
+  case ELMC_PEBBLE_DRAW_ARC:
+  case ELMC_PEBBLE_DRAW_FILL_RADIAL:
+    *out_rect = GRect((int16_t)cmd->p0, (int16_t)cmd->p1, (int16_t)cmd->p2, (int16_t)cmd->p3);
+    return !rect_is_empty(*out_rect);
+  case ELMC_PEBBLE_DRAW_CIRCLE:
+  case ELMC_PEBBLE_DRAW_FILL_CIRCLE: {
+    int r = cmd->p2 < 0 ? 0 : cmd->p2;
+    *out_rect = GRect((int16_t)(cmd->p0 - r), (int16_t)(cmd->p1 - r), (int16_t)(r * 2 + 1), (int16_t)(r * 2 + 1));
+    return !rect_is_empty(*out_rect);
+  }
+  case ELMC_PEBBLE_DRAW_TEXT:
+  case ELMC_PEBBLE_DRAW_BITMAP_IN_RECT:
+    *out_rect = GRect((int16_t)cmd->p1, (int16_t)cmd->p2, (int16_t)cmd->p3, (int16_t)cmd->p4);
+    return !rect_is_empty(*out_rect);
+  default:
+    return false;
+  }
+}
+
+static bool draw_cmd_should_execute(const ElmcPebbleDrawCmd *cmd, bool dirty_full, GRect dirty_rect) {
+  if (dirty_full) return true;
+  if (!cmd) return false;
+  switch (cmd->kind) {
+  case ELMC_PEBBLE_DRAW_PUSH_CONTEXT:
+  case ELMC_PEBBLE_DRAW_POP_CONTEXT:
+  case ELMC_PEBBLE_DRAW_STROKE_WIDTH:
+  case ELMC_PEBBLE_DRAW_ANTIALIASED:
+  case ELMC_PEBBLE_DRAW_STROKE_COLOR:
+  case ELMC_PEBBLE_DRAW_FILL_COLOR:
+  case ELMC_PEBBLE_DRAW_TEXT_COLOR:
+  case ELMC_PEBBLE_DRAW_COMPOSITING_MODE:
+  case ELMC_PEBBLE_DRAW_CLEAR:
+    return true;
+  default: {
+    GRect bounds;
+    return draw_cmd_bounds(cmd, &bounds) && rects_intersect(bounds, dirty_rect);
+  }
+  }
+}
+#endif
+
 static void draw_update_proc(Layer *layer, GContext *ctx) {
+  if (!layer || !ctx) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "draw skipped null layer/context");
+    return;
+  }
+  if (!s_logged_first_draw) {
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw begin seq=%d", s_render_sequence);
+  }
   GRect bounds = layer_get_bounds(layer);
+  bool dirty_full = true;
+  GRect paint_rect = bounds;
+#if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+  ElmcPebbleRect runtime_dirty_rect = {0, 0, bounds.size.w, bounds.size.h};
+  int runtime_dirty_full = 1;
+  int dirty_rc = elmc_pebble_scene_dirty_rect(&s_elm_app, &runtime_dirty_rect, &runtime_dirty_full);
+  dirty_full = dirty_rc <= 0 || runtime_dirty_full != 0;
+  if (!dirty_full) {
+    paint_rect = rect_intersection(
+        bounds,
+        GRect((int16_t)runtime_dirty_rect.x,
+              (int16_t)runtime_dirty_rect.y,
+              (int16_t)runtime_dirty_rect.w,
+              (int16_t)runtime_dirty_rect.h));
+    if (rect_is_empty(paint_rect)) {
+      if (!s_logged_first_draw) {
+        ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw skipped empty dirty rect");
+        s_logged_first_draw = true;
+      }
+#if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
+      schedule_frame_timer_if_needed();
+#endif
+      return;
+    }
+  }
+#endif
   graphics_context_set_fill_color(ctx, GColorWhite);
-  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+  graphics_fill_rect(ctx, paint_rect, 0, GCornerNone);
+  if (!s_logged_first_draw) {
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw base filled x=%d y=%d w=%d h=%d full=%d",
+            paint_rect.origin.x, paint_rect.origin.y, paint_rect.size.w, paint_rect.size.h, dirty_full ? 1 : 0);
+  }
 
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
   char text_buf[32];
@@ -622,20 +790,22 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   int style_top = 0;
   style_stack[style_top] = draw_style_default();
   apply_draw_style(ctx, &style_stack[style_top]);
+  if (!s_logged_first_draw) {
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw style applied");
+  }
 
   enum {
-    DRAW_STACK_CHUNK_CAPACITY = 4,
-    DRAW_HEAP_CHUNK_CAPACITY = 128,
-    DRAW_HEAP_FALLBACK_CHUNK_CAPACITY = 64,
-    DRAW_SMALL_HEAP_CHUNK_CAPACITY = 16,
+    DRAW_HEAP_CHUNK_CAPACITY = 32,
+    DRAW_MEDIUM_HEAP_CHUNK_CAPACITY = 16,
+    DRAW_SMALL_HEAP_CHUNK_CAPACITY = 8,
+    DRAW_TINY_HEAP_CHUNK_CAPACITY = 1,
     DRAW_CHUNK_GUARD = 128
   };
-  ElmcPebbleDrawCmd stack_chunk[DRAW_STACK_CHUNK_CAPACITY];
   int draw_chunk_capacity = DRAW_HEAP_CHUNK_CAPACITY;
   ElmcPebbleDrawCmd *draw_chunk =
       (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
   if (!draw_chunk) {
-    draw_chunk_capacity = DRAW_HEAP_FALLBACK_CHUNK_CAPACITY;
+    draw_chunk_capacity = DRAW_MEDIUM_HEAP_CHUNK_CAPACITY;
     draw_chunk = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
   }
   if (!draw_chunk) {
@@ -643,8 +813,12 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
     draw_chunk = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
   }
   if (!draw_chunk) {
-    draw_chunk = stack_chunk;
-    draw_chunk_capacity = DRAW_STACK_CHUNK_CAPACITY;
+    draw_chunk_capacity = DRAW_TINY_HEAP_CHUNK_CAPACITY;
+    draw_chunk = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * draw_chunk_capacity);
+  }
+  if (!draw_chunk) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "draw skipped: unable to allocate command chunk");
+    return;
   }
   int draw_skip = 0;
   int chunks_processed = 0;
@@ -655,10 +829,14 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         draw_chunk,
         draw_chunk_capacity,
         draw_skip);
+    if (!s_logged_first_draw) {
+      ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw chunk=%d count=%d skip=%d cap=%d",
+              chunk, chunk_count, draw_skip, draw_chunk_capacity);
+    }
     chunks_processed = chunk + 1;
     if (chunk_count <= 0) {
       if (!s_logged_first_draw) {
-        APP_LOG(APP_LOG_LEVEL_INFO, "draw complete chunks=%d cmds=%d chunk_cap=%d last=%d",
+        ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw complete chunks=%d cmds=%d chunk_cap=%d last=%d",
                 chunk, draw_skip, draw_chunk_capacity, chunk_count);
         s_logged_first_draw = true;
       }
@@ -667,6 +845,26 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
 
     for (int i = 0; i < chunk_count; i++) {
       const ElmcPebbleDrawCmd *cmd = &draw_chunk[i];
+      if (!s_logged_first_draw && draw_skip + i < 12) {
+        ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
+                "draw cmd index=%d kind=%lld p0=%lld p1=%lld p2=%lld p3=%lld p4=%lld",
+                draw_skip + i,
+                (long long)cmd->kind,
+                (long long)cmd->p0,
+                (long long)cmd->p1,
+                (long long)cmd->p2,
+                (long long)cmd->p3,
+                (long long)cmd->p4);
+      }
+      if (
+#if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+          !draw_cmd_should_execute(cmd, dirty_full, paint_rect)
+#else
+          false
+#endif
+      ) {
+        continue;
+      }
       switch (cmd->kind) {
 #if ELMC_PEBBLE_FEATURE_DRAW_CONTEXT
       case ELMC_PEBBLE_DRAW_PUSH_CONTEXT:
@@ -724,7 +922,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
 #if ELMC_PEBBLE_FEATURE_DRAW_CLEAR
       case ELMC_PEBBLE_DRAW_CLEAR:
         graphics_context_set_fill_color(ctx, color_from_code(cmd->p0));
-        graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+        graphics_fill_rect(ctx, paint_rect, 0, GCornerNone);
         graphics_context_set_fill_color(ctx, style_stack[style_top].fill_color);
         break;
 #endif
@@ -863,6 +1061,9 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
       case ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT: {
         bool should_unload = false;
         GFont font = font_from_id(cmd->p0, &should_unload);
+        if (!font) {
+          break;
+        }
         snprintf(text_buf, sizeof(text_buf), "%lld", (long long)cmd->p3);
         graphics_draw_text(ctx, text_buf, font,
                            GRect((int16_t)cmd->p1, (int16_t)cmd->p2, bounds.size.w, bounds.size.h),
@@ -877,6 +1078,9 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
       case ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT: {
         bool should_unload = false;
         GFont font = font_from_id(cmd->p0, &should_unload);
+        if (!font) {
+          break;
+        }
         const char *label = "Label";
         if (cmd->p3 == 0) {
           label = "Waiting for companion app";
@@ -894,6 +1098,9 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
       case ELMC_PEBBLE_DRAW_TEXT: {
         bool should_unload = false;
         GFont font = font_from_id_for_height(cmd->p0, cmd->p4, &should_unload);
+        if (!font) {
+          break;
+        }
         graphics_draw_text(ctx, cmd->text, font,
                            GRect((int16_t)cmd->p1, (int16_t)cmd->p2, (int16_t)cmd->p3, (int16_t)cmd->p4),
                            GTextOverflowModeWordWrap,
@@ -927,31 +1134,33 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
     draw_skip += chunk_count;
     if (chunk_count < draw_chunk_capacity) {
       if (!s_logged_first_draw) {
-        APP_LOG(APP_LOG_LEVEL_INFO, "draw complete chunks=%d cmds=%d chunk_cap=%d",
+        ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw complete chunks=%d cmds=%d chunk_cap=%d",
                 chunk + 1, draw_skip, draw_chunk_capacity);
         s_logged_first_draw = true;
       }
       break;
     }
   }
-  if (draw_chunk != stack_chunk) {
-    free(draw_chunk);
-  }
-  elmc_pebble_clear_view_cache(&s_elm_app);
+  free(draw_chunk);
 
   if (s_last_logged_draw_sequence != s_render_sequence && s_last_render_request_ms > 0) {
     int64_t latency_ms = monotonic_ms() - s_last_render_request_ms;
-    APP_LOG(APP_LOG_LEVEL_INFO, "draw rendered seq=%d latency_ms=%lld chunks=%d cmds=%d chunk_cap=%d",
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw rendered seq=%d latency_ms=%lld chunks=%d cmds=%d chunk_cap=%d",
             s_render_sequence,
             (long long)latency_ms,
             chunks_processed,
             draw_skip,
             draw_chunk_capacity);
     s_last_logged_draw_sequence = s_render_sequence;
+    (void)latency_ms;
   }
 
   (void)drew_text;
+  (void)chunks_processed;
 
+#if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
+  schedule_frame_timer_if_needed();
+#endif
 }
 
 static void render_model(void) {
@@ -959,7 +1168,8 @@ static void render_model(void) {
   s_render_sequence += 1;
   s_last_render_request_ms = monotonic_ms();
   layer_mark_dirty(s_draw_layer);
-  APP_LOG(APP_LOG_LEVEL_INFO, "elmc render seq=%d model=%lld", s_render_sequence, (long long)value);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc render seq=%d model=%lld", s_render_sequence, (long long)value);
+  (void)value;
 }
 
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
@@ -1147,7 +1357,7 @@ static void note_user_interaction(void) {
   light_enable_interaction();
 }
 
-#if ELMC_PEBBLE_FEATURE_BUTTON_EVENTS
+#if ELMC_PEBBLE_FEATURE_BUTTON_EVENTS && !ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS
 static void click_handler(ClickRecognizerRef recognizer, void *context) {
   (void)context;
   note_user_interaction();
@@ -1167,12 +1377,14 @@ static void click_handler(ClickRecognizerRef recognizer, void *context) {
   }
 }
 
+#if ELMC_PEBBLE_FEATURE_BUTTON_EVENTS && !ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS
 static void click_config_provider(void *context) {
   (void)context;
   window_single_click_subscribe(BUTTON_ID_UP, click_handler);
   window_single_click_subscribe(BUTTON_ID_SELECT, click_handler);
   window_single_click_subscribe(BUTTON_ID_DOWN, click_handler);
 }
+#endif
 #endif
 
 #if ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS
@@ -1194,7 +1406,7 @@ static void raw_button_down_handler(ClickRecognizerRef recognizer, void *context
   note_user_interaction();
   ElmcPebbleButtonId button_id = raw_button_id(click_recognizer_get_button_id(recognizer));
   int rc = elmc_pebble_dispatch_button_raw(&s_elm_app, button_id, 1);
-  APP_LOG(APP_LOG_LEVEL_INFO, "raw button down id=%d rc=%d", (int)button_id, rc);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "raw button down id=%d rc=%d", (int)button_id, rc);
   if (rc == 0) {
     apply_pending_cmd();
     render_model();
@@ -1206,7 +1418,7 @@ static void raw_button_up_handler(ClickRecognizerRef recognizer, void *context) 
   note_user_interaction();
   ElmcPebbleButtonId button_id = raw_button_id(click_recognizer_get_button_id(recognizer));
   int rc = elmc_pebble_dispatch_button_raw(&s_elm_app, button_id, 0);
-  APP_LOG(APP_LOG_LEVEL_INFO, "raw button up id=%d rc=%d", (int)button_id, rc);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "raw button up id=%d rc=%d", (int)button_id, rc);
   if (rc == 0) {
     apply_pending_cmd();
     render_model();
@@ -1218,7 +1430,7 @@ static void raw_back_click_handler(ClickRecognizerRef recognizer, void *context)
   (void)context;
   note_user_interaction();
   int rc = elmc_pebble_dispatch_button_raw(&s_elm_app, ELMC_PEBBLE_BUTTON_BACK, 1);
-  APP_LOG(APP_LOG_LEVEL_INFO, "raw button back click rc=%d", rc);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "raw button back click rc=%d", rc);
   if (rc == 0) {
     apply_pending_cmd();
     render_model();
@@ -1289,12 +1501,19 @@ static void connection_handler(bool connected) {
 #endif
 
 static void main_window_load(Window *window) {
-  APP_LOG(APP_LOG_LEVEL_INFO, "window load");
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window load");
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
 
   s_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  if (!s_font) {
+    s_font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
+  }
   s_draw_layer = layer_create(bounds);
+  if (!s_draw_layer) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "draw layer create failed");
+    return;
+  }
   layer_set_update_proc(s_draw_layer, draw_update_proc);
   layer_add_child(window_layer, s_draw_layer);
 }
@@ -1357,7 +1576,7 @@ static ElmcValue *build_launch_context(AppLaunchReason launch) {
 }
 
 static void init(void) {
-  APP_LOG(APP_LOG_LEVEL_INFO, "app init start");
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "app init start");
 #ifdef ELMC_WATCHFACE_MODE
   s_run_mode = ELMC_PEBBLE_MODE_WATCHFACE;
 #else
@@ -1383,14 +1602,14 @@ static void init(void) {
   }
 #endif
   window_stack_push(s_main_window, true);
-  APP_LOG(APP_LOG_LEVEL_INFO, "window pushed");
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
 
   AppLaunchReason launch = launch_reason();
   ElmcValue *flags = build_launch_context(launch);
-  APP_LOG(APP_LOG_LEVEL_INFO, "elmc init begin");
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc init begin");
   int rc = elmc_pebble_init_with_mode(&s_elm_app, flags, s_run_mode);
   elmc_release(flags);
-  APP_LOG(APP_LOG_LEVEL_INFO, "elmc init rc=%d launch_reason=%d mode=%d", rc, (int)launch, (int)s_run_mode);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "elmc init rc=%d launch_reason=%d mode=%d", rc, (int)launch, (int)s_run_mode);
 
   if (rc == 0) {
     app_message_register_inbox_received(inbox_received_handler);
@@ -1404,7 +1623,6 @@ static void init(void) {
 #if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
     if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
       s_frame_interval_ms = frame_interval_from_subscriptions();
-      s_frame_timer = app_timer_register(s_frame_interval_ms, frame_timer_callback, NULL);
     }
 #endif
 #if ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS
@@ -1435,7 +1653,7 @@ static void init(void) {
 }
 
 static void deinit(void) {
-  APP_LOG(APP_LOG_LEVEL_INFO, "app deinit start");
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "app deinit start");
 #if ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS
   tick_timer_service_unsubscribe();
 #endif
@@ -1474,7 +1692,7 @@ static void deinit(void) {
     window_destroy(s_main_window);
     s_main_window = NULL;
   }
-  APP_LOG(APP_LOG_LEVEL_INFO, "app deinit complete");
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "app deinit complete");
 }
 
 int main(void) {

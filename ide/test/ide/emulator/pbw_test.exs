@@ -12,7 +12,8 @@ defmodule Ide.Emulator.PbwTest do
     appinfo = %{
       "uuid" => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
       "targetPlatforms" => ["basalt"],
-      "displayName" => "X"
+      "displayName" => "X",
+      "resources" => %{"media" => [%{"name" => "IMAGE", "file" => "image.png"}]}
     }
 
     dir = Path.join(System.tmp_dir!(), "elm-test-pbw-#{System.unique_integer([:positive])}")
@@ -41,6 +42,126 @@ defmodule Ide.Emulator.PbwTest do
     assert pbw.uuid == appinfo["uuid"]
     kinds = Enum.map(pbw.parts, & &1.kind)
     assert kinds == [:binary, :resources]
+
+    File.rm_rf!(dir)
+  end
+
+  test "load skips generated resource pack when app declares no media" do
+    appinfo = %{
+      "uuid" => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "targetPlatforms" => ["basalt"],
+      "displayName" => "X",
+      "resources" => %{"media" => []}
+    }
+
+    dir =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-test-pbw-empty-resources-#{System.unique_integer([:positive])}"
+      )
+
+    pbw_path = Path.join(dir, "app.pbw")
+    File.mkdir_p!(dir)
+
+    assert {:ok, _path} =
+             :zip.create(
+               String.to_charlist(pbw_path),
+               [
+                 {~c"appinfo.json", Jason.encode!(appinfo)},
+                 {~c"basalt/manifest.json", Jason.encode!(@manifest)},
+                 {~c"basalt/pebble-app.bin", <<1, 2, 3, 4>>},
+                 {~c"basalt/app_resources.pbpack", <<9, 8>>}
+               ],
+               []
+             )
+
+    assert {:ok, pbw} = PBW.load(pbw_path, "basalt")
+    assert Enum.map(pbw.parts, & &1.kind) == [:binary]
+
+    File.rm_rf!(dir)
+  end
+
+  test "prune_empty_media_resources leaves placeholder resource pack in artifact" do
+    appinfo = %{
+      "uuid" => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "targetPlatforms" => ["basalt"],
+      "displayName" => "X",
+      "resources" => %{"media" => []}
+    }
+
+    dir =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-test-pbw-prune-empty-resources-#{System.unique_integer([:positive])}"
+      )
+
+    pbw_path = Path.join(dir, "app.pbw")
+    File.mkdir_p!(dir)
+
+    assert {:ok, _path} =
+             :zip.create(
+               String.to_charlist(pbw_path),
+               [
+                 {~c"appinfo.json", Jason.encode!(appinfo)},
+                 {~c"basalt/manifest.json", Jason.encode!(@manifest)},
+                 {~c"basalt/pebble-app.bin", <<1, 2, 3, 4>>},
+                 {~c"basalt/app_resources.pbpack", <<9, 8>>}
+               ],
+               []
+             )
+
+    assert {:ok, ^pbw_path} = PBW.prune_empty_media_resources(pbw_path)
+    assert {:ok, entries} = :zip.extract(String.to_charlist(pbw_path), [:memory])
+
+    names = Enum.map(entries, fn {name, _data} -> List.to_string(name) end)
+    assert "basalt/app_resources.pbpack" in names
+
+    manifest =
+      entries
+      |> Enum.find_value(fn
+        {~c"basalt/manifest.json", data} -> Jason.decode!(data)
+        _ -> nil
+      end)
+
+    assert %{"name" => "app_resources.pbpack"} = manifest["resources"]
+
+    File.rm_rf!(dir)
+  end
+
+  test "prune_empty_media_resources keeps declared media resource pack" do
+    appinfo = %{
+      "uuid" => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "targetPlatforms" => ["basalt"],
+      "displayName" => "X",
+      "resources" => %{"media" => [%{"name" => "IMAGE", "file" => "image.png"}]}
+    }
+
+    dir =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-test-pbw-keep-media-resources-#{System.unique_integer([:positive])}"
+      )
+
+    pbw_path = Path.join(dir, "app.pbw")
+    File.mkdir_p!(dir)
+
+    assert {:ok, _path} =
+             :zip.create(
+               String.to_charlist(pbw_path),
+               [
+                 {~c"appinfo.json", Jason.encode!(appinfo)},
+                 {~c"basalt/manifest.json", Jason.encode!(@manifest)},
+                 {~c"basalt/pebble-app.bin", <<1, 2, 3, 4>>},
+                 {~c"basalt/app_resources.pbpack", <<9, 8>>}
+               ],
+               []
+             )
+
+    assert {:ok, ^pbw_path} = PBW.prune_empty_media_resources(pbw_path)
+    assert {:ok, entries} = :zip.extract(String.to_charlist(pbw_path), [:memory])
+
+    names = Enum.map(entries, fn {name, _data} -> List.to_string(name) end)
+    assert "basalt/app_resources.pbpack" in names
 
     File.rm_rf!(dir)
   end
@@ -85,9 +206,9 @@ defmodule Ide.Emulator.PbwTest do
     app_name = fixed_string("PBW Test", 32)
     company_name = fixed_string("elm-pebble-ide", 32)
 
-    <<0::64, 1, 0, 5, 86, 1, 0, 0::little-16, 0::little-32, 0::little-32,
-      app_name::binary, company_name::binary, 0::little-32, 0::little-32, 137::little-32,
-      0::little-32, uuid_bytes::binary, 0::48>>
+    <<0::64, 1, 0, 5, 86, 1, 0, 0::little-16, 0::little-32, 0::little-32, app_name::binary,
+      company_name::binary, 0::little-32, 0::little-32, 137::little-32, 0::little-32,
+      uuid_bytes::binary, 0::48>>
   end
 
   defp fixed_string(value, size) do

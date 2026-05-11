@@ -346,6 +346,36 @@ defmodule Ide.DebuggerTest do
     end
   end
 
+  defmodule FrameRuntimeExecutor do
+    @moduledoc false
+
+    def execute(%{message: "FrameTick " <> encoded}) do
+      {:ok, frame} = Jason.decode(encoded)
+
+      {:ok,
+       %{
+         model_patch: %{
+           "runtime_model" => %{
+             "frame" => frame["frame"],
+             "dtMs" => frame["dtMs"],
+             "elapsedMs" => frame["elapsedMs"]
+           }
+         },
+         view_tree: %{"type" => "runtime-root", "children" => []},
+         view_output: []
+       }}
+    end
+
+    def execute(_request) do
+      {:ok,
+       %{
+         model_patch: %{"runtime_model" => %{}},
+         view_tree: %{"type" => "runtime-root", "children" => []},
+         view_output: []
+       }}
+    end
+  end
+
   test "start, reload, and reset maintain deterministic event sequencing" do
     slug = "debugger-test-#{System.unique_integer([:positive])}"
 
@@ -2304,6 +2334,107 @@ defmodule Ide.DebuggerTest do
     assert runtime_model["y"] == -340
     assert runtime_model["z"] == 930
     assert get_in(triggered, [:watch, :model, "runtime_last_message"]) == "AccelData"
+  end
+
+  test "frame subscription trigger auto-fire sends frame payload" do
+    previous_config = Application.get_env(:ide, Debugger, [])
+
+    Application.put_env(
+      :ide,
+      Debugger,
+      Keyword.put(previous_config, :runtime_executor_module, FrameRuntimeExecutor)
+    )
+
+    on_exit(fn -> Application.put_env(:ide, Debugger, previous_config) end)
+
+    slug = "sim-frame-trigger-#{System.unique_integer([:positive])}"
+
+    source = """
+    module FrameTrigger exposing (..)
+
+    import Json.Decode as Decode
+    import Pebble.Frame as Frame
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Model =
+        { frame : Int }
+
+    type Msg
+        = FrameTick Frame.Frame
+
+    init _ =
+        ( { frame = 0 }, Cmd.none )
+
+    update msg model =
+        case msg of
+            FrameTick frame ->
+                ( { model | frame = frame.frame }, Cmd.none )
+
+    subscriptions _ =
+        Frame.every 33 FrameTick
+
+    view _ =
+        Ui.toUiNode [ Ui.clear Color.white ]
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    {:ok, _} =
+      Debugger.reload(slug, %{
+        rel_path: "watch/FrameTrigger.elm",
+        source: source,
+        reason: "frame_trigger_base"
+      })
+
+    assert {:ok, trigger_rows} = Debugger.available_triggers(slug, %{"target" => "watch"})
+
+    assert frame_trigger =
+             Enum.find(trigger_rows, fn row ->
+               row[:message] == "FrameTick" and String.contains?(row[:trigger], "Frame")
+             end)
+
+    assert frame_trigger[:declared_interval_ms] == 33
+    assert frame_trigger[:interval_ms] == 100
+
+    assert {:ok, enabled} =
+             Debugger.set_auto_fire(slug, %{
+               target: "watch",
+               trigger: frame_trigger[:trigger],
+               enabled: "true"
+             })
+
+    assert enabled.auto_tick.interval_ms == 100
+
+    enabled_seq = enabled.seq
+    Process.sleep(1_150)
+
+    assert {:ok, triggered} = Debugger.stop_auto_tick(slug)
+
+    runtime_model = get_in(triggered, [:watch, :model, "runtime_model"]) || %{}
+    assert runtime_model["frame"] >= 1
+    assert runtime_model["dtMs"] == 16
+    assert runtime_model["elapsedMs"] == runtime_model["frame"] * 16
+
+    assert get_in(triggered, [:watch, :model, "runtime_message_source"]) == "subscription_auto_fire"
+    assert String.starts_with?(get_in(triggered, [:watch, :model, "runtime_last_message"]), "FrameTick ")
+
+    assert Enum.any?(triggered.events, fn event ->
+             message = Map.get(event.payload, :message) || Map.get(event.payload, "message") || ""
+
+             event.seq > enabled_seq and event.type == "debugger.update_in" and
+               String.starts_with?(message, "FrameTick ")
+           end)
   end
 
   test "disabled subscription trigger cannot be injected until re-enabled" do

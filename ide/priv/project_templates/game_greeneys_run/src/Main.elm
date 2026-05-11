@@ -92,38 +92,55 @@ step model =
         player =
             { x = 24, y = nextY, w = 12, h = 14 }
 
-        landed =
-            List.any (onTile nextOffset player) model.tiles
-
-        fixedY =
-            if landed && model.velocityY >= 0 then
-                ((nextY + 14) // 16) * 16 - 14
+        landingTile =
+            if model.velocityY >= 0 then
+                List.filter (landedOnTile nextOffset (model.playerY + 14) player) model.tiles
+                    |> List.head
 
             else
-                nextY
+                Nothing
+
+        fixedY =
+            case landingTile of
+                Just tile ->
+                    (tileRect nextOffset tile).y - player.h
+
+                Nothing ->
+                    nextY
     in
     ( { model
         | offset = nextOffset
         , playerY = fixedY
         , velocityY =
-            if landed then
+            if landingTile /= Nothing then
                 0
 
             else
                 min 9 (model.velocityY + 1)
-        , jumping = not landed
+        , jumping = landingTile == Nothing
         , score = model.score + 1
       }
     , Cmd.none
     )
 
 
-onTile : Int -> Collision.Rect -> PlatformTile -> Bool
-onTile offset player tile =
+landedOnTile : Int -> Int -> Collision.Rect -> PlatformTile -> Bool
+landedOnTile offset previousBottom player tile =
     let
-        tileX =
-            tile.x * 48 - modBy 384 offset
+        platform =
+            tileRect offset tile
+    in
+    Collision.rectRect player platform
+        && previousBottom
+        <= platform.y
+        && player.y
+        + player.h
+        >= platform.y
 
+
+tileRect : Int -> PlatformTile -> Collision.Rect
+tileRect offset tile =
+    let
         bob =
             if tile.moving then
                 modBy 18 offset - 9
@@ -131,7 +148,11 @@ onTile offset player tile =
             else
                 0
     in
-    Collision.rectRect player { x = tileX, y = tile.y + bob, w = 40, h = 8 }
+    { x = tile.x * 48 - modBy 384 offset
+    , y = tile.y + bob
+    , w = 40
+    , h = 8
+    }
 
 
 subscriptions : Model -> Sub Msg
@@ -165,18 +186,7 @@ view model =
 
 drawTile : Int -> PlatformTile -> Ui.RenderOp
 drawTile offset tile =
-    let
-        x =
-            tile.x * 48 - modBy 384 offset
-
-        bob =
-            if tile.moving then
-                modBy 18 offset - 9
-
-            else
-                0
-    in
-    Ui.fillRect { x = x, y = tile.y + bob, w = 40, h = 8 } Color.black
+    Ui.fillRect (tileRect offset tile) Color.black
 
 
 main : Program Decode.Value Model Msg

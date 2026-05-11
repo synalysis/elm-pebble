@@ -168,6 +168,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               title="Watch subscribed events"
               rows={@debugger_watch_trigger_buttons}
               target="watch"
+              auto_fire_subscriptions={@debugger_auto_fire_subscriptions}
               disabled_subscriptions={@debugger_disabled_subscriptions}
             />
           </div>
@@ -191,6 +192,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               title="Companion subscribed events"
               rows={@debugger_companion_trigger_buttons}
               target="protocol"
+              auto_fire_subscriptions={@debugger_auto_fire_subscriptions}
               disabled_subscriptions={@debugger_disabled_subscriptions}
             />
           </div>
@@ -1783,6 +1785,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:title, :string, required: true)
   attr(:rows, :list, required: true)
   attr(:target, :string, required: true)
+  attr(:auto_fire_subscriptions, :list, default: [])
   attr(:disabled_subscriptions, :list, default: [])
 
   @spec debugger_subscription_buttons(term()) :: term()
@@ -1792,7 +1795,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       <p class="text-[11px] font-semibold text-zinc-700">{@title}</p>
       <div class="mt-1 flex flex-wrap gap-1">
         <div :for={row <- @rows} class="inline-flex items-center gap-1 rounded bg-zinc-100 px-1 py-1">
-          <form phx-change="debugger-set-subscription-enabled" class="flex items-center">
+          <form
+            :if={not subscription_trigger_enabled?(@disabled_subscriptions, @target, row.trigger)}
+            phx-change="debugger-set-subscription-enabled"
+            class="flex items-center gap-1"
+          >
             <input type="hidden" name="target" value={@target} />
             <input type="hidden" name="trigger" value={row.trigger} />
             <input type="hidden" name="enabled" value="false" />
@@ -1804,6 +1811,24 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               class="rounded border-zinc-300"
               title="Enable this subscribed event"
             />
+            <span class="text-[9px] uppercase tracking-wide text-zinc-500">Enabled</span>
+          </form>
+          <form phx-change="debugger-set-auto-fire" class="flex items-center gap-1">
+            <input type="hidden" name="target" value={@target} />
+            <input type="hidden" name="trigger" value={row.trigger} />
+            <input type="hidden" name="enabled" value="false" />
+            <input
+              type="checkbox"
+              name="enabled"
+              value="true"
+              checked={subscription_auto_fire_enabled?(@auto_fire_subscriptions, @target, row.trigger)}
+              disabled={
+                not subscription_trigger_enabled?(@disabled_subscriptions, @target, row.trigger)
+              }
+              class="rounded border-zinc-300"
+              title="Auto-fire this subscribed event"
+            />
+            <span class="text-[9px] uppercase tracking-wide text-zinc-500">Auto</span>
           </form>
           <button
             type="button"
@@ -1837,6 +1862,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   end
 
   defp subscription_trigger_enabled?(_disabled_subscriptions, _target, _trigger), do: true
+
+  defp subscription_auto_fire_enabled?(auto_fire_subscriptions, target, trigger)
+       when is_list(auto_fire_subscriptions) and is_binary(target) and is_binary(trigger) do
+    Enum.any?(auto_fire_subscriptions, fn row ->
+      row_target = Map.get(row, "target") || Map.get(row, :target)
+      row_trigger = Map.get(row, "trigger") || Map.get(row, :trigger)
+
+      row_target == debugger_auto_fire_target(target) and
+        (row_trigger == "*" or row_trigger == trigger)
+    end)
+  end
+
+  defp subscription_auto_fire_enabled?(_auto_fire_subscriptions, _target, _trigger), do: false
 
   attr(:runtime, :any, required: true)
   attr(:project, :any, default: nil)

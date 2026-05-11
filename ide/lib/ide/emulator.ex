@@ -14,7 +14,7 @@ defmodule Ide.Emulator do
 
   @spec launch(launch_opts()) :: {:ok, map()} | {:error, term()}
   def launch(opts) do
-    spec = {Session, opts}
+    spec = Session.child_spec(opts)
 
     case DynamicSupervisor.start_child(Ide.Emulator.SessionSupervisor, spec) do
       {:ok, pid} -> {:ok, Session.info(pid)}

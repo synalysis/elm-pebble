@@ -37,6 +37,27 @@ defmodule IdeWeb.EmulatorControllerTest do
     end)
   end
 
+  test "ping returns not alive for an unresponsive registered session", %{conn: conn} do
+    id = "hung-#{System.unique_integer([:positive])}"
+    parent = self()
+
+    pid =
+      spawn(fn ->
+        {:ok, _} = Registry.register(Ide.Emulator.Registry, id, nil)
+        send(parent, :registered)
+        Process.sleep(:infinity)
+      end)
+
+    assert_receive :registered
+
+    assert %{"alive" => false} =
+             conn
+             |> post(~p"/api/emulator/#{id}/ping")
+             |> json_response(200)
+
+    Process.exit(pid, :kill)
+  end
+
   test "kill is idempotent", %{conn: conn} do
     EmulatorSessionEnv.run(fn ->
       assert {:ok, info} =

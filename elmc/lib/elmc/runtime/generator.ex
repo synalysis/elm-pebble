@@ -543,10 +543,12 @@ defmodule Elmc.Runtime.Generator do
 
     ElmcValue *elmc_record_new(int field_count, const char **field_names, ElmcValue **field_values);
     ElmcValue *elmc_record_get(ElmcValue *record, const char *field_name);
+    ElmcValue *elmc_record_get_at(ElmcValue *record, int index, const char *field_name);
     ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value);
 
     ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
     ElmcValue *elmc_closure_call(ElmcValue *closure, ElmcValue **args, int argc);
+    ElmcValue *elmc_apply_extra(ElmcValue *value, ElmcValue **args, int argc);
 
     uint64_t elmc_rc_allocated_count(void);
     uint64_t elmc_rc_released_count(void);
@@ -771,6 +773,23 @@ defmodule Elmc.Runtime.Generator do
         if ((left->tag == ELMC_TAG_INT || left->tag == ELMC_TAG_BOOL) &&
             (right->tag == ELMC_TAG_INT || right->tag == ELMC_TAG_BOOL)) {
           return elmc_as_int(left) == elmc_as_int(right);
+        }
+        if (left->tag == ELMC_TAG_MAYBE && left->payload && right->tag == ELMC_TAG_INT) {
+          ElmcMaybe *maybe = (ElmcMaybe *)left->payload;
+          return !maybe->is_just && elmc_as_int(right) == 0;
+        }
+        if (right->tag == ELMC_TAG_MAYBE && right->payload && left->tag == ELMC_TAG_INT) {
+          ElmcMaybe *maybe = (ElmcMaybe *)right->payload;
+          return !maybe->is_just && elmc_as_int(left) == 0;
+        }
+        if (left->tag == ELMC_TAG_MAYBE && left->payload && right->tag == ELMC_TAG_TUPLE2 && right->payload) {
+          ElmcMaybe *maybe = (ElmcMaybe *)left->payload;
+          ElmcTuple2 *tuple = (ElmcTuple2 *)right->payload;
+          int tag = (int)elmc_as_int(tuple->first);
+          return maybe->is_just ? (tag == 1 && elmc_value_equal(maybe->value, tuple->second)) : tag == 0;
+        }
+        if (right->tag == ELMC_TAG_MAYBE && right->payload && left->tag == ELMC_TAG_TUPLE2 && left->payload) {
+          return elmc_value_equal(right, left);
         }
         return 0;
       }
@@ -1419,6 +1438,16 @@ defmodule Elmc.Runtime.Generator do
       return elmc_new_int(0);
     }
 
+    ElmcValue *elmc_record_get_at(ElmcValue *record, int index, const char *field_name) {
+      if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_new_int(0);
+      ElmcRecord *rec = (ElmcRecord *)record->payload;
+      if (index >= 0 && index < rec->field_count && rec->field_names[index] &&
+          strcmp(rec->field_names[index], field_name) == 0) {
+        return elmc_retain(rec->field_values[index]);
+      }
+      return elmc_record_get(record, field_name);
+    }
+
     ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value) {
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
       ElmcRecord *old = (ElmcRecord *)record->payload;
@@ -1470,6 +1499,18 @@ defmodule Elmc.Runtime.Generator do
         return next;
       }
       return result;
+    }
+
+    ElmcValue *elmc_apply_extra(ElmcValue *value, ElmcValue **args, int argc) {
+      if (!value) return elmc_new_int(0);
+      if (value->tag == ELMC_TAG_CLOSURE) {
+        return elmc_closure_call(value, args, argc);
+      }
+      if (argc == 1 && args && args[0] && args[0]->tag == ELMC_TAG_CLOSURE) {
+        ElmcValue *access_args[1] = { value };
+        return elmc_closure_call(args[0], access_args, 1);
+      }
+      return elmc_retain(value);
     }
 
     /* ================================================================
