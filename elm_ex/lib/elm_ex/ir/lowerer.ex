@@ -23,7 +23,7 @@ defmodule ElmEx.IR.Lowerer do
     {:nowarn_function, lower_declaration: 2}
   ]
 
-  @spec lower_project(Project.t()) :: {:ok, IR.t()} | {:error, map()}
+  @spec lower_project(Project.t()) :: {:ok, IR.t()}
   def lower_project(%Project{} = project) do
     global_constructor_lookup =
       project.modules

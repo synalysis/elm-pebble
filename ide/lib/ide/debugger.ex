@@ -47,6 +47,7 @@ defmodule Ide.Debugger do
           phone: map(),
           storage: map(),
           auto_tick: map(),
+          disabled_subscriptions: [map()],
           events: [runtime_event()],
           debugger_timeline: [debugger_event()],
           debugger_seq: non_neg_integer(),
@@ -2639,6 +2640,7 @@ defmodule Ide.Debugger do
         callback = Map.get(op, "callback_constructor")
         message = callback || best_message_for_trigger(known_messages, to_string(trigger || ""))
         trigger_id = normalize_trigger_id(trigger)
+
         metadata =
           op
           |> button_subscription_metadata()
@@ -2757,7 +2759,8 @@ defmodule Ide.Debugger do
   defp subscription_timing_metadata(_op), do: %{}
 
   @spec frame_subscription_interval_ms(String.t(), [term()]) :: integer() | nil
-  defp frame_subscription_interval_ms(target, snippets) when is_binary(target) and is_list(snippets) do
+  defp frame_subscription_interval_ms(target, snippets)
+       when is_binary(target) and is_list(snippets) do
     value = snippets |> List.first() |> normalize_integer(0)
     target_name = target |> subscription_target_name() |> String.downcase()
 
@@ -3488,7 +3491,8 @@ defmodule Ide.Debugger do
     end
   end
 
-  @spec auto_fire_worker_interval_ms(map(), [:watch | :companion | :phone], [map()]) :: pos_integer()
+  @spec auto_fire_worker_interval_ms(map(), [:watch | :companion | :phone], [map()]) ::
+          pos_integer()
   defp auto_fire_worker_interval_ms(state, targets, subscriptions)
        when is_map(state) and is_list(targets) and is_list(subscriptions) do
     targets
@@ -4532,7 +4536,7 @@ defmodule Ide.Debugger do
 
   defp filter_events_since_seq(state, _since_seq), do: state
 
-  @spec default_state(String.t() | nil) :: runtime_state()
+  @spec default_state(String.t()) :: runtime_state()
   defp default_state(project_slug) do
     watch_profile_id =
       persisted_project_watch_profile_id(project_slug) || default_watch_profile_id()

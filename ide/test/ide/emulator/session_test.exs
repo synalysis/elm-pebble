@@ -312,6 +312,343 @@ defmodule Ide.Emulator.SessionTest do
     end
   end
 
+  test "runtime status reports Linux missing shared library failures with OS hints" do
+    previous = Application.get_env(:ide, Ide.Emulator.Session)
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-runtime-qemu-linux-library-test-#{System.unique_integer([:positive])}"
+      )
+
+    sdk_root = Path.join(root, "SDKs/current")
+    qemu_bin = Path.join(sdk_root, "toolchain/bin/qemu-pebble")
+
+    File.mkdir_p!(Path.dirname(qemu_bin))
+
+    File.write!(qemu_bin, """
+    #!/bin/sh
+    echo "#{qemu_bin}: error while loading shared libraries: libsndio.so.7: cannot open shared object file: No such file or directory"
+    exit 127
+    """)
+
+    File.chmod!(qemu_bin, 0o755)
+
+    Application.put_env(:ide, Ide.Emulator.Session,
+      enabled: true,
+      sdk_roots: [sdk_root],
+      qemu_image_root: nil
+    )
+
+    try do
+      status = Session.runtime_status("basalt")
+
+      assert %{id: :qemu, status: :missing, installable: false, detail: detail} =
+               Enum.find(status.components, &(&1.id == :qemu))
+
+      assert detail =~ "missing Linux shared library libsndio.so.7"
+      assert detail =~ "Debian/Ubuntu"
+      assert detail =~ "Fedora"
+      assert detail =~ "standard Fedora repositories"
+    after
+      Application.put_env(:ide, Ide.Emulator.Session, previous)
+      File.rm_rf!(root)
+    end
+  end
+
+  test "runtime status reports missing SDK Python env as installable" do
+    previous = Application.get_env(:ide, Ide.Emulator.Session)
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-runtime-sdk-python-env-test-#{System.unique_integer([:positive])}"
+      )
+
+    sdk_root = Path.join(root, "SDKs/current")
+    requirements = Path.join(sdk_root, "sdk-core/requirements.txt")
+
+    File.mkdir_p!(Path.dirname(requirements))
+    File.write!(requirements, "pypng>=0.20220715.0\n")
+
+    Application.put_env(:ide, Ide.Emulator.Session,
+      enabled: true,
+      sdk_roots: [sdk_root],
+      qemu_image_root: nil
+    )
+
+    try do
+      status = Session.runtime_status("basalt")
+
+      assert %{id: :pebble_sdk_python_env, status: :missing, installable: true} =
+               Enum.find(status.components, &(&1.id == :pebble_sdk_python_env))
+
+      assert status.installable
+    after
+      Application.put_env(:ide, Ide.Emulator.Session, previous)
+      File.rm_rf!(root)
+    end
+  end
+
+  test "runtime status reports missing SDK JS dependencies as installable" do
+    previous = Application.get_env(:ide, Ide.Emulator.Session)
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-runtime-sdk-node-env-test-#{System.unique_integer([:positive])}"
+      )
+
+    sdk_root = Path.join(root, "SDKs/current")
+    package_json = Path.join(sdk_root, "sdk-core/package.json")
+
+    File.mkdir_p!(Path.dirname(package_json))
+    File.write!(package_json, ~s({"dependencies":{}}))
+
+    Application.put_env(:ide, Ide.Emulator.Session,
+      enabled: true,
+      sdk_roots: [sdk_root],
+      qemu_image_root: nil
+    )
+
+    try do
+      status = Session.runtime_status("basalt")
+
+      assert %{id: :pebble_sdk_node_modules, status: :missing, installable: true} =
+               Enum.find(status.components, &(&1.id == :pebble_sdk_node_modules))
+
+      assert status.installable
+    after
+      Application.put_env(:ide, Ide.Emulator.Session, previous)
+      File.rm_rf!(root)
+    end
+  end
+
+  test "runtime status checks ARM GCC in versioned SDK root used by pebble build" do
+    previous = Application.get_env(:ide, Ide.Emulator.Session)
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-runtime-versioned-gcc-test-#{System.unique_integer([:positive])}"
+      )
+
+    current_root = Path.join(root, "SDKs/current")
+    current_gcc = Path.join(current_root, "toolchain/arm-none-eabi/bin/arm-none-eabi-gcc")
+
+    File.mkdir_p!(Path.dirname(current_gcc))
+    File.write!(current_gcc, "#!/bin/sh\n")
+
+    Application.put_env(:ide, Ide.Emulator.Session,
+      enabled: true,
+      sdk_roots: [current_root],
+      sdk_core_version: "4.9.169",
+      qemu_image_root: nil
+    )
+
+    try do
+      status = Session.runtime_status("basalt")
+      expected = Path.join(root, "SDKs/4.9.169/toolchain/arm-none-eabi/bin/arm-none-eabi-gcc")
+
+      assert %{id: :pebble_arm_gcc, status: :missing, installable: true, detail: ^expected} =
+               Enum.find(status.components, &(&1.id == :pebble_arm_gcc))
+    after
+      Application.put_env(:ide, Ide.Emulator.Session, previous)
+      File.rm_rf!(root)
+    end
+  end
+
+  test "runtime dependency install refreshes pebble-tool with supported Python before SDK install" do
+    previous_config = Application.get_env(:ide, Ide.Emulator.Session)
+    previous_path = System.get_env("PATH")
+    previous_command_log = System.get_env("COMMAND_LOG")
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-runtime-install-python-test-#{System.unique_integer([:positive])}"
+      )
+
+    bin_dir = Path.join(root, "bin")
+    log_path = Path.join(root, "commands.log")
+    image_root = Path.join(root, "images")
+    qemu_dir = Path.join([image_root, "basalt", "qemu"])
+    pebble_bin = Path.join(bin_dir, "pebble")
+    pypkjs_bin = Path.join(bin_dir, "pypkjs")
+    uv_bin = Path.join(bin_dir, "uv")
+    sdk_archive_path = write_sdk_core_archive!(root)
+    toolchain_archive_path = write_toolchain_archive!(root)
+
+    File.mkdir_p!(bin_dir)
+    File.mkdir_p!(qemu_dir)
+    File.write!(Path.join(qemu_dir, "qemu_micro_flash.bin"), "")
+    File.write!(Path.join(qemu_dir, "qemu_spi_flash.bin.bz2"), "")
+
+    write_command_logger!(uv_bin, "uv")
+    write_command_logger!(pebble_bin, "pebble")
+    write_command_logger!(pypkjs_bin, "pypkjs")
+
+    path = if previous_path in [nil, ""], do: bin_dir, else: "#{bin_dir}:#{previous_path}"
+
+    System.put_env("PATH", path)
+    System.put_env("COMMAND_LOG", log_path)
+
+    Application.put_env(:ide, Ide.Emulator.Session,
+      enabled: true,
+      pebble_bin: pebble_bin,
+      pypkjs_bin: pypkjs_bin,
+      qemu_image_root: image_root,
+      sdk_roots: [Path.join(root, "SDKs/current")],
+      sdk_core_version: "4.9.169",
+      sdk_core_archive_path: sdk_archive_path,
+      sdk_toolchain_archive_path: toolchain_archive_path,
+      pebble_tool_python: "3.13"
+    )
+
+    try do
+      assert {:ok, result} = Session.install_runtime_dependencies("basalt")
+
+      assert Enum.map(result.results, & &1.name) == [
+               :pebble_tool,
+               :pebble_sdk,
+               :qemu_images
+             ]
+
+      log = File.read!(log_path)
+      assert log =~ "uv tool install --force --python 3.13 pebble-tool"
+      refute log =~ "pebble sdk install"
+      assert File.exists?(Path.join(root, "SDKs/current/toolchain/bin/qemu-pebble"))
+    after
+      Application.put_env(:ide, Ide.Emulator.Session, previous_config)
+      restore_env("PATH", previous_path)
+      restore_env("COMMAND_LOG", previous_command_log)
+      File.rm_rf!(root)
+    end
+  end
+
+  test "runtime dependency install asks uv to install missing managed Python and retries" do
+    previous_config = Application.get_env(:ide, Ide.Emulator.Session)
+    previous_path = System.get_env("PATH")
+    previous_command_log = System.get_env("COMMAND_LOG")
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-runtime-install-managed-python-test-#{System.unique_integer([:positive])}"
+      )
+
+    bin_dir = Path.join(root, "bin")
+    log_path = Path.join(root, "commands.log")
+    image_root = Path.join(root, "images")
+    qemu_dir = Path.join([image_root, "basalt", "qemu"])
+    pebble_bin = Path.join(bin_dir, "pebble")
+    pypkjs_bin = Path.join(bin_dir, "pypkjs")
+    uv_bin = Path.join(bin_dir, "uv")
+    sdk_archive_path = write_sdk_core_archive!(root)
+    toolchain_archive_path = write_toolchain_archive!(root)
+
+    File.mkdir_p!(bin_dir)
+    File.mkdir_p!(qemu_dir)
+    File.write!(Path.join(qemu_dir, "qemu_micro_flash.bin"), "")
+    File.write!(Path.join(qemu_dir, "qemu_spi_flash.bin.bz2"), "")
+
+    write_uv_requiring_python_install!(uv_bin)
+    write_command_logger!(pebble_bin, "pebble")
+    write_command_logger!(pypkjs_bin, "pypkjs")
+
+    path = if previous_path in [nil, ""], do: bin_dir, else: "#{bin_dir}:#{previous_path}"
+
+    System.put_env("PATH", path)
+    System.put_env("COMMAND_LOG", log_path)
+
+    Application.put_env(:ide, Ide.Emulator.Session,
+      enabled: true,
+      pebble_bin: pebble_bin,
+      pypkjs_bin: pypkjs_bin,
+      qemu_image_root: image_root,
+      sdk_roots: [Path.join(root, "SDKs/current")],
+      sdk_core_version: "4.9.169",
+      sdk_core_archive_path: sdk_archive_path,
+      sdk_toolchain_archive_path: toolchain_archive_path,
+      pebble_tool_python: "3.13"
+    )
+
+    try do
+      assert {:ok, result} = Session.install_runtime_dependencies("basalt")
+
+      assert Enum.map(result.results, & &1.name) == [
+               :pebble_tool,
+               :pebble_sdk,
+               :qemu_images
+             ]
+
+      log = File.read!(log_path)
+      assert log =~ "uv tool install --force --python 3.13 pebble-tool"
+      assert log =~ "uv python install 3.13"
+      refute log =~ "pebble sdk install"
+      assert File.exists?(Path.join(root, "SDKs/current/toolchain/bin/qemu-pebble"))
+    after
+      Application.put_env(:ide, Ide.Emulator.Session, previous_config)
+      restore_env("PATH", previous_path)
+      restore_env("COMMAND_LOG", previous_command_log)
+      File.rm_rf!(root)
+    end
+  end
+
+  test "runtime dependency install stops when pebble-tool cannot be refreshed" do
+    previous_config = Application.get_env(:ide, Ide.Emulator.Session)
+    previous_path = System.get_env("PATH")
+    previous_command_log = System.get_env("COMMAND_LOG")
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-runtime-install-stop-test-#{System.unique_integer([:positive])}"
+      )
+
+    bin_dir = Path.join(root, "bin")
+    log_path = Path.join(root, "commands.log")
+    image_root = Path.join(root, "images")
+    qemu_dir = Path.join([image_root, "basalt", "qemu"])
+
+    File.mkdir_p!(bin_dir)
+    File.mkdir_p!(qemu_dir)
+    File.write!(Path.join(qemu_dir, "qemu_micro_flash.bin"), "")
+    File.write!(Path.join(qemu_dir, "qemu_spi_flash.bin.bz2"), "")
+
+    write_failing_command_logger!(Path.join(bin_dir, "uv"), "uv")
+    write_command_logger!(Path.join(bin_dir, "pebble"), "pebble")
+    write_command_logger!(Path.join(bin_dir, "pypkjs"), "pypkjs")
+
+    path = if previous_path in [nil, ""], do: bin_dir, else: "#{bin_dir}:#{previous_path}"
+
+    System.put_env("PATH", path)
+    System.put_env("COMMAND_LOG", log_path)
+
+    Application.put_env(:ide, Ide.Emulator.Session,
+      enabled: true,
+      qemu_image_root: image_root,
+      sdk_roots: [Path.join(root, "SDKs/current")],
+      sdk_core_version: "4.9.169",
+      pebble_tool_python: "3.13"
+    )
+
+    try do
+      assert {:ok, result} = Session.install_runtime_dependencies("basalt")
+
+      assert [%{name: :pebble_tool, status: :error}] = result.results
+
+      log = File.read!(log_path)
+      assert log =~ "uv tool install --force --python 3.13 pebble-tool"
+      refute log =~ "pebble sdk install"
+    after
+      Application.put_env(:ide, Ide.Emulator.Session, previous_config)
+      restore_env("PATH", previous_path)
+      restore_env("COMMAND_LOG", previous_command_log)
+      File.rm_rf!(root)
+    end
+  end
+
   defp wait_until(fun, attempts \\ 20)
   defp wait_until(_fun, 0), do: false
 
@@ -323,4 +660,87 @@ defmodule Ide.Emulator.SessionTest do
       wait_until(fun, attempts - 1)
     end
   end
+
+  defp write_command_logger!(path, name) do
+    File.write!(path, """
+    #!/bin/sh
+    echo "#{name} $*" >> "$COMMAND_LOG"
+    exit 0
+    """)
+
+    File.chmod!(path, 0o755)
+  end
+
+  defp write_failing_command_logger!(path, name) do
+    File.write!(path, """
+    #!/bin/sh
+    echo "#{name} $*" >> "$COMMAND_LOG"
+    echo "failed"
+    exit 1
+    """)
+
+    File.chmod!(path, 0o755)
+  end
+
+  defp write_uv_requiring_python_install!(path) do
+    File.write!(path, """
+    #!/bin/sh
+    echo "uv $*" >> "$COMMAND_LOG"
+
+    if [ "$1 $2" = "python install" ]; then
+      touch "$(dirname "$COMMAND_LOG")/managed-python-installed"
+      exit 0
+    fi
+
+    if [ "$1 $2" = "tool install" ] && [ ! -f "$(dirname "$COMMAND_LOG")/managed-python-installed" ]; then
+      echo "error: No interpreter found for Python 3.13 in search path or managed installations"
+      echo ""
+      echo "hint: A managed Python download is available for Python 3.13, but Python downloads are set to 'manual', use \\`uv python install 3.13\\` to install the required version"
+      exit 2
+    fi
+
+    exit 0
+    """)
+
+    File.chmod!(path, 0o755)
+  end
+
+  defp write_sdk_core_archive!(root) do
+    archive_path = Path.join(root, "sdk-core-test.tar.gz")
+    source_root = Path.join(root, "sdk-core-archive")
+    pebble_root = Path.join(source_root, "sdk-core/pebble")
+
+    File.mkdir_p!(pebble_root)
+    File.write!(Path.join(source_root, "sdk-core/manifest.json"), ~s({"version":"4.9.169"}))
+
+    {_, 0} = System.cmd("tar", ["czf", archive_path, "-C", source_root, "."])
+
+    archive_path
+  end
+
+  defp write_toolchain_archive!(root) do
+    archive_path = Path.join(root, "toolchain-test.tar.gz")
+    source_root = Path.join(root, "toolchain-archive")
+    qemu_bin = Path.join(source_root, "toolchain-linux-x86_64/bin/qemu-pebble")
+    gcc_bin = Path.join(source_root, "toolchain-linux-x86_64/arm-none-eabi/bin/arm-none-eabi-gcc")
+
+    File.mkdir_p!(Path.dirname(qemu_bin))
+    File.mkdir_p!(Path.dirname(gcc_bin))
+
+    File.write!(qemu_bin, """
+    #!/bin/sh
+    echo qemu-pebble test
+    """)
+
+    File.chmod!(qemu_bin, 0o755)
+    File.write!(gcc_bin, "#!/bin/sh\n")
+    File.chmod!(gcc_bin, 0o755)
+
+    {_, 0} = System.cmd("tar", ["czf", archive_path, "-C", source_root, "."])
+
+    archive_path
+  end
+
+  defp restore_env(key, nil), do: System.delete_env(key)
+  defp restore_env(key, value), do: System.put_env(key, value)
 end

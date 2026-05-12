@@ -1245,9 +1245,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defp normalized_list_values(values) when is_list(values), do: {:ok, values}
   defp normalized_list_values(_values), do: :error
 
-  @spec normalized_payload_args(term(), non_neg_integer()) :: {:ok, [term()]} | :error
-  defp normalized_payload_args(payload, 1), do: {:ok, [payload]}
-
+  @spec normalized_payload_args(term(), pos_integer()) :: {:ok, [term()]} | :error
   defp normalized_payload_args(payload, arity) when is_integer(arity) and arity > 1 do
     flatten_normalized_payload(payload, arity, [])
   end
@@ -1720,14 +1718,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec parser_view_tree(map() | term()) :: map() | nil
+  @spec parser_view_tree(map()) :: map() | nil
   defp parser_view_tree(%{} = model) do
     elm_introspect = Map.get(model, "elm_introspect") || Map.get(model, :elm_introspect) || %{}
     tree = Map.get(elm_introspect, "view_tree") || Map.get(elm_introspect, :view_tree)
     if is_map(tree), do: tree, else: nil
   end
-
-  defp parser_view_tree(_model), do: nil
 
   @spec model_diagnostic_preview(map() | nil) :: [map()]
   def model_diagnostic_preview(nil), do: []
@@ -3448,8 +3444,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  defp auto_fire_subscriptions(_debugger_state), do: []
-
   defp disabled_subscriptions(debugger_state) when is_map(debugger_state) do
     case Map.get(debugger_state, :disabled_subscriptions) ||
            Map.get(debugger_state, "disabled_subscriptions") do
@@ -3457,8 +3451,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       _ -> []
     end
   end
-
-  defp disabled_subscriptions(_debugger_state), do: []
 
   @spec cursor_runtime(map() | nil, :watch | :companion | :phone) :: map() | nil
   defp cursor_runtime(nil, _kind), do: nil
@@ -3615,8 +3607,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       parts -> "(" <> Enum.join(parts, ", ") <> ")"
     end
   end
-
-  defp rendered_node_detail_suffix(_node), do: ""
 
   @spec rendered_detail_value(map(), String.t(), String.t()) :: String.t()
   defp rendered_detail_value(node, field, value)

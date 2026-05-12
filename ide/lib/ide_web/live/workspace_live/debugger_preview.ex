@@ -328,7 +328,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp resolve_text_label_value(_node, _env), do: nil
 
-  @spec string_from_int_node?(term()) :: boolean()
+  @spec string_from_int_node?(map()) :: boolean()
   defp string_from_int_node?(node) when is_map(node) do
     target =
       to_string(Map.get(node, "qualified_target") || Map.get(node, :qualified_target) || "")
@@ -337,8 +337,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
     target in ["String.fromInt", "Basics.String.fromInt"] or type == "fromInt"
   end
-
-  defp string_from_int_node?(_node), do: false
 
   @spec resolve_field_access_text(map(), map()) :: String.t() | nil
   defp resolve_field_access_text(node, env) when is_map(node) and is_map(env) do
@@ -438,15 +436,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     |> apply_svg_style_state()
   end
 
-  @spec runtime_view_output_rows(term()) :: [map()]
+  @spec runtime_view_output_rows(map()) :: [map()]
   defp runtime_view_output_rows(model) when is_map(model) do
     model
     |> Map.get("runtime_view_output", Map.get(model, :runtime_view_output, []))
     |> List.wrap()
     |> Enum.filter(&is_map/1)
   end
-
-  defp runtime_view_output_rows(_model), do: []
 
   @spec normalize_compact_scene(map()) :: map()
   defp normalize_compact_scene(scene) when is_map(scene) do
@@ -1701,7 +1697,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     ]
   end
 
-  @spec node_int_args(term(), term()) :: [integer()]
+  @spec node_int_args(map(), term()) :: [integer()]
   defp node_int_args(node, model) when is_map(node) do
     case structured_node_int_args(node, model) do
       {:ok, values} ->
@@ -1715,9 +1711,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  defp node_int_args(_node, _model), do: []
-
-  @spec structured_node_int_args(term(), term()) :: {:ok, [integer()]} | :error
+  @spec structured_node_int_args(map(), term()) :: {:ok, [integer()]} | :error
   defp structured_node_int_args(node, model) when is_map(node) do
     type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
     children = node_children(node)
@@ -1787,8 +1781,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  defp structured_node_int_args(_node, _model), do: :error
-
   @spec node_int_value(term()) :: term()
   defp node_int_value(node), do: node_int_value(node, %{})
 
@@ -1832,14 +1824,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp evaluated_node_value(_node, _model), do: nil
 
-  @spec node_color_value(term(), term()) :: integer() | nil
+  @spec node_color_value(map(), term()) :: integer() | nil
   defp node_color_value(node, model) when is_map(node) do
     node_int_value(node, model) || color_constructor_value(node, model)
   end
 
-  defp node_color_value(_node, _model), do: nil
-
-  @spec bitmap_node_id(term(), term()) :: integer() | nil
+  @spec bitmap_node_id(map(), term()) :: integer() | nil
   defp bitmap_node_id(node, model) when is_map(node) do
     evaluated = evaluated_node_value(node, model)
 
@@ -1863,9 +1853,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  defp bitmap_node_id(_node, _model), do: nil
-
-  @spec color_constructor_value(term(), term()) :: integer() | nil
+  @spec color_constructor_value(map(), term()) :: integer() | nil
   defp color_constructor_value(node, model) when is_map(node) do
     target =
       to_string(Map.get(node, "qualified_target") || Map.get(node, :qualified_target) || "")
@@ -1906,8 +1894,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
         nil
     end
   end
-
-  defp color_constructor_value(_node, _model), do: nil
 
   @spec rect_node_ints(term(), term()) :: {:ok, [integer()]} | :error
   defp rect_node_ints(node, model), do: record_field_ints(node, ["x", "y", "w", "h"], model)

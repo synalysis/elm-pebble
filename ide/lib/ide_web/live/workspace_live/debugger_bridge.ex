@@ -230,8 +230,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     end
   end
 
-  defp compile_result_source_root(_socket, _result), do: nil
-
   @spec infer_source_root_from_compiled_path(Phoenix.LiveView.Socket.t(), term()) ::
           String.t() | nil
   defp infer_source_root_from_compiled_path(socket, compiled_path)

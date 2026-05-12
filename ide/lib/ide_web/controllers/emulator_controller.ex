@@ -13,6 +13,7 @@ defmodule IdeWeb.EmulatorController do
 
     with project when not is_nil(project) <- Projects.get_project_by_slug(slug),
          workspace_root <- Projects.project_workspace_path(project),
+         :ok <- ensure_runtime_ready(platform),
          {:ok, package_result, launch_platform} <-
            package_for_launch(project, workspace_root, platform),
          {:ok, info} <-
@@ -46,7 +47,11 @@ defmodule IdeWeb.EmulatorController do
 
         if aplite_app_overflow?(platform, reason) and platform != fallback_platform do
           with {:ok, package_result} <-
-                 BuildFlow.package_for_emulator_session(project, workspace_root, fallback_platform) do
+                 BuildFlow.package_for_emulator_session(
+                   project,
+                   workspace_root,
+                   fallback_platform
+                 ) do
             {:ok, package_result, fallback_platform}
           end
         else
@@ -54,6 +59,24 @@ defmodule IdeWeb.EmulatorController do
         end
     end
   end
+
+  defp ensure_runtime_ready(platform) do
+    case Emulator.runtime_status(platform) do
+      %{missing: []} ->
+        :ok
+
+      %{missing: missing} when is_list(missing) ->
+        {:error, {:embedded_emulator_unavailable, Enum.map(missing, &component_missing_detail/1)}}
+    end
+  end
+
+  defp component_missing_detail(%{label: label, detail: detail})
+       when is_binary(label) and is_binary(detail) do
+    "#{label}: #{detail}"
+  end
+
+  defp component_missing_detail(%{label: label}) when is_binary(label), do: label
+  defp component_missing_detail(component), do: inspect(component)
 
   defp aplite_app_overflow?("aplite", {:pebble_build_failed, %{output: output}})
        when is_binary(output) do

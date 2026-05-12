@@ -113,4 +113,58 @@ defmodule IdeWeb.SettingsLiveTest do
     assert html =~ "read,edit"
     assert html =~ ~s(phx-hook="CopyToClipboard")
   end
+
+  test "emulator dependency install button is disabled while install is running", %{conn: conn} do
+    previous_session_config = Application.get_env(:ide, Ide.Emulator.Session)
+    previous_path = System.get_env("PATH")
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_settings_install_button_test_#{System.unique_integer([:positive])}"
+      )
+
+    bin_dir = Path.join(root, "bin")
+    uv_bin = Path.join(bin_dir, "uv")
+
+    File.mkdir_p!(bin_dir)
+
+    File.write!(uv_bin, """
+    #!/bin/sh
+    sleep 1
+    exit 0
+    """)
+
+    File.chmod!(uv_bin, 0o755)
+
+    Application.put_env(:ide, Ide.Emulator.Session,
+      enabled: true,
+      sdk_roots: [],
+      qemu_image_root: Path.join(root, "images"),
+      pebble_tool_python: "3.13"
+    )
+
+    path = if previous_path in [nil, ""], do: bin_dir, else: "#{bin_dir}:#{previous_path}"
+
+    System.put_env("PATH", path)
+
+    try do
+      assert {:ok, view, _html} = live(conn, ~p"/settings")
+
+      html = render_click(view, "install-emulator-dependencies")
+
+      assert html =~ "Installing..."
+      assert html =~ ~s(phx-disable-with="Installing...")
+
+      assert html =~
+               ~r/<button(?=[^>]*phx-click="install-emulator-dependencies")(?=[^>]*disabled)[^>]*>.*Installing/s
+    after
+      Application.put_env(:ide, Ide.Emulator.Session, previous_session_config)
+      restore_env("PATH", previous_path)
+      File.rm_rf!(root)
+    end
+  end
+
+  defp restore_env(key, nil), do: System.delete_env(key)
+  defp restore_env(key, value), do: System.put_env(key, value)
 end

@@ -49,7 +49,7 @@ defmodule Ide.Debugger.HttpExecutor do
          %{
            "status" => response.status,
            "body" => response_body(response.body),
-           "headers" => response.headers || %{}
+           "headers" => response.headers
          }}
 
       {:error, %Mint.TransportError{reason: :timeout}} ->
@@ -178,13 +178,6 @@ defmodule Ide.Debugger.HttpExecutor do
         rescue
           ArgumentError -> nil
         end
-    end
-  end
-
-  defp map_value(map, key) when is_map(map) and is_atom(key) do
-    case Map.fetch(map, key) do
-      {:ok, value} -> value
-      :error -> Map.get(map, Atom.to_string(key))
     end
   end
 

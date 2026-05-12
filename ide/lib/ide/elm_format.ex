@@ -107,11 +107,9 @@ defmodule Ide.ElmFormat do
     Path.join(System.tmp_dir!(), "elm-pebble-format-#{suffix}#{ext}")
   end
 
-  @spec cleanup_temp(term()) :: :ok
+  @spec cleanup_temp(String.t()) :: :ok
   defp cleanup_temp(path) when is_binary(path) do
     _ = File.rm(path)
     :ok
   end
-
-  defp cleanup_temp(_), do: :ok
 end

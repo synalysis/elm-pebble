@@ -95,7 +95,7 @@ defmodule Ide.Lsp.Server do
     text = document[:text] || ""
     position = params["position"] || %{}
     offset = offset_at_position(text, position)
-    prefix = completion_prefix(String.slice(text, 0, offset) || "")
+    prefix = completion_prefix(String.slice(text, 0, offset))
     {dependency_payload, state} = cached_dependency_payload(uri, state)
 
     items =
@@ -144,7 +144,9 @@ defmodule Ide.Lsp.Server do
   end
 
   defp dispatch("textDocument/definition", %{"id" => id}, state), do: {[response(id, nil)], state}
-  defp dispatch("textDocument/documentLink", %{"id" => id}, state), do: {[response(id, [])], state}
+
+  defp dispatch("textDocument/documentLink", %{"id" => id}, state),
+    do: {[response(id, [])], state}
 
   defp dispatch(_method, %{"id" => id}, state) do
     {[error_response(id, -32601, "Method not found.")], state}
@@ -255,7 +257,9 @@ defmodule Ide.Lsp.Server do
 
       :error ->
         payload = dependency_payload(uri)
-        {payload, %{state | dependency_payloads: Map.put(state.dependency_payloads, cache_key, payload)}}
+
+        {payload,
+         %{state | dependency_payloads: Map.put(state.dependency_payloads, cache_key, payload)}}
     end
   end
 
@@ -390,7 +394,7 @@ defmodule Ide.Lsp.Server do
           end
 
         String.ends_with?(trimmed, "=") or String.ends_with?(trimmed, "->") or
-            String.starts_with?(trimmed, "type ") or String.starts_with?(trimmed, "case ") ->
+          String.starts_with?(trimmed, "type ") or String.starts_with?(trimmed, "case ") ->
           case next_less_or_equal_indent(lines, idx + 1, indent) do
             end_idx when is_integer(end_idx) and end_idx - idx > @min_fold_span_lines ->
               [%{"startLine" => idx, "endLine" => end_idx - 1}]
@@ -458,8 +462,8 @@ defmodule Ide.Lsp.Server do
     %{"jsonrpc" => "2.0", "id" => id, "error" => %{"code" => code, "message" => message}}
   end
 
-  defp notification(method, params), do: %{"jsonrpc" => "2.0", "method" => method, "params" => params}
+  defp notification(method, params),
+    do: %{"jsonrpc" => "2.0", "method" => method, "params" => params}
 
   defp lsp_error_message(reason) when is_map(reason), do: reason[:message] || inspect(reason)
-  defp lsp_error_message(reason), do: inspect(reason)
 end

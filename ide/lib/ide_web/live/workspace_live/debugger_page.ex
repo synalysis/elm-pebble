@@ -1557,7 +1557,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_model_scalar(value) when is_atom(value), do: Atom.to_string(value)
   defp debugger_model_scalar(value), do: inspect(value)
 
-  @spec debugger_model_container_label(term()) :: String.t()
+  @spec debugger_model_container_label(map() | list()) :: String.t()
   defp debugger_model_container_label(value) when is_map(value) do
     if debugger_model_elm_constructor?(value),
       do: debugger_model_elm_value(value),
@@ -1565,7 +1565,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   end
 
   defp debugger_model_container_label(value) when is_list(value), do: "[#{length(value)}]"
-  defp debugger_model_container_label(_value), do: ""
 
   @spec debugger_model_elm_constructor?(term()) :: boolean()
   defp debugger_model_elm_constructor?(value) when is_map(value) do
@@ -1578,9 +1577,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       |> Enum.all?(&(to_string(&1) in ["ctor", "args", "$ctor", "$args"]))
   end
 
-  defp debugger_model_elm_constructor?(_value), do: false
-
-  @spec debugger_model_elm_value(term()) :: String.t()
+  @spec debugger_model_elm_value(map()) :: String.t()
   defp debugger_model_elm_value(%{} = value) do
     ctor = Map.get(value, "ctor") || Map.get(value, "$ctor") || Map.get(value, :ctor)
     args = Map.get(value, "args") || Map.get(value, "$args") || Map.get(value, :args) || []
@@ -1601,8 +1598,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         inspect(value)
     end
   end
-
-  defp debugger_model_elm_value(value), do: debugger_model_scalar(value)
 
   @spec debugger_model_elm_arg_value(term()) :: String.t()
   defp debugger_model_elm_arg_value(%{} = value) do
@@ -1646,13 +1641,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     "{ " <> inner <> " }"
   end
 
-  @spec constructor_arg_count(term()) :: non_neg_integer()
+  @spec constructor_arg_count(map()) :: non_neg_integer()
   defp constructor_arg_count(%{} = value) do
     args = Map.get(value, "args") || Map.get(value, "$args") || Map.get(value, :args) || []
     if is_list(args), do: length(args), else: 0
   end
-
-  defp constructor_arg_count(_value), do: 0
 
   @spec debugger_debugger_model(term()) :: map()
   defp debugger_debugger_model(runtime) do
@@ -1821,7 +1814,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               type="checkbox"
               name="enabled"
               value="true"
-              checked={subscription_auto_fire_enabled?(@auto_fire_subscriptions, @target, row.trigger)}
+              checked={
+                subscription_auto_fire_enabled?(@auto_fire_subscriptions, @target, row.trigger)
+              }
               disabled={
                 not subscription_trigger_enabled?(@disabled_subscriptions, @target, row.trigger)
               }
@@ -2841,7 +2836,5 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   @spec debugger_auto_fire_target(term()) :: String.t()
   defp debugger_auto_fire_target("protocol"), do: "protocol"
   defp debugger_auto_fire_target("companion"), do: "protocol"
-  defp debugger_auto_fire_target(:protocol), do: "protocol"
-  defp debugger_auto_fire_target(:companion), do: "protocol"
   defp debugger_auto_fire_target(_target), do: "watch"
 end

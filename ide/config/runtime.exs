@@ -33,8 +33,11 @@ config :ide, Ide.Emulator.Session,
   qemu_data_root: System.get_env("ELM_PEBBLE_QEMU_DATA_ROOT"),
   download_images:
     System.get_env("ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES", "true") not in ~w(0 false no off),
+  sdk_install_root: System.get_env("ELM_PEBBLE_SDK_INSTALL_ROOT"),
   sdk_core_version: System.get_env("ELM_PEBBLE_SDK_CORE_VERSION") || "4.9.169",
   sdk_core_metadata_url: System.get_env("ELM_PEBBLE_SDK_CORE_METADATA_URL"),
+  sdk_core_archive_path: System.get_env("ELM_PEBBLE_SDK_CORE_ARCHIVE_PATH"),
+  sdk_toolchain_archive_path: System.get_env("ELM_PEBBLE_SDK_TOOLCHAIN_ARCHIVE_PATH"),
   pypkjs_bin: System.get_env("ELM_PEBBLE_PYPKJS_BIN"),
   idle_timeout_ms:
     System.get_env("ELM_PEBBLE_EMULATOR_IDLE_TIMEOUT_MS", "300000")

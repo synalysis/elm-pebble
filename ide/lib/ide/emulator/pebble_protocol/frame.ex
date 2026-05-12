@@ -8,7 +8,7 @@ defmodule Ide.Emulator.PebbleProtocol.Frame do
     <<byte_size(payload)::16, endpoint::16, payload::binary>>
   end
 
-  @spec parse(binary()) :: {:ok, t(), binary()} | :more | {:error, term()}
+  @spec parse(binary()) :: {:ok, t(), binary()} | :more
   def parse(buffer) when byte_size(buffer) < 4, do: :more
 
   def parse(<<length::16, endpoint::16, rest::binary>> = buffer) do
@@ -32,7 +32,6 @@ defmodule Ide.Emulator.PebbleProtocol.Frame do
     case parse(buffer) do
       {:ok, frame, remaining} -> parse_many(remaining, [frame | frames])
       :more -> {Enum.reverse(frames), buffer}
-      {:error, _reason} -> {Enum.reverse(frames), buffer}
     end
   end
 end

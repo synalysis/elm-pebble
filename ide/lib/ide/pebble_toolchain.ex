@@ -403,7 +403,7 @@ defmodule Ide.PebbleToolchain do
 
   defp expr_target(_), do: nil
 
-  @spec package_target_type_from_main_target(term(), term()) :: String.t()
+  @spec package_target_type_from_main_target(String.t(), term()) :: String.t()
   defp package_target_type_from_main_target(target, fallback) when is_binary(target) do
     case target do
       "Pebble.Platform.watchface" -> "watchface"
@@ -413,9 +413,6 @@ defmodule Ide.PebbleToolchain do
       _ -> normalize_package_target_type(fallback)
     end
   end
-
-  defp package_target_type_from_main_target(_target, fallback),
-    do: normalize_package_target_type(fallback)
 
   @spec normalize_package_target_type(term()) :: String.t()
   defp normalize_package_target_type(value) when value in ["watchface", "watchapp", "app"],
@@ -883,8 +880,6 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  defp companion_protocol_runtime_tags(_project_root), do: %{}
-
   defp unqualified_constructor_runtime_tags(project) do
     project.modules
     |> Enum.flat_map(fn frontend_module ->
@@ -983,7 +978,6 @@ defmodule Ide.PebbleToolchain do
       end
     else
       nil -> :ok
-      _ -> :ok
     end
   end
 

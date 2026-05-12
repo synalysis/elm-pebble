@@ -400,11 +400,12 @@ defmodule IdeWeb.SettingsLive do
           <div class="flex flex-wrap gap-2">
             <.button
               phx-click="install-emulator-dependencies"
+              phx-disable-with="Installing..."
               disabled={
                 @emulator_dependency_install_status == :running or
                   not emulator_installable?(@emulator_installation_status)
               }
-              class="!bg-blue-700 hover:!bg-blue-600"
+              class="!bg-blue-700 hover:!bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {if @emulator_dependency_install_status == :running,
                 do: "Installing...",

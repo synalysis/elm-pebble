@@ -59,7 +59,6 @@ defmodule Ide.PebblePreferences do
         |> case do
           {:ok, %{sections: []}} -> {:error, {:preferences_without_sections, path}}
           {:ok, schema} -> {:ok, schema}
-          {:error, reason} -> {:error, {reason, path}}
         end
       else
         {:ok, nil}
@@ -207,7 +206,6 @@ defmodule Ide.PebblePreferences do
         File.write(path, source)
       end
     else
-      {:ok, nil} -> :ok
       nil -> :ok
       {:error, reason} -> {:error, reason}
     end
@@ -304,7 +302,6 @@ defmodule Ide.PebblePreferences do
       {:ok, project} ->
         case Lowerer.lower_project(project) do
           {:ok, _ir} -> :ok
-          {:error, reason} -> {:error, {:preferences_project_lower_failed, reason}}
         end
 
       {:error, reason} ->
@@ -329,7 +326,7 @@ defmodule Ide.PebblePreferences do
       String.contains?(source, "Preferences.schema")
   end
 
-  @spec parse_source(String.t()) :: {:ok, schema()} | {:error, term()}
+  @spec parse_source(String.t()) :: {:ok, schema()}
   defp parse_source(source) do
     module_name = module_name(source)
     value_name = schema_value_name(source)

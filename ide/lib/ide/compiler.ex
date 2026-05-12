@@ -348,11 +348,9 @@ defmodule Ide.Compiler do
     }
   end
 
-  @spec core_ir_validation_diagnostics(term()) :: [map()]
+  @spec core_ir_validation_diagnostics(map()) :: [map()]
   defp core_ir_validation_diagnostics(%{diagnostics: diagnostics}) when is_list(diagnostics),
     do: diagnostics
-
-  defp core_ir_validation_diagnostics(_error), do: []
 
   @spec run_elmc_manifest(String.t(), String.t(), boolean()) ::
           {:ok, manifest_result()} | {:error, term()}

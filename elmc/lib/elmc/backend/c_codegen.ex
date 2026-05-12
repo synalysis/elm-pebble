@@ -1303,10 +1303,8 @@ defmodule Elmc.Backend.CCodegen do
       %{op: :list_literal, items: items} ->
         Enum.all?(items, &direct_supported?(&1, module_name, decl_map, seen))
 
-      %{op: :let_in, value_expr: value_expr, in_expr: in_expr} ->
-        (scalar_supported?(value_expr) or
-           direct_supported?(value_expr, module_name, decl_map, seen)) and
-          direct_supported?(in_expr, module_name, decl_map, seen)
+      %{op: :let_in, in_expr: in_expr} ->
+        direct_supported?(in_expr, module_name, decl_map, seen)
 
       %{op: :case, branches: branches} ->
         Enum.all?(branches, &direct_supported?(&1.expr, module_name, decl_map, seen))
@@ -1374,13 +1372,11 @@ defmodule Elmc.Backend.CCodegen do
         direct_supported?(left, module_name, decl_map, seen) and
           direct_supported?(right, module_name, decl_map, seen)
 
-      {"List.indexedMap", [fun_expr, list_expr]} ->
-        direct_function_target(fun_expr, module_name, decl_map, seen) != nil and
-          scalar_supported?(list_expr)
+      {"List.indexedMap", [fun_expr, _list_expr]} ->
+        direct_function_target(fun_expr, module_name, decl_map, seen) != nil
 
-      {"List.map", [fun_expr, list_expr]} ->
-        direct_function_target(fun_expr, module_name, decl_map, seen) != nil and
-          scalar_supported?(list_expr)
+      {"List.map", [fun_expr, _list_expr]} ->
+        direct_function_target(fun_expr, module_name, decl_map, seen) != nil
 
       {target, _args}
       when target in [
@@ -1410,7 +1406,7 @@ defmodule Elmc.Backend.CCodegen do
            ] ->
         direct_path_supported?(normalize_special_target(path_target), path_args)
 
-      {target, args} ->
+      {target, _args} ->
         case direct_qualified_function_target(target, decl_map) do
           nil ->
             false
@@ -1418,7 +1414,6 @@ defmodule Elmc.Backend.CCodegen do
           target_key ->
             Map.has_key?(decl_map, target_key) and
               not MapSet.member?(seen, target_key) and
-              Enum.all?(args, &scalar_supported?/1) and
               direct_supported?(
                 decl_map[target_key].expr,
                 elem(target_key, 0),
@@ -1458,17 +1453,14 @@ defmodule Elmc.Backend.CCodegen do
   defp direct_path_supported?("Pebble.Ui.path", [
          %{op: :list_literal, items: points},
          offset,
-         rotation
+         _rotation
        ]) do
-    length(points) <= 16 and
-      Enum.all?(points, &(record_field_expr(&1, "x") && record_field_expr(&1, "y"))) and
-      record_field_expr(offset, "x") && record_field_expr(offset, "y") &&
-      scalar_supported?(rotation)
+    (length(points) <= 16 and
+       Enum.all?(points, &(record_field_expr(&1, "x") && record_field_expr(&1, "y"))) and
+       record_field_expr(offset, "x")) && record_field_expr(offset, "y")
   end
 
   defp direct_path_supported?(_, _), do: false
-
-  defp scalar_supported?(_expr), do: true
 
   defp direct_function_target(%{op: :var, name: name}, module_name, decl_map, seen) do
     target = {module_name, name}
@@ -3195,11 +3187,11 @@ defmodule Elmc.Backend.CCodegen do
     do: %{op: :qualified_call, target: "Pebble.Storage.saveJsonImpl", args: [key, value, to_msg]}
 
   defp special_value_from_target("Elm.Kernel.PebblePhone.storageLoadJson", [key, decoder, to_msg]),
-    do: %{
-      op: :qualified_call,
-      target: "Pebble.Storage.loadJsonImpl",
-      args: [key, decoder, to_msg]
-    }
+       do: %{
+         op: :qualified_call,
+         target: "Pebble.Storage.loadJsonImpl",
+         args: [key, decoder, to_msg]
+       }
 
   defp special_value_from_target("Elm.Kernel.PebblePhone.storageSaveInt", [key, value, to_msg]),
     do: %{op: :qualified_call, target: "Pebble.Storage.saveIntImpl", args: [key, value, to_msg]}

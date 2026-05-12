@@ -98,6 +98,8 @@ defmodule Ide.Emulator.Session do
   @spec runtime_status(term()) :: map()
   def runtime_status(platform \\ nil) do
     platform = normalize_platform(platform)
+    sdk_root = preferred_sdk_root()
+    sdk_toolchain_root = sdk_version_root(config(:sdk_core_version, "4.9.169"))
 
     components = [
       component(
@@ -108,6 +110,29 @@ defmodule Ide.Emulator.Session do
         false
       ),
       command_component(:pebble_cli, "Pebble CLI", pebble_bin(), true),
+      component(
+        :pebble_sdk_python_env,
+        "Pebble SDK Python env",
+        SdkImages.sdk_python_env_present?(sdk_root),
+        Path.join(sdk_root, ".venv"),
+        true
+      ),
+      component(
+        :pebble_sdk_node_modules,
+        "Pebble SDK JS dependencies",
+        SdkImages.sdk_node_modules_present?(sdk_root),
+        Path.join(sdk_root, "node_modules"),
+        true
+      ),
+      component(
+        :pebble_arm_gcc,
+        "Pebble ARM GCC",
+        File.exists?(
+          Path.join(sdk_toolchain_root, "toolchain/arm-none-eabi/bin/arm-none-eabi-gcc")
+        ),
+        Path.join(sdk_toolchain_root, "toolchain/arm-none-eabi/bin/arm-none-eabi-gcc"),
+        true
+      ),
       qemu_component(qemu_bin()),
       command_component(:pypkjs, "pypkjs bridge", pypkjs_bin(), true),
       component(
@@ -149,7 +174,7 @@ defmodule Ide.Emulator.Session do
       |> Enum.flat_map(&install_steps_for_component(&1, platform))
       |> Enum.uniq_by(& &1.name)
 
-    results = Enum.map(steps, &run_install_step/1)
+    results = run_install_steps(steps)
     after_status = runtime_status(platform)
 
     {:ok,
@@ -963,15 +988,27 @@ defmodule Ide.Emulator.Session do
       _ ->
         home = System.user_home!()
 
-        [
-          Path.expand("Library/Application Support/Pebble SDK/SDKs/current", home),
-          Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.169", home),
-          Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.148", home),
-          Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.77", home),
-          Path.expand(".pebble-sdk/SDKs/current", home),
-          Path.expand(".pebble-sdk/SDKs/4.9.169", home),
-          Path.expand(".pebble-sdk/SDKs/4.9.148", home)
-        ]
+        sdk_roots_for_os(home)
+    end
+  end
+
+  defp sdk_roots_for_os(home) do
+    linux_roots = [
+      Path.expand(".pebble-sdk/SDKs/current", home),
+      Path.expand(".pebble-sdk/SDKs/4.9.169", home),
+      Path.expand(".pebble-sdk/SDKs/4.9.148", home)
+    ]
+
+    mac_roots = [
+      Path.expand("Library/Application Support/Pebble SDK/SDKs/current", home),
+      Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.169", home),
+      Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.148", home),
+      Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.77", home)
+    ]
+
+    case :os.type() do
+      {:unix, :darwin} -> mac_roots ++ linux_roots
+      _ -> linux_roots ++ mac_roots
     end
   end
 
@@ -1068,6 +1105,9 @@ defmodule Ide.Emulator.Session do
       String.contains?(output, "Library not loaded") ->
         "#{path} is not runnable: #{single_line(output)}"
 
+      library = missing_linux_shared_library(output) ->
+        linux_shared_library_detail(path, library)
+
       output != "" ->
         "#{path} exited with #{exit_code}: #{single_line(output)}"
 
@@ -1083,23 +1123,69 @@ defmodule Ide.Emulator.Session do
     |> Enum.join(" ")
   end
 
+  defp missing_linux_shared_library(output) do
+    case Regex.run(~r/error while loading shared libraries: ([^:]+):/, output) do
+      [_match, library] -> library
+      _ -> nil
+    end
+  end
+
+  defp linux_shared_library_detail(path, "libsndio.so.7") do
+    "#{path} is not runnable: missing Linux shared library libsndio.so.7. " <>
+      "Debian/Ubuntu: install libsndio7.0. " <>
+      "Fedora: sndio is not currently in the standard Fedora repositories; install a compatible sndio package from a trusted source or build sndio from source, then recheck."
+  end
+
+  defp linux_shared_library_detail(path, library) do
+    "#{path} is not runnable: missing Linux shared library #{library}. " <>
+      "Install the OS package that provides #{library}, then recheck."
+  end
+
   defp install_steps_for_component(id, platform)
        when id in [:qemu, :qemu_micro_flash, :qemu_spi_flash] do
     [
+      %{name: :pebble_tool, fun: &install_pebble_tool/0},
       %{name: :pebble_sdk, fun: fn -> install_pebble_sdk() end},
       %{name: :qemu_images, fun: fn -> install_qemu_images(platform) end}
     ]
   end
 
   defp install_steps_for_component(:pypkjs, _platform) do
-    [%{name: :pypkjs, fun: &install_pypkjs/0}]
+    [%{name: :pebble_tool, fun: &install_pebble_tool/0}]
   end
 
   defp install_steps_for_component(:pebble_cli, _platform) do
-    [%{name: :pebble_tool, fun: &install_pypkjs/0}]
+    [%{name: :pebble_tool, fun: &install_pebble_tool/0}]
+  end
+
+  defp install_steps_for_component(:pebble_sdk_python_env, _platform) do
+    [%{name: :pebble_sdk, fun: fn -> install_pebble_sdk() end}]
+  end
+
+  defp install_steps_for_component(:pebble_sdk_node_modules, _platform) do
+    [%{name: :pebble_sdk, fun: fn -> install_pebble_sdk() end}]
+  end
+
+  defp install_steps_for_component(:pebble_arm_gcc, _platform) do
+    [
+      %{name: :pebble_tool, fun: &install_pebble_tool/0},
+      %{name: :pebble_sdk, fun: fn -> install_pebble_sdk() end}
+    ]
   end
 
   defp install_steps_for_component(_id, _platform), do: []
+
+  defp run_install_steps(steps) do
+    Enum.reduce_while(steps, [], fn step, results ->
+      result = run_install_step(step)
+      results = results ++ [result]
+
+      case result.status do
+        :ok -> {:cont, results}
+        :error -> {:halt, results}
+      end
+    end)
+  end
 
   defp run_install_step(%{name: name, fun: fun}) do
     case fun.() do
@@ -1112,13 +1198,39 @@ defmodule Ide.Emulator.Session do
 
   defp install_pebble_sdk do
     version = config(:sdk_core_version, "4.9.169")
+    sdk_root = sdk_version_root(version)
+    preferred_root = preferred_sdk_root()
 
-    with {:ok, pebble_bin} <- pebble_bin(),
-         {:ok, install_output} <- run_command(pebble_bin, ["sdk", "install", version]),
-         {:ok, activate_output} <- run_command(pebble_bin, ["sdk", "activate", version]) do
-      {:ok, String.trim(install_output <> "\n" <> activate_output)}
-    else
+    opts =
+      [
+        sdk_version: version,
+        python: pebble_tool_python()
+      ]
+      |> maybe_put_metadata_url(config(:sdk_core_metadata_url, nil))
+      |> maybe_put_archive_path(config(:sdk_core_archive_path, nil))
+      |> maybe_put_toolchain_archive_path(config(:sdk_toolchain_archive_path, nil))
+
+    case ensure_sdk_roots_with_toolchain([sdk_root, preferred_root], opts) do
+      :ok -> {:ok, "Pebble SDK #{version} is available in #{sdk_root}."}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_sdk_roots_with_toolchain(roots, opts) do
+    roots
+    |> Enum.uniq()
+    |> Enum.reduce_while(:ok, fn root, :ok ->
+      case ensure_sdk_with_toolchain(root, opts) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp ensure_sdk_with_toolchain(sdk_root, opts) do
+    with :ok <- SdkImages.ensure_sdk_core(sdk_root, opts),
+         :ok <- SdkImages.ensure_toolchain(sdk_root, opts) do
+      :ok
     end
   end
 
@@ -1131,6 +1243,7 @@ defmodule Ide.Emulator.Session do
         sdk_version: config(:sdk_core_version, "4.9.169")
       ]
       |> maybe_put_metadata_url(config(:sdk_core_metadata_url, nil))
+      |> maybe_put_archive_path(config(:sdk_core_archive_path, nil))
 
     case SdkImages.ensure_platform_images(platform, opts) do
       :ok -> {:ok, "QEMU images are available in #{Path.join(image_root, platform)}."}
@@ -1138,16 +1251,98 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  defp install_pypkjs do
+  defp install_pebble_tool do
     cond do
       uv = System.find_executable("uv") ->
-        run_command(uv, ["tool", "install", "pebble-tool"])
+        install_pebble_tool_with_uv(uv)
 
       pipx = System.find_executable("pipx") ->
-        run_command(pipx, ["install", "pebble-tool"])
+        case pebble_tool_python_bin() do
+          {:ok, python} ->
+            run_command(pipx, ["install", "--force", "--python", python, "pebble-tool"])
+
+          {:error, reason} ->
+            {:error, reason}
+        end
 
       true ->
         {:error, :uv_or_pipx_not_found}
+    end
+  end
+
+  defp install_pebble_tool_with_uv(uv) do
+    tool_args = ["tool", "install", "--force", "--python", pebble_tool_python(), "pebble-tool"]
+
+    case run_command(uv, tool_args) do
+      {:ok, output} ->
+        {:ok, output}
+
+      {:error, %{output: output} = reason} ->
+        if uv_python_missing?(output) do
+          install_uv_python_and_retry_tool(uv, tool_args)
+        else
+          {:error, reason}
+        end
+    end
+  end
+
+  defp install_uv_python_and_retry_tool(uv, tool_args) do
+    with {:ok, python_output} <- run_command(uv, ["python", "install", pebble_tool_python()]),
+         {:ok, tool_output} <- run_command(uv, tool_args) do
+      {:ok, String.trim(python_output <> "\n" <> tool_output)}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp uv_python_missing?(output) when is_binary(output) do
+    String.contains?(output, "No interpreter found for Python") and
+      String.contains?(output, "uv python install")
+  end
+
+  defp uv_python_missing?(_output), do: false
+
+  defp pebble_tool_python do
+    case config(:pebble_tool_python, "3.13") do
+      python when is_binary(python) and python != "" -> python
+      _ -> "3.13"
+    end
+  end
+
+  defp pebble_tool_python_bin do
+    pebble_tool_python_candidates()
+    |> Enum.find_value(fn candidate ->
+      resolve_python_candidate(candidate)
+    end)
+    |> case do
+      {:ok, path} -> {:ok, path}
+      nil -> {:error, {:compatible_python_not_found, pebble_tool_python_candidates()}}
+    end
+  end
+
+  defp resolve_python_candidate("/" <> _ = candidate) do
+    if executable_file?(candidate), do: {:ok, candidate}
+  end
+
+  defp resolve_python_candidate(candidate) do
+    case System.find_executable(candidate) do
+      nil -> nil
+      path -> {:ok, path}
+    end
+  end
+
+  defp pebble_tool_python_candidates do
+    configured = pebble_tool_python()
+
+    cond do
+      String.starts_with?(configured, "/") ->
+        [configured]
+
+      String.starts_with?(configured, "python") ->
+        [configured]
+
+      true ->
+        ["python#{configured}", configured]
     end
   end
 
@@ -1197,6 +1392,7 @@ defmodule Ide.Emulator.Session do
             sdk_version: config(:sdk_core_version, "4.9.169")
           ]
           |> maybe_put_metadata_url(config(:sdk_core_metadata_url, nil))
+          |> maybe_put_archive_path(config(:sdk_core_archive_path, nil))
 
         SdkImages.ensure_platform_images(platform, opts)
     end
@@ -1206,6 +1402,16 @@ defmodule Ide.Emulator.Session do
     do: Keyword.put(opts, :metadata_url, url)
 
   defp maybe_put_metadata_url(opts, _url), do: opts
+
+  defp maybe_put_archive_path(opts, path) when is_binary(path) and path != "",
+    do: Keyword.put(opts, :archive_path, path)
+
+  defp maybe_put_archive_path(opts, _path), do: opts
+
+  defp maybe_put_toolchain_archive_path(opts, path) when is_binary(path) and path != "",
+    do: Keyword.put(opts, :toolchain_archive_path, path)
+
+  defp maybe_put_toolchain_archive_path(opts, _path), do: opts
 
   defp install_opts do
     [
@@ -1252,6 +1458,33 @@ defmodule Ide.Emulator.Session do
           root when is_binary(root) -> root
           nil -> ""
         end
+    end
+  end
+
+  defp preferred_sdk_root do
+    case config(:sdk_install_root, nil) do
+      root when is_binary(root) and root != "" ->
+        root
+
+      _ ->
+        sdk_roots()
+        |> List.first()
+        |> case do
+          root when is_binary(root) -> root
+          nil -> Path.expand(".pebble-sdk/SDKs/current", System.user_home!())
+        end
+    end
+  end
+
+  defp sdk_version_root(version) do
+    case config(:sdk_install_root, nil) do
+      root when is_binary(root) and root != "" ->
+        root
+
+      _ ->
+        preferred_sdk_root()
+        |> Path.dirname()
+        |> Path.join(version)
     end
   end
 
