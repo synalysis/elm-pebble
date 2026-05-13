@@ -30,9 +30,18 @@ defmodule Elmc.CLI do
   defp run_check(project_dir) do
     case Elmc.check(project_dir) do
       {:ok, project} ->
-        IO.puts("check: ok")
-        IO.puts("modules: #{length(project.modules)}")
-        print_warnings(project.diagnostics)
+        if error_diagnostics?(project.diagnostics) do
+          IO.puts(:stderr, "check: failed")
+          IO.puts(:stderr, "modules: #{length(project.modules)}")
+
+          project.diagnostics
+          |> print_warnings()
+          |> halt_on_error_diagnostics()
+        else
+          IO.puts("check: ok")
+          IO.puts("modules: #{length(project.modules)}")
+          print_warnings(project.diagnostics)
+        end
 
       {:error, error} ->
         IO.puts(:stderr, "check: failed")
@@ -45,9 +54,20 @@ defmodule Elmc.CLI do
   defp run_compile(project_dir, out_dir, strip_dead_code) do
     case Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: strip_dead_code}) do
       {:ok, result} ->
-        IO.puts("compile: ok")
-        IO.puts("output: #{out_dir}")
-        print_warnings(compile_warnings(result))
+        warnings = compile_warnings(result)
+
+        if error_diagnostics?(warnings) do
+          IO.puts(:stderr, "compile: failed")
+          IO.puts(:stderr, "output: #{out_dir}")
+
+          warnings
+          |> print_warnings()
+          |> halt_on_error_diagnostics()
+        else
+          IO.puts("compile: ok")
+          IO.puts("output: #{out_dir}")
+          print_warnings(warnings)
+        end
 
       {:error, error} ->
         IO.puts(:stderr, "compile: failed")
@@ -113,8 +133,13 @@ defmodule Elmc.CLI do
         %{
           "type" => "lowerer-warning",
           "source" => Map.get(warning, :source, "lowerer"),
+          "code" => Map.get(warning, :code),
           "module" => Map.get(warning, :module),
           "function" => Map.get(warning, :function),
+          "line" => Map.get(warning, :line),
+          "constructor" => Map.get(warning, :constructor),
+          "expected_kind" => Map.get(warning, :expected_kind),
+          "has_arg_pattern" => Map.get(warning, :has_arg_pattern),
           "message" => Map.get(warning, :message, inspect(warning)),
           "severity" => Map.get(warning, :severity, "warning")
         }
@@ -123,7 +148,7 @@ defmodule Elmc.CLI do
     dedupe_warnings(project_warnings ++ ir_warnings)
   end
 
-  @spec print_warnings([map()]) :: :ok
+  @spec print_warnings([map()]) :: [map()]
   defp print_warnings(warnings) when is_list(warnings) do
     rendered = DiagnosticFormatter.format_warnings(warnings)
 
@@ -134,7 +159,33 @@ defmodule Elmc.CLI do
     if warnings != [] and warnings_json_enabled?() do
       IO.puts(:stderr, "ELMC_WARNINGS_JSON:" <> Jason.encode!(warnings))
     end
+
+    warnings
   end
+
+  @spec halt_on_error_diagnostics([map()]) :: :ok | no_return()
+  defp halt_on_error_diagnostics(diagnostics) when is_list(diagnostics) do
+    if error_diagnostics?(diagnostics) do
+      System.halt(1)
+    end
+
+    :ok
+  end
+
+  @spec error_diagnostics?([map()]) :: boolean()
+  defp error_diagnostics?(diagnostics) when is_list(diagnostics) do
+    Enum.any?(diagnostics, &(diagnostic_severity(&1) == "error"))
+  end
+
+  @spec diagnostic_severity(term()) :: String.t()
+  defp diagnostic_severity(diagnostic) when is_map(diagnostic) do
+    diagnostic
+    |> Map.get("severity", Map.get(diagnostic, :severity, "warning"))
+    |> to_string()
+    |> String.downcase()
+  end
+
+  defp diagnostic_severity(_diagnostic), do: "warning"
 
   @spec dedupe_warnings([map()]) :: [map()]
   defp dedupe_warnings(warnings) do

@@ -6,6 +6,7 @@ import Pebble.Button as PebbleButton
 import Pebble.Cmd as PebbleCmd
 import Pebble.Events as PebbleEvents
 import Pebble.Frame as PebbleFrame
+import Pebble.Health as PebbleHealth
 import Pebble.Light as PebbleLight
 import Pebble.Log as PebbleLog
 import Pebble.Platform as PebblePlatform
@@ -55,6 +56,11 @@ type Msg
     | GotFirmwareVersion PebbleWatchInfo.FirmwareVersion
     | GotBatteryLevel Int
     | GotConnectionStatus Bool
+    | GotHealthValue Int
+    | GotHealthSumToday Int
+    | GotHealthSum Int
+    | GotHealthAccessible Bool
+    | HealthEvent PebbleHealth.Event
 
 
 coveredSurfaceFunctions : List String
@@ -72,9 +78,15 @@ coveredSurfaceFunctions =
     , "Pebble.Events.batch"
     , "Pebble.Events.onHourChange"
     , "Pebble.Events.onMinuteChange"
+    , "Pebble.Events.onSecondChange"
     , "Pebble.Events.onTick"
     , "Pebble.Frame.atFps"
     , "Pebble.Frame.every"
+    , "Pebble.Health.accessible"
+    , "Pebble.Health.onEvent"
+    , "Pebble.Health.sum"
+    , "Pebble.Health.sumToday"
+    , "Pebble.Health.value"
     , "Pebble.Light.disable"
     , "Pebble.Light.enable"
     , "Pebble.Light.interaction"
@@ -143,6 +155,10 @@ init launchContext =
         , PebbleWatchInfo.getFirmwareVersion GotFirmwareVersion
         , PebbleSystem.batteryLevel GotBatteryLevel
         , PebbleSystem.connectionStatus GotConnectionStatus
+        , PebbleHealth.value PebbleHealth.StepCount GotHealthValue
+        , PebbleHealth.sumToday PebbleHealth.StepCount GotHealthSumToday
+        , PebbleHealth.sum PebbleHealth.WalkedDistanceMeters 0 3600 GotHealthSum
+        , PebbleHealth.accessible PebbleHealth.ActiveSeconds 0 3600 GotHealthAccessible
         , PebbleLight.interaction
         , PebbleLight.disable
         , PebbleLight.enable
@@ -246,6 +262,29 @@ update msg model =
             in
             ( model, Cmd.none )
 
+        GotHealthValue value ->
+            ( { model | ticks = value }, Cmd.none )
+
+        GotHealthSumToday value ->
+            ( { model | ticks = value }, Cmd.none )
+
+        GotHealthSum value ->
+            ( { model | ticks = value }, Cmd.none )
+
+        GotHealthAccessible value ->
+            let
+                _ =
+                    value
+            in
+            ( model, Cmd.none )
+
+        HealthEvent event ->
+            let
+                _ =
+                    event
+            in
+            ( model, Cmd.none )
+
         GotClockStyle24h _ ->
             ( model, Cmd.none )
 
@@ -269,6 +308,7 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     PebbleEvents.batch
         [ PebbleEvents.onTick Tick
+        , PebbleEvents.onSecondChange Tick
         , PebbleButton.onPress PebbleButton.Up ButtonUp
         , PebbleButton.onPress PebbleButton.Select ButtonSelect
         , PebbleButton.onPress PebbleButton.Down ButtonDown
@@ -286,6 +326,7 @@ subscriptions _ =
         , PebbleButton.on PebbleButton.Up PebbleButton.Released UpReleased
         , PebbleButton.onRelease PebbleButton.Up UpReleased
         , PebbleAccel.onData PebbleAccel.defaultConfig AccelData
+        , PebbleHealth.onEvent HealthEvent
         ]
 
 

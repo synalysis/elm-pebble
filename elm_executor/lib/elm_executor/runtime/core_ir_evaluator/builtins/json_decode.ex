@@ -8,6 +8,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.JsonDecode do
   def eval("string", [], ops), do: ops.kernel.("decodestring", [])
   def eval("value", [], ops), do: ops.kernel.("decodevalue", [])
   def eval("field", values, ops), do: ops.kernel.("decodefield", values)
+  def eval("at", [path, decoder], _ops) when is_list(path), do: {:ok, at_decoder(path, decoder)}
   def eval("index", values, ops), do: ops.kernel.("decodeindex", values)
   def eval("list", values, ops), do: ops.kernel.("decodelist", values)
   def eval("array", values, ops), do: ops.kernel.("decodearray", values)
@@ -31,4 +32,15 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.JsonDecode do
 
   def eval("decodevalue", [decoder, value], ops), do: ops.kernel.("run", [decoder, value])
   def eval(_function_name, _values, _ops), do: :no_builtin
+
+  @spec at_decoder([term()], term()) :: term()
+  defp at_decoder(path, decoder) do
+    path
+    |> Enum.reverse()
+    |> Enum.reduce(decoder, fn
+      field, acc when is_binary(field) -> {:json_decoder, {:field, field, acc}}
+      index, acc when is_integer(index) -> {:json_decoder, {:index, index, acc}}
+      _segment, acc -> acc
+    end)
+  end
 end

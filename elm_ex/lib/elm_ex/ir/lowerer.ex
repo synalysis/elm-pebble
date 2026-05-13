@@ -277,7 +277,8 @@ defmodule ElmEx.IR.Lowerer do
           project.modules,
           global_payload_arity_lookup,
           global_qualified_payload_arity_lookup
-        )
+        ) ++
+        collect_preferences_schema_field_order_diagnostics(project.modules)
 
     {:ok, %IR{modules: modules, diagnostics: diagnostics}}
   end
@@ -321,11 +322,12 @@ defmodule ElmEx.IR.Lowerer do
 
   defp lower_declaration(%{kind: :type_alias, name: name} = decl, _definition) do
     fields = Map.get(decl, :fields) || []
+    field_types = Map.get(decl, :field_types) || %{}
 
     %Declaration{
       kind: :type_alias,
       name: name,
-      expr: type_alias_expr(fields),
+      expr: type_alias_expr(fields, field_types),
       span: Map.get(decl, :span),
       ownership: [:retain_on_assign, :release_on_scope_exit]
     }
@@ -340,14 +342,21 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  defp type_alias_expr(fields) when is_list(fields) and fields != [] do
+  defp type_alias_expr(fields, field_types) when is_list(fields) and fields != [] do
     %{
       op: :record_alias,
-      fields: Enum.map(fields, &to_string/1)
+      fields: Enum.map(fields, &to_string/1),
+      field_types: normalize_record_alias_field_types(field_types)
     }
   end
 
-  defp type_alias_expr(_fields), do: nil
+  defp type_alias_expr(_fields, _field_types), do: nil
+
+  defp normalize_record_alias_field_types(field_types) when is_map(field_types) do
+    Map.new(field_types, fn {field, type} -> {to_string(field), to_string(type)} end)
+  end
+
+  defp normalize_record_alias_field_types(_field_types), do: %{}
 
   @spec ownership_for_type(String.t() | nil) :: [atom()]
   defp ownership_for_type(type) do
@@ -1073,6 +1082,217 @@ defmodule ElmEx.IR.Lowerer do
       end)
     end)
   end
+
+  @spec collect_preferences_schema_field_order_diagnostics([map()]) :: [diagnostic()]
+  defp collect_preferences_schema_field_order_diagnostics(frontend_modules)
+       when is_list(frontend_modules) do
+    Enum.flat_map(frontend_modules, fn frontend_module ->
+      module_name = Map.get(frontend_module, :name)
+
+      alias_fields =
+        frontend_module
+        |> Map.get(:declarations, [])
+        |> Enum.filter(&(&1.kind == :type_alias))
+        |> Map.new(fn alias_decl ->
+          {Map.get(alias_decl, :name), Map.get(alias_decl, :fields) || []}
+        end)
+
+      frontend_module
+      |> Map.get(:declarations, [])
+      |> Enum.filter(&(&1.kind == :function_definition and is_map(&1.expr)))
+      |> Enum.flat_map(fn decl ->
+        line =
+          case Map.get(decl, :span) do
+            %{start_line: start_line} when is_integer(start_line) -> start_line
+            _ -> nil
+          end
+
+        expr_preferences_schema_field_order_diagnostics(
+          decl.expr,
+          alias_fields,
+          module_name,
+          decl.name,
+          line
+        )
+      end)
+    end)
+  end
+
+  @spec expr_preferences_schema_field_order_diagnostics(
+          expr(),
+          map(),
+          term() | nil,
+          term() | nil,
+          integer() | nil
+        ) :: [diagnostic()]
+  defp expr_preferences_schema_field_order_diagnostics(
+         expr,
+         alias_fields,
+         module_name,
+         function_name,
+         line
+       )
+       when is_map(expr) do
+    case preferences_schema_field_order(expr) do
+      {:ok, alias_name, field_order} ->
+        expected_order = Map.get(alias_fields, alias_name)
+
+        if is_list(expected_order) and expected_order != [] and expected_order != field_order do
+          [
+            %{
+              severity: "error",
+              source: "lowerer/preferences",
+              code: "preferences_schema_field_order",
+              module: module_name,
+              function: function_name,
+              line: line,
+              constructor: alias_name,
+              expected_fields: expected_order,
+              actual_fields: field_order,
+              message:
+                "Preference schema for #{alias_name} adds fields in #{inspect(field_order)}, but the record constructor expects #{inspect(expected_order)}. Fields must be added in constructor order."
+            }
+          ]
+        else
+          []
+        end
+
+      _ ->
+        nested_preferences_schema_field_order_diagnostics(
+          expr,
+          alias_fields,
+          module_name,
+          function_name,
+          line
+        )
+    end
+  end
+
+  defp expr_preferences_schema_field_order_diagnostics(
+         _expr,
+         _alias_fields,
+         _module_name,
+         _function_name,
+         _line
+       ),
+       do: []
+
+  @spec nested_preferences_schema_field_order_diagnostics(
+          map(),
+          map(),
+          term() | nil,
+          term() | nil,
+          integer() | nil
+        ) :: [diagnostic()]
+  defp nested_preferences_schema_field_order_diagnostics(
+         expr,
+         alias_fields,
+         module_name,
+         function_name,
+         line
+       ) do
+    expr
+    |> Map.values()
+    |> Enum.flat_map(fn value ->
+      cond do
+        is_map(value) ->
+          expr_preferences_schema_field_order_diagnostics(
+            value,
+            alias_fields,
+            module_name,
+            function_name,
+            line
+          )
+
+        is_list(value) ->
+          Enum.flat_map(value, fn item ->
+            if is_map(item) do
+              expr_preferences_schema_field_order_diagnostics(
+                item,
+                alias_fields,
+                module_name,
+                function_name,
+                line
+              )
+            else
+              []
+            end
+          end)
+
+        true ->
+          []
+      end
+    end)
+  end
+
+  @spec preferences_schema_field_order(expr()) ::
+          {:ok, String.t(), [String.t()]} | :error
+  defp preferences_schema_field_order(%{op: :qualified_call, target: target, args: args})
+       when is_binary(target) and is_list(args) do
+    cond do
+      preferences_call?(target, "schema") ->
+        case args do
+          [
+            _title,
+            %{op: :constructor_call, target: constructor_target}
+          ]
+          when is_binary(constructor_target) ->
+            {:ok, constructor_target |> String.split(".") |> List.last(), []}
+
+          _ ->
+            :error
+        end
+
+      preferences_call?(target, "section") ->
+        case args do
+          [_title, %{op: :lambda, body: body}, previous] ->
+            with {:ok, alias_name, previous_fields} <- preferences_schema_field_order(previous),
+                 {:ok, section_fields} <- preferences_section_fields(body) do
+              {:ok, alias_name, previous_fields ++ section_fields}
+            end
+
+          _ ->
+            :error
+        end
+
+      true ->
+        :error
+    end
+  end
+
+  defp preferences_schema_field_order(_expr), do: :error
+
+  @spec preferences_section_fields(expr()) :: {:ok, [String.t()]} | :error
+  defp preferences_section_fields(%{op: :qualified_call, target: target, args: args})
+       when is_binary(target) and is_list(args) do
+    if preferences_call?(target, "field") do
+      case args do
+        [%{op: :string_literal, value: field_id}, _control, previous]
+        when is_binary(field_id) ->
+          with {:ok, previous_fields} <- preferences_section_fields(previous) do
+            {:ok, previous_fields ++ [field_id]}
+          end
+
+        _ ->
+          :error
+      end
+    else
+      :error
+    end
+  end
+
+  defp preferences_section_fields(%{op: :var}), do: {:ok, []}
+  defp preferences_section_fields(_expr), do: :error
+
+  @spec preferences_call?(term(), String.t()) :: boolean()
+  defp preferences_call?(target, function_name) when is_binary(target) do
+    target in [
+      "Preferences.#{function_name}",
+      "Pebble.Companion.Preferences.#{function_name}"
+    ]
+  end
+
+  defp preferences_call?(_target, _function_name), do: false
 
   @spec expr_constructor_call_arity_diagnostics(
           expr(),

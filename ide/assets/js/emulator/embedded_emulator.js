@@ -67,6 +67,7 @@ export class EmbeddedEmulatorHost {
     this.phoneOpenedAt = 0
     this.launching = false
     this.installing = false
+    this.appInstalled = false
     this.stopping = false
     this.pendingPypkjsInstall = null
     this.currentStatus = null
@@ -184,6 +185,7 @@ export class EmbeddedEmulatorHost {
       this.clearLog()
       this.hideConfigPage()
       this.sessionEnded = false
+      this.appInstalled = false
       this.setStatus("Launching embedded emulator...")
       const payload = {
         slug: this.el.dataset.projectSlug,
@@ -192,7 +194,6 @@ export class EmbeddedEmulatorHost {
       this.session = await postJSON("/api/emulator/launch", payload)
       this.resizeCanvas(this.session.screen)
       await this.connectVnc()
-      this.connectPhone()
       this.startPing()
       this.setStatus(this.session.backend_enabled ? "Embedded emulator connected" : "Embedded emulator backend disabled; launch API is in dry-run mode")
     } catch (error) {
@@ -278,7 +279,6 @@ export class EmbeddedEmulatorHost {
     this.phoneSocket.addEventListener("open", () => {
       this.phoneOpenedAt = Date.now()
       this.appendLog("phone websocket open")
-      window.setTimeout(() => this.enableAppLogs(), 250)
     })
     this.phoneSocket.addEventListener("close", () => {
       this.appendLog("phone websocket closed")
@@ -288,29 +288,74 @@ export class EmbeddedEmulatorHost {
 
   async install() {
     if (this.installing || !this.session) return
+    const installSessionId = this.session.id
     this.installing = true
     this.updateControlButtons()
 
     try {
-      if (this.session?.has_phone_companion && this.phoneSocket?.readyState === WebSocket.OPEN && this.session?.artifact_path) {
-        await this.installPbwViaPhoneBridge()
-        return
+      await this.installPbwViaNativeInstaller(installSessionId)
+      if (this.session?.id !== installSessionId) return
+      if (this.session?.has_phone_companion && this.session?.backend_enabled && this.session?.artifact_path) {
+        try {
+          if (this.phoneSocket?.readyState !== WebSocket.OPEN) {
+            this.connectPhone()
+            await this.waitForPhoneBridge()
+          }
+          if (this.session?.id !== installSessionId) return
+          await this.installPbwViaPhoneBridge()
+        } catch (error) {
+          if (this.session?.id === installSessionId) {
+            this.appendLog(`phone bridge companion cache refresh failed: ${error.message}`)
+          }
+        }
       }
-      if (!this.session?.install_path) {
-        this.setStatus("Embedded emulator install API is unavailable.")
-        return
-      }
-      this.setStatus("Installing PBW on embedded emulator via fallback installer...")
-      const response = await postJSON(this.session.install_path)
-      const parts = response.result?.parts?.map(part => part.kind).join(", ")
-      this.setStatus(parts ? `PBW installed on embedded emulator (${parts})` : "PBW installed on embedded emulator")
-      this.appendLog("native PBW install complete")
     } catch (error) {
-      this.setStatus(`PBW install failed: ${error.message}`)
+      if (this.session?.id === installSessionId && !this.stopping) {
+        this.setStatus(`PBW install failed: ${error.message}`)
+      }
     } finally {
-      this.installing = false
+      if (this.session?.id === installSessionId) {
+        this.installing = false
+      }
       this.updateControlButtons()
     }
+  }
+
+  async installPbwViaNativeInstaller(installSessionId = this.session?.id) {
+    if (!this.session?.install_path) {
+      this.setStatus("Embedded emulator install API is unavailable.")
+      return
+    }
+
+    this.setStatus("Installing PBW on embedded emulator via fallback installer...")
+    const response = await postJSON(this.session.install_path)
+    if (this.session?.id !== installSessionId) return
+    const parts = response.result?.parts?.map(part => part.kind).join(", ")
+    this.appInstalled = true
+    this.setStatus(parts ? `PBW installed on embedded emulator (${parts})` : "PBW installed on embedded emulator")
+    this.appendLog("native PBW install complete")
+    this.enableAppLogs()
+  }
+
+  waitForPhoneBridge(timeoutMs = 10_000) {
+    if (this.phoneSocket?.readyState === WebSocket.OPEN) return Promise.resolve()
+
+    return new Promise((resolve, reject) => {
+      const startedAt = Date.now()
+      const check = () => {
+        if (!this.session) {
+          reject(new Error("Emulator session ended before phone bridge opened"))
+        } else if (this.phoneSocket?.readyState === WebSocket.OPEN) {
+          resolve()
+        } else if (Date.now() - startedAt >= timeoutMs) {
+          reject(new Error("Timed out waiting for phone bridge"))
+        } else {
+          window.setTimeout(check, 100)
+        }
+      }
+
+      check()
+    })
   }
 
   async loadCompanionPreferences() {
@@ -345,16 +390,16 @@ export class EmbeddedEmulatorHost {
       case 0x05:
         if (this.pendingPypkjsInstall) {
           this.finishPypkjsInstall(data[data.length - 1] === 0)
-          this.setStatus(data[data.length - 1] === 0 ? "PBW installed on embedded emulator" : "PBW install failed")
+          this.setStatus(data[data.length - 1] === 0 ? "Phone companion refreshed" : "Phone companion refresh failed")
         }
         break
       case 0x08:
         this.appendLog(data[1] === 0xff ? "phone bridge connected to watch" : "phone bridge disconnected")
-        if (data[1] === 0xff) this.enableAppLogs()
+        if (data[1] === 0xff && this.appInstalled) this.enableAppLogs()
         break
       case 0x09:
         this.appendLog(data[1] === 0 ? "phone bridge authenticated" : "phone bridge authentication failed")
-        if (data[1] === 0) this.enableAppLogs()
+        if (data[1] === 0 && this.appInstalled) this.enableAppLogs()
         break
       case 0x0a:
         this.handleConfigFrame(data)
@@ -417,7 +462,7 @@ export class EmbeddedEmulatorHost {
       return
     }
 
-    this.setStatus("Installing PBW on embedded emulator via phone bridge...")
+    this.setStatus("Refreshing phone companion from PBW...")
     const response = await fetch(this.session.artifact_path)
     if (!response.ok) throw new Error(`Could not fetch PBW for phone bridge: ${response.statusText}`)
 
@@ -428,9 +473,9 @@ export class EmbeddedEmulatorHost {
 
     const result = this.waitForPypkjsInstall()
     this.phoneSocket.send(payload)
-    this.appendLog(`sent PBW to phone bridge installer (${pbw.length} bytes)`)
+    this.appendLog(`sent PBW to phone bridge companion cache (${pbw.length} bytes)`)
     await result
-    this.appendLog("phone bridge PBW install complete")
+    this.appendLog("phone bridge companion cache refresh complete")
   }
 
   waitForPypkjsInstall() {

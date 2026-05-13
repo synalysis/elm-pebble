@@ -43,6 +43,38 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert socket.assigns.debugger_companion_auto_fire == false
   end
 
+  test "debugger_agent_state_markdown includes sections and json fences" do
+    doc =
+      DebuggerSupport.debugger_agent_state_markdown(%{
+        format_version: "elm-pebble.debugger_state.v1",
+        project_name: "Demo",
+        project_slug: "demo",
+        timeline_mode: "mixed",
+        timeline_text: "#1 [watch] update Tick",
+        watch_model_json: "{\n  \"a\": 1\n}",
+        companion_model_json: "{\n  \"b\": 2\n}",
+        rendered_view_json: "{\n  \"root\": true\n}",
+        session_running: true,
+        session_event_count: 3,
+        debugger_cursor_seq: 1,
+        selected_timeline_seq: 9,
+        watch_profile_id: "basalt"
+      })
+
+    assert String.starts_with?(doc, "# IDE debugger state export")
+    assert doc =~ "## Meta"
+    assert doc =~ "## Timeline"
+    assert doc =~ "#1 [watch] update Tick"
+    assert doc =~ "## Watch model"
+    assert doc =~ "\"a\": 1"
+    assert doc =~ "## Companion model"
+    assert doc =~ "\"b\": 2"
+    assert doc =~ "## Rendered view"
+    assert doc =~ "\"root\": true"
+    assert doc =~ "**format**: `elm-pebble.debugger_state.v1`"
+    assert doc =~ "**session_event_count**: 3"
+  end
+
   test "snapshot_runtime_at_cursor returns nearest runtime snapshots at or before cursor" do
     events = [
       %{seq: 5, type: "debugger.tick", watch: nil, companion: nil, phone: nil},
@@ -363,6 +395,40 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
     assert DebuggerSupport.debugger_timeline_text(rows) ==
              "#2 [companion] update Sync {\"ok\":true}\n#1 [watch] init init"
+  end
+
+  test "subscription trigger modal support rejects opaque gateway payloads" do
+    state = %{
+      watch: %{
+        model: %{
+          "elm_introspect" => %{
+            "msg_constructor_arities" => %{
+              "FromPhone" => 1,
+              "SecondChanged" => 1,
+              "ButtonPressed" => 0
+            }
+          }
+        }
+      }
+    }
+
+    refute Debugger.subscription_trigger_injection_modal_supported?(state, %{
+             trigger: "Companion.Watch.onPhoneToWatch",
+             target: "watch",
+             message: "FromPhone"
+           })
+
+    assert Debugger.subscription_trigger_injection_modal_supported?(state, %{
+             trigger: "Pebble.Events.onSecondChange",
+             target: "watch",
+             message: "SecondChanged"
+           })
+
+    assert Debugger.subscription_trigger_injection_modal_supported?(state, %{
+             trigger: "Pebble.Button.onPress",
+             target: "watch",
+             message: "ButtonPressed"
+           })
   end
 
   test "copy_json exports debugger payloads as pretty JSON" do
@@ -817,7 +883,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
       model: %{
         "runtime_view_output" => [
           %{"kind" => "fill_rect", "x" => 1, "y" => 2, "w" => 3, "h" => 4, "fill" => 1},
-          %{"kind" => "text", "x" => 5, "y" => 6, "w" => 20, "h" => 12, "text" => "ok"}
+          %{
+            "kind" => "text",
+            "x" => 5,
+            "y" => 6,
+            "w" => 20,
+            "h" => 12,
+            "text" => "ok",
+            "source" => %{"call" => "Ui.text", "path" => "src/Main.elm", "line" => 512}
+          }
         ]
       }
     }
@@ -834,6 +908,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert rect.kind == :fill_rect
     assert text.kind == :text_label
     assert text.text == "ok"
+    assert text.source == %{"call" => "Ui.text", "path" => "src/Main.elm", "line" => 512}
   end
 
   test "debugger preview prefers evaluated runtime_view_output over tree fallback" do
@@ -1174,6 +1249,180 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
     assert rendered["type"] == "windowStack"
     refute rendered["type"] == "toUiNode"
+  end
+
+  test "rendered_tree derives runtime output tree instead of parser wrapper outline" do
+    runtime = %{
+      view_tree: %{
+        "type" => "toUiNode",
+        "qualified_target" => "Ui.toUiNode",
+        "children" => [%{"type" => "if", "children" => []}]
+      },
+      model: %{
+        "runtime_model" => %{"screenW" => 144, "screenH" => 168},
+        "runtime_view_output" => [
+          %{"kind" => "clear", "color" => 255},
+          %{
+            "kind" => "text",
+            "x" => 4,
+            "y" => 8,
+            "w" => 100,
+            "h" => 20,
+            "text" => "OK",
+            "source" => %{"call" => "Ui.text", "path" => "src/Main.elm", "line" => 512}
+          },
+          %{"kind" => "fill_rect", "x" => 1, "y" => 2, "w" => 3, "h" => 4, "fill" => 1},
+          %{
+            "kind" => "fill_circle",
+            "cx" => 72,
+            "cy" => 84,
+            "r" => 10,
+            "color" => 255,
+            "source" => %{"call" => "Ui.fillCircle", "path" => "src/Main.elm", "line" => 335}
+          }
+        ],
+        "elm_introspect" => %{
+          "view_tree" => %{
+            "type" => "toUiNode",
+            "qualified_target" => "Ui.toUiNode",
+            "children" => [%{"type" => "if", "children" => []}]
+          }
+        }
+      }
+    }
+
+    rendered = DebuggerSupport.rendered_tree(runtime)
+
+    assert rendered["type"] == "windowStack"
+    refute rendered["type"] == "toUiNode"
+
+    text_node =
+      get_in(rendered, [
+        "children",
+        Access.at(0),
+        "children",
+        Access.at(0),
+        "children",
+        Access.at(1)
+      ])
+
+    assert text_node["text"] == "OK"
+    assert text_node["source"] == %{"call" => "Ui.text", "path" => "src/Main.elm", "line" => 512}
+
+    circle_node =
+      get_in(rendered, [
+        "children",
+        Access.at(0),
+        "children",
+        Access.at(0),
+        "children",
+        Access.at(3)
+      ])
+
+    assert circle_node["type"] == "fillCircle"
+
+    assert circle_node["source"] == %{
+             "call" => "Ui.fillCircle",
+             "path" => "src/Main.elm",
+             "line" => 335
+           }
+  end
+
+  test "rendered_tree prefers runtime output with source over concrete runtime tree" do
+    runtime = %{
+      view_tree: %{
+        "type" => "group",
+        "children" => [
+          %{"type" => "text", "children" => [], "text" => "OK"}
+        ]
+      },
+      model: %{
+        "runtime_model" => %{"screenW" => 144, "screenH" => 168},
+        "runtime_view_output" => [
+          %{
+            "kind" => "text",
+            "x" => 4,
+            "y" => 8,
+            "w" => 100,
+            "h" => 20,
+            "text" => "OK",
+            "source" => %{"call" => "Ui.text", "path" => "src/Main.elm", "line" => 512}
+          }
+        ]
+      }
+    }
+
+    rendered = DebuggerSupport.rendered_tree(runtime)
+
+    assert rendered["type"] == "windowStack"
+
+    text_node =
+      get_in(rendered, [
+        "children",
+        Access.at(0),
+        "children",
+        Access.at(0),
+        "children",
+        Access.at(0)
+      ])
+
+    assert text_node["source"] == %{"call" => "Ui.text", "path" => "src/Main.elm", "line" => 512}
+  end
+
+  test "rendered_tree preserves runtime output groups and style context" do
+    runtime = %{
+      model: %{
+        "runtime_model" => %{"screenW" => 144, "screenH" => 168},
+        "runtime_view_output" => [
+          %{"kind" => "clear", "color" => 192},
+          %{"kind" => "push_context"},
+          %{"kind" => "text_color", "color" => 255},
+          %{
+            "kind" => "text",
+            "x" => 4,
+            "y" => 8,
+            "w" => 100,
+            "h" => 20,
+            "text" => "OK",
+            "source" => %{"call" => "Ui.text", "path" => "src/Main.elm", "line" => 512}
+          },
+          %{"kind" => "pop_context"},
+          %{"kind" => "line", "x1" => 0, "y1" => 0, "x2" => 10, "y2" => 10, "color" => 255}
+        ]
+      }
+    }
+
+    rendered = DebuggerSupport.rendered_tree(runtime)
+
+    canvas_children =
+      get_in(rendered, [
+        "children",
+        Access.at(0),
+        "children",
+        Access.at(0),
+        "children"
+      ])
+
+    assert [%{"type" => "clear"}, group, %{"type" => "line"}] = canvas_children
+    assert group["type"] == "group"
+    assert group["style"] == %{"text_color" => 255}
+    assert [%{"type" => "text", "text" => "OK"}] = group["children"]
+  end
+
+  test "rendered_tree does not expose parser expression outline as rendered output" do
+    runtime = %{
+      model: %{
+        "elm_introspect" => %{
+          "view_tree" => %{
+            "type" => "toUiNode",
+            "qualified_target" => "Ui.toUiNode",
+            "children" => [%{"type" => "if", "children" => []}]
+          }
+        }
+      }
+    }
+
+    assert DebuggerSupport.rendered_tree(runtime) == nil
   end
 
   test "rendered_tree repairs normalized lowered Pebble Ui tuple trees" do

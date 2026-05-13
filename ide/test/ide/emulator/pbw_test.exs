@@ -166,6 +166,53 @@ defmodule Ide.Emulator.PbwTest do
     File.rm_rf!(dir)
   end
 
+  test "prune_development_artifacts removes JavaScript source maps from artifact" do
+    dir =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-test-pbw-prune-development-artifacts-#{System.unique_integer([:positive])}"
+      )
+
+    pbw_path = Path.join(dir, "app.pbw")
+    File.mkdir_p!(dir)
+
+    js = """
+    console.log("ok");
+    //# sourceMappingURL=pebble-js-app.js.map
+    """
+
+    assert {:ok, _path} =
+             :zip.create(
+               String.to_charlist(pbw_path),
+               [
+                 {~c"appinfo.json",
+                  Jason.encode!(%{"uuid" => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"})},
+                 {~c"pebble-js-app.js", js},
+                 {~c"pebble-js-app.js.map", "{}"},
+                 {~c"basalt/manifest.json", Jason.encode!(@manifest)},
+                 {~c"basalt/pebble-app.bin", <<1, 2, 3, 4>>}
+               ],
+               []
+             )
+
+    assert {:ok, ^pbw_path} = PBW.prune_development_artifacts(pbw_path)
+    assert {:ok, entries} = :zip.extract(String.to_charlist(pbw_path), [:memory])
+
+    names = Enum.map(entries, fn {name, _data} -> List.to_string(name) end)
+    refute "pebble-js-app.js.map" in names
+
+    js_entry =
+      Enum.find_value(entries, fn
+        {~c"pebble-js-app.js", data} -> data
+        _ -> nil
+      end)
+
+    assert js_entry =~ ~S|console.log("ok");|
+    refute js_entry =~ "sourceMappingURL"
+
+    File.rm_rf!(dir)
+  end
+
   test "load rejects pbw when appinfo uuid differs from binary header uuid" do
     appinfo_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     binary_uuid = "3278ae24-9885-427f-90e7-791ac2450e78"

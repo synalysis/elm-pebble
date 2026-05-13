@@ -573,7 +573,7 @@ defmodule Ide.DebuggerTest do
     assert Map.get(p, :target) == "watch" || Map.get(p, "target") == "watch"
   end
 
-  test "protocol reload merges parser snapshot into companion model and view tree" do
+  test "phone reload merges parser snapshot into companion model and view tree" do
     slug = "sim-intro-proto-#{System.unique_integer([:positive])}"
 
     source = """
@@ -593,10 +593,10 @@ defmodule Ide.DebuggerTest do
 
     assert {:ok, st} =
              Debugger.reload(slug, %{
-               rel_path: "protocol/Types.elm",
+               rel_path: "phone/src/CompanionApp.elm",
                source: source,
-               reason: "proto_introspect",
-               source_root: "protocol"
+               reason: "phone_introspect",
+               source_root: "phone"
              })
 
     assert get_in(st, [:companion, :model, "elm_introspect", "module"]) == "ProtoSnap"
@@ -604,7 +604,7 @@ defmodule Ide.DebuggerTest do
     refute get_in(st, [:watch, :model, "elm_introspect"])
   end
 
-  test "phone reload merges parser snapshot into phone model and view tree" do
+  test "phone reload drives the visible companion surface" do
     slug = "sim-intro-phone-#{System.unique_integer([:positive])}"
 
     source = """
@@ -630,8 +630,8 @@ defmodule Ide.DebuggerTest do
                source_root: "phone"
              })
 
-    assert get_in(st, [:phone, :model, "elm_introspect", "module"]) == "PhoneSnap"
-    assert get_in(st, [:phone, :view_tree, "type"]) == "root"
+    assert get_in(st, [:companion, :model, "elm_introspect", "module"]) == "PhoneSnap"
+    assert get_in(st, [:companion, :view_tree, "type"]) == "root"
   end
 
   test "snapshot trims event list while preserving sequence" do
@@ -892,7 +892,7 @@ defmodule Ide.DebuggerTest do
                source_root: "protocol"
              })
 
-    assert st.seq == 8
+    assert st.seq == 6
     assert get_in(st.companion, [:view_tree, "label"]) == "phone"
     [status | _] = get_in(st.companion, [:view_tree, "children"])
     assert String.starts_with?(status["label"], "protocol:")
@@ -1831,7 +1831,7 @@ defmodule Ide.DebuggerTest do
            end)
 
     assert {"watch", "ConnectionStatusChanged True", "init_device_data"} in timeline
-    assert {"protocol", "RequestWeather CurrentLocation", "protocol_rx"} in timeline
+    assert {"phone", "RequestWeather CurrentLocation", "protocol_rx"} in timeline
 
     runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
     assert runtime_model["batteryLevel"] == %{"ctor" => "Just", "args" => [88]}
@@ -1856,7 +1856,7 @@ defmodule Ide.DebuggerTest do
         rel_path: "src/CompanionApp.elm",
         source: companion_source,
         reason: "tutorial_companion_bootstrap",
-        source_root: "protocol"
+        source_root: "phone"
       })
 
     {:ok, reloaded} =
@@ -1885,7 +1885,7 @@ defmodule Ide.DebuggerTest do
       reloaded.debugger_timeline
       |> Enum.map(&{&1.target, &1.message, &1.message_source})
 
-    assert {"protocol", "FromWatch (Ok (RequestWeather CurrentLocation))", "protocol_rx"} in timeline
+    assert {"phone", "FromWatch (Ok (RequestWeather CurrentLocation))", "protocol_rx"} in timeline
 
     companion_runtime = get_in(reloaded, [:companion, :model, "runtime_model"]) || %{}
     assert companion_runtime["protocol_message_count"] == 1
@@ -2880,7 +2880,7 @@ defmodule Ide.DebuggerTest do
              })
 
     assert both_on.auto_tick.enabled == true
-    assert both_on.auto_tick.targets == ["watch", "protocol"]
+    assert both_on.auto_tick.targets == ["watch", "phone"]
 
     assert {:ok, companion_only} =
              Debugger.set_auto_fire(slug, %{
@@ -2888,7 +2888,7 @@ defmodule Ide.DebuggerTest do
              })
 
     assert companion_only.auto_tick.enabled == true
-    assert companion_only.auto_tick.targets == ["protocol"]
+    assert companion_only.auto_tick.targets == ["phone"]
 
     assert {:ok, all_off} =
              Debugger.set_auto_fire(slug, %{
@@ -3417,10 +3417,10 @@ defmodule Ide.DebuggerTest do
                rel_path: "phone/src/CompanionApp.elm",
                source: "module CompanionSnap exposing (..)",
                reason: "companion_http_followup",
-               source_root: "protocol"
+               source_root: "phone"
              })
 
-    assert {:ok, stepped} = Debugger.step(slug, %{target: "protocol", message: "Tick", count: 1})
+    assert {:ok, stepped} = Debugger.step(slug, %{target: "phone", message: "Tick", count: 1})
     assert get_in(reloaded, [:companion, :model, "elm_introspect", "module"]) == "CompanionSnap"
     assert String.starts_with?(stepped.companion.last_message, "WeatherReceived ")
     assert get_in(stepped.companion.model, ["runtime_model", "lastResponse"]) == 1
@@ -3432,7 +3432,7 @@ defmodule Ide.DebuggerTest do
 
     assert Enum.any?(stepped.events, fn event ->
              event.type == "debugger.package_cmd" and
-               event.payload.target == "protocol" and
+               event.payload.target == "phone" and
                event.payload.package == "elm/http" and
                String.starts_with?(event.payload.response_message, "WeatherReceived ")
            end)

@@ -63,8 +63,8 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "elm_pebble_font_resource_height"
     assert template =~ "resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING"
     assert template =~ "font_from_id_for_height"
-    assert template =~ "DRAW_CHUNK_CAPACITY"
-    assert template =~ "elmc_pebble_view_commands_from"
+    assert template =~ "DRAW_HEAP_CHUNK_CAPACITY"
+    assert template =~ "elmc_pebble_scene_commands_from"
     refute template =~ "realloc(s_draw_cmds"
     refute template =~ "resource_id == 0"
   end
@@ -148,8 +148,56 @@ defmodule Ide.PebbleToolchainTest do
     source = File.read!("lib/ide/pebble_toolchain.ex")
 
     assert source =~ ~S|run_pebble_with_timeout(["wipe"], timeout_seconds, cwd: cwd)|
-    assert source =~ ~S|["install", "--emulator", emulator_target, package_path]|
+    assert source =~ "emulator_install_args(emulator_target, package_path)"
+    assert source =~ ~S|["install", "--emulator", emulator_target]|
+    assert source =~ ~S|--throttle=#{throttle}|
     assert source =~ "ensure_successful_wipe"
+  end
+
+  test "emulator commands expose Linux bzip2 compatibility library path" do
+    previous_config = Application.get_env(:ide, Ide.PebbleToolchain, [])
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_pebble_toolchain_compat_test_#{System.unique_integer([:positive])}"
+      )
+
+    fake_pebble = Path.join(root, "fake_pebble.sh")
+    compat_dir = Path.join(root, "compat")
+    host_bzip2 = Path.join(root, "libbz2.so.1")
+
+    File.mkdir_p!(root)
+    File.write!(host_bzip2, "")
+
+    File.write!(fake_pebble, """
+    #!/usr/bin/env bash
+    echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+    """)
+
+    File.chmod!(fake_pebble, 0o755)
+
+    Application.put_env(
+      :ide,
+      Ide.PebbleToolchain,
+      previous_config
+      |> Keyword.put(:pebble_bin, fake_pebble)
+      |> Keyword.put(:pebble_toolchain_compat_dir, compat_dir)
+      |> Keyword.put(:legacy_bzip2_candidates, [Path.join(root, "libbz2.so.1.0")])
+      |> Keyword.put(:bzip2_soname_alias_candidates, [host_bzip2])
+    )
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.PebbleToolchain, previous_config)
+      File.rm_rf(root)
+    end)
+
+    assert {:ok, result} =
+             PebbleToolchain.run_screenshot("test", Path.join(root, "screen.png"), "flint")
+
+    assert result.status == :ok
+    assert result.output =~ "LD_LIBRARY_PATH=#{compat_dir}"
+    assert File.exists?(Path.join(compat_dir, "libbz2.so.1.0"))
   end
 
   test "deterministic package UUIDs set RFC4122 version and variant bits" do
@@ -175,7 +223,7 @@ defmodule Ide.PebbleToolchainTest do
     set -e
     if [ "$1" = "build" ]; then
       mkdir -p build
-      touch build/app.pbw
+      python3 -c 'import zipfile; z=zipfile.ZipFile("build/app.pbw", "w"); z.writestr("appinfo.json", "{}"); z.close()'
     fi
     """)
 

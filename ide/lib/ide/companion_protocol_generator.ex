@@ -584,7 +584,7 @@ defmodule Ide.CompanionProtocolGenerator do
     Enum.map_join(messages, "\n", fn msg ->
       case msg.fields do
         [] ->
-          "                #{msg.tag} ->\n                    Ok #{msg.name}\n"
+          "                    #{msg.tag} ->\n                        Ok #{msg.name}\n"
 
         [field] ->
           key = field.key

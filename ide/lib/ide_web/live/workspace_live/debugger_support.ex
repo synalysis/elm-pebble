@@ -657,18 +657,425 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   @spec rendered_tree(map() | term()) :: map() | nil
   def rendered_tree(%{} = runtime) do
-    case Map.get(runtime, :view_tree) || Map.get(runtime, "view_tree") do
-      tree when is_map(tree) and map_size(tree) > 0 ->
+    model = runtime_model(runtime)
+
+    case runtime_rendered_tree(runtime, model) do
+      %{} = tree ->
         normalize_rendered_tree(tree)
 
       _ ->
-        runtime
-        |> runtime_model()
+        model
         |> parser_view_tree()
+        |> discard_parser_expression_view_tree()
     end
   end
 
   def rendered_tree(_runtime), do: nil
+
+  @spec runtime_rendered_tree(map(), map()) :: map() | nil
+  defp runtime_rendered_tree(runtime, model) when is_map(runtime) and is_map(model) do
+    view_tree = Map.get(runtime, :view_tree) || Map.get(runtime, "view_tree")
+
+    output_tree = runtime_view_output_tree(model)
+
+    cond do
+      output_tree != nil ->
+        output_tree
+
+      concrete_rendered_view_tree?(view_tree) ->
+        view_tree
+
+      true ->
+        nil
+    end
+  end
+
+  defp runtime_rendered_tree(_runtime, _model), do: nil
+
+  @spec concrete_rendered_view_tree?(term()) :: boolean()
+  defp concrete_rendered_view_tree?(tree) when is_map(tree) and map_size(tree) > 0,
+    do: not parser_expression_view_tree?(tree)
+
+  defp concrete_rendered_view_tree?(_tree), do: false
+
+  @spec discard_parser_expression_view_tree(term()) :: map() | nil
+  defp discard_parser_expression_view_tree(tree) when is_map(tree) do
+    if parser_expression_view_tree?(tree), do: nil, else: tree
+  end
+
+  defp discard_parser_expression_view_tree(_tree), do: nil
+
+  @spec parser_expression_view_tree?(term()) :: boolean()
+  defp parser_expression_view_tree?(%{"type" => type}) when is_binary(type),
+    do: parser_expression_root_type?(type)
+
+  defp parser_expression_view_tree?(%{type: type}) when is_binary(type),
+    do: parser_expression_root_type?(type)
+
+  defp parser_expression_view_tree?(_tree), do: false
+
+  @spec parser_expression_root_type?(String.t()) :: boolean()
+  defp parser_expression_root_type?(type)
+       when type in [
+              "toUiNode",
+              "append",
+              "List",
+              "call",
+              "expr",
+              "var",
+              "withDefault",
+              "if",
+              "case"
+            ],
+       do: true
+
+  defp parser_expression_root_type?(_type), do: false
+
+  @spec runtime_view_output_tree(map()) :: map() | nil
+  defp runtime_view_output_tree(model) when is_map(model) do
+    case Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output) || [] do
+      [_ | _] = ops ->
+        {screen_w, screen_h} = runtime_view_output_screen(model)
+
+        %{
+          "type" => "windowStack",
+          "label" => "",
+          "box" => %{"x" => 0, "y" => 0, "w" => screen_w, "h" => screen_h},
+          "children" => [
+            %{
+              "type" => "window",
+              "label" => "",
+              "id" => 1,
+              "children" => [
+                %{
+                  "type" => "canvasLayer",
+                  "label" => "",
+                  "id" => 1,
+                  "children" => runtime_view_output_nodes(ops)
+                }
+              ]
+            }
+          ]
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  defp runtime_view_output_tree(_model), do: nil
+
+  @spec runtime_view_output_screen(map()) :: {pos_integer(), pos_integer()}
+  defp runtime_view_output_screen(model) when is_map(model) do
+    runtime_model =
+      case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
+        %{} = value -> value
+        _ -> model
+      end
+
+    {
+      positive_integer_value(
+        Map.get(runtime_model, "screenW") || Map.get(runtime_model, :screenW),
+        144
+      ),
+      positive_integer_value(
+        Map.get(runtime_model, "screenH") || Map.get(runtime_model, :screenH),
+        168
+      )
+    }
+  end
+
+  @spec positive_integer_value(term(), pos_integer()) :: pos_integer()
+  defp positive_integer_value(value, _fallback) when is_integer(value) and value > 0, do: value
+
+  defp positive_integer_value(value, _fallback) when is_float(value) and value > 0,
+    do: trunc(value)
+
+  defp positive_integer_value(value, fallback) when is_binary(value) do
+    case Integer.parse(value) do
+      {parsed, ""} when parsed > 0 -> parsed
+      _ -> fallback
+    end
+  end
+
+  defp positive_integer_value(_value, fallback), do: fallback
+
+  @spec runtime_view_output_nodes([term()]) :: [map()]
+  defp runtime_view_output_nodes(ops) when is_list(ops) do
+    {nodes, _rest} = runtime_view_output_nodes_until(ops, false)
+    nodes
+  end
+
+  @spec runtime_view_output_nodes_until([term()], boolean()) :: {[map()], [term()]}
+  defp runtime_view_output_nodes_until(rows, stop_on_pop?) when is_list(rows) do
+    runtime_view_output_nodes_until(rows, stop_on_pop?, [])
+  end
+
+  defp runtime_view_output_nodes_until([], _stop_on_pop?, acc), do: {Enum.reverse(acc), []}
+
+  defp runtime_view_output_nodes_until([row | rest], stop_on_pop?, acc) when is_map(row) do
+    case runtime_view_output_kind(row) do
+      "pop_context" when stop_on_pop? ->
+        {Enum.reverse(acc), rest}
+
+      "pop_context" ->
+        runtime_view_output_nodes_until(rest, stop_on_pop?, acc)
+
+      "push_context" ->
+        {group_nodes, remaining} = runtime_view_output_nodes_until(rest, true)
+        {style, children} = split_runtime_view_output_group(group_nodes)
+
+        group =
+          %{"type" => "group", "label" => "", "children" => children}
+          |> maybe_put_group_style(style)
+
+        runtime_view_output_nodes_until(remaining, stop_on_pop?, [group | acc])
+
+      kind when kind in ["stroke_color", "fill_color", "text_color"] ->
+        runtime_view_output_nodes_until(rest, stop_on_pop?, [
+          runtime_view_output_style_node(row) | acc
+        ])
+
+      _ ->
+        case runtime_view_output_node(row) do
+          %{} = node -> runtime_view_output_nodes_until(rest, stop_on_pop?, [node | acc])
+          nil -> runtime_view_output_nodes_until(rest, stop_on_pop?, acc)
+        end
+    end
+  end
+
+  defp runtime_view_output_nodes_until([_row | rest], stop_on_pop?, acc),
+    do: runtime_view_output_nodes_until(rest, stop_on_pop?, acc)
+
+  @spec split_runtime_view_output_group([map()]) :: {map(), [map()]}
+  defp split_runtime_view_output_group(nodes) when is_list(nodes) do
+    Enum.reduce(nodes, {%{}, []}, fn node, {style, children} ->
+      case Map.get(node, "type") do
+        "style" ->
+          {Map.put(style, Map.get(node, "key"), Map.get(node, "value")), children}
+
+        _ ->
+          {style, [node | children]}
+      end
+    end)
+    |> then(fn {style, children} -> {style, Enum.reverse(children)} end)
+  end
+
+  @spec maybe_put_group_style(map(), map()) :: map()
+  defp maybe_put_group_style(group, style) when is_map(group) and map_size(style) > 0,
+    do: Map.put(group, "style", style)
+
+  defp maybe_put_group_style(group, _style), do: group
+
+  @spec runtime_view_output_style_node(map()) :: map()
+  defp runtime_view_output_style_node(row) when is_map(row) do
+    kind = runtime_view_output_kind(row)
+
+    %{
+      "type" => "style",
+      "key" => kind,
+      "value" =>
+        Map.get(row, "color") || Map.get(row, :color) || Map.get(row, "value") ||
+          Map.get(row, :value)
+    }
+  end
+
+  @spec runtime_view_output_kind(map()) :: String.t()
+  defp runtime_view_output_kind(row) when is_map(row),
+    do: to_string(Map.get(row, "kind") || Map.get(row, :kind) || "")
+
+  @spec runtime_view_output_node(map()) :: map() | nil
+  defp runtime_view_output_node(row) when is_map(row) do
+    case runtime_view_output_kind(row) do
+      "clear" ->
+        %{
+          "type" => "clear",
+          "label" => "",
+          "children" => [],
+          "color" => map_integer_value(row, "color", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      kind when kind in ["rect", "fill_rect"] ->
+        %{
+          "type" => if(kind == "rect", do: "rect", else: "fillRect"),
+          "label" => "",
+          "children" => [],
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0),
+          "w" => map_integer_value(row, "w", 0),
+          "h" => map_integer_value(row, "h", 0),
+          "fill" => map_integer_value(row, "fill", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      "round_rect" ->
+        %{
+          "type" => "roundRect",
+          "label" => "",
+          "children" => [],
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0),
+          "w" => map_integer_value(row, "w", 0),
+          "h" => map_integer_value(row, "h", 0),
+          "radius" => map_integer_value(row, "radius", 0),
+          "fill" => map_integer_value(row, "fill", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      "text" ->
+        %{
+          "type" => "text",
+          "label" => "",
+          "children" => [],
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0),
+          "w" => map_integer_value(row, "w", 0),
+          "h" => map_integer_value(row, "h", 0),
+          "font_id" => map_integer_value(row, "font_id", 0),
+          "text" => to_string(Map.get(row, "text") || Map.get(row, :text) || "")
+        }
+        |> maybe_put_rendered_source(row)
+
+      "line" ->
+        %{
+          "type" => "line",
+          "label" => "",
+          "children" => [],
+          "x1" => map_integer_value(row, "x1", 0),
+          "y1" => map_integer_value(row, "y1", 0),
+          "x2" => map_integer_value(row, "x2", 0),
+          "y2" => map_integer_value(row, "y2", 0),
+          "color" => map_integer_value(row, "color", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      "circle" ->
+        %{
+          "type" => "circle",
+          "label" => "",
+          "children" => [],
+          "cx" => map_integer_value(row, "cx", 0),
+          "cy" => map_integer_value(row, "cy", 0),
+          "r" => map_integer_value(row, "r", 0),
+          "color" => map_integer_value(row, "color", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      "fill_circle" ->
+        %{
+          "type" => "fillCircle",
+          "label" => "",
+          "children" => [],
+          "cx" => map_integer_value(row, "cx", 0),
+          "cy" => map_integer_value(row, "cy", 0),
+          "r" => map_integer_value(row, "r", 0),
+          "color" => map_integer_value(row, "color", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      "pixel" ->
+        %{
+          "type" => "pixel",
+          "label" => "",
+          "children" => [],
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0),
+          "color" => map_integer_value(row, "color", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      "text_label" ->
+        %{
+          "type" => "textLabel",
+          "label" => "",
+          "children" => [],
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0),
+          "font_id" => map_integer_value(row, "font_id", 0),
+          "text" => to_string(Map.get(row, "text") || Map.get(row, :text) || "")
+        }
+        |> maybe_put_rendered_source(row)
+
+      "text_int" ->
+        %{
+          "type" => "textInt",
+          "label" => "",
+          "children" => [],
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0),
+          "font_id" => map_integer_value(row, "font_id", 0),
+          "text" => to_string(Map.get(row, "text") || Map.get(row, :text) || "")
+        }
+        |> maybe_put_rendered_source(row)
+
+      "bitmap_in_rect" ->
+        %{
+          "type" => "bitmapInRect",
+          "label" => "",
+          "children" => [],
+          "bitmap_id" => map_integer_value(row, "bitmap_id", 0),
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0),
+          "w" => map_integer_value(row, "w", 0),
+          "h" => map_integer_value(row, "h", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      "rotated_bitmap" ->
+        %{
+          "type" => "rotatedBitmap",
+          "label" => "",
+          "children" => [],
+          "bitmap_id" => map_integer_value(row, "bitmap_id", 0),
+          "src_w" => map_integer_value(row, "src_w", 0),
+          "src_h" => map_integer_value(row, "src_h", 0),
+          "angle" => map_integer_value(row, "angle", 0),
+          "center_x" => map_integer_value(row, "center_x", 0),
+          "center_y" => map_integer_value(row, "center_y", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      "arc" ->
+        %{
+          "type" => "arc",
+          "label" => "",
+          "children" => [],
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0),
+          "w" => map_integer_value(row, "w", 0),
+          "h" => map_integer_value(row, "h", 0),
+          "start_angle" => map_integer_value(row, "start_angle", 0),
+          "end_angle" => map_integer_value(row, "end_angle", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      "fill_radial" ->
+        %{
+          "type" => "fillRadial",
+          "label" => "",
+          "children" => [],
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0),
+          "w" => map_integer_value(row, "w", 0),
+          "h" => map_integer_value(row, "h", 0),
+          "start_angle" => map_integer_value(row, "start_angle", 0),
+          "end_angle" => map_integer_value(row, "end_angle", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      _ ->
+        nil
+    end
+  end
+
+  @spec maybe_put_rendered_source(map(), map()) :: map()
+  defp maybe_put_rendered_source(node, row) when is_map(node) and is_map(row) do
+    case Map.get(row, "source") || Map.get(row, :source) do
+      %{} = source -> Map.put(node, "source", source)
+      _ -> node
+    end
+  end
 
   @spec rendered_node_bounds(term(), term(), term(), term()) :: map() | nil
   def rendered_node_bounds(tree, path, screen_w, screen_h)
@@ -1270,6 +1677,100 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     case Jason.encode(term, pretty: true) do
       {:ok, json} -> json
       {:error, _reason} -> Jason.encode!(inspect(term), pretty: true)
+    end
+  end
+
+  @doc """
+  Single markdown document for assistants: meta, timeline text, and JSON blocks for models and rendered tree.
+  """
+  @spec debugger_agent_state_markdown(%{
+          required(:format_version) => String.t(),
+          required(:project_name) => String.t(),
+          required(:project_slug) => String.t(),
+          required(:timeline_mode) => String.t(),
+          required(:timeline_text) => String.t(),
+          required(:watch_model_json) => String.t(),
+          required(:companion_model_json) => String.t(),
+          required(:rendered_view_json) => String.t(),
+          optional(:session_running) => boolean() | nil,
+          optional(:session_event_count) => non_neg_integer() | nil,
+          optional(:debugger_cursor_seq) => term(),
+          optional(:selected_timeline_seq) => term(),
+          optional(:watch_profile_id) => term()
+        }) :: String.t()
+  def debugger_agent_state_markdown(%{} = ctx) do
+    format = Map.get(ctx, :format_version, "elm-pebble.debugger_state.v1")
+    name = Map.get(ctx, :project_name, "")
+    slug = Map.get(ctx, :project_slug, "")
+    timeline_mode = Map.get(ctx, :timeline_mode, "")
+
+    timeline =
+      Map.get(ctx, :timeline_text, "") |> blank_fallback("(no timeline rows for this view)")
+
+    watch_j = Map.get(ctx, :watch_model_json, "{}")
+    comp_j = Map.get(ctx, :companion_model_json, "{}")
+    view_j = Map.get(ctx, :rendered_view_json, "null")
+
+    running = session_field(ctx, :session_running)
+    evc = session_field(ctx, :session_event_count)
+    cur = session_field(ctx, :debugger_cursor_seq)
+    sel = session_field(ctx, :selected_timeline_seq)
+    profile = session_field(ctx, :watch_profile_id)
+
+    """
+    # IDE debugger state export
+
+    Use this document as context for an assistant. Sections mirror the Debugger page (live watch view / models).
+
+    ## Meta
+
+    - **format**: `#{format}`
+    - **project**: #{name} (`#{slug}`)
+    - **timeline_mode** (visible filter): `#{timeline_mode}`
+    - **selected_timeline_seq**: #{sel}
+    - **debugger_cursor_seq** (event cursor): #{cur}
+    - **session_running**: #{running}
+    - **session_event_count**: #{evc}
+    - **watch_profile_id**: #{profile}
+
+    ## Timeline
+
+    #{timeline}
+
+    ## Watch model
+
+    ```json
+    #{watch_j}
+    ```
+
+    ## Companion model
+
+    ```json
+    #{comp_j}
+    ```
+
+    ## Rendered view (watch, live panel)
+
+    ```json
+    #{view_j}
+    ```
+    """
+    |> String.trim()
+  end
+
+  defp blank_fallback(s, fallback) when is_binary(s) do
+    if String.trim(s) == "", do: fallback, else: s
+  end
+
+  defp blank_fallback(_, fallback), do: fallback
+
+  defp session_field(ctx, key) do
+    case Map.get(ctx, key) do
+      nil -> "—"
+      false -> "false"
+      true -> "true"
+      n when is_integer(n) -> Integer.to_string(n)
+      other -> inspect(other)
     end
   end
 
@@ -2731,8 +3232,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   @spec debugger_target(term()) :: String.t()
   defp debugger_target("companion"), do: "companion"
   defp debugger_target("protocol"), do: "companion"
+  defp debugger_target("phone"), do: "companion"
   defp debugger_target(:companion), do: "companion"
   defp debugger_target(:protocol), do: "companion"
+  defp debugger_target(:phone), do: "companion"
   defp debugger_target(_), do: "watch"
 
   @spec debugger_target_runtime(String.t(), map() | nil, map() | nil) :: map() | nil
@@ -3023,13 +3526,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   @spec normalize_preview_target(term()) :: term()
   defp normalize_preview_target("watch"), do: "watch"
   defp normalize_preview_target("protocol"), do: "protocol"
-  defp normalize_preview_target("companion"), do: "protocol"
+  defp normalize_preview_target("companion"), do: "phone"
   defp normalize_preview_target("phone"), do: "phone"
   defp normalize_preview_target(_), do: "watch"
 
   @spec preview_target_label(term()) :: term()
   defp preview_target_label("watch"), do: "watch"
   defp preview_target_label("protocol"), do: "protocol"
+  defp preview_target_label("companion"), do: "phone"
   defp preview_target_label("phone"), do: "phone"
   defp preview_target_label(_), do: "watch"
 
@@ -3388,7 +3892,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         message: Map.get(row, :message) || Map.get(row, "message"),
         source: Map.get(row, :source) || Map.get(row, "source"),
         button: Map.get(row, :button) || Map.get(row, "button"),
-        button_event: Map.get(row, :button_event) || Map.get(row, "button_event")
+        button_event: Map.get(row, :button_event) || Map.get(row, "button_event"),
+        injection_supported?:
+          Debugger.subscription_trigger_injection_modal_supported?(debugger_state, row)
       }
     end)
     |> Enum.filter(fn row ->
@@ -3412,7 +3918,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         message: Map.get(row, :message) || Map.get(row, "message"),
         source: Map.get(row, :source) || Map.get(row, "source"),
         button: Map.get(row, :button) || Map.get(row, "button"),
-        button_event: Map.get(row, :button_event) || Map.get(row, "button_event")
+        button_event: Map.get(row, :button_event) || Map.get(row, "button_event"),
+        injection_supported?:
+          Debugger.subscription_trigger_injection_modal_supported?(debugger_state, row)
       }
     end)
     |> Enum.filter(fn row ->
@@ -3427,7 +3935,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defp auto_fire_enabled?(debugger_state, target)
        when is_map(debugger_state) and target in [:watch, :companion] do
     auto_tick = Map.get(debugger_state, :auto_tick, %{})
-    source_root = if target == :companion, do: "protocol", else: "watch"
+    source_root = if target == :companion, do: "phone", else: "watch"
 
     Map.get(auto_tick, :enabled) == true and
       source_root in List.wrap(Map.get(auto_tick, :targets, []))
@@ -4044,9 +4552,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         "y1" -> :y1
         "x2" -> :x2
         "y2" -> :y2
+        "cx" -> :cx
+        "cy" -> :cy
+        "r" -> :r
         "radius" -> :radius
         "fill" -> :fill
         "color" -> :color
+        "font_id" -> :font_id
+        "bitmap_id" -> :bitmap_id
+        "src_w" -> :src_w
+        "src_h" -> :src_h
+        "angle" -> :angle
+        "center_x" -> :center_x
+        "center_y" -> :center_y
+        "start_angle" -> :start_angle
+        "end_angle" -> :end_angle
         _ -> nil
       end
 

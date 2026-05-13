@@ -343,6 +343,99 @@
     ]
   },
   {
+    "aliases": [],
+    "binops": [],
+    "comment": "Access Pebble Health data such as step count, active time, distance, sleep,\ncalories, and heart rate.\n\n# Types\n@docs Metric, Event\n\n# Commands\n@docs value, sumToday, sum, accessible\n\n# Subscriptions\n@docs onEvent",
+    "name": "Pebble.Health",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "StepCount",
+            []
+          ],
+          [
+            "ActiveSeconds",
+            []
+          ],
+          [
+            "WalkedDistanceMeters",
+            []
+          ],
+          [
+            "SleepSeconds",
+            []
+          ],
+          [
+            "RestfulSleepSeconds",
+            []
+          ],
+          [
+            "RestingKCalories",
+            []
+          ],
+          [
+            "ActiveKCalories",
+            []
+          ],
+          [
+            "HeartRateBPM",
+            []
+          ]
+        ],
+        "comment": "A Pebble health metric.",
+        "name": "Metric"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "SignificantUpdate",
+            []
+          ],
+          [
+            "MovementUpdate",
+            []
+          ],
+          [
+            "SleepUpdate",
+            []
+          ]
+        ],
+        "comment": "A Pebble health service event.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Request the current value for a metric.\n\nFor example, `value StepCount GotSteps` requests the current step count.",
+        "name": "value",
+        "type": "Metric -> (Int -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request today's total for a metric.",
+        "name": "sumToday",
+        "type": "Metric -> (Int -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request the total for a metric between two Unix timestamps in seconds.",
+        "name": "sum",
+        "type": "Metric -> Int -> Int -> (Int -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request whether a metric is available between two Unix timestamps in seconds.",
+        "name": "accessible",
+        "type": "Metric -> Int -> Int -> (Bool -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Receive health service events.",
+        "name": "onEvent",
+        "type": "(Event -> msg) -> Sub msg"
+      }
+    ]
+  },
+  {
     "aliases": [
       {
         "args": [],

@@ -21,6 +21,9 @@ def configure(ctx):
     Universal configuration: add your change prior to calling ctx.load('pebble_sdk').
     """
     ctx.load('pebble_sdk')
+    if os.environ.get('ELMC_PEBBLE_TRACE_FUNCTIONS') in ('1', 'true', 'TRUE', 'yes', 'YES'):
+        for env in ctx.all_envs.values():
+            env.append_value('CFLAGS', ['-DELMC_PEBBLE_TRACE_FUNCTIONS=1'])
 
 
 def build(ctx):

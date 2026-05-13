@@ -136,7 +136,10 @@ defmodule Ide.PebblePreferences do
             var input = document.createElement(control.type === "choice" ? "select" : "input");
             input.id = field.id;
             if (control.type === "text") input.type = "text";
-            if (control.type === "number") input.type = "number";
+            if (control.type === "number") {
+              input.type = "number";
+              input.step = typeof control.step !== "undefined" ? control.step : "any";
+            }
             if (control.type === "color") input.type = "color";
             if (control.type === "slider") {
               input.type = "range";

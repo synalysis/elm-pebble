@@ -6,7 +6,7 @@ defmodule Ide.ProjectTemplates do
   alias Ide.InternalPackages
   alias Ide.CompanionProtocolGenerator
 
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete game-basic game-tiny-bird game-greeneys-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes game-basic game-tiny-bird game-greeneys-run game-2048)
 
   @doc """
   Returns available template keys.
@@ -19,7 +19,12 @@ defmodule Ide.ProjectTemplates do
   """
   @spec target_type_for_template(String.t()) :: String.t()
   def target_type_for_template(template)
-      when template in ["watchface-digital", "watchface-analog", "watchface-tutorial-complete"],
+      when template in [
+             "watchface-digital",
+             "watchface-analog",
+             "watchface-tutorial-complete",
+             "watchface-yes"
+           ],
       do: "watchface"
 
   def target_type_for_template(_template), do: "app"
@@ -34,6 +39,7 @@ defmodule Ide.ProjectTemplates do
       {"Watchface: Digital (watch-only)", "watchface-digital"},
       {"Watchface: Analog (watch-only)", "watchface-analog"},
       {"Watchface tutorial: Complete", "watchface-tutorial-complete"},
+      {"Watchface: YES (watch, protocol, phone)", "watchface-yes"},
       {"Game: Basic", "game-basic"},
       {"Game: Tiny Bird", "game-tiny-bird"},
       {"Game: Greeney's Run", "game-greeneys-run"},
@@ -58,6 +64,9 @@ defmodule Ide.ProjectTemplates do
 
       "watchface-tutorial-complete" ->
         seed_watchface_tutorial_workspace(workspace_path)
+
+      "watchface-yes" ->
+        seed_yes_watchface_workspace(workspace_path)
 
       "game-basic" ->
         seed_watch_only_workspace(workspace_path, "game_basic")
@@ -90,6 +99,62 @@ defmodule Ide.ProjectTemplates do
          :ok <- seed_phone_companion(workspace_path),
          :ok <- seed_watchface_tutorial_phone(workspace_path),
          :ok <- seed_watch_only_workspace(workspace_path, "watchface_tutorial_complete") do
+      :ok
+    end
+  end
+
+  @spec seed_yes_watchface_workspace(term()) :: term()
+  defp seed_yes_watchface_workspace(workspace_path) do
+    with :ok <- seed_yes_protocol(workspace_path),
+         :ok <- seed_phone_companion(workspace_path),
+         :ok <- seed_yes_phone(workspace_path),
+         :ok <- seed_watch_only_workspace(workspace_path, "watchface_yes") do
+      :ok
+    end
+  end
+
+  @spec seed_yes_protocol(term()) :: term()
+  defp seed_yes_protocol(workspace_path) do
+    source_dir = Path.join(ide_root(), "priv/project_templates/watchface_yes/protocol/src")
+    target_dir = Path.join(workspace_path, "protocol/src")
+    protocol_root = Path.join(workspace_path, "protocol")
+
+    elm_json = %{
+      "type" => "application",
+      "source-directories" => ["src"],
+      "elm-version" => "0.19.1",
+      "dependencies" => %{
+        "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
+        "indirect" => %{}
+      },
+      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+    }
+
+    protocol_types = Path.join(target_dir, "Companion/Types.elm")
+    protocol_internal = Path.join(target_dir, "Companion/Internal.elm")
+
+    with :ok <- replace_dir(source_dir, target_dir),
+         :ok <-
+           CompanionProtocolGenerator.generate_elm_internal(protocol_types, protocol_internal),
+         :ok <-
+           File.write(Path.join(protocol_root, "elm.json"), Jason.encode!(elm_json, pretty: true)) do
+      :ok
+    end
+  end
+
+  @spec seed_yes_phone(term()) :: term()
+  defp seed_yes_phone(workspace_path) do
+    source = Path.join(ide_root(), "priv/project_templates/watchface_yes/phone/src")
+    target = Path.join(workspace_path, "phone/src")
+
+    with :ok <-
+           copy_file(Path.join(source, "CompanionApp.elm"), Path.join(target, "CompanionApp.elm")),
+         :ok <-
+           copy_file(
+             Path.join(source, "CompanionPreferences.elm"),
+             Path.join(target, "CompanionPreferences.elm")
+           ),
+         :ok <- Ide.PebblePreferences.ensure_generated_bridge(Path.join(workspace_path, "phone")) do
       :ok
     end
   end
@@ -164,7 +229,8 @@ defmodule Ide.ProjectTemplates do
   end
 
   @spec watch_source_directories(term()) :: [String.t()]
-  defp watch_source_directories("watchface_tutorial_complete") do
+  defp watch_source_directories(template_dir)
+       when template_dir in ["watchface_tutorial_complete", "watchface_yes"] do
     [
       "src",
       "../protocol/src",
@@ -184,7 +250,7 @@ defmodule Ide.ProjectTemplates do
 
     elm_json = %{
       "type" => "application",
-      "source-directories" => ["src"] ++ InternalPackages.watch_elm_json_extra_source_dirs_abs(),
+      "source-directories" => watch_with_protocol_source_directories(),
       "elm-version" => "0.19.1",
       "dependencies" => %{
         "direct" => %{
@@ -206,6 +272,17 @@ defmodule Ide.ProjectTemplates do
          :ok <- replace_dir(Path.join(template_root, "src"), Path.join(watch_root, "src")) do
       :ok
     end
+  end
+
+  @spec watch_with_protocol_source_directories() :: [String.t()]
+  defp watch_with_protocol_source_directories do
+    [
+      "src",
+      "../protocol/src",
+      InternalPackages.pebble_elm_src_abs(),
+      InternalPackages.elm_time_elm_src_abs(),
+      InternalPackages.elm_random_elm_src_abs()
+    ]
   end
 
   @spec seed_protocol_shared(term()) :: term()

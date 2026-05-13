@@ -13,6 +13,7 @@
         "Pebble.Game.Collision",
         "Pebble.Game.Math",
         "Pebble.Game.Sprite",
+        "Pebble.Health",
         "Pebble.Hardware",
         "Pebble.Light",
         "Pebble.Log",

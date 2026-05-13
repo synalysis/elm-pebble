@@ -203,6 +203,7 @@ defmodule ElmEx.Frontend.Bridge do
       "constructor" => Map.get(diagnostic, :constructor),
       "expected_kind" =>
         case Map.get(diagnostic, :expected_kind) do
+          nil -> nil
           kind when is_atom(kind) -> Atom.to_string(kind)
           kind -> kind
         end,

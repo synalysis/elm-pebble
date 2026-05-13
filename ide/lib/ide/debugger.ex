@@ -8,6 +8,7 @@ defmodule Ide.Debugger do
   alias Ide.Debugger.HttpExecutor
   alias Ide.Debugger.RuntimeExecutor
   alias Ide.Debugger.RuntimeFingerprintDrift
+  alias Ide.Compiler
   alias Ide.PebblePreferences
   alias Ide.Projects
   alias Ide.WatchModels
@@ -666,6 +667,111 @@ defmodule Ide.Debugger do
     end)
   end
 
+  @doc """
+  Whether the debugger trigger modal can faithfully edit payloads for this subscription row.
+
+  Simulator-backed subscriptions are always allowed. Otherwise we require an Elm `Msg`
+  constructor present in `elm_introspect.msg_constructor_arities` with arity 0 or 1.
+
+  Gateway subscriptions that deliver opaque variant payloads (e.g. phone→watch) are excluded:
+  the modal cannot enumerate every constructor payload without structured metadata.
+  """
+  @spec subscription_trigger_injection_modal_supported?(runtime_state(), map()) :: boolean()
+  def subscription_trigger_injection_modal_supported?(state, row)
+      when is_map(state) and is_map(row) do
+    trigger =
+      trigger_candidate_field(row, :trigger)
+      |> to_string()
+      |> String.trim()
+
+    target_s =
+      trigger_candidate_field(row, :target)
+      |> to_string()
+      |> String.trim()
+
+    message = trigger_candidate_field(row, :message)
+
+    cond do
+      trigger == "" ->
+        false
+
+      opaque_gateway_subscription_trigger?(trigger) ->
+        false
+
+      debugger_subscription_simulated_payload_trigger?(trigger) ->
+        true
+
+      true ->
+        case trigger_row_constructor_message(message) do
+          nil ->
+            false
+
+          constructor ->
+            target_atom = normalize_step_target(target_s)
+
+            case get_in(state, [
+                   target_atom,
+                   :model,
+                   "elm_introspect",
+                   "msg_constructor_arities"
+                 ]) do
+              %{} = arities when map_size(arities) > 0 ->
+                case Map.fetch(arities, constructor) do
+                  {:ok, arity} when is_integer(arity) and arity >= 0 and arity <= 1 ->
+                    true
+
+                  _ ->
+                    false
+                end
+
+              _ ->
+                false
+            end
+        end
+    end
+  end
+
+  def subscription_trigger_injection_modal_supported?(_state, _row), do: false
+
+  @spec trigger_candidate_field(map(), atom()) :: term()
+  defp trigger_candidate_field(row, key) when is_map(row) and is_atom(key) do
+    Map.get(row, key) || Map.get(row, Atom.to_string(key))
+  end
+
+  @spec trigger_row_constructor_message(term()) :: String.t() | nil
+  defp trigger_row_constructor_message(message) when is_binary(message) do
+    trimmed = String.trim(message)
+    if trimmed == "", do: nil, else: trimmed
+  end
+
+  defp trigger_row_constructor_message(_message), do: nil
+
+  @spec opaque_gateway_subscription_trigger?(String.t()) :: boolean()
+  defp opaque_gateway_subscription_trigger?(trigger) when is_binary(trigger) do
+    normalized =
+      trigger
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]/, "")
+
+    String.contains?(normalized, "phonetowatch")
+  end
+
+  defp opaque_gateway_subscription_trigger?(_trigger), do: false
+
+  @spec debugger_subscription_simulated_payload_trigger?(String.t()) :: boolean()
+  defp debugger_subscription_simulated_payload_trigger?(trigger) when is_binary(trigger) do
+    normalized = String.downcase(trigger)
+
+    contains_any?(normalized, ["on_minute_change", "onminutechange"]) or
+      contains_any?(normalized, ["on_hour_change", "onhourchange"]) or
+      contains_any?(normalized, ["on_battery_change", "onbatterychange"]) or
+      contains_any?(normalized, ["on_connection_change", "onconnectionchange"]) or
+      contains_any?(normalized, ["on_tick", "ontick"]) or
+      contains_any?(normalized, ["on_second_change", "onsecondchange"])
+  end
+
+  defp debugger_subscription_simulated_payload_trigger?(_trigger), do: false
+
   @spec subscription_trigger_message_value(term(), term()) :: term()
   defp subscription_trigger_message_value(message, %{} = value) when is_binary(message) do
     cond do
@@ -1035,7 +1141,7 @@ defmodule Ide.Debugger do
 
     command_protocol_events =
       if runtime_protocol_events == [] do
-        protocol_events_for_model_commands(model, target, message)
+        protocol_events_for_model_commands(state, model, target, message)
       else
         []
       end
@@ -1045,11 +1151,7 @@ defmodule Ide.Debugger do
     message_source = source_override || msg_source
 
     protocol_events =
-      if message_source == "configuration" do
-        []
-      else
-        runtime_protocol_events ++ command_protocol_events
-      end
+      (runtime_protocol_events ++ command_protocol_events)
       |> enrich_protocol_events(trigger, message_source)
 
     updated_model =
@@ -1205,7 +1307,7 @@ defmodule Ide.Debugger do
     if is_map(ei) do
       ei
       |> introspect_cmd_calls("init_cmd_calls")
-      |> Enum.flat_map(&protocol_events_from_cmd_call(target, &1, model))
+      |> Enum.flat_map(&protocol_events_from_cmd_call(state, target, &1, model))
       |> Enum.reduce(state, fn event, acc ->
         acc
         |> append_event(event.type, event.payload)
@@ -1224,12 +1326,12 @@ defmodule Ide.Debugger do
 
   defp maybe_apply_init_protocol_events(state, _target), do: state
 
-  defp protocol_events_from_cmd_call(:watch, cmd_call, model) when is_map(cmd_call) do
+  defp protocol_events_from_cmd_call(state, :watch, cmd_call, model) when is_map(cmd_call) do
     name = (Map.get(cmd_call, "name") || Map.get(cmd_call, :name) || "") |> to_string()
     target = (Map.get(cmd_call, "target") || Map.get(cmd_call, :target) || "") |> to_string()
 
     {message, message_value} =
-      protocol_message_payload_for_cmd_call(cmd_call, model, :watch_to_phone)
+      protocol_message_payload_for_cmd_call(state, cmd_call, model, :watch_to_phone)
 
     if name == "sendWatchToPhone" or String.ends_with?(target, ".sendWatchToPhone") do
       protocol_tx_rx_events("watch", "companion", message, "init_cmd", message_value)
@@ -1238,13 +1340,13 @@ defmodule Ide.Debugger do
     end
   end
 
-  defp protocol_events_from_cmd_call(target_surface, cmd_call, model)
+  defp protocol_events_from_cmd_call(state, target_surface, cmd_call, model)
        when target_surface in [:companion, :phone] and is_map(cmd_call) do
     name = (Map.get(cmd_call, "name") || Map.get(cmd_call, :name) || "") |> to_string()
     target = (Map.get(cmd_call, "target") || Map.get(cmd_call, :target) || "") |> to_string()
 
     {message, message_value} =
-      protocol_message_payload_for_cmd_call(cmd_call, model, :phone_to_watch)
+      protocol_message_payload_for_cmd_call(state, cmd_call, model, :phone_to_watch)
 
     if name == "sendPhoneToWatch" or String.ends_with?(target, ".sendPhoneToWatch") do
       protocol_tx_rx_events("companion", "watch", message, "protocol_cmd", message_value)
@@ -1253,10 +1355,10 @@ defmodule Ide.Debugger do
     end
   end
 
-  defp protocol_events_from_cmd_call(_surface, _cmd_call, _model), do: []
+  defp protocol_events_from_cmd_call(_state, _surface, _cmd_call, _model), do: []
 
-  @spec protocol_events_for_model_commands(term(), term(), term()) :: [map()]
-  defp protocol_events_for_model_commands(model, target, message)
+  @spec protocol_events_for_model_commands(term(), term(), term(), term()) :: [map()]
+  defp protocol_events_for_model_commands(state, model, target, message)
        when is_map(model) and target in [:watch, :companion, :phone] and is_binary(message) do
     current_ctor = message_constructor(message)
 
@@ -1264,19 +1366,24 @@ defmodule Ide.Debugger do
     |> Map.get("elm_introspect")
     |> introspect_cmd_calls("update_cmd_calls")
     |> update_cmd_calls_for_message(current_ctor)
-    |> Enum.flat_map(&protocol_events_from_cmd_call(target, &1, model))
+    |> Enum.flat_map(&protocol_events_from_cmd_call(state, target, &1, model))
   end
 
-  defp protocol_events_for_model_commands(_model, _target, _message), do: []
+  defp protocol_events_for_model_commands(_state, _model, _target, _message), do: []
 
-  @spec protocol_message_payload_for_cmd_call(map(), term(), :watch_to_phone | :phone_to_watch) ::
+  @spec protocol_message_payload_for_cmd_call(
+          term(),
+          map(),
+          term(),
+          :watch_to_phone | :phone_to_watch
+        ) ::
           {String.t() | nil, term()}
-  defp protocol_message_payload_for_cmd_call(cmd_call, model, direction)
+  defp protocol_message_payload_for_cmd_call(state, cmd_call, model, direction)
        when is_map(cmd_call) and direction in [:watch_to_phone, :phone_to_watch] do
     callback =
       Map.get(cmd_call, "callback_constructor") || Map.get(cmd_call, :callback_constructor)
 
-    case protocol_schema_from_model(model) do
+    case protocol_schema_from_state_or_model(state, model) do
       {:ok, schema} ->
         {
           protocol_message_from_schema(schema, direction, callback),
@@ -1288,7 +1395,35 @@ defmodule Ide.Debugger do
     end
   end
 
-  defp protocol_message_payload_for_cmd_call(_cmd_call, _model, _direction), do: {nil, nil}
+  defp protocol_message_payload_for_cmd_call(_state, _cmd_call, _model, _direction),
+    do: {nil, nil}
+
+  @spec protocol_schema_from_state_or_model(term(), term()) :: {:ok, map()} | {:error, term()}
+  defp protocol_schema_from_state_or_model(state, model) do
+    case project_protocol_schema(state) do
+      {:ok, schema} -> {:ok, schema}
+      {:error, _} -> protocol_schema_from_model(model)
+    end
+  end
+
+  @spec project_protocol_schema(term()) :: {:ok, map()} | {:error, term()}
+  defp project_protocol_schema(state) when is_map(state) do
+    with project_slug when is_binary(project_slug) <- Map.get(state, :project_slug),
+         %{} = project <- Projects.get_project_by_slug(project_slug),
+         workspace_root <- Projects.project_workspace_path(project),
+         protocol_types <- Path.join(workspace_root, "protocol/src/Companion/Types.elm"),
+         true <- File.exists?(protocol_types),
+         {:ok, source} <- File.read(protocol_types) do
+      Ide.CompanionProtocolGenerator.schema_from_source(source)
+    else
+      _ -> {:error, :missing_project_protocol}
+    end
+  rescue
+    DBConnection.OwnershipError ->
+      {:error, :repo_unavailable}
+  end
+
+  defp project_protocol_schema(_state), do: {:error, :missing_project_protocol}
 
   @spec protocol_schema_from_model(term()) :: {:ok, map()} | {:error, term()}
   defp protocol_schema_from_model(_model) do
@@ -2308,6 +2443,7 @@ defmodule Ide.Debugger do
             end
 
           next_state
+          |> maybe_bootstrap_runtime_source(recipient)
           |> append_runtime_exec_event_for_target(recipient, %{
             trigger: "protocol_rx",
             message: Map.get(meta, :message),
@@ -2413,6 +2549,82 @@ defmodule Ide.Debugger do
   end
 
   defp maybe_apply_protocol_rx_subscription(state, _recipient, _meta), do: state
+
+  @spec maybe_bootstrap_runtime_source(term(), term()) :: map()
+  defp maybe_bootstrap_runtime_source(state, target)
+       when is_map(state) and target in [:watch, :companion, :phone] do
+    if runtime_source_loaded?(state, target) do
+      state
+    else
+      case runtime_entrypoint_source(state, target) do
+        {:ok, source_root, rel_path, source, artifacts} ->
+          state
+          |> maybe_merge_runtime_artifacts(target, artifacts)
+          |> put_reload_source_fields(target, rel_path, source, source_root)
+          |> merge_elm_introspect_with_payload(rel_path, source, source_root)
+          |> elem(0)
+
+        :error ->
+          state
+      end
+    end
+  end
+
+  defp maybe_bootstrap_runtime_source(state, _target), do: state
+
+  @spec runtime_source_loaded?(term(), term()) :: boolean()
+  defp runtime_source_loaded?(state, target) when is_map(state) do
+    state
+    |> get_in([target, :model, "elm_introspect"])
+    |> is_map()
+  end
+
+  defp runtime_source_loaded?(_state, _target), do: false
+
+  @spec runtime_entrypoint_source(term(), term()) ::
+          {:ok, String.t(), String.t(), String.t(), map()} | :error
+  defp runtime_entrypoint_source(state, target) when is_map(state) do
+    with project_slug when is_binary(project_slug) <- Map.get(state, :project_slug),
+         %{} = project <- Projects.get_project_by_slug(project_slug),
+         {source_root, rel_path} <- runtime_entrypoint_path(target),
+         {:ok, source} <- Projects.read_source_file(project, source_root, rel_path),
+         true <- is_binary(source) and String.trim(source) != "" do
+      artifacts = runtime_entrypoint_artifacts(project_slug, project, source_root)
+      {:ok, source_root, rel_path, source, artifacts}
+    else
+      _ -> :error
+    end
+  rescue
+    DBConnection.OwnershipError ->
+      :error
+  end
+
+  defp runtime_entrypoint_source(_state, _target), do: :error
+
+  @spec runtime_entrypoint_path(term()) :: {String.t(), String.t()} | nil
+  defp runtime_entrypoint_path(:watch), do: {"watch", "src/Main.elm"}
+  defp runtime_entrypoint_path(:companion), do: {"phone", "src/CompanionApp.elm"}
+  defp runtime_entrypoint_path(:phone), do: {"phone", "src/CompanionApp.elm"}
+  defp runtime_entrypoint_path(_target), do: nil
+
+  @spec runtime_entrypoint_artifacts(String.t(), term(), String.t()) :: map()
+  defp runtime_entrypoint_artifacts(project_slug, project, source_root)
+       when is_binary(project_slug) and is_binary(source_root) do
+    workspace_root =
+      project
+      |> Projects.project_workspace_path()
+      |> Path.join(source_root)
+
+    case Compiler.compile("#{project_slug}:#{source_root}", workspace_root: workspace_root) do
+      {:ok, result} when is_map(result) ->
+        optional_runtime_artifacts_from_attrs(result)
+
+      _ ->
+        %{}
+    end
+  rescue
+    _ -> %{}
+  end
 
   defp restore_protocol_rx_metadata(state, recipient, meta)
        when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(meta) do
@@ -2921,7 +3133,8 @@ defmodule Ide.Debugger do
             subscription_message_arity(state, target, message_text) == 1 ->
           "#{message_text} #{Jason.encode!(subscription_frame_payload(state, target))}"
 
-        (String.contains?(t, "ontick") or String.contains?(t, "tick")) and
+        (String.contains?(t, "ontick") or String.contains?(t, "tick") or
+           String.contains?(t, "secondchange") or String.contains?(t, "onsecond")) and
             subscription_message_arity(state, target, message_text) == 1 ->
           "#{message_text} #{now.second}"
 
@@ -3850,10 +4063,10 @@ defmodule Ide.Debugger do
         is_map(output_view_tree) ->
           output_view_tree
 
-        is_map(runtime_view_tree) and map_size(runtime_view_tree) > 0 ->
+        concrete_runtime_view_tree?(runtime_view_tree) ->
           runtime_view_tree
 
-        is_map(previous_view_tree) and map_size(previous_view_tree) > 0 ->
+        concrete_runtime_view_tree?(previous_view_tree) ->
           previous_view_tree
 
         true ->
@@ -4055,6 +4268,7 @@ defmodule Ide.Debugger do
           "children" => [],
           "color" => integer_or_zero(map_value(row, "color"))
         }
+        |> maybe_put_rendered_source(row)
 
       "round_rect" ->
         %{
@@ -4068,6 +4282,7 @@ defmodule Ide.Debugger do
           "radius" => integer_or_zero(map_value(row, "radius")),
           "fill" => integer_or_zero(map_value(row, "fill"))
         }
+        |> maybe_put_rendered_source(row)
 
       "fill_rect" ->
         %{
@@ -4080,6 +4295,7 @@ defmodule Ide.Debugger do
           "h" => integer_or_zero(map_value(row, "h")),
           "fill" => integer_or_zero(map_value(row, "fill"))
         }
+        |> maybe_put_rendered_source(row)
 
       "line" ->
         %{
@@ -4092,6 +4308,7 @@ defmodule Ide.Debugger do
           "y2" => integer_or_zero(map_value(row, "y2")),
           "color" => integer_or_zero(map_value(row, "color"))
         }
+        |> maybe_put_rendered_source(row)
 
       "circle" ->
         %{
@@ -4103,6 +4320,7 @@ defmodule Ide.Debugger do
           "r" => integer_or_zero(map_value(row, "r")),
           "color" => integer_or_zero(map_value(row, "color"))
         }
+        |> maybe_put_rendered_source(row)
 
       "fill_circle" ->
         %{
@@ -4114,6 +4332,7 @@ defmodule Ide.Debugger do
           "r" => integer_or_zero(map_value(row, "r")),
           "color" => integer_or_zero(map_value(row, "color"))
         }
+        |> maybe_put_rendered_source(row)
 
       "pixel" ->
         %{
@@ -4124,6 +4343,7 @@ defmodule Ide.Debugger do
           "y" => integer_or_zero(map_value(row, "y")),
           "color" => integer_or_zero(map_value(row, "color"))
         }
+        |> maybe_put_rendered_source(row)
 
       "text" ->
         %{
@@ -4137,6 +4357,7 @@ defmodule Ide.Debugger do
           "font_id" => integer_or_zero(map_value(row, "font_id")),
           "text" => to_string(map_value(row, "text") || "")
         }
+        |> maybe_put_rendered_source(row)
 
       "text_label" ->
         %{
@@ -4148,9 +4369,18 @@ defmodule Ide.Debugger do
           "font_id" => integer_or_zero(map_value(row, "font_id")),
           "text" => to_string(map_value(row, "text") || "")
         }
+        |> maybe_put_rendered_source(row)
 
       _ ->
         nil
+    end
+  end
+
+  @spec maybe_put_rendered_source(map(), map()) :: map()
+  defp maybe_put_rendered_source(node, row) when is_map(node) and is_map(row) do
+    case map_value(row, "source") do
+      %{} = source -> Map.put(node, "source", source)
+      _ -> node
     end
   end
 
@@ -4544,6 +4774,7 @@ defmodule Ide.Debugger do
     launch_context = launch_context_for(watch_profile_id, "LaunchUser")
 
     %{
+      project_slug: project_slug,
       running: false,
       revision: nil,
       watch_profile_id: watch_profile_id,
@@ -4896,6 +5127,28 @@ defmodule Ide.Debugger do
     {:ok, if(bool, do: "True", else: "False"), bool}
   end
 
+  defp configuration_protocol_arg(%{"type" => type}, value) when type in ["number", "slider"] do
+    int_value =
+      case value do
+        n when is_integer(n) ->
+          n
+
+        n when is_float(n) ->
+          round(n)
+
+        value when is_binary(value) ->
+          case Float.parse(value) do
+            {parsed, _rest} -> round(parsed)
+            :error -> 0
+          end
+
+        _ ->
+          0
+      end
+
+    {:ok, Integer.to_string(int_value), int_value}
+  end
+
   defp configuration_protocol_arg(%{"type" => "choice", "options" => options}, value)
        when is_list(options) do
     case Enum.find(options, &(Map.get(&1, "value") == value)) do
@@ -5177,7 +5430,6 @@ defmodule Ide.Debugger do
         |> hydrate_static_runtime_model_values()
         |> hydrate_runtime_model_launch_context(model)
         |> hydrate_runtime_model_message_payload(message)
-        |> hydrate_runtime_model_protocol_payload(message)
 
       Map.put(model, "runtime_model", hydrated)
     else
@@ -5419,140 +5671,6 @@ defmodule Ide.Debugger do
         if message_constructor_value?(current, constructor),
           do: Map.put(runtime_model, key, value),
           else: runtime_model
-    end
-  end
-
-  @spec hydrate_runtime_model_protocol_payload(map(), term()) :: map()
-  defp hydrate_runtime_model_protocol_payload(runtime_model, message)
-       when is_map(runtime_model) and is_binary(message) do
-    with {:ok, protocol_message} <- nested_protocol_message(message),
-         {:ok, constructor, args} <- split_constructor_call(protocol_message),
-         field when is_binary(field) <- protocol_payload_model_field(constructor),
-         %{"ctor" => maybe_ctor, "args" => maybe_args} <- Map.get(runtime_model, field),
-         true <- maybe_ctor in ["Nothing", "Just"] and is_list(maybe_args),
-         {:ok, value} <- protocol_payload_value(args) do
-      Map.put(runtime_model, field, %{"ctor" => "Just", "args" => [value]})
-    else
-      _ -> runtime_model
-    end
-  end
-
-  defp hydrate_runtime_model_protocol_payload(runtime_model, _message), do: runtime_model
-
-  @spec nested_protocol_message(String.t()) :: {:ok, String.t()} | :error
-  defp nested_protocol_message(message) when is_binary(message) do
-    trimmed = String.trim(message)
-
-    cond do
-      String.starts_with?(trimmed, "FromPhone ") ->
-        trimmed
-        |> String.replace_prefix("FromPhone ", "")
-        |> unwrap_parenthesized()
-        |> then(&{:ok, &1})
-
-      String.starts_with?(trimmed, "FromWatch (Ok ") ->
-        trimmed
-        |> String.replace_prefix("FromWatch (Ok ", "")
-        |> trim_closing_paren()
-        |> unwrap_parenthesized()
-        |> then(&{:ok, &1})
-
-      true ->
-        :error
-    end
-  end
-
-  @spec split_constructor_call(String.t()) :: {:ok, String.t(), String.t()} | :error
-  defp split_constructor_call(message) when is_binary(message) do
-    case String.split(String.trim(message), ~r/\s+/, parts: 2) do
-      [ctor, args] when ctor != "" -> {:ok, ctor, String.trim(args)}
-      [ctor] when ctor != "" -> {:ok, ctor, ""}
-      _ -> :error
-    end
-  end
-
-  @spec protocol_payload_model_field(String.t()) :: String.t() | nil
-  defp protocol_payload_model_field(constructor) when is_binary(constructor) do
-    cond do
-      String.starts_with?(constructor, "Provide") ->
-        constructor |> String.replace_prefix("Provide", "") |> lower_camel_name()
-
-      String.starts_with?(constructor, "Set") ->
-        constructor |> String.replace_prefix("Set", "") |> lower_camel_name()
-
-      true ->
-        nil
-    end
-  end
-
-  @spec protocol_payload_value(String.t()) :: {:ok, term()} | :error
-  defp protocol_payload_value(args) when is_binary(args) do
-    args = args |> String.trim() |> unwrap_parenthesized()
-
-    cond do
-      args == "" ->
-        :error
-
-      String.match?(args, ~r/^-?\d+$/) ->
-        {value, ""} = Integer.parse(args)
-        {:ok, value}
-
-      args in ["True", "False"] ->
-        {:ok, args == "True"}
-
-      String.starts_with?(args, "\"") ->
-        case Jason.decode(args) do
-          {:ok, value} -> {:ok, value}
-          _ -> :error
-        end
-
-      true ->
-        case String.split(args, ~r/\s+/, parts: 2) do
-          [ctor, rest] when ctor != "" ->
-            {:ok, %{"ctor" => ctor, "args" => protocol_payload_arg_values(rest)}}
-
-          [ctor] when ctor != "" ->
-            {:ok, %{"ctor" => ctor, "args" => []}}
-
-          _ ->
-            :error
-        end
-    end
-  end
-
-  @spec protocol_payload_arg_values(String.t()) :: [term()]
-  defp protocol_payload_arg_values(args) when is_binary(args) do
-    args
-    |> String.split(~r/\s+/, trim: true)
-    |> Enum.map(fn arg ->
-      case protocol_payload_value(arg) do
-        {:ok, value} -> value
-        :error -> arg
-      end
-    end)
-  end
-
-  @spec unwrap_parenthesized(String.t()) :: String.t()
-  defp unwrap_parenthesized(value) when is_binary(value) do
-    trimmed = String.trim(value)
-
-    if String.starts_with?(trimmed, "(") and String.ends_with?(trimmed, ")") do
-      trimmed
-      |> String.slice(1, String.length(trimmed) - 2)
-      |> String.trim()
-    else
-      trimmed
-    end
-  end
-
-  @spec trim_closing_paren(String.t()) :: String.t()
-  defp trim_closing_paren(value) when is_binary(value) do
-    trimmed = String.trim(value)
-
-    if String.ends_with?(trimmed, ")") do
-      String.slice(trimmed, 0, String.length(trimmed) - 1)
-    else
-      trimmed
     end
   end
 
@@ -6100,11 +6218,8 @@ defmodule Ide.Debugger do
           parser_expression_view_tree?(runtime_view_tree) ->
         latest_view_tree
 
-      is_map(runtime_view_tree) and map_size(runtime_view_tree) > 0 ->
-        runtime_view_tree
-
       true ->
-        snapshot_view_tree
+        if concrete_runtime_view_tree?(snapshot_view_tree), do: snapshot_view_tree, else: nil
     end
   end
 
@@ -6230,9 +6345,9 @@ defmodule Ide.Debugger do
   @spec normalize_step_target(term()) :: :watch | :companion | :phone
   defp normalize_step_target("companion"), do: :companion
   defp normalize_step_target("protocol"), do: :companion
-  defp normalize_step_target("phone"), do: :phone
+  defp normalize_step_target("phone"), do: :companion
   defp normalize_step_target(:companion), do: :companion
-  defp normalize_step_target(:phone), do: :phone
+  defp normalize_step_target(:phone), do: :companion
   defp normalize_step_target(_), do: :watch
 
   @spec normalize_optional_step_target(term()) :: (:watch | :companion | :phone) | nil
@@ -6780,19 +6895,19 @@ defmodule Ide.Debugger do
 
   @spec elm_introspect?(term(), term(), term()) :: boolean()
   defp elm_introspect?(rel_path, source, source_root) do
-    source_root in ["watch", "protocol", "phone"] and is_binary(rel_path) and
+    source_root in ["watch", "phone"] and is_binary(rel_path) and
       String.ends_with?(rel_path, ".elm") and is_binary(source) and String.trim(source) != ""
   end
 
   @spec introspect_target_key(term()) :: :watch | :companion | :phone
   defp introspect_target_key("watch"), do: :watch
   defp introspect_target_key("protocol"), do: :companion
-  defp introspect_target_key("phone"), do: :phone
+  defp introspect_target_key("phone"), do: :companion
   defp introspect_target_key(_), do: :watch
 
   @spec source_root_for_target(term()) :: String.t()
   defp source_root_for_target(:watch), do: "watch"
-  defp source_root_for_target(:companion), do: "protocol"
+  defp source_root_for_target(:companion), do: "phone"
   defp source_root_for_target(:phone), do: "phone"
 
   @spec runtime_execution_artifacts(term()) :: map()
@@ -6881,7 +6996,7 @@ defmodule Ide.Debugger do
         rel_path: rel_path || model["last_path"],
         source: source,
         introspect: ei,
-        current_model: model,
+        current_model: current_model_for_introspect_execution(model),
         current_view_tree: view_tree
       }
       |> Map.merge(runtime_execution_artifacts(model))
@@ -6935,6 +7050,17 @@ defmodule Ide.Debugger do
       normalize_followup_messages(execution_followup_messages(execution))
     )
   end
+
+  @spec current_model_for_introspect_execution(term()) :: map()
+  defp current_model_for_introspect_execution(model) when is_map(model) do
+    if is_map(Map.get(model, "elm_introspect")) do
+      model
+    else
+      Map.delete(model, "runtime_model")
+    end
+  end
+
+  defp current_model_for_introspect_execution(_model), do: %{}
 
   @spec introspect_view_usable?(term()) :: boolean()
   defp introspect_view_usable?(%{"type" => "unknown", "children" => []}), do: false

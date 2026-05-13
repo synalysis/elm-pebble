@@ -189,6 +189,97 @@ defmodule Elmc.IRLowererTest do
            )
   end
 
+  test "lowerer emits diagnostics for preference schema fields out of constructor order" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{},
+      modules: [
+        %FrontendModule{
+          name: "CompanionPreferences",
+          path: "/tmp/CompanionPreferences.elm",
+          imports: ["Pebble.Companion.Preferences"],
+          declarations: [
+            %{
+              kind: :type_alias,
+              name: "Settings",
+              fields: ["enabled", "showDate", "units"],
+              span: %{start_line: 3, end_line: 7}
+            },
+            %{
+              kind: :function_definition,
+              name: "settings",
+              args: [],
+              span: %{start_line: 10, end_line: 24},
+              expr:
+                preferences_schema_expr(
+                  [
+                    {"General", ["enabled", "units"]},
+                    {"Display", ["showDate"]}
+                  ],
+                  "Settings"
+                )
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    assert [
+             %{
+               severity: "error",
+               source: "lowerer/preferences",
+               code: "preferences_schema_field_order",
+               constructor: "Settings",
+               expected_fields: ["enabled", "showDate", "units"],
+               actual_fields: ["enabled", "units", "showDate"],
+               module: "CompanionPreferences",
+               function: "settings",
+               line: 10
+             }
+           ] = Enum.filter(ir.diagnostics, &(&1.code == "preferences_schema_field_order"))
+  end
+
+  test "lowerer accepts preference schema fields in constructor order across sections" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{},
+      modules: [
+        %FrontendModule{
+          name: "CompanionPreferences",
+          path: "/tmp/CompanionPreferences.elm",
+          imports: ["Pebble.Companion.Preferences"],
+          declarations: [
+            %{
+              kind: :type_alias,
+              name: "Settings",
+              fields: ["enabled", "showDate", "units"],
+              span: %{start_line: 3, end_line: 7}
+            },
+            %{
+              kind: :function_definition,
+              name: "settings",
+              args: [],
+              span: %{start_line: 10, end_line: 24},
+              expr:
+                preferences_schema_expr(
+                  [
+                    {"General", ["enabled"]},
+                    {"Display", ["showDate", "units"]}
+                  ],
+                  "Settings"
+                )
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+    refute Enum.any?(ir.diagnostics, &(&1.code == "preferences_schema_field_order"))
+  end
+
   test "lowerer emits payload diagnostics from nested case used as case subject" do
     project = %Project{
       project_dir: "/tmp",
@@ -1122,5 +1213,45 @@ defmodule Elmc.IRLowererTest do
 
     assert names == ["helper", "main", "util"]
     assert Enum.find(main_mod.declarations, &(&1.name == "main")).type == "Int"
+  end
+
+  defp preferences_schema_expr(sections, constructor_name) do
+    Enum.reduce(sections, preferences_schema_root(constructor_name), fn {title, fields},
+                                                                        schema_expr ->
+      %{
+        op: :qualified_call,
+        target: "Preferences.section",
+        args: [
+          %{op: :string_literal, value: title},
+          %{op: :lambda, args: ["schema"], body: preferences_section_body(fields)},
+          schema_expr
+        ]
+      }
+    end)
+  end
+
+  defp preferences_schema_root(constructor_name) do
+    %{
+      op: :qualified_call,
+      target: "Preferences.schema",
+      args: [
+        %{op: :string_literal, value: "Test"},
+        %{op: :constructor_call, target: constructor_name, args: []}
+      ]
+    }
+  end
+
+  defp preferences_section_body(fields) do
+    Enum.reduce(fields, %{op: :var, name: "schema"}, fn field_id, schema_expr ->
+      %{
+        op: :qualified_call,
+        target: "Preferences.field",
+        args: [
+          %{op: :string_literal, value: field_id},
+          %{op: :qualified_call, target: "Preferences.text", args: []},
+          schema_expr
+        ]
+      }
+    end)
   end
 end

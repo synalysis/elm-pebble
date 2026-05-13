@@ -65,7 +65,11 @@ defmodule Elmc.Backend.Pebble do
     get_connection_status: 25,
     storage_write_string: 26,
     storage_read_string: 27,
-    random_generate: 28
+    random_generate: 28,
+    health_value: 29,
+    health_sum_today: 30,
+    health_sum: 31,
+    health_accessible: 32
   ]
 
   @run_modes [
@@ -126,8 +130,9 @@ defmodule Elmc.Backend.Pebble do
     watch_model_tags = union_constructors(ir, "Pebble.WatchInfo", "WatchModel")
     watch_color_tags = union_constructors(ir, "Pebble.WatchInfo", "WatchColor")
     has_view = has_view?(ir, entry_module)
-    feature_flags = feature_flags(ir, msg_constructors)
+    feature_flags = feature_flags(ir, msg_constructors, entry_module)
     random_generate_tag = random_generate_target_tag(ir, msg_constructors)
+    health_event_tag = health_event_target_tag(ir, msg_constructors)
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <-
@@ -149,7 +154,8 @@ defmodule Elmc.Backend.Pebble do
                msg_constructor_arities,
                has_view,
                entry_module,
-               random_generate_tag
+               random_generate_tag,
+               health_event_tag
              )
            ) do
       :ok
@@ -308,6 +314,7 @@ defmodule Elmc.Backend.Pebble do
     #define ELMC_PEBBLE_SUB_FRAME (1 << 13)
     #define ELMC_PEBBLE_SUB_BUTTON_RAW (1 << 14)
     #define ELMC_PEBBLE_SUB_ACCEL_DATA (1 << 15)
+    #define ELMC_PEBBLE_SUB_HEALTH (1LL << 31)
 
     int elmc_pebble_init(ElmcPebbleApp *app, ElmcValue *flags);
     int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mode);
@@ -333,6 +340,7 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_dispatch_random_int(ElmcPebbleApp *app, int32_t value);
     int elmc_pebble_dispatch_battery(ElmcPebbleApp *app, int level);
     int elmc_pebble_dispatch_connection(ElmcPebbleApp *app, int connected);
+    int elmc_pebble_dispatch_health(ElmcPebbleApp *app, int event);
     int elmc_pebble_dispatch_frame(ElmcPebbleApp *app, int64_t dt_ms, int64_t elapsed_ms, int64_t frame);
     int elmc_pebble_dispatch_hour(ElmcPebbleApp *app, int hour);
     int elmc_pebble_dispatch_minute(ElmcPebbleApp *app, int minute);
@@ -355,13 +363,14 @@ defmodule Elmc.Backend.Pebble do
     """
   end
 
-  @spec pebble_source([map()], map(), boolean(), String.t(), integer()) :: String.t()
+  @spec pebble_source([map()], map(), boolean(), String.t(), integer(), integer()) :: String.t()
   defp pebble_source(
          msg_constructors,
          msg_constructor_arities,
          has_view,
          entry_module,
-         random_generate_tag
+         random_generate_tag,
+         health_event_tag
        ) do
     value_decode_cases =
       msg_constructors
@@ -446,6 +455,21 @@ defmodule Elmc.Backend.Pebble do
     #endif
     #include <stdlib.h>
     #include <string.h>
+
+    #if defined(ELMC_PEBBLE_TRACE_FUNCTIONS) && defined(ELMC_PEBBLE_PLATFORM)
+    #define ELMC_PEBBLE_GENERATED_TRACE_ENTER(name) app_log(APP_LOG_LEVEL_INFO, __FILE_NAME__, __LINE__, "g+%d", __LINE__)
+    #define ELMC_PEBBLE_GENERATED_TRACE_EXIT(name) app_log(APP_LOG_LEVEL_INFO, __FILE_NAME__, __LINE__, "g-%d", __LINE__)
+    #define ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT(name, value) \\
+      do { \\
+        int elmc_pebble_trace_rc__ = (value); \\
+        app_log(APP_LOG_LEVEL_INFO, __FILE_NAME__, __LINE__, "g-%d rc=%d", __LINE__, elmc_pebble_trace_rc__); \\
+        return elmc_pebble_trace_rc__; \\
+      } while (0)
+    #else
+    #define ELMC_PEBBLE_GENERATED_TRACE_ENTER(name) do { } while (0)
+    #define ELMC_PEBBLE_GENERATED_TRACE_EXIT(name) do { } while (0)
+    #define ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT(name, value) return (value)
+    #endif
 
     #ifndef ELMC_PEBBLE_DIRTY_REGION_ENABLED
     #if defined(ELMC_PEBBLE_PLATFORM)
@@ -1423,7 +1447,8 @@ defmodule Elmc.Backend.Pebble do
     }
 
     int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mode) {
-      if (!app) return -1;
+      ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_init_with_mode");
+      if (!app) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_init_with_mode", -1);
       app->initialized = 0;
       app->run_mode = run_mode;
       app->has_prev_ui = 0;
@@ -1453,91 +1478,96 @@ defmodule Elmc.Backend.Pebble do
     #endif
       int rc = elmc_worker_init(&app->worker, flags);
       if (rc == 0) app->initialized = 1;
-      return rc;
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_init_with_mode", rc);
     }
 
     int elmc_pebble_dispatch_int(ElmcPebbleApp *app, int64_t tag) {
-      if (!app || !app->initialized) return -1;
+      ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_int");
+      if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_int", -1);
       ElmcValue *msg = elmc_new_int(tag);
-      if (!msg) return -2;
+      if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_int", -2);
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return elmc_pebble_finish_dispatch(app, rc);
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_int", elmc_pebble_finish_dispatch(app, rc));
     }
 
     int elmc_pebble_dispatch_tag_value(ElmcPebbleApp *app, int64_t tag, int64_t value) {
-      if (!app || !app->initialized) return -1;
+      ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_value");
+      if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_value", -1);
       ElmcValue *tag_value = elmc_new_int(tag);
       ElmcValue *payload_value = elmc_new_int(value);
       if (!tag_value || !payload_value) {
         if (tag_value) elmc_release(tag_value);
         if (payload_value) elmc_release(payload_value);
-        return -2;
+        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_value", -2);
       }
 
       ElmcValue *msg = elmc_tuple2(tag_value, payload_value);
       elmc_release(tag_value);
       elmc_release(payload_value);
-      if (!msg) return -2;
+      if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_value", -2);
 
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return elmc_pebble_finish_dispatch(app, rc);
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_value", elmc_pebble_finish_dispatch(app, rc));
     }
 
     int elmc_pebble_dispatch_tag_bool(ElmcPebbleApp *app, int64_t tag, int value) {
-      if (!app || !app->initialized) return -1;
+      ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_bool");
+      if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_bool", -1);
       ElmcValue *tag_value = elmc_new_int(tag);
       ElmcValue *payload_value = elmc_new_bool(value ? 1 : 0);
       if (!tag_value || !payload_value) {
         if (tag_value) elmc_release(tag_value);
         if (payload_value) elmc_release(payload_value);
-        return -2;
+        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_bool", -2);
       }
 
       ElmcValue *msg = elmc_tuple2(tag_value, payload_value);
       elmc_release(tag_value);
       elmc_release(payload_value);
-      if (!msg) return -2;
+      if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_bool", -2);
 
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return elmc_pebble_finish_dispatch(app, rc);
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_bool", elmc_pebble_finish_dispatch(app, rc));
     }
 
     int elmc_pebble_dispatch_tag_string(ElmcPebbleApp *app, int64_t tag, const char *value) {
-      if (!app || !app->initialized) return -1;
+      ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_string");
+      if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_string", -1);
       ElmcValue *tag_value = elmc_new_int(tag);
       ElmcValue *payload_value = elmc_new_string(value ? value : "");
       if (!tag_value || !payload_value) {
         if (tag_value) elmc_release(tag_value);
         if (payload_value) elmc_release(payload_value);
-        return -2;
+        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_string", -2);
       }
 
       ElmcValue *msg = elmc_tuple2(tag_value, payload_value);
       elmc_release(tag_value);
       elmc_release(payload_value);
-      if (!msg) return -2;
+      if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_string", -2);
 
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return elmc_pebble_finish_dispatch(app, rc);
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_string", elmc_pebble_finish_dispatch(app, rc));
     }
 
     int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload) {
-      if (!app || !app->initialized) return -1;
-      if (!payload) return -3;
+      ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_payload");
+      if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -1);
+      if (!payload) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -3);
       ElmcValue *tag_value = elmc_new_int(tag);
-      if (!tag_value) return -2;
+      if (!tag_value) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -2);
 
       ElmcValue *msg = elmc_tuple2(tag_value, payload);
       elmc_release(tag_value);
-      if (!msg) return -2;
+      if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -2);
 
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return elmc_pebble_finish_dispatch(app, rc);
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", elmc_pebble_finish_dispatch(app, rc));
     }
 
     int elmc_pebble_dispatch_tag_record_int_fields(
@@ -1546,16 +1576,17 @@ defmodule Elmc.Backend.Pebble do
         int field_count,
         const char **field_names,
         const int64_t *field_values) {
-      if (!app || !app->initialized) return -1;
-      if (field_count <= 0 || !field_names || !field_values) return -3;
+      ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_record_int_fields");
+      if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -1);
+      if (field_count <= 0 || !field_names || !field_values) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -3);
 
       ElmcValue *tag_value = elmc_new_int(tag);
-      if (!tag_value) return -2;
+      if (!tag_value) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
 
       ElmcValue **record_values = (ElmcValue **)malloc(sizeof(ElmcValue *) * field_count);
       if (!record_values) {
         elmc_release(tag_value);
-        return -2;
+        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
       }
 
       int built = 0;
@@ -1576,17 +1607,17 @@ defmodule Elmc.Backend.Pebble do
 
       if (!payload_value) {
         elmc_release(tag_value);
-        return -2;
+        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
       }
 
       ElmcValue *msg = elmc_tuple2(tag_value, payload_value);
       elmc_release(tag_value);
       elmc_release(payload_value);
-      if (!msg) return -2;
+      if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
 
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
-      return elmc_pebble_finish_dispatch(app, rc);
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", elmc_pebble_finish_dispatch(app, rc));
 
     cleanup_values:
       for (int i = 0; i < built; i++) {
@@ -1594,7 +1625,7 @@ defmodule Elmc.Backend.Pebble do
       }
       free(record_values);
       elmc_release(tag_value);
-      return -2;
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
     }
 
     int elmc_pebble_msg_from_appmessage(int32_t key, int32_t value, int64_t *out_tag) {
@@ -1739,6 +1770,15 @@ defmodule Elmc.Backend.Pebble do
       return elmc_pebble_dispatch_tag_bool(app, #{connection_tag}, connected);
     }
 
+    int elmc_pebble_dispatch_health(ElmcPebbleApp *app, int event) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_HEALTH)) return -8;
+      if (#{health_event_tag} <= 0) return -6;
+      if (event < 0) event = 0;
+      if (event > 2) event = 0;
+      return elmc_pebble_dispatch_tag_value(app, #{health_event_tag}, event);
+    }
+
     int elmc_pebble_dispatch_hour(ElmcPebbleApp *app, int hour) {
       if (!app || !app->initialized) return -1;
       if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_HOUR)) return -8;
@@ -1793,18 +1833,18 @@ defmodule Elmc.Backend.Pebble do
     }
 
     int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
-      if (!app || !app->initialized) return -1;
-      if (!app->scene.dirty) return 0;
+      ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_ensure_scene");
+      if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -1);
+      if (!app->scene.dirty) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", 0);
       elmc_pebble_prepare_scene_rebuild(app);
       elmc_pebble_scene_reset(app);
       enum {
-        BUILD_STACK_CHUNK_CAPACITY = 4,
         BUILD_HEAP_CHUNK_CAPACITY = 32,
         BUILD_MEDIUM_HEAP_CHUNK_CAPACITY = 16,
         BUILD_SMALL_HEAP_CHUNK_CAPACITY = 8,
+        BUILD_TINY_HEAP_CHUNK_CAPACITY = 1,
         BUILD_CHUNK_GUARD = 256
       };
-      ElmcPebbleDrawCmd stack_cmds[BUILD_STACK_CHUNK_CAPACITY];
       int build_chunk_capacity = BUILD_HEAP_CHUNK_CAPACITY;
       ElmcPebbleDrawCmd *cmds =
           (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * build_chunk_capacity);
@@ -1817,8 +1857,12 @@ defmodule Elmc.Backend.Pebble do
         cmds = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * build_chunk_capacity);
       }
       if (!cmds) {
-        build_chunk_capacity = BUILD_STACK_CHUNK_CAPACITY;
-        cmds = stack_cmds;
+        build_chunk_capacity = BUILD_TINY_HEAP_CHUNK_CAPACITY;
+        cmds = (ElmcPebbleDrawCmd *)malloc(sizeof(ElmcPebbleDrawCmd) * build_chunk_capacity);
+      }
+      if (!cmds) {
+        elmc_pebble_scene_buffer_free(&app->scene);
+        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -2);
       }
       int skip = 0;
       for (int chunk = 0; chunk < BUILD_CHUNK_GUARD; chunk++) {
@@ -1826,8 +1870,8 @@ defmodule Elmc.Backend.Pebble do
         if (count < 0) {
           elmc_pebble_clear_view_cache(app);
           elmc_pebble_scene_buffer_free(&app->scene);
-          if (cmds != stack_cmds) free(cmds);
-          return count;
+          free(cmds);
+          ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", count);
         }
         if (count == 0) break;
         for (int i = 0; i < count; i++) {
@@ -1835,15 +1879,15 @@ defmodule Elmc.Backend.Pebble do
           if (rc != 0) {
             elmc_pebble_clear_view_cache(app);
             elmc_pebble_scene_buffer_free(&app->scene);
-            if (cmds != stack_cmds) free(cmds);
-            return rc;
+            free(cmds);
+            ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", rc);
           }
         }
         skip += count;
         if (count < build_chunk_capacity) break;
       }
       elmc_pebble_clear_view_cache(app);
-      if (cmds != stack_cmds) free(cmds);
+      free(cmds);
       app->scene.dirty = 0;
     #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
       if (!app->prev_scene.bytes || app->prev_scene.byte_count <= 0) {
@@ -1852,7 +1896,7 @@ defmodule Elmc.Backend.Pebble do
         elmc_pebble_scene_compute_dirty_rect(app);
       }
     #endif
-      return 0;
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", 0);
     }
 
     int elmc_pebble_scene_command_count(ElmcPebbleApp *app) {
@@ -1879,22 +1923,23 @@ defmodule Elmc.Backend.Pebble do
     }
 
     int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip) {
-      if (!app || !out_cmds || max_cmds <= 0 || skip < 0) return -1;
+      ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_scene_commands_from");
+      if (!app || !out_cmds || max_cmds <= 0 || skip < 0) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", -1);
       int rc = elmc_pebble_ensure_scene(app);
-      if (rc != 0) return rc;
+      if (rc != 0) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", rc);
       int byte_offset = 0;
       int emitted = 0;
       int count = 0;
       while (byte_offset < app->scene.byte_count && count < max_cmds) {
         ElmcPebbleDrawCmd cmd;
         rc = elmc_pebble_scene_decode_record(app->scene.bytes, app->scene.byte_count, &byte_offset, &cmd);
-        if (rc != 0) return rc;
+        if (rc != 0) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", rc);
         if (emitted >= skip) {
           out_cmds[count++] = cmd;
         }
         emitted += 1;
       }
-      return count;
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", count);
     }
 
     static int elmc_pebble_view_commands_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe) {
@@ -2160,7 +2205,7 @@ defmodule Elmc.Backend.Pebble do
          args: [to_msg, _generator]
        })
        when target in ["Random.generate", "Elm.Kernel.Random.generate"] do
-    random_generate_tagger_name(to_msg)
+    callback_tagger_names(to_msg)
   end
 
   defp random_generate_target_names(%{} = node) do
@@ -2174,22 +2219,57 @@ defmodule Elmc.Backend.Pebble do
 
   defp random_generate_target_names(_), do: []
 
-  defp random_generate_tagger_name(%{op: :var, name: name}) when is_binary(name), do: [name]
+  defp callback_tagger_names(%{op: :var, name: name}) when is_binary(name), do: [name]
 
-  defp random_generate_tagger_name(%{op: :int_literal, value: tag}) when is_integer(tag),
+  defp callback_tagger_names(%{op: :int_literal, value: tag}) when is_integer(tag),
     do: [{:tag, tag}]
 
-  defp random_generate_tagger_name(%{op: :qualified_var, target: target})
+  defp callback_tagger_names(%{op: :qualified_var, target: target})
        when is_binary(target) do
     [target |> String.split(".") |> List.last()]
   end
 
-  defp random_generate_tagger_name(%{op: :qualified_call, target: target, args: []})
+  defp callback_tagger_names(%{op: :qualified_call, target: target, args: []})
        when is_binary(target) do
     [target |> String.split(".") |> List.last()]
   end
 
-  defp random_generate_tagger_name(_), do: []
+  defp callback_tagger_names(_), do: []
+
+  @spec health_event_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
+  defp health_event_target_tag(%IR{} = ir, msg_constructors) do
+    ir.modules
+    |> Enum.flat_map(fn mod -> Map.get(mod, :declarations, []) end)
+    |> Enum.flat_map(fn declaration ->
+      health_event_target_names(Map.get(declaration, :expr) || Map.get(declaration, :body))
+    end)
+    |> Enum.find_value(-1, fn
+      {:tag, tag} when is_integer(tag) ->
+        tag
+
+      name ->
+        Enum.find_value(msg_constructors, fn
+          {^name, tag} -> tag
+          _ -> nil
+        end)
+    end)
+  end
+
+  defp health_event_target_names(%{op: :qualified_call, target: target, args: [to_msg]})
+       when target in ["Pebble.Health.onEvent", "Elm.Kernel.PebbleWatch.onHealthEvent"] do
+    callback_tagger_names(to_msg)
+  end
+
+  defp health_event_target_names(%{} = node) do
+    node
+    |> Map.values()
+    |> Enum.flat_map(&health_event_target_names/1)
+  end
+
+  defp health_event_target_names(list) when is_list(list),
+    do: Enum.flat_map(list, &health_event_target_names/1)
+
+  defp health_event_target_names(_), do: []
 
   @spec phone_to_watch_msg_target([{String.t(), non_neg_integer()}], map()) :: integer()
   defp phone_to_watch_msg_target(msg_constructors, payload_specs) do
@@ -2275,9 +2355,9 @@ defmodule Elmc.Backend.Pebble do
     """
   end
 
-  @spec feature_flags(IR.t(), [{String.t(), non_neg_integer()}]) :: map()
-  defp feature_flags(ir, msg_constructors) do
-    targets = call_targets(ir)
+  @spec feature_flags(IR.t(), [{String.t(), non_neg_integer()}], String.t()) :: map()
+  defp feature_flags(ir, msg_constructors, entry_module) do
+    targets = reachable_call_targets(ir, entry_module)
     command_flags = command_feature_flags(targets)
     draw_flags = draw_feature_flags(targets)
 
@@ -2320,6 +2400,9 @@ defmodule Elmc.Backend.Pebble do
           "ConnectionChanged",
           "BluetoothChanged"
         ]),
+      health_events:
+        uses_target?(targets, "Pebble.Health.onEvent") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onHealthEvent"),
       inbox_events: uses_target?(targets, "Companion.Watch.onPhoneToWatch"),
       msg_current_time:
         has_any_constructor?(msg_constructors, ["CurrentTime", "CurrentTimeString", "GotTime"]),
@@ -2359,6 +2442,7 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_ACCEL_DATA_EVENTS", flags[:accel_data_events]},
       {"ELMC_PEBBLE_FEATURE_BATTERY_EVENTS", flags[:battery_events]},
       {"ELMC_PEBBLE_FEATURE_CONNECTION_EVENTS", flags[:connection_events]},
+      {"ELMC_PEBBLE_FEATURE_HEALTH_EVENTS", flags[:health_events]},
       {"ELMC_PEBBLE_FEATURE_INBOX_EVENTS", flags[:inbox_events]},
       {"ELMC_PEBBLE_FEATURE_MSG_CURRENT_TIME", flags[:msg_current_time]},
       {"ELMC_PEBBLE_FEATURE_CMD_TIMER_AFTER_MS", flags[:cmd_timer_after_ms]},
@@ -2390,6 +2474,10 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_CMD_VIBES_SHORT_PULSE", flags[:cmd_vibes_short_pulse]},
       {"ELMC_PEBBLE_FEATURE_CMD_VIBES_LONG_PULSE", flags[:cmd_vibes_long_pulse]},
       {"ELMC_PEBBLE_FEATURE_CMD_VIBES_DOUBLE_PULSE", flags[:cmd_vibes_double_pulse]},
+      {"ELMC_PEBBLE_FEATURE_CMD_HEALTH_VALUE", flags[:cmd_health_value]},
+      {"ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM_TODAY", flags[:cmd_health_sum_today]},
+      {"ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM", flags[:cmd_health_sum]},
+      {"ELMC_PEBBLE_FEATURE_CMD_HEALTH_ACCESSIBLE", flags[:cmd_health_accessible]},
       {"ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT", flags[:draw_text_int]},
       {"ELMC_PEBBLE_FEATURE_DRAW_CLEAR", flags[:draw_clear]},
       {"ELMC_PEBBLE_FEATURE_DRAW_PIXEL", flags[:draw_pixel]},
@@ -2408,7 +2496,7 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT", flags[:draw_round_rect]},
       {"ELMC_PEBBLE_FEATURE_DRAW_ARC", flags[:draw_arc]},
       {"ELMC_PEBBLE_FEATURE_DRAW_PATH", flags[:draw_path]},
-      {"ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL", flags[:draw_fill_radial]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL", false},
       {"ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE", flags[:draw_compositing_mode]},
       {"ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT", flags[:draw_bitmap_in_rect]},
       {"ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP", flags[:draw_rotated_bitmap]},
@@ -2419,14 +2507,57 @@ defmodule Elmc.Backend.Pebble do
     end)
   end
 
-  @spec call_targets(IR.t()) :: MapSet.t(String.t())
-  defp call_targets(%IR{} = ir) do
-    ir.modules
-    |> Enum.flat_map(fn mod ->
-      mod.declarations
-      |> Enum.flat_map(fn decl -> collect_targets(decl.expr) end)
-    end)
-    |> MapSet.new()
+  @spec reachable_call_targets(IR.t(), String.t()) :: MapSet.t(String.t())
+  defp reachable_call_targets(%IR{} = ir, entry_module) do
+    function_map =
+      ir.modules
+      |> Enum.flat_map(fn mod ->
+        mod.declarations
+        |> Enum.filter(&(&1.kind == :function))
+        |> Enum.map(fn decl -> {"#{mod.name}.#{decl.name}", {mod.name, decl.expr}} end)
+      end)
+      |> Map.new()
+
+    roots =
+      ["init", "update", "subscriptions", "view", "main"]
+      |> Enum.map(&"#{entry_module}.#{&1}")
+      |> Enum.filter(&Map.has_key?(function_map, &1))
+
+    reachable_targets(function_map, MapSet.new(roots), roots, MapSet.new())
+  end
+
+  defp reachable_targets(_function_map, _seen, [], targets), do: targets
+
+  defp reachable_targets(function_map, seen, [current | rest], targets) do
+    {module_name, expr} = Map.fetch!(function_map, current)
+
+    {calls, targets} =
+      expr
+      |> collect_targets()
+      |> Enum.reduce({[], targets}, fn target, {calls, targets} ->
+        targets = MapSet.put(targets, target)
+
+        case Map.fetch(function_map, target) do
+          {:ok, _decl} ->
+            if MapSet.member?(seen, target) do
+              {calls, targets}
+            else
+              {[target | calls], targets}
+            end
+
+          :error ->
+            local_target = "#{module_name}.#{target}"
+
+            if Map.has_key?(function_map, local_target) and not MapSet.member?(seen, local_target) do
+              {[local_target | calls], targets}
+            else
+              {calls, targets}
+            end
+        end
+      end)
+
+    seen = Enum.reduce(calls, seen, &MapSet.put(&2, &1))
+    reachable_targets(function_map, seen, rest ++ Enum.reverse(calls), targets)
   end
 
   @spec collect_targets(term()) :: [String.t()]
@@ -2442,6 +2573,15 @@ defmodule Elmc.Backend.Pebble do
   defp collect_targets(%{op: op, target: target} = expr)
        when op in [:qualified_call, :qualified_call1, :constructor_call] and is_binary(target) do
     [target | collect_targets(Map.values(expr))]
+  end
+
+  defp collect_targets(%{op: op, name: name} = expr)
+       when op in [:call, :call1] and is_binary(name) do
+    [name | collect_targets(Map.values(expr))]
+  end
+
+  defp collect_targets(%{op: :var, name: name} = expr) when is_binary(name) do
+    [name | collect_targets(Map.delete(expr, :name))]
   end
 
   defp collect_targets(map) when is_map(map) do
@@ -2507,7 +2647,11 @@ defmodule Elmc.Backend.Pebble do
           uses_target?(targets, "Pebble.Vibes.longPulse"),
       cmd_vibes_double_pulse:
         uses_target?(targets, "Pebble.Cmd.vibesDoublePulse") or
-          uses_target?(targets, "Pebble.Vibes.doublePulse")
+          uses_target?(targets, "Pebble.Vibes.doublePulse"),
+      cmd_health_value: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthValue"),
+      cmd_health_sum_today: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthSumToday"),
+      cmd_health_sum: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthSum"),
+      cmd_health_accessible: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthAccessible")
     }
   end
 

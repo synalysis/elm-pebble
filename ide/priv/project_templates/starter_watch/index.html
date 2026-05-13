@@ -2997,14 +2997,14 @@ var $author$project$Pebble$Events$onButtonSelect = function (_v0) {
 var $author$project$Pebble$Events$onButtonUp = function (_v0) {
 	return $elm$core$Platform$Sub$none;
 };
-var $author$project$Pebble$Events$onTick = function (_v0) {
+var $author$project$Pebble$Events$onSecondChange = function (_v0) {
 	return $elm$core$Platform$Sub$none;
 };
 var $author$project$Main$subscriptions = function (_v0) {
 	return $author$project$Pebble$Events$batch(
 		_List_fromArray(
 			[
-				$author$project$Pebble$Events$onTick($author$project$Main$Tick),
+				$author$project$Pebble$Events$onSecondChange($author$project$Main$Tick),
 				$author$project$Pebble$Events$onButtonUp($author$project$Main$UpPressed),
 				$author$project$Pebble$Events$onButtonSelect($author$project$Main$SelectPressed),
 				$author$project$Pebble$Events$onButtonDown($author$project$Main$DownPressed),

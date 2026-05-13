@@ -21,6 +21,7 @@ defmodule Ide.CompanionProtocolGeneratorTest do
 
   type WatchToPhone
       = RequestWeather Location
+      | RequestUpdate
 
   type PhoneToWatch
       = ProvideTemperature Temperature
@@ -39,7 +40,11 @@ defmodule Ide.CompanionProtocolGeneratorTest do
 
     assert Enum.map(schema.payload_unions["Temperature"], & &1.name) == ["Celsius", "Fahrenheit"]
 
-    assert [%{name: "RequestWeather", tag: 2, fields: [request_field]}] = schema.watch_to_phone
+    assert [
+             %{name: "RequestWeather", tag: 2, fields: [request_field]},
+             %{name: "RequestUpdate", tag: 3, fields: []}
+           ] = schema.watch_to_phone
+
     assert request_field.wire_type == {:enum, "Location"}
 
     assert Enum.map(schema.phone_to_watch, & &1.name) == [
@@ -116,6 +121,7 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated =~ "decodeTemperature : Int -> Int -> Maybe Temperature"
       assert generated =~ "encodeTutorialColorCode : TutorialColor -> Int"
       assert generated =~ "( \"set_show_date_field1\", Encode.int (if field1 then 1 else 0) )"
+      assert generated =~ "                    3 ->\n                        Ok RequestUpdate"
       assert generated =~ "watchToPhoneTag : WatchToPhone -> Int"
       refute generated =~ "locationWeatherQuery"
       refute generated =~ ", location"

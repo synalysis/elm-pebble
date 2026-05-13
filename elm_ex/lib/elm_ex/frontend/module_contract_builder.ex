@@ -178,8 +178,8 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
                                                         union_current} ->
         case line_info.decl do
           {:ok, {:type_alias, name}} ->
-            fields =
-              type_alias_record_fields(
+            field_specs =
+              type_alias_record_field_specs(
                 Map.get(line_info, :type_alias_source) || line_info.trimmed
               )
 
@@ -188,7 +188,8 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
                 %{
                   kind: :type_alias,
                   name: name,
-                  fields: fields,
+                  fields: Enum.map(field_specs, & &1.name),
+                  field_types: Map.new(field_specs, &{&1.name, &1.type}),
                   span: %{start_line: line_info.line_no, end_line: line_info.line_no}
                 }
                 | aliases_acc
@@ -223,20 +224,20 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     }
   end
 
-  @spec type_alias_record_fields(String.t()) :: [String.t()]
-  defp type_alias_record_fields(source) when is_binary(source) do
+  @spec type_alias_record_field_specs(String.t()) :: [%{name: String.t(), type: String.t()}]
+  defp type_alias_record_field_specs(source) when is_binary(source) do
     with {:ok, rhs} <- split_type_alias_rhs(source),
          {:ok, inner} <- record_type_body(rhs) do
       inner
       |> strip_extensible_record_base()
       |> split_top_level(",", [])
-      |> Enum.flat_map(&record_field_name/1)
+      |> Enum.flat_map(&record_field_spec/1)
     else
       _ -> []
     end
   end
 
-  defp type_alias_record_fields(_source), do: []
+  defp type_alias_record_field_specs(_source), do: []
 
   @spec split_type_alias_rhs(String.t()) :: {:ok, String.t()} | :error
   defp split_type_alias_rhs(source) do
@@ -265,12 +266,18 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end
   end
 
-  @spec record_field_name(String.t()) :: [String.t()]
-  defp record_field_name(source) do
+  @spec record_field_spec(String.t()) :: [%{name: String.t(), type: String.t()}]
+  defp record_field_spec(source) do
     case split_top_level(source, ":", []) do
-      [name, _type] ->
+      [name, type] ->
         name = String.trim(name)
-        if valid_record_field_name?(name), do: [name], else: []
+        type = String.trim(type)
+
+        if valid_record_field_name?(name) and type != "" do
+          [%{name: name, type: type}]
+        else
+          []
+        end
 
       _ ->
         []

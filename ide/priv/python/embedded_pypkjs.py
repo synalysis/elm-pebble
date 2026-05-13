@@ -1,5 +1,6 @@
 import json
 import sys
+import tempfile
 from uuid import UUID
 
 from libpebble2.services.appmessage import AppMessageService, CString, Int32, Uint32
@@ -42,6 +43,33 @@ def patch_early_appmessage_replay():
 
 
 patch_early_appmessage_replay()
+
+
+def patch_companion_cache_install():
+    original_on_message = WebsocketRunner.on_message
+
+    def on_message(runner, ws, message):
+        if not isinstance(message, (bytearray, bytes)) or len(message) == 0 or message[0] != 0x04:
+            return original_on_message(runner, ws, message)
+
+        if runner.requires_auth and not ws.authed:
+            return
+
+        with tempfile.NamedTemporaryFile() as f:
+            f.write(bytes(message[1:]))
+            f.flush()
+
+            try:
+                runner.load_pbws([f.name], cache=True)
+                ws.send(bytearray([0x05, 0x00, 0x00, 0x00, 0x00]))
+            except Exception as exc:
+                runner.log_output("Companion cache refresh failed: %s: %s" % (type(exc).__name__, exc))
+                ws.send(bytearray([0x05, 0x00, 0x00, 0x00, 0x01]))
+
+    WebsocketRunner.on_message = on_message
+
+
+patch_companion_cache_install()
 
 
 def patch_debug_appmessage_send():

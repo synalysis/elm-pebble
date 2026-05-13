@@ -429,6 +429,81 @@ defmodule Ide.ProjectsTest do
            ]
   end
 
+  test "yes watchface template seeds watch protocol phone and preferences" do
+    slug = "watchface-yes-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "YES Watchface",
+               "slug" => slug,
+               "target_type" => "app",
+               "template" => "watchface-yes"
+             })
+
+    base = Projects.project_workspace_path(project)
+    assert project.target_type == "watchface"
+    assert File.exists?(Path.join(base, "watch/src/Main.elm"))
+    assert File.exists?(Path.join(base, "protocol/src/Companion/Types.elm"))
+    assert File.exists?(Path.join(base, "protocol/src/Companion/Internal.elm"))
+    assert File.exists?(Path.join(base, "phone/src/CompanionApp.elm"))
+    assert File.exists?(Path.join(base, "phone/src/CompanionPreferences.elm"))
+    assert File.exists?(Path.join(base, "phone/src/Companion/GeneratedPreferences.elm"))
+
+    assert {:ok, watch_main} = Projects.read_source_file(project, "watch", "src/Main.elm")
+    assert String.contains?(watch_main, "RequestUpdate")
+    assert String.contains?(watch_main, "ProvideSun")
+    assert String.contains?(watch_main, "ProvideWeather")
+    assert String.contains?(watch_main, "ProvideWind")
+    assert String.contains?(watch_main, "ProvideTide")
+    assert String.contains?(watch_main, "Button.onRelease Button.Down RequestRefresh")
+    assert String.contains?(watch_main, "model.isRound")
+
+    assert {:ok, protocol_types} =
+             Projects.read_source_file(project, "protocol", "src/Companion/Types.elm")
+
+    assert String.contains?(protocol_types, "type WeatherCondition")
+    assert String.contains?(protocol_types, "ProvideLocation Int Int Int")
+    assert String.contains?(protocol_types, "type InternetMode")
+
+    assert String.contains?(
+             protocol_types,
+             "ProvideWeather Int WeatherCondition Int Int Int TemperatureUnit"
+           )
+
+    assert String.contains?(protocol_types, "ProvideWind Int Int WindUnit")
+    assert String.contains?(protocol_types, "SetUseInternet InternetMode")
+    assert String.contains?(protocol_types, "SetUnits TemperatureUnit WindUnit")
+
+    assert {:ok, companion_app} =
+             Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
+
+    assert String.contains?(companion_app, "Http.get")
+    assert String.contains?(companion_app, "GeneratedPreferences.onConfiguration FromBridge")
+    assert String.contains?(companion_app, "CompanionPhone.onWatchToPhone FromWatch")
+    assert String.contains?(companion_app, "ProvideAltitude")
+
+    assert {:ok, companion_preferences} =
+             Projects.read_source_file(project, "phone", "src/CompanionPreferences.elm")
+
+    assert String.contains?(companion_preferences, "Preferences.schema \"YES Watchface\"")
+    assert String.contains?(companion_preferences, "Preferences.field \"homeLatitude\"")
+    assert String.contains?(companion_preferences, "Preferences.field \"internetMode\"")
+    assert String.contains?(companion_preferences, "Preferences.choiceOption Fahrenheit")
+    assert String.contains?(companion_preferences, "Preferences.choiceOption MilesPerHour")
+
+    assert {:ok, preferences_schema} = Ide.PebblePreferences.extract(Path.join(base, "phone"))
+
+    assert Enum.flat_map(preferences_schema.sections, & &1.fields) |> Enum.map(& &1.id) == [
+             "homeLatitude",
+             "homeLongitude",
+             "homeTzOffsetMinutes",
+             "internetMode",
+             "showTide",
+             "temperatureUnit",
+             "windUnit"
+           ]
+  end
+
   test "import project maps watch/protocol/phone directories" do
     source_root =
       Path.join(System.tmp_dir!(), "ide_import_test_#{System.unique_integer([:positive])}")
@@ -592,6 +667,46 @@ defmodule Ide.ProjectsTest do
     assert "elm-pebble.project.json" in file_names
     assert "watch/src/Main.elm" in file_names
     refute "watch/.elmc-build/generated.c" in file_names
+  end
+
+  test "debugger lazily boots phone companion when watch sends protocol message" do
+    slug = "lazy-companion-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Lazy Companion",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "watchface-yes"
+             })
+
+    assert {:ok, watch_source} = Projects.read_source_file(project, "watch", "src/Main.elm")
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: watch_source,
+               reason: "lazy_companion_boot",
+               source_root: "watch"
+             })
+
+    companion_model = get_in(reloaded, [:companion, :model]) || %{}
+    companion_runtime = Map.get(companion_model, "runtime_model") || %{}
+
+    assert get_in(companion_model, ["elm_introspect", "module"]) == "CompanionApp"
+    assert %{"ctor" => "Just", "args" => [settings]} = companion_runtime["settings"]
+    assert is_map(settings)
+    refute Map.has_key?(settings, "$var")
+    assert companion_runtime["errors"] == []
+    assert companion_runtime["protocol_message_count"] >= 1
+    refute st_has_internal_text_tuple?(reloaded.watch.view_tree)
+  end
+
+  defp st_has_internal_text_tuple?(value) do
+    value
+    |> inspect()
+    |> String.contains?("{3, {1")
   end
 
   defp tree_rel_paths(nodes) do

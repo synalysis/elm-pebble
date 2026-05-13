@@ -149,6 +149,32 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   def index_record_aliases(_), do: %{}
 
+  @spec index_record_alias_field_types(map() | nil) :: map()
+  def index_record_alias_field_types(%{modules: modules}) when is_list(modules),
+    do: index_record_alias_field_types(%{"modules" => modules})
+
+  def index_record_alias_field_types(%{"modules" => modules}) when is_list(modules) do
+    Enum.reduce(modules, %{}, fn mod, acc ->
+      module_name = to_string(generic_map_value(mod, "name") || "Main")
+      decls = generic_map_value(mod, "declarations") || []
+
+      Enum.reduce(decls, acc, fn decl, a ->
+        kind = to_string(generic_map_value(decl, "kind") || "")
+        name = to_string(generic_map_value(decl, "name") || "")
+        expr = generic_map_value(decl, "expr") || %{}
+        field_types = generic_map_value(expr, "field_types") || %{}
+
+        if kind == "type_alias" and record_alias_expr?(expr) and is_map(field_types) do
+          Map.put(a, {module_name, name}, stringify_map_values(field_types))
+        else
+          a
+        end
+      end)
+    end)
+  end
+
+  def index_record_alias_field_types(_), do: %{}
+
   @spec index_constructor_tags(map() | nil) :: [map()]
   def index_constructor_tags(%{modules: modules}) when is_list(modules),
     do: index_constructor_tags(%{"modules" => modules})
@@ -243,6 +269,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp generic_map_value(_map, _key), do: nil
 
+  @spec stringify_map_values(map()) :: map()
+  defp stringify_map_values(map) when is_map(map) do
+    Map.new(map, fn {key, value} -> {to_string(key), to_string(value)} end)
+  end
+
   @spec normalize_params(term()) :: term()
   defp normalize_params(params) when is_list(params) do
     params
@@ -304,6 +335,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
             case String.downcase(to_string(name || "")) do
               "pi" -> :math.pi()
               "e" -> :math.exp(1.0)
+              "lt" -> %{"ctor" => "LT", "args" => []}
+              "eq" -> %{"ctor" => "EQ", "args" => []}
+              "gt" -> %{"ctor" => "GT", "args" => []}
               "empty" -> []
               _ -> nil
             end
@@ -506,10 +540,18 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
                args |> Enum.map(&maybe_evaluate(&1, env, context, stack)) |> collect_ok() do
           cond do
             values == [] and record_alias_fields(context, target) != nil ->
-              {:ok, {:record_alias_constructor, short, record_alias_fields(context, target)}}
+              {:ok,
+               {:record_alias_constructor, short, record_alias_fields(context, target),
+                record_alias_field_types(context, target)}}
 
             is_list(record_alias_fields(context, target)) ->
-              {:ok, record_alias_value(record_alias_fields(context, target), values)}
+              {:ok,
+               record_alias_value(
+                 record_alias_fields(context, target),
+                 record_alias_field_types(context, target),
+                 values,
+                 context
+               )}
 
             true ->
               case {short, values} do
@@ -968,7 +1010,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
       {"pebble.ui.textlabel", [font_id, pos, text]} ->
         with {:ok, normalized_font_id} <- normalize_font_id(font_id),
-             {:ok, {x, y}} <- normalize_point(pos) do
+             {:ok, {x, y}} <- normalize_point(pos),
+             {:ok, normalized_text} <- normalize_text_value(text) do
           {:ok,
            ui_node(
              "textLabel",
@@ -976,7 +1019,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
                expr_node(normalized_font_id),
                expr_node(x),
                expr_node(y),
-               expr_node(text)
+               expr_node(normalized_text)
              ]
            )}
         else
@@ -986,11 +1029,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       {"pebble.ui.text", [font_id, bounds, value]} ->
         with {:ok, normalized_font_id} <- normalize_font_id(font_id),
              {:ok, {x, y, w, h}} <- normalize_rect(bounds),
-             true <- is_binary(value) do
+             {:ok, normalized_text} <- normalize_text_value(value) do
           {:ok,
            ui_node(
              "text",
-             Enum.map([normalized_font_id, x, y, w, h, value], &expr_node/1)
+             Enum.map([normalized_font_id, x, y, w, h, normalized_text], &expr_node/1)
            )}
         else
           _ -> :no_builtin
@@ -1239,6 +1282,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           package_builtin_ops(env, context, stack)
         )
 
+      "companion.generatedpreferences" ->
+        eval_generated_preferences_builtin(function_name, values)
+
       "basics" ->
         ElmExecutor.Runtime.CoreIREvaluator.Builtins.Basics.eval(
           function_name,
@@ -1356,6 +1402,25 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         :no_builtin
     end
   end
+
+  @spec eval_generated_preferences_builtin(String.t(), [term()]) :: term()
+  defp eval_generated_preferences_builtin("decodeconfigurationflags", [flags]) do
+    response =
+      case flags do
+        %{} -> Map.get(flags, "configurationResponse") || Map.get(flags, :configurationResponse)
+        _ -> nil
+      end
+
+    case response do
+      value when is_binary(value) and value != "" ->
+        :no_builtin
+
+      _ ->
+        {:ok, %{"ctor" => "Ok", "args" => [%{"ctor" => "Nothing", "args" => []}]}}
+    end
+  end
+
+  defp eval_generated_preferences_builtin(_function_name, _values), do: :no_builtin
 
   defp indexed_function_defined?(context, module_name, function_name, arity)
        when is_map(context) and is_binary(module_name) and is_binary(function_name) and
@@ -1618,8 +1683,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       {op, [left]} when op in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] ->
         {:ok, {:builtin_partial, op, [left]}}
 
-      {"__fdiv__", [_a, 0]} ->
+      {"__fdiv__", [a, b]} when is_number(a) and is_number(b) and a == 0 and b == 0 ->
         {:ok, :nan}
+
+      {"__fdiv__", [a, b]} when is_number(a) and is_number(b) and b == 0 ->
+        {:ok, if(a < 0, do: :neg_infinity, else: :infinity)}
 
       {"__fdiv__", [a, b]} when is_number(a) and is_number(b) ->
         {:ok, a / b}
@@ -1650,6 +1718,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
       {"min", [a, b]} ->
         {:ok, if(a <= b, do: a, else: b)}
+
+      {"clamp", [low, high, value]} ->
+        {:ok, value |> max(low) |> min(high)}
 
       {"not", [a]} when is_boolean(a) ->
         {:ok, !a}
@@ -2556,8 +2627,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           :no_builtin -> {:error, {:unknown_function, {"<builtin>", name, length(bound ++ args)}}}
         end
 
-      {:record_alias_constructor, _name, fields} when is_list(fields) ->
-        {:ok, record_alias_value(fields, args)}
+      {:record_alias_constructor, _name, fields, field_types} when is_list(fields) ->
+        {:ok, record_alias_value(fields, field_types, args, context)}
 
       {:function_ref, name} when is_binary(name) ->
         case call_function(name, Enum.map(args, &literal_or_expr/1), env, context, stack) do
@@ -2596,7 +2667,19 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   @spec constructor_value(term(), list()) :: map()
   defp constructor_value(name, args) when is_list(args) do
-    %{"ctor" => short_ctor_name(to_string(name || "")), "args" => args}
+    ctor_label =
+      cond do
+        is_binary(name) ->
+          short_ctor_name(name)
+
+        is_atom(name) ->
+          short_ctor_name(Atom.to_string(name))
+
+        true ->
+          inspect(name)
+      end
+
+    %{"ctor" => ctor_label, "args" => args}
   end
 
   @spec tagged_constructor_value(term(), list(), map()) :: term()
@@ -2605,6 +2688,17 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     case constructor_name_for_tag(tag, context) do
       name when is_binary(name) -> constructor_value(name, args)
       _ -> {tag, constructor_payload(args)}
+    end
+  end
+
+  defp tagged_constructor_value({tag, payload}, args, context)
+       when is_integer(tag) and is_list(args) and is_map(context) do
+    case constructor_name_for_tag(tag, context) do
+      name when is_binary(name) ->
+        constructor_value(name, [payload | args])
+
+      _ ->
+        {tag, constructor_payload([payload | args])}
     end
   end
 
@@ -2685,6 +2779,28 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_constructor_payload(payload, _payload_spec, _context), do: payload
 
+  @spec normalize_value_by_type(term(), String.t() | nil, map()) :: term()
+  def normalize_value_by_type(value, type, context)
+      when is_binary(type) and is_map(context) do
+    normalized_type = normalize_type_name(type)
+
+    cond do
+      maybe_type?(normalized_type) ->
+        normalize_maybe_value(value, maybe_inner_type(normalized_type), context)
+
+      union_known?(normalized_type, context) ->
+        normalize_union_value(value, normalized_type, context)
+
+      is_list(record_alias_fields(context, normalized_type)) ->
+        normalize_record_alias_runtime_value(value, normalized_type, context)
+
+      true ->
+        value
+    end
+  end
+
+  def normalize_value_by_type(value, _type, _context), do: value
+
   @spec constructor_entry_for_union_tag(String.t(), integer(), map()) :: map() | nil
   defp constructor_entry_for_union_tag(union, tag, context)
        when is_binary(union) and is_integer(tag) and is_map(context) do
@@ -2715,11 +2831,179 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp record_alias_fields(_context, _target), do: nil
 
-  @spec record_alias_value([String.t()], list()) :: map()
-  defp record_alias_value(fields, values) when is_list(fields) and is_list(values) do
+  @spec record_alias_field_types(map(), String.t()) :: map()
+  defp record_alias_field_types(context, target) when is_map(context) and is_binary(target) do
+    aliases = Map.get(context, :record_alias_field_types, %{})
+    short = short_ctor_name(target)
+    {module_name, name} = parse_function_name(target, context)
+
+    aliases[{module_name, name}] ||
+      Enum.find_value(aliases, %{}, fn
+        {{_module, ^short}, field_types} -> field_types
+        _ -> nil
+      end)
+  end
+
+  defp record_alias_field_types(_context, _target), do: %{}
+
+  @spec record_alias_value([String.t()], map(), list(), map()) :: map()
+  defp record_alias_value(fields, field_types, values, context)
+       when is_list(fields) and is_map(field_types) and is_list(values) and is_map(context) do
     fields
     |> Enum.zip(values)
-    |> Map.new(fn {field, value} -> {field, value} end)
+    |> Map.new(fn {field, value} ->
+      {field, normalize_value_by_type(value, Map.get(field_types, field), context)}
+    end)
+  end
+
+  @spec normalize_record_alias_runtime_value(term(), String.t(), map()) :: term()
+  defp normalize_record_alias_runtime_value(value, type, context)
+       when is_binary(type) and is_map(context) do
+    fields = record_alias_fields(context, type)
+    field_types = record_alias_field_types(context, type)
+
+    cond do
+      legacy_tuple_constructor_map?(value) and is_list(fields) ->
+        values = flatten_legacy_tuple_constructor_map(value, length(fields))
+        record_alias_value(fields, field_types, values, context)
+
+      is_map(value) and is_list(fields) ->
+        Map.new(value, fn {field, nested} ->
+          field = to_string(field)
+          {field, normalize_value_by_type(nested, Map.get(field_types, field), context)}
+        end)
+
+      is_tuple(value) and is_list(fields) ->
+        values = flatten_tuple_chain(value, length(fields))
+        record_alias_value(fields, field_types, values, context)
+
+      true ->
+        value
+    end
+  end
+
+  @spec normalize_maybe_value(term(), String.t() | nil, map()) :: term()
+  defp normalize_maybe_value(0, _inner_type, _context), do: %{"ctor" => "Nothing", "args" => []}
+  defp normalize_maybe_value(nil, _inner_type, _context), do: %{"ctor" => "Nothing", "args" => []}
+
+  defp normalize_maybe_value({1, payload}, inner_type, context),
+    do: %{"ctor" => "Just", "args" => [normalize_value_by_type(payload, inner_type, context)]}
+
+  defp normalize_maybe_value(%{"ctor" => "Just", "args" => [payload]}, inner_type, context),
+    do: %{"ctor" => "Just", "args" => [normalize_value_by_type(payload, inner_type, context)]}
+
+  defp normalize_maybe_value(%{"ctor" => "Nothing", "args" => []}, _inner_type, _context),
+    do: %{"ctor" => "Nothing", "args" => []}
+
+  defp normalize_maybe_value(%{ctor: "Just", args: [payload]}, inner_type, context),
+    do: %{"ctor" => "Just", "args" => [normalize_value_by_type(payload, inner_type, context)]}
+
+  defp normalize_maybe_value(%{ctor: "Nothing", args: []}, _inner_type, _context),
+    do: %{"ctor" => "Nothing", "args" => []}
+
+  defp normalize_maybe_value(value, _inner_type, _context), do: value
+
+  @spec flatten_tuple_chain(term(), non_neg_integer()) :: [term()]
+  defp flatten_tuple_chain(value, count) when is_integer(count) and count > 0 do
+    do_flatten_tuple_chain(value, count, [])
+  end
+
+  defp flatten_tuple_chain(_value, _count), do: []
+
+  defp do_flatten_tuple_chain(value, 1, acc), do: Enum.reverse([value | acc])
+
+  defp do_flatten_tuple_chain({left, right}, remaining, acc) when remaining > 1,
+    do: do_flatten_tuple_chain(right, remaining - 1, [left | acc])
+
+  defp do_flatten_tuple_chain(value, _remaining, acc), do: Enum.reverse([value | acc])
+
+  @spec legacy_tuple_constructor_map?(term()) :: boolean()
+  defp legacy_tuple_constructor_map?(%{"ctor" => ctor, "args" => args})
+       when is_binary(ctor) and is_list(args),
+       do: legacy_tuple_integer_token(ctor) != nil
+
+  defp legacy_tuple_constructor_map?(_value), do: false
+
+  @spec flatten_legacy_tuple_constructor_map(term(), non_neg_integer()) :: [term()]
+  defp flatten_legacy_tuple_constructor_map(value, count) when is_integer(count) and count > 0 do
+    do_flatten_legacy_tuple_constructor_map(value, count, [])
+  end
+
+  defp flatten_legacy_tuple_constructor_map(_value, _count), do: []
+
+  defp do_flatten_legacy_tuple_constructor_map(value, 1, acc) do
+    Enum.reverse([legacy_tuple_scalar_value(value) | acc])
+  end
+
+  defp do_flatten_legacy_tuple_constructor_map(
+         %{"ctor" => ctor, "args" => [next | _]},
+         remaining,
+         acc
+       )
+       when is_binary(ctor) and remaining > 1 do
+    case legacy_tuple_integer_token(ctor) do
+      nil -> Enum.reverse([%{"ctor" => ctor, "args" => [next]} | acc])
+      integer -> do_flatten_legacy_tuple_constructor_map(next, remaining - 1, [integer | acc])
+    end
+  end
+
+  defp do_flatten_legacy_tuple_constructor_map(value, _remaining, acc),
+    do: Enum.reverse([legacy_tuple_scalar_value(value) | acc])
+
+  @spec legacy_tuple_scalar_value(term()) :: term()
+  defp legacy_tuple_scalar_value(%{"ctor" => ctor, "args" => []}) when is_binary(ctor) do
+    legacy_tuple_integer_token(ctor) || %{"ctor" => ctor, "args" => []}
+  end
+
+  defp legacy_tuple_scalar_value(value), do: value
+
+  @spec legacy_tuple_integer_token(String.t()) :: integer() | nil
+  defp legacy_tuple_integer_token(token) when is_binary(token) do
+    normalized =
+      token
+      |> String.trim()
+      |> String.trim_leading("(")
+      |> String.trim_trailing(",")
+      |> String.trim_trailing(")")
+      |> String.trim()
+
+    case Integer.parse(normalized) do
+      {integer, ""} -> integer
+      _ -> nil
+    end
+  end
+
+  @spec maybe_type?(String.t()) :: boolean()
+  defp maybe_type?(type), do: type == "Maybe" or String.starts_with?(type, "Maybe ")
+
+  @spec maybe_inner_type(String.t()) :: String.t() | nil
+  defp maybe_inner_type("Maybe"), do: nil
+
+  defp maybe_inner_type(type) when is_binary(type) do
+    type
+    |> String.replace_prefix("Maybe", "")
+    |> String.trim()
+    |> unwrap_parens()
+  end
+
+  @spec normalize_type_name(String.t()) :: String.t()
+  defp normalize_type_name(type) when is_binary(type) do
+    type
+    |> String.trim()
+    |> unwrap_parens()
+  end
+
+  @spec unwrap_parens(String.t()) :: String.t()
+  defp unwrap_parens(type) when is_binary(type) do
+    trimmed = String.trim(type)
+
+    if String.starts_with?(trimmed, "(") and String.ends_with?(trimmed, ")") do
+      trimmed
+      |> String.slice(1, String.length(trimmed) - 2)
+      |> String.trim()
+    else
+      trimmed
+    end
   end
 
   @spec literal_or_expr(term()) :: term()
@@ -2988,6 +3272,28 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   end
 
   defp normalize_font_id(_), do: :error
+
+  @spec normalize_text_value(term()) :: {:ok, String.t()} | :error
+  defp normalize_text_value(value) when is_binary(value), do: {:ok, value}
+
+  defp normalize_text_value(value) do
+    case binary_leaves(value) do
+      leaves when leaves != [] -> {:ok, Enum.join(leaves)}
+      _ -> :error
+    end
+  end
+
+  @spec binary_leaves(term()) :: [String.t()]
+  defp binary_leaves(value) when is_binary(value), do: [value]
+
+  defp binary_leaves(value) when is_tuple(value) do
+    value
+    |> Tuple.to_list()
+    |> Enum.flat_map(&binary_leaves/1)
+  end
+
+  defp binary_leaves(value) when is_list(value), do: Enum.flat_map(value, &binary_leaves/1)
+  defp binary_leaves(_value), do: []
 
   @spec normalize_rotation_angle(term()) :: {:ok, integer()} | :error
   defp normalize_rotation_angle(value) when is_integer(value), do: {:ok, value}

@@ -15,6 +15,8 @@ defmodule Elmc.PebbleSurfaceCoverageTest do
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Events.elm", __DIR__),
     "Pebble.Frame" =>
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Frame.elm", __DIR__),
+    "Pebble.Health" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Health.elm", __DIR__),
     "Pebble.Light" =>
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Light.elm", __DIR__),
     "Pebble.Log" =>

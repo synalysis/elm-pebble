@@ -107,6 +107,175 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert result.protocol_events == []
   end
 
+  test "normalizes tuple-backed runtime model values through declared record and union types" do
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Main",
+          "unions" => %{
+            "SunMode" => %{
+              "tags" => %{"SunCycle" => 1, "PolarDay" => 2},
+              "payload_specs" => %{}
+            },
+            "TemperatureUnit" => %{
+              "tags" => %{"Celsius" => 1, "Fahrenheit" => 2},
+              "payload_specs" => %{}
+            }
+          },
+          "declarations" => [
+            record_alias("Model", ["sun", "displayUnits"], %{
+              "sun" => "Maybe SunWindow",
+              "displayUnits" => "DisplayUnits"
+            }),
+            record_alias("SunWindow", ["sunriseMin", "sunsetMin", "mode"], %{
+              "sunriseMin" => "Int",
+              "sunsetMin" => "Int",
+              "mode" => "SunMode"
+            }),
+            record_alias("DisplayUnits", ["temperature"], %{
+              "temperature" => "TemperatureUnit"
+            })
+          ]
+        }
+      ]
+    }
+
+    request = %{
+      source_root: "watch",
+      source: "module Main exposing (main)",
+      current_model: %{
+        "runtime_model" => %{
+          "sun" => {1, {360, {1080, 2}}},
+          "displayUnits" => %{"temperature" => 1}
+        }
+      },
+      current_view_tree: %{},
+      message: nil,
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert %{
+             "ctor" => "Just",
+             "args" => [
+               %{
+                 "sunriseMin" => 360,
+                 "sunsetMin" => 1080,
+                 "mode" => %{"ctor" => "PolarDay", "args" => []}
+               }
+             ]
+           } = result.model_patch["runtime_model"]["sun"]
+
+    assert %{
+             "temperature" => %{"ctor" => "Celsius", "args" => []}
+           } = result.model_patch["runtime_model"]["displayUnits"]
+  end
+
+  test "normalizes legacy tuple-constructor maps through declared record and union types" do
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Main",
+          "unions" => %{
+            "SunMode" => %{
+              "tags" => %{"SunCycle" => 1},
+              "payload_specs" => %{}
+            },
+            "TideKind" => %{
+              "tags" => %{"HighTide" => 1},
+              "payload_specs" => %{}
+            }
+          },
+          "declarations" => [
+            record_alias("Model", ["sun", "tide"], %{
+              "sun" => "Maybe SunWindow",
+              "tide" => "Maybe Tide"
+            }),
+            record_alias("SunWindow", ["sunriseMin", "sunsetMin", "mode"], %{
+              "sunriseMin" => "Int",
+              "sunsetMin" => "Int",
+              "mode" => "SunMode"
+            }),
+            record_alias("Tide", ["nextMin", "levelCm", "progress", "kind"], %{
+              "nextMin" => "Int",
+              "levelCm" => "Int",
+              "progress" => "Int",
+              "kind" => "TideKind"
+            })
+          ]
+        }
+      ]
+    }
+
+    request = %{
+      source_root: "watch",
+      source: "module Main exposing (main)",
+      current_model: %{
+        "runtime_model" => %{
+          "sun" => %{
+            "ctor" => "Just",
+            "args" => [
+              %{
+                "ctor" => "360,",
+                "args" => [
+                  %{"ctor" => "(1080,", "args" => [%{"ctor" => "1)", "args" => []}]}
+                ]
+              }
+            ]
+          },
+          "tide" => %{
+            "ctor" => "Just",
+            "args" => [
+              %{
+                "ctor" => "372,",
+                "args" => [
+                  %{
+                    "ctor" => "(90,",
+                    "args" => [
+                      %{
+                        "ctor" => "(420,",
+                        "args" => [%{"ctor" => "1))", "args" => []}]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      current_view_tree: %{},
+      message: nil,
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert %{
+             "ctor" => "Just",
+             "args" => [
+               %{
+                 "sunriseMin" => 360,
+                 "sunsetMin" => 1080,
+                 "mode" => %{"ctor" => "SunCycle", "args" => []}
+               }
+             ]
+           } = result.model_patch["runtime_model"]["sun"]
+
+    assert %{
+             "ctor" => "Just",
+             "args" => [
+               %{
+                 "nextMin" => 372,
+                 "levelCm" => 90,
+                 "progress" => 420,
+                 "kind" => %{"ctor" => "HighTide", "args" => []}
+               }
+             ]
+           } = result.model_patch["runtime_model"]["tide"]
+  end
+
   test "core update returns evaluated elm/http commands as followup work" do
     core_ir = %{
       "modules" => [
@@ -756,7 +925,17 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
       source_root: "watch",
       rel_path: "watch/src/Main.elm",
       source: source,
-      introspect: %{},
+      introspect: %{
+        "view_source_locations" => %{
+          "clear" => [%{"call" => "Ui.clear", "line" => 36, "path" => "src/Main.elm"}],
+          "fill_rect" => [%{"call" => "Ui.fillRect", "line" => 48, "path" => "src/Main.elm"}],
+          "bitmap_in_rect" => [
+            %{"call" => "Ui.drawBitmapInRect", "line" => 55, "path" => "src/Main.elm"},
+            %{"call" => "Ui.drawBitmapInRect", "line" => 56, "path" => "src/Main.elm"}
+          ],
+          "text" => [%{"call" => "Ui.text", "line" => 40, "path" => "src/Main.elm"}]
+        }
+      },
       current_model: %{},
       current_view_tree: %{},
       message: nil
@@ -779,6 +958,11 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
            end)
 
     refute Enum.any?(result.view_output, &(&1["text"] == "PAUSED"))
+
+    assert Enum.any?(result.view_output, fn row ->
+             row["kind"] == "fill_rect" and
+               row["source"] == %{"call" => "Ui.fillRect", "line" => 48, "path" => "src/Main.elm"}
+           end)
   end
 
   test "runtime view_output evaluates package helper functions from supplied CoreIR" do
@@ -1248,6 +1432,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
             %{"type" => "clear", "label" => "0", "children" => []},
             %{
               "type" => "textInt",
+              "source" => %{"call" => "Ui.textInt", "path" => "src/Main.elm", "line" => 42},
               "children" => [
                 %{"type" => "expr", "value" => 0},
                 %{
@@ -1283,7 +1468,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert result.runtime["view_output_count"] == length(result.view_output)
 
     assert Enum.any?(result.view_output, fn row ->
-             row["kind"] == "text_int" and row["text"] == "1511"
+             row["kind"] == "text_int" and row["text"] == "1511" and
+               row["source"] == %{"call" => "Ui.textInt", "path" => "src/Main.elm", "line" => 42}
            end)
   end
 
@@ -2678,5 +2864,18 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert {:ok, ir} = ElmEx.IR.Lowerer.lower_project(project)
     assert {:ok, core_ir} = ElmEx.CoreIR.from_ir(ir)
     core_ir
+  end
+
+  defp record_alias(name, fields, field_types)
+       when is_binary(name) and is_list(fields) and is_map(field_types) do
+    %{
+      "kind" => "type_alias",
+      "name" => name,
+      "expr" => %{
+        "op" => "record_alias",
+        "fields" => fields,
+        "field_types" => field_types
+      }
+    }
   end
 end

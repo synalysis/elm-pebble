@@ -38,13 +38,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             Elm-style update timeline with selected watch/companion models and watch render output.
           </p>
         </div>
-        <button
-          type="button"
-          phx-click="debugger-toggle-advanced"
-          class="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-200"
-        >
-          {if @debugger_advanced_debug_tools, do: "Hide advanced tools", else: "Advanced tools"}
-        </button>
+        <div class="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+          <.debugger_copy_button
+            id="debugger-copy-agent-state"
+            text={debugger_agent_state_clipboard_text(assigns)}
+            label="Copy for agent"
+            title="Copy timeline, watch model, companion model, and rendered view as one markdown document"
+          />
+          <button
+            type="button"
+            phx-click="debugger-toggle-advanced"
+            class="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-200"
+          >
+            {if @debugger_advanced_debug_tools, do: "Hide advanced tools", else: "Advanced tools"}
+          </button>
+        </div>
       </div>
       <p :if={@debugger_state} class="mt-2 text-[11px] text-zinc-500">
         running: {to_string(@debugger_state.running)} · events: {length(@debugger_state.events)} · selected seq: {@debugger_cursor_seq ||
@@ -191,7 +199,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             <.debugger_subscription_buttons
               title="Companion subscribed events"
               rows={@debugger_companion_trigger_buttons}
-              target="protocol"
+              target="phone"
               auto_fire_subscriptions={@debugger_auto_fire_subscriptions}
               disabled_subscriptions={@debugger_disabled_subscriptions}
             />
@@ -442,7 +450,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
                 phx-value-trigger={row.trigger}
                 phx-value-target={row.target}
                 phx-value-message={row.message}
-                class="rounded bg-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-800 hover:bg-zinc-300"
+                disabled={not subscription_trigger_injection_supported?(row)}
+                title={subscription_trigger_button_title(row)}
+                class="rounded bg-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-800 hover:bg-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {row.label}
               </button>
@@ -1461,7 +1471,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         value={debugger_configuration_input_value(@control_value)}
         min={@control["min"]}
         max={@control["max"]}
-        step={@control["step"]}
+        step={debugger_configuration_input_step(@control_type, @control)}
         class="mt-1 w-full rounded border border-zinc-200 bg-white px-2 py-1 text-[11px]"
       />
       <p
@@ -1654,6 +1664,65 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     |> hide_debugger_model_metadata()
   end
 
+  @spec debugger_agent_state_clipboard_text(map()) :: String.t()
+  defp debugger_agent_state_clipboard_text(%{} = assigns) do
+    project = Map.get(assigns, :project)
+
+    timeline_text =
+      assigns
+      |> Map.get(:debugger_rows, [])
+      |> DebuggerSupport.debugger_rows_for_mode(
+        Map.get(assigns, :debugger_timeline_mode, "mixed")
+      )
+      |> DebuggerSupport.debugger_timeline_text()
+
+    selected_seq =
+      case Map.get(assigns, :debugger_selected_row) do
+        %{seq: s} -> s
+        %{"seq" => s} -> s
+        _ -> nil
+      end
+
+    state = Map.get(assigns, :debugger_state)
+
+    DebuggerSupport.debugger_agent_state_markdown(%{
+      project_name: project_name_for_clipboard(project),
+      project_slug: project_slug_for_clipboard(project),
+      timeline_mode: Map.get(assigns, :debugger_timeline_mode, "mixed"),
+      timeline_text: timeline_text,
+      watch_model_json:
+        DebuggerSupport.copy_json(
+          debugger_debugger_model(Map.get(assigns, :debugger_watch_runtime))
+        ),
+      companion_model_json:
+        DebuggerSupport.copy_json(
+          debugger_debugger_model(Map.get(assigns, :debugger_companion_runtime))
+        ),
+      rendered_view_json:
+        DebuggerSupport.copy_json(
+          debugger_rendered_tree(Map.get(assigns, :debugger_watch_view_runtime))
+        ),
+      session_running: state && debugger_state_running?(state),
+      session_event_count: if(state, do: length(state.events), else: nil),
+      debugger_cursor_seq: Map.get(assigns, :debugger_cursor_seq),
+      selected_timeline_seq: selected_seq,
+      watch_profile_id: state && debugger_state_watch_profile_id(state, project)
+    })
+  end
+
+  defp project_name_for_clipboard(%Project{name: name}) when is_binary(name), do: name
+  defp project_name_for_clipboard(_), do: ""
+
+  defp project_slug_for_clipboard(%Project{slug: slug}) when is_binary(slug), do: slug
+  defp project_slug_for_clipboard(_), do: ""
+
+  defp debugger_state_watch_profile_id(state, project) do
+    case Map.get(state, :watch_profile_id) do
+      nil -> selected_debugger_watch_profile_id(state, project)
+      id -> id
+    end
+  end
+
   @spec debugger_companion_configuration_model(term()) :: map() | nil
   defp debugger_companion_configuration_model(runtime) do
     model = debugger_runtime_model(runtime)
@@ -1676,6 +1745,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_configuration_input_value(value) when is_boolean(value), do: to_string(value)
   defp debugger_configuration_input_value(value) when is_number(value), do: to_string(value)
   defp debugger_configuration_input_value(value), do: inspect(value)
+
+  @spec debugger_configuration_input_step(String.t(), map()) :: String.t() | number() | nil
+  defp debugger_configuration_input_step("number", control) when is_map(control) do
+    Map.get(control, "step") || "any"
+  end
+
+  defp debugger_configuration_input_step(_control_type, control) when is_map(control) do
+    Map.get(control, "step")
+  end
+
+  defp debugger_configuration_input_step(_control_type, _control), do: nil
 
   @spec hide_debugger_model_metadata(term()) :: map()
   defp hide_debugger_model_metadata(model) when is_map(model) do
@@ -1806,7 +1886,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             />
             <span class="text-[9px] uppercase tracking-wide text-zinc-500">Enabled</span>
           </form>
-          <form phx-change="debugger-set-auto-fire" class="flex items-center gap-1">
+          <form
+            :if={subscription_auto_fire_toggle_visible?(@auto_fire_subscriptions, @target, row)}
+            phx-change="debugger-set-auto-fire"
+            class="flex items-center gap-1"
+          >
             <input type="hidden" name="target" value={@target} />
             <input type="hidden" name="trigger" value={row.trigger} />
             <input type="hidden" name="enabled" value="false" />
@@ -1832,8 +1916,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             phx-value-target={row.target}
             phx-value-message={row.message}
             disabled={
-              not subscription_trigger_enabled?(@disabled_subscriptions, @target, row.trigger)
+              not subscription_trigger_enabled?(@disabled_subscriptions, @target, row.trigger) or
+                not subscription_trigger_injection_supported?(row)
             }
+            title={subscription_trigger_button_title(row)}
             class="rounded bg-zinc-200 px-2 py-1 text-[10px] font-medium text-zinc-800 hover:bg-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {row.label}
@@ -1858,6 +1944,23 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp subscription_trigger_enabled?(_disabled_subscriptions, _target, _trigger), do: true
 
+  @spec subscription_trigger_injection_supported?(map()) :: boolean()
+  defp subscription_trigger_injection_supported?(%{injection_supported?: true}), do: true
+  defp subscription_trigger_injection_supported?(%{"injection_supported?" => true}), do: true
+  defp subscription_trigger_injection_supported?(_row), do: false
+
+  @spec subscription_trigger_button_title(map()) :: String.t()
+  defp subscription_trigger_button_title(row) when is_map(row) do
+    if subscription_trigger_injection_supported?(row) do
+      "Fire this subscribed event"
+    else
+      "This subscribed event needs a payload shape the debugger form cannot represent."
+    end
+  end
+
+  defp subscription_trigger_button_title(_row),
+    do: "This subscribed event needs a payload shape the debugger form cannot represent."
+
   defp subscription_auto_fire_enabled?(auto_fire_subscriptions, target, trigger)
        when is_list(auto_fire_subscriptions) and is_binary(target) and is_binary(trigger) do
     Enum.any?(auto_fire_subscriptions, fn row ->
@@ -1870,6 +1973,36 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   end
 
   defp subscription_auto_fire_enabled?(_auto_fire_subscriptions, _target, _trigger), do: false
+
+  @spec subscription_auto_fire_toggle_visible?([map()], String.t(), map()) :: boolean()
+  defp subscription_auto_fire_toggle_visible?(auto_fire_subscriptions, target, row)
+       when is_list(auto_fire_subscriptions) and is_binary(target) and is_map(row) do
+    trigger = to_string(Map.get(row, :trigger) || Map.get(row, "trigger") || "")
+    interval_ms = Map.get(row, :interval_ms) || Map.get(row, "interval_ms")
+
+    interval_auto? = is_integer(interval_ms) and interval_ms > 0
+    recurring_event? = recurring_auto_fire_trigger?(trigger)
+
+    interval_auto? or recurring_event? or
+      subscription_auto_fire_enabled?(auto_fire_subscriptions, target, trigger)
+  end
+
+  defp subscription_auto_fire_toggle_visible?(_auto_fire_subscriptions, _target, _row), do: false
+
+  @spec recurring_auto_fire_trigger?(String.t()) :: boolean()
+  defp recurring_auto_fire_trigger?(trigger) when is_binary(trigger) do
+    trigger =
+      trigger
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]/, "")
+
+    String.contains?(trigger, "ontick") or
+      String.contains?(trigger, "onsecondchange") or
+      String.contains?(trigger, "onminutechange") or
+      String.contains?(trigger, "onhourchange")
+  end
+
+  defp recurring_auto_fire_trigger?(_trigger), do: false
 
   attr(:runtime, :any, required: true)
   attr(:project, :any, default: nil)
@@ -1976,165 +2109,182 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             <g clip-path={if @screen_round?, do: "url(##{@clip_id})", else: nil}>
               <rect x="0" y="0" width={@screen_w} height={@screen_h} fill="white" />
               <%= for op <- @svg_ops do %>
-                <rect
-                  :if={op.kind == :clear}
-                  x="0"
-                  y="0"
-                  width={@screen_w}
-                  height={@screen_h}
-                  fill={debugger_svg_color(op.color, "white")}
-                />
-                <image
-                  :if={op.kind == :bitmap_in_rect and is_binary(op[:href])}
-                  x={op.x}
-                  y={op.y}
-                  width={op.w}
-                  height={op.h}
-                  href={op.href}
-                  preserveAspectRatio="none"
-                />
-                <image
-                  :if={op.kind == :rotated_bitmap and is_binary(op[:href])}
-                  x={op.center_x - div(op.src_w, 2)}
-                  y={op.center_y - div(op.src_h, 2)}
-                  width={op.src_w}
-                  height={op.src_h}
-                  href={op.href}
-                  transform={"rotate(#{debugger_pebble_angle_deg(op.angle)} #{op.center_x} #{op.center_y})"}
-                  preserveAspectRatio="none"
-                />
-                <rect
-                  :if={op.kind == :round_rect}
-                  x={op.x}
-                  y={op.y}
-                  width={op.w}
-                  height={op.h}
-                  rx={op.radius}
-                  ry={op.radius}
-                  fill="none"
-                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                  stroke-width={op.stroke_width || 1}
-                />
-                <rect
-                  :if={op.kind == :rect}
-                  x={op.x}
-                  y={op.y}
-                  width={op.w}
-                  height={op.h}
-                  fill="none"
-                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                  stroke-width={op.stroke_width || 1}
-                />
-                <rect
-                  :if={op.kind == :fill_rect}
-                  x={op.x}
-                  y={op.y}
-                  width={op.w}
-                  height={op.h}
-                  fill={debugger_svg_color(op.fill_color, "#111111")}
-                  stroke={
-                    debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
-                  }
-                  stroke-width={op.stroke_width || 1}
-                />
-                <line
-                  :if={op.kind == :line}
-                  x1={op.x1}
-                  y1={op.y1}
-                  x2={op.x2}
-                  y2={op.y2}
-                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                  stroke-width={op.stroke_width || 1}
-                />
-                <path
-                  :if={op.kind == :arc}
-                  d={debugger_arc_path(op)}
-                  fill="none"
-                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                  stroke-width={op.stroke_width || 1}
-                />
-                <path
-                  :if={op.kind == :fill_radial}
-                  d={debugger_arc_sector_path(op)}
-                  fill={debugger_svg_color(op.fill_color, "#111111")}
-                  stroke={
-                    debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
-                  }
-                  stroke-width={op.stroke_width || 1}
-                />
-                <path
-                  :if={op.kind == :path_filled}
-                  d={debugger_path_d(op, true)}
-                  fill={debugger_svg_color(op.fill_color, "#111111")}
-                  stroke={
-                    debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
-                  }
-                  stroke-width={op.stroke_width || 1}
-                />
-                <path
-                  :if={op.kind == :path_outline}
-                  d={debugger_path_d(op, true)}
-                  fill="none"
-                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                  stroke-width={op.stroke_width || 1}
-                />
-                <path
-                  :if={op.kind == :path_outline_open}
-                  d={debugger_path_d(op, false)}
-                  fill="none"
-                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                  stroke-width={op.stroke_width || 1}
-                />
-                <circle
-                  :if={op.kind == :circle}
-                  cx={op.cx}
-                  cy={op.cy}
-                  r={op.r}
-                  fill="none"
-                  stroke={debugger_svg_color(op.stroke_color, "#111111")}
-                  stroke-width={op.stroke_width || 1}
-                />
-                <circle
-                  :if={op.kind == :fill_circle}
-                  cx={op.cx}
-                  cy={op.cy}
-                  r={op.r}
-                  fill={debugger_svg_color(op.fill_color, "#111111")}
-                  stroke={
-                    debugger_svg_color(op.stroke_color, debugger_svg_color(op.fill_color, "#111111"))
-                  }
-                  stroke-width={op.stroke_width || 1}
-                />
-                <rect
-                  :if={op.kind == :pixel}
-                  x={op.x}
-                  y={op.y}
-                  width="1"
-                  height="1"
-                  fill={debugger_svg_color(op.stroke_color, "#111111")}
-                />
-                <text
-                  :if={op.kind == :text_int}
-                  x={op.x}
-                  y={op.y}
-                  font-size="14"
-                  font-family="monospace"
-                  fill={debugger_svg_color(op.text_color, "#111111")}
-                >
-                  {op.text}
-                </text>
-                <text
-                  :if={op.kind == :text_label}
-                  x={debugger_text_svg_x(op)}
-                  y={debugger_text_svg_y(op)}
-                  font-size={debugger_text_svg_font_size(op)}
-                  font-family="sans-serif"
-                  text-anchor={debugger_text_svg_anchor(op)}
-                  dominant-baseline={debugger_text_svg_baseline(op)}
-                  fill={debugger_svg_color(op.text_color, "#111111")}
-                >
-                  {op.text}
-                </text>
+                <g>
+                  <title :if={debugger_svg_op_tooltip(op) != nil}>
+                    {debugger_svg_op_tooltip(op)}
+                  </title>
+                  <rect
+                    :if={op.kind == :clear}
+                    x="0"
+                    y="0"
+                    width={@screen_w}
+                    height={@screen_h}
+                    fill={debugger_svg_color(op.color, "white")}
+                  />
+                  <image
+                    :if={op.kind == :bitmap_in_rect and is_binary(op[:href])}
+                    x={op.x}
+                    y={op.y}
+                    width={op.w}
+                    height={op.h}
+                    href={op.href}
+                    preserveAspectRatio="none"
+                  />
+                  <image
+                    :if={op.kind == :rotated_bitmap and is_binary(op[:href])}
+                    x={op.center_x - div(op.src_w, 2)}
+                    y={op.center_y - div(op.src_h, 2)}
+                    width={op.src_w}
+                    height={op.src_h}
+                    href={op.href}
+                    transform={"rotate(#{debugger_pebble_angle_deg(op.angle)} #{op.center_x} #{op.center_y})"}
+                    preserveAspectRatio="none"
+                  />
+                  <rect
+                    :if={op.kind == :round_rect}
+                    x={op.x}
+                    y={op.y}
+                    width={op.w}
+                    height={op.h}
+                    rx={op.radius}
+                    ry={op.radius}
+                    fill="none"
+                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke-width={op.stroke_width || 1}
+                  />
+                  <rect
+                    :if={op.kind == :rect}
+                    x={op.x}
+                    y={op.y}
+                    width={op.w}
+                    height={op.h}
+                    fill="none"
+                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke-width={op.stroke_width || 1}
+                  />
+                  <rect
+                    :if={op.kind == :fill_rect}
+                    x={op.x}
+                    y={op.y}
+                    width={op.w}
+                    height={op.h}
+                    fill={debugger_svg_color(op.fill_color, "#111111")}
+                    stroke={
+                      debugger_svg_color(
+                        op.stroke_color,
+                        debugger_svg_color(op.fill_color, "#111111")
+                      )
+                    }
+                    stroke-width={op.stroke_width || 1}
+                  />
+                  <line
+                    :if={op.kind == :line}
+                    x1={op.x1}
+                    y1={op.y1}
+                    x2={op.x2}
+                    y2={op.y2}
+                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke-width={op.stroke_width || 1}
+                  />
+                  <path
+                    :if={op.kind == :arc}
+                    d={debugger_arc_path(op)}
+                    fill="none"
+                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke-width={op.stroke_width || 1}
+                  />
+                  <path
+                    :if={op.kind == :fill_radial}
+                    d={debugger_arc_sector_path(op)}
+                    fill={debugger_svg_color(op.fill_color, "#111111")}
+                    stroke={
+                      debugger_svg_color(
+                        op.stroke_color,
+                        debugger_svg_color(op.fill_color, "#111111")
+                      )
+                    }
+                    stroke-width={op.stroke_width || 1}
+                  />
+                  <path
+                    :if={op.kind == :path_filled}
+                    d={debugger_path_d(op, true)}
+                    fill={debugger_svg_color(op.fill_color, "#111111")}
+                    stroke={
+                      debugger_svg_color(
+                        op.stroke_color,
+                        debugger_svg_color(op.fill_color, "#111111")
+                      )
+                    }
+                    stroke-width={op.stroke_width || 1}
+                  />
+                  <path
+                    :if={op.kind == :path_outline}
+                    d={debugger_path_d(op, true)}
+                    fill="none"
+                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke-width={op.stroke_width || 1}
+                  />
+                  <path
+                    :if={op.kind == :path_outline_open}
+                    d={debugger_path_d(op, false)}
+                    fill="none"
+                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke-width={op.stroke_width || 1}
+                  />
+                  <circle
+                    :if={op.kind == :circle}
+                    cx={op.cx}
+                    cy={op.cy}
+                    r={op.r}
+                    fill="none"
+                    stroke={debugger_svg_color(op.stroke_color, "#111111")}
+                    stroke-width={op.stroke_width || 1}
+                  />
+                  <circle
+                    :if={op.kind == :fill_circle}
+                    cx={op.cx}
+                    cy={op.cy}
+                    r={op.r}
+                    fill={debugger_svg_color(op.fill_color, "#111111")}
+                    stroke={
+                      debugger_svg_color(
+                        op.stroke_color,
+                        debugger_svg_color(op.fill_color, "#111111")
+                      )
+                    }
+                    stroke-width={op.stroke_width || 1}
+                  />
+                  <rect
+                    :if={op.kind == :pixel}
+                    x={op.x}
+                    y={op.y}
+                    width="1"
+                    height="1"
+                    fill={debugger_svg_color(op.stroke_color, "#111111")}
+                  />
+                  <text
+                    :if={op.kind == :text_int}
+                    x={op.x}
+                    y={op.y}
+                    font-size="14"
+                    font-family="monospace"
+                    fill={debugger_svg_color(op.text_color, "#111111")}
+                  >
+                    {op.text}
+                  </text>
+                  <text
+                    :if={op.kind == :text_label}
+                    x={debugger_text_svg_x(op)}
+                    y={debugger_text_svg_y(op)}
+                    font-size={debugger_text_svg_font_size(op)}
+                    font-family="sans-serif"
+                    text-anchor={debugger_text_svg_anchor(op)}
+                    dominant-baseline={debugger_text_svg_baseline(op)}
+                    fill={debugger_svg_color(op.text_color, "#111111")}
+                  >
+                    {op.text}
+                  </text>
+                </g>
               <% end %>
               <rect
                 :if={is_map(@hover_box)}
@@ -2418,6 +2568,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         :summary,
         DebuggerSupport.rendered_node_summary(node, assigns.model, assigns.arg_name)
       )
+      |> assign(:source_tooltip, debugger_rendered_node_source_tooltip(node))
       |> assign(:children, children)
 
     ~H"""
@@ -2427,6 +2578,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
           class="rounded px-0.5 text-zinc-800 hover:bg-blue-50 hover:text-blue-950"
           data-rendered-node-hover-path={@path}
           data-rendered-node-hover-scope={@scope}
+          title={@source_tooltip}
         >
           {@summary}
         </div>
@@ -2447,6 +2599,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
           class="cursor-pointer select-none rounded px-0.5 text-zinc-800 hover:bg-blue-50 hover:text-blue-950"
           data-rendered-node-hover-path={@path}
           data-rendered-node-hover-scope={@scope}
+          title={@source_tooltip}
         >
           {@summary}
         </summary>
@@ -2467,6 +2620,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         class="mt-0.5 rounded px-0.5 text-zinc-800 hover:bg-blue-50 hover:text-blue-950"
         data-rendered-node-hover-path={@path}
         data-rendered-node-hover-scope={@scope}
+        title={@source_tooltip}
       >
         {@summary}
       </div>
@@ -2480,6 +2634,31 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   end
 
   defp debugger_hidden_rendered_node_type?(_), do: false
+
+  @spec debugger_rendered_node_source_tooltip(map()) :: String.t() | nil
+  defp debugger_rendered_node_source_tooltip(node) when is_map(node) do
+    source = Map.get(node, "source") || Map.get(node, :source)
+
+    with %{} <- source,
+         call when is_binary(call) and call != "" <-
+           Map.get(source, "call") || Map.get(source, :call) ||
+             Map.get(node, "qualified_target") || Map.get(node, :qualified_target) ||
+             rendered_node_tooltip_call(node),
+         path when is_binary(path) and path != "" <-
+           Map.get(source, "path") || Map.get(source, :path),
+         line when is_integer(line) <- Map.get(source, "line") || Map.get(source, :line) do
+      "#{call} at #{path}:#{line}"
+    else
+      _ -> nil
+    end
+  end
+
+  defp debugger_rendered_node_source_tooltip(_node), do: nil
+
+  defp rendered_node_tooltip_call(node) when is_map(node) do
+    type = Map.get(node, "type") || Map.get(node, :type)
+    if is_binary(type) and type != "", do: "Ui.#{type}", else: nil
+  end
 
   @spec debugger_rendered_child_rows([map()], map(), String.t()) :: [
           %{node: map(), arg_name: String.t() | nil, path: String.t()}
@@ -2602,6 +2781,24 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   @spec debugger_unresolved_svg_summary(term()) :: term()
   defp debugger_unresolved_svg_summary(rows), do: DebuggerPreview.unresolved_summary(rows)
+
+  @spec debugger_svg_op_tooltip(term()) :: String.t() | nil
+  defp debugger_svg_op_tooltip(op) when is_map(op) do
+    source = Map.get(op, :source) || Map.get(op, "source")
+
+    with %{} <- source,
+         call when is_binary(call) and call != "" <-
+           Map.get(source, "call") || Map.get(source, :call),
+         path when is_binary(path) and path != "" <-
+           Map.get(source, "path") || Map.get(source, :path),
+         line when is_integer(line) <- Map.get(source, "line") || Map.get(source, :line) do
+      "#{call} at #{path}:#{line}"
+    else
+      _ -> nil
+    end
+  end
+
+  defp debugger_svg_op_tooltip(_op), do: nil
 
   @spec debugger_rendered_tree(term()) :: term()
   defp debugger_rendered_tree(runtime), do: DebuggerSupport.rendered_tree(runtime)
@@ -2835,6 +3032,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   @spec debugger_auto_fire_target(term()) :: String.t()
   defp debugger_auto_fire_target("protocol"), do: "protocol"
-  defp debugger_auto_fire_target("companion"), do: "protocol"
+  defp debugger_auto_fire_target("companion"), do: "phone"
   defp debugger_auto_fire_target(_target), do: "watch"
 end

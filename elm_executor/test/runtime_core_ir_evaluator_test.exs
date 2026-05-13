@@ -632,6 +632,60 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
             }} = CoreIREvaluator.decode_http_response(command, response, context)
   end
 
+  test "decode_http_response merges Http.expectJson partial to_msg captured payload" do
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "CompanionApp",
+          "unions" => %{
+            "Msg" => %{
+              "tags" => %{
+                "FromWatch" => 1,
+                "FromBridge" => 2,
+                "WeatherReceived" => 3
+              }
+            }
+          },
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "update",
+              "args" => ["msg", "model"],
+              "expr" => %{"op" => :literal, "value" => nil}
+            }
+          ]
+        }
+      ]
+    }
+
+    context = %{
+      module: "CompanionApp",
+      source_module: "CompanionApp",
+      functions: CoreIREvaluator.index_functions(core_ir),
+      record_aliases: CoreIREvaluator.index_record_aliases(core_ir),
+      constructor_tags: CoreIREvaluator.index_constructor_tags(core_ir)
+    }
+
+    command = %{
+      "expect" => %{
+        "kind" => "json",
+        "decoder" => {:json_decoder, {:field, "elevation", {:json_decoder, :int}}},
+        "to_msg" => {3, %{"homeLatitude" => 52520000}}
+      }
+    }
+
+    response = %{"status" => 200, "body" => ~s({"elevation": 42})}
+
+    assert {:ok,
+            %{
+              "ctor" => "WeatherReceived",
+              "args" => [
+                %{"homeLatitude" => 52520000},
+                %{"ctor" => "Ok", "args" => [42]}
+              ]
+            }} = CoreIREvaluator.decode_http_response(command, response, context)
+  end
+
   test "evaluates elm/http request descriptors with headers and string bodies" do
     expr = %{
       "op" => :qualified_call,
@@ -751,6 +805,84 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
                qcall("Task.andThen", [
                  lambda(["x"], qcall("Task.succeed", [call("__add__", [var("x"), int(1)])])),
                  qcall("Task.succeed", [int(2)])
+               ])
+             )
+  end
+
+  test "evaluates complete Basics numeric surface and partials" do
+    assert {:ok, pi} = CoreIREvaluator.evaluate(qcall("Basics.pi", []))
+    assert_in_delta pi, :math.pi(), 1.0e-12
+
+    assert {:ok, e} = CoreIREvaluator.evaluate(qcall("Basics.e", []))
+    assert_in_delta e, :math.exp(1.0), 1.0e-12
+
+    assert {:ok, 3.0} = CoreIREvaluator.evaluate(qcall("Basics.sqrt", [float(9.0)]))
+    assert {:ok, 2.0} = CoreIREvaluator.evaluate(qcall("Basics.logBase", [float(10.0), float(100.0)]))
+
+    assert {:ok, radians} = CoreIREvaluator.evaluate(qcall("Basics.degrees", [float(180.0)]))
+    assert_in_delta radians, :math.pi(), 1.0e-12
+
+    assert {:ok, turns} = CoreIREvaluator.evaluate(qcall("Basics.turns", [float(0.5)]))
+    assert_in_delta turns, :math.pi(), 1.0e-12
+
+    assert {:ok, sin_value} = CoreIREvaluator.evaluate(qcall("Basics.sin", [float(:math.pi() / 2.0)]))
+    assert_in_delta sin_value, 1.0, 1.0e-12
+
+    assert {:ok, cos_value} = CoreIREvaluator.evaluate(qcall("Basics.cos", [float(0.0)]))
+    assert_in_delta cos_value, 1.0, 1.0e-12
+
+    assert {:ok, tan_value} = CoreIREvaluator.evaluate(qcall("Basics.tan", [float(0.0)]))
+    assert_in_delta tan_value, 0.0, 1.0e-12
+
+    assert {:ok, atan_value} = CoreIREvaluator.evaluate(qcall("Basics.atan2", [float(1.0), float(1.0)]))
+    assert_in_delta atan_value, :math.pi() / 4.0, 1.0e-12
+
+    assert {:ok, {x, y}} =
+             CoreIREvaluator.evaluate(qcall("Basics.fromPolar", [tuple2(float(2.0), float(0.0))]))
+
+    assert_in_delta x, 2.0, 1.0e-12
+    assert_in_delta y, 0.0, 1.0e-12
+
+    assert {:ok, {radius, theta}} =
+             CoreIREvaluator.evaluate(qcall("Basics.toPolar", [tuple2(float(0.0), float(2.0))]))
+
+    assert_in_delta radius, 2.0, 1.0e-12
+    assert_in_delta theta, :math.pi() / 2.0, 1.0e-12
+
+    assert {:ok, true} =
+             CoreIREvaluator.evaluate(
+               qcall("Basics.isNaN", [qcall("__fdiv__", [float(0.0), float(0.0)])])
+             )
+
+    assert {:ok, true} =
+             CoreIREvaluator.evaluate(
+               qcall("Basics.isInfinite", [qcall("__fdiv__", [float(1.0), float(0.0)])])
+             )
+
+    assert {:ok, [sin_zero, sin_half_turn]} =
+             CoreIREvaluator.evaluate(
+               qcall("List.map", [
+                 qcall("Basics.sin", []),
+                 list([0.0, :math.pi() / 2.0])
+               ])
+             )
+
+    assert_in_delta sin_zero, 0.0, 1.0e-12
+    assert_in_delta sin_half_turn, 1.0, 1.0e-12
+
+    assert {:ok, [8.0, 16.0]} =
+             CoreIREvaluator.evaluate(
+               qcall("List.map", [
+                 qcall("Basics.logBase", [float(2.0)]),
+                 list([256.0, 65536.0])
+               ])
+             )
+
+    assert {:ok, [0, 1, 2]} =
+             CoreIREvaluator.evaluate(
+               qcall("List.map", [
+                 qcall("Basics.clamp", [int(0), int(2)]),
+                 list([-1, 1, 3])
                ])
              )
   end
@@ -921,6 +1053,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
     do: %{"op" => :compare, "kind" => kind, "left" => left, "right" => right}
 
   defp int(value), do: %{"op" => :int_literal, "value" => value}
+  defp float(value), do: %{"op" => :float_literal, "value" => value}
   defp string(value), do: %{"op" => :string_literal, "value" => value}
   defp var(name), do: %{"op" => :var, "name" => name}
   defp list(values), do: %{"op" => :list_literal, "items" => Enum.map(values, &literal/1)}
@@ -938,6 +1071,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
   end
 
   defp literal(value) when is_integer(value), do: int(value)
+  defp literal(value) when is_float(value), do: float(value)
   defp literal(value) when is_binary(value), do: string(value)
   defp literal(value), do: value
 end

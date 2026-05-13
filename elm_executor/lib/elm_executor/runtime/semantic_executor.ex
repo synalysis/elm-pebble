@@ -110,6 +110,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
           {base_runtime_model, "init_model", nil, "init_model", %{}, init_commands}
       end
 
+    runtime_model = normalize_runtime_model_by_declared_type(runtime_model, eval_context)
     runtime_model_for_view = enrich_runtime_model_for_view(runtime_model, current_model)
     init_execution? = not (is_binary(message) and message != "")
 
@@ -126,7 +127,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
     followup_messages = package_followup_messages(runtime_commands, source_root)
 
-    view_output = derive_view_output(runtime_view_tree, runtime_model_for_view, eval_context)
+    view_output =
+      runtime_view_tree
+      |> derive_view_output(runtime_model_for_view, eval_context)
+      |> annotate_view_output_sources(introspect)
 
     runtime = %{
       "engine" => "elm_executor_runtime_v1",
@@ -1355,14 +1359,70 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   @spec evaluator_context(term()) :: term()
   defp evaluator_context(core_ir) do
+    module_name = evaluator_entry_module(core_ir)
+
     %{
-      module: "Main",
-      source_module: "Main",
+      module: module_name,
+      source_module: module_name,
       functions: CoreIREvaluator.index_functions(core_ir),
       record_aliases: CoreIREvaluator.index_record_aliases(core_ir),
+      record_alias_field_types: CoreIREvaluator.index_record_alias_field_types(core_ir),
       constructor_tags: CoreIREvaluator.index_constructor_tags(core_ir)
     }
   end
+
+  @spec evaluator_entry_module(term()) :: String.t()
+  defp evaluator_entry_module(core_ir) when is_map(core_ir) do
+    modules = generic_map_value(core_ir, "modules")
+
+    modules
+    |> List.wrap()
+    |> Enum.find_value(&module_name_with_decl(&1, "init"))
+    |> case do
+      name when is_binary(name) and name != "" ->
+        name
+
+      _ ->
+        modules
+        |> List.wrap()
+        |> Enum.find_value(&module_name/1)
+        |> case do
+          name when is_binary(name) and name != "" -> name
+          _ -> "Main"
+        end
+    end
+  end
+
+  defp evaluator_entry_module(_core_ir), do: "Main"
+
+  @spec module_name_with_decl(term(), String.t()) :: String.t() | nil
+  defp module_name_with_decl(module, declaration_name) when is_map(module) do
+    declarations = generic_map_value(module, "declarations") || []
+
+    if Enum.any?(declarations, &(generic_map_value(&1, "name") == declaration_name)) do
+      module_name(module)
+    end
+  end
+
+  defp module_name_with_decl(_module, _declaration_name), do: nil
+
+  @spec module_name(term()) :: String.t() | nil
+  defp module_name(module) when is_map(module) do
+    case generic_map_value(module, "name") do
+      name when is_binary(name) and name != "" -> name
+      _ -> nil
+    end
+  end
+
+  defp module_name(_module), do: nil
+
+  @spec normalize_runtime_model_by_declared_type(term(), term()) :: term()
+  defp normalize_runtime_model_by_declared_type(runtime_model, eval_context)
+       when is_map(runtime_model) and is_map(eval_context) do
+    CoreIREvaluator.normalize_value_by_type(runtime_model, "Model", eval_context)
+  end
+
+  defp normalize_runtime_model_by_declared_type(runtime_model, _eval_context), do: runtime_model
 
   @spec enrich_runtime_model_for_view(term(), term()) :: term()
   defp enrich_runtime_model_for_view(runtime_model, current_model)
@@ -1561,285 +1621,359 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
     ints = node_int_args(node, runtime_model, eval_context)
 
-    case type do
-      "clear" ->
-        case clear_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [color]} ->
-            [%{"kind" => "clear", "color" => color}]
+    rows =
+      case type do
+        "clear" ->
+          case clear_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [color]} ->
+              [%{"kind" => "clear", "color" => color}]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 1)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 1)]
+          end
 
-      "roundRect" ->
-        case round_rect_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [x, y, w, h, radius, fill]} ->
-            [
-              %{
-                "kind" => "round_rect",
-                "x" => x,
-                "y" => y,
-                "w" => w,
-                "h" => h,
-                "radius" => radius,
-                "fill" => fill
-              }
-            ]
+        "roundRect" ->
+          case round_rect_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [x, y, w, h, radius, fill]} ->
+              [
+                %{
+                  "kind" => "round_rect",
+                  "x" => x,
+                  "y" => y,
+                  "w" => w,
+                  "h" => h,
+                  "radius" => radius,
+                  "fill" => fill
+                }
+              ]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 6)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 6)]
+          end
 
-      "rect" ->
-        case rect_color_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [x, y, w, h, fill]} ->
-            [%{"kind" => "rect", "x" => x, "y" => y, "w" => w, "h" => h, "fill" => fill}]
+        "rect" ->
+          case rect_color_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [x, y, w, h, fill]} ->
+              [%{"kind" => "rect", "x" => x, "y" => y, "w" => w, "h" => h, "fill" => fill}]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 5)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 5)]
+          end
 
-      "fillRect" ->
-        case rect_color_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [x, y, w, h, fill]} ->
-            [%{"kind" => "fill_rect", "x" => x, "y" => y, "w" => w, "h" => h, "fill" => fill}]
+        "fillRect" ->
+          case rect_color_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [x, y, w, h, fill]} ->
+              [%{"kind" => "fill_rect", "x" => x, "y" => y, "w" => w, "h" => h, "fill" => fill}]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 5)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 5)]
+          end
 
-      "line" ->
-        case line_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [x1, y1, x2, y2, color]} ->
-            [
-              %{
-                "kind" => "line",
-                "x1" => x1,
-                "y1" => y1,
-                "x2" => x2,
-                "y2" => y2,
-                "color" => color
-              }
-            ]
+        "line" ->
+          case line_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [x1, y1, x2, y2, color]} ->
+              [
+                %{
+                  "kind" => "line",
+                  "x1" => x1,
+                  "y1" => y1,
+                  "x2" => x2,
+                  "y2" => y2,
+                  "color" => color
+                }
+              ]
 
-          _ ->
-            [unresolved_view_output_row(node, type, ints, 5)]
-        end
+            _ ->
+              [unresolved_view_output_row(node, type, ints, 5)]
+          end
 
-      "arc" ->
-        case rect_angle_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [x, y, w, h, start_angle, end_angle]} ->
-            [
-              %{
-                "kind" => "arc",
-                "x" => x,
-                "y" => y,
-                "w" => w,
-                "h" => h,
-                "start_angle" => start_angle,
-                "end_angle" => end_angle
-              }
-            ]
+        "arc" ->
+          case rect_angle_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [x, y, w, h, start_angle, end_angle]} ->
+              [
+                %{
+                  "kind" => "arc",
+                  "x" => x,
+                  "y" => y,
+                  "w" => w,
+                  "h" => h,
+                  "start_angle" => start_angle,
+                  "end_angle" => end_angle
+                }
+              ]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 6)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 6)]
+          end
 
-      "fillRadial" ->
-        case rect_angle_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [x, y, w, h, start_angle, end_angle]} ->
-            [
-              %{
-                "kind" => "fill_radial",
-                "x" => x,
-                "y" => y,
-                "w" => w,
-                "h" => h,
-                "start_angle" => start_angle,
-                "end_angle" => end_angle
-              }
-            ]
+        "fillRadial" ->
+          case rect_angle_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [x, y, w, h, start_angle, end_angle]} ->
+              [
+                %{
+                  "kind" => "fill_radial",
+                  "x" => x,
+                  "y" => y,
+                  "w" => w,
+                  "h" => h,
+                  "start_angle" => start_angle,
+                  "end_angle" => end_angle
+                }
+              ]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 6)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 6)]
+          end
 
-      "pathFilled" ->
-        case path_args_from_node(node, runtime_model, eval_context) do
-          {:ok, %{points: points, offset_x: offset_x, offset_y: offset_y, rotation: rotation}} ->
-            [
-              %{
-                "kind" => "path_filled",
-                "points" => points,
-                "offset_x" => offset_x,
-                "offset_y" => offset_y,
-                "rotation" => rotation
-              }
-            ]
+        "pathFilled" ->
+          case path_args_from_node(node, runtime_model, eval_context) do
+            {:ok, %{points: points, offset_x: offset_x, offset_y: offset_y, rotation: rotation}} ->
+              [
+                %{
+                  "kind" => "path_filled",
+                  "points" => points,
+                  "offset_x" => offset_x,
+                  "offset_y" => offset_y,
+                  "rotation" => rotation
+                }
+              ]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 4)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 4)]
+          end
 
-      "pathOutline" ->
-        case path_args_from_node(node, runtime_model, eval_context) do
-          {:ok, %{points: points, offset_x: offset_x, offset_y: offset_y, rotation: rotation}} ->
-            [
-              %{
-                "kind" => "path_outline",
-                "points" => points,
-                "offset_x" => offset_x,
-                "offset_y" => offset_y,
-                "rotation" => rotation
-              }
-            ]
+        "pathOutline" ->
+          case path_args_from_node(node, runtime_model, eval_context) do
+            {:ok, %{points: points, offset_x: offset_x, offset_y: offset_y, rotation: rotation}} ->
+              [
+                %{
+                  "kind" => "path_outline",
+                  "points" => points,
+                  "offset_x" => offset_x,
+                  "offset_y" => offset_y,
+                  "rotation" => rotation
+                }
+              ]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 4)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 4)]
+          end
 
-      "pathOutlineOpen" ->
-        case path_args_from_node(node, runtime_model, eval_context) do
-          {:ok, %{points: points, offset_x: offset_x, offset_y: offset_y, rotation: rotation}} ->
-            [
-              %{
-                "kind" => "path_outline_open",
-                "points" => points,
-                "offset_x" => offset_x,
-                "offset_y" => offset_y,
-                "rotation" => rotation
-              }
-            ]
+        "pathOutlineOpen" ->
+          case path_args_from_node(node, runtime_model, eval_context) do
+            {:ok, %{points: points, offset_x: offset_x, offset_y: offset_y, rotation: rotation}} ->
+              [
+                %{
+                  "kind" => "path_outline_open",
+                  "points" => points,
+                  "offset_x" => offset_x,
+                  "offset_y" => offset_y,
+                  "rotation" => rotation
+                }
+              ]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 4)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 4)]
+          end
 
-      "circle" ->
-        case circle_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [cx, cy, r, color]} ->
-            [%{"kind" => "circle", "cx" => cx, "cy" => cy, "r" => r, "color" => color}]
+        "circle" ->
+          case circle_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [cx, cy, r, color]} ->
+              [%{"kind" => "circle", "cx" => cx, "cy" => cy, "r" => r, "color" => color}]
 
-          _ ->
-            [unresolved_view_output_row(node, type, ints, 4)]
-        end
+            _ ->
+              [unresolved_view_output_row(node, type, ints, 4)]
+          end
 
-      "fillCircle" ->
-        case circle_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [cx, cy, r, color]} ->
-            [%{"kind" => "fill_circle", "cx" => cx, "cy" => cy, "r" => r, "color" => color}]
+        "fillCircle" ->
+          case circle_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [cx, cy, r, color]} ->
+              [%{"kind" => "fill_circle", "cx" => cx, "cy" => cy, "r" => r, "color" => color}]
 
-          _ ->
-            [unresolved_view_output_row(node, type, ints, 4)]
-        end
+            _ ->
+              [unresolved_view_output_row(node, type, ints, 4)]
+          end
 
-      "bitmapInRect" ->
-        case require_ints(ints, 5) do
-          {:ok, [bitmap_id, x, y, w, h]} ->
-            [
-              %{
-                "kind" => "bitmap_in_rect",
-                "bitmap_id" => bitmap_id,
-                "x" => x,
-                "y" => y,
-                "w" => w,
-                "h" => h
-              }
-            ]
+        "bitmapInRect" ->
+          case require_ints(ints, 5) do
+            {:ok, [bitmap_id, x, y, w, h]} ->
+              [
+                %{
+                  "kind" => "bitmap_in_rect",
+                  "bitmap_id" => bitmap_id,
+                  "x" => x,
+                  "y" => y,
+                  "w" => w,
+                  "h" => h
+                }
+              ]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 5)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 5)]
+          end
 
-      "rotatedBitmap" ->
-        case require_ints(ints, 6) do
-          {:ok, [bitmap_id, src_w, src_h, angle, center_x, center_y]} ->
-            [
-              %{
-                "kind" => "rotated_bitmap",
-                "bitmap_id" => bitmap_id,
-                "src_w" => src_w,
-                "src_h" => src_h,
-                "angle" => angle,
-                "center_x" => center_x,
-                "center_y" => center_y
-              }
-            ]
+        "rotatedBitmap" ->
+          case require_ints(ints, 6) do
+            {:ok, [bitmap_id, src_w, src_h, angle, center_x, center_y]} ->
+              [
+                %{
+                  "kind" => "rotated_bitmap",
+                  "bitmap_id" => bitmap_id,
+                  "src_w" => src_w,
+                  "src_h" => src_h,
+                  "angle" => angle,
+                  "center_x" => center_x,
+                  "center_y" => center_y
+                }
+              ]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 6)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 6)]
+          end
 
-      "pixel" ->
-        case require_ints(ints, 3) do
-          {:ok, [x, y, color]} ->
-            [%{"kind" => "pixel", "x" => x, "y" => y, "color" => color}]
+        "pixel" ->
+          case require_ints(ints, 3) do
+            {:ok, [x, y, color]} ->
+              [%{"kind" => "pixel", "x" => x, "y" => y, "color" => color}]
 
-          :error ->
-            [unresolved_view_output_row(node, type, ints, 3)]
-        end
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 3)]
+          end
 
-      "textInt" ->
-        case text_int_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [font_id, x, y, value]} when is_integer(font_id) and is_integer(value) ->
-            [
-              %{
-                "kind" => "text_int",
-                "x" => x,
-                "y" => y,
-                "text" => Integer.to_string(value),
-                "font_id" => font_id
-              }
-            ]
+        "textInt" ->
+          case text_int_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [font_id, x, y, value]} when is_integer(font_id) and is_integer(value) ->
+              [
+                %{
+                  "kind" => "text_int",
+                  "x" => x,
+                  "y" => y,
+                  "text" => Integer.to_string(value),
+                  "font_id" => font_id
+                }
+              ]
 
-          _ ->
-            [unresolved_view_output_row(node, type, ints, 4)]
-        end
+            _ ->
+              [unresolved_view_output_row(node, type, ints, 4)]
+          end
 
-      "textLabel" ->
-        case text_label_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [font_id, x, y]} when is_integer(font_id) ->
-            [
-              %{
-                "kind" => "text_label",
-                "x" => x,
-                "y" => y,
-                "text" => text_label_from_node(node, runtime_model, eval_context),
-                "font_id" => font_id
-              }
-            ]
+        "textLabel" ->
+          case text_label_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [font_id, x, y]} when is_integer(font_id) ->
+              [
+                %{
+                  "kind" => "text_label",
+                  "x" => x,
+                  "y" => y,
+                  "text" => text_label_from_node(node, runtime_model, eval_context),
+                  "font_id" => font_id
+                }
+              ]
 
-          _ ->
-            [unresolved_view_output_row(node, type, ints, 3)]
-        end
+            _ ->
+              [unresolved_view_output_row(node, type, ints, 3)]
+          end
 
-      "text" ->
-        case text_args_from_node(node, ints, runtime_model, eval_context) do
-          {:ok, [font_id, x, y, w, h, text]}
-          when is_integer(font_id) and is_integer(x) and is_integer(y) and is_integer(w) and
-                 is_integer(h) and is_binary(text) ->
-            [
-              %{
-                "kind" => "text",
-                "x" => x,
-                "y" => y,
-                "w" => w,
-                "h" => h,
-                "text" => text,
-                "font_id" => font_id
-              }
-            ]
+        "text" ->
+          case text_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [font_id, x, y, w, h, text]}
+            when is_integer(font_id) and is_integer(x) and is_integer(y) and is_integer(w) and
+                   is_integer(h) and is_binary(text) ->
+              [
+                %{
+                  "kind" => "text",
+                  "x" => x,
+                  "y" => y,
+                  "w" => w,
+                  "h" => h,
+                  "text" => text,
+                  "font_id" => font_id
+                }
+              ]
 
-          _ ->
-            [unresolved_view_output_row(node, type, ints, 6)]
-        end
+            _ ->
+              [unresolved_view_output_row(node, type, ints, 6)]
+          end
 
-      _ ->
-        []
-    end
+        _ ->
+          []
+      end
+
+    Enum.map(rows, &put_view_output_source(&1, node))
   end
 
   defp view_output_from_node(_node, _runtime_model, _eval_context), do: []
+
+  @spec put_view_output_source(term(), term()) :: term()
+  defp put_view_output_source(row, node) when is_map(row) and is_map(node) do
+    case Map.get(node, "source") || Map.get(node, :source) do
+      %{} = source -> Map.put(row, "source", source)
+      _ -> row
+    end
+  end
+
+  defp put_view_output_source(row, _node), do: row
+
+  @spec annotate_view_output_sources([term()], map()) :: [term()]
+  defp annotate_view_output_sources(rows, introspect) when is_list(rows) and is_map(introspect) do
+    source_locations =
+      map_value(introspect, :view_source_locations)
+      |> case do
+        %{} = value -> value
+        _ -> %{}
+      end
+
+    {annotated, _counters} =
+      Enum.map_reduce(rows, %{}, fn row, counters ->
+        kind = if is_map(row), do: to_string(map_value(row, :kind) || "")
+
+        cond do
+          not is_map(row) ->
+            {row, counters}
+
+          map_value(row, :source) != nil ->
+            {row, increment_view_output_counter(counters, kind)}
+
+          kind == "" ->
+            {row, counters}
+
+          true ->
+            index = Map.get(counters, kind, 0)
+
+            source =
+              source_locations
+              |> Map.get(kind)
+              |> source_location_at(index)
+
+            row =
+              case source do
+                %{} = source -> Map.put(row, "source", source)
+                _ -> row
+              end
+
+            {row, increment_view_output_counter(counters, kind)}
+        end
+      end)
+
+    annotated
+  end
+
+  defp annotate_view_output_sources(rows, _introspect) when is_list(rows), do: rows
+
+  @spec increment_view_output_counter(map(), String.t() | nil) :: map()
+  defp increment_view_output_counter(counters, kind)
+       when is_map(counters) and is_binary(kind) and kind != "" do
+    Map.update(counters, kind, 1, &(&1 + 1))
+  end
+
+  defp increment_view_output_counter(counters, _kind), do: counters
+
+  @spec source_location_at(term(), non_neg_integer()) :: map() | nil
+  defp source_location_at(locations, index) when is_list(locations) and locations != [] do
+    Enum.at(locations, index) || List.last(locations)
+  end
+
+  defp source_location_at(_locations, _index), do: nil
 
   @spec node_int_args(term(), term(), term()) :: term()
   defp node_int_args(node, runtime_model, eval_context)

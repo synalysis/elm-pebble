@@ -1639,7 +1639,16 @@ defmodule IdeWeb.WorkspaceLive do
 
   def handle_event("debugger-open-trigger-modal", %{"trigger" => trigger} = params, socket)
       when is_binary(trigger) do
-    {:noreply, open_debugger_trigger_modal(socket, params)}
+    if debugger_trigger_modal_supported?(socket, params) do
+      {:noreply, open_debugger_trigger_modal(socket, params)}
+    else
+      {:noreply,
+       put_flash(
+         socket,
+         :error,
+         "This subscribed event needs a payload shape the debugger form cannot represent."
+       )}
+    end
   end
 
   def handle_event("debugger-close-trigger-modal", _params, socket) do
@@ -2850,7 +2859,7 @@ defmodule IdeWeb.WorkspaceLive do
 
         {mod, socket} =
           cond do
-            cur_mod != "" and row && cur_mod in row.modules ->
+            (cur_mod != "" and row) && cur_mod in row.modules ->
               {cur_mod, assign(socket, :editor_doc_module, cur_mod)}
 
             row && row.modules != [] ->
@@ -3204,6 +3213,21 @@ defmodule IdeWeb.WorkspaceLive do
     )
   end
 
+  @spec debugger_trigger_modal_supported?(term(), map()) :: boolean()
+  defp debugger_trigger_modal_supported?(socket, params) when is_map(params) do
+    state = socket.assigns[:debugger_state]
+
+    row = %{
+      trigger: Map.get(params, "trigger") || Map.get(params, :trigger),
+      target: Map.get(params, "target") || Map.get(params, :target),
+      message: Map.get(params, "message") || Map.get(params, :message)
+    }
+
+    Ide.Debugger.subscription_trigger_injection_modal_supported?(state, row)
+  end
+
+  defp debugger_trigger_modal_supported?(_socket, _params), do: false
+
   @spec close_debugger_trigger_modal(term()) :: term()
   defp close_debugger_trigger_modal(socket) do
     assign(socket,
@@ -3238,8 +3262,13 @@ defmodule IdeWeb.WorkspaceLive do
         contains_any?(normalized_trigger, ["on_connection_change", "onconnectionchange"]) ->
           {"boolean", "True", append_single_payload(constructor, "True")}
 
+        contains_any?(normalized_trigger, ["on_second_change", "onsecondchange"]) ->
+          {"integer", Integer.to_string(now.second),
+           append_single_payload(constructor, now.second)}
+
         contains_any?(normalized_trigger, ["on_tick", "ontick", "tick"]) ->
-          {"none", "", constructor}
+          {"integer", Integer.to_string(now.second),
+           append_single_payload(constructor, now.second)}
 
         true ->
           {"message", "", constructor}
@@ -3532,7 +3561,10 @@ defmodule IdeWeb.WorkspaceLive do
       end
 
     auto_tick
-    |> Map.get(:interval_ms, Map.get(auto_tick, "interval_ms", @debugger_auto_fire_refresh_interval_ms))
+    |> Map.get(
+      :interval_ms,
+      Map.get(auto_tick, "interval_ms", @debugger_auto_fire_refresh_interval_ms)
+    )
     |> case do
       interval_ms when is_integer(interval_ms) ->
         interval_ms
@@ -3553,9 +3585,9 @@ defmodule IdeWeb.WorkspaceLive do
 
   @spec debugger_auto_fire_target(term()) :: String.t()
   defp debugger_auto_fire_target("protocol"), do: "protocol"
-  defp debugger_auto_fire_target("companion"), do: "protocol"
+  defp debugger_auto_fire_target("companion"), do: "phone"
   defp debugger_auto_fire_target(:protocol), do: "protocol"
-  defp debugger_auto_fire_target(:companion), do: "protocol"
+  defp debugger_auto_fire_target(:companion), do: "phone"
   defp debugger_auto_fire_target(_target), do: "watch"
 
   @spec debugger_checkbox_enabled?(term()) :: boolean()

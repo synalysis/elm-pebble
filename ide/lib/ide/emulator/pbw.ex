@@ -66,11 +66,23 @@ defmodule Ide.Emulator.PBW do
   @spec prune_empty_media_resources(String.t()) :: {:ok, String.t()} | {:error, term()}
   def prune_empty_media_resources(path) when is_binary(path), do: {:ok, path}
 
+  @spec prune_development_artifacts(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def prune_development_artifacts(path) when is_binary(path) do
+    with {:ok, entries} <- read_entry_list(path),
+         pruned <- prune_entry_list(entries) do
+      if pruned == entries do
+        {:ok, path}
+      else
+        rewrite_entries(path, pruned)
+      end
+    end
+  end
+
   @spec platform_variants(String.t()) :: [String.t()]
   def platform_variants(platform), do: Map.get(@platform_fallbacks, platform, [platform])
 
   defp read_entries(path) do
-    case :zip.extract(String.to_charlist(path), [:memory]) do
+    case read_entry_list(path) do
       {:ok, entries} ->
         {:ok,
          Map.new(entries, fn {name, data} ->
@@ -79,6 +91,51 @@ defmodule Ide.Emulator.PBW do
 
       {:error, reason} ->
         {:error, {:pbw_zip_error, reason}}
+    end
+  end
+
+  defp read_entry_list(path), do: :zip.extract(String.to_charlist(path), [:memory])
+
+  defp prune_entry_list(entries) do
+    Enum.flat_map(entries, fn {name, data} ->
+      path = List.to_string(name)
+
+      cond do
+        String.ends_with?(path, ".js.map") ->
+          []
+
+        String.ends_with?(path, ".js") ->
+          [{name, strip_source_map_reference(data)}]
+
+        true ->
+          [{name, data}]
+      end
+    end)
+  end
+
+  defp strip_source_map_reference(data) when is_binary(data) do
+    data
+    |> String.split("\n")
+    |> Enum.reject(&String.starts_with?(&1, "//# sourceMappingURL="))
+    |> Enum.join("\n")
+  end
+
+  defp rewrite_entries(path, entries) do
+    temp_path = "#{path}.#{System.unique_integer([:positive])}.tmp"
+
+    case :zip.create(String.to_charlist(temp_path), entries) do
+      {:ok, _zip_path} ->
+        case File.rename(temp_path, path) do
+          :ok ->
+            {:ok, path}
+
+          {:error, reason} ->
+            File.rm(temp_path)
+            {:error, {:pbw_rewrite_failed, reason}}
+        end
+
+      {:error, reason} ->
+        {:error, {:pbw_zip_rewrite_failed, reason}}
     end
   end
 
@@ -166,8 +223,8 @@ defmodule Ide.Emulator.PBW do
       sdk_version_minor, app_version_major, app_version_minor, _app_size::little-16,
       _offset::little-32, _crc::little-32, app_name::binary-size(32),
       _company_name::binary-size(32), icon_resource_id::little-32, _symbol_table_addr::little-32,
-      flags::little-32, _num_relocation_entries::little-32, uuid::binary-size(16),
-      _rest::binary>> = binary
+      flags::little-32, _num_relocation_entries::little-32, uuid::binary-size(16), _rest::binary>> =
+      binary
 
     {:ok,
      %{

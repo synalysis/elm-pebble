@@ -34,7 +34,11 @@ defmodule Ide.Debugger.ElmIntrospect do
 
     try do
       File.write!(path, source)
-      analyze_file(path)
+
+      case GeneratedParser.parse_file(path) do
+        {:ok, %Module{} = mod} -> {:ok, build_snapshot(mod, source_display_path(virtual_path))}
+        {:error, _} = err -> err
+      end
     after
       _ = File.rm(path)
     end
@@ -75,8 +79,8 @@ defmodule Ide.Debugger.ElmIntrospect do
     Enum.find(values, &(!is_nil(&1)))
   end
 
-  @spec build_snapshot(Module.t()) :: map()
-  defp build_snapshot(%Module{} = mod) do
+  @spec build_snapshot(Module.t(), String.t() | nil) :: map()
+  defp build_snapshot(%Module{} = mod, source_path_override \\ nil) do
     init_params = function_param_names(find_function_definition(mod, "init"))
     init_e = find_init_expr(mod)
     init_model = map_expr(init_e, &expr_to_json_value(init_model_expr(&1), 0, 8), nil)
@@ -84,7 +88,12 @@ defmodule Ide.Debugger.ElmIntrospect do
     view_params = function_param_names(find_function_definition(mod, "view"))
     view_e = find_view_expr(mod)
     {view_case_branches, view_case_subject} = view_case_analysis(view_e, view_params)
-    api_metadata = source_api_metadata(mod)
+
+    api_metadata =
+      mod
+      |> source_api_metadata()
+      |> Map.put(:source_path, source_path_override || source_display_path(mod))
+      |> Map.put(:source_lines, source_lines(mod))
 
     view_tree =
       map_expr(
@@ -92,6 +101,9 @@ defmodule Ide.Debugger.ElmIntrospect do
         &expr_to_view_tree(normalize_view_expr(&1), 0, 40, api_metadata),
         view_tree_unknown()
       )
+      |> annotate_view_tree_sources(api_metadata)
+
+    view_source_locations = view_output_source_locations(api_metadata)
 
     update_params = function_param_names(find_function_definition(mod, "update"))
     update_e = find_update_expr(mod)
@@ -165,7 +177,8 @@ defmodule Ide.Debugger.ElmIntrospect do
         "main_program" => main_program,
         "ports" => ports,
         "port_module" => port_module,
-        "view_tree" => view_tree
+        "view_tree" => view_tree,
+        "view_source_locations" => view_source_locations
       }
     }
   end
@@ -224,6 +237,38 @@ defmodule Ide.Debugger.ElmIntrospect do
       source_line_count
     }
   end
+
+  @spec source_lines(Module.t()) :: [String.t()]
+  defp source_lines(%Module{path: path}) when is_binary(path) do
+    case File.read(path) do
+      {:ok, source} -> String.split(source, "\n", trim: false)
+      {:error, _} -> []
+    end
+  end
+
+  defp source_lines(_mod), do: []
+
+  @spec source_display_path(Module.t()) :: String.t()
+  defp source_display_path(%Module{path: path}) when is_binary(path) do
+    source_display_path(path)
+  end
+
+  @spec source_display_path(String.t()) :: String.t()
+  defp source_display_path(path) when is_binary(path) do
+    parts = Path.split(path)
+
+    case Enum.find_index(parts, &(&1 == "src")) do
+      index when is_integer(index) ->
+        parts
+        |> Enum.drop(index)
+        |> Path.join()
+
+      _ ->
+        Path.basename(path)
+    end
+  end
+
+  defp source_display_path(_mod), do: nil
 
   @spec source_line_count(term()) :: term()
   defp source_line_count(source) when is_binary(source) do
@@ -1626,6 +1671,179 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   @spec view_tree_unknown() :: term()
   defp view_tree_unknown, do: %{"type" => "unknown", "label" => "", "children" => []}
+
+  @spec annotate_view_tree_sources(term(), map()) :: term()
+  defp annotate_view_tree_sources(tree, api_metadata)
+       when is_map(tree) and is_map(api_metadata) do
+    {annotated, _counters} = annotate_view_tree_sources(tree, api_metadata, %{})
+    annotated
+  end
+
+  defp annotate_view_tree_sources(tree, _api_metadata), do: tree
+
+  @spec annotate_view_tree_sources(term(), map(), map()) :: {term(), map()}
+  defp annotate_view_tree_sources(node, api_metadata, counters)
+       when is_map(node) and is_map(api_metadata) and is_map(counters) do
+    {children, counters} =
+      node
+      |> Map.get("children", [])
+      |> List.wrap()
+      |> Enum.map_reduce(counters, &annotate_view_tree_sources(&1, api_metadata, &2))
+
+    node = Map.put(node, "children", children)
+
+    case view_tree_source_target(node) do
+      target when is_binary(target) and target != "" ->
+        {maybe_put_view_tree_source(node, target, api_metadata, counters),
+         increment_source_counter(counters, target)}
+
+      _ ->
+        {node, counters}
+    end
+  end
+
+  defp annotate_view_tree_sources(other, _api_metadata, counters), do: {other, counters}
+
+  @spec view_tree_source_target(map()) :: String.t() | nil
+  defp view_tree_source_target(%{"qualified_target" => target}) when is_binary(target), do: target
+  defp view_tree_source_target(%{qualified_target: target}) when is_binary(target), do: target
+
+  defp view_tree_source_target(%{"type" => "call", "label" => label}) when is_binary(label),
+    do: label
+
+  defp view_tree_source_target(%{type: "call", label: label}) when is_binary(label), do: label
+  defp view_tree_source_target(_node), do: nil
+
+  @spec maybe_put_view_tree_source(map(), String.t(), map(), map()) :: map()
+  defp maybe_put_view_tree_source(node, target, api_metadata, counters) do
+    index = Map.get(counters, target, 0)
+
+    case target |> source_locations_for_target(api_metadata) |> source_location_at(index) do
+      %{} = source -> Map.put(node, "source", source)
+      _ -> node
+    end
+  end
+
+  @spec increment_source_counter(map(), String.t()) :: map()
+  defp increment_source_counter(counters, target) when is_map(counters) and is_binary(target) do
+    Map.update(counters, target, 1, &(&1 + 1))
+  end
+
+  @spec source_location_at([map()], non_neg_integer()) :: map() | nil
+  defp source_location_at([], _index), do: nil
+
+  defp source_location_at(locations, index) when is_list(locations) and is_integer(index) do
+    Enum.at(locations, index) || List.last(locations)
+  end
+
+  @spec source_locations_for_target(String.t(), map()) :: [map()]
+  defp source_locations_for_target(target, api_metadata)
+       when is_binary(target) and is_map(api_metadata) do
+    lines = Map.get(api_metadata, :source_lines, [])
+    path = Map.get(api_metadata, :source_path)
+    names = source_call_names(target, api_metadata)
+
+    lines
+    |> Enum.with_index(1)
+    |> Enum.flat_map(fn {line, line_no} ->
+      case source_call_name_on_line(line, names) do
+        nil ->
+          []
+
+        call ->
+          [%{"path" => path, "line" => line_no, "call" => call}]
+      end
+    end)
+  end
+
+  defp source_locations_for_target(_target, _api_metadata), do: []
+
+  @spec source_call_names(String.t(), map()) :: [String.t()]
+  defp source_call_names(target, api_metadata) when is_binary(target) and is_map(api_metadata) do
+    resolved = resolve_source_call(target, api_metadata)
+
+    names =
+      case resolved do
+        {module_name, function_name} when is_binary(module_name) and is_binary(function_name) ->
+          aliases =
+            api_metadata
+            |> Map.get(:aliases, %{})
+            |> Enum.flat_map(fn
+              {alias_name, ^module_name} when is_binary(alias_name) -> [alias_name]
+              _ -> []
+            end)
+
+          unqualified =
+            if Map.get(Map.get(api_metadata, :unqualified, %{}), function_name) == module_name,
+              do: [function_name],
+              else: []
+
+          Enum.map(aliases, &"#{&1}.#{function_name}") ++ unqualified
+
+        _ ->
+          []
+      end
+
+    ([target] ++ names)
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.uniq()
+    |> Enum.sort_by(&String.length/1, :desc)
+  end
+
+  @spec source_call_name_on_line(String.t(), [String.t()]) :: String.t() | nil
+  defp source_call_name_on_line(line, names) when is_binary(line) and is_list(names) do
+    line =
+      line
+      |> String.split("--", parts: 2)
+      |> List.first()
+      |> to_string()
+
+    Enum.find(names, fn name ->
+      Regex.match?(~r/(^|[^A-Za-z0-9_'])#{Regex.escape(name)}([^A-Za-z0-9_']|$)/, line)
+    end)
+  end
+
+  defp source_call_name_on_line(_line, _names), do: nil
+
+  @spec view_output_source_locations(map()) :: map()
+  defp view_output_source_locations(api_metadata) when is_map(api_metadata) do
+    %{
+      "clear" => ["Pebble.Ui.clear"],
+      "round_rect" => ["Pebble.Ui.roundRect"],
+      "rect" => ["Pebble.Ui.rect"],
+      "fill_rect" => ["Pebble.Ui.fillRect"],
+      "line" => ["Pebble.Ui.line"],
+      "circle" => ["Pebble.Ui.circle"],
+      "fill_circle" => ["Pebble.Ui.fillCircle"],
+      "pixel" => ["Pebble.Ui.pixel"],
+      "text" => ["Pebble.Ui.text"],
+      "text_int" => ["Pebble.Ui.textInt", "Pebble.Ui.textIntWithFont"],
+      "text_label" => ["Pebble.Ui.textLabel", "Pebble.Ui.textLabelWithFont"],
+      "bitmap_in_rect" => ["Pebble.Ui.bitmapInRect", "Pebble.Ui.drawBitmapInRect"],
+      "rotated_bitmap" => ["Pebble.Ui.rotatedBitmap"],
+      "arc" => ["Pebble.Ui.arc"],
+      "fill_radial" => ["Pebble.Ui.fillRadial"],
+      "path_filled" => ["Pebble.Ui.pathFilled"],
+      "path_outline" => ["Pebble.Ui.pathOutline"],
+      "path_outline_open" => ["Pebble.Ui.pathOutlineOpen"],
+      "stroke_color" => ["Pebble.Ui.strokeColor"],
+      "fill_color" => ["Pebble.Ui.fillColor"],
+      "text_color" => ["Pebble.Ui.textColor"]
+    }
+    |> Enum.map(fn {kind, targets} ->
+      locations =
+        targets
+        |> Enum.flat_map(&source_locations_for_target(&1, api_metadata))
+        |> Enum.uniq_by(&{Map.get(&1, "path"), Map.get(&1, "line"), Map.get(&1, "call")})
+        |> Enum.sort_by(&Map.get(&1, "line", 0))
+
+      {kind, locations}
+    end)
+    |> Enum.reject(fn {_kind, locations} -> locations == [] end)
+    |> Map.new()
+  end
+
+  defp view_output_source_locations(_api_metadata), do: %{}
 
   @spec view_type_name(term()) :: term()
   defp view_type_name(target) when is_binary(target) do

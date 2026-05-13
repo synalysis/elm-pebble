@@ -277,6 +277,56 @@ defmodule Ide.Debugger.ElmIntrospectTest do
     assert line["arg_names"] == ["startPos", "endPos", "color"]
   end
 
+  test "analyze_source annotates UI view nodes with source locations" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Model =
+        {}
+
+    type Msg
+        = Tick
+
+    init _ =
+        ( {}, Cmd.none )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    view _ =
+        Ui.toUiNode
+            [ Ui.clear Color.white
+            , Ui.text 1 { x = 4, y = 8, w = 100, h = 20 } "OK"
+            ]
+    """
+
+    expected_line =
+      source
+      |> String.split("\n", trim: false)
+      |> Enum.find_index(&String.contains?(&1, "Ui.text 1"))
+      |> Kernel.+(1)
+
+    assert {:ok, %{"elm_introspect" => ei}} =
+             ElmIntrospect.analyze_source(source, "watch/src/Main.elm")
+
+    text =
+      ei["view_tree"]
+      |> collect_tree_nodes()
+      |> Enum.find(&(Map.get(&1, "type") == "text"))
+
+    assert text["source"]["call"] == "Ui.text"
+    assert text["source"]["line"] == expected_line
+    assert text["source"]["path"] == "src/Main.elm"
+
+    assert [%{"call" => "Ui.text", "line" => ^expected_line}] =
+             ei["view_source_locations"]["text"]
+
+    assert [%{"path" => "src/Main.elm"}] = ei["view_source_locations"]["text"]
+  end
+
   test "analyze_source keeps tuple2 operands in view tree nodes" do
     source = """
     module Main exposing (main)

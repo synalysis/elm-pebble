@@ -54,7 +54,8 @@ defmodule Elmc do
          :ok <-
            CCodegen.write_project(
              ir,
-             opts[:out_dir] || "build"
+             opts[:out_dir] || "build",
+             opts
            ),
          :ok <-
            Generator.write_runtime(

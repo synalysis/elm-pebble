@@ -71,7 +71,8 @@ defmodule Ide.PebbleToolchain do
          :ok <- ensure_successful_build(build_result),
          :ok <- ensure_no_forbidden_build_warnings(build_result),
          {:ok, artifact_path} <- latest_pbw(app_root),
-         {:ok, artifact_path} <- Ide.Emulator.PBW.prune_empty_media_resources(artifact_path) do
+         {:ok, artifact_path} <- Ide.Emulator.PBW.prune_empty_media_resources(artifact_path),
+         {:ok, artifact_path} <- Ide.Emulator.PBW.prune_development_artifacts(artifact_path) do
       {:ok,
        %{
          status: build_result.status,
@@ -173,7 +174,7 @@ defmodule Ide.PebbleToolchain do
     with {:ok, wipe_result} <- run_pebble_with_timeout(["wipe"], timeout_seconds, cwd: cwd),
          :ok <- ensure_successful_wipe(wipe_result) do
       run_pebble_with_timeout(
-        ["install", "--emulator", emulator_target, package_path],
+        emulator_install_args(emulator_target, package_path),
         timeout_seconds,
         cwd: cwd
       )
@@ -183,6 +184,47 @@ defmodule Ide.PebbleToolchain do
   @spec ensure_successful_wipe(term()) :: :ok | {:error, term()}
   defp ensure_successful_wipe(%{status: :ok}), do: :ok
   defp ensure_successful_wipe(result), do: {:error, {:pebble_wipe_failed, result}}
+
+  @spec emulator_install_args(String.t(), String.t()) :: [String.t()]
+  defp emulator_install_args(emulator_target, package_path) do
+    ["install", "--emulator", emulator_target]
+    |> maybe_append_emulator_install_throttle()
+    |> Kernel.++([package_path])
+  end
+
+  @spec maybe_append_emulator_install_throttle([String.t()]) :: [String.t()]
+  defp maybe_append_emulator_install_throttle(args) do
+    case configured_emulator_install_throttle() do
+      nil -> args
+      throttle -> args ++ ["--throttle=#{throttle}"]
+    end
+  end
+
+  @spec configured_emulator_install_throttle() :: String.t() | nil
+  defp configured_emulator_install_throttle do
+    Application.get_env(:ide, Ide.PebbleToolchain, [])
+    |> Keyword.get(:emulator_install_throttle_seconds, 0.004)
+    |> case do
+      false ->
+        nil
+
+      nil ->
+        nil
+
+      throttle when is_binary(throttle) ->
+        String.trim(throttle)
+
+      throttle when is_number(throttle) and throttle > 0 ->
+        :erlang.float_to_binary(throttle / 1, decimals: 3)
+
+      _ ->
+        nil
+    end
+    |> case do
+      "" -> nil
+      throttle -> throttle
+    end
+  end
 
   @spec attach_emulator_logs(term(), term(), term(), term()) :: term()
   defp attach_emulator_logs(result, emulator_target, cwd, opts) do
@@ -232,8 +274,10 @@ defmodule Ide.PebbleToolchain do
             "--no-color"
           ]
 
+          env = pebble_command_env(args)
+
           {output, exit_code} =
-            System.cmd(timeout_bin, args, cd: cwd, stderr_to_stdout: true, env: [{"LC_ALL", "C"}])
+            System.cmd(timeout_bin, args, cd: cwd, stderr_to_stdout: true, env: env)
 
           {:ok,
            %{
@@ -283,7 +327,7 @@ defmodule Ide.PebbleToolchain do
   defp run_pebble(args, opts \\ []) do
     with {:ok, pebble_bin} <- pebble_bin(),
          {:ok, cwd} <- command_cwd(opts) do
-      env = [{"LC_ALL", "C"}] ++ Keyword.get(opts, :env, [])
+      env = pebble_command_env(args, opts)
 
       {output, exit_code} =
         System.cmd(pebble_bin, args, cd: cwd, stderr_to_stdout: true, env: env)
@@ -306,7 +350,7 @@ defmodule Ide.PebbleToolchain do
        when is_list(args) and is_integer(timeout_seconds) and timeout_seconds > 0 do
     with {:ok, pebble_bin} <- pebble_bin(),
          {:ok, cwd} <- command_cwd(opts) do
-      env = [{"LC_ALL", "C"}] ++ Keyword.get(opts, :env, [])
+      env = pebble_command_env(args, opts)
       timeout_bin = System.find_executable("timeout")
 
       if is_binary(timeout_bin) and timeout_bin != "" do
@@ -329,6 +373,152 @@ defmodule Ide.PebbleToolchain do
     end
   rescue
     error -> {:error, error}
+  end
+
+  @spec pebble_command_env([String.t()], keyword()) :: [{String.t(), String.t()}]
+  defp pebble_command_env(args, opts \\ []) do
+    env = [{"LC_ALL", "C"}] ++ Keyword.get(opts, :env, [])
+
+    if pebble_emulator_command?(args) do
+      maybe_prepend_linux_bzip2_compat_path(env)
+    else
+      env
+    end
+  end
+
+  @spec pebble_emulator_command?([String.t()]) :: boolean()
+  defp pebble_emulator_command?(["wipe" | _]), do: true
+  defp pebble_emulator_command?(args), do: Enum.member?(args, "--emulator")
+
+  @spec maybe_prepend_linux_bzip2_compat_path([{String.t(), String.t()}]) :: [
+          {String.t(), String.t()}
+        ]
+  defp maybe_prepend_linux_bzip2_compat_path(env) do
+    case ensure_linux_bzip2_compat_dir() do
+      {:ok, dir} -> prepend_env_path(env, "LD_LIBRARY_PATH", dir)
+      _ -> env
+    end
+  end
+
+  @spec ensure_linux_bzip2_compat_dir() :: {:ok, String.t()} | {:error, term()} | :ignore
+  defp ensure_linux_bzip2_compat_dir do
+    cond do
+      :os.type() != {:unix, :linux} ->
+        :ignore
+
+      Enum.any?(legacy_bzip2_candidates(), &File.exists?/1) ->
+        :ignore
+
+      true ->
+        with {:ok, source} <- first_existing_path(bzip2_soname_alias_candidates()),
+             {:ok, dir} <- pebble_toolchain_compat_dir(),
+             :ok <- File.mkdir_p(dir),
+             :ok <- ensure_symlink(Path.join(dir, "libbz2.so.1.0"), source) do
+          {:ok, dir}
+        end
+    end
+  end
+
+  @spec ensure_symlink(String.t(), String.t()) :: :ok | {:error, term()}
+  defp ensure_symlink(link_path, target_path) do
+    case File.ln_s(target_path, link_path) do
+      :ok ->
+        :ok
+
+      {:error, :eexist} ->
+        if File.exists?(link_path) do
+          :ok
+        else
+          with :ok <- File.rm(link_path), do: File.ln_s(target_path, link_path)
+        end
+
+      error ->
+        error
+    end
+  end
+
+  @spec prepend_env_path([{String.t(), String.t()}], String.t(), String.t()) :: [
+          {String.t(), String.t()}
+        ]
+  defp prepend_env_path(env, key, path) do
+    {existing_entries, rest} = Enum.split_with(env, fn {env_key, _value} -> env_key == key end)
+
+    existing =
+      case List.last(existing_entries) do
+        {_key, value} -> value
+        nil -> System.get_env(key)
+      end
+
+    value =
+      [path, existing]
+      |> Enum.reject(&(is_nil(&1) or &1 == ""))
+      |> Enum.join(":")
+
+    [{key, value} | rest]
+  end
+
+  @spec first_existing_path([String.t()]) :: {:ok, String.t()} | {:error, :not_found}
+  defp first_existing_path(paths) do
+    case Enum.find(paths, &File.exists?/1) do
+      nil -> {:error, :not_found}
+      path -> {:ok, path}
+    end
+  end
+
+  @spec pebble_toolchain_compat_dir() :: {:ok, String.t()} | {:error, term()}
+  defp pebble_toolchain_compat_dir do
+    configured =
+      Application.get_env(:ide, Ide.PebbleToolchain, [])
+      |> Keyword.get(:pebble_toolchain_compat_dir)
+
+    cond do
+      is_binary(configured) and configured != "" ->
+        {:ok, configured}
+
+      cache_home = System.get_env("XDG_CACHE_HOME") ->
+        {:ok, Path.join([cache_home, "elm-pebble", "pebble-toolchain-compat"])}
+
+      true ->
+        {:ok, Path.join([System.user_home!(), ".cache", "elm-pebble", "pebble-toolchain-compat"])}
+    end
+  rescue
+    error -> {:error, error}
+  end
+
+  @spec legacy_bzip2_candidates() :: [String.t()]
+  defp legacy_bzip2_candidates do
+    configured =
+      Application.get_env(:ide, Ide.PebbleToolchain, [])
+      |> Keyword.get(:legacy_bzip2_candidates)
+
+    if is_list(configured) do
+      configured
+    else
+      [
+        "/lib64/libbz2.so.1.0",
+        "/usr/lib64/libbz2.so.1.0",
+        "/lib/x86_64-linux-gnu/libbz2.so.1.0",
+        "/usr/lib/x86_64-linux-gnu/libbz2.so.1.0"
+      ]
+    end
+  end
+
+  @spec bzip2_soname_alias_candidates() :: [String.t()]
+  defp bzip2_soname_alias_candidates do
+    configured =
+      Application.get_env(:ide, Ide.PebbleToolchain, [])
+      |> Keyword.get(:bzip2_soname_alias_candidates)
+
+    if is_list(configured) do
+      configured
+    else
+      [
+        "/lib64/libbz2.so.1",
+        "/usr/lib64/libbz2.so.1",
+        "/lib/x86_64-linux-gnu/libbz2.so.1",
+        "/usr/lib/x86_64-linux-gnu/libbz2.so.1"
+      ]
+    end
   end
 
   @spec prepare_project_build_app(term(), term(), term(), term(), term()) :: term()
@@ -356,9 +546,9 @@ defmodule Ide.PebbleToolchain do
              preferences_schema,
              has_phone_companion
            ),
+         :ok <- generate_companion_protocol_elm_internal(protocol_elm),
          :ok <- generate_elmc_sources(compile_project_root, app_root, workspace_root),
          :ok <- generate_companion_protocol(protocol_elm, app_root, compile_project_root),
-         :ok <- generate_companion_protocol_elm_internal(protocol_elm),
          :ok <- write_generated_preferences_bridge(workspace_root, preferences_schema),
          :ok <- write_preferences_config(app_root, preferences_schema),
          :ok <- compile_phone_companion(workspace_root, app_root),
@@ -785,17 +975,30 @@ defmodule Ide.PebbleToolchain do
 
   @spec generate_elmc_sources(term(), term(), term()) :: term()
   defp generate_elmc_sources(project_root, app_root, _workspace_root) do
-    out_dir = Path.join(app_root, "src/c/elmc")
+    compile_out_dir = Path.join(project_root, ".elmc-build")
+    stage_out_dir = Path.join(app_root, "src/c/elmc")
 
     opts = %{
-      out_dir: out_dir,
+      out_dir: compile_out_dir,
       entry_module: "Main",
       prune_runtime: true
     }
 
-    case Elmc.compile(project_root, opts) do
-      {:ok, _} -> :ok
+    with :ok <- reset_generated_dir(compile_out_dir),
+         :ok <- reset_generated_dir(stage_out_dir),
+         {:ok, _} <- Elmc.compile(project_root, opts),
+         :ok <- File.mkdir_p(Path.dirname(stage_out_dir)),
+         {:ok, _copied} <- File.cp_r(compile_out_dir, stage_out_dir) do
+      :ok
+    else
       {:error, reason} -> {:error, {:elmc_compile_failed, reason}}
+    end
+  end
+
+  defp reset_generated_dir(path) do
+    case File.rm_rf(path) do
+      {:ok, _} -> :ok
+      {:error, reason, _file} -> {:error, reason}
     end
   end
 

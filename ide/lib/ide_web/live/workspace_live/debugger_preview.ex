@@ -553,6 +553,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
       "value" -> :value
       "text_align" -> :text_align
       "font_size" -> :font_size
+      "source" -> :source
       _ -> nil
     end
   end
@@ -699,240 +700,269 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp normalize_svg_op(op) when is_map(op) do
     kind = to_string(Map.get(op, "kind") || Map.get(op, :kind) || "")
 
-    case kind do
-      "push_context" ->
-        %{kind: :push_context}
+    normalized =
+      case kind do
+        "push_context" ->
+          %{kind: :push_context}
 
-      "pop_context" ->
-        %{kind: :pop_context}
+        "pop_context" ->
+          %{kind: :pop_context}
 
-      "stroke_width" ->
-        case map_integer_required(op, "value") do
-          {:ok, value} -> %{kind: :stroke_width, value: max(value, 1)}
-          :error -> unresolved_svg_op("stroke_width", ["value"], op)
-        end
+        "stroke_width" ->
+          case map_integer_required(op, "value") do
+            {:ok, value} -> %{kind: :stroke_width, value: max(value, 1)}
+            :error -> unresolved_svg_op("stroke_width", ["value"], op)
+          end
 
-      "antialiased" ->
-        case map_integer_required(op, "value") do
-          {:ok, value} -> %{kind: :antialiased, value: value != 0}
-          :error -> unresolved_svg_op("antialiased", ["value"], op)
-        end
+        "antialiased" ->
+          case map_integer_required(op, "value") do
+            {:ok, value} -> %{kind: :antialiased, value: value != 0}
+            :error -> unresolved_svg_op("antialiased", ["value"], op)
+          end
 
-      "stroke_color" ->
-        normalize_style_color_op(:stroke_color, op, "stroke_color")
+        "stroke_color" ->
+          normalize_style_color_op(:stroke_color, op, "stroke_color")
 
-      "fill_color" ->
-        normalize_style_color_op(:fill_color, op, "fill_color")
+        "fill_color" ->
+          normalize_style_color_op(:fill_color, op, "fill_color")
 
-      "text_color" ->
-        normalize_style_color_op(:text_color, op, "text_color")
+        "text_color" ->
+          normalize_style_color_op(:text_color, op, "text_color")
 
-      "compositing_mode" ->
-        case map_integer_required(op, "value") do
-          {:ok, value} -> %{kind: :compositing_mode, value: value}
-          :error -> unresolved_svg_op("compositing_mode", ["value"], op)
-        end
+        "compositing_mode" ->
+          case map_integer_required(op, "value") do
+            {:ok, value} -> %{kind: :compositing_mode, value: value}
+            :error -> unresolved_svg_op("compositing_mode", ["value"], op)
+          end
 
-      "clear" ->
-        case map_integer_required(op, "color") do
-          {:ok, color} -> %{kind: :clear, color: color}
-          :error -> unresolved_svg_op("clear", ["color"], op)
-        end
+        "clear" ->
+          case map_integer_required(op, "color") do
+            {:ok, color} -> %{kind: :clear, color: color}
+            :error -> unresolved_svg_op("clear", ["color"], op)
+          end
 
-      "round_rect" ->
-        case map_integers_required(op, ["x", "y", "w", "h", "radius", "fill"]) do
-          {:ok, [x, y, w, h, radius, fill]} ->
-            %{kind: :round_rect, x: x, y: y, w: w, h: h, radius: radius, fill: fill}
+        "round_rect" ->
+          case map_integers_required(op, ["x", "y", "w", "h", "radius", "fill"]) do
+            {:ok, [x, y, w, h, radius, fill]} ->
+              %{kind: :round_rect, x: x, y: y, w: w, h: h, radius: radius, fill: fill}
 
-          :error ->
-            unresolved_svg_op("round_rect", ["x", "y", "w", "h", "radius", "fill"], op)
-        end
+            :error ->
+              unresolved_svg_op("round_rect", ["x", "y", "w", "h", "radius", "fill"], op)
+          end
 
-      "rect" ->
-        case map_integers_required(op, ["x", "y", "w", "h", "fill"]) do
-          {:ok, [x, y, w, h, fill]} -> %{kind: :rect, x: x, y: y, w: w, h: h, fill: fill}
-          :error -> unresolved_svg_op("rect", ["x", "y", "w", "h", "fill"], op)
-        end
+        "rect" ->
+          case map_integers_required(op, ["x", "y", "w", "h", "fill"]) do
+            {:ok, [x, y, w, h, fill]} -> %{kind: :rect, x: x, y: y, w: w, h: h, fill: fill}
+            :error -> unresolved_svg_op("rect", ["x", "y", "w", "h", "fill"], op)
+          end
 
-      "fill_rect" ->
-        case map_integers_required(op, ["x", "y", "w", "h", "fill"]) do
-          {:ok, [x, y, w, h, fill]} -> %{kind: :fill_rect, x: x, y: y, w: w, h: h, fill: fill}
-          :error -> unresolved_svg_op("fill_rect", ["x", "y", "w", "h", "fill"], op)
-        end
+        "fill_rect" ->
+          case map_integers_required(op, ["x", "y", "w", "h", "fill"]) do
+            {:ok, [x, y, w, h, fill]} -> %{kind: :fill_rect, x: x, y: y, w: w, h: h, fill: fill}
+            :error -> unresolved_svg_op("fill_rect", ["x", "y", "w", "h", "fill"], op)
+          end
 
-      "line" ->
-        case map_integers_required(op, ["x1", "y1", "x2", "y2", "color"]) do
-          {:ok, [x1, y1, x2, y2, color]} ->
-            %{kind: :line, x1: x1, y1: y1, x2: x2, y2: y2, color: color}
+        "line" ->
+          case map_integers_required(op, ["x1", "y1", "x2", "y2", "color"]) do
+            {:ok, [x1, y1, x2, y2, color]} ->
+              %{kind: :line, x1: x1, y1: y1, x2: x2, y2: y2, color: color}
 
-          :error ->
-            unresolved_svg_op("line", ["x1", "y1", "x2", "y2", "color"], op)
-        end
+            :error ->
+              unresolved_svg_op("line", ["x1", "y1", "x2", "y2", "color"], op)
+          end
 
-      "arc" ->
-        case map_integers_required(op, ["x", "y", "w", "h", "start_angle", "end_angle"]) do
-          {:ok, [x, y, w, h, start_angle, end_angle]} ->
-            %{kind: :arc, x: x, y: y, w: w, h: h, start_angle: start_angle, end_angle: end_angle}
+        "arc" ->
+          case map_integers_required(op, ["x", "y", "w", "h", "start_angle", "end_angle"]) do
+            {:ok, [x, y, w, h, start_angle, end_angle]} ->
+              %{
+                kind: :arc,
+                x: x,
+                y: y,
+                w: w,
+                h: h,
+                start_angle: start_angle,
+                end_angle: end_angle
+              }
 
-          :error ->
-            unresolved_svg_op("arc", ["x", "y", "w", "h", "start_angle", "end_angle"], op)
-        end
+            :error ->
+              unresolved_svg_op("arc", ["x", "y", "w", "h", "start_angle", "end_angle"], op)
+          end
 
-      "fill_radial" ->
-        case map_integers_required(op, ["x", "y", "w", "h", "start_angle", "end_angle"]) do
-          {:ok, [x, y, w, h, start_angle, end_angle]} ->
-            %{
-              kind: :fill_radial,
-              x: x,
-              y: y,
-              w: w,
-              h: h,
-              start_angle: start_angle,
-              end_angle: end_angle
-            }
+        "fill_radial" ->
+          case map_integers_required(op, ["x", "y", "w", "h", "start_angle", "end_angle"]) do
+            {:ok, [x, y, w, h, start_angle, end_angle]} ->
+              %{
+                kind: :fill_radial,
+                x: x,
+                y: y,
+                w: w,
+                h: h,
+                start_angle: start_angle,
+                end_angle: end_angle
+              }
 
-          :error ->
-            unresolved_svg_op("fill_radial", ["x", "y", "w", "h", "start_angle", "end_angle"], op)
-        end
+            :error ->
+              unresolved_svg_op(
+                "fill_radial",
+                ["x", "y", "w", "h", "start_angle", "end_angle"],
+                op
+              )
+          end
 
-      "path_filled" ->
-        case map_path_required(op) do
-          {:ok, path} ->
-            Map.put(path, :kind, :path_filled)
+        "path_filled" ->
+          case map_path_required(op) do
+            {:ok, path} ->
+              Map.put(path, :kind, :path_filled)
 
-          :error ->
-            unresolved_svg_op("path_filled", ["points", "offset_x", "offset_y", "rotation"], op)
-        end
+            :error ->
+              unresolved_svg_op("path_filled", ["points", "offset_x", "offset_y", "rotation"], op)
+          end
 
-      "path_outline" ->
-        case map_path_required(op) do
-          {:ok, path} ->
-            Map.put(path, :kind, :path_outline)
+        "path_outline" ->
+          case map_path_required(op) do
+            {:ok, path} ->
+              Map.put(path, :kind, :path_outline)
 
-          :error ->
-            unresolved_svg_op("path_outline", ["points", "offset_x", "offset_y", "rotation"], op)
-        end
+            :error ->
+              unresolved_svg_op(
+                "path_outline",
+                ["points", "offset_x", "offset_y", "rotation"],
+                op
+              )
+          end
 
-      "path_outline_open" ->
-        case map_path_required(op) do
-          {:ok, path} ->
-            Map.put(path, :kind, :path_outline_open)
+        "path_outline_open" ->
+          case map_path_required(op) do
+            {:ok, path} ->
+              Map.put(path, :kind, :path_outline_open)
 
-          :error ->
-            unresolved_svg_op(
-              "path_outline_open",
-              ["points", "offset_x", "offset_y", "rotation"],
-              op
-            )
-        end
+            :error ->
+              unresolved_svg_op(
+                "path_outline_open",
+                ["points", "offset_x", "offset_y", "rotation"],
+                op
+              )
+          end
 
-      "circle" ->
-        case map_integers_required(op, ["cx", "cy", "r", "color"]) do
-          {:ok, [cx, cy, r, color]} -> %{kind: :circle, cx: cx, cy: cy, r: r, color: color}
-          :error -> unresolved_svg_op("circle", ["cx", "cy", "r", "color"], op)
-        end
+        "circle" ->
+          case map_integers_required(op, ["cx", "cy", "r", "color"]) do
+            {:ok, [cx, cy, r, color]} -> %{kind: :circle, cx: cx, cy: cy, r: r, color: color}
+            :error -> unresolved_svg_op("circle", ["cx", "cy", "r", "color"], op)
+          end
 
-      "fill_circle" ->
-        case map_integers_required(op, ["cx", "cy", "r", "color"]) do
-          {:ok, [cx, cy, r, color]} -> %{kind: :fill_circle, cx: cx, cy: cy, r: r, color: color}
-          :error -> unresolved_svg_op("fill_circle", ["cx", "cy", "r", "color"], op)
-        end
+        "fill_circle" ->
+          case map_integers_required(op, ["cx", "cy", "r", "color"]) do
+            {:ok, [cx, cy, r, color]} -> %{kind: :fill_circle, cx: cx, cy: cy, r: r, color: color}
+            :error -> unresolved_svg_op("fill_circle", ["cx", "cy", "r", "color"], op)
+          end
 
-      "pixel" ->
-        case map_integers_required(op, ["x", "y", "color"]) do
-          {:ok, [x, y, color]} -> %{kind: :pixel, x: x, y: y, color: color}
-          :error -> unresolved_svg_op("pixel", ["x", "y", "color"], op)
-        end
+        "pixel" ->
+          case map_integers_required(op, ["x", "y", "color"]) do
+            {:ok, [x, y, color]} -> %{kind: :pixel, x: x, y: y, color: color}
+            :error -> unresolved_svg_op("pixel", ["x", "y", "color"], op)
+          end
 
-      "bitmap_in_rect" ->
-        case map_integers_required(op, ["bitmap_id", "x", "y", "w", "h"]) do
-          {:ok, [bitmap_id, x, y, w, h]} ->
-            %{kind: :bitmap_in_rect, bitmap_id: bitmap_id, x: x, y: y, w: w, h: h}
+        "bitmap_in_rect" ->
+          case map_integers_required(op, ["bitmap_id", "x", "y", "w", "h"]) do
+            {:ok, [bitmap_id, x, y, w, h]} ->
+              %{kind: :bitmap_in_rect, bitmap_id: bitmap_id, x: x, y: y, w: w, h: h}
 
-          :error ->
-            unresolved_svg_op("bitmap_in_rect", ["bitmap_id", "x", "y", "w", "h"], op)
-        end
+            :error ->
+              unresolved_svg_op("bitmap_in_rect", ["bitmap_id", "x", "y", "w", "h"], op)
+          end
 
-      "rotated_bitmap" ->
-        case map_integers_required(op, [
-               "bitmap_id",
-               "src_w",
-               "src_h",
-               "angle",
-               "center_x",
-               "center_y"
-             ]) do
-          {:ok, [bitmap_id, src_w, src_h, angle, center_x, center_y]} ->
-            %{
-              kind: :rotated_bitmap,
-              bitmap_id: bitmap_id,
-              src_w: src_w,
-              src_h: src_h,
-              angle: angle,
-              center_x: center_x,
-              center_y: center_y
-            }
+        "rotated_bitmap" ->
+          case map_integers_required(op, [
+                 "bitmap_id",
+                 "src_w",
+                 "src_h",
+                 "angle",
+                 "center_x",
+                 "center_y"
+               ]) do
+            {:ok, [bitmap_id, src_w, src_h, angle, center_x, center_y]} ->
+              %{
+                kind: :rotated_bitmap,
+                bitmap_id: bitmap_id,
+                src_w: src_w,
+                src_h: src_h,
+                angle: angle,
+                center_x: center_x,
+                center_y: center_y
+              }
 
-          :error ->
-            unresolved_svg_op(
-              "rotated_bitmap",
-              ["bitmap_id", "src_w", "src_h", "angle", "center_x", "center_y"],
-              op
-            )
-        end
+            :error ->
+              unresolved_svg_op(
+                "rotated_bitmap",
+                ["bitmap_id", "src_w", "src_h", "angle", "center_x", "center_y"],
+                op
+              )
+          end
 
-      "text_int" ->
-        case map_integers_required(op, ["x", "y"]) do
-          {:ok, [x, y]} ->
-            text = to_string(Map.get(op, "text") || Map.get(op, :text) || "")
+        "text_int" ->
+          case map_integers_required(op, ["x", "y"]) do
+            {:ok, [x, y]} ->
+              text = to_string(Map.get(op, "text") || Map.get(op, :text) || "")
 
-            if text == "",
-              do: unresolved_svg_op("text_int", ["x", "y", "text"], op),
-              else: %{kind: :text_int, x: x, y: y, text: text}
+              if text == "",
+                do: unresolved_svg_op("text_int", ["x", "y", "text"], op),
+                else: %{kind: :text_int, x: x, y: y, text: text}
 
-          :error ->
-            unresolved_svg_op("text_int", ["x", "y", "text"], op)
-        end
+            :error ->
+              unresolved_svg_op("text_int", ["x", "y", "text"], op)
+          end
 
-      "text_label" ->
-        case map_integers_required(op, ["x", "y"]) do
-          {:ok, [x, y]} ->
-            text = to_string(Map.get(op, "text") || Map.get(op, :text) || "")
+        "text_label" ->
+          case map_integers_required(op, ["x", "y"]) do
+            {:ok, [x, y]} ->
+              text = to_string(Map.get(op, "text") || Map.get(op, :text) || "")
 
-            if text == "",
-              do: unresolved_svg_op("text_label", ["x", "y", "text"], op),
-              else: %{kind: :text_label, x: x, y: y, text: text}
+              if text == "",
+                do: unresolved_svg_op("text_label", ["x", "y", "text"], op),
+                else: %{kind: :text_label, x: x, y: y, text: text}
 
-          :error ->
-            unresolved_svg_op("text_label", ["x", "y", "text"], op)
-        end
+            :error ->
+              unresolved_svg_op("text_label", ["x", "y", "text"], op)
+          end
 
-      "text" ->
-        case map_integers_required(op, ["x", "y"]) do
-          {:ok, [x, y]} ->
-            text = to_string(Map.get(op, "text") || Map.get(op, :text) || "")
+        "text" ->
+          case map_integers_required(op, ["x", "y"]) do
+            {:ok, [x, y]} ->
+              text = to_string(Map.get(op, "text") || Map.get(op, :text) || "")
 
-            if text == "",
-              do: unresolved_svg_op("text", ["x", "y", "text"], op),
-              else: text_box_svg_op(op, x, y, text)
+              if text == "",
+                do: unresolved_svg_op("text", ["x", "y", "text"], op),
+                else: text_box_svg_op(op, x, y, text)
 
-          :error ->
-            unresolved_svg_op("text", ["x", "y", "text"], op)
-        end
+            :error ->
+              unresolved_svg_op("text", ["x", "y", "text"], op)
+          end
 
-      "unresolved" ->
-        unresolved_svg_op(
-          to_string(Map.get(op, "node_type") || Map.get(op, :node_type) || "node"),
-          [],
-          op
-        )
+        "unresolved" ->
+          unresolved_svg_op(
+            to_string(Map.get(op, "node_type") || Map.get(op, :node_type) || "node"),
+            [],
+            op
+          )
 
-      _ ->
-        nil
-    end
+        _ ->
+          nil
+      end
+
+    maybe_put_svg_source(normalized, op)
   end
 
   defp normalize_svg_op(_op), do: nil
+
+  @spec maybe_put_svg_source(term(), map()) :: term()
+  defp maybe_put_svg_source(%{} = normalized, original) when is_map(original) do
+    case Map.get(original, "source") || Map.get(original, :source) do
+      %{} = source -> Map.put(normalized, :source, source)
+      _ -> normalized
+    end
+  end
+
+  defp maybe_put_svg_source(normalized, _original), do: normalized
 
   @spec text_box_svg_op(map(), integer(), integer(), String.t()) :: map()
   defp text_box_svg_op(op, x, y, text) when is_map(op) and is_integer(x) and is_integer(y) do

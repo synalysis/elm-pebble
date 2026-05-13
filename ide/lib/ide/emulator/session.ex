@@ -58,14 +58,7 @@ defmodule Ide.Emulator.Session do
 
   @spec install(pid()) :: {:ok, map()} | {:error, term()}
   def install(pid) do
-    with {:ok, context} <- GenServer.call(pid, :install_context, 5_000) do
-      Ide.Emulator.PBWInstaller.install(
-        context.protocol_router_pid,
-        context.artifact_path,
-        context.platform,
-        install_opts()
-      )
-    end
+    do_install(pid, config(:native_install_retries, 4))
   catch
     :exit, {:timeout, _} -> {:error, :emulator_session_unresponsive}
     :exit, _ -> {:error, :emulator_session_unavailable}
@@ -94,6 +87,59 @@ defmodule Ide.Emulator.Session do
     :exit, _ ->
       :ok
   end
+
+  defp do_install(pid, retries_left) do
+    with {:ok, context} <- GenServer.call(pid, :direct_install_context, 5_000) do
+      case install_with_libpebble2(context) do
+        {:ok, result} ->
+          _ = GenServer.call(pid, :restart_protocol_router, 10_000)
+          {:ok, result}
+
+        {:error, reason} = error ->
+          maybe_retry_install(pid, reason, retries_left, error)
+      end
+    end
+  end
+
+  defp maybe_retry_install(pid, reason, retries_left, error) when retries_left > 0 do
+    if retryable_install_error?(reason) do
+      Logger.debug(
+        "embedded emulator install failed with retryable error #{inspect(reason)}; resetting QEMU and retrying"
+      )
+
+      Process.sleep(500)
+
+      case GenServer.call(pid, :reset_for_install_retry, 90_000) do
+        :ok ->
+          do_install(pid, retries_left - 1)
+
+        {:error, reset_reason} ->
+          Logger.debug(
+            "embedded emulator install retry reset failed #{inspect(reset_reason)} after #{inspect(reason)}"
+          )
+
+          _ = GenServer.call(pid, :restart_protocol_router, 10_000)
+          {:error, {:install_retry_reset_failed, reset_reason, reason}}
+      end
+    else
+      _ = GenServer.call(pid, :restart_protocol_router, 10_000)
+      error
+    end
+  end
+
+  defp maybe_retry_install(pid, _reason, _retries_left, error) do
+    _ = GenServer.call(pid, :restart_protocol_router, 10_000)
+    error
+  end
+
+  defp retryable_install_error?({:libpebble2_install_failed, _exit_code, output})
+       when is_binary(output) do
+    String.contains?(output, "TimeoutError") or
+      String.contains?(output, "ConnectionError") or
+      String.contains?(output, "Connection refused")
+  end
+
+  defp retryable_install_error?(_reason), do: false
 
   @spec runtime_status(term()) :: map()
   def runtime_status(platform \\ nil) do
@@ -195,8 +241,7 @@ defmodule Ide.Emulator.Session do
     with :ok <- validate_runtime_requirements(platform),
          {:ok, state} <- build_state(Keyword.put(opts, :platform, platform)),
          {:ok, state} <- maybe_start_qemu(state),
-         {:ok, state} <- maybe_start_protocol_router(state),
-         {:ok, state} <- maybe_start_pypkjs(state) do
+         {:ok, state} <- maybe_start_protocol_router(state) do
       schedule_idle_check(state)
       {:ok, state}
     else
@@ -216,17 +261,82 @@ defmodule Ide.Emulator.Session do
     do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
 
   def handle_call(:install_context, _from, state) do
+    cleanup_process(state.pypkjs_pid)
+
     {:reply,
      {:ok,
       %{
         protocol_router_pid: state.protocol_router_pid,
         artifact_path: state.artifact_path,
         platform: state.platform
-      }}, state}
+      }}, %{state | pypkjs_pid: nil}}
+  end
+
+  def handle_call(:direct_install_context, _from, %{qemu_pid: nil} = state),
+    do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
+
+  def handle_call(:direct_install_context, _from, state) do
+    cleanup_process(state.pypkjs_pid)
+    cleanup_process(state.protocol_router_pid)
+
+    {:reply,
+     {:ok,
+      %{
+        qemu_port: state.bt_port,
+        artifact_path: state.artifact_path,
+        platform: state.platform,
+        app_uuid: state.app_uuid
+      }}, %{state | pypkjs_pid: nil, protocol_router_pid: nil, installing?: true}}
   end
 
   def handle_call({:local_port, :vnc}, _from, state), do: {:reply, state.vnc_port, state}
+
+  def handle_call({:local_port, :phone}, _from, %{pypkjs_pid: nil} = state) do
+    case maybe_start_pypkjs(state) do
+      {:ok, state} -> {:reply, state.phone_ws_port, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
   def handle_call({:local_port, :phone}, _from, state), do: {:reply, state.phone_ws_port, state}
+
+  def handle_call(:restart_protocol_router, _from, %{protocol_router_pid: nil} = state) do
+    case maybe_start_protocol_router(state) do
+      {:ok, state} -> {:reply, :ok, %{state | installing?: false}}
+      {:error, reason} -> {:reply, {:error, reason}, %{state | installing?: false}}
+    end
+  end
+
+  def handle_call(:restart_protocol_router, _from, state), do: {:reply, :ok, state}
+
+  def handle_call(:reset_for_install_retry, _from, state) do
+    cleanup_process(state.pypkjs_pid)
+    cleanup_process(state.protocol_router_pid)
+    cleanup_process(state.qemu_pid)
+
+    with {:ok, _path} <- reset_spi_image(state.platform, state.spi_image_path),
+         {:ok, state} <-
+           maybe_start_qemu(%{
+             state
+             | pypkjs_pid: nil,
+               protocol_router_pid: nil,
+               qemu_pid: nil,
+               installing?: true
+           }) do
+      {:reply, :ok, state}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, %{state | installing?: false}}
+    end
+  end
+
+  def handle_call(:restart_pypkjs, _from, %{pypkjs_pid: nil} = state) do
+    case maybe_start_pypkjs(state) do
+      {:ok, state} -> {:reply, :ok, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call(:restart_pypkjs, _from, state), do: {:reply, :ok, state}
 
   def handle_call(:ping, _from, state) do
     case session_health(state) do
@@ -257,6 +367,10 @@ defmodule Ide.Emulator.Session do
       nil ->
         Logger.debug("embedded emulator linked process exited: #{inspect(reason)}")
         {:noreply, state}
+
+      :pypkjs ->
+        Logger.debug("embedded emulator pypkjs exited: #{inspect(reason)}")
+        {:noreply, %{state | pypkjs_pid: nil}}
 
       role ->
         Logger.debug("embedded emulator #{role} exited: #{inspect(reason)}")
@@ -418,6 +532,7 @@ defmodule Ide.Emulator.Session do
          qemu_features: qemu_features(),
          spi_image_path: spi_image_path,
          persist_dir: persist_dir,
+         installing?: false,
          last_ping_ms: now_ms(),
          idle_timeout_ms: config(:idle_timeout_ms, @default_idle_timeout_ms)
        }}
@@ -1413,17 +1528,31 @@ defmodule Ide.Emulator.Session do
 
   defp maybe_put_toolchain_archive_path(opts, _path), do: opts
 
-  defp install_opts do
-    [
-      chunk_size: config(:native_install_chunk_size, 1_000),
-      timeout_ms: config(:native_install_timeout_ms, 30_000),
-      install_timeout_ms: config(:native_install_phase_timeout_ms, 120_000),
-      install_transition_timeout_ms: config(:native_install_transition_timeout_ms, 30_000),
-      putbytes_retries: config(:native_install_putbytes_retries, 2),
-      chunk_delay_ms: config(:native_install_chunk_delay_ms, 10),
-      part_retries: config(:native_install_part_retries, 1),
-      part_delay_ms: config(:native_install_part_delay_ms, 0)
-    ]
+  defp install_with_libpebble2(context) do
+    with {:ok, pypkjs} <- pypkjs_bin(),
+         {:ok, python} <- pypkjs_python(pypkjs),
+         script <- Path.expand("../../../priv/python/embedded_install.py", __DIR__),
+         true <- File.exists?(script) do
+      args = [script, "127.0.0.1:#{context.qemu_port}", context.artifact_path]
+
+      case System.cmd(python, args, stderr_to_stdout: true) do
+        {output, 0} ->
+          {:ok,
+           %{
+             uuid: context.app_uuid,
+             variant: context.platform,
+             app_id: 0,
+             parts: [%{name: "pebble-app.bin", kind: :binary, bytes: 0}],
+             output: output
+           }}
+
+        {output, exit_code} ->
+          {:error, {:libpebble2_install_failed, exit_code, output}}
+      end
+    else
+      false -> {:error, :embedded_install_script_not_found}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp qemu_micro_flash_path(platform),
@@ -1530,7 +1659,35 @@ defmodule Ide.Emulator.Session do
     do: Process.send_after(self(), :idle_check, min(state.idle_timeout_ms, 60_000))
 
   defp cleanup_process(nil), do: :ok
-  defp cleanup_process(pid) when is_pid(pid), do: Process.exit(pid, :normal)
+
+  defp cleanup_process(pid) when is_pid(pid) do
+    if Process.alive?(pid) do
+      stop_process(pid, 1_000)
+    else
+      :ok
+    end
+  end
+
+  defp stop_process(pid, timeout) do
+    GenServer.stop(pid, :normal, timeout)
+    :ok
+  catch
+    :exit, _reason ->
+      Process.exit(pid, :kill)
+      wait_for_process_exit(pid, timeout)
+  end
+
+  defp wait_for_process_exit(pid, timeout) do
+    ref = Process.monitor(pid)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+    after
+      timeout ->
+        Process.demonitor(ref, [:flush])
+        :ok
+    end
+  end
 
   defp session_health(state) do
     cond do
@@ -1540,16 +1697,16 @@ defmodule Ide.Emulator.Session do
       not live_pid?(state.qemu_pid) ->
         {:error, {:child_not_running, :qemu}}
 
+      Map.get(state, :installing?, false) ->
+        :ok
+
       not live_pid?(state.protocol_router_pid) ->
         {:error, {:child_not_running, :protocol_router}}
-
-      not live_pid?(state.pypkjs_pid) ->
-        {:error, {:child_not_running, :pypkjs}}
 
       not tcp_port_open?(state.vnc_port) ->
         {:error, {:port_not_ready, :vnc, state.vnc_port}}
 
-      not tcp_port_open?(state.phone_ws_port) ->
+      live_pid?(state.pypkjs_pid) and not tcp_port_open?(state.phone_ws_port) ->
         {:error, {:port_not_ready, :phone, state.phone_ws_port}}
 
       true ->

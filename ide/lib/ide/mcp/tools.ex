@@ -422,6 +422,7 @@ defmodule Ide.Mcp.Tools do
               "watchface-digital",
               "watchface-analog",
               "watchface-tutorial-complete",
+              "watchface-yes",
               "game-basic",
               "game-tiny-bird",
               "game-greeneys-run",

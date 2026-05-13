@@ -138,7 +138,8 @@ defmodule Ide.PebblePreferencesTest do
           %{
             title: "Display",
             fields: [
-              %{id: "showDate", label: "Show date", control: %{type: "toggle", default: true}}
+              %{id: "showDate", label: "Show date", control: %{type: "toggle", default: true}},
+              %{id: "homeLatitude", label: "Latitude", control: %{type: "number", default: 52.52}}
             ]
           }
         ]
@@ -148,6 +149,8 @@ defmodule Ide.PebblePreferencesTest do
     assert html =~ "return_to"
     assert html =~ "Show date"
     assert html =~ "\"showDate\""
+    assert html =~ "\"homeLatitude\""
+    assert html =~ "input.step = typeof control.step !== \"undefined\" ? control.step : \"any\";"
     assert html =~ "JSON.stringify(values)"
   end
 

@@ -2,6 +2,7 @@ module Pebble.Events exposing
     ( batch
     , onHourChange
     , onMinuteChange
+    , onSecondChange
     , onTick
     )
 
@@ -10,8 +11,8 @@ module Pebble.Events exposing
 
 Each helper turns a platform event into a regular Elm `Sub msg`.
 
-# Tick
-@docs onTick, onHourChange, onMinuteChange
+# Time
+@docs onSecondChange, onHourChange, onMinuteChange
 
 # Composition
 @docs batch
@@ -22,13 +23,20 @@ Each helper turns a platform event into a regular Elm `Sub msg`.
 import Elm.Kernel.PebbleWatch
 
 
-{-| Receive the current second on each clock tick from the runtime.
+{-| Receive the current second whenever the local second changes.
 
 The value is the current wall-clock second, from `0` to `59`.
 -}
+onSecondChange : (Int -> msg) -> Sub msg
+onSecondChange =
+    Elm.Kernel.PebbleWatch.onSecondChange
+
+
+{-| Backward-compatible alias for `onSecondChange`.
+-}
 onTick : (Int -> msg) -> Sub msg
 onTick =
-    Elm.Kernel.PebbleWatch.onTick
+    onSecondChange
 
 
 {-| Receive a message when the local hour changes.

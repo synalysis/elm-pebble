@@ -12,6 +12,10 @@ module Elm.Kernel.PebbleWatch exposing
     , getTimezone
     , getTimezoneIsSet
     , getWatchModel
+    , healthAccessible
+    , healthSum
+    , healthSumToday
+    , healthValue
     , logErrorCode
     , logInfoCode
     , logWarnCode
@@ -28,8 +32,10 @@ module Elm.Kernel.PebbleWatch exposing
     , onButtonUp
     , onConnectionChange
     , onFrame
+    , onHealthEvent
     , onHourChange
     , onMinuteChange
+    , onSecondChange
     , onTick
     , storageDelete
     , storageReadInt
@@ -166,6 +172,42 @@ getConnectionStatus toMsg =
     Cmd.none
 
 
+healthValue : Int -> (Int -> msg) -> Cmd msg
+healthValue metric toMsg =
+    let
+        keep =
+            ( metric, toMsg )
+    in
+    Cmd.none
+
+
+healthSumToday : Int -> (Int -> msg) -> Cmd msg
+healthSumToday metric toMsg =
+    let
+        keep =
+            ( metric, toMsg )
+    in
+    Cmd.none
+
+
+healthSum : Int -> Int -> Int -> (Int -> msg) -> Cmd msg
+healthSum metric startSeconds endSeconds toMsg =
+    let
+        keep =
+            ( metric, startSeconds, endSeconds, toMsg )
+    in
+    Cmd.none
+
+
+healthAccessible : Int -> Int -> Int -> (Bool -> msg) -> Cmd msg
+healthAccessible metric startSeconds endSeconds toMsg =
+    let
+        keep =
+            ( metric, startSeconds, endSeconds, toMsg )
+    in
+    Cmd.none
+
+
 getClockStyle24h : (Bool -> msg) -> Cmd msg
 getClockStyle24h toMsg =
     let
@@ -290,6 +332,11 @@ onTick _ =
     Sub.none
 
 
+onSecondChange : (Int -> msg) -> Sub msg
+onSecondChange =
+    onTick
+
+
 onFrame : Int -> (a -> msg) -> Sub msg
 onFrame _ _ =
     Sub.none
@@ -357,6 +404,11 @@ onBatteryChange _ =
 
 onConnectionChange : (Bool -> msg) -> Sub msg
 onConnectionChange _ =
+    Sub.none
+
+
+onHealthEvent : (a -> msg) -> Sub msg
+onHealthEvent _ =
     Sub.none
 
 

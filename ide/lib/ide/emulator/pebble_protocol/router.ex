@@ -252,5 +252,4 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   end
 
   defp parse_qemu_packets(buffer, packets), do: {Enum.reverse(packets), buffer}
-
 end

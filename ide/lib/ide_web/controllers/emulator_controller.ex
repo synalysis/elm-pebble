@@ -193,7 +193,7 @@ defmodule IdeWeb.EmulatorController do
 
   defp proxy_target(%{id: id}, :vnc) do
     with {:ok, pid} <- Emulator.lookup(id),
-         port <- Ide.Emulator.Session.local_port(pid, :vnc),
+         port when is_integer(port) <- Ide.Emulator.Session.local_port(pid, :vnc),
          true <- Ide.Emulator.Session.tcp_port_open?(port) do
       {:ok, {:tcp, "127.0.0.1", port}}
     else
@@ -204,7 +204,7 @@ defmodule IdeWeb.EmulatorController do
 
   defp proxy_target(%{id: id}, :phone) do
     with {:ok, pid} <- Emulator.lookup(id),
-         port <- Ide.Emulator.Session.local_port(pid, :phone),
+         port when is_integer(port) <- Ide.Emulator.Session.local_port(pid, :phone),
          true <- Ide.Emulator.Session.tcp_port_open?(port) do
       {:ok, "ws://127.0.0.1:#{port}/"}
     else

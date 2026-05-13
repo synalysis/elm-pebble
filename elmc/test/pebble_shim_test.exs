@@ -867,6 +867,45 @@ defmodule Elmc.PebbleShimTest do
     assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_CMD_BACKLIGHT 1")
   end
 
+  test "unreachable Pebble declarations do not enable generated functions or features" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/pebble_unreachable_feature_project", __DIR__)
+    out_dir = Path.expand("tmp/pebble_unreachable_feature_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_unreachable_feature_app!(project_dir)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert draw_feature?(header, "CLEAR")
+    refute draw_feature?(header, "ARC")
+    refute String.contains?(generated, "elmc_fn_Main_unusedArc")
+  end
+
+  test "direct view helper references enable draw runtime features" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/pebble_direct_helper_feature_project", __DIR__)
+    out_dir = Path.expand("tmp/pebble_direct_helper_feature_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_direct_helper_feature_app!(project_dir)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert draw_feature?(header, "RECT")
+    assert draw_feature?(header, "STROKE_COLOR")
+    assert draw_feature?(header, "TEXT_COLOR")
+    assert String.contains?(generated, "elmc_fn_Main_drawCell_commands_append")
+  end
+
   defp available_c_compilers do
     ["cc", "gcc", "clang"]
     |> Enum.map(fn name -> {name, System.find_executable(name)} end)
@@ -876,6 +915,77 @@ defmodule Elmc.PebbleShimTest do
 
   defp draw_feature?(header, suffix) do
     String.contains?(header, "#define ELMC_PEBBLE_FEATURE_DRAW_#{suffix} 1")
+  end
+
+  defp write_direct_helper_feature_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Button as Button
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { cells : List Int }
+
+
+    type Msg
+        = UpPressed
+
+
+    init _ =
+        ( { cells = [ 0, 2 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Button.onPress Button.Up UpPressed
+
+
+    view model =
+        Ui.toUiNode (List.indexedMap drawCell model.cells)
+
+
+    drawCell : Int -> Int -> Ui.RenderOp
+    drawCell index value =
+        let
+            x =
+                10 + index * 31
+
+            label =
+                if value == 0 then
+                    "."
+
+                else
+                    String.fromInt value
+        in
+        Ui.group
+            (Ui.context
+                [ Ui.strokeColor Color.black
+                , Ui.textColor Color.black
+                ]
+                [ Ui.rect { x = x, y = 42, w = 28, h = 28 } Color.black
+                , Ui.text Resources.DefaultFont { x = x + 2, y = 47, w = 24, h = 18 } label
+                ]
+            )
+
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+    """)
   end
 
   defp write_minimal_watchface!(project_dir) do
@@ -923,6 +1033,58 @@ defmodule Elmc.PebbleShimTest do
                     [ Ui.clear Color.white ]
                 ]
             ]
+    """)
+  end
+
+  defp write_unreachable_feature_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        { value : Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { value = 0 }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.windowStack
+            [ Ui.window 1
+                [ Ui.canvasLayer 1
+                    [ Ui.clear Color.white ]
+                ]
+            ]
+
+
+    unusedArc =
+        Ui.arc { x = 0, y = 0, w = 20, h = 20 } 0 180
     """)
   end
 
