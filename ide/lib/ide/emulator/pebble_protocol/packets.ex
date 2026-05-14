@@ -33,6 +33,9 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
   @spec app_fetch_start_response() :: {non_neg_integer(), binary()}
   def app_fetch_start_response, do: {@endpoint_app_fetch, <<0x01, 0x01>>}
 
+  @spec app_run_state_request() :: {non_neg_integer(), binary()}
+  def app_run_state_request, do: {@endpoint_app_run_state, <<0x03>>}
+
   @spec blob_insert_app(non_neg_integer(), map()) :: {non_neg_integer(), binary()}
   def blob_insert_app(token, metadata) do
     key = uuid_bytes(metadata.uuid)

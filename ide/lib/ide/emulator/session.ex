@@ -5,7 +5,7 @@ defmodule Ide.Emulator.Session do
 
   require Logger
 
-  alias Ide.Emulator.{PBW, SdkImages}
+  alias Ide.Emulator.{PBW, PBWInstaller, SdkImages}
   alias Ide.Emulator.PebbleProtocol.Router
   alias Ide.WatchModels
 
@@ -58,7 +58,9 @@ defmodule Ide.Emulator.Session do
 
   @spec install(pid()) :: {:ok, map()} | {:error, term()}
   def install(pid) do
-    do_install(pid, config(:native_install_retries, 4))
+    with :ok <- GenServer.call(pid, :reset_for_install, 90_000) do
+      do_install(pid, config(:native_install_retries, 4))
+    end
   catch
     :exit, {:timeout, _} -> {:error, :emulator_session_unresponsive}
     :exit, _ -> {:error, :emulator_session_unavailable}
@@ -89,15 +91,80 @@ defmodule Ide.Emulator.Session do
   end
 
   defp do_install(pid, retries_left) do
-    with {:ok, context} <- GenServer.call(pid, :direct_install_context, 5_000) do
-      case install_with_libpebble2(context) do
+    with {:ok, context} <- GenServer.call(pid, :install_context, 5_000) do
+      # region agent log
+      Ide.AgentDebugLog.log("initial", "H2,H3,H6", "session.ex:do_install:context", "router install context acquired", %{
+        platform: context.platform,
+        artifact_path: context.artifact_path,
+        artifact_bytes: file_size(context.artifact_path),
+        protocol_router_alive: alive?(context.protocol_router_pid),
+        retries_left: retries_left
+      })
+
+      # endregion
+      case install_with_router(context) do
         {:ok, result} ->
-          _ = GenServer.call(pid, :restart_protocol_router, 10_000)
+          console_tail = capture_console_after_install(context.console_port)
+
+          # region agent log
+          Ide.AgentDebugLog.log("initial", "H3,H6,H16,H17,H18", "session.ex:do_install:ok", "router install succeeded", %{
+            platform: context.platform,
+            uuid: Map.get(result, :uuid),
+            parts: Map.get(result, :parts),
+            protocol_router_alive: alive?(context.protocol_router_pid),
+            console_tail: console_tail
+          })
+
+          # endregion
           {:ok, result}
 
         {:error, reason} = error ->
+          # region agent log
+          Ide.AgentDebugLog.log("initial", "H3,H6", "session.ex:do_install:error", "router install failed", %{
+            platform: context.platform,
+            reason: inspect(reason)
+          })
+
+          # endregion
           maybe_retry_install(pid, reason, retries_left, error)
       end
+    end
+  end
+
+  defp install_with_router(context) do
+    PBWInstaller.install(context.protocol_router_pid, context.artifact_path, context.platform,
+      post_install_probe_timeout_ms: 1_000
+    )
+  end
+
+  defp capture_console_after_install(console_port) do
+    deadline = System.monotonic_time(:millisecond) + 750
+
+    with {:ok, socket} <-
+           :gen_tcp.connect(~c"127.0.0.1", console_port, [:binary, active: false], 250) do
+      try do
+        console_capture_loop(socket, deadline, <<>>)
+      after
+        :gen_tcp.close(socket)
+      end
+    else
+      {:error, reason} -> "console_connect_failed:#{inspect(reason)}"
+    end
+  end
+
+  defp console_capture_loop(socket, deadline, acc) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    cond do
+      remaining == 0 ->
+        console_tail(acc)
+
+      true ->
+        case :gen_tcp.recv(socket, 0, min(remaining, 100)) do
+          {:ok, data} -> console_capture_loop(socket, deadline, acc <> data)
+          {:error, :timeout} -> console_capture_loop(socket, deadline, acc)
+          {:error, reason} -> "console_closed:#{inspect(reason)} tail=#{console_tail(acc)}"
+        end
     end
   end
 
@@ -138,6 +205,8 @@ defmodule Ide.Emulator.Session do
       String.contains?(output, "ConnectionError") or
       String.contains?(output, "Connection refused")
   end
+
+  defp retryable_install_error?({:putbytes_failed, _meta, :timeout}), do: true
 
   defp retryable_install_error?(_reason), do: false
 
@@ -243,9 +312,33 @@ defmodule Ide.Emulator.Session do
          {:ok, state} <- maybe_start_qemu(state),
          {:ok, state} <- maybe_start_protocol_router(state) do
       schedule_idle_check(state)
+      # region agent log
+      Ide.AgentDebugLog.log("initial", "H2", "session.ex:init:ok", "emulator session initialized", %{
+        id: state.id,
+        project_slug: state.project_slug,
+        platform: state.platform,
+        artifact_path: state.artifact_path,
+        artifact_bytes: file_size(state.artifact_path),
+        app_uuid: state.app_uuid,
+        has_phone_companion: state.has_phone_companion,
+        bt_port: state.bt_port,
+        phone_ws_port: state.phone_ws_port,
+        qemu_alive: alive?(state.qemu_pid),
+        protocol_router_alive: alive?(state.protocol_router_pid)
+      })
+
+      # endregion
       {:ok, state}
     else
-      {:error, reason} -> {:stop, reason}
+      {:error, reason} ->
+        # region agent log
+        Ide.AgentDebugLog.log("initial", "H2", "session.ex:init:error", "emulator session init failed", %{
+          platform: platform,
+          reason: inspect(reason)
+        })
+
+        # endregion
+        {:stop, reason}
     end
   end
 
@@ -268,7 +361,8 @@ defmodule Ide.Emulator.Session do
       %{
         protocol_router_pid: state.protocol_router_pid,
         artifact_path: state.artifact_path,
-        platform: state.platform
+        platform: state.platform,
+        console_port: state.console_port
       }}, %{state | pypkjs_pid: nil}}
   end
 
@@ -293,8 +387,28 @@ defmodule Ide.Emulator.Session do
 
   def handle_call({:local_port, :phone}, _from, %{pypkjs_pid: nil} = state) do
     case maybe_start_pypkjs(state) do
-      {:ok, state} -> {:reply, state.phone_ws_port, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
+      {:ok, state} ->
+        # region agent log
+        Ide.AgentDebugLog.log("initial", "H5", "session.ex:phone_port:pypkjs_ok", "pypkjs started for phone websocket", %{
+          id: state.id,
+          platform: state.platform,
+          phone_ws_port: state.phone_ws_port,
+          pypkjs_alive: alive?(state.pypkjs_pid)
+        })
+
+        # endregion
+        {:reply, state.phone_ws_port, state}
+
+      {:error, reason} ->
+        # region agent log
+        Ide.AgentDebugLog.log("initial", "H5", "session.ex:phone_port:pypkjs_error", "pypkjs failed to start", %{
+          id: state.id,
+          platform: state.platform,
+          reason: inspect(reason)
+        })
+
+        # endregion
+        {:reply, {:error, reason}, state}
     end
   end
 
@@ -309,22 +423,37 @@ defmodule Ide.Emulator.Session do
 
   def handle_call(:restart_protocol_router, _from, state), do: {:reply, :ok, state}
 
-  def handle_call(:reset_for_install_retry, _from, state) do
-    cleanup_process(state.pypkjs_pid)
-    cleanup_process(state.protocol_router_pid)
-    cleanup_process(state.qemu_pid)
+  def handle_call(:reset_for_install, _from, state) do
+    # region agent log
+    Ide.AgentDebugLog.log("initial", "H12", "session.ex:reset_for_install:start", "resetting embedded emulator before install", %{
+      id: state.id,
+      platform: state.platform,
+      spi_image_path: state.spi_image_path
+    })
 
-    with {:ok, _path} <- reset_spi_image(state.platform, state.spi_image_path),
-         {:ok, state} <-
-           maybe_start_qemu(%{
-             state
-             | pypkjs_pid: nil,
-               protocol_router_pid: nil,
-               qemu_pid: nil,
-               installing?: true
-           }) do
-      {:reply, :ok, state}
-    else
+    # endregion
+
+    case reset_for_install(state) do
+      {:ok, state} ->
+        # region agent log
+        Ide.AgentDebugLog.log("initial", "H12", "session.ex:reset_for_install:ok", "embedded emulator reset before install", %{
+          id: state.id,
+          platform: state.platform,
+          qemu_alive: alive?(state.qemu_pid),
+          protocol_router_alive: alive?(state.protocol_router_pid)
+        })
+
+        # endregion
+        {:reply, :ok, state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, %{state | installing?: false}}
+    end
+  end
+
+  def handle_call(:reset_for_install_retry, _from, state) do
+    case reset_for_install(state) do
+      {:ok, state} -> {:reply, :ok, state}
       {:error, reason} -> {:reply, {:error, reason}, %{state | installing?: false}}
     end
   end
@@ -349,6 +478,25 @@ defmodule Ide.Emulator.Session do
     end
   end
 
+  defp reset_for_install(state) do
+    cleanup_process(state.pypkjs_pid)
+    cleanup_process(state.protocol_router_pid)
+    cleanup_process(state.qemu_pid)
+
+    with {:ok, _path} <- reset_spi_image(state.platform, state.spi_image_path),
+         {:ok, state} <-
+           maybe_start_qemu(%{
+             state
+             | pypkjs_pid: nil,
+               protocol_router_pid: nil,
+               qemu_pid: nil,
+               installing?: true
+           }),
+         {:ok, state} <- maybe_start_protocol_router(state) do
+      {:ok, state}
+    end
+  end
+
   @impl true
   def handle_info(:idle_check, state) do
     if now_ms() - state.last_ping_ms > state.idle_timeout_ms do
@@ -369,10 +517,27 @@ defmodule Ide.Emulator.Session do
         {:noreply, state}
 
       :pypkjs ->
+        # region agent log
+        Ide.AgentDebugLog.log("initial", "H5", "session.ex:child_exit:pypkjs", "pypkjs exited", %{
+          id: state.id,
+          platform: state.platform,
+          reason: inspect(reason)
+        })
+
+        # endregion
         Logger.debug("embedded emulator pypkjs exited: #{inspect(reason)}")
         {:noreply, %{state | pypkjs_pid: nil}}
 
       role ->
+        # region agent log
+        Ide.AgentDebugLog.log("initial", "H4", "session.ex:child_exit:emulator", "emulator child exited", %{
+          id: state.id,
+          platform: state.platform,
+          role: inspect(role),
+          reason: inspect(reason)
+        })
+
+        # endregion
         Logger.debug("embedded emulator #{role} exited: #{inspect(reason)}")
         {:stop, {:shutdown, {:child_exited, role, reason}}, state}
     end
@@ -785,27 +950,33 @@ defmodule Ide.Emulator.Session do
     bz2 = raw <> ".bz2"
     path = Path.join(emulator_state_dir(project_slug, platform), "qemu_spi_flash.bin")
 
-    cond do
-      File.exists?(path) ->
-        {:ok, path}
+    with :ok <- File.mkdir_p(Path.dirname(path)) do
+      # region agent log
+      Ide.AgentDebugLog.log("initial", "H24,H27", "session.ex:make_spi_image", "creating fresh emulator flash image for launch", %{
+        project_slug: project_slug,
+        platform: platform,
+        path: path,
+        had_existing_image: File.exists?(path),
+        has_raw_source: File.exists?(raw),
+        has_bz2_source: File.exists?(bz2)
+      })
 
-      true ->
-        with :ok <- File.mkdir_p(Path.dirname(path)) do
-          cond do
-            File.exists?(raw) ->
-              File.cp(raw, path)
-              {:ok, path}
+      # endregion
 
-            File.exists?(bz2) ->
-              decompress_bzip2(bz2, path)
+      cond do
+        File.exists?(raw) ->
+          File.cp(raw, path)
+          {:ok, path}
 
-            start_processes?() ->
-              {:error, {:qemu_flash_image_not_found, source_dir}}
+        File.exists?(bz2) ->
+          decompress_bzip2(bz2, path)
 
-            true ->
-              File.touch(path)
-              {:ok, path}
-          end
+        start_processes?() ->
+          {:error, {:qemu_flash_image_not_found, source_dir}}
+
+        true ->
+          File.touch(path)
+          {:ok, path}
         end
     end
   end
@@ -1528,32 +1699,17 @@ defmodule Ide.Emulator.Session do
 
   defp maybe_put_toolchain_archive_path(opts, _path), do: opts
 
-  defp install_with_libpebble2(context) do
-    with {:ok, pypkjs} <- pypkjs_bin(),
-         {:ok, python} <- pypkjs_python(pypkjs),
-         script <- Path.expand("../../../priv/python/embedded_install.py", __DIR__),
-         true <- File.exists?(script) do
-      args = [script, "127.0.0.1:#{context.qemu_port}", context.artifact_path]
-
-      case System.cmd(python, args, stderr_to_stdout: true) do
-        {output, 0} ->
-          {:ok,
-           %{
-             uuid: context.app_uuid,
-             variant: context.platform,
-             app_id: 0,
-             parts: [%{name: "pebble-app.bin", kind: :binary, bytes: 0}],
-             output: output
-           }}
-
-        {output, exit_code} ->
-          {:error, {:libpebble2_install_failed, exit_code, output}}
-      end
-    else
-      false -> {:error, :embedded_install_script_not_found}
-      {:error, reason} -> {:error, reason}
+  defp file_size(path) when is_binary(path) do
+    case File.stat(path) do
+      {:ok, %{size: size}} -> size
+      _ -> nil
     end
   end
+
+  defp file_size(_path), do: nil
+
+  defp alive?(pid) when is_pid(pid), do: Process.alive?(pid)
+  defp alive?(_pid), do: false
 
   defp qemu_micro_flash_path(platform),
     do: File.exists?(Path.join(qemu_image_dir(platform), "qemu_micro_flash.bin"))

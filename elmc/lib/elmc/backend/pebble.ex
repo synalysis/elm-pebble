@@ -106,6 +106,18 @@ defmodule Elmc.Backend.Pebble do
   @spec draw_kind_id!(atom()) :: non_neg_integer()
   def draw_kind_id!(kind), do: Map.fetch!(@draw_kind_ids, kind)
 
+  @spec draw_kind_c_name!(atom() | integer()) :: String.t()
+  def draw_kind_c_name!(kind) when is_atom(kind) do
+    "ELMC_PEBBLE_DRAW_#{macro_name(Atom.to_string(kind))}"
+  end
+
+  def draw_kind_c_name!(id) when is_integer(id) do
+    case Enum.find(@draw_kinds, fn {_kind, value} -> value == id end) do
+      {kind, _value} -> draw_kind_c_name!(kind)
+      nil -> raise KeyError, key: id, term: @draw_kinds
+    end
+  end
+
   @spec command_kind_id!(atom()) :: non_neg_integer()
   def command_kind_id!(kind), do: Map.fetch!(@command_kind_ids, kind)
 
@@ -266,15 +278,19 @@ defmodule Elmc.Backend.Pebble do
       int32_t p3;
       int32_t p4;
       int32_t p5;
+      union {
+        char text[64];
     #if ELMC_PEBBLE_FEATURE_DRAW_PATH
-      int32_t path_point_count;
-      int32_t path_offset_x;
-      int32_t path_offset_y;
-      int32_t path_rotation;
-      int16_t path_x[16];
-      int16_t path_y[16];
+        struct {
+          int16_t path_x[16];
+          int16_t path_y[16];
+          int16_t path_offset_x;
+          int16_t path_offset_y;
+          int16_t path_rotation;
+          uint8_t path_point_count;
+        };
     #endif
-      char text[64];
+      };
     } ElmcPebbleDrawCmd;
 
     typedef struct {
@@ -323,6 +339,12 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_dispatch_tag_bool(ElmcPebbleApp *app, int64_t tag, int value);
     int elmc_pebble_dispatch_tag_string(ElmcPebbleApp *app, int64_t tag, const char *value);
     int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload);
+    int elmc_pebble_dispatch_tag_int_values(
+        ElmcPebbleApp *app,
+        int64_t outer_tag,
+        int64_t inner_tag,
+        int field_count,
+        const int64_t *field_values);
     int elmc_pebble_dispatch_tag_record_int_fields(
         ElmcPebbleApp *app,
         int64_t tag,
@@ -471,6 +493,10 @@ defmodule Elmc.Backend.Pebble do
     #define ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT(name, value) return (value)
     #endif
 
+    #ifndef ELMC_AGENT_PROBES
+    #define ELMC_AGENT_PROBES 0
+    #endif
+
     #ifndef ELMC_PEBBLE_DIRTY_REGION_ENABLED
     #if defined(ELMC_PEBBLE_PLATFORM)
     #define ELMC_PEBBLE_DIRTY_REGION_ENABLED 0
@@ -480,6 +506,71 @@ defmodule Elmc.Backend.Pebble do
     #endif
 
     #{current_second_helper}
+
+    // #region agent log
+    #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_AGENT_PROBES
+    static bool elmc_agent_scene_probe_enabled(uint32_t tag) {
+      return tag == 0xED997A00 ||
+             tag == 0xED997C02 ||
+             tag == 0xED996191 ||
+             tag == 0xED996211 ||
+             tag == 0xED996213 ||
+             tag == 0xED996300 ||
+             tag == 0xED9963F0 ||
+             tag == 0xED996410 ||
+             tag == 0xED996411 ||
+             tag == 0xED996412 ||
+             tag == 0xED996413 ||
+             tag == 0xED996500 ||
+             tag == 0xED996501 ||
+             (tag & 0xFFFFFF00) == 0xED997000 ||
+             (tag & 0xFFFFFF00) == 0xED997100 ||
+             (tag & 0xFFFFFF00) == 0xED997B00 ||
+             (tag & 0xFFFFFF00) == 0xED997D00 ||
+             (tag & 0xFFFFFF00) == 0xED997E00 ||
+             (tag & 0xFFFFFF00) == 0xED997F00 ||
+             (tag & 0xFFFFFF00) == 0xED998000 ||
+             (tag & 0xFFFFFF00) == 0xED998100;
+    }
+
+    static void elmc_agent_scene_probe(uint32_t tag) {
+      if (!elmc_agent_scene_probe_enabled(tag)) return;
+      static uint32_t seen_tags[16];
+      static int seen_count = 0;
+      for (int i = 0; i < seen_count; i++) {
+        if (seen_tags[i] == tag) return;
+      }
+      if (seen_count >= 16) return;
+      DataLoggingSessionRef session =
+          data_logging_create(tag, DATA_LOGGING_BYTE_ARRAY, 1, false);
+      if (session) {
+        seen_tags[seen_count++] = tag;
+        data_logging_finish(session);
+      }
+    }
+    #else
+    #define elmc_agent_scene_probe(tag) do { (void)(tag); } while (0)
+    #endif
+
+    #if !defined(#{direct_view_macro})
+    static uint32_t elmc_agent_value_shape(ElmcValue *value) {
+      if (!value) return 0x0;
+      switch (value->tag) {
+        case ELMC_TAG_INT: return 0x1;
+        case ELMC_TAG_BOOL: return 0x2;
+        case ELMC_TAG_STRING: return 0x3;
+        case ELMC_TAG_LIST: return value->payload ? 0x41 : 0x40;
+        case ELMC_TAG_RESULT: return 0x5;
+        case ELMC_TAG_MAYBE: return 0x6;
+        case ELMC_TAG_TUPLE2: return value->payload ? 0x71 : 0x70;
+        case ELMC_TAG_PORT_PAYLOAD: return 0x9;
+        case ELMC_TAG_FLOAT: return 0xA;
+        default: return 0xF;
+      }
+    }
+    #endif
+
+    // #endregion
 
     static int elmc_unpack_draw_payload(ElmcValue *payload, int64_t out[6]) {
       if (!payload) return -1;
@@ -496,6 +587,7 @@ defmodule Elmc.Backend.Pebble do
       return 0;
     }
 
+    #if !defined(#{direct_view_macro})
     #if ELMC_PEBBLE_FEATURE_DRAW_PATH
     static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_cmd);
     #endif
@@ -659,6 +751,7 @@ defmodule Elmc.Backend.Pebble do
         default: return -3;
       }
     }
+    #endif
 
     static void elmc_draw_cmd_init(ElmcPebbleDrawCmd *cmd, int32_t kind) {
       if (!cmd) return;
@@ -737,17 +830,17 @@ defmodule Elmc.Backend.Pebble do
     #endif
     }
 
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
     static void elmc_pebble_scene_mark_full_dirty(ElmcPebbleApp *app) {
       if (!app) return;
-    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
       app->dirty_rect_valid = 0;
       app->dirty_rect_full = 1;
       app->dirty_rect.x = 0;
       app->dirty_rect.y = 0;
       app->dirty_rect.w = 0;
       app->dirty_rect.h = 0;
-    #endif
     }
+    #endif
 
     static int elmc_pebble_scene_reserve(ElmcPebbleApp *app, int extra) {
       if (!app || extra < 0) return -1;
@@ -1152,11 +1245,9 @@ defmodule Elmc.Backend.Pebble do
       app->dirty_rect_valid = 1;
     }
     #else
-    static void elmc_pebble_scene_compute_dirty_rect(ElmcPebbleApp *app) {
-      elmc_pebble_scene_mark_full_dirty(app);
-    }
     #endif
 
+    #if !defined(#{direct_view_macro})
     static void elmc_emit_draw_cmd(
         const ElmcPebbleDrawCmd *cmd,
         ElmcPebbleDrawCmd *out_cmds,
@@ -1226,6 +1317,7 @@ defmodule Elmc.Backend.Pebble do
       }
       return 0;
     }
+    #endif
 
     static int elmc_cmd_from_value(ElmcValue *value, ElmcPebbleCmd *out_cmd) {
       if (!out_cmd) return -1;
@@ -1282,6 +1374,7 @@ defmodule Elmc.Backend.Pebble do
       return -4;
     }
 
+    #if !defined(#{direct_view_macro})
     static uint64_t elmc_hash_value(ElmcValue *value, int depth) {
       if (!value || depth > 64) return 1469598103934665603ULL;
       uint64_t h = 1469598103934665603ULL;
@@ -1335,7 +1428,7 @@ defmodule Elmc.Backend.Pebble do
     static int elmc_is_virtual_ui_tag(ElmcValue *value, int64_t encoded_tag) {
       if (!value) return 0;
       int64_t tag = elmc_as_int(value);
-      return tag == encoded_tag || tag == 1;
+      return tag == encoded_tag;
     }
 
     static int elmc_extract_virtual_canvas_ops(
@@ -1423,11 +1516,21 @@ defmodule Elmc.Backend.Pebble do
       if (layer_tuple->second->tag != ELMC_TAG_TUPLE2 || layer_tuple->second->payload == NULL) return -13;
       ElmcTuple2 *layer_payload = (ElmcTuple2 *)layer_tuple->second->payload;
       if (!layer_payload->first || !layer_payload->second) return -14;
+      // #region agent log
+      elmc_agent_scene_probe(0xED996600 | elmc_agent_value_shape(layer_payload->first));
+      elmc_agent_scene_probe(0xED996700 | elmc_agent_value_shape(layer_payload->second));
+      if (layer_payload->second->tag == ELMC_TAG_TUPLE2 && layer_payload->second->payload != NULL) {
+        ElmcTuple2 *ops_payload = (ElmcTuple2 *)layer_payload->second->payload;
+        elmc_agent_scene_probe(0xED996800 | elmc_agent_value_shape(ops_payload->first));
+        elmc_agent_scene_probe(0xED996900 | elmc_agent_value_shape(ops_payload->second));
+      }
+      // #endregion
 
       *out_layer_id = elmc_as_int(layer_payload->first);
       *out_ops = layer_payload->second;
       return 0;
     }
+    #endif
 
     static int elmc_pebble_is_subscribed(ElmcPebbleApp *app, int64_t flag) {
       if (!app || !app->initialized) return 0;
@@ -1455,7 +1558,9 @@ defmodule Elmc.Backend.Pebble do
       app->prev_window_id = 0;
       app->prev_layer_id = 0;
       app->prev_ops_hash = 0;
+    #if !defined(#{direct_view_macro})
       app->stream_view_result = NULL;
+    #endif
       app->scene.bytes = NULL;
       app->scene.byte_count = 0;
       app->scene.byte_capacity = 0;
@@ -1568,6 +1673,54 @@ defmodule Elmc.Backend.Pebble do
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", elmc_pebble_finish_dispatch(app, rc));
+    }
+
+    static ElmcValue *elmc_pebble_int_tuple_from_values(const int64_t *field_values, int index, int field_count) {
+      if (field_count <= 0) return elmc_new_int(0);
+      if (!field_values || index < 0 || index >= field_count) return NULL;
+
+      ElmcValue *head = elmc_new_int(field_values[index]);
+      if (!head) return NULL;
+      if (index == field_count - 1) return head;
+
+      ElmcValue *tail = elmc_pebble_int_tuple_from_values(field_values, index + 1, field_count);
+      if (!tail) {
+        elmc_release(head);
+        return NULL;
+      }
+
+      ElmcValue *tuple = elmc_tuple2(head, tail);
+      elmc_release(head);
+      elmc_release(tail);
+      return tuple;
+    }
+
+    int elmc_pebble_dispatch_tag_int_values(
+        ElmcPebbleApp *app,
+        int64_t outer_tag,
+        int64_t inner_tag,
+        int field_count,
+        const int64_t *field_values) {
+      ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_int_values");
+      if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", -1);
+      if (field_count < 0 || (field_count > 0 && !field_values)) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", -3);
+
+      ElmcValue *inner_tag_value = elmc_new_int(inner_tag);
+      ElmcValue *inner_payload = elmc_pebble_int_tuple_from_values(field_values, 0, field_count);
+      if (!inner_tag_value || !inner_payload) {
+        if (inner_tag_value) elmc_release(inner_tag_value);
+        if (inner_payload) elmc_release(inner_payload);
+        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", -2);
+      }
+
+      ElmcValue *inner_msg = elmc_tuple2(inner_tag_value, inner_payload);
+      elmc_release(inner_tag_value);
+      elmc_release(inner_payload);
+      if (!inner_msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", -2);
+
+      int rc = elmc_pebble_dispatch_tag_payload(app, outer_tag, inner_msg);
+      elmc_release(inner_msg);
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", rc);
     }
 
     int elmc_pebble_dispatch_tag_record_int_fields(
@@ -1826,10 +1979,14 @@ defmodule Elmc.Backend.Pebble do
 
     void elmc_pebble_clear_view_cache(ElmcPebbleApp *app) {
       if (!app) return;
+    #if defined(#{direct_view_macro})
+      (void)app;
+    #else
       if (app->stream_view_result) {
         elmc_release(app->stream_view_result);
         app->stream_view_result = NULL;
       }
+    #endif
     }
 
     int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
@@ -1862,11 +2019,30 @@ defmodule Elmc.Backend.Pebble do
       }
       if (!cmds) {
         elmc_pebble_scene_buffer_free(&app->scene);
+        // #region agent log
+        elmc_agent_scene_probe(0xED997C02);
+        // #endregion
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -2);
       }
       int skip = 0;
       for (int chunk = 0; chunk < BUILD_CHUNK_GUARD; chunk++) {
+        // #region agent log
+        if (chunk == 0 && skip == 0) elmc_agent_scene_probe(0xED997A00);
+        // #endregion
         int count = elmc_pebble_view_commands_raw_impl(app, cmds, build_chunk_capacity, skip, 0);
+        // #region agent log
+        if (chunk == 0 && skip == 0) {
+          uint32_t encoded_count = count < 0 ? (uint32_t)(128 + ((-count) & 0x7F)) : (uint32_t)(count > 127 ? 127 : count);
+          elmc_agent_scene_probe(0xED997B00 | encoded_count);
+          if (count > 0) {
+            int probe_limit = count < 4 ? count : 4;
+            for (int probe_i = 0; probe_i < probe_limit; probe_i++) {
+              elmc_agent_scene_probe(0xED997D00 | ((uint32_t)probe_i << 4) | ((uint32_t)cmds[probe_i].kind & 0x0F));
+              elmc_agent_scene_probe(0xED997E00 | ((uint32_t)probe_i << 4) | ((uint32_t)cmds[probe_i].p0 & 0x0F));
+            }
+          }
+        }
+        // #endregion
         if (count < 0) {
           elmc_pebble_clear_view_cache(app);
           elmc_pebble_scene_buffer_free(&app->scene);
@@ -1877,6 +2053,10 @@ defmodule Elmc.Backend.Pebble do
         for (int i = 0; i < count; i++) {
           int rc = elmc_pebble_scene_encode_cmd(app, &cmds[i]);
           if (rc != 0) {
+            // #region agent log
+            elmc_agent_scene_probe(0xED997F00 | ((uint32_t)i & 0xFF));
+            elmc_agent_scene_probe(0xED998000 | (rc < 0 ? (uint32_t)(0x80 | ((-rc) & 0x7F)) : (uint32_t)(rc & 0x7F)));
+            // #endregion
             elmc_pebble_clear_view_cache(app);
             elmc_pebble_scene_buffer_free(&app->scene);
             free(cmds);
@@ -1922,10 +2102,19 @@ defmodule Elmc.Backend.Pebble do
     #endif
     }
 
+    static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe);
+
     int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip) {
       ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_scene_commands_from");
       if (!app || !out_cmds || max_cmds <= 0 || skip < 0) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", -1);
       int rc = elmc_pebble_ensure_scene(app);
+      if (rc == -2) {
+        int fallback_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0);
+        // #region agent log
+        elmc_agent_scene_probe(0xED998100 | (fallback_count < 0 ? (uint32_t)(0x80 | ((-fallback_count) & 0x7F)) : (uint32_t)(fallback_count > 0x7F ? 0x7F : fallback_count)));
+        // #endregion
+        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", fallback_count);
+      }
       if (rc != 0) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", rc);
       int byte_offset = 0;
       int emitted = 0;
@@ -1962,21 +2151,29 @@ defmodule Elmc.Backend.Pebble do
     static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe) {
       if (!app || !app->initialized || !out_cmds || max_cmds <= 0) return -1;
       if (skip < 0) return -1;
+    #if !defined(#{direct_view_macro})
       int count = 0;
       ElmcValue *result = NULL;
       int result_is_cached = dedupe ? 0 : 1;
       if (!dedupe && skip == 0) {
         elmc_pebble_clear_view_cache(app);
       }
+    #endif
     #{if has_view do
       """
       #if defined(#{direct_view_macro})
+            // #region agent log
+            elmc_agent_scene_probe(0xED996100);
+            // #endregion
             ElmcValue *direct_model = elmc_worker_model(&app->worker);
             if (!direct_model) return -2;
             ElmcValue *direct_args[] = { direct_model };
             int direct_count = #{entry_view_commands_from}(direct_args, 1, out_cmds, max_cmds, skip);
             elmc_release(direct_model);
             if (direct_count < 0) return direct_count;
+            // #region agent log
+            elmc_agent_scene_probe(direct_count == 0 ? 0xED996120 : 0xED996121);
+            // #endregion
             if (skip == 0 && dedupe) {
               uint64_t direct_hash = 1469598103934665603ULL;
               for (int i = 0; i < direct_count; i++) {
@@ -2011,13 +2208,40 @@ defmodule Elmc.Backend.Pebble do
             return direct_count;
       #else
             if (!dedupe && app->stream_view_result) {
+              // #region agent log
+              elmc_agent_scene_probe(0xED9961A0);
+              // #endregion
               result = app->stream_view_result;
             } else {
+              // #region agent log
+              elmc_agent_scene_probe(0xED996180);
+              // #endregion
               ElmcValue *model = elmc_worker_model(&app->worker);
+              // #region agent log
+              elmc_agent_scene_probe(model ? 0xED996181 : 0xED99618F);
+              // #endregion
               if (!model) return -2;
               ElmcValue *args[] = { model };
+              // #region agent log
+              elmc_agent_scene_probe(0xED996190);
+              // #endregion
               result = elmc_fn_#{String.replace(entry_module, ".", "_")}_view(args, 1);
+              // #region agent log
+              elmc_agent_scene_probe(0xED996191);
+              // #endregion
               elmc_release(model);
+              // #region agent log
+              elmc_agent_scene_probe(0xED996200);
+              if (!result) {
+                elmc_agent_scene_probe(0xED996213);
+              } else if (result->tag == ELMC_TAG_TUPLE2) {
+                elmc_agent_scene_probe(0xED996211);
+              } else if (result->tag == ELMC_TAG_LIST) {
+                elmc_agent_scene_probe(0xED996212);
+              } else {
+                elmc_agent_scene_probe(0xED996210);
+              }
+              // #endregion
               if (!dedupe) {
                 app->stream_view_result = result;
               }
@@ -2038,45 +2262,70 @@ defmodule Elmc.Backend.Pebble do
       """
     end}
 
-      ElmcValue *ops = result;
-      int64_t window_id = 0;
-      int64_t layer_id = 0;
-      int extracted = elmc_extract_virtual_canvas_ops(result, &window_id, &layer_id, &ops);
-      if (extracted != 0 || !ops) {
-        ops = result;
-      }
-
-      if (ops->tag == ELMC_TAG_LIST) {
-        ElmcValue *cursor = ops;
-        int emitted = 0;
-        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL && count < max_cmds) {
-          ElmcCons *node = (ElmcCons *)cursor->payload;
-          elmc_append_draw_cmd_from_value_window(node->head, out_cmds, max_cmds, &count, &emitted, skip, 0);
-          cursor = node->tail;
+      #if !defined(#{direct_view_macro})
+        ElmcValue *ops = result;
+        int64_t window_id = 0;
+        int64_t layer_id = 0;
+        int extracted = elmc_extract_virtual_canvas_ops(result, &window_id, &layer_id, &ops);
+        // #region agent log
+        elmc_agent_scene_probe(extracted == 0 ? 0xED996300 : 0xED9963F0);
+        elmc_agent_scene_probe(0xED997000 | (uint32_t)((extracted < 0 ? -extracted : extracted) & 0xFF));
+        // #endregion
+        if (extracted != 0 || !ops) {
+          ops = result;
         }
-      } else {
-        int emitted = 0;
-        elmc_append_draw_cmd_from_value_window(ops, out_cmds, max_cmds, &count, &emitted, skip, 0);
-      }
 
-      if (skip == 0 && dedupe && extracted == 0 && count < max_cmds) {
-        uint64_t next_hash = elmc_hash_value(ops, 0);
-        if (app->has_prev_ui &&
-            app->prev_window_id == window_id &&
-            app->prev_layer_id == layer_id &&
-            app->prev_ops_hash == next_hash) {
-          count = 0;
+        // #region agent log
+        if (!ops) {
+          elmc_agent_scene_probe(0xED996413);
+        } else if (ops->tag == ELMC_TAG_LIST) {
+          elmc_agent_scene_probe(ops->payload == NULL ? 0xED996410 : 0xED996411);
+        } else if (ops->tag == ELMC_TAG_TUPLE2) {
+          elmc_agent_scene_probe(0xED996412);
+        } else {
+          elmc_agent_scene_probe(0xED996413);
         }
-        app->has_prev_ui = 1;
-        app->prev_window_id = window_id;
-        app->prev_layer_id = layer_id;
-        app->prev_ops_hash = next_hash;
-      }
+        // #endregion
 
-      if (!result_is_cached) {
-        elmc_release(result);
-      }
-      return count;
+        if (ops->tag == ELMC_TAG_LIST) {
+          ElmcValue *cursor = ops;
+          int emitted = 0;
+          while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL && count < max_cmds) {
+            ElmcCons *node = (ElmcCons *)cursor->payload;
+            elmc_append_draw_cmd_from_value_window(node->head, out_cmds, max_cmds, &count, &emitted, skip, 0);
+            cursor = node->tail;
+          }
+        } else {
+          int emitted = 0;
+          elmc_append_draw_cmd_from_value_window(ops, out_cmds, max_cmds, &count, &emitted, skip, 0);
+        }
+
+        // #region agent log
+        elmc_agent_scene_probe(count == 0 ? 0xED996500 : 0xED996501);
+        elmc_agent_scene_probe(0xED997100 | (uint32_t)(count > 255 ? 255 : count));
+        // #endregion
+
+        if (skip == 0 && dedupe && extracted == 0 && count < max_cmds) {
+          uint64_t next_hash = elmc_hash_value(ops, 0);
+          if (app->has_prev_ui &&
+              app->prev_window_id == window_id &&
+              app->prev_layer_id == layer_id &&
+              app->prev_ops_hash == next_hash) {
+            count = 0;
+          }
+          app->has_prev_ui = 1;
+          app->prev_window_id = window_id;
+          app->prev_layer_id = layer_id;
+          app->prev_ops_hash = next_hash;
+        }
+
+        if (!result_is_cached) {
+          elmc_release(result);
+        }
+        return count;
+      #else
+        return -11;
+      #endif
     }
 
     int elmc_pebble_tick(ElmcPebbleApp *app) {

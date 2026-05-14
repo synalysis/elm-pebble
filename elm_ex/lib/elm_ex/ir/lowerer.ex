@@ -14,13 +14,17 @@ defmodule ElmEx.IR.Lowerer do
   @typep payload_kind() :: :none | :single | :multi | :function_like
   @typep diagnostic() :: map()
 
+  @pebble_ui_window_stack_tag 1000
+  @pebble_ui_window_node_tag 1001
+  @pebble_ui_canvas_layer_tag 1002
+
   @dialyzer [
     {:nowarn_function, rewrite_expr: 2},
     {:nowarn_function, rewrite_case_subject: 2},
     {:nowarn_function, rewrite_pattern: 2},
     {:nowarn_function, resolve_constructor_tag: 2},
     {:nowarn_function, build_constructor_payload: 1},
-    {:nowarn_function, lower_declaration: 2}
+    {:nowarn_function, lower_declaration: 3}
   ]
 
   @spec lower_project(Project.t()) :: {:ok, IR.t()}
@@ -169,7 +173,7 @@ defmodule ElmEx.IR.Lowerer do
           others
           |> Enum.filter(&(&1.kind == :function_definition))
 
-        definitions =
+        {definitions, rewrite_lookup} =
           others
           |> Enum.filter(&(&1.kind == :function_definition))
           |> then(fn defs ->
@@ -183,7 +187,7 @@ defmodule ElmEx.IR.Lowerer do
               end)
               |> Map.new()
 
-            {alias_map, import_unqualified_map, wildcard_import_modules} =
+            {alias_map, import_unqualified_map, wildcard_import_modules, type_unqualified_map} =
               build_import_resolution(
                 Map.get(frontend_module, :import_entries) || [],
                 project_module_exports
@@ -196,6 +200,7 @@ defmodule ElmEx.IR.Lowerer do
               current_module: frontend_module.name,
               alias_map: alias_map,
               import_unqualified_map: import_unqualified_map,
+              type_unqualified_map: type_unqualified_map,
               wildcard_import_modules: wildcard_import_modules,
               local_call_names: MapSet.new(Enum.map(defs, & &1.name))
             }
@@ -203,11 +208,14 @@ defmodule ElmEx.IR.Lowerer do
             {defs, rewrite_lookup}
           end)
           |> then(fn {defs, rewrite_lookup} ->
-            defs
-            |> Map.new(fn defn ->
-              expr = rewrite_expr(defn.expr, rewrite_lookup)
-              {defn.name, %{defn | expr: expr}}
-            end)
+            definitions =
+              defs
+              |> Map.new(fn defn ->
+                expr = rewrite_expr(defn.expr, rewrite_lookup)
+                {defn.name, %{defn | expr: expr}}
+              end)
+
+            {definitions, rewrite_lookup}
           end)
 
         signature_names = signatures |> Enum.map(& &1.name) |> MapSet.new()
@@ -215,7 +223,7 @@ defmodule ElmEx.IR.Lowerer do
         signature_declarations =
           signatures
           |> Enum.map(fn sig ->
-            lower_declaration(sig, Map.get(definitions, sig.name))
+            lower_declaration(sig, Map.get(definitions, sig.name), rewrite_lookup)
           end)
           |> Enum.reject(&is_nil/1)
 
@@ -224,7 +232,7 @@ defmodule ElmEx.IR.Lowerer do
           |> Enum.reject(&MapSet.member?(signature_names, &1.name))
           |> Enum.map(fn defn ->
             lowered = Map.get(definitions, defn.name, defn)
-            lower_declaration(lowered, nil)
+            lower_declaration(lowered, nil, rewrite_lookup)
           end)
           |> Enum.reject(&is_nil/1)
 
@@ -234,7 +242,7 @@ defmodule ElmEx.IR.Lowerer do
         type_alias_declarations =
           others
           |> Enum.filter(&(&1.kind == :type_alias))
-          |> Enum.map(&lower_declaration(&1, nil))
+          |> Enum.map(&lower_declaration(&1, nil, rewrite_lookup))
           |> Enum.reject(&is_nil/1)
 
         ordered_function_names =
@@ -283,8 +291,16 @@ defmodule ElmEx.IR.Lowerer do
     {:ok, %IR{modules: modules, diagnostics: diagnostics}}
   end
 
-  @spec lower_declaration(map(), map() | nil) :: ElmEx.IR.Declaration.t() | nil
-  defp lower_declaration(%{kind: :function_signature, name: name, type: type} = sig, definition) do
+  @spec lower_declaration(map(), map() | nil, map()) :: ElmEx.IR.Declaration.t() | nil
+  defp lower_declaration(decl, definition, lookup)
+
+  defp lower_declaration(
+         %{kind: :function_signature, name: name, type: type} = sig,
+         definition,
+         lookup
+       ) do
+    type = canonicalize_type_annotation(type, lookup)
+
     span =
       case definition do
         %{span: definition_span} when is_map(definition_span) -> definition_span
@@ -308,7 +324,11 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  defp lower_declaration(%{kind: :function_definition, name: name} = definition, _signature) do
+  defp lower_declaration(
+         %{kind: :function_definition, name: name} = definition,
+         _signature,
+         _lookup
+       ) do
     %Declaration{
       kind: :function,
       name: name,
@@ -320,9 +340,13 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  defp lower_declaration(%{kind: :type_alias, name: name} = decl, _definition) do
+  defp lower_declaration(%{kind: :type_alias, name: name} = decl, _definition, lookup) do
     fields = Map.get(decl, :fields) || []
-    field_types = Map.get(decl, :field_types) || %{}
+
+    field_types =
+      decl
+      |> Map.get(:field_types)
+      |> canonicalize_record_field_types(lookup)
 
     %Declaration{
       kind: :type_alias,
@@ -333,7 +357,7 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  defp lower_declaration(%{kind: :union, name: name} = decl, _definition) do
+  defp lower_declaration(%{kind: :union, name: name} = decl, _definition, _lookup) do
     %Declaration{
       kind: :union,
       name: name,
@@ -569,6 +593,94 @@ defmodule ElmEx.IR.Lowerer do
 
   defp rewrite_case_subject(subject, _lookup), do: subject
 
+  @spec canonicalize_record_field_types(map() | nil, lookup()) :: map()
+  defp canonicalize_record_field_types(field_types, lookup) when is_map(field_types) do
+    Map.new(field_types, fn {field, type} ->
+      {field, canonicalize_type_annotation(type, lookup)}
+    end)
+  end
+
+  defp canonicalize_record_field_types(_field_types, _lookup), do: %{}
+
+  @spec canonicalize_type_annotation(String.t() | nil, lookup()) :: String.t() | nil
+  defp canonicalize_type_annotation(type, lookup) when is_binary(type) do
+    alias_map = Map.get(lookup, :alias_map, %{})
+    type_unqualified_map = Map.get(lookup, :type_unqualified_map, %{})
+
+    type
+    |> canonicalize_qualified_type_aliases(alias_map)
+    |> canonicalize_unqualified_type_names(type_unqualified_map)
+  end
+
+  defp canonicalize_type_annotation(type, _lookup), do: type
+
+  defp canonicalize_qualified_type_aliases(type, alias_map) when is_map(alias_map) do
+    alias_map
+    |> Enum.sort_by(fn {alias_name, _module_name} -> -String.length(alias_name) end)
+    |> Enum.reduce(type, fn {alias_name, module_name}, acc ->
+      replace_type_alias_prefix(acc, alias_name, module_name)
+    end)
+  end
+
+  defp canonicalize_qualified_type_aliases(type, _alias_map), do: type
+
+  defp canonicalize_unqualified_type_names(type, type_unqualified_map)
+       when is_map(type_unqualified_map) do
+    type_unqualified_map
+    |> Enum.filter(fn
+      {name, module_name} ->
+        type_name?(name) and is_binary(module_name) and
+          not builtin_type_name?(name)
+    end)
+    |> Enum.sort_by(fn {name, _module_name} -> -String.length(name) end)
+    |> Enum.reduce(type, fn {name, module_name}, acc ->
+      replace_unqualified_type_name(acc, name, module_name)
+    end)
+  end
+
+  defp canonicalize_unqualified_type_names(type, _type_unqualified_map), do: type
+
+  defp replace_type_alias_prefix(type, alias_name, module_name)
+       when is_binary(type) and is_binary(alias_name) and is_binary(module_name) do
+    pattern = ~r/(^|[^A-Za-z0-9_'.])#{Regex.escape(alias_name)}\./
+
+    Regex.replace(pattern, type, fn _match, prefix ->
+      "#{prefix}#{module_name}."
+    end)
+  end
+
+  defp replace_unqualified_type_name(type, name, module_name)
+       when is_binary(type) and is_binary(name) and is_binary(module_name) do
+    pattern = ~r/(^|[^A-Za-z0-9_'.])#{Regex.escape(name)}($|[^A-Za-z0-9_'.])/
+
+    Regex.replace(pattern, type, fn _match, prefix, suffix ->
+      "#{prefix}#{module_name}.#{name}#{suffix}"
+    end)
+  end
+
+  defp type_name?(<<first::utf8, _rest::binary>>) do
+    first >= ?A and first <= ?Z
+  end
+
+  defp type_name?(_name), do: false
+
+  defp builtin_type_name?(name)
+       when name in [
+              "Bool",
+              "Char",
+              "Cmd",
+              "Float",
+              "Int",
+              "List",
+              "Maybe",
+              "Never",
+              "Result",
+              "String"
+            ],
+       do: true
+
+  defp builtin_type_name?(_name), do: false
+
   @spec resolve_alias(String.t(), map()) :: String.t()
   defp resolve_alias(target, lookup) when is_binary(target) do
     alias_map = Map.get(lookup, :alias_map, %{})
@@ -605,12 +717,14 @@ defmodule ElmEx.IR.Lowerer do
 
   defp resolve_alias(target, _lookup), do: target
 
-  @spec build_import_resolution([map()], map()) :: {map(), map(), [String.t()]}
+  @spec build_import_resolution([map()], map()) :: {map(), map(), [String.t()], map()}
   defp build_import_resolution(import_entries, project_module_exports)
        when is_list(import_entries) and is_map(project_module_exports) do
     entries = ensure_default_import_entries(import_entries)
 
-    Enum.reduce(entries, {%{}, %{}, []}, fn entry, {alias_acc, unqualified_acc, wildcard_acc} ->
+    Enum.reduce(entries, {%{}, %{}, [], %{}}, fn entry,
+                                                 {alias_acc, unqualified_acc, wildcard_acc,
+                                                  type_acc} ->
       module_name = Map.get(entry, "module")
       as_name = Map.get(entry, "as")
       exposing = Map.get(entry, "exposing")
@@ -624,17 +738,21 @@ defmodule ElmEx.IR.Lowerer do
           |> maybe_put_alias(as_name, module_name)
           |> maybe_put_alias(compact_name, module_name)
 
-        {unqualified_acc, wildcard_acc} =
+        {unqualified_acc, wildcard_acc, type_acc} =
           case exposing do
             ".." ->
               {
                 register_wildcard_exports(unqualified_acc, module_name, project_module_exports),
-                add_unique_string(wildcard_acc, module_name)
+                add_unique_string(wildcard_acc, module_name),
+                register_wildcard_type_exports(type_acc, module_name, project_module_exports)
               }
 
             names when is_list(names) ->
               expanded_names =
                 expand_import_exposing_names(names, module_name, project_module_exports)
+
+              exposed_types =
+                expand_import_exposing_type_names(names, module_name, project_module_exports)
 
               mapped =
                 expanded_names
@@ -643,20 +761,27 @@ defmodule ElmEx.IR.Lowerer do
                   put_unqualified_name(acc, name, module_name)
                 end)
 
-              {mapped, wildcard_acc}
+              type_mapped =
+                exposed_types
+                |> Enum.filter(&is_binary/1)
+                |> Enum.reduce(type_acc, fn name, acc ->
+                  put_unqualified_name(acc, name, module_name)
+                end)
+
+              {mapped, wildcard_acc, type_mapped}
 
             _ ->
-              {unqualified_acc, wildcard_acc}
+              {unqualified_acc, wildcard_acc, type_acc}
           end
 
-        {alias_acc, unqualified_acc, wildcard_acc}
+        {alias_acc, unqualified_acc, wildcard_acc, type_acc}
       else
-        {alias_acc, unqualified_acc, wildcard_acc}
+        {alias_acc, unqualified_acc, wildcard_acc, type_acc}
       end
     end)
   end
 
-  defp build_import_resolution(_import_entries, _project_module_exports), do: {%{}, %{}, []}
+  defp build_import_resolution(_import_entries, _project_module_exports), do: {%{}, %{}, [], %{}}
 
   @spec build_project_module_exports([map()]) :: map()
   defp build_project_module_exports(frontend_modules) when is_list(frontend_modules) do
@@ -678,6 +803,7 @@ defmodule ElmEx.IR.Lowerer do
   defp collect_module_exports(frontend_module) when is_map(frontend_module) do
     exposing = Map.get(frontend_module, :module_exposing)
     union_constructors = module_union_constructors(frontend_module)
+    type_names = module_type_names(frontend_module)
 
     names =
       cond do
@@ -707,10 +833,47 @@ defmodule ElmEx.IR.Lowerer do
           []
       end
 
-    %{names: Enum.uniq(names), union_constructors: union_constructors}
+    exposed_types =
+      cond do
+        exposing == ".." -> type_names
+        is_list(exposing) -> exposed_type_names(exposing, type_names)
+        true -> []
+      end
+
+    %{
+      names: Enum.uniq(names),
+      types: Enum.uniq(exposed_types),
+      union_constructors: union_constructors
+    }
   end
 
-  defp collect_module_exports(_), do: %{names: [], union_constructors: %{}}
+  defp collect_module_exports(_), do: %{names: [], types: [], union_constructors: %{}}
+
+  defp module_type_names(frontend_module) when is_map(frontend_module) do
+    frontend_module
+    |> Map.get(:declarations, [])
+    |> Enum.flat_map(fn decl ->
+      case {Map.get(decl, :kind), Map.get(decl, :name)} do
+        {kind, name} when kind in [:type_alias, :union] and is_binary(name) -> [name]
+        _ -> []
+      end
+    end)
+  end
+
+  defp module_type_names(_), do: []
+
+  defp exposed_type_names(exposing, type_names) when is_list(exposing) and is_list(type_names) do
+    exposing
+    |> Enum.flat_map(fn name ->
+      case type_wildcard_name(name) do
+        nil -> [name]
+        type_name -> [type_name]
+      end
+    end)
+    |> Enum.filter(&(&1 in type_names))
+  end
+
+  defp exposed_type_names(_exposing, _type_names), do: []
 
   @spec module_union_constructors(map()) :: map()
   defp module_union_constructors(frontend_module) when is_map(frontend_module) do
@@ -781,6 +944,29 @@ defmodule ElmEx.IR.Lowerer do
 
   defp expand_import_exposing_names(_names, _module_name, _project_module_exports), do: []
 
+  @spec expand_import_exposing_type_names([String.t()], String.t(), map()) :: [String.t()]
+  defp expand_import_exposing_type_names(names, module_name, project_module_exports)
+       when is_list(names) and is_binary(module_name) and is_map(project_module_exports) do
+    module_exports =
+      Map.get(project_module_exports, module_name, %{types: []})
+
+    exported_types = Map.get(module_exports, :types, [])
+    module_type_name = module_name |> String.split(".") |> List.last()
+
+    names
+    |> Enum.flat_map(fn name ->
+      case type_wildcard_name(name) do
+        nil -> [name]
+        type_name -> [type_name]
+      end
+    end)
+    |> Enum.filter(fn name ->
+      name in exported_types or (type_name?(name) and name == module_type_name)
+    end)
+  end
+
+  defp expand_import_exposing_type_names(_names, _module_name, _project_module_exports), do: []
+
   @spec ensure_default_import_entries([map()]) :: [map()]
   defp ensure_default_import_entries(import_entries) do
     existing_modules =
@@ -836,6 +1022,20 @@ defmodule ElmEx.IR.Lowerer do
     module_exports
     |> Enum.reduce(acc, fn name, a -> put_unqualified_name(a, name, module_name) end)
   end
+
+  @spec register_wildcard_type_exports(map(), String.t(), map()) :: map()
+  defp register_wildcard_type_exports(acc, module_name, project_module_exports)
+       when is_map(acc) and is_binary(module_name) and is_map(project_module_exports) do
+    module_exports =
+      project_module_exports
+      |> Map.get(module_name, %{types: []})
+      |> Map.get(:types, [])
+
+    module_exports
+    |> Enum.reduce(acc, fn name, a -> put_unqualified_name(a, name, module_name) end)
+  end
+
+  defp register_wildcard_type_exports(acc, _module_name, _project_module_exports), do: acc
 
   @spec known_wildcard_exports(String.t()) :: [String.t()]
   defp known_wildcard_exports("Basics") do
@@ -935,27 +1135,85 @@ defmodule ElmEx.IR.Lowerer do
   @spec rewrite_constructor_value(String.t(), [expr()], lookup()) :: expr() | nil
   defp rewrite_constructor_value(resolved_target, rewritten_args, lookup)
        when is_binary(resolved_target) and is_list(rewritten_args) do
-    tag = resolve_constructor_tag(resolved_target, lookup)
+    case rewrite_virtual_ui_constructor(resolved_target, rewritten_args, lookup) do
+      nil ->
+        tag = resolve_constructor_tag(resolved_target, lookup)
 
-    if is_integer(tag) do
-      case rewritten_args do
-        [] ->
-          %{op: :int_literal, value: tag}
+        if is_integer(tag) do
+          tagged_constructor_value(tag, rewritten_args)
+        end
 
-        [arg] ->
-          %{
-            op: :tuple2,
-            left: %{op: :int_literal, value: tag},
-            right: arg
-          }
+      rewritten ->
+        rewritten
+    end
+  end
 
-        many_args ->
-          %{
-            op: :tuple2,
-            left: %{op: :int_literal, value: tag},
-            right: build_constructor_payload(many_args)
-          }
+  @spec rewrite_virtual_ui_constructor(String.t(), [expr()], lookup()) :: expr() | nil
+  defp rewrite_virtual_ui_constructor(resolved_target, rewritten_args, lookup) do
+    case qualify_constructor_target(resolved_target, lookup) do
+      "Pebble.Ui.WindowStack" ->
+        case rewritten_args do
+          [windows] -> tagged_constructor_value(@pebble_ui_window_stack_tag, [windows])
+          _ -> nil
+        end
+
+      "Pebble.Ui.WindowNode" ->
+        case rewritten_args do
+          [window_id, layers] ->
+            tagged_constructor_value(@pebble_ui_window_node_tag, [window_id, layers])
+
+          _ ->
+            nil
+        end
+
+      "Pebble.Ui.CanvasLayer" ->
+        case rewritten_args do
+          [layer_id, ops] ->
+            tagged_constructor_value(@pebble_ui_canvas_layer_tag, [layer_id, ops])
+
+          _ ->
+            nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  @spec qualify_constructor_target(String.t(), lookup()) :: String.t()
+  defp qualify_constructor_target(target, lookup) when is_binary(target) do
+    if String.contains?(target, ".") do
+      target
+    else
+      current_module = Map.get(lookup, :current_module)
+
+      if is_binary(current_module) and current_module != "" do
+        "#{current_module}.#{target}"
+      else
+        target
       end
+    end
+  end
+
+  @spec tagged_constructor_value(integer(), [expr()]) :: expr()
+  defp tagged_constructor_value(tag, rewritten_args) do
+    case rewritten_args do
+      [] ->
+        %{op: :int_literal, value: tag}
+
+      [arg] ->
+        %{
+          op: :tuple2,
+          left: %{op: :int_literal, value: tag},
+          right: arg
+        }
+
+      many_args ->
+        %{
+          op: :tuple2,
+          left: %{op: :int_literal, value: tag},
+          right: build_constructor_payload(many_args)
+        }
     end
   end
 

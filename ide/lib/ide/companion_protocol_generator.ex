@@ -303,22 +303,47 @@ defmodule Ide.CompanionProtocolGenerator do
       schema.phone_to_watch
       |> Enum.with_index(1)
       |> Enum.map_join("\n", fn {msg, phone_to_watch_tag} ->
-        payload = c_payload_expr(msg)
-
-        """
-            case COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_#{macro_name(msg.name)}: {
-              if (ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET <= 0) return -7;
-        #{payload}
-              if (!payload) return -2;
-              ElmcValue *phone_to_watch = companion_protocol_new_phone_to_watch_message(#{phone_to_watch_tag}, payload);
-              elmc_release(payload);
-              if (!phone_to_watch) return -2;
-              int rc = elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, phone_to_watch);
-              elmc_release(phone_to_watch);
-              return rc;
-            }
-        """
+        c_dispatch_case(msg, phone_to_watch_tag)
       end)
+
+    union_value_helper =
+      if companion_protocol_uses_union_payloads?(schema) do
+        """
+        static ElmcValue *companion_protocol_new_union_value(int32_t runtime_tag, int32_t value) {
+          ElmcValue *tag_value = elmc_new_int(runtime_tag);
+          ElmcValue *payload_value = elmc_new_int(value);
+          if (!tag_value || !payload_value) {
+            if (tag_value) elmc_release(tag_value);
+            if (payload_value) elmc_release(payload_value);
+            return NULL;
+          }
+
+          ElmcValue *out = elmc_tuple2(tag_value, payload_value);
+          elmc_release(tag_value);
+          elmc_release(payload_value);
+          return out;
+        }
+        """
+      else
+        ""
+      end
+
+    phone_to_watch_helper =
+      if companion_protocol_uses_boxed_dispatch?(schema) do
+        """
+        static ElmcValue *companion_protocol_new_phone_to_watch_message(int32_t tag, ElmcValue *payload) {
+          if (!payload) return NULL;
+          ElmcValue *tag_value = elmc_new_int(tag);
+          if (!tag_value) return NULL;
+
+          ElmcValue *out = elmc_tuple2(tag_value, payload);
+          elmc_release(tag_value);
+          return out;
+        }
+        """
+      else
+        ""
+      end
 
     """
     #include "companion_protocol.h"
@@ -326,30 +351,9 @@ defmodule Ide.CompanionProtocolGenerator do
 
     #{c_runtime_tag_helpers(schema, runtime_tags)}
 
-    static ElmcValue *companion_protocol_new_union_value(int32_t runtime_tag, int32_t value) {
-      ElmcValue *tag_value = elmc_new_int(runtime_tag);
-      ElmcValue *payload_value = elmc_new_int(value);
-      if (!tag_value || !payload_value) {
-        if (tag_value) elmc_release(tag_value);
-        if (payload_value) elmc_release(payload_value);
-        return NULL;
-      }
+    #{union_value_helper}
 
-      ElmcValue *out = elmc_tuple2(tag_value, payload_value);
-      elmc_release(tag_value);
-      elmc_release(payload_value);
-      return out;
-    }
-
-    static ElmcValue *companion_protocol_new_phone_to_watch_message(int32_t tag, ElmcValue *payload) {
-      if (!payload) return NULL;
-      ElmcValue *tag_value = elmc_new_int(tag);
-      if (!tag_value) return NULL;
-
-      ElmcValue *out = elmc_tuple2(tag_value, payload);
-      elmc_release(tag_value);
-      return out;
-    }
+    #{phone_to_watch_helper}
 
     bool companion_protocol_encode_watch_to_phone(DictionaryIterator *iter, int32_t tag, int32_t value) {
       if (!iter) return false;
@@ -408,6 +412,72 @@ defmodule Ide.CompanionProtocolGenerator do
     }
     """
   end
+
+  defp companion_protocol_uses_union_payloads?(schema) do
+    schema.phone_to_watch
+    |> Enum.flat_map(& &1.fields)
+    |> Enum.any?(fn
+      %{wire_type: {:union, _type}} -> true
+      _field -> false
+    end)
+  end
+
+  defp companion_protocol_uses_boxed_dispatch?(schema) do
+    Enum.any?(schema.phone_to_watch, &(not native_int_payload_message?(&1)))
+  end
+
+  defp c_dispatch_case(msg, phone_to_watch_tag) do
+    if native_int_payload_message?(msg) do
+      values =
+        msg.fields
+        |> Enum.with_index()
+        |> Enum.map_join(", ", fn {field, index} -> c_native_int_value_expr(field, index) end)
+
+      values_decl =
+        case msg.fields do
+          [] -> ""
+          _ -> "      const int64_t payload_values[] = { #{values} };\n"
+        end
+
+      values_ref = if msg.fields == [], do: "NULL", else: "payload_values"
+
+      """
+          case COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_#{macro_name(msg.name)}: {
+            if (ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET <= 0) return -7;
+      #{values_decl}      return elmc_pebble_dispatch_tag_int_values(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, #{phone_to_watch_tag}, #{length(msg.fields)}, #{values_ref});
+          }
+      """
+    else
+      payload = c_payload_expr(msg)
+
+      """
+          case COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_#{macro_name(msg.name)}: {
+            if (ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET <= 0) return -7;
+      #{payload}
+            if (!payload) return -2;
+            ElmcValue *phone_to_watch = companion_protocol_new_phone_to_watch_message(#{phone_to_watch_tag}, payload);
+            elmc_release(payload);
+            if (!phone_to_watch) return -2;
+            int rc = elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, phone_to_watch);
+            elmc_release(phone_to_watch);
+            return rc;
+          }
+      """
+    end
+  end
+
+  defp native_int_payload_message?(%{fields: fields}) do
+    Enum.all?(fields, fn
+      %{wire_type: :int} -> true
+      %{wire_type: {:enum, _type}} -> true
+      _field -> false
+    end)
+  end
+
+  defp c_native_int_value_expr(%{wire_type: {:enum, type}}, index),
+    do: "#{c_runtime_tag_function(type)}(message->int_fields[#{index}])"
+
+  defp c_native_int_value_expr(_field, index), do: "message->int_fields[#{index}]"
 
   defp js(schema) do
     constants =

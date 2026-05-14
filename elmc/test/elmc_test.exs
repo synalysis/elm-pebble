@@ -40,6 +40,20 @@ defmodule ElmcTest do
     refute String.contains?(generated, "elmc_fn_CoreCompliance_resultInc")
   end
 
+  test "compile omits unused generated trig fallback helpers" do
+    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    out_dir = Path.expand("tmp/build_no_trig_fallback", __DIR__)
+    File.rm_rf!(out_dir)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir})
+
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    refute generated =~ "generated_trig_normalize_radians"
+    refute generated =~ "generated_trig_sin_double"
+    refute generated =~ "generated_trig_cos_double"
+  end
+
   test "runtime pruning keeps closure constructor referenced by generated code" do
     out_dir = Path.expand("tmp/runtime_pruned_closure", __DIR__)
     refs_dir = Path.join(out_dir, "refs")
@@ -62,5 +76,40 @@ defmodule ElmcTest do
 
     assert runtime =~ "ElmcValue *elmc_closure_new"
     assert runtime =~ "ElmcValue *elmc_alloc"
+  end
+
+  test "runtime stores int and bool scalars inline" do
+    runtime_dir = Path.expand("tmp/runtime_inline_scalars", __DIR__)
+
+    File.rm_rf!(runtime_dir)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir)
+
+    header = File.read!(Path.join(runtime_dir, "elmc_runtime.h"))
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert header =~ "elmc_int_t scalar;"
+    assert runtime =~ "return elmc_alloc_scalar(ELMC_TAG_INT, value);"
+    assert runtime =~ "return elmc_alloc_scalar(ELMC_TAG_BOOL, value != 0);"
+    assert runtime =~ "return value->scalar;"
+    refute runtime =~ "malloc(sizeof(elmc_int_t))"
+  end
+
+  test "runtime uses shared empty string and logs allocation failure once" do
+    runtime_dir = Path.expand("tmp/runtime_alloc_failure_logging", __DIR__)
+
+    File.rm_rf!(runtime_dir)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir)
+
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime =~ "static ElmcValue ELMC_EMPTY_STRING"
+    assert runtime =~ "return &ELMC_EMPTY_STRING;"
+    assert runtime =~ "static void elmc_log_alloc_failed_once"
+    assert runtime =~ "ELMC allocation failed in %s"
+    assert runtime =~ "static void *elmc_malloc(size_t size, const char *context)"
+    assert runtime =~ "elmc_malloc(sizeof(ElmcValue), __func__)"
+    refute runtime =~ "if (!out) return elmc_new_string(\"\");"
   end
 end

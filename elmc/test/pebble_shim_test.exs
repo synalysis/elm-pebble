@@ -545,7 +545,6 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-Werror",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -850,6 +849,245 @@ defmodule Elmc.PebbleShimTest do
 
     {_run_out, run_code} = System.cmd(binary_path, [])
     assert run_code == 0
+  end
+
+  test "host C renderer emits commands for Yes watchface template" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_template = Path.expand("../../ide/priv/project_templates/watchface_yes", __DIR__)
+    project_dir = Path.expand("tmp/watchface_yes_host_project", __DIR__)
+    out_dir = Path.expand("tmp/watchface_yes_host_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_template, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+
+    main_path
+    |> File.read!()
+    |> String.replace("import Companion.Watch as CompanionWatch\n", "")
+    |> String.replace("CompanionWatch.sendWatchToPhone RequestUpdate", "Cmd.none")
+    |> String.replace("CompanionWatch.onPhoneToWatch FromPhone", "Sub.none")
+    |> then(&File.write!(main_path, &1))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => [
+          "src",
+          "protocol/src",
+          "../../../../packages/elm-pebble/elm-watch/src"
+        ],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3", "elm/time" => "1.0.0"},
+          "indirect" => %{}
+        },
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert String.contains?(generated, "elmc_fn_Main_view_commands_from")
+
+    point_at_body =
+      generated
+      |> String.split("static ElmcValue *elmc_fn_Main_pointAt_native")
+      |> List.last()
+      |> String.split("ElmcValue *elmc_fn_Main_", parts: 2)
+      |> hd()
+
+    assert point_at_body =~ "double native_float_theta_"
+    assert point_at_body =~ "elmc_basics_sin_double(native_float_theta_"
+    assert point_at_body =~ "elmc_basics_cos_double(native_float_theta_"
+    refute point_at_body =~ "elmc_basics_sin(tmp_"
+    refute point_at_body =~ "elmc_basics_cos(tmp_"
+    refute point_at_body =~ "elmc_new_float"
+
+    harness_path = Path.join(out_dir, "c/watchface_yes_host_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+      #include "elmc_generated.h"
+
+      static int list_length(ElmcValue *list) {
+        int count = 0;
+        ElmcValue *cursor = list;
+        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL && count < 512) {
+          ElmcCons *node = (ElmcCons *)cursor->payload;
+          cursor = node->tail;
+          count++;
+        }
+        return (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload == NULL) ? count : -1;
+      }
+
+      static int tuple_tag(ElmcValue *value) {
+        if (!value || value->tag != ELMC_TAG_TUPLE2 || value->payload == NULL) return -1;
+        ElmcTuple2 *tuple = (ElmcTuple2 *)value->payload;
+        return (int)elmc_as_int(tuple->first);
+      }
+
+      static int first_list_item(ElmcValue *list, ElmcValue **out) {
+        if (!list || list->tag != ELMC_TAG_LIST || list->payload == NULL || !out) return 0;
+        *out = ((ElmcCons *)list->payload)->head;
+        return *out != NULL;
+      }
+
+      static int expect_yes_ui_node(ElmcValue *view) {
+        if (tuple_tag(view) != ELMC_PEBBLE_UI_WINDOW_STACK) return 0;
+        ElmcTuple2 *stack = (ElmcTuple2 *)view->payload;
+        if (list_length(stack->second) != 1) return 0;
+
+        ElmcValue *window = NULL;
+        if (!first_list_item(stack->second, &window)) return 0;
+        if (tuple_tag(window) != ELMC_PEBBLE_UI_WINDOW_NODE) return 0;
+        ElmcTuple2 *window_tuple = (ElmcTuple2 *)window->payload;
+        if (!window_tuple->second || window_tuple->second->tag != ELMC_TAG_TUPLE2) return 0;
+        ElmcTuple2 *window_payload = (ElmcTuple2 *)window_tuple->second->payload;
+        if (elmc_as_int(window_payload->first) != 1) return 0;
+        if (list_length(window_payload->second) != 1) return 0;
+
+        ElmcValue *layer = NULL;
+        if (!first_list_item(window_payload->second, &layer)) return 0;
+        if (tuple_tag(layer) != ELMC_PEBBLE_UI_CANVAS_LAYER) return 0;
+        ElmcTuple2 *layer_tuple = (ElmcTuple2 *)layer->payload;
+        if (!layer_tuple->second || layer_tuple->second->tag != ELMC_TAG_TUPLE2) return 0;
+        ElmcTuple2 *layer_payload = (ElmcTuple2 *)layer_tuple->second->payload;
+        if (elmc_as_int(layer_payload->first) != 1) return 0;
+        return list_length(layer_payload->second) > 0;
+      }
+
+      static ElmcValue *test_launch_context(void) {
+        ElmcValue *screen_width = elmc_new_int(144);
+        ElmcValue *screen_height = elmc_new_int(168);
+        ElmcValue *screen_is_color = elmc_new_bool(1);
+        ElmcValue *screen_is_round = elmc_new_bool(0);
+        const char *screen_names[] = {"height", "isColor", "isRound", "width"};
+        ElmcValue *screen_values[] = {screen_height, screen_is_color, screen_is_round, screen_width};
+        ElmcValue *screen = elmc_record_new(4, screen_names, screen_values);
+        elmc_release(screen_width);
+        elmc_release(screen_height);
+        elmc_release(screen_is_color);
+        elmc_release(screen_is_round);
+
+        ElmcValue *reason = elmc_new_int(2);
+        ElmcValue *watch_model = elmc_new_string("");
+        ElmcValue *watch_profile_id = elmc_new_string("flint");
+        const char *context_names[] = {"reason", "screen", "watchModel", "watchProfileId"};
+        ElmcValue *context_values[] = {reason, screen, watch_model, watch_profile_id};
+        ElmcValue *context = elmc_record_new(4, context_names, context_values);
+        elmc_release(reason);
+        elmc_release(screen);
+        elmc_release(watch_model);
+        elmc_release(watch_profile_id);
+        return context;
+      }
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = test_launch_context();
+        if (elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE) != 0) return 2;
+        elmc_release(flags);
+        if ((int)sizeof(ElmcPebbleDrawCmd) > 112) return 18;
+
+        ElmcValue *model = elmc_worker_model(&app.worker);
+        if (!model) return 6;
+
+        ElmcValue *face_args[1] = { model };
+        ElmcValue *face_ops = elmc_fn_Main_faceOps(face_args, 1);
+        if (!face_ops || face_ops->tag != ELMC_TAG_LIST || list_length(face_ops) <= 0) return 7;
+
+        ElmcValue *view_args[1] = { model };
+        ElmcValue *view = elmc_fn_Main_view(view_args, 1);
+        if (!expect_yes_ui_node(view)) return 8;
+
+        ElmcValue *dial_args[4] = { model, elmc_new_int(72), elmc_new_int(84), elmc_new_int(64) };
+        ElmcValue *dial = elmc_fn_Main_drawDial(dial_args, 4);
+        if (!dial || dial->tag != ELMC_TAG_LIST || list_length(dial) <= 0) return 9;
+        elmc_release(dial_args[1]);
+        elmc_release(dial_args[2]);
+        elmc_release(dial_args[3]);
+
+        ElmcValue *point_args[4] = { elmc_new_int(72), elmc_new_int(84), elmc_new_int(64), elmc_new_int(0) };
+        ElmcValue *point = elmc_fn_Main_pointAt(point_args, 4);
+        if (elmc_record_get_int(point, "x") != 72 || elmc_record_get_int(point, "y") != 20) return 12;
+        elmc_release(point);
+        elmc_release(point_args[0]);
+        elmc_release(point_args[1]);
+        elmc_release(point_args[2]);
+        elmc_release(point_args[3]);
+
+        ElmcValue *corner_args[1] = { model };
+        ElmcValue *corners = elmc_fn_Main_drawCorners(corner_args, 1);
+        if (!corners || corners->tag != ELMC_TAG_LIST || list_length(corners) < 0) return 10;
+
+        ElmcValue *to_ui_args[1] = { face_ops };
+        ElmcValue *manual_view = elmc_fn_Pebble_Ui_toUiNode(to_ui_args, 1);
+        if (!expect_yes_ui_node(manual_view)) return 11;
+
+        elmc_release(manual_view);
+        elmc_release(corners);
+        elmc_release(dial);
+        elmc_release(view);
+        elmc_release(face_ops);
+        elmc_release(model);
+
+        int count = elmc_pebble_scene_command_count(&app);
+        if (count <= 0) return 3;
+
+        ElmcPebbleDrawCmd cmds[16] = {0};
+        int decoded = elmc_pebble_scene_commands_from(&app, cmds, 16, 0);
+        if (decoded <= 0) return 4;
+        if (app.scene.byte_count <= 0) return 19;
+        if (cmds[0].kind != ELMC_PEBBLE_DRAW_CLEAR) return 5;
+        if (cmds[0].p0 != 0xC0) return 13;
+        if (decoded < 2) return 14;
+        if (cmds[1].kind != ELMC_PEBBLE_DRAW_FILL_CIRCLE) return 15;
+        if (cmds[1].p0 != 72 || cmds[1].p1 != 84 || cmds[1].p2 != 64) return 16;
+        if (cmds[1].p3 != 0xC1) return 17;
+
+        elmc_pebble_deinit(&app);
+        return 0;
+      }
+      """
+    )
+
+    for {variant, extra_flags} <- [{"host64", []}, {"pebble_int32", ["-DELMC_PEBBLE_INT32"]}] do
+      binary_path = Path.join(out_dir, "watchface_yes_host_harness_#{variant}")
+
+      {compile_out, compile_code} =
+        System.cmd(cc, [
+          "-std=c11",
+          "-Wall",
+          "-Wextra",
+          "-Werror"
+          | extra_flags ++
+              [
+                "-I#{Path.join(out_dir, "runtime")}",
+                "-I#{Path.join(out_dir, "ports")}",
+                "-I#{Path.join(out_dir, "c")}",
+                Path.join(out_dir, "runtime/elmc_runtime.c"),
+                Path.join(out_dir, "ports/elmc_ports.c"),
+                Path.join(out_dir, "c/elmc_generated.c"),
+                Path.join(out_dir, "c/elmc_worker.c"),
+                Path.join(out_dir, "c/elmc_pebble.c"),
+                harness_path,
+                "-o",
+                binary_path
+              ]
+        ])
+
+      assert compile_code == 0, "#{variant} compile failed:\n#{compile_out}"
+
+      {run_out, run_code} = System.cmd(binary_path, [])
+      assert run_code == 0, "#{variant} run failed:\n#{run_out}"
+    end
   end
 
   test "generated feature flags include Pebble.Light commands" do

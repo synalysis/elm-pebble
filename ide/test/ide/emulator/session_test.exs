@@ -59,6 +59,55 @@ defmodule Ide.Emulator.SessionTest do
     end)
   end
 
+  test "launch refreshes existing spi flash from sdk image" do
+    EmulatorSessionEnv.run(fn ->
+      root =
+        Path.join(
+          System.tmp_dir!(),
+          "elm-pebble-emulator-state-test-#{System.unique_integer([:positive])}"
+        )
+
+      image_root =
+        Path.join(
+          System.tmp_dir!(),
+          "elm-pebble-emulator-images-test-#{System.unique_integer([:positive])}"
+        )
+
+      qemu_dir = Path.join([image_root, "basalt", "qemu"])
+      state_image = Path.join(root, "my-game/basalt/qemu_spi_flash.bin")
+
+      File.mkdir_p!(qemu_dir)
+      File.mkdir_p!(Path.dirname(state_image))
+      File.write!(Path.join(qemu_dir, "qemu_micro_flash.bin"), "")
+      File.write!(Path.join(qemu_dir, "qemu_spi_flash.bin"), "fresh sdk image")
+      File.write!(state_image, "stale installed app")
+
+      previous = Application.get_env(:ide, Ide.Emulator.Session)
+
+      Application.put_env(
+        :ide,
+        Ide.Emulator.Session,
+        Keyword.merge(previous, state_root: root, qemu_image_root: image_root)
+      )
+
+      try do
+        assert {:ok, info} =
+                 EmulatorLaunch.launch(
+                   project_slug: "my game",
+                   platform: "basalt",
+                   artifact_path: nil
+                 )
+
+        assert :ok = Emulator.kill(info.id)
+        refute File.read!(state_image) == "stale installed app"
+      after
+        Application.put_env(:ide, Ide.Emulator.Session, previous)
+        File.rm_rf!(root)
+        File.rm_rf!(image_root)
+      end
+    end)
+  end
+
   test "session exits when a managed emulator child exits" do
     EmulatorSessionEnv.run(fn ->
       assert {:ok, info} =

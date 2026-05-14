@@ -18,11 +18,21 @@ defmodule Elmc.WorkerAdapterTest do
       #include "elmc_worker.h"
       #include <stdio.h>
 
+      static ElmcValue *launch_context(void) {
+        ElmcValue *reason = elmc_new_int(1); /* Pebble.Platform.LaunchSystem constructor tag */
+        ElmcValue *screen = elmc_int_zero();
+        ElmcValue *watch_model = elmc_new_string("");
+        ElmcValue *watch_profile_id = elmc_new_string("");
+        const char *names[] = {"reason", "screen", "watchModel", "watchProfileId"};
+        ElmcValue *values[] = {reason, screen, watch_model, watch_profile_id};
+        return elmc_record_new_take(4, names, values);
+      }
+
       int main(void) {
         ElmcWorkerState state = {0};
-        ElmcValue *flags = elmc_new_int(0);
-        if (elmc_worker_init(&state, flags) != 0) return 2;
-        elmc_release(flags);
+        ElmcValue *context = launch_context();
+        if (elmc_worker_init(&state, context) != 0) return 2;
+        elmc_release(context);
 
         for (int i = 0; i < 16; i++) {
           ElmcValue *init_cmd = elmc_worker_take_cmd(&state);

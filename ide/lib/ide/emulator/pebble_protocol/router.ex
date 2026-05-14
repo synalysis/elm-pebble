@@ -23,6 +23,11 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
     GenServer.call(pid, {:send_and_await, endpoint, payload, matcher, timeout}, timeout + 1_000)
   end
 
+  @spec await_frame(pid(), (frame() -> boolean()), timeout()) :: {:ok, frame()} | {:error, term()}
+  def await_frame(pid, matcher, timeout \\ 5_000) when is_pid(pid) and is_function(matcher, 1) do
+    GenServer.call(pid, {:await_frame, matcher, timeout}, timeout + 1_000)
+  end
+
   @spec send_packet(pid(), non_neg_integer(), binary()) :: :ok
   def send_packet(pid, endpoint, payload),
     do: GenServer.call(pid, {:send_packet, endpoint, payload})
@@ -60,6 +65,12 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   @impl true
   def handle_call({:send_and_await, endpoint, payload, matcher, timeout}, from, state) do
     :ok = :gen_tcp.send(state.qemu, qemu_spp_packet(Frame.encode(endpoint, payload)))
+    timer = Process.send_after(self(), {:waiter_timeout, from}, timeout)
+    waiter = %{from: from, matcher: matcher, timer: timer}
+    {:noreply, %{state | waiters: [waiter | state.waiters]}}
+  end
+
+  def handle_call({:await_frame, matcher, timeout}, from, state) do
     timer = Process.send_after(self(), {:waiter_timeout, from}, timeout)
     waiter = %{from: from, matcher: matcher, timer: timer}
     {:noreply, %{state | waiters: [waiter | state.waiters]}}

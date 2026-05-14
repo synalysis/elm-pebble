@@ -805,21 +805,21 @@ defmodule Ide.PebbleToolchain do
 
     #define ELM_PEBBLE_RESOURCE_ID_MISSING UINT32_MAX
 
-    static uint32_t elm_pebble_bitmap_resource_id(int64_t bitmap_id) {
+    static inline uint32_t elm_pebble_bitmap_resource_id(int64_t bitmap_id) {
       switch (bitmap_id) {
     #{bitmap_cases}
         default: return ELM_PEBBLE_RESOURCE_ID_MISSING;
       }
     }
 
-    static uint32_t elm_pebble_font_resource_id(int64_t font_id) {
+    static inline uint32_t elm_pebble_font_resource_id(int64_t font_id) {
       switch (font_id) {
     #{font_cases}
         default: return ELM_PEBBLE_RESOURCE_ID_MISSING;
       }
     }
 
-    static int64_t elm_pebble_font_resource_height(int64_t font_id) {
+    static inline int64_t elm_pebble_font_resource_height(int64_t font_id) {
       switch (font_id) {
     #{font_height_cases}
         default: return 0;
@@ -981,7 +981,10 @@ defmodule Ide.PebbleToolchain do
     opts = %{
       out_dir: compile_out_dir,
       entry_module: "Main",
-      prune_runtime: true
+      direct_render_only: true,
+      prune_runtime: true,
+      prune_native_wrappers: true,
+      pebble_int32: true
     }
 
     with :ok <- reset_generated_dir(compile_out_dir),
@@ -1354,28 +1357,12 @@ defmodule Ide.PebbleToolchain do
 
         if (payload && payload.api === "appMessage" && payload.op === "send") {
             console.log("Elm companion sendAppMessage payload", JSON.stringify(payload.payload || {}));
-            Pebble.sendAppMessage(
-                normalizeOutgoingAppMessage(payload.payload || {}),
-                function () {
-                    console.log("Elm companion -> watch", JSON.stringify(payload.payload || {}));
-                },
-                function (error) {
-                    console.log("Elm companion send failed:", JSON.stringify(error));
-                }
-            );
+            Pebble.sendAppMessage(normalizeOutgoingAppMessage(payload.payload || {}));
             return;
         }
 
         console.log("Elm companion sendAppMessage payload", JSON.stringify(payload));
-        Pebble.sendAppMessage(
-            normalizeOutgoingAppMessage(payload),
-            function () {
-                console.log("Elm companion -> watch", JSON.stringify(payload));
-            },
-            function (error) {
-                console.log("Elm companion send failed:", JSON.stringify(error));
-            }
-        );
+        Pebble.sendAppMessage(normalizeOutgoingAppMessage(payload));
     }
 
     function installXmlHttpRequestCompatibility() {

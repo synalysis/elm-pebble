@@ -17,7 +17,8 @@ defmodule Elmc do
           optional(:out_dir) => String.t(),
           optional(:runtime_dir) => String.t(),
           optional(:strip_dead_code) => boolean(),
-          optional(:prune_runtime) => boolean()
+          optional(:prune_runtime) => boolean(),
+          optional(:prune_native_wrappers) => boolean()
         }
 
   @doc """
@@ -60,7 +61,8 @@ defmodule Elmc do
          :ok <-
            Generator.write_runtime(
              opts[:runtime_dir] || Path.join(opts[:out_dir] || "build", "runtime"),
-             prune_from_dir: if(opts[:prune_runtime], do: opts[:out_dir] || "build", else: nil)
+             prune_from_dir: if(opts[:prune_runtime], do: opts[:out_dir] || "build", else: nil),
+             pebble_int32: opts[:pebble_int32] || false
            ) do
       {:ok, %{project: project, ir: ir}}
     end

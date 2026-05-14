@@ -1247,14 +1247,54 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp collect_view_nodes(node) when is_map(node) do
     type = node |> Map.get("type", Map.get(node, :type, "")) |> to_string()
 
-    if type == "if" do
-      []
-    else
-      collect_view_nodes_in_node(node, type)
+    cond do
+      type == "if" ->
+        []
+
+      type == "group" ->
+        collect_group_view_nodes(node)
+
+      true ->
+        collect_view_nodes_in_node(node, type)
     end
   end
 
   defp collect_view_nodes(_), do: []
+
+  @spec collect_group_view_nodes(map()) :: [map()]
+  defp collect_group_view_nodes(node) when is_map(node) do
+    children =
+      node
+      |> node_children()
+      |> Enum.flat_map(&collect_view_nodes/1)
+
+    [%{"type" => "push_context"}] ++
+      group_style_nodes(node) ++ children ++ [%{"type" => "pop_context"}]
+  end
+
+  @spec group_style_nodes(map()) :: [map()]
+  defp group_style_nodes(node) when is_map(node) do
+    style =
+      case Map.get(node, "style") || Map.get(node, :style) do
+        %{} = value -> value
+        _ -> %{}
+      end
+
+    [
+      style_node(style, "stroke_color"),
+      style_node(style, "fill_color"),
+      style_node(style, "text_color")
+    ]
+    |> Enum.reject(&is_nil/1)
+  end
+
+  @spec style_node(map(), String.t()) :: map() | nil
+  defp style_node(style, key) when is_map(style) and is_binary(key) do
+    case Map.get(style, key) || Map.get(style, String.to_atom(key)) do
+      value when is_integer(value) -> %{"type" => key, "color" => value}
+      _ -> nil
+    end
+  end
 
   @spec collect_view_nodes_in_node(map(), String.t()) :: [map()]
   defp collect_view_nodes_in_node(node, type) when is_map(node) and is_binary(type) do
@@ -1274,6 +1314,195 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     type = node |> Map.get("type", Map.get(node, :type, "")) |> to_string()
     ints = node_int_args(node, model)
 
+    case concrete_svg_op_from_node(node) do
+      %{} = op ->
+        [op]
+
+      nil ->
+        svg_op_from_node_children(node, type, ints, primary_int, model)
+    end
+  end
+
+  defp svg_op_from_node(_node, _primary_int, _model), do: []
+
+  @spec concrete_svg_op_from_node(map()) :: map() | nil
+  defp concrete_svg_op_from_node(node) when is_map(node) do
+    type = node |> Map.get("type", Map.get(node, :type, "")) |> to_string()
+
+    op =
+      case type do
+        "push_context" ->
+          %{"kind" => "push_context"}
+
+        "pop_context" ->
+          %{"kind" => "pop_context"}
+
+        "stroke_color" ->
+          %{"kind" => "stroke_color", "color" => Map.get(node, "color") || Map.get(node, :color)}
+
+        "fill_color" ->
+          %{"kind" => "fill_color", "color" => Map.get(node, "color") || Map.get(node, :color)}
+
+        "text_color" ->
+          %{"kind" => "text_color", "color" => Map.get(node, "color") || Map.get(node, :color)}
+
+        "clear" ->
+          %{"kind" => "clear", "color" => Map.get(node, "color") || Map.get(node, :color)}
+
+        "roundRect" ->
+          %{
+            "kind" => "round_rect",
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y),
+            "w" => Map.get(node, "w") || Map.get(node, :w),
+            "h" => Map.get(node, "h") || Map.get(node, :h),
+            "radius" => Map.get(node, "radius") || Map.get(node, :radius),
+            "fill" =>
+              Map.get(node, "fill") || Map.get(node, :fill) || Map.get(node, "color") ||
+                Map.get(node, :color)
+          }
+
+        "rect" ->
+          %{
+            "kind" => "rect",
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y),
+            "w" => Map.get(node, "w") || Map.get(node, :w),
+            "h" => Map.get(node, "h") || Map.get(node, :h),
+            "fill" =>
+              Map.get(node, "fill") || Map.get(node, :fill) || Map.get(node, "color") ||
+                Map.get(node, :color)
+          }
+
+        "fillRect" ->
+          %{
+            "kind" => "fill_rect",
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y),
+            "w" => Map.get(node, "w") || Map.get(node, :w),
+            "h" => Map.get(node, "h") || Map.get(node, :h),
+            "fill" =>
+              Map.get(node, "fill") || Map.get(node, :fill) || Map.get(node, "color") ||
+                Map.get(node, :color)
+          }
+
+        "line" ->
+          %{
+            "kind" => "line",
+            "x1" => Map.get(node, "x1") || Map.get(node, :x1),
+            "y1" => Map.get(node, "y1") || Map.get(node, :y1),
+            "x2" => Map.get(node, "x2") || Map.get(node, :x2),
+            "y2" => Map.get(node, "y2") || Map.get(node, :y2),
+            "color" => Map.get(node, "color") || Map.get(node, :color)
+          }
+
+        "arc" ->
+          %{
+            "kind" => "arc",
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y),
+            "w" => Map.get(node, "w") || Map.get(node, :w),
+            "h" => Map.get(node, "h") || Map.get(node, :h),
+            "start_angle" => Map.get(node, "start_angle") || Map.get(node, :start_angle),
+            "end_angle" => Map.get(node, "end_angle") || Map.get(node, :end_angle)
+          }
+
+        "fillRadial" ->
+          %{
+            "kind" => "fill_radial",
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y),
+            "w" => Map.get(node, "w") || Map.get(node, :w),
+            "h" => Map.get(node, "h") || Map.get(node, :h),
+            "start_angle" => Map.get(node, "start_angle") || Map.get(node, :start_angle),
+            "end_angle" => Map.get(node, "end_angle") || Map.get(node, :end_angle)
+          }
+
+        "circle" ->
+          %{
+            "kind" => "circle",
+            "cx" => Map.get(node, "cx") || Map.get(node, :cx),
+            "cy" => Map.get(node, "cy") || Map.get(node, :cy),
+            "r" => Map.get(node, "r") || Map.get(node, :r),
+            "color" => Map.get(node, "color") || Map.get(node, :color)
+          }
+
+        "fillCircle" ->
+          %{
+            "kind" => "fill_circle",
+            "cx" => Map.get(node, "cx") || Map.get(node, :cx),
+            "cy" => Map.get(node, "cy") || Map.get(node, :cy),
+            "r" => Map.get(node, "r") || Map.get(node, :r),
+            "color" => Map.get(node, "color") || Map.get(node, :color)
+          }
+
+        "pixel" ->
+          %{
+            "kind" => "pixel",
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y),
+            "color" => Map.get(node, "color") || Map.get(node, :color)
+          }
+
+        "bitmapInRect" ->
+          %{
+            "kind" => "bitmap_in_rect",
+            "bitmap_id" => Map.get(node, "bitmap_id") || Map.get(node, :bitmap_id),
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y),
+            "w" => Map.get(node, "w") || Map.get(node, :w),
+            "h" => Map.get(node, "h") || Map.get(node, :h)
+          }
+
+        "text" ->
+          %{
+            "kind" => "text",
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y),
+            "w" => Map.get(node, "w") || Map.get(node, :w),
+            "h" => Map.get(node, "h") || Map.get(node, :h),
+            "text" => Map.get(node, "text") || Map.get(node, :text)
+          }
+
+        "textInt" ->
+          %{
+            "kind" => "text_int",
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y),
+            "text" =>
+              Map.get(node, "text") || Map.get(node, :text) || Map.get(node, "value") ||
+                Map.get(node, :value)
+          }
+
+        "textLabel" ->
+          %{
+            "kind" => "text_label",
+            "x" => Map.get(node, "x") || Map.get(node, :x),
+            "y" => Map.get(node, "y") || Map.get(node, :y),
+            "text" => Map.get(node, "text") || Map.get(node, :text)
+          }
+
+        _ ->
+          nil
+      end
+
+    case op do
+      %{} ->
+        case normalize_svg_op(op) do
+          %{kind: :unresolved} = unresolved ->
+            if node_children(node) == [], do: unresolved, else: nil
+
+          normalized ->
+            normalized
+        end
+
+      nil ->
+        nil
+    end
+  end
+
+  @spec svg_op_from_node_children(map(), String.t(), [integer()], term(), term()) :: [map()]
+  defp svg_op_from_node_children(node, type, ints, primary_int, model) do
     case type do
       "clear" ->
         case require_ints(ints, 1) do
@@ -1712,8 +1941,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
         []
     end
   end
-
-  defp svg_op_from_node(_node, _primary_int, _model), do: []
 
   @spec unresolved_node(String.t(), non_neg_integer(), pos_integer()) :: [map()]
   defp unresolved_node(node_type, provided_int_count, required_int_count) do

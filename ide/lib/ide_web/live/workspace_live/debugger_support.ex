@@ -693,6 +693,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defp runtime_rendered_tree(_runtime, _model), do: nil
 
   @spec concrete_rendered_view_tree?(term()) :: boolean()
+  defp concrete_rendered_view_tree?(%{"type" => "tuple2"} = tree),
+    do: match?({:ok, _node}, normalize_rendered_ui_value(tree))
+
   defp concrete_rendered_view_tree?(tree) when is_map(tree) and map_size(tree) > 0,
     do: not parser_expression_view_tree?(tree)
 
@@ -706,6 +709,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defp discard_parser_expression_view_tree(_tree), do: nil
 
   @spec parser_expression_view_tree?(term()) :: boolean()
+  defp parser_expression_view_tree?(%{"type" => "tuple2"} = tree),
+    do: not match?({:ok, _node}, normalize_rendered_ui_value(tree))
+
   defp parser_expression_view_tree?(%{"type" => type}) when is_binary(type),
     do: parser_expression_root_type?(type)
 
@@ -1450,7 +1456,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   end
 
   defp normalize_rendered_ui_value(value) do
-    with {:ok, 1, windows} <- normalized_tagged_tuple(value),
+    with {:ok, tag, windows} when tag in [1, 1000] <- normalized_tagged_tuple(value),
          {:ok, windows} <- normalized_list_values(windows),
          {:ok, window_nodes} <-
            normalize_rendered_list(windows, &normalize_rendered_window_node/1) do
@@ -1462,7 +1468,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   @spec normalize_rendered_window_node(term()) :: {:ok, map()} | :error
   defp normalize_rendered_window_node(value) do
-    with {:ok, 1, payload} <- normalized_tagged_tuple(value),
+    with {:ok, tag, payload} when tag in [1, 1001] <- normalized_tagged_tuple(value),
          {:ok, [id, layers]} <- normalized_payload_args(payload, 2),
          {:ok, layers} <- normalized_list_values(layers),
          {:ok, layer_nodes} <- normalize_rendered_list(layers, &normalize_rendered_layer_node/1) do
@@ -1480,7 +1486,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   @spec normalize_rendered_layer_node(term()) :: {:ok, map()} | :error
   defp normalize_rendered_layer_node(value) do
-    with {:ok, 1, payload} <- normalized_tagged_tuple(value),
+    with {:ok, tag, payload} when tag in [1, 1002] <- normalized_tagged_tuple(value),
          {:ok, [id, ops]} <- normalized_payload_args(payload, 2),
          {:ok, ops} <- normalized_list_values(ops),
          {:ok, op_nodes} <- normalize_rendered_list(ops, &normalize_rendered_op_node/1) do
@@ -2775,6 +2781,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       watch_runtime = nearest_surface_runtime_at_or_before(events, raw_seq, :watch)
       companion_runtime = nearest_surface_runtime_at_or_before(events, raw_seq, :companion)
       phone_runtime = nearest_surface_runtime_at_or_before(events, raw_seq, :phone)
+      companion_app_runtime = companion_or_phone_runtime(companion_runtime, phone_runtime)
 
       %{
         seq: debugger_seq,
@@ -2784,10 +2791,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         target: target,
         message: protocol_payload_field(payload, :message) || "",
         message_source: protocol_payload_field(payload, :message_source),
-        selected_runtime: debugger_target_runtime(target, watch_runtime, companion_runtime),
-        other_runtime: debugger_other_runtime(target, watch_runtime, companion_runtime),
+        selected_runtime: debugger_target_runtime(target, watch_runtime, companion_app_runtime),
+        other_runtime: debugger_other_runtime(target, watch_runtime, companion_app_runtime),
         watch_runtime: watch_runtime,
-        companion_runtime: companion_runtime,
+        companion_runtime: companion_app_runtime,
         phone_runtime: phone_runtime
       }
     end)
@@ -2850,6 +2857,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     watch_runtime = Map.get(row, :watch) || Map.get(row, "watch")
     companion_runtime = Map.get(row, :companion) || Map.get(row, "companion")
     phone_runtime = Map.get(row, :phone) || Map.get(row, "phone")
+    companion_app_runtime = companion_or_phone_runtime(companion_runtime, phone_runtime)
 
     %{
       seq: seq,
@@ -2859,10 +2867,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       target: target,
       message: Map.get(row, :message) || Map.get(row, "message") || "",
       message_source: Map.get(row, :message_source) || Map.get(row, "message_source"),
-      selected_runtime: debugger_target_runtime(target, watch_runtime, companion_runtime),
-      other_runtime: debugger_other_runtime(target, watch_runtime, companion_runtime),
+      selected_runtime: debugger_target_runtime(target, watch_runtime, companion_app_runtime),
+      other_runtime: debugger_other_runtime(target, watch_runtime, companion_app_runtime),
       watch_runtime: watch_runtime,
-      companion_runtime: companion_runtime,
+      companion_runtime: companion_app_runtime,
       phone_runtime: phone_runtime
     }
   end
@@ -3247,6 +3255,35 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   @spec debugger_other_runtime(String.t(), map() | nil, map() | nil) :: map() | nil
   defp debugger_other_runtime("companion", watch_runtime, _companion_runtime), do: watch_runtime
   defp debugger_other_runtime(_target, _watch_runtime, companion_runtime), do: companion_runtime
+
+  @spec companion_or_phone_runtime(map() | nil, map() | nil) :: map() | nil
+  defp companion_or_phone_runtime(companion_runtime, phone_runtime) do
+    cond do
+      app_runtime?(companion_runtime) -> companion_runtime
+      app_runtime?(phone_runtime) -> phone_runtime
+      is_map(companion_runtime) -> companion_runtime
+      true -> phone_runtime
+    end
+  end
+
+  @spec app_runtime?(term()) :: boolean()
+  defp app_runtime?(%{} = runtime) do
+    model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
+    runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model) || %{}
+
+    is_map(Map.get(model, "elm_introspect") || Map.get(model, :elm_introspect)) or
+      (is_map(runtime_model) and
+         Enum.any?(Map.keys(runtime_model), fn key ->
+           to_string(key) not in [
+             "protocol_message_count",
+             "protocol_inbound_count",
+             "protocol_outbound_count",
+             "status"
+           ]
+         end))
+  end
+
+  defp app_runtime?(_runtime), do: false
 
   @spec filtered_event_summaries([map()] | term(), timeline_kind(), pos_integer()) :: [
           event_summary()
@@ -3774,6 +3811,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         %{companion_runtime: %{} = runtime} -> runtime
         _ -> snapshot_runtime.companion
       end
+
+    phone_runtime =
+      case selected do
+        %{phone_runtime: %{} = runtime} -> runtime
+        _ -> snapshot_runtime.phone
+      end
+
+    companion_runtime = companion_or_phone_runtime(companion_runtime, phone_runtime)
 
     watch_view_runtime =
       Debugger.render_runtime_preview_for_debugger(

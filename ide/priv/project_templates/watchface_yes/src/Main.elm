@@ -410,7 +410,7 @@ drawOuterScale cx cy radius =
             in
             if modBy 2 hour == 0 then
                 [ Ui.line outer inner Color.white
-                , textAt Color.lightGray { x = Tuple.first labelPoint - 7, y = Tuple.second labelPoint - 5, w = 18, h = 10 } label
+                , textAt Color.lightGray { x = labelPoint.x - 7, y = labelPoint.y - 5, w = 18, h = 10 } label
                 ]
 
             else

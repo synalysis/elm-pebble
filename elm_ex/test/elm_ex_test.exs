@@ -248,6 +248,78 @@ defmodule ElmExTest do
     assert func.expr.left.op == :int_literal
   end
 
+  test "lowerer gives Pebble virtual UI constructors stable semantic tags" do
+    project = %ElmEx.Frontend.Project{
+      project_dir: "/tmp/synthetic",
+      elm_json: %{"source-directories" => ["src"]},
+      modules: [
+        %FrontendModule{
+          name: "Pebble.Ui",
+          path: "/tmp/synthetic/src/Pebble/Ui.elm",
+          imports: [],
+          declarations: [
+            %{
+              kind: :union,
+              name: "UiNode",
+              constructors: [%{name: "WindowStack", arg: "List WindowNode"}],
+              span: %{start_line: 1, end_line: 1}
+            },
+            %{
+              kind: :union,
+              name: "WindowNode",
+              constructors: [%{name: "WindowNode", arg: "Int (List LayerNode)"}],
+              span: %{start_line: 2, end_line: 2}
+            },
+            %{
+              kind: :union,
+              name: "LayerNode",
+              constructors: [%{name: "CanvasLayer", arg: "Int (List RenderOp)"}],
+              span: %{start_line: 3, end_line: 3}
+            },
+            sig("toUiNode", "List RenderOp -> UiNode"),
+            defn("toUiNode", ["ops"], %{
+              op: :constructor_call,
+              target: "WindowStack",
+              args: [
+                %{
+                  op: :list_literal,
+                  items: [
+                    %{
+                      op: :constructor_call,
+                      target: "WindowNode",
+                      args: [
+                        %{op: :int_literal, value: 1},
+                        %{
+                          op: :list_literal,
+                          items: [
+                            %{
+                              op: :constructor_call,
+                              target: "CanvasLayer",
+                              args: [%{op: :int_literal, value: 1}, %{op: :var, name: "ops"}]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            })
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, %IR{modules: [mod]}} = Lowerer.lower_project(project)
+    func = Enum.find(mod.declarations, &(&1.name == "toUiNode"))
+
+    assert func.expr.left.value == 1000
+    [window] = func.expr.right.items
+    assert window.left.value == 1001
+    [layer] = window.right.right.items
+    assert layer.left.value == 1002
+  end
+
   test "lowerer rewrites nested list/cons/alias constructor patterns with tags" do
     project =
       synthetic_project([

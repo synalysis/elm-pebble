@@ -10,6 +10,13 @@ defmodule IdeWeb.EmulatorController do
   @spec launch(term(), term()) :: term()
   def launch(conn, %{"slug" => slug} = params) do
     platform = Map.get(params, "platform")
+    # region agent log
+    Ide.AgentDebugLog.log("initial", "H1,H2", "emulator_controller.ex:launch:start", "emulator launch requested", %{
+      slug: slug,
+      platform: platform
+    })
+
+    # endregion
 
     with project when not is_nil(project) <- Projects.get_project_by_slug(slug),
          workspace_root <- Projects.project_workspace_path(project),
@@ -23,12 +30,39 @@ defmodule IdeWeb.EmulatorController do
              artifact_path: package_result.artifact_path,
              has_phone_companion: package_result.has_phone_companion
            ) do
+      # region agent log
+      Ide.AgentDebugLog.log("initial", "H1,H2", "emulator_controller.ex:launch:ok", "emulator launch succeeded", %{
+        slug: slug,
+        requested_platform: platform,
+        launch_platform: launch_platform,
+        artifact_path: package_result.artifact_path,
+        artifact_bytes: file_size(package_result.artifact_path),
+        has_phone_companion: package_result.has_phone_companion,
+        emulator_id: Map.get(info, :id) || Map.get(info, "id")
+      })
+
+      # endregion
       json(conn, info)
     else
       nil ->
+        # region agent log
+        Ide.AgentDebugLog.log("initial", "H1", "emulator_controller.ex:launch:not_found", "project not found", %{
+          slug: slug,
+          platform: platform
+        })
+
+        # endregion
         conn |> put_status(:not_found) |> json(%{error: "Project not found"})
 
       {:error, reason} ->
+        # region agent log
+        Ide.AgentDebugLog.log("initial", "H1,H2", "emulator_controller.ex:launch:error", "emulator launch failed", %{
+          slug: slug,
+          platform: platform,
+          reason: inspect(reason)
+        })
+
+        # endregion
         conn |> put_status(:unprocessable_entity) |> json(%{error: launch_error_message(reason)})
     end
   end
@@ -40,9 +74,27 @@ defmodule IdeWeb.EmulatorController do
   defp package_for_launch(project, workspace_root, platform) do
     case BuildFlow.package_for_emulator_session(project, workspace_root, platform) do
       {:ok, package_result} ->
+        # region agent log
+        Ide.AgentDebugLog.log("initial", "H1", "emulator_controller.ex:package_for_launch:ok", "package ready for emulator", %{
+          slug: project.slug,
+          platform: platform,
+          artifact_path: package_result.artifact_path,
+          artifact_bytes: file_size(package_result.artifact_path),
+          has_phone_companion: package_result.has_phone_companion
+        })
+
+        # endregion
         {:ok, package_result, platform}
 
       {:error, reason} ->
+        # region agent log
+        Ide.AgentDebugLog.log("initial", "H1", "emulator_controller.ex:package_for_launch:error", "package failed for emulator", %{
+          slug: project.slug,
+          platform: platform,
+          reason: inspect(reason)
+        })
+
+        # endregion
         fallback_platform = WatchModels.default_id()
 
         if aplite_app_overflow?(platform, reason) and platform != fallback_platform do
@@ -84,6 +136,15 @@ defmodule IdeWeb.EmulatorController do
   end
 
   defp aplite_app_overflow?(_platform, _reason), do: false
+
+  defp file_size(path) when is_binary(path) do
+    case File.stat(path) do
+      {:ok, %{size: size}} -> size
+      _ -> nil
+    end
+  end
+
+  defp file_size(_path), do: nil
 
   @spec ping(term(), term()) :: term()
   def ping(conn, %{"id" => id}) do
@@ -172,8 +233,25 @@ defmodule IdeWeb.EmulatorController do
   def ws_phone(conn, %{"id" => id}), do: proxy(conn, id, :phone)
 
   defp proxy(conn, id, kind) do
+    # region agent log
+    Ide.AgentDebugLog.log("initial", "H20,H22", "emulator_controller.ex:proxy:start", "emulator websocket proxy requested", %{
+      id: id,
+      kind: kind
+    })
+
+    # endregion
+
     with {:ok, info} <- Emulator.info(id),
          {:ok, target} <- proxy_target(info, kind) do
+      # region agent log
+      Ide.AgentDebugLog.log("initial", "H20,H22", "emulator_controller.ex:proxy:target", "emulator websocket proxy target ready", %{
+        id: id,
+        kind: kind,
+        target: inspect(target)
+      })
+
+      # endregion
+
       conn
       |> WebSockAdapter.upgrade(IdeWeb.EmulatorProxySocket, %{target: target},
         timeout: 86_400_000
@@ -184,6 +262,14 @@ defmodule IdeWeb.EmulatorController do
         conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
 
       {:error, reason} ->
+        # region agent log
+        Ide.AgentDebugLog.log("initial", "H20,H22", "emulator_controller.ex:proxy:error", "emulator websocket proxy failed", %{
+          id: id,
+          kind: kind,
+          reason: inspect(reason)
+        })
+
+        # endregion
         conn |> put_status(:bad_request) |> json(%{error: inspect(reason)})
     end
   end

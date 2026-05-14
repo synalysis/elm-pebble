@@ -320,6 +320,32 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert get_in(companion_row.other_runtime, [:model, "runtime_model", "w"]) == 5
   end
 
+  test "debugger_rows presents phone app runtime in companion panel when companion is shell only" do
+    events = [
+      %{
+        seq: 2,
+        type: "debugger.update_in",
+        payload: %{target: "phone", message: "FromWatch"},
+        watch: %{model: %{"runtime_model" => %{"w" => 2}}},
+        companion: %{
+          model: %{"runtime_model" => %{"protocol_message_count" => 0, "status" => "idle"}}
+        },
+        phone: %{
+          model: %{
+            "elm_introspect" => %{"main_program" => %{}},
+            "runtime_model" => %{"settings" => %{"enabled" => true}}
+          }
+        }
+      }
+    ]
+
+    [row] = DebuggerSupport.debugger_rows(events)
+
+    assert row.target == "companion"
+    assert get_in(row.companion_runtime, [:model, "runtime_model", "settings", "enabled"]) == true
+    assert get_in(row.selected_runtime, [:model, "runtime_model", "settings", "enabled"]) == true
+  end
+
   test "debugger_rows reads semantic debugger timeline snapshots without raw seq gaps" do
     state = %{
       debugger_timeline: [
@@ -478,6 +504,25 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     preview = DebuggerSupport.rendered_view_preview(runtime)
     assert preview =~ "- Window [root]"
     assert preview =~ "- TextLayer [Hello]"
+  end
+
+  test "rendered_tree ignores parser tuple2 expression roots" do
+    runtime = %{
+      model: %{
+        "elm_introspect" => %{
+          "view_tree" => %{
+            "type" => "tuple2",
+            "children" => [%{"type" => "expr", "value" => 1000}]
+          }
+        }
+      },
+      view_tree: %{
+        "type" => "tuple2",
+        "children" => [%{"type" => "expr", "value" => 1000}]
+      }
+    }
+
+    assert DebuggerSupport.rendered_tree(runtime) == nil
   end
 
   test "rendered_view_preview labels argument values from structured arg metadata" do
@@ -961,6 +1006,46 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
     assert rect.kind == :fill_rect
     assert %{x: 1, y: 2, w: 3, h: 4} = rect
+  end
+
+  test "debugger preview consumes promoted rendered tree primitive fields" do
+    tree = %{
+      "type" => "windowStack",
+      "children" => [
+        %{
+          "type" => "window",
+          "children" => [
+            %{
+              "type" => "canvasLayer",
+              "children" => [
+                %{"type" => "clear", "color" => 192, "children" => []},
+                %{"type" => "fillCircle", "cx" => 72, "cy" => 84, "r" => 64, "color" => 193},
+                %{
+                  "type" => "group",
+                  "style" => %{"fill_color" => 248},
+                  "children" => [
+                    %{
+                      "type" => "fillRadial",
+                      "x" => 26,
+                      "y" => 38,
+                      "w" => 92,
+                      "h" => 92,
+                      "start_angle" => 49_152,
+                      "end_angle" => 16_384
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+
+    ops = DebuggerPreview.svg_ops(tree, %{model: %{}})
+
+    refute Enum.any?(ops, &(&1.kind == :unresolved))
+    assert [%{kind: :clear}, %{kind: :fill_circle}, %{kind: :fill_radial, fill_color: 248}] = ops
   end
 
   test "debugger preview can consume precomputed compact scene" do

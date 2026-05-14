@@ -46,7 +46,7 @@ defmodule Ide.Emulator.PbwTest do
     File.rm_rf!(dir)
   end
 
-  test "load skips generated resource pack when app declares no media" do
+  test "load includes manifest resource pack even when app declares no media" do
     appinfo = %{
       "uuid" => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
       "targetPlatforms" => ["basalt"],
@@ -76,7 +76,7 @@ defmodule Ide.Emulator.PbwTest do
              )
 
     assert {:ok, pbw} = PBW.load(pbw_path, "basalt")
-    assert Enum.map(pbw.parts, & &1.kind) == [:binary]
+    assert Enum.map(pbw.parts, & &1.kind) == [:binary, :resources]
 
     File.rm_rf!(dir)
   end

@@ -127,28 +127,12 @@ function handleOutgoing(payload) {
 
     if (payload && payload.api === "appMessage" && payload.op === "send") {
         console.log("Elm companion sendAppMessage payload", JSON.stringify(payload.payload || {}));
-        Pebble.sendAppMessage(
-            normalizeOutgoingAppMessage(payload.payload || {}),
-            function () {
-                console.log("Elm companion -> watch", JSON.stringify(payload.payload || {}));
-            },
-            function (error) {
-                console.log("Elm companion send failed:", JSON.stringify(error));
-            }
-        );
+        Pebble.sendAppMessage(normalizeOutgoingAppMessage(payload.payload || {}));
         return;
     }
 
     console.log("Elm companion sendAppMessage payload", JSON.stringify(payload));
-    Pebble.sendAppMessage(
-        normalizeOutgoingAppMessage(payload),
-        function () {
-            console.log("Elm companion -> watch", JSON.stringify(payload));
-        },
-        function (error) {
-            console.log("Elm companion send failed:", JSON.stringify(error));
-        }
-    );
+    Pebble.sendAppMessage(normalizeOutgoingAppMessage(payload));
 }
 
 function installXmlHttpRequestCompatibility() {

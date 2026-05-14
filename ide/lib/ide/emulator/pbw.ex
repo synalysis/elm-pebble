@@ -46,7 +46,7 @@ defmodule Ide.Emulator.PBW do
     with {:ok, entries} <- read_entries(path),
          {:ok, appinfo} <- read_json(entries, "appinfo.json"),
          {:ok, variant, manifest} <- select_manifest(entries, platform, appinfo),
-         {:ok, parts} <- read_parts(entries, variant, manifest, appinfo),
+         {:ok, parts} <- read_parts(entries, variant, manifest),
          {:ok, app_metadata} <- app_metadata(appinfo, parts),
          {:ok, uuid} <- validate_uuid(appinfo, app_metadata) do
       {:ok,
@@ -161,7 +161,7 @@ defmodule Ide.Emulator.PBW do
     end
   end
 
-  defp read_parts(entries, variant, manifest, appinfo) do
+  defp read_parts(entries, variant, manifest) do
     definitions =
       [
         {:binary, :binary, get_in(manifest, ["application"])},
@@ -169,9 +169,6 @@ defmodule Ide.Emulator.PBW do
         {:worker, :worker, get_in(manifest, ["worker"])}
       ]
       |> Enum.reject(fn {_kind, _object_type, blob} -> is_nil(blob) end)
-      |> Enum.reject(fn {kind, _object_type, _blob} ->
-        kind == :resources and empty_media_resources?(appinfo)
-      end)
 
     parts =
       Enum.reduce_while(definitions, {:ok, []}, fn {kind, object_type, blob}, {:ok, acc} ->
@@ -261,13 +258,6 @@ defmodule Ide.Emulator.PBW do
 
   defp fallback_flags(appinfo) do
     if get_in(appinfo, ["watchapp", "watchface"]) == true, do: 1, else: 0
-  end
-
-  defp empty_media_resources?(appinfo) do
-    case get_in(appinfo, ["resources", "media"]) do
-      media when is_list(media) -> media == []
-      _other -> false
-    end
   end
 
   defp version_pair(version) when is_binary(version) do

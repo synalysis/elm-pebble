@@ -9,7 +9,7 @@ defmodule Elmc.Runtime.Generator do
 
   @spec write_runtime(String.t(), write_opts()) :: :ok | {:error, term()}
   def write_runtime(runtime_dir, opts \\ []) do
-    header = runtime_header()
+    header = runtime_header(opts)
     source = runtime_source()
 
     {header, source} =
@@ -25,6 +25,7 @@ defmodule Elmc.Runtime.Generator do
   @spec maybe_prune_runtime(term(), term(), term()) :: term()
   defp maybe_prune_runtime(header, source, prune_from_dir) when is_binary(prune_from_dir) do
     with refs when map_size(refs) > 0 <- collect_runtime_references(prune_from_dir),
+         source <- maybe_drop_float_runtime(source, refs),
          {:ok, defs} <- parse_function_defs(source),
          true <- defs != [] do
       kept_names = transitive_keep_set(defs, refs)
@@ -42,6 +43,69 @@ defmodule Elmc.Runtime.Generator do
   end
 
   defp maybe_prune_runtime(header, source, _), do: {header, source}
+
+  defp maybe_drop_float_runtime(source, refs) when is_map(refs) do
+    float_refs =
+      MapSet.new([
+        "elmc_new_float",
+        "elmc_as_float",
+        "elmc_string_from_float",
+        "elmc_string_to_float",
+        "elmc_basics_to_float",
+        "elmc_basics_sqrt",
+        "elmc_basics_log_base",
+        "elmc_basics_sin",
+        "elmc_basics_cos",
+        "elmc_basics_tan",
+        "elmc_basics_acos",
+        "elmc_basics_asin",
+        "elmc_basics_atan",
+        "elmc_basics_atan2",
+        "elmc_basics_degrees",
+        "elmc_basics_radians",
+        "elmc_basics_turns",
+        "elmc_basics_is_nan",
+        "elmc_basics_is_infinite",
+        "elmc_basics_round",
+        "elmc_basics_floor",
+        "elmc_basics_ceiling",
+        "elmc_basics_truncate",
+        "elmc_basics_sqrt_double",
+        "elmc_basics_sin_double",
+        "elmc_basics_cos_double",
+        "elmc_basics_tan_double"
+      ])
+
+    referenced = refs |> Map.keys() |> MapSet.new()
+
+    if MapSet.disjoint?(referenced, float_refs) do
+      source
+      |> String.replace(
+        """
+
+            case ELMC_TAG_FLOAT:
+              return elmc_as_float(left) == elmc_as_float(right);
+        """,
+        ""
+      )
+      |> String.replace(
+        """
+          if (a && b && (a->tag == ELMC_TAG_FLOAT || b->tag == ELMC_TAG_FLOAT)) {
+            double fa = elmc_as_float(a);
+            double fb = elmc_as_float(b);
+            if (fa < fb) return elmc_new_int(-1);
+            if (fa > fb) return elmc_new_int(1);
+            return elmc_int_zero();
+          }
+        """,
+        ""
+      )
+    else
+      source
+    end
+  end
+
+  defp maybe_drop_float_runtime(source, _refs), do: source
 
   @spec collect_runtime_references(term()) :: term()
   defp collect_runtime_references(dir) do
@@ -237,14 +301,18 @@ defmodule Elmc.Runtime.Generator do
     end
   end
 
-  @spec runtime_header() :: String.t()
-  defp runtime_header do
+  @spec runtime_header(write_opts()) :: String.t()
+  defp runtime_header(opts) do
+    int32_define =
+      if Keyword.get(opts, :pebble_int32, false), do: "#define ELMC_PEBBLE_INT32 1\n", else: ""
+
     """
     #ifndef ELMC_RUNTIME_H
     #define ELMC_RUNTIME_H
 
     #include <stdint.h>
     #include <stddef.h>
+    #{int32_define}
 
     #if defined(ELMC_PEBBLE_INT32) || defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
     typedef int32_t elmc_int_t;
@@ -270,6 +338,7 @@ defmodule Elmc.Runtime.Generator do
       uint32_t rc;
       ElmcTag tag;
       void *payload;
+      elmc_int_t scalar;
     } ElmcValue;
 
     typedef struct ElmcCons {
@@ -297,6 +366,9 @@ defmodule Elmc.Runtime.Generator do
       const char **field_names;
       ElmcValue **field_values;
     } ElmcRecord;
+
+    #define ELMC_RECORD_GET_INDEX_INT(record, index) \\
+      elmc_as_int(((ElmcRecord *)((record)->payload))->field_values[(index)])
 
     typedef struct ElmcClosure {
       ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count);
@@ -326,6 +398,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_tuple2_ints(elmc_int_t first, elmc_int_t second);
 
     elmc_int_t elmc_as_int(ElmcValue *value);
+    elmc_int_t elmc_as_bool(ElmcValue *value);
     int elmc_value_equal(ElmcValue *left, ElmcValue *right);
     int elmc_string_length(ElmcValue *value);
     ElmcValue *elmc_list_head(ElmcValue *list);
@@ -349,6 +422,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_debug_to_string(ElmcValue *value);
     ElmcValue *elmc_append(ElmcValue *left, ElmcValue *right);
     ElmcValue *elmc_string_append(ElmcValue *left, ElmcValue *right);
+    ElmcValue *elmc_string_append_native(const char *left, const char *right);
     ElmcValue *elmc_string_is_empty(ElmcValue *value);
     ElmcValue *elmc_dict_from_list(ElmcValue *items);
     ElmcValue *elmc_dict_insert(ElmcValue *key, ElmcValue *value, ElmcValue *dict);
@@ -411,6 +485,7 @@ defmodule Elmc.Runtime.Generator do
 
     /* --- Maybe operations --- */
     ElmcValue *elmc_maybe_with_default(ElmcValue *default_val, ElmcValue *maybe);
+    elmc_int_t elmc_maybe_with_default_int(elmc_int_t default_val, ElmcValue *maybe);
     ElmcValue *elmc_maybe_map(ElmcValue *f, ElmcValue *maybe);
     ElmcValue *elmc_maybe_map2(ElmcValue *f, ElmcValue *a, ElmcValue *b);
     ElmcValue *elmc_maybe_and_then(ElmcValue *f, ElmcValue *maybe);
@@ -562,16 +637,26 @@ defmodule Elmc.Runtime.Generator do
 
     ElmcValue *elmc_new_float(double value);
     double elmc_as_float(ElmcValue *value);
+    double elmc_basics_sqrt_double(double x);
+    double elmc_basics_sin_double(double x);
+    double elmc_basics_cos_double(double x);
+    double elmc_basics_tan_double(double x);
 
     ElmcValue *elmc_record_new(int field_count, const char **field_names, ElmcValue **field_values);
     ElmcValue *elmc_record_new_take(int field_count, const char **field_names, ElmcValue **field_values);
     ElmcValue *elmc_record_new_ints(int field_count, const char **field_names, const elmc_int_t *field_values);
     ElmcValue *elmc_record_get(ElmcValue *record, const char *field_name);
     ElmcValue *elmc_record_get_at(ElmcValue *record, int index, const char *field_name);
+    ElmcValue *elmc_record_get_index(ElmcValue *record, int index);
     elmc_int_t elmc_record_get_int(ElmcValue *record, const char *field_name);
     elmc_int_t elmc_record_get_at_int(ElmcValue *record, int index, const char *field_name);
+    elmc_int_t elmc_record_get_index_int(ElmcValue *record, int index);
+    elmc_int_t elmc_record_get_maybe_int(ElmcValue *record, const char *field_name, elmc_int_t default_val);
+    elmc_int_t elmc_record_get_at_maybe_int(ElmcValue *record, int index, const char *field_name, elmc_int_t default_val);
+    elmc_int_t elmc_record_get_index_maybe_int(ElmcValue *record, int index, elmc_int_t default_val);
     elmc_int_t elmc_record_get_bool(ElmcValue *record, const char *field_name);
     elmc_int_t elmc_record_get_at_bool(ElmcValue *record, int index, const char *field_name);
+    elmc_int_t elmc_record_get_index_bool(ElmcValue *record, int index);
     ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value);
 
     ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
@@ -611,7 +696,10 @@ defmodule Elmc.Runtime.Generator do
     #define ELMC_PROCESS_MAX_SLOTS 16
     #define ELMC_RC_IMMORTAL UINT32_MAX
     static elmc_int_t ELMC_INT_ZERO_PAYLOAD = 0;
-    ElmcValue ELMC_INT_ZERO = { ELMC_RC_IMMORTAL, ELMC_TAG_INT, &ELMC_INT_ZERO_PAYLOAD };
+    ElmcValue ELMC_INT_ZERO = { ELMC_RC_IMMORTAL, ELMC_TAG_INT, &ELMC_INT_ZERO_PAYLOAD, 0 };
+    static char ELMC_EMPTY_STRING_PAYLOAD[] = "";
+    static ElmcValue ELMC_EMPTY_STRING = { ELMC_RC_IMMORTAL, ELMC_TAG_STRING, ELMC_EMPTY_STRING_PAYLOAD, 0 };
+    static int ELMC_ALLOC_FAILURE_LOGGED = 0;
 
     typedef struct {
       int active;
@@ -680,13 +768,36 @@ defmodule Elmc.Runtime.Generator do
     }
     #endif
 
+    static void elmc_log_alloc_failed_once(const char *context, size_t size) {
+      if (ELMC_ALLOC_FAILURE_LOGGED) return;
+      ELMC_ALLOC_FAILURE_LOGGED = 1;
+    #ifdef ELMC_PEBBLE_PLATFORM
+      APP_LOG(APP_LOG_LEVEL_ERROR, "ELMC allocation failed in %s (%lu bytes)", context ? context : "unknown", (unsigned long)size);
+    #else
+      fprintf(stderr, "ELMC allocation failed in %s (%lu bytes)\\n", context ? context : "unknown", (unsigned long)size);
+    #endif
+    }
+
+    static void *elmc_malloc(size_t size, const char *context) {
+      void *ptr = malloc(size);
+      if (!ptr) elmc_log_alloc_failed_once(context, size);
+      return ptr;
+    }
+
     static ElmcValue *elmc_alloc(ElmcTag tag, void *payload) {
-      ElmcValue *value = (ElmcValue *)malloc(sizeof(ElmcValue));
+      ElmcValue *value = (ElmcValue *)elmc_malloc(sizeof(ElmcValue), __func__);
       if (!value) return NULL;
       value->rc = 1;
       value->tag = tag;
       value->payload = payload;
+      value->scalar = 0;
       ELMC_ALLOCATED += 1;
+      return value;
+    }
+
+    static ElmcValue *elmc_alloc_scalar(ElmcTag tag, elmc_int_t scalar) {
+      ElmcValue *value = elmc_alloc(tag, NULL);
+      if (value) value->scalar = scalar;
       return value;
     }
 
@@ -705,17 +816,11 @@ defmodule Elmc.Runtime.Generator do
 
     ElmcValue *elmc_new_int(elmc_int_t value) {
       if (value == 0) return &ELMC_INT_ZERO;
-      elmc_int_t *ptr = (elmc_int_t *)malloc(sizeof(elmc_int_t));
-      if (!ptr) return NULL;
-      *ptr = value;
-      return elmc_alloc(ELMC_TAG_INT, ptr);
+      return elmc_alloc_scalar(ELMC_TAG_INT, value);
     }
 
     ElmcValue *elmc_new_bool(int value) {
-      elmc_int_t *ptr = (elmc_int_t *)malloc(sizeof(elmc_int_t));
-      if (!ptr) return NULL;
-      *ptr = value;
-      return elmc_alloc(ELMC_TAG_BOOL, ptr);
+      return elmc_alloc_scalar(ELMC_TAG_BOOL, value != 0);
     }
 
     ElmcValue *elmc_new_char(elmc_int_t value) {
@@ -723,11 +828,17 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_new_string(const char *value) {
+      if (!value || value[0] == '\\0') return &ELMC_EMPTY_STRING;
       size_t len = strlen(value);
-      char *ptr = (char *)malloc(len + 1);
-      if (!ptr) return NULL;
+      char *ptr = (char *)elmc_malloc(len + 1, __func__);
+      if (!ptr) return &ELMC_EMPTY_STRING;
       memcpy(ptr, value, len + 1);
-      return elmc_alloc(ELMC_TAG_STRING, ptr);
+      ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, ptr);
+      if (!out) {
+        free(ptr);
+        return &ELMC_EMPTY_STRING;
+      }
+      return out;
     }
 
     ElmcValue *elmc_list_nil(void) {
@@ -735,7 +846,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_list_cons(ElmcValue *head, ElmcValue *tail) {
-      ElmcCons *node = (ElmcCons *)malloc(sizeof(ElmcCons));
+      ElmcCons *node = (ElmcCons *)elmc_malloc(sizeof(ElmcCons), __func__);
       if (!node) return NULL;
       node->head = elmc_retain(head);
       node->tail = elmc_retain(tail);
@@ -743,7 +854,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     static ElmcValue *elmc_list_cons_take(ElmcValue *head, ElmcValue *tail) {
-      ElmcCons *node = (ElmcCons *)malloc(sizeof(ElmcCons));
+      ElmcCons *node = (ElmcCons *)elmc_malloc(sizeof(ElmcCons), __func__);
       if (!node) {
         elmc_release(head);
         elmc_release(tail);
@@ -775,7 +886,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_maybe_nothing(void) {
-      ElmcMaybe *maybe = (ElmcMaybe *)malloc(sizeof(ElmcMaybe));
+      ElmcMaybe *maybe = (ElmcMaybe *)elmc_malloc(sizeof(ElmcMaybe), __func__);
       if (!maybe) return NULL;
       maybe->is_just = 0;
       maybe->value = NULL;
@@ -783,7 +894,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_maybe_just(ElmcValue *value) {
-      ElmcMaybe *maybe = (ElmcMaybe *)malloc(sizeof(ElmcMaybe));
+      ElmcMaybe *maybe = (ElmcMaybe *)elmc_malloc(sizeof(ElmcMaybe), __func__);
       if (!maybe) return NULL;
       maybe->is_just = 1;
       maybe->value = elmc_retain(value);
@@ -791,7 +902,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_result_ok(ElmcValue *value) {
-      ElmcResult *result = (ElmcResult *)malloc(sizeof(ElmcResult));
+      ElmcResult *result = (ElmcResult *)elmc_malloc(sizeof(ElmcResult), __func__);
       if (!result) return NULL;
       result->is_ok = 1;
       result->value = elmc_retain(value);
@@ -799,7 +910,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_result_err(ElmcValue *value) {
-      ElmcResult *result = (ElmcResult *)malloc(sizeof(ElmcResult));
+      ElmcResult *result = (ElmcResult *)elmc_malloc(sizeof(ElmcResult), __func__);
       if (!result) return NULL;
       result->is_ok = 0;
       result->value = elmc_retain(value);
@@ -807,7 +918,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_tuple2(ElmcValue *first, ElmcValue *second) {
-      ElmcTuple2 *tuple = (ElmcTuple2 *)malloc(sizeof(ElmcTuple2));
+      ElmcTuple2 *tuple = (ElmcTuple2 *)elmc_malloc(sizeof(ElmcTuple2), __func__);
       if (!tuple) return NULL;
       tuple->first = elmc_retain(first);
       tuple->second = elmc_retain(second);
@@ -815,7 +926,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_tuple2_take(ElmcValue *first, ElmcValue *second) {
-      ElmcTuple2 *tuple = (ElmcTuple2 *)malloc(sizeof(ElmcTuple2));
+      ElmcTuple2 *tuple = (ElmcTuple2 *)elmc_malloc(sizeof(ElmcTuple2), __func__);
       if (!tuple) {
         elmc_release(first);
         elmc_release(second);
@@ -832,7 +943,11 @@ defmodule Elmc.Runtime.Generator do
 
     elmc_int_t elmc_as_int(ElmcValue *value) {
       if (!value || (value->tag != ELMC_TAG_INT && value->tag != ELMC_TAG_BOOL)) return 0;
-      return *((elmc_int_t *)value->payload);
+      return value->scalar;
+    }
+
+    elmc_int_t elmc_as_bool(ElmcValue *value) {
+      return elmc_as_int(value) != 0;
     }
 
     int elmc_value_equal(ElmcValue *left, ElmcValue *right) {
@@ -1090,10 +1205,16 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_string_append(ElmcValue *left, ElmcValue *right) {
       const char *a = (left && left->tag == ELMC_TAG_STRING && left->payload) ? (const char *)left->payload : "";
       const char *b = (right && right->tag == ELMC_TAG_STRING && right->payload) ? (const char *)right->payload : "";
+      return elmc_string_append_native(a, b);
+    }
+
+    ElmcValue *elmc_string_append_native(const char *left, const char *right) {
+      const char *a = left ? left : "";
+      const char *b = right ? right : "";
       size_t len_a = strlen(a);
       size_t len_b = strlen(b);
-      char *out = (char *)malloc(len_a + len_b + 1);
-      if (!out) return elmc_new_string("");
+      char *out = (char *)elmc_malloc(len_a + len_b + 1, __func__);
+      if (!out) return &ELMC_EMPTY_STRING;
       memcpy(out, a, len_a);
       memcpy(out + len_a, b, len_b);
       out[len_a + len_b] = '\\0';
@@ -1471,7 +1592,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_new_float(double value) {
-      double *ptr = (double *)malloc(sizeof(double));
+      double *ptr = (double *)elmc_malloc(sizeof(double), __func__);
       if (!ptr) return NULL;
       *ptr = value;
       return elmc_alloc(ELMC_TAG_FLOAT, ptr);
@@ -1480,16 +1601,16 @@ defmodule Elmc.Runtime.Generator do
     double elmc_as_float(ElmcValue *value) {
       if (!value) return 0.0;
       if (value->tag == ELMC_TAG_FLOAT) return *((double *)value->payload);
-      if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) return (double)(*((int64_t *)value->payload));
+      if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) return (double)elmc_as_int(value);
       return 0.0;
     }
 
     ElmcValue *elmc_record_new(int field_count, const char **field_names, ElmcValue **field_values) {
-      ElmcRecord *record = (ElmcRecord *)malloc(sizeof(ElmcRecord));
+      ElmcRecord *record = (ElmcRecord *)elmc_malloc(sizeof(ElmcRecord), __func__);
       if (!record) return NULL;
       record->field_count = field_count;
-      record->field_names = (const char **)malloc(sizeof(const char *) * field_count);
-      record->field_values = (ElmcValue **)malloc(sizeof(ElmcValue *) * field_count);
+      record->field_names = (const char **)elmc_malloc(sizeof(const char *) * field_count, __func__);
+      record->field_values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * field_count, __func__);
       if (!record->field_names || !record->field_values) {
         free(record->field_names);
         free(record->field_values);
@@ -1498,7 +1619,7 @@ defmodule Elmc.Runtime.Generator do
       }
       for (int i = 0; i < field_count; i++) {
         size_t len = strlen(field_names[i]);
-        char *name_copy = (char *)malloc(len + 1);
+        char *name_copy = (char *)elmc_malloc(len + 1, __func__);
         if (name_copy) { memcpy(name_copy, field_names[i], len + 1); }
         record->field_names[i] = name_copy;
         record->field_values[i] = elmc_retain(field_values[i]);
@@ -1507,11 +1628,11 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_record_new_take(int field_count, const char **field_names, ElmcValue **field_values) {
-      ElmcRecord *record = (ElmcRecord *)malloc(sizeof(ElmcRecord));
+      ElmcRecord *record = (ElmcRecord *)elmc_malloc(sizeof(ElmcRecord), __func__);
       if (!record) return NULL;
       record->field_count = field_count;
-      record->field_names = (const char **)malloc(sizeof(const char *) * field_count);
-      record->field_values = (ElmcValue **)malloc(sizeof(ElmcValue *) * field_count);
+      record->field_names = (const char **)elmc_malloc(sizeof(const char *) * field_count, __func__);
+      record->field_values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * field_count, __func__);
       if (!record->field_names || !record->field_values) {
         free(record->field_names);
         free(record->field_values);
@@ -1523,7 +1644,7 @@ defmodule Elmc.Runtime.Generator do
       }
       for (int i = 0; i < field_count; i++) {
         size_t len = strlen(field_names[i]);
-        char *name_copy = (char *)malloc(len + 1);
+        char *name_copy = (char *)elmc_malloc(len + 1, __func__);
         if (name_copy) { memcpy(name_copy, field_names[i], len + 1); }
         record->field_names[i] = name_copy;
         record->field_values[i] = field_values[i];
@@ -1560,6 +1681,13 @@ defmodule Elmc.Runtime.Generator do
       return elmc_record_get(record, field_name);
     }
 
+    ElmcValue *elmc_record_get_index(ElmcValue *record, int index) {
+      if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_int_zero();
+      ElmcRecord *rec = (ElmcRecord *)record->payload;
+      if (index >= 0 && index < rec->field_count) return elmc_retain(rec->field_values[index]);
+      return elmc_int_zero();
+    }
+
     elmc_int_t elmc_record_get_int(ElmcValue *record, const char *field_name) {
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return 0;
       ElmcRecord *rec = (ElmcRecord *)record->payload;
@@ -1581,6 +1709,41 @@ defmodule Elmc.Runtime.Generator do
       return elmc_record_get_int(record, field_name);
     }
 
+    elmc_int_t elmc_record_get_index_int(ElmcValue *record, int index) {
+      if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return 0;
+      ElmcRecord *rec = (ElmcRecord *)record->payload;
+      if (index >= 0 && index < rec->field_count) return elmc_as_int(rec->field_values[index]);
+      return 0;
+    }
+
+    elmc_int_t elmc_record_get_maybe_int(ElmcValue *record, const char *field_name, elmc_int_t default_val) {
+      if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return default_val;
+      ElmcRecord *rec = (ElmcRecord *)record->payload;
+      for (int i = 0; i < rec->field_count; i++) {
+        if (rec->field_names[i] && strcmp(rec->field_names[i], field_name) == 0) {
+          return elmc_maybe_with_default_int(default_val, rec->field_values[i]);
+        }
+      }
+      return default_val;
+    }
+
+    elmc_int_t elmc_record_get_at_maybe_int(ElmcValue *record, int index, const char *field_name, elmc_int_t default_val) {
+      if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return default_val;
+      ElmcRecord *rec = (ElmcRecord *)record->payload;
+      if (index >= 0 && index < rec->field_count && rec->field_names[index] &&
+          strcmp(rec->field_names[index], field_name) == 0) {
+        return elmc_maybe_with_default_int(default_val, rec->field_values[index]);
+      }
+      return elmc_record_get_maybe_int(record, field_name, default_val);
+    }
+
+    elmc_int_t elmc_record_get_index_maybe_int(ElmcValue *record, int index, elmc_int_t default_val) {
+      if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return default_val;
+      ElmcRecord *rec = (ElmcRecord *)record->payload;
+      if (index >= 0 && index < rec->field_count) return elmc_maybe_with_default_int(default_val, rec->field_values[index]);
+      return default_val;
+    }
+
     elmc_int_t elmc_record_get_bool(ElmcValue *record, const char *field_name) {
       return elmc_record_get_int(record, field_name) != 0;
     }
@@ -1589,11 +1752,15 @@ defmodule Elmc.Runtime.Generator do
       return elmc_record_get_at_int(record, index, field_name) != 0;
     }
 
+    elmc_int_t elmc_record_get_index_bool(ElmcValue *record, int index) {
+      return elmc_record_get_index_int(record, index) != 0;
+    }
+
     ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value) {
       if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
       ElmcRecord *old = (ElmcRecord *)record->payload;
-      const char **names = (const char **)malloc(sizeof(const char *) * old->field_count);
-      ElmcValue **values = (ElmcValue **)malloc(sizeof(ElmcValue *) * old->field_count);
+      const char **names = (const char **)elmc_malloc(sizeof(const char *) * old->field_count, __func__);
+      ElmcValue **values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * old->field_count, __func__);
       if (!names || !values) { free(names); free(values); return elmc_retain(record); }
       for (int i = 0; i < old->field_count; i++) {
         names[i] = old->field_names[i];
@@ -1610,14 +1777,14 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures) {
-      ElmcClosure *clo = (ElmcClosure *)malloc(sizeof(ElmcClosure));
+      ElmcClosure *clo = (ElmcClosure *)elmc_malloc(sizeof(ElmcClosure), __func__);
       if (!clo) return NULL;
       clo->fn = fn;
       clo->arity = arity;
       clo->capture_count = capture_count;
       clo->captures = NULL;
       if (capture_count > 0) {
-        clo->captures = (ElmcValue **)malloc(sizeof(ElmcValue *) * capture_count);
+        clo->captures = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * capture_count, __func__);
         if (!clo->captures) { free(clo); return NULL; }
         for (int i = 0; i < capture_count; i++) {
           clo->captures[i] = elmc_retain(captures[i]);
@@ -2218,6 +2385,22 @@ defmodule Elmc.Runtime.Generator do
       return elmc_retain(default_val);
     }
 
+    elmc_int_t elmc_maybe_with_default_int(elmc_int_t default_val, ElmcValue *maybe) {
+      if (!maybe) return default_val;
+      if (maybe->tag == ELMC_TAG_MAYBE) {
+        ElmcMaybe *m = (ElmcMaybe *)maybe->payload;
+        if (m && m->is_just && m->value) return elmc_as_int(m->value);
+        return default_val;
+      }
+      if (maybe->tag == ELMC_TAG_TUPLE2 && maybe->payload) {
+        ElmcTuple2 *pair = (ElmcTuple2 *)maybe->payload;
+        if (pair->first && elmc_as_int(pair->first) == 1 && pair->second) {
+          return elmc_as_int(pair->second);
+        }
+      }
+      return default_val;
+    }
+
     ElmcValue *elmc_maybe_map(ElmcValue *f, ElmcValue *maybe) {
       if (!maybe || maybe->tag != ELMC_TAG_MAYBE) return elmc_maybe_nothing();
       ElmcMaybe *m = (ElmcMaybe *)maybe->payload;
@@ -2314,40 +2497,40 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_reverse(ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       size_t len = strlen(src);
-      char *buf = (char *)malloc(len + 1);
-      if (!buf) return elmc_new_string("");
+      char *buf = (char *)elmc_malloc(len + 1, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
       for (size_t i = 0; i < len; i++) {
         buf[i] = src[len - 1 - i];
       }
       buf[len] = '\\0';
       ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
-      if (!out) { free(buf); return elmc_new_string(""); }
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
       return out;
     }
 
     ElmcValue *elmc_string_repeat(ElmcValue *n, ElmcValue *s) {
       int64_t count = elmc_as_int(n);
-      if (count <= 0 || !s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (count <= 0 || !s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       size_t slen = strlen(src);
       size_t total = slen * (size_t)count;
-      char *buf = (char *)malloc(total + 1);
-      if (!buf) return elmc_new_string("");
+      char *buf = (char *)elmc_malloc(total + 1, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
       for (int64_t i = 0; i < count; i++) {
         memcpy(buf + i * slen, src, slen);
       }
       buf[total] = '\\0';
       ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
-      if (!out) { free(buf); return elmc_new_string(""); }
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
       return out;
     }
 
     ElmcValue *elmc_string_replace(ElmcValue *old_s, ElmcValue *new_s, ElmcValue *s) {
       (void)old_s; (void)new_s;
-      if (!s || s->tag != ELMC_TAG_STRING) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING) return &ELMC_EMPTY_STRING;
       return elmc_retain(s);
     }
 
@@ -2467,39 +2650,39 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_to_upper(ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       size_t len = strlen(src);
-      char *buf = (char *)malloc(len + 1);
-      if (!buf) return elmc_new_string("");
+      char *buf = (char *)elmc_malloc(len + 1, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
       for (size_t i = 0; i < len; i++) {
         char c = src[i];
         buf[i] = (c >= 'a' && c <= 'z') ? (c - 32) : c;
       }
       buf[len] = '\\0';
       ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
-      if (!out) { free(buf); return elmc_new_string(""); }
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
       return out;
     }
 
     ElmcValue *elmc_string_to_lower(ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       size_t len = strlen(src);
-      char *buf = (char *)malloc(len + 1);
-      if (!buf) return elmc_new_string("");
+      char *buf = (char *)elmc_malloc(len + 1, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
       for (size_t i = 0; i < len; i++) {
         char c = src[i];
         buf[i] = (c >= 'A' && c <= 'Z') ? (c + 32) : c;
       }
       buf[len] = '\\0';
       ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
-      if (!out) { free(buf); return elmc_new_string(""); }
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
       return out;
     }
 
     ElmcValue *elmc_string_trim(ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       size_t len = strlen(src);
       size_t start = 0;
@@ -2507,17 +2690,17 @@ defmodule Elmc.Runtime.Generator do
       size_t end = len;
       while (end > start && (src[end-1] == ' ' || src[end-1] == '\\t' || src[end-1] == '\\n' || src[end-1] == '\\r')) end--;
       size_t new_len = end - start;
-      char *buf = (char *)malloc(new_len + 1);
-      if (!buf) return elmc_new_string("");
+      char *buf = (char *)elmc_malloc(new_len + 1, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
       memcpy(buf, src + start, new_len);
       buf[new_len] = '\\0';
       ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
-      if (!out) { free(buf); return elmc_new_string(""); }
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
       return out;
     }
 
     ElmcValue *elmc_string_trim_left(ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       size_t len = strlen(src);
       size_t start = 0;
@@ -2526,16 +2709,16 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_trim_right(ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       size_t len = strlen(src);
       while (len > 0 && (src[len-1] == ' ' || src[len-1] == '\\t' || src[len-1] == '\\n' || src[len-1] == '\\r')) len--;
-      char *buf = (char *)malloc(len + 1);
-      if (!buf) return elmc_new_string("");
+      char *buf = (char *)elmc_malloc(len + 1, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
       memcpy(buf, src, len);
       buf[len] = '\\0';
       ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
-      if (!out) { free(buf); return elmc_new_string(""); }
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
       return out;
     }
 
@@ -2603,7 +2786,7 @@ defmodule Elmc.Runtime.Generator do
             break;
           }
           size_t chunk = (size_t)(found - p);
-          char *buf = (char *)malloc(chunk + 1);
+          char *buf = (char *)elmc_malloc(chunk + 1, __func__);
           if (buf) {
             memcpy(buf, p, chunk);
             buf[chunk] = '\\0';
@@ -2626,7 +2809,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_join(ElmcValue *sep, ElmcValue *list) {
-      if (!list || list->tag != ELMC_TAG_LIST || list->payload == NULL) return elmc_new_string("");
+      if (!list || list->tag != ELMC_TAG_LIST || list->payload == NULL) return &ELMC_EMPTY_STRING;
       const char *sp = (sep && sep->tag == ELMC_TAG_STRING && sep->payload) ? (const char *)sep->payload : "";
       size_t splen = strlen(sp);
       /* First pass: compute total length */
@@ -2642,8 +2825,8 @@ defmodule Elmc.Runtime.Generator do
         cursor = node->tail;
       }
       if (count > 1) total += splen * (size_t)(count - 1);
-      char *buf = (char *)malloc(total + 1);
-      if (!buf) return elmc_new_string("");
+      char *buf = (char *)elmc_malloc(total + 1, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
       size_t pos = 0;
       int idx = 0;
       cursor = list;
@@ -2663,7 +2846,7 @@ defmodule Elmc.Runtime.Generator do
       }
       buf[pos] = '\\0';
       ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
-      if (!out) { free(buf); return elmc_new_string(""); }
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
       return out;
     }
 
@@ -2682,7 +2865,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_slice(ElmcValue *start, ElmcValue *end_idx, ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       int64_t len = (int64_t)strlen(src);
       int64_t st = elmc_as_int(start);
@@ -2693,14 +2876,14 @@ defmodule Elmc.Runtime.Generator do
       if (en < 0) en = 0;
       if (st > len) st = len;
       if (en > len) en = len;
-      if (en <= st) return elmc_new_string("");
+      if (en <= st) return &ELMC_EMPTY_STRING;
       size_t new_len = (size_t)(en - st);
-      char *buf = (char *)malloc(new_len + 1);
-      if (!buf) return elmc_new_string("");
+      char *buf = (char *)elmc_malloc(new_len + 1, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
       memcpy(buf, src + st, new_len);
       buf[new_len] = '\\0';
       ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
-      if (!out) { free(buf); return elmc_new_string(""); }
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
       return out;
     }
 
@@ -2712,7 +2895,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_right(ElmcValue *n, ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       int64_t len = (int64_t)strlen((const char *)s->payload);
       int64_t count = elmc_as_int(n);
       int64_t st = len - count;
@@ -2726,7 +2909,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_drop_left(ElmcValue *n, ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       int64_t len = (int64_t)strlen((const char *)s->payload);
       ElmcValue *end_v = elmc_new_int(len);
       ElmcValue *out = elmc_string_slice(n, end_v, s);
@@ -2735,7 +2918,7 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_drop_right(ElmcValue *n, ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       int64_t len = (int64_t)strlen((const char *)s->payload);
       int64_t count = elmc_as_int(n);
       int64_t en = len - count;
@@ -2791,8 +2974,8 @@ defmodule Elmc.Runtime.Generator do
         count++;
         cursor = ((ElmcCons *)cursor->payload)->tail;
       }
-      char *buf = (char *)malloc((size_t)count + 1);
-      if (!buf) return elmc_new_string("");
+      char *buf = (char *)elmc_malloc((size_t)count + 1, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
       int64_t idx = 0;
       cursor = list;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
@@ -2802,7 +2985,7 @@ defmodule Elmc.Runtime.Generator do
       }
       buf[count] = '\\0';
       ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
-      if (!out) { free(buf); return elmc_new_string(""); }
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
       return out;
     }
 
@@ -2816,14 +2999,14 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_pad_left(ElmcValue *n, ElmcValue *ch, ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       int64_t target = elmc_as_int(n);
       int64_t cur_len = (int64_t)strlen(src);
       if (cur_len >= target) return elmc_retain(s);
       int64_t pad_count = target - cur_len;
       char pad_char = (char)elmc_as_int(ch);
-      char *buf = (char *)malloc((size_t)target + 1);
+      char *buf = (char *)elmc_malloc((size_t)target + 1, __func__);
       if (!buf) return elmc_retain(s);
       for (int64_t i = 0; i < pad_count; i++) buf[i] = pad_char;
       memcpy(buf + pad_count, src, (size_t)cur_len);
@@ -2834,14 +3017,14 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_pad_right(ElmcValue *n, ElmcValue *ch, ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       int64_t target = elmc_as_int(n);
       int64_t cur_len = (int64_t)strlen(src);
       if (cur_len >= target) return elmc_retain(s);
       int64_t pad_count = target - cur_len;
       char pad_char = (char)elmc_as_int(ch);
-      char *buf = (char *)malloc((size_t)target + 1);
+      char *buf = (char *)elmc_malloc((size_t)target + 1, __func__);
       if (!buf) return elmc_retain(s);
       memcpy(buf, src, (size_t)cur_len);
       for (int64_t i = 0; i < pad_count; i++) buf[cur_len + i] = pad_char;
@@ -2852,11 +3035,11 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_string_map(ElmcValue *f, ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       size_t len = strlen(src);
-      char *buf = (char *)malloc(len + 1);
-      if (!buf) return elmc_new_string("");
+      char *buf = (char *)elmc_malloc(len + 1, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
       for (size_t i = 0; i < len; i++) {
         ElmcValue *ch = elmc_new_int((int64_t)(unsigned char)src[i]);
         ElmcValue *args[1] = { ch };
@@ -2867,16 +3050,16 @@ defmodule Elmc.Runtime.Generator do
       }
       buf[len] = '\\0';
       ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
-      if (!out) { free(buf); return elmc_new_string(""); }
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
       return out;
     }
 
     ElmcValue *elmc_string_filter(ElmcValue *f, ElmcValue *s) {
-      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return elmc_new_string("");
+      if (!s || s->tag != ELMC_TAG_STRING || !s->payload) return &ELMC_EMPTY_STRING;
       const char *src = (const char *)s->payload;
       size_t len = strlen(src);
-      char *buf = (char *)malloc(len + 1);
-      if (!buf) return elmc_new_string("");
+      char *buf = (char *)elmc_malloc(len + 1, __func__);
+      if (!buf) return &ELMC_EMPTY_STRING;
       size_t out_len = 0;
       for (size_t i = 0; i < len; i++) {
         ElmcValue *ch = elmc_new_int((int64_t)(unsigned char)src[i]);
@@ -2888,7 +3071,7 @@ defmodule Elmc.Runtime.Generator do
       }
       buf[out_len] = '\\0';
       ElmcValue *out = elmc_alloc(ELMC_TAG_STRING, buf);
-      if (!out) { free(buf); return elmc_new_string(""); }
+      if (!out) { free(buf); return &ELMC_EMPTY_STRING; }
       return out;
     }
 
@@ -3065,7 +3248,7 @@ defmodule Elmc.Runtime.Generator do
       return elmc_new_float(guess);
     }
 
-    static double elmc_basics_sqrt_double(double x) {
+    double elmc_basics_sqrt_double(double x) {
       ElmcValue stack = { .rc = 1, .tag = ELMC_TAG_FLOAT, .payload = &x };
       ElmcValue *out = elmc_basics_sqrt(&stack);
       double result = elmc_as_float(out);
@@ -3112,7 +3295,7 @@ defmodule Elmc.Runtime.Generator do
       return x;
     }
 
-    static double elmc_basics_sin_double(double x) {
+    double elmc_basics_sin_double(double x) {
       const double pi = 3.14159265358979323846;
       const double half_pi = 1.57079632679489661923;
       x = elmc_basics_normalize_radians(x);
@@ -3130,14 +3313,21 @@ defmodule Elmc.Runtime.Generator do
       return elmc_new_float(elmc_basics_sin_double(elmc_as_float(x)));
     }
 
-    ElmcValue *elmc_basics_cos(ElmcValue *x) {
+    double elmc_basics_cos_double(double x) {
       const double half_pi = 1.57079632679489661923;
-      return elmc_new_float(elmc_basics_sin_double(elmc_as_float(x) + half_pi));
+      return elmc_basics_sin_double(x + half_pi);
+    }
+
+    ElmcValue *elmc_basics_cos(ElmcValue *x) {
+      return elmc_new_float(elmc_basics_cos_double(elmc_as_float(x)));
+    }
+
+    double elmc_basics_tan_double(double x) {
+      return elmc_basics_sin_double(x) / elmc_basics_cos_double(x);
     }
 
     ElmcValue *elmc_basics_tan(ElmcValue *x) {
-      double v = elmc_as_float(x);
-      return elmc_new_float(elmc_basics_sin_double(v) / elmc_basics_sin_double(v + 1.57079632679489661923));
+      return elmc_new_float(elmc_basics_tan_double(elmc_as_float(x)));
     }
 
     static double elmc_basics_atan_double(double x) {
@@ -3341,8 +3531,8 @@ defmodule Elmc.Runtime.Generator do
         if (cmp > 0) return elmc_new_int(1);
         return elmc_int_zero();
       }
-      int64_t ia = elmc_as_int(a);
-      int64_t ib = elmc_as_int(b);
+      elmc_int_t ia = elmc_as_int(a);
+      elmc_int_t ib = elmc_as_int(b);
       if (ia < ib) return elmc_new_int(-1);
       if (ia > ib) return elmc_new_int(1);
       return elmc_int_zero();
@@ -4001,7 +4191,9 @@ defmodule Elmc.Runtime.Generator do
       if (value->rc == 0) return;
       value->rc -= 1;
       if (value->rc > 0) return;
-      if (value->tag == ELMC_TAG_LIST && value->payload != NULL) {
+      if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) {
+        /* Scalar values live inline in ElmcValue, not in heap payloads. */
+      } else if (value->tag == ELMC_TAG_LIST && value->payload != NULL) {
         ElmcCons *node = (ElmcCons *)value->payload;
         elmc_release(node->head);
         elmc_release(node->tail);
@@ -4030,7 +4222,9 @@ defmodule Elmc.Runtime.Generator do
         }
         free(clo->captures);
       }
-      free(value->payload);
+      if (value->tag != ELMC_TAG_INT && value->tag != ELMC_TAG_BOOL) {
+        free(value->payload);
+      }
       free(value);
       ELMC_RELEASED += 1;
     }
