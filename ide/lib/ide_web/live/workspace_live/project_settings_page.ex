@@ -81,6 +81,54 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
                 placeholder="fitness, minimal, utility"
               />
             </label>
+            <fieldset class="text-xs md:col-span-2">
+              <legend class="mb-1 block font-medium text-zinc-700">Target platforms</legend>
+              <p class="mb-2 text-zinc-600">
+                Select which Pebble platforms are included in release builds and distributable metadata.
+              </p>
+              <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <label
+                  :for={platform <- target_platform_options()}
+                  class="flex items-start gap-2 rounded border border-zinc-200 bg-zinc-50 p-2"
+                >
+                  <input
+                    type="checkbox"
+                    name="project_settings[target_platforms][]"
+                    value={platform.id}
+                    checked={platform.id in (@project_settings_form["target_platforms"].value || [])}
+                    class="mt-0.5"
+                  />
+                  <span>
+                    <span class="block font-medium text-zinc-800">{platform.label}</span>
+                    <span class="block text-zinc-500">{platform.help}</span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+            <fieldset class="text-xs md:col-span-2">
+              <legend class="mb-1 block font-medium text-zinc-700">Capabilities</legend>
+              <p class="mb-2 text-zinc-600">
+                Declare capabilities that appear in the Pebble package metadata.
+              </p>
+              <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <label
+                  :for={capability <- capability_options()}
+                  class="flex items-start gap-2 rounded border border-zinc-200 bg-zinc-50 p-2"
+                >
+                  <input
+                    type="checkbox"
+                    name="project_settings[capabilities][]"
+                    value={capability.id}
+                    checked={capability.id in (@project_settings_form["capabilities"].value || [])}
+                    class="mt-0.5"
+                  />
+                  <span>
+                    <span class="block font-medium text-zinc-800">{capability.label}</span>
+                    <span class="block text-zinc-500">{capability.help}</span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
           </div>
         </section>
 
@@ -152,4 +200,36 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
     do: "rounded bg-blue-100 px-3 py-1.5 text-blue-800"
 
   defp settings_tab_class(_active, _tab), do: "rounded bg-zinc-100 px-3 py-1.5 text-zinc-700"
+
+  defp target_platform_options do
+    [
+      %{id: "aplite", label: "Build Aplite", help: "eg OG Pebble and Pebble Steel."},
+      %{id: "basalt", label: "Build Basalt", help: "eg Pebble Time/Time Steel."},
+      %{id: "chalk", label: "Build Chalk", help: "eg Pebble Time Round."},
+      %{id: "diorite", label: "Build Diorite", help: "eg Pebble 2."},
+      %{id: "emery", label: "Build Emery", help: "eg Pebble Time 2."},
+      %{id: "flint", label: "Build Flint", help: "eg Pebble 2 Duo."},
+      %{id: "gabbro", label: "Build Gabbro", help: "eg Pebble Round 2."}
+    ]
+  end
+
+  defp capability_options do
+    [
+      %{
+        id: "location",
+        label: "Uses location",
+        help: "Declares phone-side location access for the app."
+      },
+      %{
+        id: "configurable",
+        label: "Configurable",
+        help: "Shows a settings gear in the Pebble mobile app."
+      },
+      %{
+        id: "health",
+        label: "Uses health",
+        help: "Declares access to Pebble Health data."
+      }
+    ]
+  end
 end

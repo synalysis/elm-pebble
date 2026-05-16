@@ -180,20 +180,12 @@ defmodule Ide.ProjectTemplates do
   defp seed_watch_only_workspace(workspace_path, watchface_template_dir) do
     watch_root = Path.join(workspace_path, "watch")
 
-    direct_deps =
-      %{
-        "elm/core" => "1.0.5",
-        "elm/json" => "1.1.3",
-        "elm/random" => "1.0.0",
-        "elm/time" => "1.0.0"
-      }
-
     elm_json = %{
       "type" => "application",
       "source-directories" => watch_source_directories(watchface_template_dir),
       "elm-version" => "0.19.1",
       "dependencies" => %{
-        "direct" => direct_deps,
+        "direct" => watch_direct_dependencies(watchface_template_dir),
         "indirect" => %{}
       },
       "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
@@ -228,6 +220,21 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
+  @spec watch_direct_dependencies(String.t()) :: map()
+  defp watch_direct_dependencies(template_dir) do
+    deps = %{
+      "elm/core" => "1.0.5",
+      "elm/json" => "1.1.3",
+      "elm/time" => "1.0.0"
+    }
+
+    if template_dir == "game_2048" do
+      Map.put(deps, "elm/random", "1.0.0")
+    else
+      deps
+    end
+  end
+
   @spec watch_source_directories(term()) :: [String.t()]
   defp watch_source_directories(template_dir)
        when template_dir in ["watchface_tutorial_complete", "watchface_yes"] do
@@ -256,7 +263,6 @@ defmodule Ide.ProjectTemplates do
         "direct" => %{
           "elm/core" => "1.0.5",
           "elm/json" => "1.1.3",
-          "elm/random" => "1.0.0",
           "elm/time" => "1.0.0"
         },
         "indirect" => %{}

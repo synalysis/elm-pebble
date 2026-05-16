@@ -61,8 +61,15 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "#define ELM_PEBBLE_RESOURCE_ID_MISSING UINT32_MAX"
     assert source =~ "default: return ELM_PEBBLE_RESOURCE_ID_MISSING;"
     assert source =~ "elm_pebble_font_resource_height"
+    assert source =~ "\"characterRegex\""
+    assert source =~ "\"trackingAdjust\""
+    assert source =~ "\"targetPlatforms\""
+    assert source =~ "maybe_put_compatibility"
+    assert source =~ "maybe_put_capabilities"
+    assert source =~ ~s(["location", "configurable", "health"])
     assert template =~ "resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING"
     assert template =~ "font_from_id_for_height"
+    refute template =~ "resource_height > requested_height"
     assert template =~ "DRAW_HEAP_CHUNK_CAPACITY"
     assert template =~ "elmc_pebble_scene_commands_from"
     refute template =~ "realloc(s_draw_cmds"
@@ -152,6 +159,48 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ ~S|["install", "--emulator", emulator_target]|
     assert source =~ ~S|--throttle=#{throttle}|
     assert source =~ "ensure_successful_wipe"
+  end
+
+  test "external emulator controls dispatch Pebble SDK emu commands" do
+    previous_config = Application.get_env(:ide, Ide.PebbleToolchain, [])
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_pebble_toolchain_controls_test_#{System.unique_integer([:positive])}"
+      )
+
+    fake_pebble = Path.join(root, "fake_pebble.sh")
+    output = Path.join(root, "args.txt")
+
+    File.mkdir_p!(root)
+
+    File.write!(fake_pebble, """
+    #!/usr/bin/env bash
+    printf '%s\n' "$@" >> #{output}
+    """)
+
+    File.chmod!(fake_pebble, 0o755)
+
+    Application.put_env(
+      :ide,
+      Ide.PebbleToolchain,
+      Keyword.put(previous_config, :pebble_bin, fake_pebble)
+    )
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.PebbleToolchain, previous_config)
+      File.rm_rf(root)
+    end)
+
+    assert {:ok, %{status: :ok}} =
+             PebbleToolchain.run_emulator_control("test", "chalk", %{
+               "control" => "battery",
+               "percent" => "87",
+               "charging" => "true"
+             })
+
+    assert File.read!(output) =~ "emu-battery\n--emulator\nchalk\n--percent\n87\n--charging\n"
   end
 
   test "emulator commands expose Linux bzip2 compatibility library path" do

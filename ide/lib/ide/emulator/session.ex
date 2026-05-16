@@ -93,13 +93,19 @@ defmodule Ide.Emulator.Session do
   defp do_install(pid, retries_left) do
     with {:ok, context} <- GenServer.call(pid, :install_context, 5_000) do
       # region agent log
-      Ide.AgentDebugLog.log("initial", "H2,H3,H6", "session.ex:do_install:context", "router install context acquired", %{
-        platform: context.platform,
-        artifact_path: context.artifact_path,
-        artifact_bytes: file_size(context.artifact_path),
-        protocol_router_alive: alive?(context.protocol_router_pid),
-        retries_left: retries_left
-      })
+      Ide.AgentDebugLog.log(
+        "initial",
+        "H2,H3,H6",
+        "session.ex:do_install:context",
+        "router install context acquired",
+        %{
+          platform: context.platform,
+          artifact_path: context.artifact_path,
+          artifact_bytes: file_size(context.artifact_path),
+          protocol_router_alive: alive?(context.protocol_router_pid),
+          retries_left: retries_left
+        }
+      )
 
       # endregion
       case install_with_router(context) do
@@ -107,23 +113,35 @@ defmodule Ide.Emulator.Session do
           console_tail = capture_console_after_install(context.console_port)
 
           # region agent log
-          Ide.AgentDebugLog.log("initial", "H3,H6,H16,H17,H18", "session.ex:do_install:ok", "router install succeeded", %{
-            platform: context.platform,
-            uuid: Map.get(result, :uuid),
-            parts: Map.get(result, :parts),
-            protocol_router_alive: alive?(context.protocol_router_pid),
-            console_tail: console_tail
-          })
+          Ide.AgentDebugLog.log(
+            "initial",
+            "H3,H6,H16,H17,H18",
+            "session.ex:do_install:ok",
+            "router install succeeded",
+            %{
+              platform: context.platform,
+              uuid: Map.get(result, :uuid),
+              parts: Map.get(result, :parts),
+              protocol_router_alive: alive?(context.protocol_router_pid),
+              console_tail: console_tail
+            }
+          )
 
           # endregion
           {:ok, result}
 
         {:error, reason} = error ->
           # region agent log
-          Ide.AgentDebugLog.log("initial", "H3,H6", "session.ex:do_install:error", "router install failed", %{
-            platform: context.platform,
-            reason: inspect(reason)
-          })
+          Ide.AgentDebugLog.log(
+            "initial",
+            "H3,H6",
+            "session.ex:do_install:error",
+            "router install failed",
+            %{
+              platform: context.platform,
+              reason: inspect(reason)
+            }
+          )
 
           # endregion
           maybe_retry_install(pid, reason, retries_left, error)
@@ -207,6 +225,7 @@ defmodule Ide.Emulator.Session do
   end
 
   defp retryable_install_error?({:putbytes_failed, _meta, :timeout}), do: true
+  defp retryable_install_error?({:putbytes_failed, _meta, {:timeout, _observed}}), do: true
 
   defp retryable_install_error?(_reason), do: false
 
@@ -313,29 +332,41 @@ defmodule Ide.Emulator.Session do
          {:ok, state} <- maybe_start_protocol_router(state) do
       schedule_idle_check(state)
       # region agent log
-      Ide.AgentDebugLog.log("initial", "H2", "session.ex:init:ok", "emulator session initialized", %{
-        id: state.id,
-        project_slug: state.project_slug,
-        platform: state.platform,
-        artifact_path: state.artifact_path,
-        artifact_bytes: file_size(state.artifact_path),
-        app_uuid: state.app_uuid,
-        has_phone_companion: state.has_phone_companion,
-        bt_port: state.bt_port,
-        phone_ws_port: state.phone_ws_port,
-        qemu_alive: alive?(state.qemu_pid),
-        protocol_router_alive: alive?(state.protocol_router_pid)
-      })
+      Ide.AgentDebugLog.log(
+        "initial",
+        "H2",
+        "session.ex:init:ok",
+        "emulator session initialized",
+        %{
+          id: state.id,
+          project_slug: state.project_slug,
+          platform: state.platform,
+          artifact_path: state.artifact_path,
+          artifact_bytes: file_size(state.artifact_path),
+          app_uuid: state.app_uuid,
+          has_phone_companion: state.has_phone_companion,
+          bt_port: state.bt_port,
+          phone_ws_port: state.phone_ws_port,
+          qemu_alive: alive?(state.qemu_pid),
+          protocol_router_alive: alive?(state.protocol_router_pid)
+        }
+      )
 
       # endregion
       {:ok, state}
     else
       {:error, reason} ->
         # region agent log
-        Ide.AgentDebugLog.log("initial", "H2", "session.ex:init:error", "emulator session init failed", %{
-          platform: platform,
-          reason: inspect(reason)
-        })
+        Ide.AgentDebugLog.log(
+          "initial",
+          "H2",
+          "session.ex:init:error",
+          "emulator session init failed",
+          %{
+            platform: platform,
+            reason: inspect(reason)
+          }
+        )
 
         # endregion
         {:stop, reason}
@@ -389,23 +420,35 @@ defmodule Ide.Emulator.Session do
     case maybe_start_pypkjs(state) do
       {:ok, state} ->
         # region agent log
-        Ide.AgentDebugLog.log("initial", "H5", "session.ex:phone_port:pypkjs_ok", "pypkjs started for phone websocket", %{
-          id: state.id,
-          platform: state.platform,
-          phone_ws_port: state.phone_ws_port,
-          pypkjs_alive: alive?(state.pypkjs_pid)
-        })
+        Ide.AgentDebugLog.log(
+          "initial",
+          "H5",
+          "session.ex:phone_port:pypkjs_ok",
+          "pypkjs started for phone websocket",
+          %{
+            id: state.id,
+            platform: state.platform,
+            phone_ws_port: state.phone_ws_port,
+            pypkjs_alive: alive?(state.pypkjs_pid)
+          }
+        )
 
         # endregion
         {:reply, state.phone_ws_port, state}
 
       {:error, reason} ->
         # region agent log
-        Ide.AgentDebugLog.log("initial", "H5", "session.ex:phone_port:pypkjs_error", "pypkjs failed to start", %{
-          id: state.id,
-          platform: state.platform,
-          reason: inspect(reason)
-        })
+        Ide.AgentDebugLog.log(
+          "initial",
+          "H5",
+          "session.ex:phone_port:pypkjs_error",
+          "pypkjs failed to start",
+          %{
+            id: state.id,
+            platform: state.platform,
+            reason: inspect(reason)
+          }
+        )
 
         # endregion
         {:reply, {:error, reason}, state}
@@ -425,23 +468,35 @@ defmodule Ide.Emulator.Session do
 
   def handle_call(:reset_for_install, _from, state) do
     # region agent log
-    Ide.AgentDebugLog.log("initial", "H12", "session.ex:reset_for_install:start", "resetting embedded emulator before install", %{
-      id: state.id,
-      platform: state.platform,
-      spi_image_path: state.spi_image_path
-    })
+    Ide.AgentDebugLog.log(
+      "initial",
+      "H12",
+      "session.ex:reset_for_install:start",
+      "resetting embedded emulator before install",
+      %{
+        id: state.id,
+        platform: state.platform,
+        spi_image_path: state.spi_image_path
+      }
+    )
 
     # endregion
 
     case reset_for_install(state) do
       {:ok, state} ->
         # region agent log
-        Ide.AgentDebugLog.log("initial", "H12", "session.ex:reset_for_install:ok", "embedded emulator reset before install", %{
-          id: state.id,
-          platform: state.platform,
-          qemu_alive: alive?(state.qemu_pid),
-          protocol_router_alive: alive?(state.protocol_router_pid)
-        })
+        Ide.AgentDebugLog.log(
+          "initial",
+          "H12",
+          "session.ex:reset_for_install:ok",
+          "embedded emulator reset before install",
+          %{
+            id: state.id,
+            platform: state.platform,
+            qemu_alive: alive?(state.qemu_pid),
+            protocol_router_alive: alive?(state.protocol_router_pid)
+          }
+        )
 
         # endregion
         {:reply, :ok, state}
@@ -530,12 +585,18 @@ defmodule Ide.Emulator.Session do
 
       role ->
         # region agent log
-        Ide.AgentDebugLog.log("initial", "H4", "session.ex:child_exit:emulator", "emulator child exited", %{
-          id: state.id,
-          platform: state.platform,
-          role: inspect(role),
-          reason: inspect(reason)
-        })
+        Ide.AgentDebugLog.log(
+          "initial",
+          "H4",
+          "session.ex:child_exit:emulator",
+          "emulator child exited",
+          %{
+            id: state.id,
+            platform: state.platform,
+            role: inspect(role),
+            reason: inspect(reason)
+          }
+        )
 
         # endregion
         Logger.debug("embedded emulator #{role} exited: #{inspect(reason)}")
@@ -952,14 +1013,20 @@ defmodule Ide.Emulator.Session do
 
     with :ok <- File.mkdir_p(Path.dirname(path)) do
       # region agent log
-      Ide.AgentDebugLog.log("initial", "H24,H27", "session.ex:make_spi_image", "creating fresh emulator flash image for launch", %{
-        project_slug: project_slug,
-        platform: platform,
-        path: path,
-        had_existing_image: File.exists?(path),
-        has_raw_source: File.exists?(raw),
-        has_bz2_source: File.exists?(bz2)
-      })
+      Ide.AgentDebugLog.log(
+        "initial",
+        "H24,H27",
+        "session.ex:make_spi_image",
+        "creating fresh emulator flash image for launch",
+        %{
+          project_slug: project_slug,
+          platform: platform,
+          path: path,
+          had_existing_image: File.exists?(path),
+          has_raw_source: File.exists?(raw),
+          has_bz2_source: File.exists?(bz2)
+        }
+      )
 
       # endregion
 
@@ -977,7 +1044,7 @@ defmodule Ide.Emulator.Session do
         true ->
           File.touch(path)
           {:ok, path}
-        end
+      end
     end
   end
 

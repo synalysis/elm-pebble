@@ -51,6 +51,16 @@ export ELM_PEBBLE_PYPKJS_BIN="${ELM_PEBBLE_PYPKJS_BIN:-/opt/pipx/venvs/pebble-to
 export ELM_PEBBLE_QEMU_IMAGE_ROOT="${ELM_PEBBLE_QEMU_IMAGE_ROOT:-$DATA_ROOT/.pebble-sdk/SDKs/current/sdk-core/pebble}"
 export ELM_PEBBLE_QEMU_DATA_ROOT="${ELM_PEBBLE_QEMU_DATA_ROOT:-/usr/share/qemu}"
 export ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES="${ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES:-1}"
+export ELM_PEBBLE_WASM_EMULATOR_ROOT="${ELM_PEBBLE_WASM_EMULATOR_ROOT:-$DATA_ROOT/wasm_emulator}"
+
+if [ "${ELM_PEBBLE_WASM_BUILD_ON_START:-0}" = "1" ]; then
+  if [ -x "/workspace/scripts/build_wasm_emulator_runtime.sh" ]; then
+    /workspace/scripts/build_wasm_emulator_runtime.sh || true
+  else
+    echo "ELM_PEBBLE_WASM_BUILD_ON_START=1 requested, but /workspace/scripts/build_wasm_emulator_runtime.sh is not mounted."
+    echo "Use: docker compose run --rm wasm-emulator-builder"
+  fi
+fi
 
 /opt/ide/bin/ide eval "Ide.Release.migrate"
 exec /opt/ide/bin/ide start

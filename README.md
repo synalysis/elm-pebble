@@ -52,6 +52,41 @@ The embedded emulator uses these container paths by default:
 If QEMU flash images are not present in the active SDK, the IDE downloads them
 on demand into `ELM_PEBBLE_QEMU_IMAGE_ROOT`.
 
+### Browser WASM Emulator Runtime
+
+The browser WASM emulator runtime is built on demand and stored in the same
+persistent Docker volume as the IDE. Build it manually with:
+
+```bash
+docker compose run --rm wasm-emulator-builder
+docker compose restart elm-pebble-ide
+```
+
+To run the builder automatically as part of `docker compose up`, enable the
+profile:
+
+```bash
+COMPOSE_PROFILES=wasm-emulator docker compose up -d
+```
+
+The builder downloads QEMU 10.1 source into the volume, clones
+`ericmigi/pebble-qemu-wasm`, applies the local control-bridge patch, builds
+`qemu-system-arm.js`, `qemu-system-arm.wasm`, and
+`qemu-system-arm.worker.js`, then copies all available Pebble SDK QEMU firmware
+images from the active SDK into per-platform directories under
+`/var/lib/ide/wasm_emulator/firmware/sdk`.
+
+By default the builder uses `emery` as the legacy single-image fallback. Override
+that fallback with:
+
+```bash
+PEBBLE_WASM_FIRMWARE_PLATFORM=basalt docker compose run --rm wasm-emulator-builder
+```
+
+The IDE serves WASM assets from `ELM_PEBBLE_WASM_EMULATOR_ROOT`, which defaults
+to `/var/lib/ide/wasm_emulator` in Docker. Firmware binaries and built WASM
+artifacts are not committed to the repository.
+
 To skip automatic SDK installation/activation:
 
 ```bash

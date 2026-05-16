@@ -151,6 +151,13 @@ defmodule Ide.PackagesTest do
     assert compatibility.status == "blocked"
     assert compatibility.reason_code == "blocked_runtime_family"
 
+    assert {:ok, %{compatibility: phone_compatibility}} =
+             Packages.package_details("elm/http", source: "mock", platform_target: :phone)
+
+    assert phone_compatibility.status == "supported"
+
+    assert Packages.compatibility_for_package("elm/core").status == "supported"
+
     assert {:ok, %{versions: ["2.0.0"]}} = Packages.versions("elm/http")
     assert {:ok, %{readme: "# elm/http latest"}} = Packages.readme("elm/http")
   end
@@ -163,6 +170,7 @@ defmodule Ide.PackagesTest do
 
     assert total == 1
     assert pkg.name == "elm/html"
+    assert pkg.compatibility.status == "supported"
   end
 
   test "add_to_project writes dependency to elm.json" do

@@ -5,6 +5,7 @@ defmodule IdeWeb.WorkspaceLive do
   alias Ide.Formatter.EditPatch
   alias Ide.GitHub.Push, as: GitHubPush
   alias Ide.Emulator
+  alias Ide.PebblePreferences
   alias Ide.PebbleToolchain
   alias Ide.Packages
   alias Ide.PublishManifest
@@ -62,6 +63,7 @@ defmodule IdeWeb.WorkspaceLive do
         _ = Projects.ensure_bitmap_generated(project)
         tree = Projects.list_source_tree(project)
         bitmap_resources = load_bitmap_resources(project)
+        font_sources = load_font_sources(project)
         font_resources = load_font_resources(project)
         screenshots = load_screenshots(project)
         screenshot_groups = group_screenshots(screenshots)
@@ -69,15 +71,18 @@ defmodule IdeWeb.WorkspaceLive do
         publish_readiness = PublishFlow.publish_readiness(screenshots)
 
         selected_emulator_target = project_emulator_target(project)
+        emulator_mode = project_emulator_mode(project)
 
         project_data = %{
           tree: tree,
           bitmap_resources: bitmap_resources,
+          font_sources: font_sources,
           font_resources: font_resources,
           screenshots: screenshots,
           screenshot_groups: screenshot_groups,
           publish_readiness: publish_readiness,
           selected_emulator_target: selected_emulator_target,
+          emulator_mode: emulator_mode,
           packages_target_root: preferred_packages_target_root(socket, project),
           debugger_timeline_mode: project_debugger_timeline_mode(project)
         }
@@ -507,6 +512,8 @@ defmodule IdeWeb.WorkspaceLive do
                   tab.source_root
                 )
 
+              socket = maybe_regenerate_phone_preferences_after_save(socket, tab)
+
               socket =
                 socket
                 |> update_tab(fn active -> %{active | dirty: false, content: content_to_save} end)
@@ -534,9 +541,8 @@ defmodule IdeWeb.WorkspaceLive do
     project = socket.assigns.project
 
     results =
-      consume_uploaded_entries(socket, :bitmap, fn %{path: path, client_name: client_name},
-                                                   _entry ->
-        case Projects.import_bitmap_resource(project, path, client_name) do
+      consume_uploaded_entries(socket, :bitmap, fn %{path: path}, entry ->
+        case Projects.import_bitmap_resource(project, path, entry.client_name) do
           {:ok, result} -> {:ok, result}
           {:error, reason} -> {:ok, %{error: inspect(reason)}}
         end
@@ -548,6 +554,10 @@ defmodule IdeWeb.WorkspaceLive do
       |> assign(:bitmap_upload_output, bitmap_upload_output(results))
       |> refresh_tree()
 
+    {:noreply, socket}
+  end
+
+  def handle_event("validate-resource-upload", _params, socket) do
     {:noreply, socket}
   end
 
@@ -569,9 +579,8 @@ defmodule IdeWeb.WorkspaceLive do
     project = socket.assigns.project
 
     results =
-      consume_uploaded_entries(socket, :font, fn %{path: path, client_name: client_name},
-                                                 _entry ->
-        case Projects.import_font_resource(project, path, client_name) do
+      consume_uploaded_entries(socket, :font, fn %{path: path}, entry ->
+        case Projects.import_font_resource(project, path, entry.client_name) do
           {:ok, result} -> {:ok, result}
           {:error, reason} -> {:ok, %{error: inspect(reason)}}
         end
@@ -580,10 +589,45 @@ defmodule IdeWeb.WorkspaceLive do
     socket =
       socket
       |> assign(:font_resources, load_font_resources(project))
+      |> assign(:font_sources, load_font_sources(project))
       |> assign(:font_upload_output, font_upload_output(results))
       |> refresh_tree()
 
     {:noreply, socket}
+  end
+
+  def handle_event("add-font-variant", %{"variant" => params}, socket) do
+    project = socket.assigns.project
+
+    case Projects.add_font_variant(project, params) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:font_sources, load_font_sources(project))
+         |> assign(:font_resources, load_font_resources(project))
+         |> refresh_tree()
+         |> put_flash(:info, "Added font identifier.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not add font identifier: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("update-font-variant", %{"ctor" => ctor, "variant" => params}, socket) do
+    project = socket.assigns.project
+
+    case Projects.update_font_variant(project, ctor, params) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:font_sources, load_font_sources(project))
+         |> assign(:font_resources, load_font_resources(project))
+         |> refresh_tree()
+         |> put_flash(:info, "Updated font #{ctor}.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not update font: #{inspect(reason)}")}
+    end
   end
 
   def handle_event("delete-font-resource", %{"ctor" => ctor}, socket) do
@@ -591,12 +635,28 @@ defmodule IdeWeb.WorkspaceLive do
       {:ok, _} ->
         {:noreply,
          socket
+         |> assign(:font_sources, load_font_sources(socket.assigns.project))
          |> assign(:font_resources, load_font_resources(socket.assigns.project))
          |> refresh_tree()
          |> put_flash(:info, "Deleted font #{ctor}.")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not delete font: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("delete-font-source", %{"source-id" => source_id}, socket) do
+    case Projects.delete_font_source(socket.assigns.project, source_id) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:font_sources, load_font_sources(socket.assigns.project))
+         |> assign(:font_resources, load_font_resources(socket.assigns.project))
+         |> refresh_tree()
+         |> put_flash(:info, "Deleted source font.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not delete source font: #{inspect(reason)}")}
     end
   end
 
@@ -1037,6 +1097,31 @@ defmodule IdeWeb.WorkspaceLive do
      end)}
   end
 
+  def handle_event("stop-emulator", _params, socket) do
+    project = socket.assigns.project
+
+    {:noreply,
+     socket
+     |> assign(:emulator_stop_status, :running)
+     |> assign(:emulator_stop_output, nil)
+     |> start_async(:stop_emulator, fn ->
+       PebbleToolchain.stop_emulator(project.slug, force: true)
+     end)}
+  end
+
+  def handle_event("external-emulator-control", params, socket) do
+    project = socket.assigns.project
+    emulator_target = socket.assigns.selected_emulator_target
+
+    {:noreply,
+     socket
+     |> assign(:emulator_stop_status, :running)
+     |> assign(:emulator_stop_output, nil)
+     |> start_async(:external_emulator_control, fn ->
+       PebbleToolchain.run_emulator_control(project.slug, emulator_target, params)
+     end)}
+  end
+
   def handle_event("refresh-emulator-installation", _params, socket) do
     {:noreply, check_emulator_installation(socket)}
   end
@@ -1063,6 +1148,37 @@ defmodule IdeWeb.WorkspaceLive do
      |> start_async(:capture_screenshot, fn ->
        Screenshots.capture(project.slug, emulator_target: emulator_target)
      end)}
+  end
+
+  def handle_event("wasm-screenshot-saved", %{"screenshot" => screenshot}, socket) do
+    screenshots =
+      socket.assigns.screenshots
+      |> EmulatorFlow.upsert_screenshot(atomize_screenshot(screenshot))
+
+    readiness = PublishFlow.publish_readiness(screenshots)
+
+    warnings =
+      PublishFlow.publish_warnings(
+        socket.assigns.project,
+        readiness,
+        socket.assigns.release_summary
+      )
+
+    {:noreply,
+     socket
+     |> assign(:screenshot_status, :ok)
+     |> assign(:screenshots, screenshots)
+     |> assign(:screenshot_groups, group_screenshots(screenshots))
+     |> assign(:publish_readiness, readiness)
+     |> assign(:publish_warnings, warnings)
+     |> assign(
+       :publish_summary,
+       PublishFlow.publish_summary(socket.assigns.publish_checks, warnings, readiness)
+     )
+     |> assign(
+       :publish_type_guidance,
+       PublishFlow.publish_type_guidance(socket.assigns.project, readiness)
+     )}
   end
 
   def handle_event("capture-all-screenshots", _params, socket) do
@@ -1169,6 +1285,8 @@ defmodule IdeWeb.WorkspaceLive do
 
     version_label = String.trim(params["version_label"] || "")
     tags = String.trim(params["tags"] || "")
+    target_platforms = State.target_platforms_form_value(params["target_platforms"])
+    capabilities = State.capabilities_form_value(params["capabilities"])
     github_owner = String.trim(params["github_owner"] || "")
     github_repo = String.trim(params["github_repo"] || "")
     github_branch = String.trim(params["github_branch"] || "")
@@ -1177,7 +1295,9 @@ defmodule IdeWeb.WorkspaceLive do
       "release_defaults" =>
         defaults
         |> Map.put("version_label", version_label)
-        |> Map.put("tags", tags),
+        |> Map.put("tags", tags)
+        |> Map.put("target_platforms", target_platforms)
+        |> Map.put("capabilities", capabilities),
       "github" =>
         github
         |> Map.put("owner", github_owner)
@@ -1395,15 +1515,21 @@ defmodule IdeWeb.WorkspaceLive do
      end)}
   end
 
-  def handle_event("set-emulator-target", %{"emulator" => %{"target" => target}}, socket) do
-    project = persist_project_emulator_target(socket.assigns.project, target)
+  def handle_event("set-emulator-target", %{"emulator" => params}, socket) do
+    project =
+      socket.assigns.project
+      |> persist_project_emulator_target(Map.get(params, "target"))
+      |> persist_project_emulator_mode(Map.get(params, "mode"))
+
     target = project_emulator_target(project)
+    mode = project_emulator_mode(project)
 
     {:noreply,
      socket
      |> assign(:project, project)
      |> assign(:selected_emulator_target, target)
-     |> assign(:emulator_form, to_form(%{"target" => target}, as: :emulator))
+     |> assign(:emulator_mode, mode)
+     |> assign(:emulator_form, to_form(%{"target" => target, "mode" => mode}, as: :emulator))
      |> check_emulator_installation()}
   end
 
@@ -2144,6 +2270,48 @@ defmodule IdeWeb.WorkspaceLive do
      |> assign(:pebble_install_output, "Emulator install task exited: #{inspect(reason)}")}
   end
 
+  def handle_async(:stop_emulator, {:ok, {:ok, result}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_stop_status, result.status)
+     |> assign(:emulator_stop_output, ToolchainPresenter.render_toolchain_output(result))}
+  end
+
+  def handle_async(:stop_emulator, {:ok, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_stop_status, :error)
+     |> assign(:emulator_stop_output, "Could not stop emulator: #{inspect(reason)}")}
+  end
+
+  def handle_async(:stop_emulator, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_stop_status, :error)
+     |> assign(:emulator_stop_output, "Emulator stop task exited: #{inspect(reason)}")}
+  end
+
+  def handle_async(:external_emulator_control, {:ok, {:ok, result}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_stop_status, result.status)
+     |> assign(:emulator_stop_output, ToolchainPresenter.render_toolchain_output(result))}
+  end
+
+  def handle_async(:external_emulator_control, {:ok, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_stop_status, :error)
+     |> assign(:emulator_stop_output, "External emulator control failed: #{inspect(reason)}")}
+  end
+
+  def handle_async(:external_emulator_control, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:emulator_stop_status, :error)
+     |> assign(:emulator_stop_output, "External emulator control task exited: #{inspect(reason)}")}
+  end
+
   def handle_async(:capture_screenshot, {:ok, {:ok, result}}, socket) do
     screenshots = load_screenshots(socket.assigns.project)
     readiness = PublishFlow.publish_readiness(screenshots)
@@ -2542,6 +2710,46 @@ defmodule IdeWeb.WorkspaceLive do
      socket
      |> assign(:packages_inspect_loading, nil)
      |> put_flash(:error, "Package inspection interrupted: #{inspect(reason)}")}
+  end
+
+  defp maybe_regenerate_phone_preferences_after_save(
+         socket,
+         %{source_root: "phone", rel_path: rel_path}
+       )
+       when is_binary(rel_path) do
+    if String.ends_with?(rel_path, ".elm") and
+         rel_path != PebblePreferences.generated_bridge_rel_path() do
+      :ok = Projects.ensure_generated_phone_preferences(socket.assigns.project)
+
+      socket
+      |> refresh_open_generated_preferences_tab()
+      |> refresh_tree()
+    else
+      socket
+    end
+  end
+
+  defp maybe_regenerate_phone_preferences_after_save(socket, _tab), do: socket
+
+  defp refresh_open_generated_preferences_tab(socket) do
+    rel_path = PebblePreferences.generated_bridge_rel_path()
+
+    case Projects.read_source_file(socket.assigns.project, "phone", rel_path) do
+      {:ok, content} ->
+        tabs =
+          Enum.map(socket.assigns.tabs, fn
+            %{source_root: "phone", rel_path: ^rel_path} = tab ->
+              %{tab | content: content, dirty: false, read_only: true}
+
+            tab ->
+              tab
+          end)
+
+        assign(socket, :tabs, tabs)
+
+      _ ->
+        socket
+    end
   end
 
   @impl true
@@ -3054,6 +3262,18 @@ defmodule IdeWeb.WorkspaceLive do
   defp to_bool(value) when value in [true, "true", "on", "1", 1], do: true
   defp to_bool(_), do: false
 
+  @spec atomize_screenshot(map()) :: map()
+  defp atomize_screenshot(screenshot) when is_map(screenshot) do
+    %{
+      filename: Map.get(screenshot, "filename") || Map.get(screenshot, :filename),
+      emulator_target:
+        Map.get(screenshot, "emulator_target") || Map.get(screenshot, :emulator_target),
+      url: Map.get(screenshot, "url") || Map.get(screenshot, :url),
+      absolute_path: Map.get(screenshot, "absolute_path") || Map.get(screenshot, :absolute_path),
+      captured_at: Map.get(screenshot, "captured_at") || Map.get(screenshot, :captured_at)
+    }
+  end
+
   defdelegate render_capture_all_progress(msg), to: EmulatorFlow
   defdelegate update_capture_target_statuses(statuses, msg), to: EmulatorFlow
   defdelegate maybe_merge_capture_progress_screenshot(socket, msg), to: EmulatorFlow
@@ -3063,6 +3283,7 @@ defmodule IdeWeb.WorkspaceLive do
   defdelegate bitmap_upload_output(results), to: ResourcesFlow
   defdelegate font_upload_output(results), to: ResourcesFlow
   defdelegate load_bitmap_resources(project), to: ResourcesFlow
+  defdelegate load_font_sources(project), to: ResourcesFlow
   defdelegate load_font_resources(project), to: ResourcesFlow
   defdelegate load_screenshots(project), to: ResourcesFlow
   defdelegate group_screenshots(shots), to: ResourcesFlow
@@ -3115,6 +3336,20 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   defp persist_project_emulator_target(project, _target), do: project
+
+  @spec persist_project_emulator_mode(Project.t() | term(), term()) :: term()
+  defp persist_project_emulator_mode(%Project{} = project, mode) do
+    selected = normalize_emulator_mode(mode)
+    settings = project.debugger_settings || %{}
+    updated_settings = Map.put(settings, "emulator_mode", selected)
+
+    case Projects.update_project(project, %{"debugger_settings" => updated_settings}) do
+      {:ok, updated} -> updated
+      {:error, _} -> project
+    end
+  end
+
+  defp persist_project_emulator_mode(project, _mode), do: project
 
   @spec persist_project_debugger_watch_profile(Project.t(), String.t()) :: Project.t()
   defp persist_project_debugger_watch_profile(%Project{} = project, watch_profile_id)
@@ -3175,6 +3410,14 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   defp project_emulator_target(_), do: default_emulator_target()
+
+  @spec project_emulator_mode(term()) :: String.t()
+  defp project_emulator_mode(%Project{} = project) do
+    settings = project.debugger_settings || %{}
+    normalize_emulator_mode(Map.get(settings, "emulator_mode"))
+  end
+
+  defp project_emulator_mode(_), do: "embedded"
 
   @spec project_debugger_watch_profile_id(Project.t()) :: String.t()
   defp project_debugger_watch_profile_id(%Project{} = project) do
@@ -3658,4 +3901,15 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   defp normalize_emulator_target(_), do: normalize_emulator_target(default_emulator_target())
+
+  @spec normalize_emulator_mode(term()) :: String.t()
+  defp normalize_emulator_mode(mode) when is_binary(mode) do
+    case String.trim(mode) do
+      "external" -> "external"
+      "wasm" -> "wasm"
+      _ -> "embedded"
+    end
+  end
+
+  defp normalize_emulator_mode(_), do: "embedded"
 end

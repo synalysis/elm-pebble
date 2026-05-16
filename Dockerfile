@@ -53,6 +53,7 @@ ENV ELM_PEBBLE_PYPKJS_BIN=/opt/pipx/venvs/pebble-tool/bin/pypkjs
 ENV ELM_PEBBLE_QEMU_IMAGE_ROOT=/var/lib/ide/.pebble-sdk/SDKs/current/sdk-core/pebble
 ENV ELM_PEBBLE_QEMU_DATA_ROOT=/usr/share/qemu
 ENV ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES=1
+ENV ELM_PEBBLE_WASM_EMULATOR_ROOT=/var/lib/ide/wasm_emulator
 ENV SECRET_KEY_BASE=8eXjTGrTXoJHN8S-sqKoLrXp1xQ8vlqv2Ryr_5wPjMz5f4lAQ9S3v5dvU7uIGrYb
 
 WORKDIR /opt/ide

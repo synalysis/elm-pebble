@@ -32,6 +32,8 @@ defmodule Ide.PebbleToolchain do
   @callback publish(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
   @callback run_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
   @callback stop_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
+  @callback run_emulator_control(project_slug(), String.t(), map()) ::
+              {:ok, command_result()} | {:error, term()}
   @callback run_screenshot(project_slug(), String.t(), String.t()) ::
               {:ok, command_result()} | {:error, term()}
 
@@ -236,7 +238,7 @@ defmodule Ide.PebbleToolchain do
 
         --- emulator logs snapshot (#{logs_seconds}s) ---
         command: #{logs_result.command}
-        exit_code: #{logs_result.exit_code}
+        #{format_logs_snapshot_exit(logs_result.exit_code, logs_seconds)}
 
         #{String.trim(logs_result.output)}
         """
@@ -281,7 +283,7 @@ defmodule Ide.PebbleToolchain do
 
           {:ok,
            %{
-             status: if(exit_code == 0, do: :ok, else: :error),
+             status: if(expected_logs_snapshot_exit?(exit_code), do: :ok, else: :error),
              command: Enum.join([timeout_bin | args], " "),
              output: output,
              exit_code: exit_code,
@@ -292,6 +294,13 @@ defmodule Ide.PebbleToolchain do
   rescue
     error -> {:error, error}
   end
+
+  defp format_logs_snapshot_exit(124, seconds),
+    do: "exit_code: 124 (expected timeout after #{seconds}s log snapshot)"
+
+  defp format_logs_snapshot_exit(exit_code, _seconds), do: "exit_code: #{exit_code}"
+
+  defp expected_logs_snapshot_exit?(exit_code), do: exit_code in [0, 124]
 
   @doc """
   Runs `pebble screenshot` to capture emulator output into a file.
@@ -307,6 +316,18 @@ defmodule Ide.PebbleToolchain do
   end
 
   @doc """
+  Runs a Pebble SDK emulator control command for an already running external emulator.
+  """
+  @spec run_emulator_control(project_slug(), String.t(), map()) ::
+          {:ok, command_result()} | {:error, term()}
+  def run_emulator_control(_project_slug, emulator_target, %{} = params)
+      when is_binary(emulator_target) do
+    with {:ok, args} <- emulator_control_args(emulator_target, params) do
+      run_pebble_with_timeout(args, 10, [])
+    end
+  end
+
+  @doc """
   Returns supported emulator/watch targets for capture and install.
   """
   @spec supported_emulator_targets() :: [String.t()]
@@ -314,6 +335,103 @@ defmodule Ide.PebbleToolchain do
     Application.get_env(:ide, Ide.PebbleToolchain, [])
     |> Keyword.get(:emulator_targets, WatchModels.ordered_ids())
   end
+
+  @spec emulator_control_args(String.t(), map()) :: {:ok, [String.t()]} | {:error, term()}
+  defp emulator_control_args(emulator_target, %{"control" => "button"} = params) do
+    action = params |> Map.get("action", "click") |> normalize_button_action()
+    button = params |> Map.get("button") |> normalize_emulator_button()
+
+    case {action, button} do
+      {{:ok, action}, {:ok, button}} ->
+        {:ok, ["emu-button", "--emulator", emulator_target, action, button]}
+
+      {{:error, reason}, _} ->
+        {:error, reason}
+
+      {_, {:error, reason}} ->
+        {:error, reason}
+    end
+  end
+
+  defp emulator_control_args(emulator_target, %{"control" => "battery"} = params) do
+    percent = params |> Map.get("percent", 80) |> normalize_percent()
+    charging? = truthy?(Map.get(params, "charging"))
+
+    case percent do
+      {:ok, percent} ->
+        args = [
+          "emu-battery",
+          "--emulator",
+          emulator_target,
+          "--percent",
+          Integer.to_string(percent)
+        ]
+
+        {:ok, if(charging?, do: args ++ ["--charging"], else: args)}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp emulator_control_args(emulator_target, %{"control" => "bluetooth"} = params) do
+    connected = if truthy?(Map.get(params, "connected")), do: "yes", else: "no"
+    {:ok, ["emu-bt-connection", "--emulator", emulator_target, "--connected", connected]}
+  end
+
+  defp emulator_control_args(emulator_target, %{"control" => "tap"} = params) do
+    direction = params |> Map.get("direction", "z+") |> normalize_tap_direction()
+
+    case direction do
+      {:ok, direction} ->
+        {:ok, ["emu-tap", "--emulator", emulator_target, "--direction", direction]}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp emulator_control_args(emulator_target, %{"control" => "time_format"} = params) do
+    format = if truthy?(Map.get(params, "enabled")), do: "24h", else: "12h"
+    {:ok, ["emu-time-format", "--emulator", emulator_target, "--format", format]}
+  end
+
+  defp emulator_control_args(emulator_target, %{"control" => "timeline_quick_view"} = params) do
+    value = if truthy?(Map.get(params, "enabled")), do: "on", else: "off"
+    {:ok, ["emu-set-timeline-quick-view", "--emulator", emulator_target, value]}
+  end
+
+  defp emulator_control_args(_emulator_target, params),
+    do: {:error, {:unsupported_emulator_control, Map.get(params, "control")}}
+
+  defp normalize_button_action(action) when action in ["click", "push", "release"],
+    do: {:ok, action}
+
+  defp normalize_button_action(_), do: {:error, :invalid_button_action}
+
+  defp normalize_emulator_button(button) when button in ["back", "up", "select", "down"],
+    do: {:ok, button}
+
+  defp normalize_emulator_button(_), do: {:error, :invalid_button}
+
+  defp normalize_tap_direction(direction) when direction in ["x+", "x-", "y+", "y-", "z+", "z-"],
+    do: {:ok, direction}
+
+  defp normalize_tap_direction(_), do: {:error, :invalid_tap_direction}
+
+  defp normalize_percent(value) when is_integer(value) and value in 0..100, do: {:ok, value}
+
+  defp normalize_percent(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} -> normalize_percent(int)
+      _ -> {:error, :invalid_percent}
+    end
+  end
+
+  defp normalize_percent(_), do: {:error, :invalid_percent}
+
+  defp truthy?(values) when is_list(values), do: Enum.any?(values, &truthy?/1)
+  defp truthy?(value), do: value in [true, "true", "1", 1, "yes", "on"]
 
   @doc """
   Returns configured Pebble app template root directory.
@@ -716,6 +834,7 @@ defmodule Ide.PebbleToolchain do
       }
       |> maybe_enable_multijs(has_phone_companion)
       |> maybe_put_message_keys(app_message_keys)
+      |> maybe_put_capabilities(Keyword.get(opts, :capabilities, []))
       |> maybe_put_configurable_capability(preferences_schema)
 
     File.write(Path.join(app_root, "package.json"), Jason.encode!(package, pretty: true))
@@ -748,6 +867,17 @@ defmodule Ide.PebbleToolchain do
     put_in(package, ["pebble", "messageKeys"], app_message_keys)
   end
 
+  @spec maybe_put_capabilities(map(), term()) :: map()
+  defp maybe_put_capabilities(package, capabilities) do
+    capabilities = normalize_capabilities(capabilities)
+
+    if capabilities == [] do
+      package
+    else
+      put_in(package, ["pebble", "capabilities"], capabilities)
+    end
+  end
+
   @spec maybe_put_configurable_capability(map(), term()) :: map()
   defp maybe_put_configurable_capability(package, nil), do: package
 
@@ -762,6 +892,20 @@ defmodule Ide.PebbleToolchain do
       Map.put(pebble, "capabilities", capabilities)
     end)
   end
+
+  @spec normalize_capabilities(term()) :: [String.t()]
+  defp normalize_capabilities(value) when is_list(value) do
+    allowed = MapSet.new(["location", "configurable", "health"])
+
+    value
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.filter(&MapSet.member?(allowed, &1))
+    |> Enum.uniq()
+  end
+
+  defp normalize_capabilities(_), do: []
 
   @spec stage_project_resources(term(), term()) :: term()
   defp stage_project_resources(workspace_root, app_root) do
@@ -890,14 +1034,27 @@ defmodule Ide.PebbleToolchain do
       {:ok, json} ->
         with {:ok, decoded} <- Jason.decode(json),
              entries when is_list(entries) <- Map.get(decoded, "entries", []) do
+          sources_by_id =
+            decoded
+            |> Map.get("sources", [])
+            |> Enum.filter(&is_map/1)
+            |> Map.new(fn row ->
+              {to_string(Map.get(row, "id", "")), row}
+            end)
+
           media_entries =
             entries
             |> Enum.filter(&is_map/1)
             |> Enum.sort_by(&to_string(Map.get(&1, "ctor", "")))
             |> Enum.map(fn row ->
               ctor = to_string(Map.get(row, "ctor", "Font"))
-              filename = to_string(Map.get(row, "filename", ""))
+              source = Map.get(sources_by_id, to_string(Map.get(row, "source_id", "")), row)
+              filename = to_string(Map.get(source, "filename", Map.get(row, "filename", "")))
               height = row |> Map.get("height", 0) |> normalize_font_height()
+              characters = row |> Map.get("characters", "") |> to_string()
+              tracking_adjust = row |> Map.get("tracking_adjust", 0) |> normalize_integer(0)
+              compatibility = row |> Map.get("compatibility", "2.7") |> to_string()
+              target_platforms = normalize_string_list(Map.get(row, "target_platforms", []))
               source_path = Path.join(assets_root, filename)
               package_rel = Path.join("fonts", filename)
               target_rel = Path.join("resources", package_rel)
@@ -914,6 +1071,10 @@ defmodule Ide.PebbleToolchain do
                 "file" => package_rel,
                 "height" => height
               }
+              |> maybe_put_nonempty("characterRegex", characters)
+              |> maybe_put_nonzero("trackingAdjust", tracking_adjust)
+              |> maybe_put_compatibility(compatibility)
+              |> maybe_put_nonempty_list("targetPlatforms", target_platforms)
             end)
             |> Enum.filter(fn row -> String.trim(to_string(Map.get(row, "file", ""))) != "" end)
 
@@ -949,6 +1110,52 @@ defmodule Ide.PebbleToolchain do
   end
 
   defp normalize_font_height(_value), do: 24
+
+  @spec normalize_integer(term(), integer()) :: integer()
+  defp normalize_integer(value, _default) when is_integer(value), do: value
+
+  defp normalize_integer(value, default) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {int, ""} -> int
+      _ -> default
+    end
+  end
+
+  defp normalize_integer(_value, default), do: default
+
+  @spec normalize_string_list(term()) :: [String.t()]
+  defp normalize_string_list(values) when is_list(values) do
+    values
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
+
+  defp normalize_string_list(value) when is_binary(value) do
+    value
+    |> String.split([",", " ", "\n", "\t"], trim: true)
+    |> normalize_string_list()
+  end
+
+  defp normalize_string_list(_), do: []
+
+  @spec maybe_put_nonempty(map(), String.t(), String.t()) :: map()
+  defp maybe_put_nonempty(map, _key, ""), do: map
+  defp maybe_put_nonempty(map, key, value), do: Map.put(map, key, value)
+
+  @spec maybe_put_compatibility(map(), String.t()) :: map()
+  defp maybe_put_compatibility(map, "latest"), do: map
+  defp maybe_put_compatibility(map, ""), do: map
+  defp maybe_put_compatibility(map, value), do: Map.put(map, "compatibility", value)
+
+  @spec maybe_put_nonzero(map(), String.t(), integer()) :: map()
+  defp maybe_put_nonzero(map, _key, 0), do: map
+  defp maybe_put_nonzero(map, key, value), do: Map.put(map, key, value)
+
+  @spec maybe_put_nonempty_list(map(), String.t(), [String.t()]) :: map()
+  defp maybe_put_nonempty_list(map, _key, []), do: map
+  defp maybe_put_nonempty_list(map, key, value), do: Map.put(map, key, value)
 
   @spec target_platforms_for_target_type(term(), term()) :: term()
   defp target_platforms_for_target_type(_target_type, opts) do

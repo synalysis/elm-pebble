@@ -37,6 +37,11 @@ elm_ex/src/*.erl
 # Pebble generated or local screenshots
 ide/priv/pebble_app_template/weather-demo*.png
 ide/priv/pebble_app_template/build/
+ide/priv/wasm_emulator/qemu-system-arm.js
+ide/priv/wasm_emulator/qemu-system-arm.wasm
+ide/priv/wasm_emulator/qemu-system-arm.worker.js
+ide/priv/wasm_emulator/firmware/
+ide/priv/wasm_emulator/vendor/
 **/.lock-waf_linux_build
 ide/priv/pebble_app_template/src/c/elmc/
 ide/priv/pebble_app_template/src/c/generated/

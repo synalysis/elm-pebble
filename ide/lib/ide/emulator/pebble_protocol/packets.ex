@@ -46,6 +46,12 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
        value::binary>>}
   end
 
+  @spec blob_delete_app(non_neg_integer(), String.t()) :: {non_neg_integer(), binary()}
+  def blob_delete_app(token, uuid) do
+    key = uuid_bytes(uuid)
+    {@endpoint_blob_db, <<0x04, token::little-16, 0x02, byte_size(key), key::binary>>}
+  end
+
   @spec app_metadata(map()) :: binary()
   def app_metadata(metadata) do
     name = fixed_string(Map.fetch!(metadata, :app_name), 96)
@@ -112,10 +118,18 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
 
   def decode_putbytes_response(payload), do: {:error, {:unexpected_putbytes_payload, payload}}
 
-  @spec putbytes_ack?(map(), non_neg_integer() | nil) :: :ok | {:error, term()}
+  @spec putbytes_ack?(map(), non_neg_integer() | [non_neg_integer()] | nil) ::
+          :ok | {:error, term()}
   def putbytes_ack?(%{ack?: true, cookie: cookie}, expected_cookie)
       when is_nil(expected_cookie) or cookie == expected_cookie,
       do: :ok
+
+  def putbytes_ack?(%{ack?: true, cookie: cookie}, expected_cookies)
+      when is_list(expected_cookies) do
+    if cookie in expected_cookies,
+      do: :ok,
+      else: {:error, {:wrong_cookie, expected_cookies, cookie}}
+  end
 
   def putbytes_ack?(%{ack?: true, cookie: cookie}, expected_cookie),
     do: {:error, {:wrong_cookie, expected_cookie, cookie}}

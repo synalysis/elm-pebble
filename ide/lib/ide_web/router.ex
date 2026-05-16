@@ -14,6 +14,10 @@ defmodule IdeWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :wasm_emulator do
+    plug :accepts, ["html"]
+  end
+
   scope "/", IdeWeb do
     pipe_through :browser
 
@@ -31,6 +35,13 @@ defmodule IdeWeb.Router do
     live "/projects/:slug/settings", WorkspaceLive, :settings
   end
 
+  scope "/", IdeWeb do
+    pipe_through :wasm_emulator
+
+    get "/wasm-emulator", WasmEmulatorController, :page
+    get "/wasm-emulator/assets/*path", WasmEmulatorController, :asset
+  end
+
   scope "/api", IdeWeb do
     pipe_through :api
 
@@ -45,6 +56,10 @@ defmodule IdeWeb.Router do
     get "/emulator/:id/artifact", EmulatorController, :artifact
     get "/emulator/:id/ws/vnc", EmulatorController, :ws_vnc
     get "/emulator/:id/ws/phone", EmulatorController, :ws_phone
+    get "/wasm-emulator/status", WasmEmulatorController, :status
+    get "/wasm-emulator/projects/:slug/package", WasmEmulatorController, :package
+    get "/wasm-emulator/projects/:slug/install-plan", WasmEmulatorController, :install_plan
+    post "/wasm-emulator/projects/:slug/screenshot", WasmEmulatorController, :screenshot
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

@@ -38,6 +38,8 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:pebble_build_output, nil)
     |> assign(:pebble_install_status, :idle)
     |> assign(:pebble_install_output, nil)
+    |> assign(:emulator_stop_status, :idle)
+    |> assign(:emulator_stop_output, nil)
     |> assign(:emulator_installation_status, nil)
     |> assign(:emulator_dependency_install_status, :idle)
     |> assign(:emulator_dependency_install_output, nil)
@@ -53,7 +55,11 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:screenshot_groups, [])
     |> assign(:emulator_targets, ToolchainPresenter.emulator_targets())
     |> assign(:selected_emulator_target, default_emulator_target)
-    |> assign(:emulator_form, to_form(%{"target" => default_emulator_target}, as: :emulator))
+    |> assign(
+      :emulator_form,
+      to_form(%{"target" => default_emulator_target, "mode" => "embedded"}, as: :emulator)
+    )
+    |> assign(:emulator_mode, "embedded")
     |> assign(:publish_status, :idle)
     |> assign(:publish_output, nil)
     |> assign(:publish_artifact_path, nil)
@@ -146,6 +152,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:auto_format_last_result, nil)
     |> assign(:bitmap_resources, [])
     |> assign(:bitmap_upload_output, nil)
+    |> assign(:font_sources, [])
     |> assign(:font_resources, [])
     |> assign(:font_upload_output, nil)
     |> assign(
@@ -183,6 +190,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:pane, socket.assigns.live_action)
     |> assign(:tree, Map.fetch!(data, :tree))
     |> assign(:bitmap_resources, Map.fetch!(data, :bitmap_resources))
+    |> assign(:font_sources, Map.fetch!(data, :font_sources))
     |> assign(:font_resources, Map.fetch!(data, :font_resources))
     |> assign(:screenshots, Map.fetch!(data, :screenshots))
     |> assign(:screenshot_groups, Map.fetch!(data, :screenshot_groups))
@@ -215,7 +223,14 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:github_push_output, nil)
     |> assign(:packages_target_root, Map.fetch!(data, :packages_target_root))
     |> assign(:selected_emulator_target, selected_emulator_target)
-    |> assign(:emulator_form, to_form(%{"target" => selected_emulator_target}, as: :emulator))
+    |> assign(:emulator_mode, Map.fetch!(data, :emulator_mode))
+    |> assign(
+      :emulator_form,
+      to_form(
+        %{"target" => selected_emulator_target, "mode" => Map.fetch!(data, :emulator_mode)},
+        as: :emulator
+      )
+    )
     |> assign(:page_title, "#{project.name} · #{Atom.to_string(socket.assigns.live_action)}")
   end
 
@@ -227,6 +242,8 @@ defmodule IdeWeb.WorkspaceLive.State do
     %{
       "version_label" => Map.get(defaults, "version_label", ""),
       "tags" => Map.get(defaults, "tags", ""),
+      "target_platforms" => target_platforms_form_value(Map.get(defaults, "target_platforms")),
+      "capabilities" => capabilities_form_value(Map.get(defaults, "capabilities")),
       "github_owner" => Map.get(github, "owner", ""),
       "github_repo" => Map.get(github, "repo", ""),
       "github_branch" => Map.get(github, "branch", "main")
@@ -237,8 +254,52 @@ defmodule IdeWeb.WorkspaceLive.State do
     do: %{
       "version_label" => "",
       "tags" => "",
+      "target_platforms" => supported_target_platforms(),
+      "capabilities" => [],
       "github_owner" => "",
       "github_repo" => "",
       "github_branch" => "main"
     }
+
+  @spec supported_target_platforms() :: [String.t()]
+  def supported_target_platforms do
+    ["aplite", "basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
+  end
+
+  @spec target_platforms_form_value(term()) :: [String.t()]
+  def target_platforms_form_value(value) when is_list(value) do
+    allowed = MapSet.new(supported_target_platforms())
+
+    value
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.filter(&MapSet.member?(allowed, &1))
+    |> Enum.uniq()
+    |> case do
+      [] -> supported_target_platforms()
+      platforms -> platforms
+    end
+  end
+
+  def target_platforms_form_value(_), do: supported_target_platforms()
+
+  @spec supported_capabilities() :: [String.t()]
+  def supported_capabilities do
+    ["location", "configurable", "health"]
+  end
+
+  @spec capabilities_form_value(term()) :: [String.t()]
+  def capabilities_form_value(value) when is_list(value) do
+    allowed = MapSet.new(supported_capabilities())
+
+    value
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.filter(&MapSet.member?(allowed, &1))
+    |> Enum.uniq()
+  end
+
+  def capabilities_form_value(_), do: []
 end

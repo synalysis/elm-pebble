@@ -41,7 +41,13 @@ const persistedStateFields = [
   "storageEntries",
   "suppressedPutBytesFrames",
   "sessionEnded",
-  "phoneBridgeActive"
+  "phoneBridgeActive",
+  "rfb",
+  "rfbCanvas",
+  "vncConnecting",
+  "reconnectingVnc",
+  "vncReconnectTimer",
+  "vncReconnectAttempts"
 ]
 const embeddedEmulatorStates = window.__elmPebbleEmbeddedEmulatorStates ||= new Map()
 
@@ -65,6 +71,12 @@ function defaultEmulatorState(key) {
     suppressedPutBytesFrames: 0,
     sessionEnded: false,
     phoneBridgeActive: false,
+    rfb: null,
+    rfbCanvas: null,
+    vncConnecting: false,
+    reconnectingVnc: false,
+    vncReconnectTimer: null,
+    vncReconnectAttempts: 0,
     listeners: new Set()
   }
 }
@@ -126,17 +138,12 @@ export class EmbeddedEmulatorHost {
     this.el = hook.el
     this.state = emulatorStateFor(this.el)
     definePersistedState(this)
-    this.rfb = null
     this.phoneSocket = null
     this.pingTimer = null
     this.configUrl = null
     this.configPopupTimer = null
     this.phoneOpenedAt = 0
     this.logFlushScheduled = false
-    this.rfbCanvas = null
-    this.reconnectingVnc = false
-    this.vncReconnectTimer = null
-    this.vncReconnectAttempts = 0
     this.destroyed = false
     this.syncStateToDom = () => {
       if (this.destroyed) return
@@ -145,6 +152,7 @@ export class EmbeddedEmulatorHost {
       this.renderStorage()
       this.updateControlButtons()
     }
+    this.handlePageVisible = () => this.ensureVncAttached()
     this.handleConfigKeyDown = event => {
       if (event.key === "Escape" && this.configPanel && !this.configPanel.classList.contains("hidden")) {
         this.cancelConfig()
@@ -163,15 +171,13 @@ export class EmbeddedEmulatorHost {
     this.launchButton = this.el.querySelector("[data-emulator-launch]")
     this.installButton = this.el.querySelector("[data-emulator-install]")
     this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
-    this.stopButton = this.el.querySelector("[data-emulator-stop]")
     this.storageRows = this.el.querySelector("[data-emulator-storage-rows]")
     this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
     this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
     this.storageNewKey = this.el.querySelector("[data-emulator-storage-new-key]")
     this.storageNewType = this.el.querySelector("[data-emulator-storage-new-type]")
     this.storageNewValue = this.el.querySelector("[data-emulator-storage-new-value]")
-    this.launchButton?.addEventListener("click", () => this.launch())
-    this.stopButton?.addEventListener("click", () => this.stop())
+    this.launchButton?.addEventListener("click", () => this.toggleLaunch())
     this.installButton?.addEventListener("click", () => this.install())
     this.preferencesButton?.addEventListener("click", () => this.loadCompanionPreferences())
     this.storageResetButton?.addEventListener("click", () => this.resetStorage())
@@ -206,8 +212,11 @@ export class EmbeddedEmulatorHost {
     this.el.querySelector("[data-emulator-peek]")?.addEventListener("change", event => this.sendQemu(QEMU.timelinePeek, [event.target.checked ? 1 : 0]))
     this.el.querySelector("[data-emulator-tap]")?.addEventListener("click", () => this.sendQemu(QEMU.tap, [0, 1]))
     this.state.listeners.add(this.syncStateToDom)
+    window.addEventListener("focus", this.handlePageVisible)
+    document.addEventListener("visibilitychange", this.handlePageVisible)
     this.resumeExistingSession()
     this.syncStateToDom()
+    this.ensureVncAttached()
   }
 
   updated() {
@@ -218,7 +227,6 @@ export class EmbeddedEmulatorHost {
     this.launchButton = this.el.querySelector("[data-emulator-launch]")
     this.installButton = this.el.querySelector("[data-emulator-install]")
     this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
-    this.stopButton = this.el.querySelector("[data-emulator-stop]")
     this.storageRows = this.el.querySelector("[data-emulator-storage-rows]")
     this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
     this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
@@ -240,6 +248,7 @@ export class EmbeddedEmulatorHost {
       // #endregion
       this.reconnectVncAfterDomPatch()
     }
+    this.ensureVncAttached()
   }
 
   resumeExistingSession() {
@@ -248,11 +257,13 @@ export class EmbeddedEmulatorHost {
     this.sessionEnded = false
     this.resizeCanvas(this.session.screen)
     this.startPing()
-    this.connectVnc().catch(error => {
-      if (this.session && !this.stopping && !this.destroyed) {
-        this.scheduleVncReconnect(`Embedded emulator display reconnect failed: ${error.message}`)
-      }
-    })
+    if (this.session.backend_enabled && !(this.rfb && this.rfbCanvas === this.canvas)) {
+      this.connectVnc().catch(error => {
+        if (this.session && !this.stopping && !this.destroyed) {
+          this.scheduleVncReconnect(`Embedded emulator display reconnect failed: ${error.message}`)
+        }
+      })
+    }
     if (this.phoneBridgeActive) this.connectPhone()
   }
 
@@ -262,13 +273,28 @@ export class EmbeddedEmulatorHost {
     this.stopPing()
     this.stopVncReconnect()
     this.stopConfigPopupPolling()
+    window.removeEventListener("focus", this.handlePageVisible)
+    document.removeEventListener("visibilitychange", this.handlePageVisible)
     if (removeListeners) document.removeEventListener("keydown", this.handleConfigKeyDown)
-    if (this.rfb) this.rfb.disconnect()
+    if (this.rfb) {
+      const oldRfb = this.rfb
+      this.rfb = null
+      this.rfbCanvas = null
+      oldRfb.disconnect()
+    }
     if (this.phoneSocket) this.phoneSocket.close()
   }
 
   notifyStateChanged() {
     this.state.listeners.forEach(listener => listener())
+  }
+
+  toggleLaunch() {
+    if (this.session) {
+      this.stop()
+    } else {
+      this.launch()
+    }
   }
 
   async launch() {
@@ -328,15 +354,33 @@ export class EmbeddedEmulatorHost {
 
   async connectVnc() {
     if (this.destroyed || !this.session.backend_enabled || !this.canvas) return
+    if (this.vncConnecting) return
+    this.vncConnecting = true
     if (this.rfb) {
       this.reconnectingVnc = true
       this.rfb.disconnect()
     }
-    const RFB = await loadRFB()
-    if (this.destroyed || !this.session?.backend_enabled || !this.canvas) return
-    const rfb = new RFB(this.canvas, websocketURL(this.session.vnc_path), {shared: true})
+    let RFB
+    try {
+      RFB = await loadRFB()
+    } catch (error) {
+      this.vncConnecting = false
+      throw error
+    }
+    if (this.destroyed || !this.session?.backend_enabled || !this.canvas) {
+      this.vncConnecting = false
+      return
+    }
+    let rfb
+    try {
+      rfb = new RFB(this.canvas, websocketURL(this.session.vnc_path), {shared: true})
+    } catch (error) {
+      this.vncConnecting = false
+      throw error
+    }
     this.rfb = rfb
     this.rfbCanvas = this.canvas
+    this.vncConnecting = false
     this.reconnectingVnc = false
     // #region agent log
     agentDebugLog("initial", "H19,H20,H21", "embedded_emulator.js:vnc:create", "noVNC RFB object created", {
@@ -386,6 +430,14 @@ export class EmbeddedEmulatorHost {
 
   reconnectVncAfterDomPatch() {
     this.scheduleVncReconnect("Embedded emulator display moved; reconnecting...")
+  }
+
+  ensureVncAttached() {
+    if (this.destroyed || !this.session?.backend_enabled || !this.canvas || this.stopping) return
+    if (document.visibilityState === "hidden") return
+    if (this.rfb && this.rfbCanvas === this.canvas) return
+    if (this.vncReconnectTimer || this.reconnectingVnc || this.vncConnecting) return
+    this.scheduleVncReconnect("Embedded emulator display unavailable; reconnecting...")
   }
 
   scheduleVncReconnect(message) {
@@ -504,7 +556,7 @@ export class EmbeddedEmulatorHost {
   }
 
   async install() {
-    if (this.installing || !this.session) return
+    if (this.installing || !this.installReady()) return
     const installSessionId = this.session.id
     this.installing = true
     this.updateControlButtons()
@@ -1341,16 +1393,24 @@ export class EmbeddedEmulatorHost {
 
   updateControlButtons() {
     const hasSession = !!this.session
-    this.setButtonDisabled(this.launchButton, this.launching || this.stopping || hasSession)
-    this.setButtonDisabled(this.installButton, this.launching || this.installing || this.stopping || !hasSession)
+    this.setButtonDisabled(this.launchButton, this.launching || this.stopping)
+    this.setButtonDisabled(this.installButton, this.launching || this.installing || this.stopping || !this.installReady())
     this.setButtonDisabled(this.preferencesButton, this.launching || this.stopping || !hasSession)
-    this.setButtonDisabled(this.stopButton, this.launching || this.stopping || !hasSession)
     this.setButtonDisabled(this.storageAddButton, this.launching || this.stopping || !hasSession)
     this.setButtonDisabled(this.storageResetButton, this.launching || this.stopping || !hasSession || this.storageEntries.size === 0)
 
-    if (this.launchButton) this.launchButton.textContent = this.launching ? "Launching..." : "Launch"
+    if (this.launchButton) this.launchButton.textContent = this.launchButtonLabel()
     if (this.installButton) this.installButton.textContent = this.installing ? "Sending..." : "Send PBW"
-    if (this.stopButton) this.stopButton.textContent = this.stopping ? "Stopping..." : "Stop"
+  }
+
+  launchButtonLabel() {
+    if (this.launching) return "Launching..."
+    if (this.stopping) return "Stopping..."
+    return this.session ? "Stop" : "Launch"
+  }
+
+  installReady() {
+    return !!(this.session?.backend_enabled && this.session?.install_path && !this.sessionEnded)
   }
 
   setButtonDisabled(button, disabled) {

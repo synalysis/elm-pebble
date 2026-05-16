@@ -40,7 +40,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
           <div class="mt-4 space-y-5">
             <div class="rounded border border-zinc-200 bg-zinc-50 p-3">
               <h3 class="text-sm font-semibold text-zinc-700">Bitmap uploads</h3>
-              <.form for={%{}} phx-submit="upload-bitmap-resource" class="mt-2 space-y-2">
+              <.form
+                for={%{}}
+                phx-change="validate-resource-upload"
+                phx-submit="upload-bitmap-resource"
+                class="mt-2 space-y-2"
+              >
                 <.live_file_input upload={@uploads.bitmap} class="block w-full text-sm text-zinc-800" />
                 <.button type="submit">Upload bitmap</.button>
               </.form>
@@ -51,7 +56,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
 
             <div class="rounded border border-zinc-200 bg-zinc-50 p-3">
               <h3 class="text-sm font-semibold text-zinc-700">Font uploads</h3>
-              <.form for={%{}} phx-submit="upload-font-resource" class="mt-2 space-y-2">
+              <.form
+                for={%{}}
+                phx-change="validate-resource-upload"
+                phx-submit="upload-font-resource"
+                class="mt-2 space-y-2"
+              >
                 <.live_file_input upload={@uploads.font} class="block w-full text-sm text-zinc-800" />
                 <.button type="submit">Upload font</.button>
               </.form>
@@ -107,13 +117,61 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
 
           <section class="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
             <h3 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-              Available fonts
+              Source fonts
+            </h3>
+            <div
+              :if={@font_sources == []}
+              class="mt-3 rounded border border-dashed border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-600"
+            >
+              No source fonts uploaded yet.
+            </div>
+            <div
+              :if={@font_sources != []}
+              class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"
+            >
+              <article
+                :for={source <- @font_sources}
+                class="rounded border border-zinc-200 bg-zinc-50 p-3 text-xs"
+              >
+                <div class="mb-2 flex items-center justify-between gap-2">
+                  <p class="font-mono font-semibold text-zinc-900">{source.filename}</p>
+                  <button
+                    type="button"
+                    phx-click="delete-font-source"
+                    phx-value-source-id={source.id}
+                    class="rounded bg-rose-100 px-2 py-1 text-[11px] font-medium text-rose-800 hover:bg-rose-200"
+                  >
+                    Delete source
+                  </button>
+                </div>
+                <p class="text-zinc-500">{source.mime} · {source.bytes} bytes</p>
+                <.form
+                  for={%{}}
+                  as={:variant}
+                  phx-submit="add-font-variant"
+                  class="mt-3"
+                >
+                  <input type="hidden" name="variant[source_id]" value={source.id} />
+                  <button
+                    type="submit"
+                    class="rounded bg-blue-100 px-2 py-1 text-[11px] font-medium text-blue-800 hover:bg-blue-200"
+                  >
+                    Add identifier
+                  </button>
+                </.form>
+              </article>
+            </div>
+          </section>
+
+          <section class="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+              Font identifiers
             </h3>
             <div
               :if={@font_resources == []}
               class="mt-3 rounded border border-dashed border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-600"
             >
-              No font resources uploaded yet.
+              No font identifiers defined yet.
             </div>
             <div
               :if={@font_resources != []}
@@ -135,8 +193,82 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
                   </button>
                 </div>
                 <p class="truncate font-mono text-zinc-700">{font.filename}</p>
-                <p class="text-zinc-500">{font.mime} · {font.bytes} bytes</p>
+                <p class="text-zinc-500">
+                  size {font.height} · chars {font_characters_label(font.characters)} · tracking {font.tracking_adjust}
+                </p>
+                <p class="text-zinc-500">compatibility: {font_compatibility_label(font.compatibility)}</p>
+                <p class="text-zinc-500">platforms: {font_platforms_label(font.target_platforms)}</p>
                 <p class="text-zinc-500">resource id: {font.resource_id}</p>
+                <.form
+                  for={%{}}
+                  as={:variant}
+                  phx-submit="update-font-variant"
+                  class="mt-3 grid grid-cols-2 gap-2"
+                >
+                  <input type="hidden" name="ctor" value={font.ctor} />
+                  <input type="hidden" name="variant[source_id]" value={font.source_id} />
+                  <label class="col-span-2 flex flex-col gap-1">
+                    <span class="font-medium text-zinc-600">Identifier</span>
+                    <input
+                      name="variant[ctor]"
+                      value={font.ctor}
+                      class="rounded border border-zinc-300 px-2 py-1"
+                    />
+                  </label>
+                  <label class="flex flex-col gap-1">
+                    <span class="font-medium text-zinc-600">Size</span>
+                    <input
+                      name="variant[height]"
+                      value={font.height}
+                      inputmode="numeric"
+                      class="rounded border border-zinc-300 px-2 py-1"
+                    />
+                  </label>
+                  <label class="flex flex-col gap-1">
+                    <span class="font-medium text-zinc-600">Tracking</span>
+                    <input
+                      name="variant[tracking_adjust]"
+                      value={font.tracking_adjust}
+                      inputmode="numeric"
+                      class="rounded border border-zinc-300 px-2 py-1"
+                    />
+                  </label>
+                  <label class="col-span-2 flex flex-col gap-1">
+                    <span class="font-medium text-zinc-600">Characters</span>
+                    <input
+                      name="variant[characters]"
+                      value={font.characters}
+                      class="rounded border border-zinc-300 px-2 py-1"
+                    />
+                  </label>
+                  <label class="flex flex-col gap-1">
+                    <span class="font-medium text-zinc-600">Compatibility</span>
+                    <select name="variant[compatibility]" class="rounded border border-zinc-300 px-2 py-1">
+                      <option value="2.7" selected={font.compatibility == "2.7"}>2.7 and earlier</option>
+                      <option value="latest" selected={font.compatibility == "latest"}>Latest</option>
+                    </select>
+                  </label>
+                  <fieldset class="flex flex-col gap-1">
+                    <legend class="font-medium text-zinc-600">Platforms</legend>
+                    <div class="grid grid-cols-2 gap-1">
+                      <label :for={platform <- font_platform_options()} class="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          name="variant[target_platforms][]"
+                          value={platform}
+                          checked={platform in (font.target_platforms || [])}
+                        />
+                        <span>{platform}</span>
+                      </label>
+                    </div>
+                  </fieldset>
+                  <button
+                    type="submit"
+                    class="col-span-2 rounded bg-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-800 hover:bg-zinc-300"
+                  >
+                    Save identifier
+                  </button>
+                </.form>
               </article>
             </div>
           </section>
@@ -151,4 +283,19 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
 
   defp project_settings_tab_class(_active, _tab),
     do: "rounded bg-zinc-100 px-3 py-1.5 text-zinc-700"
+
+  defp font_characters_label(value) when is_binary(value) and value != "", do: value
+  defp font_characters_label(_), do: "all"
+
+  defp font_platforms_label(values) when is_list(values) and values != [],
+    do: Enum.join(values, ", ")
+
+  defp font_platforms_label(_), do: "all"
+
+  defp font_compatibility_label("2.7"), do: "2.7 and earlier"
+  defp font_compatibility_label(_), do: "Latest"
+
+  defp font_platform_options do
+    ["aplite", "basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
+  end
 end

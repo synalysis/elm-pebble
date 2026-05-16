@@ -1710,7 +1710,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     drawCell : Int -> Int -> Ui.RenderOp
     drawCell index value =
-        Ui.text Resources.DefaultFont { x = index * 10, y = 0, w = 10, h = 10 } (String.fromInt value)
+        if index == 16 then
+            Ui.textLabel Resources.DefaultFont { x = index * 10, y = 0 } (String.fromInt value)
+
+        else
+            Ui.text Resources.DefaultFont { x = index * 10, y = 0, w = 10, h = 10 } (String.fromInt value)
 
 
     main : Program Decode.Value Model Msg
@@ -1752,7 +1756,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
         first_count == 16 &&
         count == 17 &&
         cmds[0].kind == ELMC_PEBBLE_DRAW_TEXT &&
-        cmds[16].kind == ELMC_PEBBLE_DRAW_TEXT &&
+        cmds[16].kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT &&
         strcmp(cmds[0].text, "0") == 0 &&
         strcmp(cmds[16].text, "16") == 0;
 

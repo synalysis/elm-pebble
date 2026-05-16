@@ -1,0 +1,121 @@
+diff --git a/hw/arm/pebble_control.c b/hw/arm/pebble_control.c
+--- a/hw/arm/pebble_control.c
++++ b/hw/arm/pebble_control.c
+@@ -32,6 +32,11 @@
+ #include "pebble_control.h"
+ #include "hw/arm/pebble.h"
+ 
++#ifdef __EMSCRIPTEN__
++#include <emscripten/emscripten.h>
++#include "qemu/main-loop.h"
++#endif
++
+ //#define DEBUG_PEBBLE_CONTROL
+ #ifdef DEBUG_PEBBLE_CONTROL
+ #define DPRINTF(fmt, ...)                                 \
+@@ -191,6 +196,85 @@
+     uint32_t send_char_bytes;    /* number of bytes avaialable in send_char_buf */
+ };
+ 
++
++#ifdef __EMSCRIPTEN__
++#define PEBBLE_WASM_CONTROL_QUEUE_LEN 32
++
++static PebbleControl *s_wasm_control;
++static uint8_t s_wasm_control_queue[PEBBLE_WASM_CONTROL_QUEUE_LEN][PBLCONTROL_BUF_LEN];
++static uint32_t s_wasm_control_queue_len[PEBBLE_WASM_CONTROL_QUEUE_LEN];
++static uint32_t s_wasm_control_queue_read;
++static uint32_t s_wasm_control_queue_write;
++static int pebble_control_can_receive(void *opaque);
++static void pebble_control_receive(void *opaque, const uint8_t *buf, int size);
++
++static void pebble_control_wasm_queue_packet(const uint8_t *data, uint32_t len)
++{
++    uint32_t next = (s_wasm_control_queue_write + 1) % PEBBLE_WASM_CONTROL_QUEUE_LEN;
++
++    if (len > PBLCONTROL_BUF_LEN) {
++        return;
++    }
++
++    if (next == s_wasm_control_queue_read) {
++        /* Drop the oldest packet rather than blocking QEMU. */
++        s_wasm_control_queue_read =
++            (s_wasm_control_queue_read + 1) % PEBBLE_WASM_CONTROL_QUEUE_LEN;
++    }
++
++    memcpy(s_wasm_control_queue[s_wasm_control_queue_write], data, len);
++    s_wasm_control_queue_len[s_wasm_control_queue_write] = len;
++    s_wasm_control_queue_write = next;
++}
++
++EMSCRIPTEN_KEEPALIVE int pebble_control_wasm_send(uint8_t *data, int len)
++{
++    bool already_locked;
++
++    if (!s_wasm_control || !data || len <= 0) {
++        return 0;
++    }
++
++    already_locked = bql_locked();
++    if (!already_locked) {
++        bql_lock();
++    }
++
++    if (len > pebble_control_can_receive(s_wasm_control)) {
++        if (!already_locked) {
++            bql_unlock();
++        }
++        return 0;
++    }
++
++    pebble_control_receive(s_wasm_control, data, len);
++
++    if (!already_locked) {
++        bql_unlock();
++    }
++
++    return len;
++}
++
++EMSCRIPTEN_KEEPALIVE int pebble_control_wasm_recv(uint8_t *out, int capacity)
++{
++    uint32_t len;
++
++    if (!out || capacity <= 0 || s_wasm_control_queue_read == s_wasm_control_queue_write) {
++        return 0;
++    }
++
++    len = s_wasm_control_queue_len[s_wasm_control_queue_read];
++    if ((uint32_t)capacity < len) {
++        return -((int)len);
++    }
++
++    memcpy(out, s_wasm_control_queue[s_wasm_control_queue_read], len);
++    s_wasm_control_queue_read =
++        (s_wasm_control_queue_read + 1) % PEBBLE_WASM_CONTROL_QUEUE_LEN;
++    return (int)len;
++}
++#endif
+ 
+ // Control channel handlers are defined using this structure
+ typedef void (*PebbleControlMessageCallback)(PebbleControl *s, const uint8_t* data,
+@@ -455,6 +539,9 @@
+         int bytes_sent;
+         DPRINTF("%s: Sending packet of %d bytes to host (proto=0x%04x)\n",
+                __func__, total_size, ntohs(hdr->protocol));
++#ifdef __EMSCRIPTEN__
++        pebble_control_wasm_queue_packet(s->send_char_buf, total_size);
++#endif
+         while (total_size) {
+             bytes_sent = qemu_chr_fe_write_all(&s->chr, s->send_char_buf, total_size);
+             if (bytes_sent <= 0) {
+@@ -516,6 +603,9 @@
+         // Initialize our own CharBackend with the chardev
+         qemu_chr_fe_init(&s->chr, chr, &error_abort);
+         s->uart = uart;
++#ifdef __EMSCRIPTEN__
++        s_wasm_control = s;
++#endif
+ 
+         // The timer we use to pump more data to the uart
+         s->target_send_timer = timer_new_ms(QEMU_CLOCK_HOST,

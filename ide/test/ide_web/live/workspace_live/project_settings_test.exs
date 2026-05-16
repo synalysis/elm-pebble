@@ -14,6 +14,9 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
              })
 
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
+    html = render(view)
+    assert html =~ "data-emulator-launch"
+    refute html =~ "data-emulator-stop"
 
     view
     |> form("form[phx-change='set-emulator-target']", %{
@@ -26,6 +29,30 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
     assert has_element?(view, "select[name='emulator[target]'] option[selected][value='emery']")
+  end
+
+  test "emulator pane remembers wasm emulator mode in project settings", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceWasmEmulatorSettings",
+               "slug" => "workspace-wasm-emulator-settings",
+               "target_type" => "app"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
+
+    view
+    |> form("form[phx-change='set-emulator-target']", %{
+      "emulator" => %{"target" => "emery", "mode" => "wasm"}
+    })
+    |> render_change()
+
+    updated = Projects.get_project_by_slug(project.slug)
+    assert updated.debugger_settings["emulator_mode"] == "wasm"
+    assert render(view) =~ "WASM Emulator"
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
+    assert has_element?(view, "select[name='emulator[mode]'] option[selected][value='wasm']")
   end
 
   test "project settings pane saves release metadata and github config", %{conn: conn} do
@@ -43,6 +70,8 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
       "project_settings" => %{
         "version_label" => "1.2.3",
         "tags" => "fitness,utility",
+        "target_platforms" => ["basalt", "chalk"],
+        "capabilities" => ["location", "health"],
         "github_owner" => "elm-pebble",
         "github_repo" => "watch",
         "github_branch" => "main"
@@ -55,6 +84,8 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     updated = Projects.get_project_by_slug(project.slug)
     assert updated.release_defaults["version_label"] == "1.2.3"
     assert updated.release_defaults["tags"] == "fitness,utility"
+    assert updated.release_defaults["target_platforms"] == ["basalt", "chalk"]
+    assert updated.release_defaults["capabilities"] == ["location", "health"]
     assert updated.github["owner"] == "elm-pebble"
     assert updated.github["repo"] == "watch"
     assert updated.github["branch"] == "main"

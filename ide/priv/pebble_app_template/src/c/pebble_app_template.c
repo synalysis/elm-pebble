@@ -169,7 +169,7 @@ static inline void elmc_pebble_log_noop(int level, const char *format, ...) {
 #define ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL 1
 #endif
 #ifndef ELMC_PEBBLE_NATIVE_FILL_RADIAL_ENABLED
-#define ELMC_PEBBLE_NATIVE_FILL_RADIAL_ENABLED 0
+#define ELMC_PEBBLE_NATIVE_FILL_RADIAL_ENABLED 1
 #endif
 #ifndef ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
 #define ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE 1
@@ -282,7 +282,7 @@ static void flush_pending_companion_request(void);
 
 static GFont system_font_for_height(int64_t requested_height) {
   GFont font = NULL;
-  if (requested_height <= 22) font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  if (requested_height <= 18) font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   if (!font && requested_height <= 28) font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   if (!font && requested_height <= 36) font = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
   if (!font) font = s_font;
@@ -304,14 +304,8 @@ static GFont font_from_id(int64_t font_id, bool *should_unload) {
 
 static GFont font_from_id_for_height(int64_t font_id, int64_t requested_height, bool *should_unload) {
   uint32_t resource_id = elm_pebble_font_resource_id(font_id);
-  int64_t resource_height = elm_pebble_font_resource_height(font_id);
 
   if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
-    if (should_unload) *should_unload = false;
-    return system_font_for_height(requested_height);
-  }
-
-  if (requested_height > 0 && resource_height > 0 && resource_height > requested_height + 4) {
     if (should_unload) *should_unload = false;
     return system_font_for_height(requested_height);
   }
@@ -890,6 +884,14 @@ static GRect rect_from_params(int64_t x, int64_t y, int64_t w, int64_t h) {
   return GRect((int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h);
 }
 
+static GRect text_point_rect(GRect bounds, int64_t x, int64_t y) {
+  int width = bounds.size.w - (int)x;
+  int height = bounds.size.h - (int)y;
+  if (width < 1) width = 1;
+  if (height < 1) height = 1;
+  return GRect((int16_t)x, (int16_t)y, (int16_t)width, (int16_t)height);
+}
+
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
 static int min_int(int a, int b) {
   return a < b ? a : b;
@@ -1305,7 +1307,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         int32_t angle_start = (int32_t)cmd->p4;
         int32_t angle_end = (int32_t)cmd->p5;
         if (rect_params_are_valid(w, h)) {
-          graphics_fill_radial(ctx, GRect(x, y, w, h), GOvalScaleModeFitCircle, 0, angle_start, angle_end);
+          uint16_t thickness = (uint16_t)((w < h ? w : h) / 2);
+          graphics_fill_radial(ctx, GRect(x, y, w, h), GOvalScaleModeFitCircle, thickness, angle_start, angle_end);
         }
 #endif
         break;
@@ -1390,9 +1393,9 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         }
         snprintf(text_buf, sizeof(text_buf), "%lld", (long long)cmd->p3);
         graphics_draw_text(ctx, text_buf, font,
-                           GRect((int16_t)cmd->p1, (int16_t)cmd->p2, bounds.size.w, bounds.size.h),
+                           text_point_rect(bounds, cmd->p1, cmd->p2),
                            GTextOverflowModeWordWrap,
-                           GTextAlignmentCenter, NULL);
+                           GTextAlignmentLeft, NULL);
         if (should_unload && font) fonts_unload_custom_font(font);
         drew_text = true;
         break;
@@ -1406,13 +1409,15 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
           break;
         }
         const char *label = "Label";
-        if (cmd->p3 == 0) {
+        if (cmd->text[0] != '\0') {
+          label = cmd->text;
+        } else if (cmd->p3 == 0) {
           label = "Waiting for companion app";
         }
         graphics_draw_text(ctx, label, font,
-                           GRect((int16_t)cmd->p1, (int16_t)cmd->p2, bounds.size.w, bounds.size.h),
+                           text_point_rect(bounds, cmd->p1, cmd->p2),
                            GTextOverflowModeWordWrap,
-                           GTextAlignmentCenter, NULL);
+                           GTextAlignmentLeft, NULL);
         if (should_unload && font) fonts_unload_custom_font(font);
         drew_text = true;
         break;

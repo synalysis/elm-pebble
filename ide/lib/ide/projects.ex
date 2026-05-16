@@ -352,6 +352,14 @@ defmodule Ide.Projects do
   end
 
   @doc """
+  Lists uploaded source font files for a project.
+  """
+  @spec list_font_sources(term()) :: term()
+  def list_font_sources(%Project{} = project) do
+    ResourceStore.list_font_sources(project)
+  end
+
+  @doc """
   Imports a font resource and regenerates the generated resources Elm module.
   """
   @spec import_font_resource(term(), term(), term()) :: term()
@@ -360,11 +368,35 @@ defmodule Ide.Projects do
   end
 
   @doc """
+  Adds a generated font variant for an uploaded source font.
+  """
+  @spec add_font_variant(term(), map()) :: term()
+  def add_font_variant(%Project{} = project, params) when is_map(params) do
+    ResourceStore.add_font_variant(project, params)
+  end
+
+  @doc """
+  Updates a generated font variant.
+  """
+  @spec update_font_variant(term(), String.t(), map()) :: term()
+  def update_font_variant(%Project{} = project, ctor, params) when is_binary(ctor) and is_map(params) do
+    ResourceStore.update_font_variant(project, ctor, params)
+  end
+
+  @doc """
   Deletes one font resource and regenerates the generated resources Elm module.
   """
   @spec delete_font_resource(term(), term()) :: term()
   def delete_font_resource(%Project{} = project, ctor) do
     ResourceStore.delete_font(project, ctor)
+  end
+
+  @doc """
+  Deletes an uploaded source font and its generated variants.
+  """
+  @spec delete_font_source(term(), String.t()) :: term()
+  def delete_font_source(%Project{} = project, source_id) when is_binary(source_id) do
+    ResourceStore.delete_font_source(project, source_id)
   end
 
   @spec maybe_activate_first(term()) :: term()

@@ -625,8 +625,9 @@ defmodule Elmc.Backend.Pebble do
           return elmc_decode_path_payload(tuple->second, out_cmd);
         }
     #endif
-    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
-        if (out_cmd->kind == ELMC_PEBBLE_DRAW_TEXT) {
+    #if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
+        if (out_cmd->kind == ELMC_PEBBLE_DRAW_TEXT ||
+            out_cmd->kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT) {
           int64_t payload[5] = {0, 0, 0, 0, 0};
           ElmcValue *current = tuple->second;
           for (int i = 0; i < 5; i++) {
@@ -921,7 +922,8 @@ defmodule Elmc.Backend.Pebble do
     static int elmc_pebble_scene_cmd_extra_size(const ElmcPebbleDrawCmd *cmd) {
       if (!cmd) return 0;
       int extra = 0;
-      if (cmd->kind == ELMC_PEBBLE_DRAW_TEXT) {
+      if (cmd->kind == ELMC_PEBBLE_DRAW_TEXT ||
+          cmd->kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT) {
         int text_len = 0;
         while (text_len < (int)sizeof(cmd->text) && cmd->text[text_len] != '\\0') text_len++;
         extra += 1 + text_len;
@@ -953,7 +955,8 @@ defmodule Elmc.Backend.Pebble do
       rc = elmc_pebble_scene_put_i32(app, cmd->p3); if (rc != 0) return rc;
       rc = elmc_pebble_scene_put_i32(app, cmd->p4); if (rc != 0) return rc;
       rc = elmc_pebble_scene_put_i32(app, cmd->p5); if (rc != 0) return rc;
-      if (cmd->kind == ELMC_PEBBLE_DRAW_TEXT) {
+      if (cmd->kind == ELMC_PEBBLE_DRAW_TEXT ||
+          cmd->kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT) {
         int text_len = 0;
         while (text_len < (int)sizeof(cmd->text) && cmd->text[text_len] != '\\0') text_len++;
         rc = elmc_pebble_scene_put_u8(app, (unsigned char)text_len);
@@ -1005,7 +1008,9 @@ defmodule Elmc.Backend.Pebble do
       out_cmd->p3 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
       out_cmd->p4 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
       out_cmd->p5 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
-      if (kind == ELMC_PEBBLE_DRAW_TEXT && *offset < payload_end) {
+      if ((kind == ELMC_PEBBLE_DRAW_TEXT ||
+           kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT) &&
+          *offset < payload_end) {
         int text_len = bytes[*offset];
         *offset += 1;
         if (text_len > (int)sizeof(out_cmd->text) - 1) text_len = (int)sizeof(out_cmd->text) - 1;
@@ -2745,7 +2750,7 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT", flags[:draw_round_rect]},
       {"ELMC_PEBBLE_FEATURE_DRAW_ARC", flags[:draw_arc]},
       {"ELMC_PEBBLE_FEATURE_DRAW_PATH", flags[:draw_path]},
-      {"ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL", false},
+      {"ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL", flags[:draw_fill_radial]},
       {"ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE", flags[:draw_compositing_mode]},
       {"ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT", flags[:draw_bitmap_in_rect]},
       {"ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP", flags[:draw_rotated_bitmap]},

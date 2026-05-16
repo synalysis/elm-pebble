@@ -69,6 +69,29 @@ defmodule Ide.Screenshots do
   end
 
   @doc """
+  Stores a browser-captured PNG under the same project/target screenshot storage.
+  """
+  @spec store_png(project_slug(), String.t(), binary()) :: {:ok, screenshot()} | {:error, term()}
+  def store_png(project_slug, emulator_target, png) when is_binary(png) do
+    with {:ok, storage_root} <- storage_root(),
+         {:ok, emulator_target} <- normalize_emulator_target(emulator_target),
+         true <- png_signature?(png) do
+      target_dir = Path.join([storage_root, project_slug, emulator_target])
+      :ok = File.mkdir_p(target_dir)
+
+      absolute_path = Path.join(target_dir, "shot-#{timestamp()}.png")
+
+      case File.write(absolute_path, png) do
+        :ok -> {:ok, build_entry(project_slug, emulator_target, absolute_path)}
+        {:error, reason} -> {:error, {:write_failed, reason}}
+      end
+    else
+      false -> {:error, :invalid_png}
+      error -> error
+    end
+  end
+
+  @doc """
   Captures screenshots for all supported emulator targets.
   """
   @spec capture_all_targets(project_slug(), opts()) ::
@@ -350,6 +373,9 @@ defmodule Ide.Screenshots do
   defp file_name_image?(name) do
     String.ends_with?(name, [".png", ".jpg", ".jpeg", ".gif", ".webp"])
   end
+
+  defp png_signature?(<<137, 80, 78, 71, 13, 10, 26, 10, _::binary>>), do: true
+  defp png_signature?(_), do: false
 
   @spec timestamp() :: term()
   defp timestamp do

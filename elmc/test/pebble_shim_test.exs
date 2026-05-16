@@ -901,9 +901,9 @@ defmodule Elmc.PebbleShimTest do
       |> String.split("ElmcValue *elmc_fn_Main_", parts: 2)
       |> hd()
 
-    assert point_at_body =~ "double native_float_theta_"
-    assert point_at_body =~ "elmc_basics_sin_double(native_float_theta_"
-    assert point_at_body =~ "elmc_basics_cos_double(native_float_theta_"
+    assert point_at_body =~ "native_trig_theta_"
+    assert point_at_body =~ "generated_trig_sin_double(native_trig_theta_"
+    assert point_at_body =~ "generated_trig_cos_double(native_trig_theta_"
     refute point_at_body =~ "elmc_basics_sin(tmp_"
     refute point_at_body =~ "elmc_basics_cos(tmp_"
     refute point_at_body =~ "elmc_new_float"
@@ -1144,6 +1144,22 @@ defmodule Elmc.PebbleShimTest do
     assert String.contains?(generated, "elmc_fn_Main_drawCell_commands_append")
   end
 
+  test "fillRadial references enable radial draw runtime feature" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/pebble_fill_radial_feature_project", __DIR__)
+    out_dir = Path.expand("tmp/pebble_fill_radial_feature_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_fill_radial_feature_app!(project_dir)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
+
+    assert draw_feature?(header, "FILL_RADIAL")
+  end
+
   defp available_c_compilers do
     ["cc", "gcc", "clang"]
     |> Enum.map(fn name -> {name, System.find_executable(name)} end)
@@ -1223,6 +1239,59 @@ defmodule Elmc.PebbleShimTest do
             , subscriptions = subscriptions
             , view = view
             }
+    """)
+  end
+
+  defp write_fill_radial_feature_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.windowStack
+            [ Ui.window 1
+                [ Ui.canvasLayer 1
+                    [ Ui.group
+                        (Ui.context
+                            [ Ui.fillColor Color.chromeYellow ]
+                            [ Ui.fillRadial { x = 8, y = 8, w = 96, h = 96 } 0 32768 ]
+                        )
+                    ]
+                ]
+            ]
     """)
   end
 

@@ -21,10 +21,30 @@ services:
       ELM_PEBBLE_QEMU_IMAGE_ROOT: /var/lib/ide/.pebble-sdk/SDKs/current/sdk-core/pebble
       ELM_PEBBLE_QEMU_DATA_ROOT: /usr/share/qemu
       ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES: ${ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES:-1}
+      ELM_PEBBLE_WASM_EMULATOR_ROOT: /var/lib/ide/wasm_emulator
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-8eXjTGrTXoJHN8S-sqKoLrXp1xQ8vlqv2Ryr_5wPjMz5f4lAQ9S3v5dvU7uIGrYb}
     volumes:
       - elm_pebble_ide_data:/var/lib/ide
     restart: unless-stopped
+
+  wasm-emulator-builder:
+    image: docker:29-cli
+    profiles: ["wasm-emulator"]
+    working_dir: ${PWD}
+    environment:
+      ELM_PEBBLE_WASM_OUTPUT_DIR: /var/lib/ide/wasm_emulator
+      ELM_PEBBLE_WASM_CACHE_DIR: ${PWD}/ide/priv/wasm_emulator/vendor
+      PEBBLE_WASM_FIRMWARE_PLATFORM: ${PEBBLE_WASM_FIRMWARE_PLATFORM:-emery}
+      QEMU_VERSION: ${QEMU_VERSION:-10.1.0}
+    volumes:
+      - .:/workspace
+      - .:${PWD}
+      - elm_pebble_ide_data:/var/lib/ide
+      - ${HOME}/.pebble-sdk:/host-pebble-sdk:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: ["/bin/sh", "-lc"]
+    command:
+      - apk add --no-cache bash curl git patch tar xz bzip2 && ${PWD}/scripts/build_wasm_emulator_runtime.sh; status=$$?; chown -R "$$(stat -c '%u:%g' ${PWD})" ${PWD}/ide/priv/wasm_emulator/vendor 2>/dev/null || true; exit $$status
 
 volumes:
   elm_pebble_ide_data:

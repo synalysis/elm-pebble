@@ -32,6 +32,11 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   @spec read_only_tab?(term()) :: term()
   def read_only_tab?(%{read_only: true}), do: true
+
+  def read_only_tab?(%{source_root: source_root, rel_path: rel_path})
+      when is_binary(source_root) and is_binary(rel_path),
+      do: ResourceStore.read_only_generated_module?(source_root, rel_path)
+
   def read_only_tab?(_), do: false
 
   @spec ensure_can_modify_editor_file(term()) :: term()
@@ -154,12 +159,24 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
         token = System.unique_integer([:positive])
 
         socket
+        |> assign_dependency_lists(
+          EditorDependencies.read_dependency_lists(project, packages_root)
+        )
         |> assign(:editor_deps_refresh_token, token)
         |> start_async(:refresh_editor_dependencies, fn ->
           {EditorDependencies.build_payload(project, packages_root, doc_root), token}
         end)
     end
   end
+
+  @spec assign_dependency_lists(term(), map()) :: term()
+  defp assign_dependency_lists(socket, %{dependencies_available?: true} = payload) do
+    socket
+    |> assign(:project_elm_direct, payload.direct)
+    |> assign(:project_elm_indirect, payload.indirect)
+  end
+
+  defp assign_dependency_lists(socket, _payload), do: socket
 
   @spec editor_source_display_path(term()) :: term()
   def editor_source_display_path("src/" <> rest), do: rest

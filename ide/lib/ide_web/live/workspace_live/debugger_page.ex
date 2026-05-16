@@ -2090,8 +2090,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       </div>
       <div class="mb-2 shrink-0 rounded border border-zinc-200 bg-zinc-100 p-2">
         <div class={[
-          if(@show_watch_buttons, do: "grid grid-cols-[auto_minmax(0,1fr)_auto]", else: "block"),
-          "items-center gap-2"
+          if(@show_watch_buttons, do: "flex w-max", else: "block"),
+          "items-center justify-center gap-4 overflow-x-auto"
         ]}>
           <.debugger_watch_button :if={@show_watch_buttons} button={@watch_button_controls.back} />
           <svg

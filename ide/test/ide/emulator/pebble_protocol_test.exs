@@ -86,6 +86,15 @@ defmodule Ide.Emulator.PebbleProtocolTest do
       assert Base.encode16(payload, case: :lower) == expected
     end
 
+    test "golden BlobDB app metadata delete" do
+      {ep, payload} = Packets.blob_delete_app(0x1235, "6e5066e4-2709-4eb2-97a6-c8ff29b643bf")
+
+      assert ep == Packets.endpoint(:blob_db)
+
+      assert Base.encode16(payload, case: :lower) ==
+               "04351202106e5066e427094eb297a6c8ff29b643bf"
+    end
+
     test "golden PutBytes sequences (aligned with libpebble2.PutBytesApp serialisation)" do
       {_, p1} = Packets.putbytes_app_init(100, Packets.object_type(:binary), 42)
 

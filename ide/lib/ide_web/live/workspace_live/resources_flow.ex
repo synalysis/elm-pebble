@@ -19,7 +19,15 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   def font_upload_output(results) when is_list(results) do
     ok_count = Enum.count(results, &is_map/1)
-    "Uploaded #{ok_count} font#{if ok_count == 1, do: "", else: "s"}."
+    "Uploaded #{ok_count} source font#{if ok_count == 1, do: "", else: "s"}."
+  end
+
+  @spec load_font_sources(term()) :: term()
+  def load_font_sources(%Project{} = project) do
+    case Projects.list_font_sources(project) do
+      {:ok, entries} -> entries
+      _ -> []
+    end
   end
 
   @spec load_bitmap_resources(term()) :: term()

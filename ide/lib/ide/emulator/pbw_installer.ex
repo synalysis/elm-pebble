@@ -8,7 +8,7 @@ defmodule Ide.Emulator.PBWInstaller do
   alias Ide.Emulator.PebbleProtocol.Packets
   alias Ide.Emulator.PebbleProtocol.Router
 
-  @default_chunk_size 1_000
+  @default_chunk_size 500
   @default_timeout_ms 30_000
   @default_install_timeout_ms 120_000
   @default_putbytes_retries 2
@@ -222,6 +222,54 @@ defmodule Ide.Emulator.PBWInstaller do
     {endpoint, payload} = Packets.blob_insert_app(token, metadata)
     Logger.debug("native pbw install blobdb insert token=#{token} uuid=#{metadata.uuid}")
 
+    result =
+      send_blob_request(router, endpoint, payload, token, timeout)
+
+    case result do
+      :ok ->
+        :ok
+
+      {:error, {:blob_insert_failed, response}} ->
+        Logger.debug(
+          "native pbw install blobdb insert failed response=#{response}; deleting stale app metadata and retrying"
+        )
+
+        _ = delete_app_metadata(router, metadata.uuid, timeout)
+        retry_insert_app_metadata(router, metadata, timeout)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp retry_insert_app_metadata(router, metadata, timeout) do
+    token = System.unique_integer([:positive]) |> rem(0xFFFE) |> Kernel.+(1)
+    {endpoint, payload} = Packets.blob_insert_app(token, metadata)
+
+    Logger.debug("native pbw install blobdb retry insert token=#{token} uuid=#{metadata.uuid}")
+    send_blob_request(router, endpoint, payload, token, timeout)
+  end
+
+  defp delete_app_metadata(router, uuid, timeout) do
+    token = System.unique_integer([:positive]) |> rem(0xFFFE) |> Kernel.+(1)
+    {endpoint, payload} = Packets.blob_delete_app(token, uuid)
+
+    Logger.debug("native pbw install blobdb delete token=#{token} uuid=#{uuid}")
+
+    case send_blob_request(router, endpoint, payload, token, timeout) do
+      :ok ->
+        :ok
+
+      {:error, reason} = error ->
+        Logger.debug(
+          "native pbw install blobdb delete before retry failed uuid=#{uuid} reason=#{inspect(reason)}"
+        )
+
+        error
+    end
+  end
+
+  defp send_blob_request(router, endpoint, payload, token, timeout) do
     with {:ok, frame} <-
            Router.send_and_await(
              router,
@@ -484,12 +532,13 @@ defmodule Ide.Emulator.PBWInstaller do
          true
        ) do
     Logger.debug("native pbw install part install kind=#{kind} cookie=#{cookie}")
+    expected_cookies = [cookie, 0]
 
     with {:ok, install} <-
            send_putbytes(
              router,
              Packets.putbytes_install(cookie),
-             nil,
+             expected_cookies,
              %{phase: :install, kind: kind, cookie: cookie},
              install_timeout,
              putbytes_retries
@@ -503,6 +552,7 @@ defmodule Ide.Emulator.PBWInstaller do
         %{
           kind: kind,
           request_cookie: cookie,
+          expected_cookies: expected_cookies,
           response_cookie: install.cookie,
           response: to_string(install.result)
         }
@@ -538,6 +588,13 @@ defmodule Ide.Emulator.PBWInstaller do
       {:error, {:putbytes_failed, %{phase: :install_transition}, :timeout}} ->
         Logger.debug(
           "native pbw install transition timed out kind=#{kind} cookie=#{cookie}; continuing"
+        )
+
+        :ok
+
+      {:error, {:putbytes_failed, %{phase: :install_transition}, {:timeout, observed}}} ->
+        Logger.debug(
+          "native pbw install transition timed out kind=#{kind} cookie=#{cookie} observed=#{inspect(observed)}; continuing"
         )
 
         :ok

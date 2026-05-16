@@ -108,8 +108,43 @@ defmodule Ide.ProjectsTest do
     assert {:ok, _} = Projects.import_font_resource(project, tmp_ttf, "menu.ttf")
     assert {:ok, entries} = Projects.list_bitmap_resources(project)
     assert [%{ctor: "Logo"}] = entries
+    assert {:ok, font_sources} = Projects.list_font_sources(project)
+    assert [%{id: source_id, filename: "menu.ttf"}] = font_sources
+    source_font_path = Path.join(Projects.project_workspace_path(project), "watch/resources/fonts/menu.ttf")
+    assert File.exists?(source_font_path)
+
+    assert {:ok, _} =
+             Projects.add_font_variant(project, %{
+               "source_id" => source_id,
+               "ctor" => "MenuDigits28",
+               "name" => "Menu Digits 28",
+               "height" => "28",
+               "characters" => "[0-9:.]",
+               "tracking_adjust" => "1",
+               "compatibility" => "2.7",
+               "target_platforms" => "basalt chalk"
+             })
+
+    assert {:ok, _} =
+             Projects.add_font_variant(project, %{
+               "source_id" => source_id,
+               "ctor" => "MenuText18",
+               "name" => "Menu Text 18",
+               "height" => "18",
+               "characters" => "[A-Za-z ]",
+               "tracking_adjust" => "0",
+               "compatibility" => "3.0"
+             })
+
     assert {:ok, font_entries} = Projects.list_font_resources(project)
-    assert [%{ctor: "Menu"}] = font_entries
+    assert Enum.map(font_entries, & &1.ctor) == ["MenuDigits28", "MenuText18"]
+
+    assert {:ok, _} = Projects.add_font_variant(project, %{"source_id" => source_id})
+    assert {:ok, font_entries} = Projects.list_font_resources(project)
+    auto_entry = Enum.find(font_entries, &(&1.ctor == "Menu"))
+    assert auto_entry.height == 29
+    assert auto_entry.compatibility == "latest"
+    assert auto_entry.target_platforms == []
 
     generated =
       Path.join(Projects.project_workspace_path(project), "watch/src/Pebble/Ui/Resources.elm")
@@ -121,14 +156,24 @@ defmodule Ide.ProjectsTest do
     assert String.contains?(source, "bitmapInfo")
     assert String.contains?(source, "type Font")
     assert String.contains?(source, "Menu")
+    assert String.contains?(source, "MenuDigits28")
+    assert String.contains?(source, "MenuText18")
+    assert String.contains?(source, "height = 28")
+    assert String.contains?(source, "height = 18")
     assert String.contains?(source, "type alias FontInfo")
     assert String.contains?(source, "fontInfo")
     refute String.contains?(source, "toResourceId")
 
     assert {:ok, _} = Projects.delete_bitmap_resource(project, "Logo")
     assert {:ok, []} = Projects.list_bitmap_resources(project)
-    assert {:ok, _} = Projects.delete_font_resource(project, "Menu")
+    assert {:ok, _} = Projects.delete_font_resource(project, "MenuDigits28")
+    assert File.exists?(source_font_path)
+    assert {:ok, remaining_fonts} = Projects.list_font_resources(project)
+    assert Enum.map(remaining_fonts, & &1.ctor) == ["Menu", "MenuText18"]
+    assert {:ok, _} = Projects.delete_font_source(project, source_id)
+    refute File.exists?(source_font_path)
     assert {:ok, []} = Projects.list_font_resources(project)
+    assert {:ok, []} = Projects.list_font_sources(project)
   end
 
   test "game templates seed app projects with Elm game APIs" do
@@ -408,6 +453,8 @@ defmodule Ide.ProjectsTest do
     assert {:ok, generated_preferences} =
              Projects.read_source_file(project, "phone", "src/Companion/GeneratedPreferences.elm")
 
+    assert String.contains?(generated_preferences, "Subscribe to configuration responses")
+    assert String.contains?(generated_preferences, "decodeConfigurationFlags flags")
     assert String.contains?(generated_preferences, "decodeConfigurationSaved")
     assert String.contains?(generated_preferences, "decodeConfigurationFlags")
     assert String.contains?(generated_preferences, "configurationFlagsDecoder")

@@ -5,7 +5,7 @@ defmodule Elmc.Runtime.Generator do
 
   alias Elmc.Runtime.JsonSections
 
-  @type write_opts :: [prune_from_dir: String.t() | nil]
+  @type write_opts :: [prune_from_dir: String.t() | nil, pebble_int32: boolean()]
 
   @spec write_runtime(String.t(), write_opts()) :: :ok | {:error, term()}
   def write_runtime(runtime_dir, opts \\ []) do
@@ -104,8 +104,6 @@ defmodule Elmc.Runtime.Generator do
       source
     end
   end
-
-  defp maybe_drop_float_runtime(source, _refs), do: source
 
   @spec collect_runtime_references(term()) :: term()
   defp collect_runtime_references(dir) do

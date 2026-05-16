@@ -5,7 +5,7 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
   require Logger
 
-  alias Ide.Emulator.PebbleProtocol.Frame
+  alias Ide.Emulator.PebbleProtocol.{Frame, Trace}
 
   @qemu_header 0xFEED
   @qemu_footer 0xBEEF
@@ -64,19 +64,21 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
   @impl true
   def handle_call({:send_and_await, endpoint, payload, matcher, timeout}, from, state) do
+    trace_outbound(endpoint, payload)
     :ok = :gen_tcp.send(state.qemu, qemu_spp_packet(Frame.encode(endpoint, payload)))
     timer = Process.send_after(self(), {:waiter_timeout, from}, timeout)
-    waiter = %{from: from, matcher: matcher, timer: timer}
+    waiter = %{from: from, matcher: matcher, timer: timer, observed: []}
     {:noreply, %{state | waiters: [waiter | state.waiters]}}
   end
 
   def handle_call({:await_frame, matcher, timeout}, from, state) do
     timer = Process.send_after(self(), {:waiter_timeout, from}, timeout)
-    waiter = %{from: from, matcher: matcher, timer: timer}
+    waiter = %{from: from, matcher: matcher, timer: timer, observed: []}
     {:noreply, %{state | waiters: [waiter | state.waiters]}}
   end
 
   def handle_call({:send_packet, endpoint, payload}, _from, state) do
+    trace_outbound(endpoint, payload)
     :ok = :gen_tcp.send(state.qemu, qemu_spp_packet(Frame.encode(endpoint, payload)))
     {:reply, :ok, state}
   end
@@ -142,7 +144,7 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
     Enum.each(timed_out, fn waiter ->
       Process.cancel_timer(waiter.timer)
-      GenServer.reply(waiter.from, {:error, :timeout})
+      GenServer.reply(waiter.from, {:error, timeout_reason(waiter)})
     end)
 
     {:noreply, %{state | waiters: waiters}}
@@ -199,7 +201,10 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   end
 
   defp handle_qemu_frame(frame, state) do
+    trace_inbound(frame)
+
     {matched, waiters} = Enum.split_with(state.waiters, fn waiter -> waiter.matcher.(frame) end)
+    waiters = Enum.map(waiters, &observe_waiter_frame(&1, frame))
 
     case matched do
       [] ->
@@ -216,6 +221,30 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
         %{state | waiters: waiters}
     end
+  end
+
+  defp observe_waiter_frame(waiter, frame) do
+    observed =
+      [frame_summary(frame) | Map.get(waiter, :observed, [])]
+      |> Enum.take(20)
+
+    %{waiter | observed: observed}
+  end
+
+  defp timeout_reason(%{observed: []}), do: :timeout
+  defp timeout_reason(%{observed: observed}), do: {:timeout, Enum.reverse(observed)}
+
+  defp frame_summary(frame) do
+    payload = Map.get(frame, :payload, <<>>)
+
+    %{
+      endpoint: Map.get(frame, :endpoint),
+      payload_bytes: byte_size(payload),
+      payload_prefix:
+        payload
+        |> binary_part(0, min(byte_size(payload), 48))
+        |> Base.encode16(case: :lower)
+    }
   end
 
   defp flush_pypkjs_queue(state) do
@@ -236,6 +265,14 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
   defp qemu_packet(protocol, payload) do
     <<@qemu_header::16, protocol::16, byte_size(payload)::16, payload::binary, @qemu_footer::16>>
+  end
+
+  defp trace_outbound(endpoint, payload) do
+    if Trace.enabled?(), do: Trace.emit("host->watch", %{endpoint: endpoint, payload: payload})
+  end
+
+  defp trace_inbound(frame) do
+    if Trace.enabled?(), do: Trace.emit("watch->host", frame)
   end
 
   defp parse_qemu_packets(buffer), do: parse_qemu_packets(buffer, [])

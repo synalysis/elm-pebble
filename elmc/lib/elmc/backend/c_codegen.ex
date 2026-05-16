@@ -2178,7 +2178,7 @@ defmodule Elmc.Backend.CCodegen do
       code = """
       #{left_code}
         #{right_code}
-        ElmcValue *#{out} = elmc_tuple2_take(#{left_var}, #{right_var});
+          ElmcValue *#{out} = elmc_tuple2_take(#{left_var}, #{right_var});
       """
 
       {code, out, next}
@@ -2418,8 +2418,8 @@ defmodule Elmc.Backend.CCodegen do
       out = "tmp_#{next}"
 
       code = """
-      #{value_code}
-        ElmcValue *#{out} = elmc_string_from_native_int(#{value_ref});
+        #{value_code}
+          ElmcValue *#{out} = elmc_string_from_native_int(#{value_ref});
       """
 
       {code, out, next}
@@ -2617,9 +2617,9 @@ defmodule Elmc.Backend.CCodegen do
         {body_code, body_var, counter} = compile_expr(in_expr, body_env, counter)
 
         code = """
-        #{before_probe}
-          #{value_code}
-          #{after_probe}
+            #{before_probe}
+        #{value_code}
+              #{after_probe}
           #{body_code}
           elmc_release(#{value_var});
         """
@@ -2763,13 +2763,13 @@ defmodule Elmc.Backend.CCodegen do
 
         code = """
         #{cond_code}
-          ElmcValue *#{out};
+              ElmcValue *#{out};
           if (elmc_as_int(#{cond_var}) != 0) {
         #{indent(then_code, 4)}
-              #{then_assignment}
+                  #{then_assignment}
           } else {
         #{indent(else_code, 4)}
-              #{else_assignment}
+                  #{else_assignment}
           }
           elmc_release(#{cond_var});
         """
@@ -2851,7 +2851,7 @@ defmodule Elmc.Backend.CCodegen do
       #{field_code}
         const char *rec_names_#{next}[#{max(field_count, 1)}] = { #{names_array} };
         ElmcValue *rec_values_#{next}[#{max(field_count, 1)}] = { #{values_array} };
-        ElmcValue *#{out} = elmc_record_new_take(#{field_count}, rec_names_#{next}, rec_values_#{next});
+          ElmcValue *#{out} = elmc_record_new_take(#{field_count}, rec_names_#{next}, rec_values_#{next});
       """
 
       {code, out, next}
@@ -4900,7 +4900,7 @@ defmodule Elmc.Backend.CCodegen do
     case special_value_from_target(normalized, args) do
       nil ->
         cond do
-          normalized == "Pebble.Ui.text" and length(args || []) == 3 ->
+          normalized == "Pebble.Ui.text" and length(args) == 3 ->
             collect_direct_function_arg_contexts(
               name,
               args,
@@ -5173,31 +5173,31 @@ defmodule Elmc.Backend.CCodegen do
            """
            #{list_code}
            #{prefix_code}
-             ElmcValue *direct_cursor_#{next} = #{list_var};
-            elmc_int_t direct_index_#{next} = 0;
-             while (direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
-               ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-               ElmcValue *direct_index_value_#{next} = elmc_new_int(direct_index_#{next});
-               ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 2, 1)}] = {0};
+           ElmcValue *direct_cursor_#{next} = #{list_var};
+              elmc_int_t direct_index_#{next} = 0;
+           while (direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+             ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+             ElmcValue *direct_index_value_#{next} = elmc_new_int(direct_index_#{next});
+             ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 2, 1)}] = {0};
            #{prefix_bindings}
-               direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
-               direct_call_args_#{next}[#{prefix_count + 1}] = direct_node_#{next}->head;
-               int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 2}, out_cmds, max_cmds, skip, count, emitted);
-               elmc_release(direct_index_value_#{next});
-               if (direct_rc_#{next} < 0) {
-                 elmc_release(#{list_var});
+             direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
+             direct_call_args_#{next}[#{prefix_count + 1}] = direct_node_#{next}->head;
+             int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 2}, out_cmds, max_cmds, skip, count, emitted);
+             elmc_release(direct_index_value_#{next});
+             if (direct_rc_#{next} < 0) {
+               elmc_release(#{list_var});
            #{prefix_releases}
-                 return direct_rc_#{next};
-               }
-               if (*count >= max_cmds) {
-                 elmc_release(#{list_var});
-           #{prefix_releases}
-                 return 0;
-               }
-               direct_index_#{next} += 1;
-               direct_cursor_#{next} = direct_node_#{next}->tail;
+               return direct_rc_#{next};
              }
-             elmc_release(#{list_var});
+             if (*count >= max_cmds) {
+               elmc_release(#{list_var});
+           #{prefix_releases}
+               return 0;
+             }
+             direct_index_#{next} += 1;
+             direct_cursor_#{next} = direct_node_#{next}->tail;
+           }
+           elmc_release(#{list_var});
            #{prefix_releases}
            """, counter}
       end
@@ -5270,26 +5270,26 @@ defmodule Elmc.Backend.CCodegen do
            """
            #{list_code}
            #{prefix_code}
-             ElmcValue *direct_cursor_#{next} = #{list_var};
-             while (direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
-               ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-               ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 1, 1)}] = {0};
+           ElmcValue *direct_cursor_#{next} = #{list_var};
+           while (direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+             ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+             ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 1, 1)}] = {0};
            #{prefix_bindings}
-               direct_call_args_#{next}[#{prefix_count}] = direct_node_#{next}->head;
-               int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 1}, out_cmds, max_cmds, skip, count, emitted);
-               if (direct_rc_#{next} < 0) {
-                 elmc_release(#{list_var});
+             direct_call_args_#{next}[#{prefix_count}] = direct_node_#{next}->head;
+             int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 1}, out_cmds, max_cmds, skip, count, emitted);
+             if (direct_rc_#{next} < 0) {
+               elmc_release(#{list_var});
            #{prefix_releases}
-                 return direct_rc_#{next};
-               }
-               if (*count >= max_cmds) {
-                 elmc_release(#{list_var});
-           #{prefix_releases}
-                 return 0;
-               }
-               direct_cursor_#{next} = direct_node_#{next}->tail;
+               return direct_rc_#{next};
              }
-             elmc_release(#{list_var});
+             if (*count >= max_cmds) {
+               elmc_release(#{list_var});
+           #{prefix_releases}
+               return 0;
+             }
+             direct_cursor_#{next} = direct_node_#{next}->tail;
+           }
+           elmc_release(#{list_var});
            #{prefix_releases}
            """, counter}
       end
@@ -5414,9 +5414,16 @@ defmodule Elmc.Backend.CCodegen do
 
   defp direct_emit_qualified("Pebble.Ui.textLabel", [font, pos, label], env, counter),
     do:
-      direct_append_command(
+      direct_append_text_command(
         draw_kind(:text_label_with_font),
-        [font, field_access_expr(pos, "x"), field_access_expr(pos, "y"), label],
+        [
+          font,
+          field_access_expr(pos, "x"),
+          field_access_expr(pos, "y"),
+          %{op: :int_literal, value: 0},
+          %{op: :int_literal, value: 0}
+        ],
+        label,
         env,
         counter
       )
@@ -5819,7 +5826,7 @@ defmodule Elmc.Backend.CCodegen do
 
     {:ok,
      """
-      if (*emitted >= skip && *count < max_cmds) {
+       if (*emitted >= skip && *count < max_cmds) {
      #{indent(code, 2)}
      #{indent(text_code, 2)}
         elmc_generated_draw_init(&out_cmds[*count], #{draw_kind_c_name(kind)});
@@ -6582,10 +6589,16 @@ defmodule Elmc.Backend.CCodegen do
 
   defp special_value_from_target("Pebble.Ui.textLabel", [font_id, pos, label]),
     do:
-      encoded_cmd_expr(
+      encoded_text_cmd_expr(
         draw_kind(:text_label_with_font),
-        [font_id, field_access_expr(pos, "x"), field_access_expr(pos, "y"), label],
-        4
+        [
+          font_id,
+          field_access_expr(pos, "x"),
+          field_access_expr(pos, "y"),
+          %{op: :int_literal, value: 0},
+          %{op: :int_literal, value: 0},
+          label
+        ]
       )
 
   defp special_value_from_target("Pebble.Ui.text", [font_id, bounds, value]),
@@ -9748,10 +9761,10 @@ defmodule Elmc.Backend.CCodegen do
         code = """
         #{left_code}
           #{right_code}
-          ElmcValue *#{out} =
-              ((#{left_var} && #{left_var}->tag == ELMC_TAG_FLOAT) || (#{right_var} && #{right_var}->tag == ELMC_TAG_FLOAT))
-                  ? elmc_new_float(elmc_as_float(#{left_var}) #{operator} elmc_as_float(#{right_var}))
-                  : elmc_new_int(elmc_as_int(#{left_var}) #{operator} elmc_as_int(#{right_var}));
+              ElmcValue *#{out} =
+                  ((#{left_var} && #{left_var}->tag == ELMC_TAG_FLOAT) || (#{right_var} && #{right_var}->tag == ELMC_TAG_FLOAT))
+                      ? elmc_new_float(elmc_as_float(#{left_var}) #{operator} elmc_as_float(#{right_var}))
+                      : elmc_new_int(elmc_as_int(#{left_var}) #{operator} elmc_as_int(#{right_var}));
           elmc_release(#{left_var});
           elmc_release(#{right_var});
         """
@@ -10009,7 +10022,7 @@ defmodule Elmc.Backend.CCodegen do
 
     code = """
     #{left_code}
-    #{right_code}
+      #{right_code}
       const elmc_int_t #{left_var} = #{left_ref};
       const elmc_int_t #{right_var} = #{right_ref};
       const elmc_int_t #{out} = (#{left_var} #{cmp_op} #{right_var}) ? #{left_var} : #{right_var};
@@ -10472,7 +10485,6 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp format_function_target({module_name, function_name}), do: "#{module_name}.#{function_name}"
-  defp format_function_target(other), do: inspect(other)
 
   defp native_min_max_name("elmc_basics_min"), do: "min"
   defp native_min_max_name("elmc_basics_max"), do: "max"
@@ -10832,9 +10844,9 @@ defmodule Elmc.Backend.CCodegen do
         case operator do
           "__eq__" ->
             """
-            #{left_code}
-              #{right_code}
-              const elmc_int_t #{out} = elmc_value_equal(#{left_var}, #{right_var});
+                    #{left_code}
+                      #{right_code}
+                      const elmc_int_t #{out} = elmc_value_equal(#{left_var}, #{right_var});
               elmc_release(#{left_var});
               elmc_release(#{right_var});
             """
@@ -10911,8 +10923,8 @@ defmodule Elmc.Backend.CCodegen do
       code = """
       #{left_code}
         #{right_code}
-        const double __denf_#{next} = elmc_as_float(#{right_var});
-        const double __numf_#{next} = elmc_as_float(#{left_var});
+          const double __denf_#{next} = elmc_as_float(#{right_var});
+          const double __numf_#{next} = elmc_as_float(#{left_var});
         ElmcValue *#{out} = elmc_new_float(__numf_#{next} / __denf_#{next});
         elmc_release(#{left_var});
         elmc_release(#{right_var});

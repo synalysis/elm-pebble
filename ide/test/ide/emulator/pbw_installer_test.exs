@@ -50,6 +50,74 @@ defmodule Ide.Emulator.PBWInstallerTest do
     :gen_tcp.close(server)
   end
 
+  test "deletes stale BlobDB app metadata and retries insert after insert failure" do
+    path = tmp_pbw()
+    {:ok, server, qemu_port} = listen()
+    {:ok, proxy_port} = free_port()
+    {:ok, router} = Router.start_link(qemu_port: qemu_port, proxy_port: proxy_port)
+    {:ok, qemu} = :gen_tcp.accept(server, 1_000)
+
+    task =
+      Task.async(fn ->
+        PBWInstaller.install(router, path, "emery",
+          chunk_size: 2,
+          timeout_ms: 1_000,
+          install_transition_timeout_ms: 1_000
+        )
+      end)
+
+    reject_blob_insert(qemu, 0x02)
+    acknowledge_blob_delete(qemu)
+    acknowledge_blob_insert(qemu)
+    request_app_fetch(qemu, 0x11223344)
+
+    assert_putbytes_part(qemu, 0x11223344, 0x85, <<1, 2, 3>>, 0xABCDEF01, install?: false)
+    assert_putbytes_part(qemu, 0x11223344, 0x84, <<4, 5>>, 0xABCDEF02)
+
+    assert {:ok, result} = Task.await(task, 1_000)
+    assert Enum.map(result.parts, & &1.kind) == [:binary, :resources]
+
+    GenServer.stop(router)
+    :gen_tcp.close(qemu)
+    :gen_tcp.close(server)
+  end
+
+  test "rejects unrelated final PutBytes install ack cookies" do
+    path = tmp_pbw()
+    {:ok, server, qemu_port} = listen()
+    {:ok, proxy_port} = free_port()
+    {:ok, router} = Router.start_link(qemu_port: qemu_port, proxy_port: proxy_port)
+    {:ok, qemu} = :gen_tcp.accept(server, 1_000)
+
+    task =
+      Task.async(fn ->
+        PBWInstaller.install(router, path, "emery",
+          chunk_size: 2,
+          timeout_ms: 1_000,
+          install_transition_timeout_ms: 1_000,
+          install_retries: 0,
+          part_retries: 0
+        )
+      end)
+
+    acknowledge_blob_insert(qemu)
+    request_app_fetch(qemu, 0x11223344)
+
+    assert_putbytes_part(qemu, 0x11223344, 0x85, <<1, 2, 3>>, 0xABCDEF01, install?: false)
+
+    assert_putbytes_part(qemu, 0x11223344, 0x84, <<4, 5>>, 0xABCDEF02,
+      install_ack_cookie: 0xDEADBEEF
+    )
+
+    assert {:error,
+            {:putbytes_failed, %{phase: :install}, {:wrong_cookie, [0xABCDEF02, 0], 0xDEADBEEF}}} =
+             Task.await(task, 1_000)
+
+    GenServer.stop(router)
+    :gen_tcp.close(qemu)
+    :gen_tcp.close(server)
+  end
+
   test "retries transient PutBytes chunk NACKs" do
     path = tmp_pbw()
     {:ok, server, qemu_port} = listen()
@@ -209,9 +277,7 @@ defmodule Ide.Emulator.PBWInstallerTest do
 
     assert_putbytes_part(qemu, 0x11223344, 0x85, <<1, 2, 3>>, 0xABCDEF01, install?: false)
 
-    assert_putbytes_part(qemu, 0x11223344, 0x84, <<4, 5>>, 0xABCDEF02,
-      install_ack_delay_ms: 250
-    )
+    assert_putbytes_part(qemu, 0x11223344, 0x84, <<4, 5>>, 0xABCDEF02, install_ack_delay_ms: 250)
 
     assert {:ok, result} = Task.await(task, 1_500)
     assert Enum.map(result.parts, & &1.kind) == [:binary, :resources]
@@ -327,6 +393,25 @@ defmodule Ide.Emulator.PBWInstallerTest do
 
   defp acknowledge_blob_insert(qemu) do
     assert {:ok, %{endpoint: 0xB1DB, payload: <<0x01, token::little-16, 0x02, _rest::binary>>}} =
+             recv_frame(qemu)
+
+    :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xB1DB, <<token::little-16, 0x01>>)))
+  end
+
+  defp reject_blob_insert(qemu, response) do
+    assert {:ok, %{endpoint: 0xB1DB, payload: <<0x01, token::little-16, 0x02, _rest::binary>>}} =
+             recv_frame(qemu)
+
+    :ok =
+      :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xB1DB, <<token::little-16, response>>)))
+  end
+
+  defp acknowledge_blob_delete(qemu) do
+    assert {:ok,
+            %{
+              endpoint: 0xB1DB,
+              payload: <<0x04, token::little-16, 0x02, 16, @uuid_bytes::binary>>
+            }} =
              recv_frame(qemu)
 
     :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0xB1DB, <<token::little-16, 0x01>>)))

@@ -54,7 +54,9 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
            PebbleToolchain.package(project.slug,
              workspace_root: workspace_root,
              target_type: project.target_type,
-             project_name: project.name
+             project_name: project.name,
+             target_platforms: target_platforms(project),
+             capabilities: capabilities(project)
            ) do
       screenshots = load_screenshots(project)
       screenshot_groups = group_screenshots(screenshots)
@@ -63,7 +65,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
       checks =
         case PublishReadiness.validate(
                artifact_path: package_result.artifact_path,
-               required_targets: ToolchainPresenter.emulator_targets(),
+               required_targets: target_platforms(project),
                readiness: readiness,
                app_root: package_result.app_root,
                project_slug: project.slug
@@ -88,7 +90,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
         PublishManifest.export(project.slug,
           artifact_path: package_result.artifact_path,
           screenshot_groups: screenshot_groups,
-          required_targets: ToolchainPresenter.emulator_targets(),
+          required_targets: target_platforms(project),
           readiness: readiness
         )
 
@@ -141,6 +143,53 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     error ->
       {:error, error}
   end
+
+  defp target_platforms(project) do
+    defaults = Map.get(project, :release_defaults, %{}) || %{}
+    allowed = ToolchainPresenter.emulator_targets()
+
+    defaults
+    |> Map.get("target_platforms", allowed)
+    |> normalize_target_platforms(allowed)
+  end
+
+  defp normalize_target_platforms(value, allowed) when is_list(value) do
+    allowed_set = MapSet.new(allowed)
+
+    value
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.filter(&MapSet.member?(allowed_set, &1))
+    |> Enum.uniq()
+    |> case do
+      [] -> allowed
+      platforms -> platforms
+    end
+  end
+
+  defp normalize_target_platforms(_value, allowed), do: allowed
+
+  defp capabilities(project) do
+    defaults = Map.get(project, :release_defaults, %{}) || %{}
+
+    defaults
+    |> Map.get("capabilities", [])
+    |> normalize_capabilities()
+  end
+
+  defp normalize_capabilities(value) when is_list(value) do
+    allowed = MapSet.new(["location", "configurable", "health"])
+
+    value
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.filter(&MapSet.member?(allowed, &1))
+    |> Enum.uniq()
+  end
+
+  defp normalize_capabilities(_), do: []
 
   @spec release_notes_markdown([map()], [map()], String.t() | nil, String.t(), map()) ::
           String.t()

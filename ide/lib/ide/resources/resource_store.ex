@@ -24,6 +24,19 @@ defmodule Ide.Resources.ResourceStore do
   @type font_entry :: %{
           id: String.t(),
           ctor: String.t(),
+          source_id: String.t(),
+          filename: String.t(),
+          mime: String.t(),
+          bytes: non_neg_integer(),
+          height: non_neg_integer(),
+          characters: String.t(),
+          tracking_adjust: integer(),
+          compatibility: String.t(),
+          target_platforms: [String.t()]
+        }
+
+  @type font_source :: %{
+          id: String.t(),
           filename: String.t(),
           mime: String.t(),
           bytes: non_neg_integer()
@@ -171,6 +184,31 @@ defmodule Ide.Resources.ResourceStore do
          %{
            id: to_string(Map.get(row, "id", "")),
            ctor: to_string(Map.get(row, "ctor", "")),
+           source_id: to_string(Map.get(row, "source_id", "")),
+           filename: to_string(Map.get(row, "filename", "")),
+           mime: to_string(Map.get(row, "mime", "font/ttf")),
+           bytes: integer_or_zero(Map.get(row, "bytes", 0)),
+           height: positive_integer_or_default(Map.get(row, "height", 0), 0),
+           characters: to_string(Map.get(row, "characters", "")),
+           tracking_adjust: integer_or_default(Map.get(row, "tracking_adjust", 0), 0),
+           compatibility: to_string(Map.get(row, "compatibility", "2.7")),
+           target_platforms: string_list(Map.get(row, "target_platforms", []))
+         }
+       end)}
+    end
+  end
+
+  @spec list_font_sources(Project.t()) :: {:ok, [font_source()]} | {:error, term()}
+  def list_font_sources(%Project{} = project) do
+    workspace = Projects.project_workspace_path(project)
+
+    with {:ok, manifest} <- read_font_manifest(workspace) do
+      sources = manifest["sources"] || []
+
+      {:ok,
+       Enum.map(sources, fn row ->
+         %{
+           id: to_string(Map.get(row, "id", "")),
            filename: to_string(Map.get(row, "filename", "")),
            mime: to_string(Map.get(row, "mime", "font/ttf")),
            bytes: integer_or_zero(Map.get(row, "bytes", 0))
@@ -190,31 +228,81 @@ defmodule Ide.Resources.ResourceStore do
          {:ok, manifest} <- read_font_manifest(workspace),
          {:ok, bytes} <- File.read(upload_path),
          {:ok, safe_name, mime} <- normalized_font_filename_and_mime(original_name),
-         ctor <- constructor_from_name(safe_name),
-         unique_ctor <- unique_ctor(ctor, manifest["entries"] || []),
-         basename <- "#{unique_ctor}#{Path.extname(safe_name)}",
+         source_id <- unique_source_id(Path.rootname(safe_name), manifest["sources"] || []),
+         basename <- "#{source_id}#{Path.extname(safe_name)}",
          asset_path <- Path.join(assets_dir, basename),
          :ok <- File.write(asset_path, bytes) do
-      entry = %{
-        "id" => "font_" <> String.downcase(unique_ctor),
-        "ctor" => unique_ctor,
+      source = %{
+        "id" => source_id,
         "filename" => basename,
         "mime" => mime,
         "bytes" => byte_size(bytes)
       }
 
-      entries =
-        (manifest["entries"] || [])
-        |> Enum.reject(&(Map.get(&1, "ctor") == unique_ctor))
-        |> Kernel.++([entry])
-        |> Enum.sort_by(&Map.get(&1, "ctor", ""))
+      sources =
+        (manifest["sources"] || [])
+        |> Enum.reject(&(Map.get(&1, "id") == source_id))
+        |> Kernel.++([source])
+        |> Enum.sort_by(&Map.get(&1, "filename", ""))
 
-      payload = %{"schema_version" => 1, "entries" => entries}
+      payload = font_manifest_payload(sources, manifest["entries"] || [])
 
       with :ok <- write_manifest(manifest_path, payload),
            :ok <- write_generated_module(workspace) do
-        {:ok, %{entry: entry, entries: entries}}
+        {:ok, %{source: source, entries: payload["entries"]}}
       end
+    end
+  end
+
+  @spec add_font_variant(Project.t(), map()) :: {:ok, map()} | {:error, term()}
+  def add_font_variant(%Project{} = project, params) when is_map(params) do
+    workspace = Projects.project_workspace_path(project)
+    manifest_path = Path.join(workspace, @font_manifest_rel_path)
+
+    with {:ok, manifest} <- read_font_manifest(workspace),
+         {:ok, source} <- font_source_from_params(manifest, params),
+         {:ok, variant} <- font_variant_from_params(source, params, manifest["entries"] || []) do
+      entries =
+        (manifest["entries"] || [])
+        |> Enum.reject(&(Map.get(&1, "ctor") == Map.fetch!(variant, "ctor")))
+        |> Kernel.++([variant])
+        |> Enum.sort_by(&Map.get(&1, "ctor", ""))
+
+      payload = font_manifest_payload(manifest["sources"] || [], entries)
+
+      with :ok <- write_manifest(manifest_path, payload),
+           :ok <- write_generated_module(workspace) do
+        {:ok, %{entry: variant, entries: entries}}
+      end
+    end
+  end
+
+  @spec update_font_variant(Project.t(), String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def update_font_variant(%Project{} = project, ctor, params)
+      when is_binary(ctor) and is_map(params) do
+    workspace = Projects.project_workspace_path(project)
+    manifest_path = Path.join(workspace, @font_manifest_rel_path)
+
+    with {:ok, manifest} <- read_font_manifest(workspace),
+         %{} = existing <- Enum.find(manifest["entries"] || [], &(Map.get(&1, "ctor") == ctor)),
+         {:ok, source} <- font_source_by_id(manifest, Map.get(existing, "source_id", "")),
+         params <- Map.put_new(params, "source_id", Map.get(existing, "source_id", "")),
+         {:ok, variant} <- font_variant_from_params(source, params, manifest["entries"] || [], ctor) do
+      entries =
+        (manifest["entries"] || [])
+        |> Enum.reject(&(Map.get(&1, "ctor") == ctor))
+        |> Kernel.++([variant])
+        |> Enum.sort_by(&Map.get(&1, "ctor", ""))
+
+      payload = font_manifest_payload(manifest["sources"] || [], entries)
+
+      with :ok <- write_manifest(manifest_path, payload),
+           :ok <- write_generated_module(workspace) do
+        {:ok, %{entry: variant, entries: entries}}
+      end
+    else
+      nil -> {:error, :font_variant_not_found}
+      error -> error
     end
   end
 
@@ -222,23 +310,42 @@ defmodule Ide.Resources.ResourceStore do
   def delete_font(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @font_manifest_rel_path)
-    assets_dir = Path.join(workspace, @font_assets_rel_dir)
 
     with {:ok, manifest} <- read_font_manifest(workspace) do
       entries = manifest["entries"] || []
+      kept = Enum.reject(entries, &(Map.get(&1, "ctor") == ctor))
+      payload = font_manifest_payload(manifest["sources"] || [], kept)
 
-      {to_remove, kept} = Enum.split_with(entries, &(Map.get(&1, "ctor") == ctor))
+      with :ok <- write_manifest(manifest_path, payload),
+           :ok <- write_generated_module(workspace) do
+        {:ok, kept}
+      end
+    end
+  end
+
+  @spec delete_font_source(Project.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  def delete_font_source(%Project{} = project, source_id) when is_binary(source_id) do
+    workspace = Projects.project_workspace_path(project)
+    manifest_path = Path.join(workspace, @font_manifest_rel_path)
+    assets_dir = Path.join(workspace, @font_assets_rel_dir)
+
+    with {:ok, manifest} <- read_font_manifest(workspace) do
+      sources = manifest["sources"] || []
+      entries = manifest["entries"] || []
+
+      {to_remove, kept_sources} = Enum.split_with(sources, &(Map.get(&1, "id") == source_id))
+      kept_entries = Enum.reject(entries, &(Map.get(&1, "source_id") == source_id))
 
       Enum.each(to_remove, fn row ->
         filename = Map.get(row, "filename", "")
         if filename != "", do: File.rm(Path.join(assets_dir, filename))
       end)
 
-      payload = %{"schema_version" => 1, "entries" => kept}
+      payload = font_manifest_payload(kept_sources, kept_entries)
 
       with :ok <- write_manifest(manifest_path, payload),
            :ok <- write_generated_module(workspace) do
-        {:ok, kept}
+        {:ok, %{sources: kept_sources, entries: kept_entries}}
       end
     end
   end
@@ -250,7 +357,8 @@ defmodule Ide.Resources.ResourceStore do
 
     with {:ok, manifest} <- read_font_manifest(workspace),
          %{} = row <- Enum.find(manifest["entries"] || [], &(Map.get(&1, "ctor") == ctor)),
-         filename when is_binary(filename) and filename != "" <- Map.get(row, "filename") do
+         {:ok, source} <- font_source_by_id(manifest, Map.get(row, "source_id", "")),
+         filename when is_binary(filename) and filename != "" <- Map.get(source, "filename") do
       {:ok, Path.join(assets_dir, filename)}
     else
       _ -> {:error, :font_not_found}
@@ -278,7 +386,11 @@ defmodule Ide.Resources.ResourceStore do
   @spec read_font_manifest(term()) :: term()
   defp read_font_manifest(workspace) do
     path = Path.join(workspace, @font_manifest_rel_path)
-    read_manifest(path)
+
+    case read_manifest(path) do
+      {:ok, manifest} -> {:ok, normalize_font_manifest(manifest)}
+      error -> error
+    end
   end
 
   @spec read_manifest(term()) :: term()
@@ -498,6 +610,107 @@ defmodule Ide.Resources.ResourceStore do
     }
   end
 
+  @spec normalize_font_manifest(map()) :: map()
+  defp normalize_font_manifest(manifest) when is_map(manifest) do
+    entries = manifest["entries"] || []
+    sources = manifest["sources"] || []
+
+    if is_list(sources) and sources != [] do
+      %{
+        "schema_version" => 2,
+        "sources" => Enum.map(sources, &normalize_font_source_row/1),
+        "entries" => Enum.map(entries, &normalize_font_variant_row/1)
+      }
+    else
+      normalized_sources =
+        entries
+        |> Enum.filter(&is_map/1)
+        |> Enum.map(fn row ->
+          ctor = to_string(Map.get(row, "ctor", constructor_from_name(Map.get(row, "filename", ""))))
+          filename = to_string(Map.get(row, "filename", ""))
+          source_id = to_string(Map.get(row, "source_id", String.downcase(ctor)))
+
+          %{
+            "id" => source_id,
+            "filename" => filename,
+            "mime" => to_string(Map.get(row, "mime", "font/ttf")),
+            "bytes" => integer_or_zero(Map.get(row, "bytes", 0))
+          }
+        end)
+        |> Enum.uniq_by(&Map.get(&1, "id"))
+
+      normalized_entries =
+        entries
+        |> Enum.filter(&is_map/1)
+        |> Enum.map(fn row ->
+          ctor = to_string(Map.get(row, "ctor", constructor_from_name(Map.get(row, "filename", ""))))
+          filename = to_string(Map.get(row, "filename", ""))
+          source_id = to_string(Map.get(row, "source_id", String.downcase(ctor)))
+
+          normalize_font_variant_row(%{
+            "id" => to_string(Map.get(row, "id", "font_" <> String.downcase(ctor))),
+            "source_id" => source_id,
+            "ctor" => ctor,
+            "name" => to_string(Map.get(row, "name", ctor)),
+            "filename" => filename,
+            "mime" => to_string(Map.get(row, "mime", "font/ttf")),
+            "bytes" => integer_or_zero(Map.get(row, "bytes", 0)),
+            "height" => positive_integer_or_default(Map.get(row, "height", 0), 24),
+            "characters" => to_string(Map.get(row, "characters", "")),
+            "tracking_adjust" => integer_or_default(Map.get(row, "tracking_adjust", 0), 0),
+            "compatibility" => to_string(Map.get(row, "compatibility", "2.7")),
+            "target_platforms" => string_list(Map.get(row, "target_platforms", []))
+          })
+        end)
+
+      %{"schema_version" => 2, "sources" => normalized_sources, "entries" => normalized_entries}
+    end
+  end
+
+  @spec normalize_font_source_row(term()) :: map()
+  defp normalize_font_source_row(row) when is_map(row) do
+    %{
+      "id" => safe_resource_id(Map.get(row, "id", Map.get(row, "filename", "font"))),
+      "filename" => to_string(Map.get(row, "filename", "")),
+      "mime" => to_string(Map.get(row, "mime", "font/ttf")),
+      "bytes" => integer_or_zero(Map.get(row, "bytes", 0))
+    }
+  end
+
+  defp normalize_font_source_row(_), do: normalize_font_source_row(%{})
+
+  @spec normalize_font_variant_row(term()) :: map()
+  defp normalize_font_variant_row(row) when is_map(row) do
+    ctor = row |> Map.get("ctor", "Font") |> to_string() |> valid_constructor_name()
+    height = positive_integer_or_default(Map.get(row, "height", 0), 24)
+
+    %{
+      "id" => to_string(Map.get(row, "id", "font_" <> String.downcase(ctor))),
+      "source_id" => safe_resource_id(Map.get(row, "source_id", "")),
+      "ctor" => ctor,
+      "name" => to_string(Map.get(row, "name", ctor)),
+      "filename" => to_string(Map.get(row, "filename", "")),
+      "mime" => to_string(Map.get(row, "mime", "font/ttf")),
+      "bytes" => integer_or_zero(Map.get(row, "bytes", 0)),
+      "height" => height,
+      "characters" => to_string(Map.get(row, "characters", "")),
+      "tracking_adjust" => integer_or_default(Map.get(row, "tracking_adjust", 0), 0),
+      "compatibility" => to_string(Map.get(row, "compatibility", "2.7")),
+      "target_platforms" => string_list(Map.get(row, "target_platforms", []))
+    }
+  end
+
+  defp normalize_font_variant_row(_), do: normalize_font_variant_row(%{})
+
+  @spec font_manifest_payload([map()], [map()]) :: map()
+  defp font_manifest_payload(sources, entries) do
+    %{
+      "schema_version" => 2,
+      "sources" => Enum.map(sources, &normalize_font_source_row/1),
+      "entries" => Enum.map(entries, &normalize_font_variant_row/1)
+    }
+  end
+
   @spec elm_string(String.t()) :: String.t()
   defp elm_string(value) do
     value
@@ -605,6 +818,158 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
+  @spec unique_source_id(term(), [map()]) :: String.t()
+  defp unique_source_id(value, sources) do
+    base = safe_resource_id(value)
+
+    used =
+      sources
+      |> Enum.map(&Map.get(&1, "id", ""))
+      |> MapSet.new()
+
+    if MapSet.member?(used, base) do
+      Stream.iterate(2, &(&1 + 1))
+      |> Enum.find_value(fn idx ->
+        candidate = "#{base}_#{idx}"
+        if MapSet.member?(used, candidate), do: nil, else: candidate
+      end)
+    else
+      base
+    end
+  end
+
+  @spec safe_resource_id(term()) :: String.t()
+  defp safe_resource_id(value) do
+    value
+    |> to_string()
+    |> Path.rootname()
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9_]+/, "_")
+    |> String.trim("_")
+    |> case do
+      "" -> "font"
+      id -> id
+    end
+  end
+
+  @spec valid_constructor_name(term()) :: String.t()
+  defp valid_constructor_name(value) do
+    value
+    |> to_string()
+    |> String.split(~r/[^A-Za-z0-9]+/, trim: true)
+    |> Enum.map(fn
+      <<first::binary-size(1), rest::binary>> -> String.upcase(first) <> rest
+      other -> other
+    end)
+    |> Enum.join()
+    |> case do
+      "" -> "Font"
+      <<first::binary-size(1), rest::binary>> ->
+        String.upcase(first) <> rest
+    end
+  end
+
+  @spec font_source_by_id(map(), String.t()) :: {:ok, map()} | {:error, term()}
+  defp font_source_by_id(manifest, source_id) do
+    case Enum.find(manifest["sources"] || [], &(Map.get(&1, "id") == source_id)) do
+      %{} = source -> {:ok, source}
+      _ -> {:error, :font_source_not_found}
+    end
+  end
+
+  @spec font_source_from_params(map(), map()) :: {:ok, map()} | {:error, term()}
+  defp font_source_from_params(manifest, params) do
+    source_id =
+      params
+      |> Map.get("source_id", Map.get(params, :source_id, ""))
+      |> to_string()
+
+    font_source_by_id(manifest, source_id)
+  end
+
+  @spec font_variant_from_params(map(), map(), [map()], String.t() | nil) ::
+          {:ok, map()} | {:error, term()}
+  defp font_variant_from_params(source, params, entries, existing_ctor \\ nil) do
+    raw_ctor =
+      params
+      |> Map.get("ctor", Map.get(params, :ctor, ""))
+      |> to_string()
+      |> String.trim()
+
+    ctor_source =
+      if raw_ctor == "" do
+        source
+        |> Map.get("filename", "Font")
+        |> Path.rootname()
+      else
+        raw_ctor
+      end
+
+    ctor = valid_constructor_name(ctor_source)
+
+    used_entries =
+      if existing_ctor do
+        Enum.reject(entries, &(Map.get(&1, "ctor") == existing_ctor))
+      else
+        entries
+      end
+
+    ctor =
+      if Enum.any?(used_entries, &(Map.get(&1, "ctor") == ctor)) do
+        unique_ctor(ctor, used_entries)
+      else
+        ctor
+      end
+
+    height =
+      params
+      |> Map.get("height", Map.get(params, :height, nil))
+      |> positive_integer_or_default(next_font_height_for_source(source, used_entries))
+
+    if height <= 0 do
+      {:error, :invalid_font_height}
+    else
+      variant = %{
+        "id" => "font_" <> String.downcase(ctor),
+        "source_id" => Map.fetch!(source, "id"),
+        "ctor" => ctor,
+        "name" => params |> Map.get("name", Map.get(params, :name, ctor)) |> to_string(),
+        "filename" => Map.get(source, "filename", ""),
+        "mime" => Map.get(source, "mime", "font/ttf"),
+        "bytes" => integer_or_zero(Map.get(source, "bytes", 0)),
+        "height" => height,
+        "characters" => params |> Map.get("characters", Map.get(params, :characters, "")) |> to_string(),
+        "tracking_adjust" =>
+          params
+          |> Map.get("tracking_adjust", Map.get(params, :tracking_adjust, 0))
+          |> integer_or_default(0),
+        "compatibility" =>
+          params
+          |> Map.get("compatibility", Map.get(params, :compatibility, "latest"))
+          |> to_string(),
+        "target_platforms" =>
+          params
+          |> Map.get("target_platforms", Map.get(params, :target_platforms, []))
+          |> string_list()
+      }
+
+      {:ok, normalize_font_variant_row(variant)}
+    end
+  end
+
+  @spec next_font_height_for_source(map(), [map()]) :: pos_integer()
+  defp next_font_height_for_source(source, entries) do
+    source_id = Map.get(source, "id", "")
+
+    max_height =
+      entries
+      |> Enum.filter(&(Map.get(&1, "source_id") == source_id))
+      |> Enum.map(&(Map.get(&1, "height", 0) |> positive_integer_or_default(0)))
+      |> Enum.max(fn -> 23 end)
+
+    max_height + 1
+  end
+
   @spec bitmap_dimensions(binary(), String.t()) :: {non_neg_integer(), non_neg_integer()}
   defp bitmap_dimensions(
          <<0x89, "PNG\r\n", 0x1A, "\n", _len::32, "IHDR", width::32, height::32, _::binary>>,
@@ -630,4 +995,33 @@ defmodule Ide.Resources.ResourceStore do
   @spec integer_or_zero(term()) :: term()
   defp integer_or_zero(value) when is_integer(value) and value >= 0, do: value
   defp integer_or_zero(_), do: 0
+
+  @spec integer_or_default(term(), integer()) :: integer()
+  defp integer_or_default(value, _default) when is_integer(value), do: value
+
+  defp integer_or_default(value, default) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {int, ""} -> int
+      _ -> default
+    end
+  end
+
+  defp integer_or_default(_value, default), do: default
+
+  @spec string_list(term()) :: [String.t()]
+  defp string_list(value) when is_list(value) do
+    value
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
+
+  defp string_list(value) when is_binary(value) do
+    value
+    |> String.split([",", " ", "\n", "\t"], trim: true)
+    |> string_list()
+  end
+
+  defp string_list(_), do: []
 end

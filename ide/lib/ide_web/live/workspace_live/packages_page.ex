@@ -73,7 +73,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
                 {dep.name} <span class="text-zinc-500">{dep.version}</span>
               </button>
               <span class="flex items-center gap-1">
-                <% dep_compat = Packages.compatibility_for_package(dep.name) %>
+                <% dep_compat = dependency_compatibility(dep.name, @packages_target_root) %>
                 <span class={compatibility_badge_class(dep_compat)}>
                   {compatibility_badge_label(dep_compat)}
                 </span>
@@ -119,7 +119,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
                 >
                   {dep.name} <span class="text-zinc-500">{dep.version}</span>
                 </button>
-                <% dep_compat = Packages.compatibility_for_package(dep.name) %>
+                <% dep_compat = dependency_compatibility(dep.name, @packages_target_root) %>
                 <span class={compatibility_badge_class(dep_compat)}>
                   {compatibility_badge_label(dep_compat)}
                 </span>
@@ -176,7 +176,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
                   :for={pkg <- @packages_search_results}
                   class="rounded border border-zinc-200 bg-white p-3"
                 >
-                  <% compat = package_compatibility(pkg) %>
+                  <% compat = package_compatibility(pkg, @packages_target_root) %>
                   <div class="flex items-start justify-between gap-3">
                     <div>
                       <p class="font-mono font-semibold text-zinc-900">
@@ -246,7 +246,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
                   Latest: {(@packages_details && @packages_details[:latest_version]) || "unknown"} ·
                   Known versions: {length(@packages_versions)}
                 </p>
-                <% selected_compat = package_compatibility(@packages_details || %{}) %>
+                <% selected_compat = package_compatibility(@packages_details || %{}, @packages_target_root) %>
                 <p class="mt-2">
                   <span class={compatibility_badge_class(selected_compat)}>
                     {compatibility_badge_label(selected_compat)}
@@ -327,20 +327,26 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
   defp project_settings_tab_class(_active, _tab),
     do: "rounded bg-zinc-100 px-3 py-1.5 text-zinc-700"
 
-  @spec package_compatibility(term()) :: term()
-  defp package_compatibility(entry) when is_map(entry) do
+  @spec package_compatibility(term(), term()) :: term()
+  defp package_compatibility(entry, target_root) when is_map(entry) do
     Map.get(entry, :compatibility) ||
       Map.get(entry, "compatibility") ||
       entry
       |> Map.get(:name, Map.get(entry, "name"))
       |> case do
-        name when is_binary(name) -> Packages.compatibility_for_package(name)
+        name when is_binary(name) -> dependency_compatibility(name, target_root)
         _ -> %{status: "unknown", reason_code: "unknown", message: "Compatibility unknown."}
       end
   end
 
-  defp package_compatibility(_),
+  defp package_compatibility(_, _),
     do: %{status: "unknown", reason_code: "unknown", message: "Compatibility unknown."}
+
+  defp dependency_compatibility(package, "phone"),
+    do: Packages.compatibility_for_package(package, platform_target: :phone)
+
+  defp dependency_compatibility(package, _target_root),
+    do: Packages.compatibility_for_package(package, platform_target: :watch)
 
   @spec compatibility_badge_label(term()) :: term()
   defp compatibility_badge_label(%{status: "blocked"}), do: "Blocked"

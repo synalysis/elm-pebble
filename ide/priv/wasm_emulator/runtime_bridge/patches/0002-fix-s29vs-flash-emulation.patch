@@ -1,0 +1,155 @@
+diff --git a/hw/arm/pebble.c b/hw/arm/pebble.c
+index 6c6b75d..85d5a1e 100644
+--- a/hw/arm/pebble.c
++++ b/hw/arm/pebble.c
+@@ -444,7 +444,7 @@ void pebble_32f439_init(MachineState *machine,
+      */
+     {
+         const uint32_t flash_size_bytes = 16 * 1024 * 1024;
+-        const uint32_t sector_size = 32 * 1024;
++        const uint32_t sector_size = 128 * 1024;
+         BlockBackend *blk = blk_by_name("spi-flash");
+         if (!blk) {
+             fprintf(stderr, "WARNING: pflash drive 'spi-flash' not found, flash will be empty\n");
+diff --git a/patches/pflash_cfi02_cfi_entry.patch b/patches/pflash_cfi02_cfi_entry.patch
+index aaa8fdc..25702ea 100644
+--- a/patches/pflash_cfi02_cfi_entry.patch
++++ b/patches/pflash_cfi02_cfi_entry.patch
+@@ -1,8 +1,23 @@
+-diff --git a/hw/block/pflash_cfi02.c b/hw/block/pflash_cfi02.c
+-index 315a536..4367675 100644
+ --- a/hw/block/pflash_cfi02.c
+ +++ b/hw/block/pflash_cfi02.c
+-@@ -376,6 +376,11 @@ static uint64_t pflash_read(void *opaque, hwaddr offset, unsigned int width)
++@@ -61,6 +61,8 @@
++ enum {
++     WCYCLE_CFI              = 7,
++     WCYCLE_AUTOSELECT_CFI   = 8,
+++    WCYCLE_WRITE_BUFFER_LEN  = 9,
+++    WCYCLE_WRITE_BUFFER_DATA = 10,
++ };
++ 
++ struct PFlashCFI02 {
++@@ -107,6 +109,7 @@
++     unsigned long *sector_erase_map;
++     char *name;
++     void *storage;
+++    uint32_t write_buffer_words_remaining;
++ };
++ 
++ /*
++@@ -376,6 +379,11 @@
+          ret = pfl->status;
+          trace_pflash_read_status(pfl->name, ret);
+          break;
+@@ -14,7 +29,36 @@ index 315a536..4367675 100644
+      case 0x98:
+          /* CFI query mode */
+          if (boff < sizeof(pfl->cfi_table)) {
+-@@ -470,8 +475,8 @@ static void pflash_write(void *opaque, hwaddr offset, uint64_t value,
++@@ -393,6 +401,9 @@
++ /* update flash content on disk */
++ static void pflash_update(PFlashCFI02 *pfl, int offset, int size)
++ {
+++#ifdef __EMSCRIPTEN__
+++    return;
+++#else
++     int offset_end;
++     int ret;
++     if (pfl->blk) {
++@@ -407,6 +418,7 @@
++             error_report("Could not update PFLASH: %s", strerror(-ret));
++         }
++     }
+++#endif
++ }
++ 
++ static void pflash_sector_erase(PFlashCFI02 *pfl, hwaddr offset)
++@@ -438,7 +450,9 @@
++ 
++     trace_pflash_io_write(pfl->name, offset, width, value, pfl->wcycle);
++     cmd = value;
++-    if (pfl->cmd != 0xA0) {
+++    if (pfl->cmd != 0xA0 &&
+++        pfl->wcycle != WCYCLE_WRITE_BUFFER_LEN &&
+++        pfl->wcycle != WCYCLE_WRITE_BUFFER_DATA) {
++         /* Reset does nothing during chip erase and sector erase. */
++         if (cmd == 0xF0 && pfl->cmd != 0x10 && pfl->cmd != 0x30) {
++             if (pfl->wcycle == WCYCLE_AUTOSELECT_CFI) {
++@@ -470,8 +484,8 @@
+          pfl->read_counter = 0;
+          /* We're in read mode */
+      check_unlock0:
+@@ -25,19 +69,28 @@ index 315a536..4367675 100644
+              pfl->wcycle = WCYCLE_CFI;
+              pfl->cmd = 0x98;
+              return;
+-@@ -495,6 +500,11 @@ static void pflash_write(void *opaque, hwaddr offset, uint64_t value,
+-         if (cmd == 0xB0) { /* Erase Suspend */
+-             return;
++@@ -493,6 +507,20 @@
+          }
++         /* Ignore erase suspend. */
++         if (cmd == 0xB0) { /* Erase Suspend */
+++            return;
+++        }
+ +        /* Macronix Read Status Register (0x70) - single cycle, no unlock */
+ +        if (cmd == 0x70) {
+ +            pfl->cmd = 0x70;
+ +            return;
+ +        }
+++        /* Spansion S29VS buffered writes are issued directly at the sector
+++         * command address by Pebble firmware, without the AMD unlock sequence.
+++         */
+++        if (cmd == 0x25) {
+++            pfl->cmd = 0x25;
+++            pfl->write_buffer_words_remaining = 0;
+++            pfl->wcycle = WCYCLE_WRITE_BUFFER_LEN;
++             return;
++         }
+          if (boff != pfl->unlock_addr0 || cmd != 0xAA) {
+-             trace_pflash_unlock0_failed(pfl->name, boff,
+-                                         cmd, pfl->unlock_addr0);
+-@@ -576,7 +586,7 @@ static void pflash_write(void *opaque, hwaddr offset, uint64_t value,
++@@ -576,7 +604,7 @@
+               * We can enter CFI query mode from autoselect mode, but we must
+               * return to autoselect mode after a reset.
+               */
+@@ -46,3 +99,37 @@ index 315a536..4367675 100644
+                  /* Enter autoselect CFI query mode */
+                  pfl->wcycle = WCYCLE_AUTOSELECT_CFI;
+                  pfl->cmd = 0x98;
++@@ -681,6 +709,33 @@
++             goto reset_flash;
++         }
++         break;
+++    case WCYCLE_WRITE_BUFFER_LEN:
+++        /* S29VS write-buffer word count is encoded as N - 1. */
+++        pfl->write_buffer_words_remaining = (uint32_t)cmd + 1;
+++        pfl->wcycle = WCYCLE_WRITE_BUFFER_DATA;
+++        return;
+++    case WCYCLE_WRITE_BUFFER_DATA:
+++        if (pfl->write_buffer_words_remaining > 0) {
+++            trace_pflash_data_write(pfl->name, offset, width, value);
+++            if (!pfl->ro) {
+++                p = (uint8_t *)pfl->storage + offset;
+++                if (pfl->be) {
+++                    uint64_t current = ldn_be_p(p, width);
+++                    stn_be_p(p, width, current & value);
+++                } else {
+++                    uint64_t current = ldn_le_p(p, width);
+++                    stn_le_p(p, width, current & value);
+++                }
+++                pflash_update(pfl, offset, width);
+++            }
+++            pfl->write_buffer_words_remaining--;
+++            return;
+++        }
+++        if (cmd == 0x29) {
+++            set_dq7(pfl, value);
+++            goto reset_flash;
+++        }
+++        goto reset_flash;
++     /* Special values for CFI queries */
++     case WCYCLE_CFI:
++     case WCYCLE_AUTOSELECT_CFI:

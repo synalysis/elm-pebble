@@ -6,6 +6,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     "src/Main.elm",
     "src/CompanionApp.elm",
     "src/Companion/Types.elm",
+    "src/Companion/GeneratedPreferences.elm",
     "src/Pebble/Ui/Resources.elm"
   ]
 
@@ -120,10 +121,13 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
           class="flex min-h-0 flex-1 flex-col space-y-3"
         >
           <div class="flex flex-wrap gap-2">
-            <.button phx-click="save-file" disabled={active.read_only}>
+            <.button phx-click="save-file" disabled={editor_read_only?(active)}>
               Save
             </.button>
-            <.button phx-click="format-file" disabled={@format_status == :running or active.read_only}>
+            <.button
+              phx-click="format-file"
+              disabled={@format_status == :running or editor_read_only?(active)}
+            >
               {if @format_status == :running, do: "Formatting...", else: "Format"}
             </.button>
             <.link
@@ -171,7 +175,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
               data-source-root={active.source_root}
               data-rel-path={active.rel_path}
               data-editor-mode={Atom.to_string(@editor_mode)}
-              data-editor-readonly={to_string(active.read_only)}
+              data-editor-readonly={to_string(editor_read_only?(active))}
               data-editor-theme={Atom.to_string(@editor_theme)}
               data-editor-line-numbers={to_string(@editor_line_numbers)}
               data-editor-active-line-highlight={to_string(@editor_active_line_highlight)}
@@ -185,12 +189,12 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
                 data-role="input"
                 name="editor[content]"
                 spellcheck="false"
-                readonly={active.read_only}
+                readonly={editor_read_only?(active)}
                 class="sr-only"
               ><%= active.content %></textarea>
             </div>
           </.form>
-          <p :if={active.read_only} class="text-xs text-zinc-500">
+          <p :if={editor_read_only?(active)} class="text-xs text-zinc-500">
             This generated file is read-only.
           </p>
           <section :if={@debug_mode and @editor_inline_diagnostics != []} class="space-y-2">
@@ -680,6 +684,18 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     do: rel_path in @protected_editor_rel_paths
 
   defp protected_editor_source_file?(_), do: false
+
+  defp editor_read_only?(%{read_only: true}), do: true
+
+  defp editor_read_only?(%{
+         source_root: "phone",
+         rel_path: "src/Companion/GeneratedPreferences.elm"
+       }), do: true
+
+  defp editor_read_only?(%{source_root: "watch", rel_path: "src/Pebble/Ui/Resources.elm"}),
+    do: true
+
+  defp editor_read_only?(_), do: false
 
   @spec editor_pane_grid_style(term(), term()) :: term()
   defp editor_pane_grid_style(true, px) when is_integer(px) do

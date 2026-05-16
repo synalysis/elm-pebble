@@ -349,27 +349,88 @@ drawDial model cx cy radius =
 
         timeTextY =
             cy - (radius // 2) - 9
-    in
-    [ Ui.fillCircle { x = cx, y = cy } radius Color.oxfordBlue
-    , Ui.group
-        (Ui.context
-            [ Ui.fillColor Color.blueMoon, Ui.strokeColor Color.blueMoon ]
-            [ Ui.fillRadial (square cx cy (radius - 3)) (angleFromMinute moonrise) (angleFromMinute moonset) ]
-        )
-    , Ui.fillCircle { x = cx, y = cy } (radius - 10) Color.black
-    , Ui.group
-        (Ui.context
-            [ Ui.fillColor Color.chromeYellow, Ui.strokeColor Color.chromeYellow ]
-            [ if sunWindow.mode == PolarDay then
-                Ui.fillCircle { x = cx, y = cy } (radius - 18) Color.chromeYellow
 
-              else
-                Ui.fillRadial (square cx cy (radius - 18)) (angleFromMinute sunrise) (angleFromMinute sunset)
-            ]
-        )
-    , Ui.circle { x = cx, y = cy } radius Color.white
-    , Ui.circle { x = cx, y = cy } (radius - 10) Color.darkGray
-    ]
+        moonStart =
+            angleFromMinute moonrise
+
+        moonEnd =
+            angleFromMinute moonset
+
+        moonBounds =
+            square cx cy (radius - 3)
+
+        sunriseAngle =
+            angleFromMinute sunrise
+
+        sunsetAngle =
+            angleFromMinute sunset
+
+        sunBounds =
+            square cx cy (radius - 18)
+    in
+    [ Ui.fillCircle { x = cx, y = cy } radius Color.oxfordBlue ]
+        ++ [ Ui.group
+                (Ui.context
+                    [ Ui.fillColor Color.blueMoon, Ui.strokeColor Color.blueMoon ]
+                    [ Ui.fillRadial moonBounds moonStart
+                        (if moonEnd < moonStart then
+                            65536
+
+                         else
+                            moonEnd
+                        )
+                    ]
+                )
+           ]
+        ++ (if moonEnd < moonStart then
+                [ Ui.group
+                    (Ui.context
+                        [ Ui.fillColor Color.blueMoon, Ui.strokeColor Color.blueMoon ]
+                        [ Ui.fillRadial moonBounds 0 moonEnd ]
+                    )
+                ]
+
+            else
+                []
+           )
+        ++ [ Ui.fillCircle { x = cx, y = cy } (radius - 10) Color.black ]
+        ++ (if sunWindow.mode == PolarDay then
+                [ Ui.group
+                    (Ui.context
+                        [ Ui.fillColor Color.chromeYellow, Ui.strokeColor Color.chromeYellow ]
+                        [ Ui.fillCircle { x = cx, y = cy } (radius - 18) Color.chromeYellow ]
+                    )
+                ]
+
+            else
+                [ Ui.group
+                    (Ui.context
+                        [ Ui.fillColor Color.chromeYellow, Ui.strokeColor Color.chromeYellow ]
+                        [ Ui.fillRadial sunBounds sunriseAngle
+                            (if sunsetAngle < sunriseAngle then
+                                65536
+
+                             else
+                                sunsetAngle
+                            )
+                        ]
+                    )
+                ]
+                    ++ (if sunsetAngle < sunriseAngle then
+                            [ Ui.group
+                                (Ui.context
+                                    [ Ui.fillColor Color.chromeYellow, Ui.strokeColor Color.chromeYellow ]
+                                    [ Ui.fillRadial sunBounds 0 sunsetAngle ]
+                                )
+                            ]
+
+                        else
+                            []
+                       )
+           )
+        ++ [ Ui.circle { x = cx, y = cy } radius Color.white
+           , Ui.circle { x = cx, y = cy } (radius - 10) Color.darkGray
+           ]
         ++ drawOuterScale cx cy radius
         ++ drawMoonPhase cx moonPhaseY (max 10 (radius // 5)) phase
         ++ [ Ui.line { x = cx, y = cy } hand Color.white

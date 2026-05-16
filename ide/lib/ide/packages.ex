@@ -20,7 +20,7 @@ defmodule Ide.Packages do
   alias Ide.Packages.WatchCompatibility
   alias Ide.Projects
 
-  @blocked_package_families ~w(elm/core elm/browser elm/bytes elm/file elm/html elm/http)
+  @blocked_package_families ~w(elm/browser elm/bytes elm/file elm/html elm/http)
 
   @type provider_key :: atom()
   @type provider_spec :: %{key: provider_key(), module: module(), opts: keyword()}
@@ -40,7 +40,7 @@ defmodule Ide.Packages do
         else
           packages
         end
-        |> Enum.map(&attach_compatibility/1)
+        |> Enum.map(&attach_compatibility(&1, platform_target))
 
       total = length(packages)
       page_entries = paginate(packages, page, per_page)
@@ -61,7 +61,7 @@ defmodule Ide.Packages do
   def package_details(package, opts \\ []) do
     with {:ok, provider, details} <-
            with_provider(opts, &call_provider(&1, :package_details, [package])) do
-      compatibility = compatibility_for_package(package)
+      compatibility = compatibility_for_package(package, platform_target: Keyword.get(opts, :platform_target))
 
       {:ok,
        details
@@ -70,9 +70,11 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec compatibility_for_package(String.t()) :: map()
-  def compatibility_for_package(package) when is_binary(package) do
-    if package in @blocked_package_families do
+  @spec compatibility_for_package(String.t(), keyword()) :: map()
+  def compatibility_for_package(package, opts \\ []) when is_binary(package) do
+    platform_target = Keyword.get(opts, :platform_target, :watch)
+
+    if platform_target != :phone and package in @blocked_package_families do
       %{
         status: "blocked",
         reason_code: "blocked_runtime_family",
@@ -87,12 +89,12 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec attach_compatibility(term()) :: term()
-  defp attach_compatibility(entry) when is_map(entry) do
+  @spec attach_compatibility(term(), atom()) :: term()
+  defp attach_compatibility(entry, platform_target) when is_map(entry) do
     name = Map.get(entry, :name) || Map.get(entry, "name")
 
     if is_binary(name) and name != "" do
-      compatibility = compatibility_for_package(name)
+      compatibility = compatibility_for_package(name, platform_target: platform_target)
 
       entry
       |> Map.put(:compatibility, compatibility)

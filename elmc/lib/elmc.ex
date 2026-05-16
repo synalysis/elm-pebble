@@ -14,11 +14,13 @@ defmodule Elmc do
 
   @type compile_options :: %{
           optional(:entry_module) => String.t(),
-          optional(:out_dir) => String.t(),
+          optional(:out_dir) => String.t() | nil,
           optional(:runtime_dir) => String.t(),
           optional(:strip_dead_code) => boolean(),
           optional(:prune_runtime) => boolean(),
-          optional(:prune_native_wrappers) => boolean()
+          optional(:prune_native_wrappers) => boolean(),
+          optional(:direct_render_only) => boolean(),
+          optional(:pebble_int32) => boolean()
         }
 
   @doc """

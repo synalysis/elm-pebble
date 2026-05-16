@@ -22,6 +22,7 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 import {EmbeddedEmulatorHost} from "./emulator/embedded_emulator"
+import {WasmEmulatorHost} from "./emulator/wasm_emulator"
 
 let Hooks = {}
 
@@ -433,6 +434,21 @@ Hooks.CopyToClipboard = {
 Hooks.EmbeddedEmulator = {
   mounted() {
     this.host = new EmbeddedEmulatorHost(this)
+    this.host.mount()
+  },
+
+  updated() {
+    if (this.host) this.host.updated()
+  },
+
+  destroyed() {
+    if (this.host) this.host.destroy()
+  }
+}
+
+Hooks.WasmEmulator = {
+  mounted() {
+    this.host = new WasmEmulatorHost(this)
     this.host.mount()
   },
 
