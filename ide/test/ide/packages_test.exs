@@ -20,6 +20,8 @@ defmodule Ide.PackagesTest do
     end
 
     @impl true
+    def package_details("elm/no-details", _opts), do: {:error, :details_should_not_be_called}
+
     def package_details("elm-pebble/elm-watch", _opts) do
       {:ok,
        %{
@@ -156,6 +158,12 @@ defmodule Ide.PackagesTest do
 
     assert phone_compatibility.status == "supported"
 
+    assert Packages.compatibility_for_package("elm/random", platform_target: :phone).status ==
+             "supported"
+
+    assert Packages.compatibility_for_package("elm-pebble/elm-watch", platform_target: :phone).status ==
+             "blocked"
+
     assert Packages.compatibility_for_package("elm/core").status == "supported"
 
     assert {:ok, %{versions: ["2.0.0"]}} = Packages.versions("elm/http")
@@ -186,6 +194,10 @@ defmodule Ide.PackagesTest do
 
     assert result.package == "elm/http"
     assert result.selected_version == "2.0.0"
+
+    assert result.project.package_metadata_cache["packages"]["elm/http"]["exposed_modules"] == [
+             "Http"
+           ]
 
     assert {:ok, content} = Projects.read_source_file(project, "watch", "elm.json")
     assert {:ok, decoded} = Jason.decode(content)
@@ -244,6 +256,92 @@ defmodule Ide.PackagesTest do
 
     assert {:error, :builtin_package_not_removable} =
              Packages.remove_from_project(project, "elm/time",
+               source_root: "watch",
+               source: "mock"
+             )
+
+    assert {:ok, _} =
+             Packages.add_to_project(project, "elm/random",
+               source_root: "phone",
+               source: "mock"
+             )
+
+    assert {:ok, _} =
+             Packages.remove_from_project(project, "elm/random",
+               source_root: "phone",
+               source: "mock"
+             )
+  end
+
+  test "remove_from_project rejects packages imported by source files" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "PackagesUsed",
+               "slug" => "packages-used-service",
+               "target_type" => "app",
+               "template" => "game-2048"
+             })
+
+    assert {:error, {:package_in_use, "elm/random"}} =
+             Packages.remove_from_project(project, "elm/random",
+               source_root: "watch",
+               source: "mock"
+             )
+  end
+
+  test "package_usage uses cached exposed modules before provider package details" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "PackagesMetadataCache",
+               "slug" => "packages-metadata-cache",
+               "target_type" => "app"
+             })
+
+    assert {:ok, content} = Projects.read_source_file(project, "watch", "elm.json")
+    assert {:ok, decoded} = Jason.decode(content)
+
+    updated =
+      put_in(decoded, ["dependencies", "direct", "elm/no-details"], "1.0.0")
+
+    assert :ok =
+             Projects.write_source_file(
+               project,
+               "watch",
+               "elm.json",
+               Jason.encode!(updated, pretty: true) <> "\n"
+             )
+
+    assert :ok =
+             Projects.write_source_file(
+               project,
+               "watch",
+               "src/UsesCachedModule.elm",
+               """
+               module UsesCachedModule exposing (value)
+
+               import Cached.Module
+
+               value : Int
+               value =
+                   1
+               """
+             )
+
+    assert {:ok, project} =
+             Projects.update_project(project, %{
+               "package_metadata_cache" => %{
+                 "schema_version" => 1,
+                 "packages" => %{
+                   "elm/no-details" => %{
+                     "version" => "1.0.0",
+                     "exposed_modules" => ["Cached.Module"]
+                   }
+                 }
+               }
+             })
+
+    assert %{"elm/no-details" => true} =
+             Packages.package_usage(project, ["elm/no-details"],
                source_root: "watch",
                source: "mock"
              )

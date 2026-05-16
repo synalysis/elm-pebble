@@ -41,6 +41,16 @@ defmodule Ide.Debugger.HttpExecutor do
 
   @spec default_request(command()) :: {:ok, map()} | {:error, term()}
   defp default_request(command) do
+    if Mix.env() == :test do
+      {:ok,
+       %{"error" => %{"ctor" => "NetworkError", "args" => [map_value(command, "url") || ""]}}}
+    else
+      run_default_request(command)
+    end
+  end
+
+  @spec run_default_request(command()) :: {:ok, map()} | {:error, term()}
+  defp run_default_request(command) do
     options = req_options(command)
 
     case Req.request(options) do

@@ -1,0 +1,1569 @@
+diff --git a/build.sh b/build.sh
+index 2e83807..35616b9 100755
+--- a/build.sh
++++ b/build.sh
+@@ -22,7 +22,7 @@ cp "${SCRIPT_DIR}/include/hw/arm/pebble.h" "${QEMU_SRC}/include/hw/arm/"
+ cp "${SCRIPT_DIR}/include/hw/arm/stm32_clktree.h" "${QEMU_SRC}/include/hw/arm/"
+ 
+ # Copy hw source files (including headers in source dirs)
+-for dir in arm misc char ssi timer dma display gpio; do
++for dir in arm misc char ssi timer dma display gpio block; do
+     if [ -d "${SCRIPT_DIR}/hw/${dir}" ]; then
+         mkdir -p "${QEMU_SRC}/hw/${dir}"
+         for f in "${SCRIPT_DIR}/hw/${dir}"/*; do
+@@ -108,16 +108,26 @@ patch_meson "${QEMU_SRC}/hw/timer/meson.build" "stm32_pebble" \
+ ))"
+ 
+ # hw/ssi/meson.build
+-patch_meson "${QEMU_SRC}/hw/ssi/meson.build" "stm32_pebble" \
+-"system_ss.add(when: 'CONFIG_PEBBLE', if_true: files('stm32_pebble_spi.c'))"
++patch_meson "${QEMU_SRC}/hw/ssi/meson.build" "stm32_pebble_qspi" \
++"system_ss.add(when: 'CONFIG_PEBBLE', if_true: files(
++  'stm32_pebble_spi.c',
++  'stm32_pebble_qspi.c',
++))"
+ 
+ # hw/dma/meson.build
+ patch_meson "${QEMU_SRC}/hw/dma/meson.build" "stm32_pebble" \
+ "system_ss.add(when: 'CONFIG_PEBBLE', if_true: files('stm32_pebble_dma.c'))"
+ 
+ # hw/display/meson.build
+-patch_meson "${QEMU_SRC}/hw/display/meson.build" "pebble_snowy" \
+-"system_ss.add(when: 'CONFIG_PEBBLE', if_true: files('pebble_snowy_display.c'))"
++patch_meson "${QEMU_SRC}/hw/display/meson.build" "pebble_sm_lcd" \
++"system_ss.add(when: 'CONFIG_PEBBLE', if_true: files(
++  'pebble_snowy_display.c',
++  'pebble_sm_lcd.c',
++))"
++
++# hw/block/meson.build
++patch_meson "${QEMU_SRC}/hw/block/meson.build" "pebble_mx25u" \
++"system_ss.add(when: 'CONFIG_PEBBLE', if_true: files('pebble_mx25u.c'))"
+ 
+ # hw/gpio/meson.build
+ patch_meson "${QEMU_SRC}/hw/gpio/meson.build" "stm32_pebble" \
+diff --git a/build_wasm.sh b/build_wasm.sh
+index 5c98a0d..10f01d7 100644
+--- a/build_wasm.sh
++++ b/build_wasm.sh
+@@ -53,7 +53,7 @@ cp /pebble/include/hw/arm/pebble.h include/hw/arm/
+ cp /pebble/include/hw/arm/stm32_clktree.h include/hw/arm/
+ 
+ # Copy Pebble hw source files
+-for dir in arm misc char ssi timer dma display gpio; do
++for dir in arm misc char ssi timer dma display gpio block; do
+     if [ -d "/pebble/hw/${dir}" ]; then
+         mkdir -p "hw/${dir}"
+         for f in /pebble/hw/${dir}/*; do
+@@ -69,6 +69,12 @@ for p in /pebble/patches/*.patch; do
+     patch -p1 --forward < "$p" || true
+ done
+ 
++# Verify critical storage flash patch
++if ! grep -q "WCYCLE_WRITE_BUFFER_DATA" hw/block/pflash_cfi02.c; then
++    echo "S29VS pflash patch was not applied" >&2
++    exit 2
++fi
++
+ # Patch Kconfig
+ if ! grep -q "CONFIG_PEBBLE" hw/arm/Kconfig; then
+     echo "  Patching hw/arm/Kconfig..."
+@@ -134,16 +140,26 @@ patch_meson hw/timer/meson.build "stm32_pebble" \
+ ))"
+ 
+ # hw/ssi/meson.build
+-patch_meson hw/ssi/meson.build "stm32_pebble" \
+-"system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'stm32_pebble_spi.c'"'"'))"
++patch_meson hw/ssi/meson.build "stm32_pebble_qspi" \
++"system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files(
++  '"'"'stm32_pebble_spi.c'"'"',
++  '"'"'stm32_pebble_qspi.c'"'"',
++))"
+ 
+ # hw/dma/meson.build
+ patch_meson hw/dma/meson.build "stm32_pebble" \
+ "system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'stm32_pebble_dma.c'"'"'))"
+ 
+ # hw/display/meson.build
+-patch_meson hw/display/meson.build "pebble_snowy" \
+-"system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'pebble_snowy_display.c'"'"'))"
++patch_meson hw/display/meson.build "pebble_sm_lcd" \
++"system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files(
++  '"'"'pebble_snowy_display.c'"'"',
++  '"'"'pebble_sm_lcd.c'"'"',
++))"
++
++# hw/block/meson.build
++patch_meson hw/block/meson.build "pebble_mx25u" \
++"system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'pebble_mx25u.c'"'"'))"
+ 
+ # hw/gpio/meson.build
+ patch_meson hw/gpio/meson.build "stm32_pebble" \
+@@ -186,7 +202,7 @@ emconfigure /qemu-rw/configure \
+     --disable-docs \
+     --disable-pie \
+     --extra-cflags="-DSTM32_UART_NO_BAUD_DELAY -DTCI_INSTRUMENT -flto -msimd128" \
+-    --extra-ldflags="-flto"
++    --extra-ldflags="-flto -sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_pebble_control_wasm_send','_pebble_control_wasm_recv'] -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']"
+ 
+ # Build — Emscripten outputs .js extension, so target is qemu-system-arm.js
+ ninja -j$(nproc) qemu-system-arm.js 2>&1
+diff --git a/build_wasm_jit.sh b/build_wasm_jit.sh
+index b43422e..58e2d21 100755
+--- a/build_wasm_jit.sh
++++ b/build_wasm_jit.sh
+@@ -54,7 +54,7 @@ cp /pebble/include/hw/arm/pebble.h include/hw/arm/
+ cp /pebble/include/hw/arm/stm32_clktree.h include/hw/arm/
+ 
+ # Copy Pebble hw source files
+-for dir in arm misc char ssi timer dma display gpio; do
++for dir in arm misc char ssi timer dma display gpio block; do
+     if [ -d "/pebble/hw/${dir}" ]; then
+         mkdir -p "hw/${dir}"
+         for f in /pebble/hw/${dir}/*; do
+@@ -148,16 +148,26 @@ patch_meson hw/timer/meson.build "stm32_pebble" \
+ ))"
+ 
+ # hw/ssi/meson.build
+-patch_meson hw/ssi/meson.build "stm32_pebble" \
+-"system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'stm32_pebble_spi.c'"'"'))"
++patch_meson hw/ssi/meson.build "stm32_pebble_qspi" \
++"system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files(
++  '"'"'stm32_pebble_spi.c'"'"',
++  '"'"'stm32_pebble_qspi.c'"'"',
++))"
+ 
+ # hw/dma/meson.build
+ patch_meson hw/dma/meson.build "stm32_pebble" \
+ "system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'stm32_pebble_dma.c'"'"'))"
+ 
+ # hw/display/meson.build
+-patch_meson hw/display/meson.build "pebble_snowy" \
+-"system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'pebble_snowy_display.c'"'"'))"
++patch_meson hw/display/meson.build "pebble_sm_lcd" \
++"system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files(
++  '"'"'pebble_snowy_display.c'"'"',
++  '"'"'pebble_sm_lcd.c'"'"',
++))"
++
++# hw/block/meson.build
++patch_meson hw/block/meson.build "pebble_mx25u" \
++"system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'pebble_mx25u.c'"'"'))"
+ 
+ # hw/gpio/meson.build
+ patch_meson hw/gpio/meson.build "stm32_pebble" \
+diff --git a/hw/arm/pebble_silk.c b/hw/arm/pebble_silk.c
+index dc7c130..7e4a354 100644
+--- a/hw/arm/pebble_silk.c
++++ b/hw/arm/pebble_silk.c
+@@ -1,9 +1,19 @@
+ /*
+- * Pebble Silk (Diorite) Board - stub for QEMU 10.x
+- * TODO: Fully port when F412/silk display is needed
++ * Pebble Silk (Diorite/Flint) Board Init
++ *
++ * STM32F412-based Pebble with QSPI external flash and SM-LCD display.
++ * Ported from QEMU 2.5.0-pebble8 pebble_silk.c to QEMU 10.x APIs.
++ *
++ * Copyright (c) 2013-2016 Pebble Technology
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qapi/error.h"
+ #include "hw/boards.h"
+ #if __has_include("hw/arm/machines-qom.h")
+ #include "hw/arm/machines-qom.h"
+@@ -12,6 +22,10 @@
+ #define DEFINE_MACHINE_ARM DEFINE_MACHINE
+ #endif
+ #include "hw/arm/pebble.h"
++#include "hw/ssi/ssi.h"
++#include "hw/qdev-properties.h"
++#include "system/blockdev.h"
++#include "system/block-backend.h"
+ #include "target/arm/cpu-qom.h"
+ #include "qemu/error-report.h"
+ 
+@@ -44,8 +58,85 @@ const static PblBoardConfig s_board_config_silk_bb = {
+ void pebble_32f412_init(MachineState *machine,
+                         const PblBoardConfig *board_config)
+ {
+-    /* F412 SoC init - reuse F4xx for now (same peripherals, different memory) */
+-    pebble_32f439_init(machine, board_config);
++    Stm32Gpio *gpio[STM32F4XX_GPIO_COUNT];
++    Stm32Uart *uart[STM32F4XX_UART_COUNT];
++    Stm32Timer *timer[STM32F4XX_TIM_COUNT];
++    DeviceState *rtc_dev;
++    SSIBus *spi;
++    struct stm32f4xx stm;
++    ARMCPU *cpu;
++
++    stm32f4xx_init(board_config->flash_size,
++                   board_config->ram_size,
++                   machine->kernel_filename,
++                   gpio,
++                   board_config->gpio_idr_masks,
++                   uart,
++                   timer,
++                   &rtc_dev,
++                   8000000, /* osc_freq */
++                   32768,   /* osc32_freq */
++                   &stm,
++                   &cpu);
++
++    pebble_set_qemu_settings(rtc_dev);
++
++    /* === QSPI Flash (MX25U6435F) === */
++    if (stm.qspi_dev) {
++        spi = (SSIBus *)qdev_get_child_bus(stm.qspi_dev, "ssi");
++        DeviceState *flash_dev = qdev_new("mx25u6435f");
++        DriveInfo *dinfo = drive_get(IF_MTD, 0, 0);
++        if (dinfo) {
++            qdev_prop_set_drive(flash_dev, "drive",
++                                blk_by_legacy_dinfo(dinfo));
++        }
++        if (spi) {
++            ssi_realize_and_unref(flash_dev, spi, &error_fatal);
++        }
++        /* Wire QSPI CS output to the flash's CS input */
++        qemu_irq flash_cs = qdev_get_gpio_in_named(flash_dev,
++                                                     SSI_GPIO_CS, 0);
++        qdev_connect_gpio_out_named(stm.qspi_dev, "qspi-gpio-cs", 0,
++                                    flash_cs);
++    }
++
++    /* === Display (SM-LCD on SPI2) === */
++    spi = (SSIBus *)qdev_get_child_bus(stm.spi_dev[1], "ssi");
++    DeviceState *display_dev = qdev_new("sm-lcd");
++    qdev_prop_set_bit(display_dev, "rotate_display", false);
++    if (spi) {
++        ssi_realize_and_unref(display_dev, spi, &error_fatal);
++    }
++
++    /* Backlight enable: GPIO B pin 13 */
++    qemu_irq backlight_enable = qdev_get_gpio_in_named(display_dev,
++                                                        "backlight_enable", 0);
++    qdev_connect_gpio_out((DeviceState *)gpio[STM32_GPIOB_INDEX], 13,
++                          backlight_enable);
++
++    /* Backlight level: TIM3 (timer[2]) PWM */
++    qemu_irq backlight_level = qdev_get_gpio_in_named(display_dev,
++                                                       "backlight_level", 0);
++    qdev_connect_gpio_out_named((DeviceState *)timer[2],
++                                "pwm_ratio_changed", 0, backlight_level);
++
++    /* === UARTs === */
++    pebble_connect_uarts(uart, board_config);
++
++    /* === Buttons === */
++    pebble_init_buttons(gpio, board_config->button_map);
++
++    /* === Board device (vibrate fan-out) === */
++    qemu_irq display_vibe = qdev_get_gpio_in_named(display_dev,
++                                                     "vibe_ctl", 0);
++    DeviceState *board = pebble_init_board(gpio, display_vibe);
++
++    /* Vibrate: TIM14 (timer[13]) pwm_enable -> board vibe_in */
++    qemu_irq board_vibe_in = qdev_get_gpio_in_named(board,
++                                                      "pebble_board_vibe_in",
++                                                      0);
++    qdev_connect_gpio_out_named((DeviceState *)timer[13],
++                                "pwm_enable", 0, board_vibe_in);
+ }
+ 
+ static void pebble_silk_init(MachineState *machine)
+@@ -62,6 +153,7 @@ static void pebble_silk_bb_machine_init(MachineClass *mc)
+     mc->desc = "Pebble smartwatch (silk/diorite)";
+     mc->init = pebble_silk_init;
+     mc->valid_cpu_types = valid_cpu_types;
++    mc->ignore_memory_transaction_failures = true;
+ }
+ 
+ DEFINE_MACHINE_ARM("pebble-silk-bb", pebble_silk_bb_machine_init)
+diff --git a/hw/arm/pebble_stm32f4xx_soc.c b/hw/arm/pebble_stm32f4xx_soc.c
+index 9674057..056bf28 100644
+--- a/hw/arm/pebble_stm32f4xx_soc.c
++++ b/hw/arm/pebble_stm32f4xx_soc.c
+@@ -380,9 +380,9 @@ void stm32f4xx_init(
+     }
+ 
+     /* === QSPI === */
+-    /* Not yet ported - use unimplemented device stub */
+-    stm->qspi_dev = NULL;
+-    create_unimplemented_device("QUADSPI", 0xA0001000, 0x400);
++    stm->qspi_dev = qdev_new("stm32f412_qspi");
++    stm32_init_periph(stm->qspi_dev, STM32_QSPI, 0xA0001000,
++                      qdev_get_gpio_in(armv7m_dev, STM32_QSPI_IRQ));
+ 
+     /* === ADC === */
+     DeviceState *adc_dev = qdev_new("stm32f2xx_adc");
+diff --git a/hw/block/pebble_mx25u.c b/hw/block/pebble_mx25u.c
+new file mode 100644
+index 0000000..a4493c0
+--- /dev/null
++++ b/hw/block/pebble_mx25u.c
+@@ -0,0 +1,515 @@
++/*
++ * Emulate a QSPI flash device following the MX25U command set.
++ * Modelled after the m25p80 emulation found in hw/block/m25p80.c.
++ *
++ * Ported from QEMU 2.5.0-pebble8 mx25u.c to QEMU 10.x APIs.
++ *
++ * Copyright (c) 2013-2016 Pebble Technology
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ */
++
++#include "qemu/osdep.h"
++#include "hw/ssi/ssi.h"
++#include "hw/qdev-properties.h"
++#include "hw/qdev-properties-system.h"
++#include "hw/arm/pebble.h"
++#include "system/block-backend.h"
++#include "system/block-backend-io.h"
++#include "system/memory.h"
++#include "migration/vmstate.h"
++#include "qapi/error.h"
++#include "qemu/log.h"
++
++/* MX25U6435F: 64Mbit = 8MB */
++#define FLASH_SECTOR_SIZE (64 << 10)   /* 64 KB per sector */
++#define FLASH_NUM_SECTORS (128)        /* 128 sectors = 8MB */
++#define FLASH_PAGE_SIZE   (256)        /* 256 bytes per page */
++
++static const uint8_t MX25U_ID[] = { 0xc2, 0x25, 0x37 };
++
++/* #define MX25U_DEBUG */
++#ifdef MX25U_DEBUG
++#define DB_PRINT_L(level, ...) do { \
++    fprintf(stderr, "%d: %s: ", level, __func__); \
++    fprintf(stderr, ## __VA_ARGS__); \
++    fprintf(stderr, "\n"); \
++} while (0)
++#else
++#define DB_PRINT_L(level, ...) do {} while (0)
++#endif
++
++typedef enum {
++    WRITE_ENABLE     = 0x06,
++    WRITE_DISABLE    = 0x04,
++
++    READ_STATUS_REG  = 0x05,
++    READ_SCUR_REG    = 0x2b,
++
++    READ             = 0x03,
++    FAST_READ        = 0x0b,
++    QREAD            = 0x6b,
++    READ_ID          = 0x9f,
++    READ_QID         = 0xaf,
++
++    PAGE_PROGRAM     = 0x02,
++    QPAGE_PROGRAM    = 0x38,
++
++    ERASE_SUBSECTOR  = 0x20,   /* 4k */
++    ERASE_SECTOR     = 0x52,   /* 32k */
++    ERASE_BLOCK      = 0xd8,   /* 64k */
++    ERASE_CHIP       = 0xc7,
++
++    ERASE_SUSPEND    = 0xB0,
++    ERASE_RESUME     = 0x30,
++
++    DEEP_SLEEP       = 0xb9,
++    WAKE             = 0xab,
++
++    QUAD_ENABLE      = 0x35,
++    QUAD_DISABLE     = 0xf5,
++} FlashCmd;
++
++typedef enum {
++    STATE_IDLE,
++    STATE_COLLECT_CMD_DATA,
++    STATE_WRITE,
++    STATE_READ,
++    STATE_READ_ID,
++    STATE_READ_REGISTER,
++} CMDState;
++
++#define R_SR_WIP  (1 << 0)
++#define R_SR_WEL  (1 << 1)
++#define R_SR_BP0  (1 << 2)
++#define R_SR_BP1  (1 << 3)
++#define R_SR_BP2  (1 << 4)
++#define R_SR_BP3  (1 << 5)
++#define R_SR_QE   (1 << 6)
++#define R_SR_SRWD (1 << 7)
++
++#define R_SCUR_SOTP  (1 << 0)
++#define R_SCUR_LDSO  (1 << 1)
++#define R_SCUR_PSB   (1 << 2)
++#define R_SCUR_ESB   (1 << 3)
++#define R_SCUR_PFAIL (1 << 5)
++#define R_SCUR_EFAIL (1 << 6)
++#define R_SCUR_WPSEL (1 << 7)
++
++typedef struct Flash {
++    SSIPeripheral parent_obj;
++
++    BlockBackend *blk;
++    uint8_t *storage;
++    uint32_t size;
++    uint32_t capacity;  /* configurable via property */
++    int page_size;
++
++    int64_t dirty_page;
++
++    MemoryRegion mmap;  /* memory-mapped read region */
++
++    /* Registers */
++    uint8_t SR;
++    uint8_t SCUR;
++
++    /* Command state */
++    CMDState state;
++    FlashCmd cmd_in_progress;
++    uint8_t cmd_data[4];
++    uint8_t cmd_bytes;
++    uint32_t len;
++    uint32_t pos;
++    uint64_t current_address;
++
++    uint8_t *current_register;
++    uint8_t register_read_mask;
++} Flash;
++
++typedef struct MX25UClass {
++    SSIPeripheralClass parent_class;
++} MX25UClass;
++
++#define TYPE_MX25U "mx25u-generic"
++OBJECT_DECLARE_TYPE(Flash, MX25UClass, MX25U)
++
++static void
++mx25u_flash_sync_page(Flash *s, int page)
++{
++    if (!s->blk || !blk_is_writable(s->blk)) {
++        return;
++    }
++
++    int64_t offset = (int64_t)page * s->page_size;
++    blk_pwrite(s->blk, offset, s->page_size,
++               s->storage + offset, 0);
++}
++
++static void
++mx25u_flash_sync_area(Flash *s, int64_t off, int64_t len)
++{
++    if (!s->blk || !blk_is_writable(s->blk)) {
++        return;
++    }
++    blk_pwrite(s->blk, off, len, s->storage + off, 0);
++}
++
++static void
++flash_sync_dirty(Flash *s, int64_t newpage)
++{
++    if (s->dirty_page >= 0 && s->dirty_page != newpage) {
++        mx25u_flash_sync_page(s, s->dirty_page);
++        s->dirty_page = newpage;
++    }
++}
++
++static void
++mx25u_flash_erase(Flash *s, uint32_t offset, FlashCmd cmd)
++{
++    uint32_t len;
++
++    switch (cmd) {
++    case ERASE_SUBSECTOR:
++        len = 4 << 10;
++        break;
++    case ERASE_SECTOR:
++        len = 32 << 10;
++        break;
++    case ERASE_BLOCK:
++        len = 64 << 10;
++        break;
++    case ERASE_CHIP:
++        len = s->size;
++        break;
++    default:
++        abort();
++    }
++
++    DB_PRINT_L(0, "erase offset = %#x, len = %d", offset, len);
++
++    if (!(s->SR & R_SR_WEL)) {
++        qemu_log_mask(LOG_GUEST_ERROR, "MX25U: erase with write protect!\n");
++        return;
++    }
++
++    memset(s->storage + offset, 0xff, len);
++    mx25u_flash_sync_area(s, offset, len);
++}
++
++static void
++mx25u_decode_new_cmd(Flash *s, uint32_t value)
++{
++    s->cmd_in_progress = value;
++    DB_PRINT_L(0, "decoding new command: 0x%x", value);
++
++    switch (value) {
++    case WRITE_ENABLE:
++        s->SR |= R_SR_WEL;
++        s->state = STATE_IDLE;
++        break;
++    case WRITE_DISABLE:
++        s->SR &= ~R_SR_WEL;
++        s->state = STATE_IDLE;
++        break;
++
++    case READ_STATUS_REG:
++        s->current_register = &s->SR;
++        s->state = STATE_READ_REGISTER;
++        break;
++    case READ_SCUR_REG:
++        s->current_register = &s->SCUR;
++        s->state = STATE_READ_REGISTER;
++        break;
++
++    case READ:
++    case FAST_READ:
++    case QREAD:
++        s->cmd_bytes = 3;
++        s->pos = 0;
++        s->state = STATE_COLLECT_CMD_DATA;
++        break;
++
++    case READ_ID:
++    case READ_QID:
++        s->cmd_bytes = 0;
++        s->state = STATE_READ_ID;
++        s->len = 3;
++        s->pos = 0;
++        break;
++
++    case PAGE_PROGRAM:
++    case QPAGE_PROGRAM:
++        s->pos = 0;
++        s->cmd_bytes = 3;
++        s->state = STATE_COLLECT_CMD_DATA;
++        break;
++
++    case ERASE_SUBSECTOR:
++    case ERASE_SECTOR:
++    case ERASE_BLOCK:
++        s->pos = 0;
++        s->cmd_bytes = 3;
++        s->state = STATE_COLLECT_CMD_DATA;
++        break;
++
++    case ERASE_CHIP:
++        mx25u_flash_erase(s, 0, ERASE_CHIP);
++        s->SR |= R_SR_WIP;
++        s->register_read_mask = R_SR_WIP;
++        s->state = STATE_IDLE;
++        break;
++
++    case ERASE_SUSPEND:
++    case ERASE_RESUME:
++        break;
++
++    case DEEP_SLEEP:
++    case WAKE:
++        break;
++
++    case QUAD_ENABLE:
++    case QUAD_DISABLE:
++        break;
++
++    default:
++        qemu_log_mask(LOG_GUEST_ERROR,
++                      "MX25U: Unknown cmd 0x%x\n", value);
++    }
++}
++
++static void
++mx25u_handle_cmd_data(Flash *s)
++{
++    s->current_address = (s->cmd_data[2] << 16) |
++                         (s->cmd_data[1] << 8) |
++                          s->cmd_data[0];
++    s->state = STATE_IDLE;
++
++    switch (s->cmd_in_progress) {
++    case PAGE_PROGRAM:
++    case QPAGE_PROGRAM:
++        s->state = STATE_WRITE;
++        break;
++    case READ:
++    case FAST_READ:
++    case QREAD:
++        DB_PRINT_L(1, "Read From: 0x%" PRIu64, s->current_address);
++        s->state = STATE_READ;
++        break;
++    case ERASE_SUBSECTOR:
++    case ERASE_SECTOR:
++    case ERASE_BLOCK:
++        mx25u_flash_erase(s, s->current_address, s->cmd_in_progress);
++        s->SR |= R_SR_WIP;
++        s->register_read_mask = R_SR_WIP;
++        break;
++    default:
++        break;
++    }
++}
++
++static void
++mx25u_write8(Flash *s, uint8_t value)
++{
++    int64_t page = s->current_address / s->page_size;
++
++    uint8_t current = s->storage[s->current_address];
++    if (value & ~current) {
++        qemu_log_mask(LOG_GUEST_ERROR, "MX25U: Flipping bit from 0 => 1\n");
++        value &= current;
++    }
++    DB_PRINT_L(1, "Write 0x%" PRIx8 " = 0x%" PRIx64,
++               (uint8_t)value, s->current_address);
++    s->storage[s->current_address] = (uint8_t)value;
++
++    flash_sync_dirty(s, page);
++    s->dirty_page = page;
++}
++
++static uint32_t
++mx25u_transfer8(SSIPeripheral *ss, uint32_t tx)
++{
++    Flash *s = MX25U(ss);
++    uint32_t r = 0;
++
++    switch (s->state) {
++    case STATE_COLLECT_CMD_DATA:
++        DB_PRINT_L(2, "Collected: 0x%" PRIx32, (uint32_t)tx);
++        s->cmd_data[s->pos++] = (uint8_t)tx;
++        if (s->pos == s->cmd_bytes) {
++            mx25u_handle_cmd_data(s);
++        }
++        break;
++    case STATE_WRITE:
++        if (s->current_address > s->size) {
++            qemu_log_mask(LOG_GUEST_ERROR,
++                "MX25U: Out of bounds flash write to 0x%" PRIx64 "\n",
++                s->current_address);
++        } else {
++            mx25u_write8(s, tx);
++            s->current_address += 1;
++        }
++        break;
++    case STATE_READ:
++        if (s->current_address > s->size) {
++            qemu_log_mask(LOG_GUEST_ERROR,
++                "MX25U: Out of bounds flash read from 0x%" PRIx64 "\n",
++                s->current_address);
++        } else {
++            r = s->storage[s->current_address];
++            DB_PRINT_L(1, "Read 0x%" PRIx64 " = 0x%" PRIx8,
++                        s->current_address, (uint8_t)r);
++            s->current_address = (s->current_address + 1) % s->size;
++        }
++        break;
++    case STATE_READ_ID:
++        r = MX25U_ID[s->pos];
++        DB_PRINT_L(2, "Read ID 0x%x (pos 0x%x)", (uint8_t)r, s->pos);
++        ++s->pos;
++        if (s->pos == s->len) {
++            s->pos = 0;
++            s->state = STATE_IDLE;
++        }
++        break;
++    case STATE_READ_REGISTER:
++        r = *s->current_register;
++        *s->current_register &= ~s->register_read_mask;
++        s->register_read_mask = 0;
++        s->state = STATE_IDLE;
++        DB_PRINT_L(1, "Read register");
++        break;
++    case STATE_IDLE:
++        mx25u_decode_new_cmd(s, tx);
++        break;
++    }
++
++    return r;
++}
++
++static int
++mx25u_cs(SSIPeripheral *ss, bool select)
++{
++    Flash *s = MX25U(ss);
++
++    if (select) {
++        s->len = 0;
++        s->pos = 0;
++        s->state = STATE_IDLE;
++        flash_sync_dirty(s, -1);
++    }
++
++    DB_PRINT_L(0, "CS %s", select ? "HIGH" : "LOW");
++
++    return 0;
++}
++
++static void
++mx25u_realize(SSIPeripheral *ss, Error **errp)
++{
++    Flash *s = MX25U(ss);
++
++    s->state = STATE_IDLE;
++    s->size = s->capacity;
++    s->page_size = FLASH_PAGE_SIZE;
++    s->dirty_page = -1;
++    s->SR = 0;
++
++    if (s->blk) {
++        DB_PRINT_L(0, "Binding to block backend drive");
++
++        /* Request block permissions */
++        uint64_t perm = BLK_PERM_CONSISTENT_READ;
++        if (blk_supports_write_perm(s->blk)) {
++            perm |= BLK_PERM_WRITE;
++        }
++        if (blk_set_perm(s->blk, perm, BLK_PERM_ALL, errp) < 0) {
++            return;
++        }
++
++        s->storage = blk_blockalign(s->blk, s->size);
++
++        if (blk_pread(s->blk, 0, s->size, s->storage, 0) < 0) {
++            error_setg(errp, "Failed to initialize SPI flash from drive");
++            return;
++        }
++    } else {
++        DB_PRINT_L(0, "No drive - binding to RAM");
++        s->storage = blk_blockalign(NULL, s->size);
++        memset(s->storage, 0xFF, s->size);
++    }
++
++    /* Create memory region backed by flash storage for memory-mapped reads.
++     * Not marked read-only: firmware may write to this range (e.g. FMC init).
++     * Direct writes update the buffer but don't sync to the block backend;
++     * proper flash writes go through the QSPI controller instead. */
++    memory_region_init_ram_ptr(&s->mmap, OBJECT(ss), "mx25u.mmap",
++                                s->size, s->storage);
++}
++
++static int
++mx25u_pre_save(void *opaque)
++{
++    flash_sync_dirty((Flash *)opaque, -1);
++    return 0;
++}
++
++static const VMStateDescription vmstate_mx25u = {
++    .name = "mx25u",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .pre_save = mx25u_pre_save,
++    .fields = (VMStateField[]) {
++        VMSTATE_END_OF_LIST()
++    }
++};
++
++static const Property mx25u_properties[] = {
++    DEFINE_PROP_DRIVE("drive", Flash, blk),
++    DEFINE_PROP_UINT32("capacity", Flash, capacity,
++                       FLASH_SECTOR_SIZE * FLASH_NUM_SECTORS),
++};
++
++static void
++mx25u_class_init(ObjectClass *klass, const void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++    SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
++
++    k->realize = mx25u_realize;
++    k->transfer = mx25u_transfer8;
++    k->set_cs = mx25u_cs;
++    k->cs_polarity = SSI_CS_LOW;
++    dc->vmsd = &vmstate_mx25u;
++    device_class_set_props(dc, mx25u_properties);
++}
++
++MemoryRegion *mx25u_get_mmap(DeviceState *dev)
++{
++    return &MX25U(dev)->mmap;
++}
++
++static const TypeInfo mx25u_info = {
++    .name          = TYPE_MX25U,
++    .parent        = TYPE_SSI_PERIPHERAL,
++    .instance_size = sizeof(Flash),
++    .class_size    = sizeof(MX25UClass),
++    .class_init    = mx25u_class_init,
++    .abstract      = true,
++};
++
++static const TypeInfo mx25u6435f_info = {
++    .name   = "mx25u6435f",
++    .parent = TYPE_MX25U,
++};
++
++static void
++mx25u_register_types(void)
++{
++    type_register_static(&mx25u_info);
++    type_register_static(&mx25u6435f_info);
++}
++
++type_init(mx25u_register_types)
+diff --git a/hw/display/pebble_sm_lcd.c b/hw/display/pebble_sm_lcd.c
+new file mode 100644
+index 0000000..215cb89
+--- /dev/null
++++ b/hw/display/pebble_sm_lcd.c
+@@ -0,0 +1,350 @@
++/*-
++ * Copyright (c) 2013
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++/*
++ * QEMU Sharp LS013B7DH01 Memory LCD device model.
++ * Ported from QEMU 2.5.0-pebble8 ls013b7dh01.c to QEMU 10.x APIs.
++ */
++
++#include "qemu/osdep.h"
++#include "qemu/log.h"
++#include "ui/console.h"
++#include "ui/pixel_ops.h"
++#include "hw/ssi/ssi.h"
++#include "hw/irq.h"
++#include "hw/qdev-properties.h"
++#include "qapi/error.h"
++
++#define NUM_ROWS 168
++#define NUM_COLS 144
++#define NUM_COL_BYTES (NUM_COLS / 8)
++
++typedef enum {
++    SM_LCD_COMMAND,
++    SM_LCD_LINENO,
++    SM_LCD_DATA,
++    SM_LCD_TRAILER
++} SmLcdXferState;
++
++typedef struct {
++    SSIPeripheral parent_obj;
++    QemuConsole *con;
++    bool redraw;
++    uint8_t framebuffer[NUM_ROWS * NUM_COL_BYTES];
++    int fbindex;
++    SmLcdXferState state;
++
++    bool   backlight_enabled;
++    float  brightness;
++
++    bool   vibrate_on;
++    int    vibrate_offset;
++
++    bool power_on;
++
++    /* Tintin display was installed 'upside-down'.
++     * Use the "rotate_display" property to flip it.
++     */
++    bool rotate_display;
++} SmLcdState;
++
++#define TYPE_SM_LCD "sm-lcd"
++#define SM_LCD(obj) OBJECT_CHECK(SmLcdState, (obj), TYPE_SM_LCD)
++
++static uint8_t
++bitswap(uint8_t val)
++{
++    return ((val * 0x0802LU & 0x22110LU) |
++            (val * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16;
++}
++
++static uint32_t
++sm_lcd_transfer(SSIPeripheral *dev, uint32_t data)
++{
++    SmLcdState *s = SM_LCD(dev);
++    /* QEMU's SPI infrastructure is implicitly MSB-first */
++    data = bitswap(data);
++
++    switch (s->state) {
++    case SM_LCD_COMMAND:
++        data &= 0xfd; /* Mask VCOM bit */
++        switch (data) {
++        case 0x01: /* Write Line */
++            s->state = SM_LCD_LINENO;
++            break;
++        case 0x04: /* Clear Screen */
++            memset(s->framebuffer, 0, sizeof(s->framebuffer));
++            s->redraw = true;
++            break;
++        case 0x00: /* Toggle VCOM */
++            break;
++        default:
++            /* Simulate confused display controller */
++            memset(s->framebuffer, 0x55, sizeof(s->framebuffer));
++            s->redraw = true;
++            break;
++        }
++        break;
++    case SM_LCD_LINENO:
++        if (data == 0) {
++            s->state = SM_LCD_COMMAND;
++        } else {
++            s->fbindex = (data - 1) * NUM_COL_BYTES;
++            s->state = SM_LCD_DATA;
++        }
++        break;
++    case SM_LCD_DATA:
++        s->framebuffer[s->fbindex++] = data;
++        if (s->fbindex % NUM_COL_BYTES == 0) {
++            s->state = SM_LCD_TRAILER;
++        }
++        break;
++    case SM_LCD_TRAILER:
++        if (data != 0) {
++            qemu_log_mask(LOG_GUEST_ERROR,
++              "ls013 memory lcd received non-zero data in TRAILER\n");
++        }
++        s->state = SM_LCD_LINENO;
++        s->redraw = true;
++        break;
++    }
++    return 0;
++}
++
++static void sm_lcd_update_display(void *arg)
++{
++    SmLcdState *s = arg;
++
++    uint8_t *d;
++    uint32_t colour_on, colour_off, colour;
++    int x, y, bpp;
++
++    DisplaySurface *surface = qemu_console_surface(s->con);
++    bpp = surface_bits_per_pixel(surface);
++    d = surface_data(surface);
++
++    /* If vibrate is on, jiggle the display */
++    if (s->vibrate_on) {
++        if (s->vibrate_offset == 0) {
++            s->vibrate_offset = 2;
++        }
++        int bytes_per_pixel;
++        switch (bpp) {
++        case 8:
++            bytes_per_pixel = 1;
++            break;
++        case 15:
++        case 16:
++            bytes_per_pixel = 2;
++            break;
++        case 32:
++            bytes_per_pixel = 4;
++            break;
++        default:
++            abort();
++        }
++        int total_bytes = NUM_ROWS * NUM_COLS * bytes_per_pixel
++                        - abs(s->vibrate_offset) * bytes_per_pixel;
++        if (s->vibrate_offset > 0) {
++            memmove(d, d + s->vibrate_offset * bytes_per_pixel, total_bytes);
++        } else {
++            memmove(d - s->vibrate_offset * bytes_per_pixel, d, total_bytes);
++        }
++        s->vibrate_offset *= -1;
++        dpy_gfx_update(s->con, 0, 0, NUM_COLS, NUM_ROWS);
++        return;
++    }
++
++    if (!s->redraw) {
++        return;
++    }
++
++    /* Adjust white level for brightness */
++    float brightness = s->backlight_enabled ? s->brightness : 0.0;
++    int max_val = 170 + (255 - 170) * brightness;
++
++    switch (bpp) {
++    case 8:
++        colour_on = rgb_to_pixel8(max_val, max_val, max_val);
++        colour_off = rgb_to_pixel8(0x00, 0x00, 0x00);
++        break;
++    case 15:
++        colour_on = rgb_to_pixel15(max_val, max_val, max_val);
++        colour_off = rgb_to_pixel15(0x00, 0x00, 0x00);
++        break;
++    case 16:
++        colour_on = rgb_to_pixel16(max_val, max_val, max_val);
++        colour_off = rgb_to_pixel16(0x00, 0x00, 0x00);
++        break;
++    case 32:
++        colour_on = rgb_to_pixel32(max_val, max_val, max_val);
++        colour_off = rgb_to_pixel32(0x00, 0x00, 0x00);
++        break;
++    default:
++        return;
++    }
++
++    for (y = 0; y < NUM_ROWS; y++) {
++        for (x = 0; x < NUM_COLS; x++) {
++            int xr = (s->rotate_display) ? NUM_COLS - 1 - x : x;
++            int yr = (s->rotate_display) ? NUM_ROWS - 1 - y : y;
++            bool on = s->framebuffer[yr * NUM_COL_BYTES + xr / 8] &
++                      (1 << (xr % 8));
++            colour = on ? colour_on : colour_off;
++            switch (bpp) {
++            case 8:
++                *((uint8_t *)d) = colour;
++                d++;
++                break;
++            case 15:
++            case 16:
++                *((uint16_t *)d) = colour;
++                d += 2;
++                break;
++            case 32:
++                *((uint32_t *)d) = colour;
++                d += 4;
++                break;
++            default:
++                break;
++            }
++        }
++    }
++
++    dpy_gfx_update(s->con, 0, 0, NUM_COLS, NUM_ROWS);
++    s->redraw = false;
++}
++
++static void sm_lcd_invalidate_display(void *arg)
++{
++    SmLcdState *s = arg;
++    s->redraw = true;
++}
++
++static void sm_lcd_backlight_enable_cb(void *opaque, int n, int level)
++{
++    SmLcdState *s = (SmLcdState *)opaque;
++    assert(n == 0);
++
++    bool enable = (level != 0);
++    if (s->backlight_enabled != enable) {
++        s->backlight_enabled = enable;
++        s->redraw = true;
++    }
++}
++
++static void sm_lcd_set_backlight_level_cb(void *opaque, int n, int level)
++{
++    SmLcdState *s = (SmLcdState *)opaque;
++    assert(n == 0);
++
++    float bright_f = (float)level / 255;
++    float new_setting = MIN(1.0, bright_f * 4);
++    if (new_setting != s->brightness) {
++        s->brightness = MIN(1.0, bright_f * 4);
++        if (s->backlight_enabled) {
++            s->redraw = true;
++        }
++    }
++}
++
++static void sm_lcd_vibe_ctl(void *opaque, int n, int level)
++{
++    SmLcdState *s = (SmLcdState *)opaque;
++    assert(n == 0);
++
++    s->vibrate_on = (level != 0);
++}
++
++static void sm_lcd_power_ctl(void *opaque, int n, int level)
++{
++    SmLcdState *s = (SmLcdState *)opaque;
++    assert(n == 0);
++
++    if (!level && s->power_on) {
++        memset(&s->framebuffer, 0, sizeof(s->framebuffer));
++        s->redraw = true;
++        s->power_on = false;
++    }
++    s->power_on = !!level;
++}
++
++static void sm_lcd_reset(DeviceState *dev)
++{
++    SmLcdState *s = SM_LCD(dev);
++    memset(&s->framebuffer, 0, sizeof(s->framebuffer));
++    s->redraw = true;
++}
++
++static const GraphicHwOps sm_lcd_ops = {
++    .gfx_update = sm_lcd_update_display,
++    .invalidate = sm_lcd_invalidate_display,
++};
++
++static void sm_lcd_realize(SSIPeripheral *dev, Error **errp)
++{
++    SmLcdState *s = SM_LCD(dev);
++
++    s->brightness = 0.0;
++
++    s->con = graphic_console_init(DEVICE(dev), 0, &sm_lcd_ops, s);
++    qemu_console_resize(s->con, NUM_COLS, NUM_ROWS);
++
++    qdev_init_gpio_in_named(DEVICE(dev), sm_lcd_backlight_enable_cb,
++                            "backlight_enable", 1);
++    qdev_init_gpio_in_named(DEVICE(dev), sm_lcd_set_backlight_level_cb,
++                            "backlight_level", 1);
++    qdev_init_gpio_in_named(DEVICE(dev), sm_lcd_vibe_ctl,
++                            "vibe_ctl", 1);
++    qdev_init_gpio_in_named(DEVICE(dev), sm_lcd_power_ctl,
++                            "power_ctl", 1);
++}
++
++static const Property sm_lcd_properties[] = {
++    DEFINE_PROP_BOOL("rotate_display", SmLcdState, rotate_display, true),
++};
++
++static void sm_lcd_class_init(ObjectClass *klass, const void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++    SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
++
++    device_class_set_props(dc, sm_lcd_properties);
++    k->realize = sm_lcd_realize;
++    k->transfer = sm_lcd_transfer;
++    k->cs_polarity = SSI_CS_LOW;
++    device_class_set_legacy_reset(dc, sm_lcd_reset);
++}
++
++static const TypeInfo sm_lcd_info = {
++    .name          = TYPE_SM_LCD,
++    .parent        = TYPE_SSI_PERIPHERAL,
++    .instance_size = sizeof(SmLcdState),
++    .class_init    = sm_lcd_class_init,
++};
++
++static void sm_lcd_register(void)
++{
++    type_register_static(&sm_lcd_info);
++}
++
++type_init(sm_lcd_register);
+diff --git a/hw/ssi/stm32_pebble_qspi.c b/hw/ssi/stm32_pebble_qspi.c
+new file mode 100644
+index 0000000..5a52adf
+--- /dev/null
++++ b/hw/ssi/stm32_pebble_qspi.c
+@@ -0,0 +1,322 @@
++/*
++ * STM32F412 QSPI Controller Emulation
++ *
++ * Manages QSPI register interface and coordinates with SSI bus for flash
++ * transfers. Ported from QEMU 2.5.0-pebble8 stm32f412_qspi.c to QEMU 10.x.
++ *
++ * Copyright (c) 2013-2016 Pebble Technology
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ */
++
++#include "qemu/osdep.h"
++#include "hw/sysbus.h"
++#include "hw/ssi/ssi.h"
++#include "hw/arm/stm32_common.h"
++#include "qemu/log.h"
++
++/* #define QSPI_DEBUG */
++#ifdef QSPI_DEBUG
++#define DB_PRINT_L(level, ...) do { \
++    fprintf(stderr, "%d: %s: ", level, __func__); \
++    fprintf(stderr, ## __VA_ARGS__); \
++    fprintf(stderr, "\n"); \
++} while (0)
++#else
++#define DB_PRINT_L(level, ...) do {} while (0)
++#endif
++
++/* QSPI Register Definitions */
++#define R_CR   (0x00 / 4)
++#define CR_MATCH_MODE_MASK (0x01 << 23)
++
++#define R_DCR  (0x04 / 4)
++
++#define R_SR   (0x08 / 4)
++#define R_SR_TEF (1 << 0)
++#define R_SR_TCF (1 << 1)
++#define R_SR_FTF (1 << 2)
++#define R_SR_SMF (1 << 3)
++#define R_SR_TOF (1 << 4)
++#define R_SR_BSY (1 << 5)
++
++#define R_FCR  (0x0c / 4)
++#define R_FCR_CTOF (1 << 4)
++#define R_FCR_CSMF (1 << 3)
++#define R_FCR_CTCF (1 << 1)
++#define R_FCR_CTEF (1 << 0)
++
++#define R_DLR  (0x10 / 4)
++
++#define R_CCR  (0x14 / 4)
++#define CCR_INSTR_MASK     (0xff << 0)
++#define CCR_IMODE_MASK     (0x3 << 8)
++#define CCR_ADMODE_MASK    (0x3 << 10)
++#define CCR_ADSIZE_MASK    (0x3 << 12)
++#define CCR_MODE_MASK      (0x3 << 26)
++
++#define CCR_IMODE_NONE     (0x0 << 8)
++#define CCR_IMODE_ONELINE  (0x1 << 8)
++#define CCR_IMODE_TWOLINE  (0x2 << 8)
++#define CCR_IMODE_FOURLINE (0x3 << 8)
++
++#define CCR_ADMODE_NONE     (0x0 << 10)
++#define CCR_ADMODE_ONELINE  (0x1 << 10)
++#define CCR_ADMODE_TWOLINE  (0x2 << 10)
++#define CCR_ADMODE_FOURLINE (0x3 << 10)
++
++#define CCR_ADSIZE_8  (0x0 << 12)
++#define CCR_ADSIZE_16 (0x1 << 12)
++#define CCR_ADSIZE_24 (0x2 << 12)
++#define CCR_ADSIZE_32 (0x3 << 12)
++
++#define CCR_MODE_INDIRECT_WRITE (0x00 << 26)
++#define CCR_MODE_INDIRECT_READ  (0x01 << 26)
++#define CCR_MODE_AUTOMATIC_POLL (0x2 << 26)
++#define CCR_MODE_MEMORY_MAPPED  (0x3 << 26)
++
++#define R_AR   (0x18 / 4)
++#define R_ABR  (0x1c / 4)
++#define R_DR   (0x20 / 4)
++#define R_PSMKR (0x24 / 4)
++#define R_PSMAR (0x28 / 4)
++#define R_PIR  (0x2c / 4)
++#define R_LPTR (0x30 / 4)
++
++#define R_MAX  (0x34 / 4)
++
++#define TYPE_STM32F412_QSPI "stm32f412_qspi"
++OBJECT_DECLARE_SIMPLE_TYPE(Stm32f412Qspi, STM32F412_QSPI)
++
++typedef enum {
++    CS_STATE_LOW = 0,
++    CS_STATE_HIGH = 1,
++} CsState;
++
++struct Stm32f412Qspi {
++    SysBusDevice parent_obj;
++    MemoryRegion iomem;
++    qemu_irq irq;
++
++    SSIBus *qspi;
++
++    uint32_t regs[R_MAX];
++
++    qemu_irq cs_irq;
++    CsState cs_state;
++
++    int64_t tx_remaining;
++};
++
++static uint32_t
++stm32f412_auto_poll(Stm32f412Qspi *s, uint8_t reg)
++{
++    bool and_match = (s->regs[R_CR] & CR_MATCH_MODE_MASK) == 0;
++    uint32_t match = s->regs[R_PSMAR];
++    uint32_t mask = s->regs[R_PSMKR];
++    bool set;
++
++    if (and_match) {
++        set = (reg & mask) == match;
++    } else {
++        set = ((reg & mask) & match) != 0;
++    }
++    DB_PRINT_L(1, "Auto Poll %s", set ? "Success" : "Fail");
++    return set;
++}
++
++static bool
++stm32f412_in_CCR_mode(Stm32f412Qspi *s, uint32_t mode)
++{
++    return (s->regs[R_CCR] & CCR_MODE_MASK) == mode;
++}
++
++static void
++stm32f412_set_cs(Stm32f412Qspi *s, CsState state)
++{
++    if (s->cs_state != state) {
++        qemu_set_irq(s->cs_irq, state == CS_STATE_HIGH);
++        s->cs_state = state;
++    }
++}
++
++static uint64_t
++stm32f412_qspi_read(void *arg, hwaddr offset, unsigned size)
++{
++    Stm32f412Qspi *s = arg;
++    uint32_t r = UINT32_MAX;
++
++    offset >>= 2;
++
++    if (offset < R_MAX) {
++        switch (offset) {
++        case R_DR:
++            DB_PRINT_L(1, "Read %u of %" PRIi64 " remaining",
++                        size, s->tx_remaining);
++            r = ssi_transfer(s->qspi, 0);
++            s->tx_remaining -= size;
++            break;
++        case R_SR:
++            if (stm32f412_in_CCR_mode(s, CCR_MODE_AUTOMATIC_POLL)) {
++                DB_PRINT_L(2, "POLL STATUS REG. Command? %d",
++                            s->cs_state == CS_STATE_LOW);
++                stm32f412_set_cs(s, CS_STATE_LOW);
++                ssi_transfer(s->qspi, s->regs[R_CCR] & CCR_INSTR_MASK);
++                uint8_t reg = ssi_transfer(s->qspi, 0);
++                stm32f412_set_cs(s, CS_STATE_HIGH);
++                DB_PRINT_L(2, "REG: 0x%" PRIx8, reg);
++                if (stm32f412_auto_poll(s, reg)) {
++                    s->regs[R_SR] |= R_SR_SMF;
++                    s->regs[R_CCR] &= ~CCR_MODE_AUTOMATIC_POLL;
++                }
++            }
++            r = s->regs[R_SR];
++            break;
++        default:
++            r = s->regs[offset];
++            break;
++        }
++    } else {
++        qemu_log_mask(LOG_GUEST_ERROR,
++                      "QSPI: Out of range register 0x%x\n", (unsigned)offset);
++    }
++
++    if (s->tx_remaining <= 0) {
++        stm32f412_set_cs(s, CS_STATE_HIGH);
++        s->regs[R_SR] &= ~R_SR_TCF;
++        s->regs[R_SR] &= ~R_SR_BSY;
++    }
++
++    return r;
++}
++
++static void
++stm32f412_CCR_write(Stm32f412Qspi *s, uint32_t CCR, unsigned size)
++{
++    if ((CCR & CCR_ADMODE_MASK) != CCR_ADMODE_NONE) {
++        uint8_t addrsize = ((CCR & CCR_ADSIZE_MASK) >> 12) + 1;
++        DB_PRINT_L(1, "Adding %" PRIu8 " for address", addrsize);
++        s->tx_remaining += addrsize;
++    }
++    if ((CCR & CCR_MODE_MASK) != CCR_MODE_AUTOMATIC_POLL) {
++        if ((CCR & CCR_IMODE_MASK) != CCR_IMODE_NONE) {
++            DB_PRINT_L(1, "Command 0x%x to tx %" PRIi64 " B",
++                        CCR & CCR_INSTR_MASK, s->tx_remaining);
++            stm32f412_set_cs(s, CS_STATE_LOW);
++            ssi_transfer(s->qspi, CCR & CCR_INSTR_MASK);
++        }
++    }
++    s->regs[R_CCR] = CCR;
++}
++
++static void
++stm32f412_qspi_xfer(Stm32f412Qspi *s, uint32_t data, unsigned size)
++{
++    int i;
++    for (i = 0; i < size; ++i) {
++        uint8_t val = (data >> (i * 8)) & 0xff;
++        ssi_transfer(s->qspi, val);
++    }
++}
++
++static void
++stm32f412_qspi_write(void *arg, hwaddr addr, uint64_t data, unsigned size)
++{
++    Stm32f412Qspi *s = arg;
++
++    addr >>= 2;
++
++    switch (addr) {
++    case R_FCR:
++        s->regs[R_SR] &= ~(data);
++        break;
++    case R_CCR:
++        stm32f412_CCR_write(s, data, size);
++        break;
++    case R_AR: {
++        s->regs[R_AR] = data;
++        uint8_t addrsize = ((s->regs[R_CCR] & CCR_ADSIZE_MASK) >> 12) + 1;
++        stm32f412_qspi_xfer(s, data, addrsize);
++        s->tx_remaining -= addrsize;
++        break;
++    }
++    case R_DR:
++        DB_PRINT_L(2, "Write %u of %" PRIi64 " remaining",
++                    size, s->tx_remaining);
++        s->regs[R_DR] = 0;
++        stm32f412_qspi_xfer(s, data, size);
++        s->tx_remaining -= size;
++        break;
++    case R_DLR:
++        s->tx_remaining = data + 1;
++        DB_PRINT_L(1, "Set DLR to %" PRIu64 " + 1", data);
++        break;
++    default:
++        s->regs[addr] = data;
++        break;
++    }
++
++    if (s->tx_remaining <= 0) {
++        stm32f412_set_cs(s, CS_STATE_HIGH);
++    }
++
++    s->regs[R_SR] |= R_SR_TCF;
++}
++
++static const MemoryRegionOps stm32f412_qspi_ops = {
++    .read = stm32f412_qspi_read,
++    .write = stm32f412_qspi_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++};
++
++static void
++stm32f412_qspi_reset(DeviceState *dev)
++{
++    Stm32f412Qspi *s = STM32F412_QSPI(dev);
++    s->cs_state = CS_STATE_HIGH;
++    s->tx_remaining = 0;
++}
++
++static void
++stm32f412_qspi_realize(DeviceState *dev, Error **errp)
++{
++    Stm32f412Qspi *s = STM32F412_QSPI(dev);
++    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
++
++    memory_region_init_io(&s->iomem, OBJECT(dev), &stm32f412_qspi_ops, s,
++                          "qspi", 0x3ff);
++    sysbus_init_mmio(sbd, &s->iomem);
++    sysbus_init_irq(sbd, &s->irq);
++    s->qspi = ssi_create_bus(dev, "ssi");
++
++    s->cs_state = CS_STATE_HIGH;
++    s->tx_remaining = 0;
++
++    qdev_init_gpio_out_named(dev, &s->cs_irq, "qspi-gpio-cs", 1);
++}
++
++static void
++stm32f412_qspi_class_init(ObjectClass *klass, const void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++    dc->realize = stm32f412_qspi_realize;
++    device_class_set_legacy_reset(dc, stm32f412_qspi_reset);
++}
++
++static const TypeInfo stm32f412_qspi_info = {
++    .name          = TYPE_STM32F412_QSPI,
++    .parent        = TYPE_SYS_BUS_DEVICE,
++    .instance_size = sizeof(Stm32f412Qspi),
++    .class_init    = stm32f412_qspi_class_init,
++};
++
++static void
++stm32f412_qspi_register_types(void)
++{
++    type_register_static(&stm32f412_qspi_info);
++}
++
++type_init(stm32f412_qspi_register_types)
+diff --git a/include/hw/arm/pebble.h b/include/hw/arm/pebble.h
+index 3fe4bc8..a1e1aff 100644
+--- a/include/hw/arm/pebble.h
++++ b/include/hw/arm/pebble.h
+@@ -127,6 +127,10 @@ void pebble_connect_uarts(Stm32Uart *uart[], const PblBoardConfig *board_config)
+ void pebble_init_buttons(Stm32Gpio *gpio[], const PblButtonMap *map);
+ DeviceState *pebble_init_board(Stm32Gpio *gpio[], qemu_irq display_vibe);
+ 
++/* MX25U flash memory-mapped region accessor */
++struct MemoryRegion;
++MemoryRegion *mx25u_get_mmap(DeviceState *dev);
++
+ /* F7xx UART type forward declarations (stub for now) */
+ typedef struct Stm32F7xxUart Stm32F7xxUart;
+ 
+diff --git a/patches/wasm_cpu_longjmp_cleanup.patch b/patches/wasm_cpu_longjmp_cleanup.patch
+new file mode 100644
+index 0000000..a7e7fed
+--- /dev/null
++++ b/patches/wasm_cpu_longjmp_cleanup.patch
+@@ -0,0 +1,16 @@
++--- a/accel/tcg/cpu-exec.c	2026-05-16 17:34:02.958225923 +0200
+++++ b/accel/tcg/cpu-exec.c	2026-05-16 17:34:02.983390905 +0200
++@@ -510,8 +510,12 @@
++ 
++ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
++ {
++-    /* Non-buggy compilers preserve this; assert the correct value. */
+++    /* Non-buggy compilers preserve this; assert the correct value.
+++     * Emscripten/Asyncify can lose the global across siglongjmp even though
+++     * the CPU argument remains valid, so avoid aborting only on that host. */
+++#ifndef __EMSCRIPTEN__
++     g_assert(cpu == current_cpu);
+++#endif
++ 
++ #ifdef CONFIG_USER_ONLY
++     clear_helper_retaddr();
+diff --git a/patches/wasm_rcu_read_unlock_depth.patch b/patches/wasm_rcu_read_unlock_depth.patch
+new file mode 100644
+index 0000000..bdcc44c
+--- /dev/null
++++ b/patches/wasm_rcu_read_unlock_depth.patch
+@@ -0,0 +1,17 @@
++--- a/include/qemu/rcu.h	2026-05-16 17:49:40.322558999 +0200
+++++ b/include/qemu/rcu.h	2026-05-16 17:49:40.336388245 +0200
++@@ -98,7 +98,13 @@
++ {
++     struct rcu_reader_data *p_rcu_reader = get_ptr_rcu_reader();
++ 
++-    assert(p_rcu_reader->depth != 0);
+++    if (p_rcu_reader->depth == 0) {
+++#ifdef __EMSCRIPTEN__
+++        return;
+++#else
+++        assert(p_rcu_reader->depth != 0);
+++#endif
+++    }
++     if (--p_rcu_reader->depth > 0) {
++         return;
++     }

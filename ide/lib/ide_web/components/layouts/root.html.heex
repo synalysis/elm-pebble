@@ -15,8 +15,17 @@
     <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
     <script defer phx-track-static type="module" src={~p"/assets/app.js"}>
     </script>
+    <script
+      src="https://sdk.feedback.one/v0/core.min.js"
+      data-project-id="019e3269-74e1-7a61-8e62-27959f5d5442"
+      defer
+    >
+    </script>
   </head>
-  <body class="bg-white text-zinc-900" data-ide-theme={Atom.to_string(Ide.Settings.current().editor_theme)}>
+  <body
+    class="bg-white text-zinc-900"
+    data-ide-theme={Atom.to_string(Ide.Settings.current().editor_theme)}
+  >
     {@inner_content}
   </body>
 </html>

@@ -723,6 +723,62 @@ defmodule Ide.TokenizerTest do
            )
   end
 
+  test "compiler mode does not treat equality comparisons as assignments" do
+    source = """
+    module Main exposing (value)
+
+    value model =
+        if model.count == 0 then
+            1
+
+        else if a == b then
+            2
+
+        else
+            3
+    """
+
+    result = Tokenizer.tokenize(source, mode: :compiler)
+
+    refute Enum.any?(
+             result.diagnostics,
+             &(&1.source == "tokenizer/expr_parser" and &1.catalog_id == :missing_expression)
+           )
+  end
+
+  test "compiler mode reports invalid top-level declarations from tokens" do
+    source = """
+    module Main exposing (main)
+
+    main =
+        1
+
+    Aaa bbb ccc = dde
+    abababab
+    """
+
+    result = Tokenizer.tokenize(source, mode: :compiler)
+
+    assert capital =
+             Enum.find(
+               result.diagnostics,
+               &(&1.source == "tokenizer/decl_parser" and
+                   &1.catalog_id == :unexpected_capital_letter and &1.line == 6 and
+                   &1.column == 1)
+             )
+
+    assert capital.message =~ "UNEXPECTED CAPITAL LETTER"
+    assert capital.message =~ "Declarations always start with a lower-case letter"
+    assert capital.message =~ "6| Aaa bbb ccc = dde"
+    assert capital.message =~ "Try a name like `aaa` instead?"
+
+    assert Enum.any?(
+             result.diagnostics,
+             &(&1.source == "tokenizer/decl_parser" and
+                 &1.catalog_id == :syntax_problem and &1.line == 7)
+           )
+  end
+
   test "compiler mode reports invalid custom type constructor heads" do
     source = """
     module Main exposing (Msg)

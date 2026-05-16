@@ -116,7 +116,7 @@ Hooks.EditorDocsResizer = {
     this.onMove = (e) => {
       if (!this.dragging) return
       const delta = e.clientX - this.startX
-      this.lastW = Math.min(this.max, Math.max(this.min, this.startW + delta))
+      this.lastW = Math.min(this.max, Math.max(this.min, this.startW - delta))
       this.applyGrid(this.lastW)
     }
 

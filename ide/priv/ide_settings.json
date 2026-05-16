@@ -3,7 +3,7 @@
     "read"
   ],
   "acp_agent_enabled": true,
-  "auto_format_on_save": false,
+  "auto_format_on_save": true,
   "debug_mode": false,
   "editor_active_line_highlight": true,
   "editor_line_numbers": true,

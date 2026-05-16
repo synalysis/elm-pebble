@@ -249,7 +249,7 @@ function ensureVimWriteCommandRegistered() {
   try {
     Vim.defineEx("write", "w", cm => {
       const host = vimHostByCm.get(cm)
-      if (host && host.saveEvent) host.hook.pushEvent(host.saveEvent, {})
+      if (host && host.saveEvent) host.pushSaveEvent()
     })
   } catch (_error) {
     // Ignore duplicate registrations from hot reload cycles.
@@ -287,6 +287,7 @@ export class CodeMirrorEditorHost {
     this.el = hook.el
     this.root = this.el.querySelector("[data-role='cm-root']")
     this.hiddenInput = this.el.querySelector("[data-role='input']")
+    this.form = this.el.closest("form")
     this.modeBadge = this.el.querySelector("[data-role='mode-badge']")
     this.completionPanel = this.el.querySelector("[data-role='completion-panel']")
     this.editorMode = safeLower(this.el.dataset.editorMode) === "vim" ? "vim" : "regular"
@@ -483,6 +484,7 @@ export class CodeMirrorEditorHost {
         height: "100%",
         color: "#f4f4f5",
         backgroundColor: "#09090b",
+        "--cm-editor-fg": "#f4f4f5",
         "--cm-cursor-bg": "rgba(244, 244, 245, 0.85)",
         "--cm-selection-bg": "rgba(56, 189, 248, 0.32)",
         "--cm-selection-fg": "#f4f4f5"
@@ -533,6 +535,7 @@ export class CodeMirrorEditorHost {
         height: "100%",
         color: "#18181b",
         backgroundColor: "#ffffff",
+        "--cm-editor-fg": "#18181b",
         "--cm-cursor-bg": "rgba(24, 24, 27, 0.45)",
         "--cm-selection-bg": "rgba(14, 165, 233, 0.25)",
         "--cm-selection-fg": "#0f172a"
@@ -628,6 +631,10 @@ export class CodeMirrorEditorHost {
     }
     this.onFocusOut = () => {}
     this.onScroll = () => this.reportEditorStateDebounced()
+    this.onSubmit = () => {
+      this.cancelPendingEditorChange()
+      this.syncHiddenInput()
+    }
 
     this.view.dom.addEventListener("keydown", this.onKeydown)
     this.view.dom.addEventListener("contextmenu", this.onContextMenu)
@@ -635,6 +642,7 @@ export class CodeMirrorEditorHost {
     this.view.dom.addEventListener("focusin", this.onFocusIn)
     this.view.dom.addEventListener("focusout", this.onFocusOut)
     this.view.scrollDOM.addEventListener("scroll", this.onScroll, {passive: true})
+    if (this.form) this.form.addEventListener("submit", this.onSubmit)
   }
 
   unbindDomEvents() {
@@ -645,6 +653,7 @@ export class CodeMirrorEditorHost {
     this.view.dom.removeEventListener("focusin", this.onFocusIn)
     this.view.dom.removeEventListener("focusout", this.onFocusOut)
     this.view.scrollDOM.removeEventListener("scroll", this.onScroll)
+    if (this.form) this.form.removeEventListener("submit", this.onSubmit)
   }
 
   ensureNoFatCursor() {
@@ -761,7 +770,6 @@ export class CodeMirrorEditorHost {
   }
 
   applyLintDiagnostics({diagnostics}) {
-    if (this.lspClient && this.lspClient.connected) return
     if (!this.view) return
 
     const rows = Array.isArray(diagnostics) ? diagnostics : []
@@ -823,11 +831,27 @@ export class CodeMirrorEditorHost {
   }
 
   requestFormatDocument() {
-    if (this.lspClient && this.lspClient.connected) return false
+    return this.pushFormatEvent()
+  }
+
+  pushSaveEvent() {
+    if (!this.saveEvent) return
+    this.cancelPendingEditorChange()
+    this.syncHiddenInput()
+    this.hook.pushEvent(this.saveEvent, {content: this.getValue()})
+  }
+
+  pushFormatEvent() {
     if (!this.view || this.readOnly || !this.formatEvent) return false
+    this.cancelPendingEditorChange()
     this.syncHiddenInput()
     this.hook.pushEvent(this.formatEvent, {content: this.getValue()})
     return true
+  }
+
+  cancelPendingEditorChange() {
+    clearTimeout(this.changeTimer)
+    this.changeTimer = null
   }
 
   applyPendingEnterIndent() {
@@ -1053,7 +1077,7 @@ export class CodeMirrorEditorHost {
   handleKeydown(event) {
     if (isSaveKey(event) && this.saveEvent) {
       event.preventDefault()
-      this.hook.pushEvent(this.saveEvent, {})
+      this.pushSaveEvent()
       return
     }
 

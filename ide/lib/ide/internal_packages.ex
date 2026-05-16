@@ -49,6 +49,12 @@ defmodule Ide.InternalPackages do
   end
 
   @doc false
+  @spec phone_pebble_stubs_elm_src_abs() :: String.t()
+  def phone_pebble_stubs_elm_src_abs do
+    Path.join(ide_root(), "priv/internal_packages/phone-pebble-stubs/src") |> Path.expand()
+  end
+
+  @doc false
   @spec companion_protocol_elm_src_abs() :: String.t()
   def companion_protocol_elm_src_abs do
     Path.join(ide_root(), "priv/internal_packages/companion-protocol/src") |> Path.expand()
@@ -86,7 +92,7 @@ defmodule Ide.InternalPackages do
   def watchface_elm_json_extra_source_dirs_abs do
     [
       pebble_elm_src_abs(),
-      companion_protocol_elm_src_abs(),
+      shared_elm_abs(),
       elm_time_elm_src_abs(),
       elm_random_elm_src_abs()
     ]
@@ -102,8 +108,7 @@ defmodule Ide.InternalPackages do
       pebble_companion_preferences_elm_src_abs(),
       shared_elm_abs(),
       shared_elm_companion_abs(),
-      elm_time_elm_src_abs(),
-      elm_random_elm_src_abs()
+      elm_time_elm_src_abs()
     ]
   end
 end

@@ -22,7 +22,8 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:opening_file_id, nil)
     |> assign(:opening_file_label, nil)
     |> assign(:file_open_token, nil)
-    |> assign(:editor_deps_refresh_token, nil)
+    |> assign(:editor_deps_usage_refresh_token, nil)
+    |> assign(:editor_deps_docs_refresh_token, nil)
     |> assign(:check_status, :idle)
     |> assign(:check_output, nil)
     |> assign(:compile_status, :idle)
@@ -107,6 +108,8 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:packages_target_root, "watch")
     |> assign(:packages_last_add_result, nil)
     |> assign(:create_file_modal_open, false)
+    |> assign(:create_file_source_roots, ["watch"])
+    |> assign(:companion_app_present, false)
     |> assign(:rename_file_modal_open, false)
     |> assign(:project_elm_direct, [])
     |> assign(:project_elm_indirect, [])
@@ -134,6 +137,12 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:token_diag_by_line, %{})
     |> assign(:editor_inline_diagnostics, [])
     |> assign(:active_diagnostic_index, nil)
+    |> assign(:editor_check_status, :idle)
+    |> assign(:editor_check_token, nil)
+    |> assign(:editor_check_source_root, nil)
+    |> assign(:editor_check_rel_path, nil)
+    |> assign(:editor_check_diagnostics, [])
+    |> assign(:editor_check_output, nil)
     |> assign(:auto_format_on_save, settings.auto_format_on_save)
     |> assign(:formatter_backend, settings.formatter_backend)
     |> assign(:debug_mode, settings.debug_mode)
@@ -163,12 +172,12 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:diagnostics, [])
     |> allow_upload(:bitmap,
       accept: ~w(.png .bmp .jpg .jpeg .gif .webp),
-      max_entries: 1,
+      max_entries: 10,
       max_file_size: 2_500_000
     )
     |> allow_upload(:font,
       accept: ~w(.ttf .otf),
-      max_entries: 1,
+      max_entries: 10,
       max_file_size: 2_500_000
     )
     |> DebuggerSupport.assign_defaults()
@@ -189,6 +198,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:debugger_import_form, DebuggerSupport.import_trace_form())
     |> assign(:pane, socket.assigns.live_action)
     |> assign(:tree, Map.fetch!(data, :tree))
+    |> assign(:companion_app_present, Map.get(data, :companion_app_present, false))
     |> assign(:bitmap_resources, Map.fetch!(data, :bitmap_resources))
     |> assign(:font_sources, Map.fetch!(data, :font_sources))
     |> assign(:font_resources, Map.fetch!(data, :font_resources))

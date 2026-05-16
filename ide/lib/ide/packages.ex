@@ -61,7 +61,8 @@ defmodule Ide.Packages do
   def package_details(package, opts \\ []) do
     with {:ok, provider, details} <-
            with_provider(opts, &call_provider(&1, :package_details, [package])) do
-      compatibility = compatibility_for_package(package, platform_target: Keyword.get(opts, :platform_target))
+      compatibility =
+        compatibility_for_package(package, platform_target: Keyword.get(opts, :platform_target))
 
       {:ok,
        details
@@ -74,18 +75,27 @@ defmodule Ide.Packages do
   def compatibility_for_package(package, opts \\ []) when is_binary(package) do
     platform_target = Keyword.get(opts, :platform_target, :watch)
 
-    if platform_target != :phone and package in @blocked_package_families do
-      %{
-        status: "blocked",
-        reason_code: "blocked_runtime_family",
-        message: "Package #{package} is currently blocked for Pebble runtime compatibility."
-      }
-    else
-      %{
-        status: "supported",
-        reason_code: "allowed",
-        message: "Package #{package} is currently allowed."
-      }
+    cond do
+      platform_target == :phone and phone_forbidden_package?(package) ->
+        %{
+          status: "blocked",
+          reason_code: "blocked_phone_runtime_family",
+          message: "Package #{package} is not supported for companion phone elm.json."
+        }
+
+      platform_target != :phone and package in @blocked_package_families ->
+        %{
+          status: "blocked",
+          reason_code: "blocked_runtime_family",
+          message: "Package #{package} is currently blocked for Pebble runtime compatibility."
+        }
+
+      true ->
+        %{
+          status: "supported",
+          reason_code: "allowed",
+          message: "Package #{package} is currently allowed."
+        }
     end
   end
 
@@ -202,7 +212,8 @@ defmodule Ide.Packages do
 
   @spec preview_add_to_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def preview_add_to_project(project, package, opts \\ []) when is_map(project) do
-    with {:ok, provider, _details} <-
+    with :ok <- validate_add_package_target(package, opts),
+         {:ok, provider, _details} <-
            with_provider(opts, &call_provider(&1, :package_details, [package])),
          editor_opts <- resolver_editor_opts(provider, opts),
          {:ok, preview} <- ElmJsonEditor.preview_add(project, package, editor_opts) do
@@ -212,20 +223,36 @@ defmodule Ide.Packages do
 
   @spec add_to_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def add_to_project(project, package, opts \\ []) when is_map(project) do
-    with {:ok, provider, _details} <-
+    with :ok <- validate_add_package_target(package, opts),
+         {:ok, provider, details} <-
            with_provider(opts, &call_provider(&1, :package_details, [package])),
          editor_opts <- resolver_editor_opts(provider, opts),
-         {:ok, result} <- ElmJsonEditor.add_package(project, package, editor_opts) do
-      {:ok, result}
+         {:ok, result} <- ElmJsonEditor.add_package(project, package, editor_opts),
+         {:ok, project} <-
+           cache_package_metadata(project, package, result.selected_version, details) do
+      {:ok, Map.put(result, :project, project)}
     end
+  end
+
+  @spec validate_add_package_target(String.t(), keyword()) :: :ok | {:error, term()}
+  defp validate_add_package_target(package, opts) when is_binary(package) and is_list(opts) do
+    if Keyword.get(opts, :source_root) == "phone" and phone_forbidden_package?(package) do
+      {:error, {:package_not_supported_for_phone, package}}
+    else
+      :ok
+    end
+  end
+
+  @spec phone_forbidden_package?(String.t()) :: boolean()
+  defp phone_forbidden_package?(package) when is_binary(package) do
+    package in ["elm-pebble/elm-watch"]
   end
 
   @doc """
   Elm packages the IDE treats as part of the platform: a watch app cannot run without them,
   so they must not be removed from `elm.json`.
 
-  Includes the Pebble bindings packages and core runtime dependencies
-  (`elm/core`, `elm/json`, `elm/random`, `elm/time`).
+  Includes the Pebble bindings packages and core runtime dependencies.
   """
   @spec pebble_builtin_packages() :: [String.t()]
   def pebble_builtin_packages do
@@ -235,7 +262,6 @@ defmodule Ide.Packages do
       "elm-pebble/companion-preferences",
       "elm/core",
       "elm/json",
-      "elm/random",
       "elm/time"
     ]
   end
@@ -243,19 +269,183 @@ defmodule Ide.Packages do
   @spec pebble_builtin_package?(String.t()) :: boolean()
   def pebble_builtin_package?(name) when is_binary(name), do: name in pebble_builtin_packages()
 
+  @spec pebble_builtin_package?(String.t(), String.t() | atom() | nil) :: boolean()
+  def pebble_builtin_package?(name, source_root) when is_binary(name) do
+    name in pebble_builtin_packages(source_root)
+  end
+
+  @spec pebble_builtin_packages(String.t() | atom() | nil) :: [String.t()]
+  def pebble_builtin_packages(source_root) when source_root in ["watch", :watch] do
+    ["elm-pebble/elm-watch", "elm/core", "elm/json", "elm/time"]
+  end
+
+  def pebble_builtin_packages(source_root) when source_root in ["phone", :phone] do
+    ["elm/core", "elm/json"]
+  end
+
+  def pebble_builtin_packages(_source_root), do: pebble_builtin_packages()
+
   @spec remove_from_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def remove_from_project(project, package, opts \\ []) when is_map(project) do
-    if pebble_builtin_package?(package) do
-      {:error, :builtin_package_not_removable}
-    else
-      with {:ok, provider, _details} <-
-             with_provider(opts, &call_provider(&1, :package_details, [package])),
-           editor_opts <- resolver_editor_opts(provider, opts),
-           {:ok, result} <- ElmJsonEditor.remove_package(project, package, editor_opts) do
-        {:ok, result}
-      end
+    source_root = Keyword.get(opts, :source_root)
+
+    cond do
+      pebble_builtin_package?(package, source_root) ->
+        {:error, :builtin_package_not_removable}
+
+      package_used?(project, package, opts) ->
+        {:error, {:package_in_use, package}}
+
+      true ->
+        with {:ok, provider, _details} <-
+               with_provider(opts, &call_provider(&1, :package_details, [package])),
+             editor_opts <- resolver_editor_opts(provider, opts),
+             {:ok, result} <- ElmJsonEditor.remove_package(project, package, editor_opts) do
+          {:ok, result}
+        end
     end
   end
+
+  @spec package_used?(map(), String.t(), keyword()) :: boolean()
+  def package_used?(project, package, opts \\ []) when is_map(project) and is_binary(package) do
+    project
+    |> package_usage([package], opts)
+    |> Map.get(package, false)
+  end
+
+  @spec package_usage(map(), [String.t()], keyword()) :: %{optional(String.t()) => boolean()}
+  def package_usage(project, packages, opts \\ []) when is_map(project) and is_list(packages) do
+    source_root =
+      Keyword.get(opts, :source_root) || List.first(ElmJsonEditor.candidate_roots(project))
+
+    platform_target =
+      case source_root do
+        "watch" -> :watch
+        "phone" -> :phone
+        _ -> :none
+      end
+
+    packages = Enum.filter(packages, &is_binary/1)
+
+    pkg_opts = Keyword.take(opts, [:source])
+    versions = dependency_versions(project, source_root)
+
+    module_index =
+      module_index_for_packages(project, packages, pkg_opts, platform_target, versions)
+
+    with imports <- imported_modules(project, source_root) do
+      used =
+        imports
+        |> Enum.map(&Map.get(module_index, &1))
+        |> Enum.reject(&is_nil/1)
+        |> MapSet.new()
+
+      Map.new(packages, fn package -> {package, MapSet.member?(used, package)} end)
+    end
+  end
+
+  @spec module_index_for_packages(map(), [String.t()], keyword(), atom(), map()) :: map()
+  defp module_index_for_packages(project, packages, pkg_opts, platform_target, versions)
+       when is_map(project) and is_list(packages) do
+    package_names =
+      packages
+      |> Enum.concat(builtin_doc_packages(platform_target: platform_target))
+      |> Enum.uniq()
+
+    Enum.reduce(package_names, %{}, fn pkg, acc ->
+      exposed =
+        exposed_modules_for_usage_package(project, pkg, pkg_opts, Map.get(versions, pkg))
+
+      Enum.reduce(exposed, acc, fn mod, inner ->
+        if is_binary(mod) and mod != "" and not Map.has_key?(inner, mod),
+          do: Map.put(inner, mod, pkg),
+          else: inner
+      end)
+    end)
+  end
+
+  @spec exposed_modules_for_usage_package(map(), String.t(), keyword(), String.t() | nil) ::
+          [String.t()]
+  defp exposed_modules_for_usage_package(project, pkg, pkg_opts, version) do
+    case fallback_builtin_source_modules(pkg) do
+      [_ | _] = modules ->
+        modules
+
+      [] ->
+        case cached_package_exposed_modules(project, pkg, version) do
+          [_ | _] = modules ->
+            modules
+
+          [] ->
+            details =
+              case package_details(pkg, pkg_opts) do
+                {:ok, d} -> d
+                _ -> nil
+              end
+
+            exposed_modules_for_package(pkg, pkg_opts, details)
+        end
+    end
+  end
+
+  @spec cache_package_metadata(map(), String.t(), term(), map()) ::
+          {:ok, map()} | {:error, term()}
+  defp cache_package_metadata(project, package, version, details)
+       when is_map(project) and is_binary(package) and is_map(details) do
+    modules = exposed_modules_for_package(package, [], details)
+
+    entry = %{
+      "version" => to_string(version || details[:latest_version] || ""),
+      "exposed_modules" => modules,
+      "cached_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+
+    cache =
+      project
+      |> Map.get(:package_metadata_cache, %{})
+      |> normalize_package_metadata_cache()
+      |> put_in(["packages", package], entry)
+
+    Projects.update_project(project, %{"package_metadata_cache" => cache})
+  end
+
+  @spec cached_package_exposed_modules(map(), String.t(), String.t() | nil) :: [String.t()]
+  defp cached_package_exposed_modules(project, package, version)
+       when is_map(project) and is_binary(package) do
+    cache = normalize_package_metadata_cache(Map.get(project, :package_metadata_cache, %{}))
+    entry = get_in(cache, ["packages", package])
+    cached_version = entry && Map.get(entry, "version")
+
+    cond do
+      not is_map(entry) ->
+        []
+
+      is_binary(version) and version != "" and cached_version not in [nil, "", version] ->
+        []
+
+      true ->
+        entry
+        |> Map.get("exposed_modules", [])
+        |> Enum.filter(&(is_binary(&1) and &1 != ""))
+        |> Enum.uniq()
+        |> Enum.sort()
+    end
+  end
+
+  @spec normalize_package_metadata_cache(term()) :: map()
+  defp normalize_package_metadata_cache(cache) when is_map(cache) do
+    packages =
+      cache
+      |> Map.get("packages", Map.get(cache, :packages, %{}))
+      |> case do
+        value when is_map(value) -> value
+        _ -> %{}
+      end
+
+    %{"schema_version" => 1, "packages" => packages}
+  end
+
+  defp normalize_package_metadata_cache(_), do: %{"schema_version" => 1, "packages" => %{}}
 
   @doc """
   Maps exposed module names (e.g. `\"Json.Encode\"`) to package names for documentation links.
@@ -433,13 +623,7 @@ defmodule Ide.Packages do
     builtin_pkgs = builtin_doc_packages(opts)
 
     Enum.reduce(builtin_pkgs, index, fn pkg, acc ->
-      details =
-        case package_details(pkg, pkg_opts) do
-          {:ok, d} -> d
-          _ -> nil
-        end
-
-      exposed = exposed_modules_for_package(pkg, pkg_opts, details)
+      exposed = exposed_modules_for_builtin_package(pkg, pkg_opts)
 
       Enum.reduce(exposed, acc, fn mod, a ->
         if is_binary(mod) and mod != "" and not Map.has_key?(a, mod),
@@ -447,6 +631,23 @@ defmodule Ide.Packages do
           else: a
       end)
     end)
+  end
+
+  @spec exposed_modules_for_builtin_package(term(), term()) :: term()
+  defp exposed_modules_for_builtin_package(pkg, pkg_opts) do
+    case fallback_builtin_source_modules(pkg) do
+      [_ | _] = modules ->
+        modules
+
+      [] ->
+        details =
+          case package_details(pkg, pkg_opts) do
+            {:ok, d} -> d
+            _ -> nil
+          end
+
+        exposed_modules_for_package(pkg, pkg_opts, details)
+    end
   end
 
   @spec exposed_modules_for_package(term(), term(), term()) :: term()
@@ -468,6 +669,30 @@ defmodule Ide.Packages do
   end
 
   @spec fallback_builtin_source_modules(term()) :: term()
+  defp fallback_builtin_source_modules("elm/core") do
+    [
+      "Array",
+      "Basics",
+      "Bitwise",
+      "Char",
+      "Debug",
+      "Dict",
+      "List",
+      "Maybe",
+      "Platform",
+      "Platform.Cmd",
+      "Platform.Sub",
+      "Process",
+      "Result",
+      "Set",
+      "String",
+      "Task",
+      "Tuple"
+    ]
+  end
+
+  defp fallback_builtin_source_modules("elm/json"), do: ["Json.Decode", "Json.Encode"]
+
   defp fallback_builtin_source_modules("elm-pebble/elm-watch") do
     case ElmSourceDocs.list_modules(Ide.InternalPackages.pebble_elm_src_abs()) do
       {:ok, modules} -> modules
@@ -522,6 +747,81 @@ defmodule Ide.Packages do
   end
 
   defp fallback_builtin_source_modules(_), do: []
+
+  @spec dependency_versions(map(), String.t()) :: map()
+  defp dependency_versions(project, source_root)
+       when is_map(project) and is_binary(source_root) do
+    with {:ok, content} <- Projects.read_source_file(project, source_root, "elm.json"),
+         {:ok, decoded} <- Jason.decode(content),
+         dependencies when is_map(dependencies) <- Map.get(decoded, "dependencies", %{}) do
+      direct = dependencies |> Map.get("direct", %{}) |> ensure_string_map()
+      indirect = dependencies |> Map.get("indirect", %{}) |> ensure_string_map()
+      Map.merge(indirect, direct)
+    else
+      _ -> %{}
+    end
+  end
+
+  defp dependency_versions(_project, _source_root), do: %{}
+
+  @spec ensure_string_map(term()) :: map()
+  defp ensure_string_map(value) when is_map(value) do
+    Map.new(value, fn {key, version} -> {to_string(key), to_string(version)} end)
+  end
+
+  defp ensure_string_map(_), do: %{}
+
+  @spec imported_modules(map(), String.t()) :: [String.t()]
+  defp imported_modules(project, source_root) when is_map(project) and is_binary(source_root) do
+    project
+    |> Projects.list_source_tree()
+    |> Enum.find(&(&1.source_root == source_root))
+    |> case do
+      %{nodes: nodes} -> elm_rel_paths(nodes)
+      _ -> []
+    end
+    |> Enum.flat_map(fn rel_path ->
+      case Projects.read_source_file(project, source_root, rel_path) do
+        {:ok, source} -> imports_in_source(source)
+        _ -> []
+      end
+    end)
+    |> Enum.uniq()
+  end
+
+  @spec elm_rel_paths([map()]) :: [String.t()]
+  defp elm_rel_paths(nodes) when is_list(nodes) do
+    Enum.flat_map(nodes, fn
+      %{type: :file, rel_path: rel_path} ->
+        if String.ends_with?(rel_path, ".elm"), do: [rel_path], else: []
+
+      %{type: :dir, children: children} ->
+        elm_rel_paths(children)
+
+      _ ->
+        []
+    end)
+  end
+
+  @spec imports_in_source(String.t()) :: [String.t()]
+  defp imports_in_source(source) when is_binary(source) do
+    source
+    |> String.split("\n")
+    |> Enum.map(&import_module_from_line/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  @spec import_module_from_line(String.t()) :: String.t() | nil
+  defp import_module_from_line(line) when is_binary(line) do
+    trimmed = String.trim(line)
+
+    if String.starts_with?(trimmed, "import ") do
+      trimmed
+      |> String.replace_prefix("import ", "")
+      |> String.split()
+      |> List.first()
+    end
+  end
 
   @spec exposed_modules_from_source_root(String.t()) :: {:ok, [String.t()]} | {:error, term()}
   defp exposed_modules_from_source_root(source_root) when is_binary(source_root) do

@@ -2,9 +2,10 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
   @moduledoc false
   use IdeWeb, :html
 
+  alias Ide.Resources.ResourceStore
+
   @protected_editor_rel_paths [
     "src/Main.elm",
-    "src/CompanionApp.elm",
     "src/Companion/Types.elm",
     "src/Companion/GeneratedPreferences.elm",
     "src/Pebble/Ui/Resources.elm"
@@ -47,6 +48,14 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
               class="rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
             >
               Create file…
+            </button>
+            <button
+              :if={!@companion_app_present}
+              type="button"
+              phx-click="add-companion-app"
+              class="rounded bg-emerald-100 px-3 py-2 text-xs font-medium text-emerald-900 hover:bg-emerald-200"
+            >
+              Add companion app
             </button>
             <button
               type="button"
@@ -118,14 +127,32 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
         <div
           :if={active = active_tab(@tabs, @active_tab_id)}
-          class="flex min-h-0 flex-1 flex-col space-y-3"
+          class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
         >
+          <% editor_check_visible =
+            editor_check_visible?(
+              @editor_check_status,
+              @editor_check_source_root,
+              @editor_check_rel_path,
+              @editor_check_diagnostics,
+              active
+            ) %>
+
           <div class="flex flex-wrap gap-2">
-            <.button phx-click="save-file" disabled={editor_read_only?(active)}>
+            <.button
+              type="submit"
+              form={"token-editor-form-#{active.id}"}
+              name="editor_action"
+              value="save"
+              disabled={editor_read_only?(active)}
+            >
               Save
             </.button>
             <.button
-              phx-click="format-file"
+              type="submit"
+              form={"token-editor-form-#{active.id}"}
+              name="editor_action"
+              value="format"
               disabled={@format_status == :running or editor_read_only?(active)}
             >
               {if @format_status == :running, do: "Formatting...", else: "Format"}
@@ -134,31 +161,40 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
               navigate={settings_path_with_return_to("/projects/#{@project.slug}/#{@pane}")}
               class="rounded bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-800"
             >
-              Auto-format: {if @auto_format_on_save, do: "On", else: "Off"} · Mode: {String.upcase(
-                Atom.to_string(@editor_mode)
-              )}
+              Auto-format: {if @auto_format_on_save, do: "On", else: "Off"}
             </.link>
-            <span
-              :if={@auto_format_last_result}
-              class={[
-                "inline-flex items-center rounded px-3 py-2 text-sm font-medium",
-                auto_format_result_class(@auto_format_last_result.status)
-              ]}
-            >
-              Last auto-format: {auto_format_result_label(@auto_format_last_result)}
-            </span>
             <button
+              :if={@debug_mode}
               type="button"
               phx-click="tokenize-active-file"
               class="rounded bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-800"
             >
               Refresh tokens
             </button>
+            <span
+              :if={
+                editor_check_running_for_active?(
+                  @editor_check_status,
+                  @editor_check_source_root,
+                  @editor_check_rel_path,
+                  active
+                )
+              }
+              class="inline-flex items-center rounded bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800"
+            >
+              Checking saved file…
+            </span>
           </div>
           <.form
             for={to_form(%{"content" => active.content}, as: :editor)}
+            id={"token-editor-form-#{active.id}"}
             phx-change="editor-change"
-            class="min-h-0 flex-1"
+            phx-submit="editor-submit"
+            class={[
+              "flex-1",
+              editor_check_visible && "min-h-0",
+              !editor_check_visible && "min-h-[26rem]"
+            ]}
           >
             <div
               id={"token-editor-#{active.id}"}
@@ -182,7 +218,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
               data-restore-cursor-offset={editor_state_value(active.editor_state, :cursor_offset)}
               data-restore-scroll-top={editor_state_value(active.editor_state, :scroll_top)}
               data-restore-scroll-left={editor_state_value(active.editor_state, :scroll_left)}
-              class="relative h-full min-h-[26rem] overflow-hidden rounded border border-zinc-800 bg-zinc-950"
+              class="relative h-full min-h-0 overflow-hidden rounded border border-zinc-800 bg-zinc-950"
             >
               <div data-role="cm-root" class="absolute inset-0"></div>
               <textarea
@@ -197,6 +233,56 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
           <p :if={editor_read_only?(active)} class="text-xs text-zinc-500">
             This generated file is read-only.
           </p>
+          <section
+            :if={editor_check_visible}
+            class="flex max-h-72 shrink-0 flex-col overflow-hidden rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-950"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3 class="font-semibold">Compile errors</h3>
+              <span class="text-xs text-rose-800">
+                {editor_check_engine_label(@editor_check_source_root)} · {editor_source_display_path(
+                  @editor_check_rel_path || active.rel_path
+                )}
+              </span>
+            </div>
+            <ul
+              :if={@editor_check_diagnostics != []}
+              class="mt-3 min-h-0 space-y-2 overflow-auto pr-1"
+            >
+              <li
+                :for={{diag, index} <- Enum.with_index(@editor_check_diagnostics)}
+                phx-click={if diagnostic_editor_jumpable?(diag, active), do: "jump-to-diagnostic"}
+                phx-value-line={diagnostic_line(diag)}
+                phx-value-column={diagnostic_column(diag) || 1}
+                phx-value-index={index + 1}
+                class={[
+                  "rounded border border-rose-200 bg-white/70 px-3 py-2",
+                  diagnostic_editor_jumpable?(diag, active) &&
+                    "cursor-pointer transition hover:border-rose-300 hover:bg-white focus:outline-none focus:ring-2 focus:ring-rose-300"
+                ]}
+                tabindex={if diagnostic_editor_jumpable?(diag, active), do: "0"}
+                role={if diagnostic_editor_jumpable?(diag, active), do: "button"}
+              >
+                <p class="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                  {diag.severity} · {diag.source}
+                  <span :if={diagnostic_file_position_label(diag)} class="font-mono normal-case">
+                    · {diagnostic_file_position_label(diag)}
+                  </span>
+                </p>
+                <p class="mt-1 whitespace-pre-wrap text-sm">{diag.message}</p>
+                <p
+                  :if={diagnostic_editor_jumpable?(diag, active)}
+                  class="mt-2 text-xs font-medium text-rose-800"
+                >
+                  Click to jump to this location
+                </p>
+              </li>
+            </ul>
+            <pre
+              :if={@editor_check_diagnostics == [] and @editor_check_output}
+              class="mt-3 max-h-56 overflow-auto rounded bg-rose-950 p-3 text-xs text-rose-50"
+            ><%= @editor_check_output %></pre>
+          </section>
           <section :if={@debug_mode and @editor_inline_diagnostics != []} class="space-y-2">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Inline diagnostics
@@ -480,7 +566,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
               field={@new_file_form[:source_root]}
               type="select"
               label="Source root"
-              options={@project.source_roots}
+              options={@create_file_source_roots}
             />
             <.input
               field={@new_file_form[:rel_path]}
@@ -671,6 +757,11 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   @spec read_only_tab?(term()) :: term()
   defp read_only_tab?(%{read_only: true}), do: true
+
+  defp read_only_tab?(%{source_root: source_root, rel_path: rel_path})
+       when is_binary(source_root) and is_binary(rel_path),
+       do: ResourceStore.read_only_generated_module?(source_root, rel_path)
+
   defp read_only_tab?(_), do: false
 
   defp editor_state_value(state, key) when is_map(state) do
@@ -687,13 +778,9 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   defp editor_read_only?(%{read_only: true}), do: true
 
-  defp editor_read_only?(%{
-         source_root: "phone",
-         rel_path: "src/Companion/GeneratedPreferences.elm"
-       }), do: true
-
-  defp editor_read_only?(%{source_root: "watch", rel_path: "src/Pebble/Ui/Resources.elm"}),
-    do: true
+  defp editor_read_only?(%{source_root: source_root, rel_path: rel_path})
+       when is_binary(source_root) and is_binary(rel_path),
+       do: ResourceStore.read_only_generated_module?(source_root, rel_path)
 
   defp editor_read_only?(_), do: false
 
@@ -807,10 +894,10 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   @spec diagnostic_position_label(term()) :: term()
   defp diagnostic_position_label(diag) do
-    line = diag[:line]
-    column = diag[:column]
-    end_line = diag[:end_line]
-    end_column = diag[:end_column]
+    line = diagnostic_line(diag)
+    column = diagnostic_column(diag)
+    end_line = diagnostic_int(diag, :end_line)
+    end_column = diagnostic_int(diag, :end_column)
 
     cond do
       is_integer(line) and is_integer(column) and is_integer(end_line) and is_integer(end_column) and
@@ -828,22 +915,101 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     end
   end
 
-  @spec auto_format_result_label(term()) :: term()
-  defp auto_format_result_label(%{status: :applied, rel_path: rel_path}),
-    do: "Applied to #{editor_source_display_path(rel_path)}"
+  @spec diagnostic_file_position_label(term()) :: term()
+  defp diagnostic_file_position_label(diag) when is_map(diag) do
+    file = diag[:file] || diag["file"]
 
-  defp auto_format_result_label(%{status: :unchanged, rel_path: rel_path}),
-    do: "No changes for #{editor_source_display_path(rel_path)}"
+    case diagnostic_position_label(diag) do
+      nil when is_binary(file) and file != "" -> file
+      nil -> nil
+      position when is_binary(file) and file != "" -> "#{file}:#{position}"
+      position -> position
+    end
+  end
 
-  defp auto_format_result_label(%{status: :failed, rel_path: rel_path}),
-    do: "Skipped (parse failure) for #{editor_source_display_path(rel_path)}"
+  defp diagnostic_file_position_label(_diag), do: nil
 
-  defp auto_format_result_label(%{status: :inactive, rel_path: rel_path}),
-    do: "Not active for #{editor_source_display_path(rel_path)}"
+  @spec editor_check_visible?(term(), term(), term(), term(), term()) :: boolean()
+  defp editor_check_visible?(:error, source_root, rel_path, diagnostics, active)
+       when is_map(active) do
+    active_source_root = active[:source_root] || active["source_root"]
+    active_rel_path = active[:rel_path] || active["rel_path"]
 
-  @spec auto_format_result_class(term()) :: term()
-  defp auto_format_result_class(:applied), do: "bg-emerald-100 text-emerald-800"
-  defp auto_format_result_class(:unchanged), do: "bg-blue-100 text-blue-800"
-  defp auto_format_result_class(:failed), do: "bg-amber-100 text-amber-900"
-  defp auto_format_result_class(:inactive), do: "bg-zinc-100 text-zinc-700"
+    source_root == active_source_root and
+      (rel_path == active_rel_path or
+         Enum.any?(List.wrap(diagnostics), &diagnostic_file_matches_active?(&1, active)))
+  end
+
+  defp editor_check_visible?(_status, _source_root, _rel_path, _diagnostics, _active), do: false
+
+  @spec editor_check_running_for_active?(term(), term(), term(), term()) :: boolean()
+  defp editor_check_running_for_active?(:running, source_root, rel_path, active)
+       when is_map(active) do
+    active_source_root = active[:source_root] || active["source_root"]
+    active_rel_path = active[:rel_path] || active["rel_path"]
+
+    source_root == active_source_root and rel_path == active_rel_path
+  end
+
+  defp editor_check_running_for_active?(_status, _source_root, _rel_path, _active), do: false
+
+  @spec diagnostic_editor_jumpable?(term(), term()) :: boolean()
+  defp diagnostic_editor_jumpable?(diag, active) do
+    is_integer(diagnostic_line(diag)) and diagnostic_file_matches_active?(diag, active)
+  end
+
+  @spec diagnostic_file_matches_active?(term(), term()) :: boolean()
+  defp diagnostic_file_matches_active?(diag, active) when is_map(diag) and is_map(active) do
+    file = diag[:file] || diag["file"]
+    rel_path = active[:rel_path] || active["rel_path"]
+    source_root = active[:source_root] || active["source_root"]
+
+    cond do
+      not is_binary(file) or file == "" ->
+        true
+
+      file == rel_path ->
+        true
+
+      is_binary(source_root) and file == Path.join(source_root, rel_path || "") ->
+        true
+
+      true ->
+        false
+    end
+  end
+
+  defp diagnostic_file_matches_active?(_diag, _active), do: false
+
+  @spec diagnostic_line(term()) :: integer() | nil
+  defp diagnostic_line(diag), do: diagnostic_int(diag, :line)
+
+  @spec diagnostic_column(term()) :: integer() | nil
+  defp diagnostic_column(diag), do: diagnostic_int(diag, :column)
+
+  @spec diagnostic_int(term(), atom()) :: integer() | nil
+  defp diagnostic_int(diag, key) when is_map(diag) do
+    case diag[key] || diag[Atom.to_string(key)] do
+      value when is_integer(value) and value > 0 -> value
+      value when is_binary(value) -> parse_positive_int(value)
+      _ -> nil
+    end
+  end
+
+  defp diagnostic_int(_diag, _key), do: nil
+
+  @spec parse_positive_int(term()) :: integer() | nil
+  defp parse_positive_int(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} when int > 0 -> int
+      _ -> nil
+    end
+  end
+
+  defp parse_positive_int(value) when is_integer(value) and value > 0, do: value
+  defp parse_positive_int(_value), do: nil
+
+  @spec editor_check_engine_label(term()) :: String.t()
+  defp editor_check_engine_label("phone"), do: "Elm compiler"
+  defp editor_check_engine_label(_source_root), do: "elmc check"
 end

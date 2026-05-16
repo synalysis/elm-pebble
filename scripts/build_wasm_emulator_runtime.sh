@@ -102,17 +102,15 @@ copy_firmware_from() {
   platform="$2"
   [ -f "${src}/qemu_micro_flash.bin" ] || return 1
 
-  if ! raw_micro_flash "${src}/qemu_micro_flash.bin"; then
-    echo "Skipping ${src}: qemu_micro_flash.bin is ELF, not raw flash" >&2
-    return 1
-  fi
-
   spi="${src}/qemu_spi_flash.bin"
   compressed_spi="${src}/qemu_spi_flash.bin.bz2"
 
   dest="${OUTPUT_DIR}/firmware/sdk/${platform}"
   mkdir -p "${dest}"
-  cp "${src}/qemu_micro_flash.bin" "${dest}/qemu_micro_flash.bin"
+  copy_micro_flash "${src}/qemu_micro_flash.bin" "${dest}/qemu_micro_flash.bin" || {
+    echo "Skipping ${src}: qemu_micro_flash.bin is ELF and no ARM objcopy is available" >&2
+    return 1
+  }
 
   if [ -f "${spi}" ]; then
     cp "${spi}" "${dest}/qemu_spi_flash.bin"
@@ -137,6 +135,34 @@ raw_micro_flash() {
   [ "${magic}" != "7f454c46" ]
 }
 
+copy_micro_flash() {
+  local src="$1"
+  local dest="$2"
+  local objcopy_bin
+
+  if raw_micro_flash "${src}"; then
+    cp "${src}" "${dest}"
+    return 0
+  fi
+
+  objcopy_bin="$(arm_objcopy || true)"
+  [ -n "${objcopy_bin}" ] || return 1
+  "${objcopy_bin}" -O binary "${src}" "${dest}"
+}
+
+arm_objcopy() {
+  local candidate
+
+  for candidate in arm-none-eabi-objcopy llvm-objcopy; do
+    if command -v "${candidate}" >/dev/null 2>&1; then
+      command -v "${candidate}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 machine_for_platform() {
   case "$1" in
     aplite) printf '%s\n' "pebble-bb2" ;;
@@ -158,7 +184,7 @@ cpu_for_platform() {
 
 storage_for_platform() {
   case "$1" in
-    aplite | diorite | flint) printf '%s\n' "mtdblock" ;;
+    aplite|diorite|flint) printf '%s\n' "mtdblock" ;;
     *) printf '%s\n' "pflash" ;;
   esac
 }

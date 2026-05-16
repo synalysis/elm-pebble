@@ -423,6 +423,11 @@ defmodule Ide.Debugger do
   @spec save_configuration(String.t(), map()) :: {:ok, runtime_state()}
   def save_configuration(project_slug, values) when is_binary(project_slug) and is_map(values) do
     update(project_slug, fn state ->
+      previous_values =
+        get_in(state, [:companion, :model, "configuration", "values"]) ||
+          get_in(state, [:companion, :model, "runtime_model", "configuration", "values"]) ||
+          %{}
+
       state = attach_companion_configuration(ensure_phone_state(state), project_slug)
 
       configuration =
@@ -430,7 +435,9 @@ defmodule Ide.Debugger do
           get_in(state, [:companion, :model, "runtime_model", "configuration"]) ||
           %{}
 
+      previous_encoded_values = encode_configuration_values(configuration, previous_values)
       encoded_values = encode_configuration_values(configuration, values)
+      changed_values = changed_configuration_values(encoded_values, previous_encoded_values)
 
       bridge_event = %{
         "event" => "configuration.closed",
@@ -447,7 +454,7 @@ defmodule Ide.Debugger do
         "configuration",
         "configuration"
       )
-      |> apply_configuration_protocol_messages(configuration, encoded_values)
+      |> apply_configuration_protocol_messages(configuration, changed_values)
       |> attach_companion_configuration(project_slug)
       |> put_companion_configuration_values(encoded_values)
       |> refresh_runtime_preview_for_target(:watch)
@@ -1007,7 +1014,7 @@ defmodule Ide.Debugger do
     state =
       Agent.get(__MODULE__, fn store ->
         store
-        |> Map.get(project_slug, default_state(project_slug))
+        |> get_or_default_state(project_slug)
         |> ensure_phone_state()
         |> filter_events_by_types(types)
         |> filter_events_since_seq(since_seq)
@@ -1024,13 +1031,23 @@ defmodule Ide.Debugger do
     updated =
       Agent.get_and_update(__MODULE__, fn store ->
         current =
-          Map.get(store, project_slug, default_state(project_slug)) |> ensure_phone_state()
+          store
+          |> get_or_default_state(project_slug)
+          |> ensure_phone_state()
 
         next = updater.(current)
         {next, Map.put(store, project_slug, next)}
       end)
 
     {:ok, updated}
+  end
+
+  @spec get_or_default_state(map(), String.t()) :: runtime_state()
+  defp get_or_default_state(store, project_slug) when is_map(store) and is_binary(project_slug) do
+    case Map.fetch(store, project_slug) do
+      {:ok, state} -> state
+      :error -> default_state(project_slug)
+    end
   end
 
   @spec ensure_started() :: :ok
@@ -1100,6 +1117,32 @@ defmodule Ide.Debugger do
     )
   end
 
+  @spec append_protocol_debugger_event(runtime_state(), term(), term()) :: runtime_state()
+  defp append_protocol_debugger_event(state, message, message_source) when is_map(state) do
+    debugger_seq = Map.get(state, :debugger_seq, 0) + 1
+
+    row = %{
+      seq: debugger_seq,
+      raw_seq: Map.get(state, :seq, 0),
+      type: "update",
+      target: "protocol",
+      message: if(is_binary(message), do: message, else: to_string(message || "")),
+      message_source: if(is_binary(message_source), do: message_source, else: nil),
+      watch: Map.get(state, :watch, %{}),
+      companion: Map.get(state, :companion, %{}),
+      phone: Map.get(state, :phone, %{})
+    }
+
+    state
+    |> Map.put(:debugger_seq, debugger_seq)
+    |> Map.put(
+      :debugger_timeline,
+      [row | Map.get(state, :debugger_timeline, [])] |> Enum.take(@history_limit)
+    )
+  end
+
+  defp append_protocol_debugger_event(state, _message, _message_source), do: state
+
   @spec maybe_trim_events(runtime_state(), term()) :: runtime_state()
   defp maybe_trim_events(state, limit) when is_integer(limit) and limit > 0 do
     %{state | events: Enum.take(state.events, limit)}
@@ -1135,20 +1178,35 @@ defmodule Ide.Debugger do
     runtime_patch = normalize_runtime_patch_values(model, runtime_patch)
     runtime_view_tree = Map.get(runtime_result, :view_tree)
     runtime_view_tree = if is_map(runtime_view_tree), do: runtime_view_tree, else: view_tree
-    runtime_view_output = Map.get(runtime_result, :view_output)
-    runtime_view_output = if is_list(runtime_view_output), do: runtime_view_output, else: []
-    runtime_protocol_events = Map.get(runtime_result, :protocol_events, [])
+
+    runtime_view_output =
+      preferred_runtime_view_output(
+        Map.get(runtime_result, :view_output),
+        Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output)
+      )
+
+    message_source = source_override || msg_source
+
+    runtime_protocol_events =
+      if message_source == "configuration" do
+        []
+      else
+        Map.get(runtime_result, :protocol_events, [])
+      end
 
     command_protocol_events =
-      if runtime_protocol_events == [] do
-        protocol_events_for_model_commands(state, model, target, message)
-      else
-        []
+      cond do
+        message_source == "configuration" ->
+          []
+
+        runtime_protocol_events == [] ->
+          protocol_events_for_model_commands(state, model, target, message)
+
+        true ->
+          []
       end
 
     runtime_followups = Map.get(runtime_result, :followup_messages, [])
-
-    message_source = source_override || msg_source
 
     protocol_events =
       (runtime_protocol_events ++ command_protocol_events)
@@ -2457,6 +2515,10 @@ defmodule Ide.Debugger do
             message: Map.get(meta, :message),
             message_source: Map.get(meta, :message_source)
           })
+          |> append_protocol_debugger_event(
+            Map.get(meta, :message),
+            Map.get(meta, :message_source)
+          )
           |> append_debugger_event(
             "update",
             recipient,
@@ -2532,15 +2594,18 @@ defmodule Ide.Debugger do
   @spec maybe_apply_protocol_rx_subscription(term(), term(), term()) :: term()
   defp maybe_apply_protocol_rx_subscription(state, recipient, meta)
        when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(meta) do
+    source_override =
+      if Map.get(meta, :trigger) == "configuration", do: "configuration", else: "protocol_rx"
+
     case protocol_rx_subscription_message(state, recipient, meta) do
       {message, message_value} when is_binary(message) and message != "" ->
         state
-        |> apply_step_once(recipient, message, message_value, "protocol_rx", "protocol_rx")
+        |> apply_step_once(recipient, message, message_value, source_override, "protocol_rx")
         |> restore_protocol_rx_metadata(recipient, meta)
 
       message when is_binary(message) and message != "" ->
         state
-        |> apply_step_once(recipient, message, "protocol_rx", "protocol_rx")
+        |> apply_step_once(recipient, message, source_override, "protocol_rx")
         |> restore_protocol_rx_metadata(recipient, meta)
 
       _ ->
@@ -4073,6 +4138,8 @@ defmodule Ide.Debugger do
           default_view_tree_for_target(target)
       end
 
+    base = normalize_debugger_render_tree(base)
+
     children =
       case Map.get(base, "children") || Map.get(base, :children) do
         xs when is_list(xs) -> xs
@@ -4106,6 +4173,24 @@ defmodule Ide.Debugger do
       do: previous_view_tree,
       else: default_view_tree_for_target(target)
   end
+
+  @spec normalize_debugger_render_tree(map()) :: map()
+  defp normalize_debugger_render_tree(%{"type" => "Window"} = tree) do
+    window =
+      tree
+      |> Map.put("type", "window")
+      |> Map.put_new("label", "")
+
+    %{"type" => "windowStack", "label" => "", "children" => [window]}
+  end
+
+  defp normalize_debugger_render_tree(%{"type" => "WindowStack"} = tree) do
+    tree
+    |> Map.put("type", "windowStack")
+    |> Map.put_new("label", "")
+  end
+
+  defp normalize_debugger_render_tree(tree), do: tree
 
   @spec runtime_view_output_tree(term(), term()) :: map() | nil
   defp runtime_view_output_tree(model, target)
@@ -5032,7 +5117,11 @@ defmodule Ide.Debugger do
       control = Map.get(field, "control", %{})
 
       if is_binary(id) and id != "" do
-        Map.put(acc, id, encode_configuration_value(control, Map.get(values, id)))
+        Map.put(
+          acc,
+          id,
+          encode_configuration_value(control, configuration_value(values, id, control))
+        )
       else
         acc
       end
@@ -5040,6 +5129,20 @@ defmodule Ide.Debugger do
   end
 
   defp encode_configuration_values(_configuration, values) when is_map(values), do: values
+
+  @spec configuration_value(map(), String.t(), map()) :: term()
+  defp configuration_value(values, id, control)
+       when is_map(values) and is_binary(id) and is_map(control) do
+    if Map.has_key?(values, id), do: Map.get(values, id), else: Map.get(control, "default")
+  end
+
+  @spec changed_configuration_values(map(), map()) :: map()
+  defp changed_configuration_values(next_values, previous_values)
+       when is_map(next_values) and is_map(previous_values) do
+    Map.new(next_values, fn {key, value} -> {key, value} end)
+    |> Enum.reject(fn {key, value} -> Map.get(previous_values, key) == value end)
+    |> Map.new()
+  end
 
   @spec configuration_fields(term()) :: [map()]
   defp configuration_fields(configuration) when is_map(configuration) do
@@ -6245,7 +6348,9 @@ defmodule Ide.Debugger do
        when type in [
               "toUiNode",
               "append",
+              "CanvasLayer",
               "List",
+              "tuple2",
               "call",
               "expr",
               "var",
@@ -7023,6 +7128,7 @@ defmodule Ide.Debugger do
 
     vt = Map.get(ei, "view_tree")
     runtime_vt = Map.get(execution, :view_tree)
+    output_vt = runtime_view_output_tree(model, target)
 
     state =
       state
@@ -7030,6 +7136,7 @@ defmodule Ide.Debugger do
 
     state =
       cond do
+        introspect_view_usable?(output_vt) -> put_in(state, [target, :view_tree], output_vt)
         introspect_view_usable?(runtime_vt) -> put_in(state, [target, :view_tree], runtime_vt)
         introspect_view_usable?(vt) -> put_in(state, [target, :view_tree], vt)
         true -> state
@@ -7064,6 +7171,9 @@ defmodule Ide.Debugger do
 
   @spec introspect_view_usable?(term()) :: boolean()
   defp introspect_view_usable?(%{"type" => "unknown", "children" => []}), do: false
+
+  defp introspect_view_usable?(%{"type" => type}) when is_binary(type),
+    do: type not in ["root", "unknown"] and not parser_expression_root_type?(type)
 
   defp introspect_view_usable?(%{"children" => children})
        when is_list(children) and children != [],

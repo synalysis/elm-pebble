@@ -5,6 +5,7 @@ defmodule Ide.Resources.ResourceStore do
 
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias Ide.PebbleToolchain
 
   @manifest_rel_path "watch/resources/bitmaps.json"
   @assets_rel_dir "watch/resources/bitmaps"
@@ -51,11 +52,39 @@ defmodule Ide.Resources.ResourceStore do
   @spec read_only_generated_module?(String.t(), String.t()) :: boolean()
   def read_only_generated_module?(source_root, rel_path)
       when is_binary(source_root) and is_binary(rel_path) do
-    {source_root, rel_path} in [
+    {normalize_source_root(source_root), normalize_editor_rel_path(rel_path)} in [
       {"watch", "src/Pebble/Ui/Resources.elm"},
       {"watch", "src/Pebble/Ui/Bitmap.elm"},
       {"phone", "src/Companion/GeneratedPreferences.elm"}
     ]
+  end
+
+  def read_only_generated_module?(_, _), do: false
+
+  defp normalize_source_root(source_root) do
+    source_root
+    |> String.trim()
+    |> String.trim("/")
+  end
+
+  defp normalize_editor_rel_path(rel_path) do
+    rel_path =
+      rel_path
+      |> String.trim()
+      |> String.trim_leading("/")
+
+    rel_path =
+      if String.starts_with?(rel_path, "src/") do
+        rel_path
+      else
+        "src/" <> rel_path
+      end
+
+    if Path.extname(rel_path) == "" do
+      rel_path <> ".elm"
+    else
+      rel_path
+    end
   end
 
   @spec list(Project.t()) :: {:ok, [bitmap_entry()]} | {:error, term()}
@@ -90,6 +119,7 @@ defmodule Ide.Resources.ResourceStore do
          {:ok, manifest} <- read_bitmap_manifest(workspace),
          {:ok, bytes} <- File.read(upload_path),
          {:ok, safe_name, mime} <- normalized_filename_and_mime(original_name),
+         nil <- duplicate_asset_entry(manifest["entries"] || [], assets_dir, bytes),
          ctor <- constructor_from_name(safe_name),
          unique_ctor <- unique_ctor(ctor, manifest["entries"] || []),
          basename <- "#{unique_ctor}#{Path.extname(safe_name)}",
@@ -119,6 +149,16 @@ defmodule Ide.Resources.ResourceStore do
            :ok <- write_generated_module(workspace) do
         {:ok, %{entry: entry, entries: entries}}
       end
+    else
+      %{} = duplicate ->
+        {:ok,
+         %{
+           duplicate: true,
+           entry: duplicate
+         }}
+
+      other ->
+        other
     end
   end
 
@@ -228,6 +268,7 @@ defmodule Ide.Resources.ResourceStore do
          {:ok, manifest} <- read_font_manifest(workspace),
          {:ok, bytes} <- File.read(upload_path),
          {:ok, safe_name, mime} <- normalized_font_filename_and_mime(original_name),
+         nil <- duplicate_asset_entry(manifest["sources"] || [], assets_dir, bytes),
          source_id <- unique_source_id(Path.rootname(safe_name), manifest["sources"] || []),
          basename <- "#{source_id}#{Path.extname(safe_name)}",
          asset_path <- Path.join(assets_dir, basename),
@@ -251,6 +292,16 @@ defmodule Ide.Resources.ResourceStore do
            :ok <- write_generated_module(workspace) do
         {:ok, %{source: source, entries: payload["entries"]}}
       end
+    else
+      %{} = duplicate ->
+        {:ok,
+         %{
+           duplicate: true,
+           source: duplicate
+         }}
+
+      other ->
+        other
     end
   end
 
@@ -258,6 +309,7 @@ defmodule Ide.Resources.ResourceStore do
   def add_font_variant(%Project{} = project, params) when is_map(params) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @font_manifest_rel_path)
+    params = default_font_variant_target_platforms(project, params)
 
     with {:ok, manifest} <- read_font_manifest(workspace),
          {:ok, source} <- font_source_from_params(manifest, params),
@@ -287,7 +339,8 @@ defmodule Ide.Resources.ResourceStore do
          %{} = existing <- Enum.find(manifest["entries"] || [], &(Map.get(&1, "ctor") == ctor)),
          {:ok, source} <- font_source_by_id(manifest, Map.get(existing, "source_id", "")),
          params <- Map.put_new(params, "source_id", Map.get(existing, "source_id", "")),
-         {:ok, variant} <- font_variant_from_params(source, params, manifest["entries"] || [], ctor) do
+         {:ok, variant} <-
+           font_variant_from_params(source, params, manifest["entries"] || [], ctor) do
       entries =
         (manifest["entries"] || [])
         |> Enum.reject(&(Map.get(&1, "ctor") == ctor))
@@ -573,6 +626,10 @@ defmodule Ide.Resources.ResourceStore do
     """
     module Pebble.Ui.Resources exposing (Bitmap(..), BitmapInfo, Font(..), FontInfo, allBitmaps, allFonts, bitmapInfo, fontInfo)
 
+    {-| Generated from the resources configured on the project settings Resources page.
+    Edit bitmap and font assets there instead of editing this read-only file.
+    -}
+
     #{bitmap_type_decl}
 
     #{bitmap_all_decl}
@@ -610,6 +667,15 @@ defmodule Ide.Resources.ResourceStore do
     }
   end
 
+  defp duplicate_asset_entry(entries, assets_dir, bytes) when is_list(entries) do
+    Enum.find(entries, fn row ->
+      filename = Map.get(row, "filename", "")
+
+      is_binary(filename) and filename != "" and
+        match?({:ok, ^bytes}, File.read(Path.join(assets_dir, filename)))
+    end)
+  end
+
   @spec normalize_font_manifest(map()) :: map()
   defp normalize_font_manifest(manifest) when is_map(manifest) do
     entries = manifest["entries"] || []
@@ -626,7 +692,9 @@ defmodule Ide.Resources.ResourceStore do
         entries
         |> Enum.filter(&is_map/1)
         |> Enum.map(fn row ->
-          ctor = to_string(Map.get(row, "ctor", constructor_from_name(Map.get(row, "filename", ""))))
+          ctor =
+            to_string(Map.get(row, "ctor", constructor_from_name(Map.get(row, "filename", ""))))
+
           filename = to_string(Map.get(row, "filename", ""))
           source_id = to_string(Map.get(row, "source_id", String.downcase(ctor)))
 
@@ -643,7 +711,9 @@ defmodule Ide.Resources.ResourceStore do
         entries
         |> Enum.filter(&is_map/1)
         |> Enum.map(fn row ->
-          ctor = to_string(Map.get(row, "ctor", constructor_from_name(Map.get(row, "filename", ""))))
+          ctor =
+            to_string(Map.get(row, "ctor", constructor_from_name(Map.get(row, "filename", ""))))
+
           filename = to_string(Map.get(row, "filename", ""))
           source_id = to_string(Map.get(row, "source_id", String.downcase(ctor)))
 
@@ -863,7 +933,9 @@ defmodule Ide.Resources.ResourceStore do
     end)
     |> Enum.join()
     |> case do
-      "" -> "Font"
+      "" ->
+        "Font"
+
       <<first::binary-size(1), rest::binary>> ->
         String.upcase(first) <> rest
     end
@@ -885,6 +957,35 @@ defmodule Ide.Resources.ResourceStore do
       |> to_string()
 
     font_source_by_id(manifest, source_id)
+  end
+
+  defp default_font_variant_target_platforms(%Project{} = project, params) when is_map(params) do
+    target_platforms =
+      params
+      |> Map.get("target_platforms", Map.get(params, :target_platforms, []))
+      |> string_list()
+
+    if target_platforms == [] do
+      Map.put(params, "target_platforms", project_target_platforms(project))
+    else
+      params
+    end
+  end
+
+  defp project_target_platforms(%Project{} = project) do
+    defaults = Map.get(project, :release_defaults, %{}) || %{}
+    allowed = PebbleToolchain.supported_emulator_targets()
+    allowed_set = MapSet.new(allowed)
+
+    defaults
+    |> Map.get("target_platforms", allowed)
+    |> string_list()
+    |> Enum.filter(&MapSet.member?(allowed_set, &1))
+    |> Enum.uniq()
+    |> case do
+      [] -> allowed
+      platforms -> platforms
+    end
   end
 
   @spec font_variant_from_params(map(), map(), [map()], String.t() | nil) ::
@@ -938,7 +1039,8 @@ defmodule Ide.Resources.ResourceStore do
         "mime" => Map.get(source, "mime", "font/ttf"),
         "bytes" => integer_or_zero(Map.get(source, "bytes", 0)),
         "height" => height,
-        "characters" => params |> Map.get("characters", Map.get(params, :characters, "")) |> to_string(),
+        "characters" =>
+          params |> Map.get("characters", Map.get(params, :characters, "")) |> to_string(),
         "tracking_adjust" =>
           params
           |> Map.get("tracking_adjust", Map.get(params, :tracking_adjust, 0))

@@ -229,6 +229,8 @@ defmodule IdeWeb.WasmEmulatorController do
           let watchReady = false;
           let installActive = false;
           let qemuBluetoothConnected = false;
+          let bootDiagnosticsTimer = null;
+          let lastDebugSerialBytes = 0;
           const buttons = {back: 1 << 0, up: 1 << 1, select: 1 << 2, down: 1 << 3};
 
           function post(type, payload = {}) { parent.postMessage({source: "elm-pebble-wasm-emulator", type, ...payload}, window.location.origin); }
@@ -246,17 +248,44 @@ defmodule IdeWeb.WasmEmulatorController do
             }
           }
 
-          function dumpDebugSerial(label = "debug serial") {
+          function screenshotDataUrl() {
+            if (!cachedImgData || !cachedWidth || !cachedHeight) {
+              return canvas.toDataURL("image/png");
+            }
+
+            const shot = document.createElement("canvas");
+            shot.width = cachedWidth;
+            shot.height = cachedHeight;
+            shot.getContext("2d").putImageData(cachedImgData, 0, 0);
+            return shot.toDataURL("image/png");
+          }
+
+          function dumpDebugSerial(label = "debug serial", force = false) {
             if (!window.Module?.FS) return;
             try {
               const data = Module.FS.readFile("/tmp/pebble_serial.log");
+              if (!force && data.length === lastDebugSerialBytes) return;
+              lastDebugSerialBytes = data.length;
               const decoded = decodeDebugSerial(data);
               if (decoded.length > 0) {
-                log(`${label} decoded tail:\\n${decoded.slice(-40).join("\\n")}`);
+                log(`${label} decoded tail (${data.length} bytes):\n${decoded.slice(-20).join("\n")}`);
+              } else if (force || data.length > 0) {
+                log(`${label}: ${data.length} serial bytes captured, no printable decoded tail yet`);
               }
             } catch (_error) {
               // The file is created lazily by QEMU once the firmware writes debug serial output.
             }
+          }
+
+          function startBootDiagnostics() {
+            if (bootDiagnosticsTimer) clearInterval(bootDiagnosticsTimer);
+            bootDiagnosticsTimer = setInterval(() => {
+              if (!runtimeReady || installActive) return;
+              dumpDebugSerial("boot serial");
+              if (!window.Module?._pebble_display_frame_count && lastDebugSerialBytes === 0) {
+                log("boot diagnostics: waiting for debug serial; Silk display uses a QEMU console path not yet mirrored into the WASM canvas");
+              }
+            }, 5000);
           }
 
           function decodeDebugSerial(bytes) {
@@ -336,14 +365,28 @@ defmodule IdeWeb.WasmEmulatorController do
               log(`${label}: using first ${Math.round(expectedSize / 1024)}KB of ${Math.round(data.length / 1024)}KB SDK image`);
               return data.slice(0, expectedSize);
             }
-            throw new Error(`${label}: expected ${expectedSize} bytes, got ${data.length}`);
+            log(`${label}: padding ${Math.round(data.length / 1024)}KB SDK image to ${Math.round(expectedSize / 1024)}KB`);
+            const padded = new Uint8Array(expectedSize);
+            padded.fill(0xff);
+            padded.set(data, 0);
+            return padded;
+          }
+
+          function firmwareStorage(manifest) {
+            return manifest.storage || "pflash";
+          }
+
+          function requiredSpiFlashSize(manifest) {
+            const size = Object.prototype.hasOwnProperty.call(manifest, "spi_flash_size") ? manifest.spi_flash_size : null;
+            if (firmwareStorage(manifest) !== "pflash" || !size) return size;
+            return Math.max(size, 16777216);
           }
 
           function qemuArgsForFirmware(manifest) {
             const platform = manifest.platform || "basalt";
             const machine = manifest.machine || "pebble-snowy-bb";
             const cpu = manifest.cpu || (platform === "aplite" ? "cortex-m3" : "cortex-m4");
-            const storage = manifest.storage || (["aplite", "diorite", "flint"].includes(platform) ? "mtdblock" : "pflash");
+            const storage = firmwareStorage(manifest);
             const storageArgs = storage === "mtdblock" ?
               ["-mtdblock", "/firmware/qemu_spi_flash.bin"] :
               ["-drive", "if=none,id=spi-flash,file=/firmware/qemu_spi_flash.bin,format=raw"];
@@ -370,7 +413,7 @@ defmodule IdeWeb.WasmEmulatorController do
               if (!crossOriginIsolated) throw new Error("Page is not cross-origin isolated; SharedArrayBuffer is unavailable.");
               const fwBase = `${ASSET_BASE}firmware/${firmware}/`;
               const manifest = await firmwareManifest(fwBase, firmware);
-              const spiSize = Object.prototype.hasOwnProperty.call(manifest, "spi_flash_size") ? manifest.spi_flash_size : 16777216;
+              const spiSize = requiredSpiFlashSize(manifest);
               const micro = await fetchWithProgress(`${fwBase}qemu_micro_flash.bin`, "Micro flash", 968704);
               const spi = normalizeFlashImage(
                 await fetchWithProgress(`${fwBase}qemu_spi_flash.bin`, "SPI flash", spiSize),
@@ -394,6 +437,7 @@ defmodule IdeWeb.WasmEmulatorController do
                 onRuntimeInitialized: () => {
                   runtimeReady = true;
                   setStatus("QEMU runtime initialized; booting Pebble firmware...");
+                  startBootDiagnostics();
                   setTimeout(pumpPhoneServices, 100);
                   post("ready");
                 }
@@ -994,7 +1038,7 @@ defmodule IdeWeb.WasmEmulatorController do
             if (msg.type === "launch") boot(msg.firmware || "sdk");
             if (msg.type === "button") updateButtons(msg.name, !!msg.pressed);
             if (msg.type === "qemuControl") sendQemuPacket(msg.protocol, new Uint8Array(msg.payload || []));
-            if (msg.type === "screenshot") post("screenshot", {image: canvas.toDataURL("image/png")});
+            if (msg.type === "screenshot") post("screenshot", {image: screenshotDataUrl()});
             if (msg.type === "installPbw") {
               installPbw(msg.plan)
                 .then(result => post("install-ok", {result}))

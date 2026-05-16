@@ -192,19 +192,11 @@ healthSumToday metric toMsg =
 
 healthSum : Int -> Int -> Int -> (Int -> msg) -> Cmd msg
 healthSum metric startSeconds endSeconds toMsg =
-    let
-        keep =
-            ( metric, startSeconds, endSeconds, toMsg )
-    in
     Cmd.none
 
 
 healthAccessible : Int -> Int -> Int -> (Bool -> msg) -> Cmd msg
 healthAccessible metric startSeconds endSeconds toMsg =
-    let
-        keep =
-            ( metric, startSeconds, endSeconds, toMsg )
-    in
     Cmd.none
 
 

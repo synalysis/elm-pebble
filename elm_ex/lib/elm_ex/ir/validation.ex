@@ -80,7 +80,8 @@ defmodule ElmEx.IR.Validation do
         mod.declarations
         |> Enum.filter(&(&1.kind == :function and is_map(&1.expr)))
         |> Enum.flat_map(fn decl ->
-          collect_function_calls(decl.expr, mod.name)
+          bound_names = MapSet.new(decl.args || [])
+          collect_function_calls(decl.expr, mod.name, bound_names)
         end)
       end)
       |> Enum.uniq()
@@ -194,37 +195,53 @@ defmodule ElmEx.IR.Validation do
   end
 
   # Collect qualified function call targets
-  @spec collect_function_calls(expr(), String.t()) :: [String.t()]
-  defp collect_function_calls(%{op: :qualified_call, target: target, args: args}, module)
+  @spec collect_function_calls(expr(), String.t(), MapSet.t()) :: [String.t()]
+  defp collect_function_calls(
+         %{op: :qualified_call, target: target, args: args},
+         module,
+         bound_names
+       )
        when is_binary(target) do
-    nested = Enum.flat_map(args || [], &collect_function_calls(&1, module))
+    nested = Enum.flat_map(args || [], &collect_function_calls(&1, module, bound_names))
     [target | nested]
   end
 
-  defp collect_function_calls(%{op: :call, name: name, args: args}, module)
+  defp collect_function_calls(%{op: :call, name: name, args: args}, module, bound_names)
        when is_binary(name) do
-    nested = Enum.flat_map(args || [], &collect_function_calls(&1, module))
+    nested = Enum.flat_map(args || [], &collect_function_calls(&1, module, bound_names))
 
-    target =
-      if String.contains?(name, ".") do
-        name
-      else
-        "#{module}.#{name}"
-      end
+    cond do
+      MapSet.member?(bound_names, name) ->
+        nested
 
-    [target | nested]
+      String.contains?(name, ".") ->
+        [name | nested]
+
+      true ->
+        ["#{module}.#{name}" | nested]
+    end
   end
 
-  defp collect_function_calls(expr, module) when is_map(expr) do
+  defp collect_function_calls(%{op: :lambda, params: params, body: body}, module, bound_names)
+       when is_list(params) do
+    lambda_bound_names =
+      params
+      |> Enum.filter(&is_binary/1)
+      |> Enum.reduce(bound_names, &MapSet.put(&2, &1))
+
+    collect_function_calls(body, module, lambda_bound_names)
+  end
+
+  defp collect_function_calls(expr, module, bound_names) when is_map(expr) do
     expr
     |> Map.values()
     |> Enum.flat_map(fn
       child when is_map(child) ->
-        collect_function_calls(child, module)
+        collect_function_calls(child, module, bound_names)
 
       children when is_list(children) ->
         Enum.flat_map(children, fn
-          child when is_map(child) -> collect_function_calls(child, module)
+          child when is_map(child) -> collect_function_calls(child, module, bound_names)
           _ -> []
         end)
 
@@ -233,7 +250,7 @@ defmodule ElmEx.IR.Validation do
     end)
   end
 
-  defp collect_function_calls(_, _), do: []
+  defp collect_function_calls(_, _, _), do: []
 
   # Standard library modules whose functions are handled by codegen intrinsics
   @stdlib_modules ~w(

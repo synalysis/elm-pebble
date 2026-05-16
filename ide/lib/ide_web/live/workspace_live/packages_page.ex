@@ -84,8 +84,22 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
                 >
                   Required
                 </span>
+                <span
+                  :if={!dep.builtin? and dep[:used?]}
+                  title="This package is imported by current Elm source files."
+                  class="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800"
+                >
+                  Used
+                </span>
+                <span
+                  :if={!dep.builtin? and is_nil(dep[:used?])}
+                  title="Checking whether current Elm source files import this package."
+                  class="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600"
+                >
+                  Checking
+                </span>
                 <button
-                  :if={!dep.builtin?}
+                  :if={!dep.builtin? and dep[:used?] == false}
                   type="button"
                   phx-click="packages-remove"
                   phx-value-package={dep.name}
@@ -139,7 +153,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
           <div class="shrink-0">
             <h2 class="text-base font-semibold">Catalog search</h2>
             <p class="mt-1 text-sm text-zinc-600">
-              Browse packages like on package.elm-lang.org, then add compatible versions to this project. The catalog hides packages that pull in browser or DOM dependencies, so not everything on the registry appears here — only what fits a Pebble watch app.
+              {catalog_search_description(@packages_target_root)}
             </p>
 
             <.form
@@ -246,7 +260,8 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
                   Latest: {(@packages_details && @packages_details[:latest_version]) || "unknown"} ·
                   Known versions: {length(@packages_versions)}
                 </p>
-                <% selected_compat = package_compatibility(@packages_details || %{}, @packages_target_root) %>
+                <% selected_compat =
+                  package_compatibility(@packages_details || %{}, @packages_target_root) %>
                 <p class="mt-2">
                   <span class={compatibility_badge_class(selected_compat)}>
                     {compatibility_badge_label(selected_compat)}
@@ -347,6 +362,15 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
 
   defp dependency_compatibility(package, _target_root),
     do: Packages.compatibility_for_package(package, platform_target: :watch)
+
+  @spec catalog_search_description(term()) :: String.t()
+  defp catalog_search_description("phone") do
+    "Browse packages like on package.elm-lang.org, then add compatible versions to the companion app elm.json. The catalog marks compatibility for the selected target so you can avoid packages that do not fit the phone companion runtime."
+  end
+
+  defp catalog_search_description(_target_root) do
+    "Browse packages like on package.elm-lang.org, then add compatible versions to the watch app elm.json. The catalog hides packages that pull in browser or DOM dependencies, so not everything on the registry appears here — only what fits a Pebble watch app."
+  end
 
   @spec compatibility_badge_label(term()) :: term()
   defp compatibility_badge_label(%{status: "blocked"}), do: "Blocked"

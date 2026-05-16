@@ -18,6 +18,7 @@ defmodule Ide.ProjectBundle do
           store_app_id: String.t() | nil,
           app_uuid: String.t() | nil,
           latest_published_version: String.t() | nil,
+          package_metadata_cache: map(),
           release_defaults: map(),
           github: map(),
           debugger_settings: map()
@@ -46,6 +47,7 @@ defmodule Ide.ProjectBundle do
       "store_app_id" => project.store_app_id,
       "app_uuid" => project.app_uuid,
       "latest_published_version" => project.latest_published_version,
+      "package_metadata_cache" => project.package_metadata_cache || %{},
       "release_defaults" => project.release_defaults || %{},
       "github" => project.github || %{},
       "debugger_settings" => project.debugger_settings || %{}
@@ -89,6 +91,7 @@ defmodule Ide.ProjectBundle do
         |> put_if_blank("store_app_id", metadata.store_app_id)
         |> put_if_blank("app_uuid", metadata.app_uuid)
         |> put_if_blank("latest_published_version", metadata.latest_published_version)
+        |> Map.put_new("package_metadata_cache", metadata.package_metadata_cache)
         |> Map.put_new("release_defaults", metadata.release_defaults)
         |> Map.put_new("github", metadata.github)
         |> Map.put_new("debugger_settings", metadata.debugger_settings)
@@ -143,6 +146,7 @@ defmodule Ide.ProjectBundle do
          {:ok, app_uuid} <- fetch_optional_string(decoded, "app_uuid"),
          {:ok, latest_published_version} <-
            fetch_optional_string(decoded, "latest_published_version"),
+         {:ok, package_metadata_cache} <- fetch_optional_map(decoded, "package_metadata_cache"),
          {:ok, release_defaults} <- fetch_optional_map(decoded, "release_defaults"),
          {:ok, github} <- fetch_optional_map(decoded, "github"),
          {:ok, debugger_settings} <- fetch_optional_map(decoded, "debugger_settings") do
@@ -156,6 +160,7 @@ defmodule Ide.ProjectBundle do
          store_app_id: store_app_id,
          app_uuid: app_uuid,
          latest_published_version: latest_published_version,
+         package_metadata_cache: package_metadata_cache,
          release_defaults: release_defaults,
          github: github,
          debugger_settings: debugger_settings

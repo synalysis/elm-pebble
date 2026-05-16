@@ -1768,7 +1768,7 @@ defmodule Ide.PebbleToolchain do
   end
 
   @spec elm_bin() :: term()
-  defp elm_bin do
+  def elm_bin do
     configured =
       Application.get_env(:ide, Ide.PebbleToolchain, [])
       |> Keyword.get(:elm_bin)

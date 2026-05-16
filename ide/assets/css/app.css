@@ -363,17 +363,13 @@ body[data-ide-theme="dark"] a.text-white {
 [data-role="cm-root"] .cm-fat-cursor .cm-cursor {
   width: auto;
   border: none;
-  background: rgba(244, 244, 245, 0.8);
+  background: var(--cm-cursor-bg, rgba(244, 244, 245, 0.8));
 }
 
 /* Keep text visible when Vim enables fat-cursor mode on focus. */
 [data-role="cm-root"] .cm-fat-cursor .cm-line {
-  color: #f4f4f5 !important;
+  color: var(--cm-editor-fg, currentColor) !important;
   text-shadow: none !important;
-}
-
-[data-role="cm-root"] .cm-editor.cm-focused .cm-line {
-  color: #f4f4f5;
 }
 
 .cm-tooltip.cm-tooltip-autocomplete,

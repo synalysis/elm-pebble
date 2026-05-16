@@ -245,6 +245,7 @@ defmodule Ide.Projects do
   def list_source_tree(%Project{} = project) do
     FileStore.ensure_roots(project, projects_root())
     ensure_generated_phone_preferences(project)
+    ensure_protocol_for_phone_companion(project)
     FileStore.list_tree(project, projects_root())
   end
 
@@ -262,6 +263,24 @@ defmodule Ide.Projects do
   @spec write_source_file(term(), term(), term(), term()) :: term()
   def write_source_file(%Project{} = project, source_root, rel_path, contents) do
     FileStore.write_file(project, projects_root(), source_root, rel_path, contents)
+  end
+
+  @doc """
+  Adds the default companion app and protocol scaffolding to a watch-only project.
+  """
+  @spec add_companion_app(Project.t()) :: :ok | {:error, term()}
+  def add_companion_app(%Project{} = project) do
+    ProjectTemplates.ensure_companion_app(project_workspace_path(project))
+  end
+
+  @doc """
+  Returns true when the project has a companion app entrypoint.
+  """
+  @spec companion_app_present?(Project.t()) :: boolean()
+  def companion_app_present?(%Project{} = project) do
+    workspace_root = project_workspace_path(project)
+
+    File.exists?(Path.join(workspace_root, "phone/src/CompanionApp.elm"))
   end
 
   @doc """
@@ -344,6 +363,22 @@ defmodule Ide.Projects do
   end
 
   @doc """
+  Ensures projects with a companion app also have the default protocol contract root.
+  """
+  @spec ensure_protocol_for_phone_companion(Project.t()) :: :ok
+  def ensure_protocol_for_phone_companion(%Project{} = project) do
+    workspace_root = project_workspace_path(project)
+    phone_root = Path.join(workspace_root, "phone")
+
+    if File.exists?(Path.join(phone_root, "elm.json")) do
+      _ = ProjectTemplates.ensure_protocol_shared(workspace_root)
+      _ = ProjectTemplates.ensure_phone_companion_source_dirs(workspace_root)
+    end
+
+    :ok
+  end
+
+  @doc """
   Lists font resources for a project.
   """
   @spec list_font_resources(term()) :: term()
@@ -379,7 +414,8 @@ defmodule Ide.Projects do
   Updates a generated font variant.
   """
   @spec update_font_variant(term(), String.t(), map()) :: term()
-  def update_font_variant(%Project{} = project, ctor, params) when is_binary(ctor) and is_map(params) do
+  def update_font_variant(%Project{} = project, ctor, params)
+      when is_binary(ctor) and is_map(params) do
     ResourceStore.update_font_variant(project, ctor, params)
   end
 

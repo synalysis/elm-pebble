@@ -1155,7 +1155,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   end
 
   defp normalize_pebble_ui_value(value) do
-    with {:ok, 1, windows} <- tagged_constructor_value(value),
+    with {:ok, 1000, windows} <- tagged_constructor_value(value),
          {:ok, windows} <- constructor_list_values(windows),
          {:ok, window_nodes} <- normalize_pebble_ui_list(windows, &normalize_pebble_window_node/1) do
       {:ok, %{"type" => "windowStack", "label" => "", "children" => window_nodes}}
@@ -1166,7 +1166,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   @spec normalize_pebble_window_node(term()) :: {:ok, map()} | :error
   defp normalize_pebble_window_node(value) do
-    with {:ok, 1, payload} <- tagged_constructor_value(value),
+    with {:ok, 1001, payload} <- tagged_constructor_value(value),
          {:ok, [id, layers]} <- constructor_payload_args(payload, 2),
          {:ok, layers} <- constructor_list_values(layers),
          {:ok, layer_nodes} <- normalize_pebble_ui_list(layers, &normalize_pebble_layer_node/1) do
@@ -1184,7 +1184,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   @spec normalize_pebble_layer_node(term()) :: {:ok, map()} | :error
   defp normalize_pebble_layer_node(value) do
-    with {:ok, 1, payload} <- tagged_constructor_value(value),
+    with {:ok, 1002, payload} <- tagged_constructor_value(value),
          {:ok, [id, ops]} <- constructor_payload_args(payload, 2),
          {:ok, ops} <- constructor_list_values(ops),
          {:ok, op_nodes} <- normalize_pebble_ui_list(ops, &normalize_pebble_render_op/1) do

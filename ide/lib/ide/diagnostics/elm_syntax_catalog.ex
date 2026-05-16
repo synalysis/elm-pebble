@@ -156,6 +156,14 @@ defmodule Ide.Diagnostics.ElmSyntaxCatalog do
       example: "value if = 1",
       span_semantics: :inferred
     },
+    unexpected_capital_letter: %{
+      title: "UNEXPECTED CAPITAL LETTER",
+      source_title: "UNEXPECTED CAPITAL LETTER",
+      summary: "Declarations always start with a lower-case letter, so I am getting stuck here:",
+      hint: "Try changing the capitalization and checking the declaration shape.",
+      example: "greet name =\n  \"Hello \" ++ name ++ \"!\"",
+      span_semantics: :token
+    },
     unexpected_character: %{
       title: "UNEXPECTED CHARACTER",
       source_title: "UNEXPECTED CHARACTER",

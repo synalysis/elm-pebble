@@ -83,7 +83,12 @@ defmodule Ide.Tokenizer do
             %{
               tokens: classed_tokens,
               diagnostics:
-                base_diagnostics ++ normalize_compiler_diagnostics(payload.diagnostics, source),
+                base_diagnostics ++
+                  normalize_compiler_diagnostics(
+                    payload.diagnostics ++
+                      top_level_declaration_token_diagnostics(classed_tokens, source),
+                    source
+                  ),
               formatter_parser_payload: payload.parser_payload
             }
 
@@ -1454,7 +1459,7 @@ defmodule Ide.Tokenizer do
 
             {line_diags ++ acc, %{state | in_type_decl: false}}
 
-          Regex.match?(~r/^[a-z][A-Za-z0-9_']*(\s+[a-z][A-Za-z0-9_']*)*\s*=\s*.+$/, trimmed) ->
+          Regex.match?(~r/^[a-z][A-Za-z0-9_']*(\s+[a-z_][A-Za-z0-9_']*)*\s*=\s*.+$/, trimmed) ->
             [lhs | _rest] = String.split(trimmed, "=", parts: 2)
             header = String.trim(lhs) <> " ="
             line_diags = parse_decl_line(header, line_no, :problem_in_definition)
@@ -1599,7 +1604,7 @@ defmodule Ide.Tokenizer do
 
   @spec assignment_header_line?(term()) :: boolean()
   defp assignment_header_line?(trimmed) when is_binary(trimmed) do
-    Regex.match?(~r/^[a-z][A-Za-z0-9_']*(\s+[a-z][A-Za-z0-9_']*)*\s*=/, trimmed)
+    Regex.match?(~r/^[a-z][A-Za-z0-9_']*(\s+[a-z_][A-Za-z0-9_']*)*\s+=(?!=)/, trimmed)
   end
 
   @spec inline_if_expression?(String.t()) :: boolean()
@@ -1804,6 +1809,7 @@ defmodule Ide.Tokenizer do
     %{
       source: source_name,
       line: line,
+      column: reason_map[:column],
       message: normalize_elmc_value(reason_map[:message] || "Parser reported an issue."),
       elm_title: reason_map[:elm_title],
       detail: reason_map[:detail]
@@ -2367,6 +2373,121 @@ defmodule Ide.Tokenizer do
       [%{text: "type", class: "keyword"}, %{text: "alias", class: "keyword"} | _],
       non_trivia
     )
+  end
+
+  @spec top_level_declaration_token_diagnostics([token()], String.t()) :: [diagnostic()]
+  defp top_level_declaration_token_diagnostics(tokens, source)
+       when is_list(tokens) and is_binary(source) do
+    source_lines =
+      source
+      |> String.split("\n", trim: false)
+      |> Enum.with_index(1)
+      |> Map.new(fn {line, line_no} -> {line_no, line} end)
+
+    tokens
+    |> Enum.group_by(& &1.line)
+    |> Enum.sort_by(fn {line_no, _tokens} -> line_no end)
+    |> Enum.flat_map(fn {line_no, line_tokens} ->
+      top_level_declaration_line_diagnostics(
+        Enum.sort_by(line_tokens, & &1.column),
+        Map.get(source_lines, line_no, "")
+      )
+    end)
+  end
+
+  @spec top_level_declaration_line_diagnostics([token()], String.t()) :: [diagnostic()]
+  defp top_level_declaration_line_diagnostics(line_tokens, source_line)
+       when is_list(line_tokens) do
+    non_trivia = line_non_trivia_tokens(line_tokens)
+
+    cond do
+      non_trivia == [] or line_indented?(line_tokens) ->
+        []
+
+      top_level_declaration_line_ignored?(non_trivia) ->
+        []
+
+      top_level_declaration_starts_with_capital?(non_trivia) ->
+        top_level_declaration_start_diagnostic(List.first(non_trivia), source_line)
+
+      top_level_declaration_line_complete?(non_trivia) ->
+        []
+
+      true ->
+        top_level_declaration_start_diagnostic(List.first(non_trivia), source_line)
+    end
+  end
+
+  @spec top_level_declaration_line_ignored?([token()]) :: boolean()
+  defp top_level_declaration_line_ignored?([%{text: text} | _])
+       when text in ["module", "import", "type", "port", "|", "="],
+       do: true
+
+  defp top_level_declaration_line_ignored?(_tokens), do: false
+
+  @spec top_level_declaration_starts_with_capital?([token()]) :: boolean()
+  defp top_level_declaration_starts_with_capital?([%{class: "type_identifier"} | _]), do: true
+  defp top_level_declaration_starts_with_capital?(_tokens), do: false
+
+  @spec top_level_declaration_line_complete?([token()]) :: boolean()
+  defp top_level_declaration_line_complete?(tokens) do
+    Enum.any?(tokens, &(&1.text in [":", "="]))
+  end
+
+  @spec top_level_declaration_start_diagnostic(token() | nil, String.t()) :: [diagnostic()]
+  defp top_level_declaration_start_diagnostic(
+         %{class: "type_identifier", line: line, column: column, text: name},
+         source_line
+       ) do
+    [
+      parser_diagnostic("decl_parser", line, %{
+        column: column,
+        message: "Declarations must start with a lower-case name.",
+        elm_title: :unexpected_capital_letter,
+        detail: unexpected_capital_detail(line, column, source_line, name)
+      })
+    ]
+  end
+
+  defp top_level_declaration_start_diagnostic(
+         %{class: "identifier", line: line, column: column},
+         source_line
+       ) do
+    [
+      parser_diagnostic("decl_parser", line, %{
+        column: column,
+        message: "Top-level declarations need a type annotation or a value definition.",
+        elm_title: :syntax_problem,
+        detail:
+          source_line_detail(line, column, source_line) <>
+            "\n\nI found a top-level name, but no `:` type annotation or `=` value definition."
+      })
+    ]
+  end
+
+  defp top_level_declaration_start_diagnostic(_token, _source_line), do: []
+
+  @spec unexpected_capital_detail(integer(), integer(), String.t(), String.t()) :: String.t()
+  defp unexpected_capital_detail(line, column, source_line, name) do
+    suggestion =
+      String.downcase(String.first(name) || "") <>
+        String.slice(name, 1, max(String.length(name) - 1, 0))
+
+    source_line_detail(line, column, source_line) <>
+      "\n\nTry a name like `#{suggestion}` instead?\n\n" <>
+      "Note: Here are a couple valid declarations for reference:\n\n" <>
+      "    greet : String -> String\n" <>
+      "    greet name =\n" <>
+      "      \"Hello \" ++ name ++ \"!\"\n\n" <>
+      "    type User = Anonymous | LoggedIn String\n\n" <>
+      "Notice that they always start with a lower-case letter. Capitalization matters!"
+  end
+
+  @spec source_line_detail(integer(), integer(), String.t()) :: String.t()
+  defp source_line_detail(line, column, source_line) do
+    gutter = "#{line}| "
+    caret_padding = String.duplicate(" ", String.length(gutter) + max(column - 1, 0))
+    "#{gutter}#{source_line}\n#{caret_padding}^"
   end
 
   @spec type_declaration_continuation_lines(term(), term(), term()) :: [integer()]

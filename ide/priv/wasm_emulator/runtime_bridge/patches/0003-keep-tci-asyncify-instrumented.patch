@@ -1,8 +1,8 @@
 diff --git a/scripts/patch_wasm.py b/scripts/patch_wasm.py
-index f48f54f..90a92d7 100644
+index f48f54f..c1de459 100644
 --- a/scripts/patch_wasm.py
 +++ b/scripts/patch_wasm.py
-@@ -60,26 +60,18 @@ if '--profiling-funcs' not in content:
+@@ -60,26 +60,35 @@ if '--profiling-funcs' not in content:
  else:
      print('--profiling-funcs already in emscripten.txt')
  
@@ -19,19 +19,34 @@ index f48f54f..90a92d7 100644
  
 -asyncify_remove = "'-sASYNCIFY_REMOVE=[\"tcg_qemu_tb_exec\",\"tci_qemu_ld\",\"tci_qemu_st\"]'"
 -if 'ASYNCIFY_REMOVE' not in content:
--    content = content.replace(
--        "'--profiling-funcs'",
--        asyncify_remove + ",'--profiling-funcs'"
--    )
 +if 'ASYNCIFY_REMOVE' in content:
 +    content = re.sub(r",?\s*'-sASYNCIFY_REMOVE=\[[^\]]+\]'", '', content)
++    with open(ems_path, 'w') as f:
++        f.write(content)
++    print('Removed ASYNCIFY_REMOVE from emscripten.txt')
++else:
++    print('ASYNCIFY_REMOVE not present')
++
++# 3c. Silk firmware boot can traverse a deeper asyncified call chain through
++# QEMU's TCG/MMIO paths. Increase the Asyncify stack for the browser runtime.
++with open(ems_path, 'r') as f:
++    content = f.read()
++
++asyncify_stack_size = "'-sASYNCIFY_STACK_SIZE=33554432'"
++if 'ASYNCIFY_STACK_SIZE' not in content:
+     content = content.replace(
+-        "'--profiling-funcs'",
+-        asyncify_remove + ",'--profiling-funcs'"
++        "'-sASYNCIFY=1'",
++        "'-sASYNCIFY=1'," + asyncify_stack_size
+     )
      with open(ems_path, 'w') as f:
          f.write(content)
 -    print('Added ASYNCIFY_REMOVE for TCI hot path')
-+    print('Removed ASYNCIFY_REMOVE from emscripten.txt')
++    print('Added ASYNCIFY_STACK_SIZE to emscripten.txt')
  else:
 -    print('ASYNCIFY_REMOVE already in emscripten.txt')
-+    print('ASYNCIFY_REMOVE not present')
++    print('ASYNCIFY_STACK_SIZE already present')
  
  # 4. Upgrade meson default optimization from -O2 to -O3
  meson_path = os.path.join(qemu_dir, 'meson.build')

@@ -136,6 +136,43 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     assert elm_json =~ "\"elm/http\": \"2.0.0\""
   end
 
+  test "resources upload buttons are disabled until a file is chosen", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceResourcesUploadButtons",
+               "slug" => "workspace-resources-upload-buttons",
+               "target_type" => "app"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/resources")
+
+    assert has_element?(view, "button[disabled]", "Upload bitmap")
+    assert has_element?(view, "button[disabled]", "Upload font")
+
+    bitmap_upload =
+      file_input(view, "form[phx-submit='upload-bitmap-resource']", :bitmap, [
+        %{
+          name: "logo.png",
+          content: <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0>>,
+          type: "image/png"
+        }
+      ])
+
+    render_upload(bitmap_upload, "logo.png")
+
+    refute has_element?(
+             view,
+             "form[phx-submit='upload-bitmap-resource'] button[disabled]",
+             "Upload bitmap"
+           )
+
+    assert has_element?(
+             view,
+             "form[phx-submit='upload-font-resource'] button[disabled]",
+             "Upload font"
+           )
+  end
+
   test "packages target root defaults to active phone tab when navigating from editor", %{
     conn: conn
   } do
@@ -205,6 +242,9 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     html = render_async(view)
 
+    assert html =~ "watch app elm.json"
+    assert html =~ "only what fits a Pebble watch app"
+
     assert html =~ "elm/core"
     assert html =~ "elm/json"
     assert html =~ "elm/time"
@@ -216,6 +256,138 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     render_click(view, "packages-remove", %{"package" => "elm/json"})
     assert render(view) =~ "Required packages"
+  end
+
+  test "packages pane keeps official elm random for phone root", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspacePackagesPhoneRandom",
+               "slug" => "workspace-packages-phone-random",
+               "target_type" => "app"
+             })
+
+    assert {:ok, elm_json} = Projects.read_source_file(project, "phone", "elm.json")
+    assert {:ok, decoded} = Jason.decode(elm_json)
+
+    decoded =
+      put_in(
+        decoded,
+        ["dependencies", "direct"],
+        decoded
+        |> get_in(["dependencies", "direct"])
+        |> Map.put("elm/random", "1.0.0")
+      )
+
+    assert :ok =
+             Projects.write_source_file(
+               project,
+               "phone",
+               "elm.json",
+               Jason.encode!(decoded, pretty: true)
+             )
+
+    assert {:ok, view, _} = live(conn, ~p"/projects/#{project.slug}/packages")
+
+    render_change(view, "packages-set-target-root", %{
+      "packages_target" => %{"source_root" => "phone"}
+    })
+
+    html = render_async(view)
+
+    assert html =~ "companion app elm.json"
+    assert html =~ "phone companion runtime"
+    assert html =~ "elm/random"
+    assert html =~ "Remove elm/random from elm.json?"
+
+    assert {:ok, elm_json} = Projects.read_source_file(project, "phone", "elm.json")
+    assert elm_json =~ "\"elm/random\""
+    refute elm_json =~ "internal_packages/elm-random/src"
+  end
+
+  test "packages pane marks phone package used after rejected removal", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspacePackagesPhoneRandomUsed",
+               "slug" => "workspace-packages-phone-random-used",
+               "target_type" => "app"
+             })
+
+    assert :ok =
+             Projects.write_source_file(
+               project,
+               "phone",
+               "src/CompanionApp.elm",
+               """
+               module CompanionApp exposing (main)
+
+               import Json.Decode as Decode
+               import Platform
+               import Random
+
+               type alias Model = {}
+               type Msg = NoOp
+
+               init : Decode.Value -> ( Model, Cmd Msg )
+               init _ =
+                   ( {}, Random.generate (\\_ -> NoOp) (Random.int 1 6) )
+
+               update : Msg -> Model -> ( Model, Cmd Msg )
+               update _ model =
+                   ( model, Cmd.none )
+
+               subscriptions : Model -> Sub Msg
+               subscriptions _ =
+                   Sub.none
+
+               main : Program Decode.Value Model Msg
+               main =
+                   Platform.worker { init = init, update = update, subscriptions = subscriptions }
+               """
+             )
+
+    assert {:ok, _} =
+             Ide.Packages.add_to_project(project, "elm/random",
+               source_root: "phone",
+               source: "mock"
+             )
+
+    assert {:ok, view, _} = live(conn, ~p"/projects/#{project.slug}/packages")
+
+    render_change(view, "packages-set-target-root", %{
+      "packages_target" => %{"source_root" => "phone"}
+    })
+
+    # Before async usage analysis completes, avoid showing a misleading Remove action.
+    # If the usage task wins the race, the final Used badge is fine too.
+    initial = render(view)
+    assert initial =~ "Checking" or initial =~ "Used"
+    refute initial =~ "Remove elm/random from elm.json?"
+
+    html = render_click(view, "packages-remove", %{"package" => "elm/random"})
+    assert html =~ "elm/random is imported by current Elm source files"
+    assert html =~ "Used"
+    refute html =~ "Remove elm/random from elm.json?"
+  end
+
+  test "packages pane marks imported packages as used", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspacePackagesUsedRandom",
+               "slug" => "workspace-packages-used-random",
+               "target_type" => "app",
+               "template" => "game-2048"
+             })
+
+    assert {:ok, view, _} = live(conn, ~p"/projects/#{project.slug}/packages")
+    html = render_async(view)
+
+    assert html =~ "elm/random"
+    assert html =~ "Used"
+    assert html =~ "This package is imported by current Elm source files."
+    refute html =~ "Remove elm/random from elm.json?"
+
+    render_click(view, "packages-remove", %{"package" => "elm/random"})
+    assert render(view) =~ "elm/random is imported by current Elm source files"
   end
 
   test "build pane no longer renders Elm package management", %{conn: conn} do
@@ -551,6 +723,32 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     assert html =~ "src/Main.elm"
   end
 
+  test "editor initializes companion action visibility from project files", %{conn: conn} do
+    assert {:ok, starter} =
+             Projects.create_project(%{
+               "name" => "WorkspaceEditorCompanionPresent",
+               "slug" =>
+                 "workspace-editor-companion-present-#{System.unique_integer([:positive])}",
+               "target_type" => "app",
+               "template" => "starter"
+             })
+
+    assert {:ok, starter_view, _} = live(conn, ~p"/projects/#{starter.slug}/editor")
+    refute has_element?(starter_view, "button", "Add companion app")
+
+    assert {:ok, watch_only} =
+             Projects.create_project(%{
+               "name" => "WorkspaceEditorCompanionMissing",
+               "slug" =>
+                 "workspace-editor-companion-missing-#{System.unique_integer([:positive])}",
+               "target_type" => "app",
+               "template" => "game-2048"
+             })
+
+    assert {:ok, watch_only_view, _} = live(conn, ~p"/projects/#{watch_only.slug}/editor")
+    assert has_element?(watch_only_view, "button", "Add companion app")
+  end
+
   test "editor propagates settings editor mode to hook dataset", %{conn: conn} do
     temp_path =
       Path.join(
@@ -578,6 +776,62 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     render_click(view, "open-file", %{"source-root" => "watch", "rel-path" => "src/Main.elm"})
     html = render_async(view, 1_500)
     assert html =~ ~s(data-editor-mode="vim")
+  end
+
+  test "editor shows compile panel for invalid watch Main elm on save", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceEditorWatchError",
+               "slug" => "workspace-editor-watch-error-#{System.unique_integer([:positive])}",
+               "target_type" => "app"
+             })
+
+    assert {:ok, view, _} = live(conn, ~p"/projects/#{project.slug}/editor")
+    render_click(view, "open-file", %{"source-root" => "watch", "rel-path" => "src/Main.elm"})
+    _ = render_async(view, 1_500)
+
+    invalid_source = "module Main exposing (main)\n\nmain =\n    )\n"
+
+    view
+    |> form(~s(form[id="token-editor-form-watch:src/Main.elm"]), %{
+      "editor" => %{"content" => invalid_source}
+    })
+    |> render_submit()
+
+    html = render_async(view, 3_000)
+    assert html =~ "Compile errors"
+    assert html =~ "STRAY CLOSING DELIMITER"
+    assert html =~ "src/Main.elm:line 4:5"
+  end
+
+  test "editor shows compile panel for invalid 2048 Main elm on save", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceEditor2048Error",
+               "slug" => "workspace-editor-2048-error-#{System.unique_integer([:positive])}",
+               "target_type" => "app",
+               "template" => "game-2048"
+             })
+
+    assert {:ok, view, _} = live(conn, ~p"/projects/#{project.slug}/editor")
+    render_click(view, "open-file", %{"source-root" => "watch", "rel-path" => "src/Main.elm"})
+    _ = render_async(view, 1_500)
+
+    invalid_source = "module Main exposing (main)\n\nmain =\n    )\n"
+
+    view
+    |> form(~s(form[id="token-editor-form-watch:src/Main.elm"]), %{
+      "editor" => %{"content" => invalid_source}
+    })
+    |> render_submit()
+
+    html = render_async(view, 3_000)
+    assert html =~ "Compile errors"
+    assert html =~ "STRAY CLOSING DELIMITER"
+    assert html =~ "src/Main.elm:line 4:5"
+
+    render_hook(view, "editor-change", %{"content" => invalid_source})
+    assert render(view) =~ "Compile errors"
   end
 
   test "editor restores saved cursor and scroll state when switching tabs", %{conn: conn} do
@@ -631,7 +885,6 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     protected_files = [
       {"watch", "src/Main.elm"},
-      {"phone", "src/CompanionApp.elm"},
       {"protocol", "src/Companion/Types.elm"},
       {"watch", "src/Pebble/Ui/Resources.elm"}
     ]
@@ -643,6 +896,13 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
       assert html =~ "Rename active file"
       assert has_element?(view, "button[disabled]", "Rename active file…")
+
+      if rel_path == "src/Pebble/Ui/Resources.elm" do
+        assert has_element?(view, "button[disabled]", "Save")
+        assert has_element?(view, "button[disabled]", "Format")
+        assert html =~ ~s(data-editor-readonly="true")
+        assert html =~ "This generated file is read-only."
+      end
 
       rename_html =
         if rel_path == "src/Pebble/Ui/Resources.elm" do
@@ -662,5 +922,49 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
       assert delete_html =~ "cannot be deleted" or delete_html =~ "read-only"
       assert {:ok, _} = Projects.read_source_file(project, source_root, rel_path)
     end
+  end
+
+  test "editor allows deleting the companion app entrypoint", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceDeleteCompanionApp",
+               "slug" => "workspace-delete-companion-app",
+               "target_type" => "app"
+             })
+
+    assert {:ok, view, _} = live(conn, ~p"/projects/#{project.slug}/editor")
+
+    render_click(view, "open-file", %{
+      "source-root" => "phone",
+      "rel-path" => "src/CompanionApp.elm"
+    })
+
+    _ = render_async(view, 1_500)
+
+    refute has_element?(view, "button[disabled]", "Delete active file…")
+
+    delete_html = render_click(view, "delete-file", %{})
+    assert delete_html =~ "Deleted CompanionApp.elm"
+    assert {:error, _} = Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
+    assert delete_html =~ "Add companion app"
+
+    assert :ok =
+             Projects.write_source_file(
+               project,
+               "phone",
+               "src/Pebble/Companion/AppMessage.elm",
+               "module Pebble.Companion.AppMessage exposing (dummy)\n\ndummy = ()\n"
+             )
+
+    add_html = render_click(view, "add-companion-app", %{})
+    assert add_html =~ "Added companion app and protocol files."
+
+    assert {:ok, companion_app} =
+             Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
+
+    assert companion_app =~ "module CompanionApp exposing"
+
+    assert {:error, _} =
+             Projects.read_source_file(project, "phone", "src/Pebble/Companion/AppMessage.elm")
   end
 end

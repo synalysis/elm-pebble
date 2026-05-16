@@ -518,7 +518,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         int16_t h = (int16_t)cmd.p3;
         int32_t angle_start = (int32_t)cmd.p4;
         int32_t angle_end = (int32_t)cmd.p5;
-        graphics_fill_radial(ctx, GRect(x, y, w, h), GOvalScaleModeFitCircle, 0, angle_start, angle_end);
+        uint16_t thickness = (uint16_t)((w < h ? w : h) / 2);
+        graphics_fill_radial(ctx, GRect(x, y, w, h), GOvalScaleModeFitCircle, thickness, angle_start, angle_end);
         break;
       }
       case ELMC_PEBBLE_DRAW_BITMAP_IN_RECT: {

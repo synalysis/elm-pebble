@@ -437,7 +437,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               Firmware
               <select
                 data-wasm-firmware
-                class="rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900"
+                class="min-w-20 rounded border border-zinc-300 bg-white py-1 pl-2 pr-7 text-xs text-zinc-900"
               >
                 <option value="sdk">SDK</option>
                 <option value="full">Full</option>

@@ -22,6 +22,7 @@ defmodule Ide.Projects.Project do
           latest_published_at: DateTime.t() | nil,
           store_sync_at: DateTime.t() | nil,
           store_metadata_cache: map() | nil,
+          package_metadata_cache: map() | nil,
           release_defaults: map() | nil,
           github: map() | nil,
           debugger_settings: map() | nil,
@@ -42,6 +43,7 @@ defmodule Ide.Projects.Project do
     field :latest_published_at, :utc_datetime
     field :store_sync_at, :utc_datetime
     field :store_metadata_cache, :map, default: %{}
+    field :package_metadata_cache, :map, default: %{}
     field :release_defaults, :map, default: %{}
     field :github, :map, default: %{}
     field :debugger_settings, :map, default: %{}
@@ -69,6 +71,7 @@ defmodule Ide.Projects.Project do
       :latest_published_at,
       :store_sync_at,
       :store_metadata_cache,
+      :package_metadata_cache,
       :release_defaults,
       :github,
       :debugger_settings

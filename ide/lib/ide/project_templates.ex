@@ -84,6 +84,93 @@ defmodule Ide.ProjectTemplates do
 
   def apply_template(template, _workspace_path), do: {:error, {:unknown_template, template}}
 
+  @doc """
+  Ensures the default companion protocol root exists without overwriting user-authored
+  protocol types.
+  """
+  @spec ensure_protocol_shared(String.t()) :: :ok | {:error, term()}
+  def ensure_protocol_shared(workspace_path) when is_binary(workspace_path) do
+    source_dir = Path.join(repo_root(), "shared/elm")
+    target_dir = Path.join(workspace_path, "protocol/src")
+    protocol_root = Path.join(workspace_path, "protocol")
+    protocol_types = Path.join(target_dir, "Companion/Types.elm")
+    protocol_watch = Path.join(target_dir, "Companion/Watch.elm")
+    protocol_internal = Path.join(target_dir, "Companion/Internal.elm")
+
+    elm_json = %{
+      "type" => "application",
+      "source-directories" => ["src"],
+      "elm-version" => "0.19.1",
+      "dependencies" => %{
+        "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
+        "indirect" => %{}
+      },
+      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+    }
+
+    with :ok <- File.mkdir_p(Path.dirname(protocol_types)),
+         :ok <- copy_file_if_missing(Path.join(source_dir, "Companion/Types.elm"), protocol_types),
+         :ok <- copy_file_if_missing(Path.join(source_dir, "Companion/Watch.elm"), protocol_watch),
+         :ok <-
+           CompanionProtocolGenerator.generate_elm_internal(protocol_types, protocol_internal),
+         :ok <- write_json_if_missing(Path.join(protocol_root, "elm.json"), elm_json) do
+      :ok
+    end
+  end
+
+  @doc """
+  Adds the default companion app scaffolding to an existing watch project.
+  """
+  @spec ensure_companion_app(String.t()) :: :ok | {:error, term()}
+  def ensure_companion_app(workspace_path) when is_binary(workspace_path) do
+    with :ok <- ensure_protocol_shared(workspace_path),
+         :ok <- ensure_phone_companion(workspace_path),
+         :ok <- ensure_phone_companion_source_dirs(workspace_path),
+         :ok <- ensure_watch_protocol_source_dir(workspace_path) do
+      :ok
+    end
+  end
+
+  @spec ensure_phone_companion_source_dirs(String.t()) :: :ok | {:error, term()}
+  def ensure_phone_companion_source_dirs(workspace_path) when is_binary(workspace_path) do
+    elm_json_path = Path.join([workspace_path, "phone", "elm.json"])
+    target_dir = Path.join(workspace_path, "phone/src")
+
+    with {:ok, content} <- File.read(elm_json_path),
+         {:ok, %{} = decoded} <- Jason.decode(content) do
+      source_dirs =
+        decoded
+        |> Map.get("source-directories", ["src"])
+        |> List.wrap()
+
+      next_dirs =
+        source_dirs
+        |> reject_phone_obsolete_source_dirs()
+        |> then(fn dirs ->
+          Enum.reduce(phone_source_directory_additions(workspace_path), dirs, fn dir, acc ->
+            if dir in acc, do: acc, else: acc ++ [dir]
+          end)
+        end)
+
+      next_decoded =
+        decoded
+        |> Map.put("source-directories", next_dirs)
+        |> remove_phone_obsolete_dependencies()
+
+      with :ok <- remove_obsolete_phone_runtime_sources(target_dir) do
+        if next_decoded == decoded do
+          :ok
+        else
+          File.write(elm_json_path, Jason.encode!(next_decoded, pretty: true))
+        end
+      end
+    else
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, :invalid_phone_elm_json}
+    end
+  end
+
   @spec seed_multi_root_workspace(term()) :: term()
   defp seed_multi_root_workspace(workspace_path) do
     with :ok <- seed_watch_fixture(workspace_path),
@@ -293,31 +380,7 @@ defmodule Ide.ProjectTemplates do
 
   @spec seed_protocol_shared(term()) :: term()
   defp seed_protocol_shared(workspace_path) do
-    source_dir = Path.join(repo_root(), "shared/elm")
-    target_dir = Path.join(workspace_path, "protocol/src")
-    protocol_root = Path.join(workspace_path, "protocol")
-
-    elm_json = %{
-      "type" => "application",
-      "source-directories" => ["src"],
-      "elm-version" => "0.19.1",
-      "dependencies" => %{
-        "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
-        "indirect" => %{}
-      },
-      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
-    }
-
-    protocol_types = Path.join(target_dir, "Companion/Types.elm")
-    protocol_internal = Path.join(target_dir, "Companion/Internal.elm")
-
-    with :ok <- replace_dir(source_dir, target_dir),
-         :ok <-
-           CompanionProtocolGenerator.generate_elm_internal(protocol_types, protocol_internal),
-         :ok <-
-           File.write(Path.join(protocol_root, "elm.json"), Jason.encode!(elm_json, pretty: true)) do
-      :ok
-    end
+    ensure_protocol_shared(workspace_path)
   end
 
   @spec seed_phone_companion(term()) :: term()
@@ -347,10 +410,33 @@ defmodule Ide.ProjectTemplates do
 
     with :ok <- replace_dir(source_dir, target_dir),
          :ok <- remove_generated_phone_protocol_internal(target_dir),
+         :ok <- remove_obsolete_phone_runtime_sources(target_dir),
          :ok <-
            File.write(Path.join(phone_root, "elm.json"), Jason.encode!(elm_json, pretty: true)) do
       :ok
     end
+  end
+
+  @spec ensure_phone_companion(String.t()) :: :ok | {:error, term()}
+  defp ensure_phone_companion(workspace_path) do
+    phone_root = Path.join(workspace_path, "phone")
+
+    if File.exists?(Path.join(phone_root, "elm.json")) do
+      ensure_phone_companion_entrypoint(workspace_path)
+    else
+      seed_phone_companion(workspace_path)
+    end
+  end
+
+  @spec ensure_phone_companion_entrypoint(String.t()) :: :ok | {:error, term()}
+  defp ensure_phone_companion_entrypoint(workspace_path) do
+    source_dir = Path.join(ide_root(), "priv/pebble_app_template/src/elm")
+    target_dir = Path.join(workspace_path, "phone/src")
+
+    copy_file_if_missing(
+      Path.join(source_dir, "CompanionApp.elm"),
+      Path.join(target_dir, "CompanionApp.elm")
+    )
   end
 
   @spec phone_source_directories() :: [String.t()]
@@ -359,8 +445,86 @@ defmodule Ide.ProjectTemplates do
       "src",
       "../protocol/src",
       InternalPackages.shared_elm_companion_abs(),
+      InternalPackages.pebble_companion_core_elm_src_abs(),
       InternalPackages.pebble_companion_preferences_elm_src_abs()
     ]
+  end
+
+  @spec phone_source_directory_additions(String.t()) :: [String.t()]
+  defp phone_source_directory_additions(_workspace_path) do
+    [
+      "../protocol/src",
+      InternalPackages.shared_elm_companion_abs(),
+      InternalPackages.pebble_companion_core_elm_src_abs(),
+      InternalPackages.pebble_companion_preferences_elm_src_abs()
+    ]
+  end
+
+  @spec reject_phone_obsolete_source_dirs([term()]) :: [term()]
+  defp reject_phone_obsolete_source_dirs(source_dirs) when is_list(source_dirs) do
+    obsolete = MapSet.new(phone_obsolete_source_dirs())
+
+    Enum.reject(source_dirs, fn dir ->
+      is_binary(dir) and MapSet.member?(obsolete, Path.expand(dir))
+    end)
+  end
+
+  @spec phone_obsolete_source_dirs() :: [String.t()]
+  defp phone_obsolete_source_dirs do
+    [
+      InternalPackages.phone_pebble_stubs_elm_src_abs(),
+      InternalPackages.elm_random_elm_src_abs(),
+      InternalPackages.pebble_elm_src_abs()
+    ]
+    |> Enum.map(&Path.expand/1)
+  end
+
+  @spec remove_phone_obsolete_dependencies(map()) :: map()
+  defp remove_phone_obsolete_dependencies(%{} = elm_json) do
+    case get_in(elm_json, ["dependencies", "direct"]) do
+      %{} = deps ->
+        next_deps =
+          deps
+          |> Map.delete("elm-pebble/elm-watch")
+
+        put_in(elm_json, ["dependencies", "direct"], next_deps)
+
+      _ ->
+        elm_json
+    end
+  end
+
+  @spec ensure_watch_protocol_source_dir(String.t()) :: :ok | {:error, term()}
+  defp ensure_watch_protocol_source_dir(workspace_path) do
+    elm_json_path = Path.join([workspace_path, "watch", "elm.json"])
+
+    with {:ok, content} <- File.read(elm_json_path),
+         {:ok, %{} = decoded} <- Jason.decode(content) do
+      source_dirs =
+        decoded
+        |> Map.get("source-directories", ["src"])
+        |> List.wrap()
+
+      if "../protocol/src" in source_dirs do
+        :ok
+      else
+        next_dirs = insert_after_src(source_dirs, "../protocol/src")
+        next = Map.put(decoded, "source-directories", next_dirs)
+        File.write(elm_json_path, Jason.encode!(next, pretty: true))
+      end
+    else
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, :invalid_watch_elm_json}
+    end
+  end
+
+  @spec insert_after_src([term()], String.t()) :: [term()]
+  defp insert_after_src(source_dirs, new_dir) do
+    case Enum.split_while(source_dirs, &(&1 != "src")) do
+      {prefix, ["src" | rest]} -> prefix ++ ["src", new_dir] ++ rest
+      {_prefix, []} -> [new_dir | source_dirs]
+    end
   end
 
   @spec remove_generated_phone_protocol_internal(String.t()) :: :ok | {:error, term()}
@@ -369,6 +533,18 @@ defmodule Ide.ProjectTemplates do
       :ok -> :ok
       {:error, :enoent} -> :ok
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec remove_obsolete_phone_runtime_sources(String.t()) :: :ok | {:error, term()}
+  defp remove_obsolete_phone_runtime_sources(target_dir) when is_binary(target_dir) do
+    case File.rm_rf(Path.join(target_dir, "Pebble/Companion")) do
+      {:ok, _removed} ->
+        _ = File.rmdir(Path.join(target_dir, "Pebble"))
+        :ok
+
+      {:error, reason, _path} ->
+        {:error, reason}
     end
   end
 
@@ -388,6 +564,26 @@ defmodule Ide.ProjectTemplates do
     with :ok <- File.mkdir_p(Path.dirname(target)),
          :ok <- File.cp(source, target) do
       :ok
+    end
+  end
+
+  @spec copy_file_if_missing(String.t(), String.t()) :: :ok | {:error, term()}
+  defp copy_file_if_missing(source, target) do
+    if File.exists?(target) do
+      :ok
+    else
+      copy_file(source, target)
+    end
+  end
+
+  @spec write_json_if_missing(String.t(), map()) :: :ok | {:error, term()}
+  defp write_json_if_missing(path, payload) do
+    if File.exists?(path) do
+      :ok
+    else
+      with :ok <- File.mkdir_p(Path.dirname(path)) do
+        File.write(path, Jason.encode!(payload, pretty: true))
+      end
     end
   end
 

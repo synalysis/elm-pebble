@@ -89,7 +89,8 @@ defmodule Ide.ProjectsTest do
              Projects.create_project(%{
                "name" => "BitmapOps",
                "slug" => "bitmap-ops-#{System.unique_integer([:positive])}",
-               "target_type" => "app"
+               "target_type" => "app",
+               "release_defaults" => %{"target_platforms" => ["basalt", "chalk"]}
              })
 
     tmp_png =
@@ -106,11 +107,21 @@ defmodule Ide.ProjectsTest do
 
     assert {:ok, _} = Projects.import_bitmap_resource(project, tmp_png, "logo.png")
     assert {:ok, _} = Projects.import_font_resource(project, tmp_ttf, "menu.ttf")
+
+    assert {:ok, %{duplicate: true}} =
+             Projects.import_bitmap_resource(project, tmp_png, "logo-copy.png")
+
+    assert {:ok, %{duplicate: true}} =
+             Projects.import_font_resource(project, tmp_ttf, "menu-copy.ttf")
+
     assert {:ok, entries} = Projects.list_bitmap_resources(project)
     assert [%{ctor: "Logo"}] = entries
     assert {:ok, font_sources} = Projects.list_font_sources(project)
     assert [%{id: source_id, filename: "menu.ttf"}] = font_sources
-    source_font_path = Path.join(Projects.project_workspace_path(project), "watch/resources/fonts/menu.ttf")
+
+    source_font_path =
+      Path.join(Projects.project_workspace_path(project), "watch/resources/fonts/menu.ttf")
+
     assert File.exists?(source_font_path)
 
     assert {:ok, _} =
@@ -144,12 +155,14 @@ defmodule Ide.ProjectsTest do
     auto_entry = Enum.find(font_entries, &(&1.ctor == "Menu"))
     assert auto_entry.height == 29
     assert auto_entry.compatibility == "latest"
-    assert auto_entry.target_platforms == []
+    assert auto_entry.target_platforms == ["basalt", "chalk"]
 
     generated =
       Path.join(Projects.project_workspace_path(project), "watch/src/Pebble/Ui/Resources.elm")
 
     assert {:ok, source} = File.read(generated)
+    assert String.contains?(source, "Generated from the resources configured")
+    assert String.contains?(source, "project settings Resources page")
     assert String.contains?(source, "type Bitmap")
     assert String.contains?(source, "Logo")
     assert String.contains?(source, "type alias BitmapInfo")
@@ -221,10 +234,7 @@ defmodule Ide.ProjectsTest do
     assert "src" in dirs
     assert Enum.any?(dirs, &String.ends_with?(&1, "packages/elm-pebble/elm-watch/src"))
 
-    assert Enum.any?(
-             dirs,
-             &String.ends_with?(&1, "priv/internal_packages/companion-protocol/src")
-           )
+    assert "../protocol/src" in dirs
 
     refute Map.has_key?(direct, "elm-pebble/elm-watch")
     assert Map.fetch!(direct, "elm/json") == "1.1.3"
@@ -234,14 +244,27 @@ defmodule Ide.ProjectsTest do
 
     assert {:ok, phone_elm_json_raw} = File.read(Path.join(base, "phone/elm.json"))
     assert {:ok, phone_decoded} = Jason.decode(phone_elm_json_raw)
-    assert get_in(phone_decoded, ["dependencies", "direct", "elm/http"]) == "2.0.0"
+    phone_direct = get_in(phone_decoded, ["dependencies", "direct"]) || %{}
+    assert phone_direct["elm/http"] == "2.0.0"
+    refute Map.has_key?(phone_direct, "elm/random")
 
     refute Map.has_key?(
-             get_in(phone_decoded, ["dependencies", "direct"]) || %{},
+             phone_direct,
              "elm-pebble/elm-phone"
            )
 
-    assert "../protocol/src" in Map.fetch!(phone_decoded, "source-directories")
+    phone_dirs = Map.fetch!(phone_decoded, "source-directories")
+    assert "../protocol/src" in phone_dirs
+    refute Enum.any?(phone_dirs, &String.ends_with?(&1, "phone-pebble-stubs/src"))
+    assert Enum.any?(phone_dirs, &String.ends_with?(&1, "shared/elm-companion"))
+    assert Enum.any?(phone_dirs, &String.ends_with?(&1, "packages/elm-pebble-companion-core/src"))
+
+    assert Enum.any?(
+             phone_dirs,
+             &String.ends_with?(&1, "packages/elm-pebble-companion-preferences/src")
+           )
+
+    refute Enum.any?(phone_dirs, &String.ends_with?(&1, "internal_packages/elm-random/src"))
 
     assert {:ok, protocol_types} =
              Projects.read_source_file(project, "protocol", "src/Companion/Types.elm")
@@ -261,10 +284,8 @@ defmodule Ide.ProjectsTest do
                "template" => "starter"
              })
 
-    assert {:ok, app_message} =
+    assert {:error, _} =
              Projects.read_source_file(project, "phone", "src/Pebble/Companion/AppMessage.elm")
-
-    assert String.contains?(app_message, "module Pebble.Companion.AppMessage")
 
     phone_tree =
       project
@@ -297,6 +318,31 @@ defmodule Ide.ProjectsTest do
 
     refute "src/Companion/Watch.elm" in tree_rel_paths(protocol_tree.nodes)
     refute "src/Companion/Internal.elm" in tree_rel_paths(protocol_tree.nodes)
+    assert "src/Companion/Types.elm" in tree_rel_paths(protocol_tree.nodes)
+  end
+
+  test "listing a companion project restores missing default protocol files" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "ProtocolInvariant",
+               "slug" => "protocol-invariant-#{System.unique_integer([:positive])}",
+               "target_type" => "app",
+               "template" => "starter"
+             })
+
+    base = Projects.project_workspace_path(project)
+    File.rm_rf!(Path.join(base, "protocol"))
+
+    refute File.exists?(Path.join(base, "protocol/src/Companion/Types.elm"))
+
+    protocol_tree =
+      project
+      |> Projects.list_source_tree()
+      |> Enum.find(&(&1.source_root == "protocol"))
+
+    assert File.exists?(Path.join(base, "protocol/elm.json"))
+    assert File.exists?(Path.join(base, "protocol/src/Companion/Types.elm"))
+    assert File.exists?(Path.join(base, "protocol/src/Companion/Internal.elm"))
     assert "src/Companion/Types.elm" in tree_rel_paths(protocol_tree.nodes)
   end
 
@@ -336,6 +382,49 @@ defmodule Ide.ProjectsTest do
     end
   end
 
+  test "add_companion_app scaffolds phone and protocol for watch-only projects" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "AddCompanion",
+               "slug" => "add-companion-#{System.unique_integer([:positive])}",
+               "target_type" => "app",
+               "template" => "watchface-digital"
+             })
+
+    base = Projects.project_workspace_path(project)
+    refute Projects.companion_app_present?(project)
+    refute File.exists?(Path.join(base, "phone/elm.json"))
+    refute File.exists?(Path.join(base, "protocol/elm.json"))
+
+    assert :ok = Projects.add_companion_app(project)
+
+    assert Projects.companion_app_present?(project)
+    assert File.exists?(Path.join(base, "phone/elm.json"))
+    assert File.exists?(Path.join(base, "phone/src/CompanionApp.elm"))
+    assert File.exists?(Path.join(base, "protocol/elm.json"))
+    assert File.exists?(Path.join(base, "protocol/src/Companion/Types.elm"))
+    assert File.exists?(Path.join(base, "protocol/src/Companion/Internal.elm"))
+
+    assert {:ok, watch_elm_json_raw} = File.read(Path.join(base, "watch/elm.json"))
+    assert {:ok, watch_decoded} = Jason.decode(watch_elm_json_raw)
+    assert "../protocol/src" in Map.fetch!(watch_decoded, "source-directories")
+
+    assert {:ok, phone_elm_json_raw} = File.read(Path.join(base, "phone/elm.json"))
+    assert {:ok, phone_decoded} = Jason.decode(phone_elm_json_raw)
+    phone_dirs = Map.fetch!(phone_decoded, "source-directories")
+    refute Enum.any?(phone_dirs, &String.ends_with?(&1, "phone-pebble-stubs/src"))
+    assert Enum.any?(phone_dirs, &String.ends_with?(&1, "shared/elm-companion"))
+    assert Enum.any?(phone_dirs, &String.ends_with?(&1, "packages/elm-pebble-companion-core/src"))
+
+    assert Enum.any?(
+             phone_dirs,
+             &String.ends_with?(&1, "packages/elm-pebble-companion-preferences/src")
+           )
+
+    refute Enum.any?(phone_dirs, &String.ends_with?(&1, "internal_packages/elm-random/src"))
+    refute Map.has_key?(get_in(phone_decoded, ["dependencies", "direct"]) || %{}, "elm/random")
+  end
+
   test "complete watchface tutorial template seeds sources and resources" do
     slug = "watchface-tutorial-#{System.unique_integer([:positive])}"
 
@@ -362,7 +451,7 @@ defmodule Ide.ProjectsTest do
     assert File.exists?(Path.join(base, "phone/src/CompanionApp.elm"))
     assert File.exists?(Path.join(base, "phone/src/CompanionPreferences.elm"))
     assert File.exists?(Path.join(base, "phone/src/Companion/GeneratedPreferences.elm"))
-    assert File.exists?(Path.join(base, "phone/src/Pebble/Companion/AppMessage.elm"))
+    refute File.exists?(Path.join(base, "phone/src/Pebble/Companion/AppMessage.elm"))
     refute File.exists?(Path.join(base, "phone/src/Companion/Internal.elm"))
     refute File.exists?(Path.join(base, "phone/src/Companion/Http.elm"))
 

@@ -2,6 +2,7 @@ defmodule Ide.Compiler do
   alias Ide.Compiler.Cache
   alias Ide.Compiler.Diagnostics
   alias Ide.Compiler.ManifestCache
+  alias Ide.PebbleToolchain
   alias ElmEx.CoreIR
   alias ElmEx.Frontend.Bridge
   alias ElmEx.IR.Lowerer
@@ -94,6 +95,32 @@ defmodule Ide.Compiler do
 
       project_dir ->
         run_elmc_check(project_dir)
+    end
+  end
+
+  @doc """
+  Runs the editor save-time check for a specific source root.
+
+  The companion phone app is validated with the upstream Elm compiler. Watch-side
+  roots are validated with elmc so the editor matches the Pebble runtime compiler.
+  """
+  @spec check_source_root(project_slug(), opts()) :: {:ok, check_result()} | {:error, term()}
+  def check_source_root(project_slug, opts) do
+    workspace_root = Keyword.fetch!(opts, :workspace_root)
+    source_root = opts |> Keyword.get(:source_root, "watch") |> to_string()
+    source_dir = Path.join(workspace_root, source_root)
+
+    project_dir =
+      if File.exists?(Path.join(source_dir, "elm.json")), do: source_dir, else: workspace_root
+
+    if source_root == "phone" do
+      run_elm_check(project_dir)
+    else
+      case run_editor_parser_check(project_dir) do
+        {:ok, %{status: :ok}} -> check(project_slug, workspace_root: project_dir)
+        {:ok, result} -> {:ok, result}
+        {:error, _reason} = error -> error
+      end
     end
   end
 
@@ -242,6 +269,157 @@ defmodule Ide.Compiler do
      }}
   rescue
     error -> {:error, error}
+  end
+
+  @spec run_elm_check(String.t()) :: {:ok, check_result()} | {:error, term()}
+  defp run_elm_check(project_dir) do
+    with {:ok, elm_json} <- read_elm_json(project_dir),
+         {:ok, elm_bin} <- PebbleToolchain.elm_bin(),
+         {:ok, entries} <- elm_make_entries(project_dir, elm_json) do
+      case entries do
+        [] ->
+          {:ok,
+           elm_check_result(:error, project_dir, "No Elm source files found for elm make.", [
+             %{
+               severity: "error",
+               source: "elm",
+               message: "No Elm source files found for elm make.",
+               file: nil,
+               line: nil,
+               column: nil
+             }
+           ])}
+
+        [_ | _] ->
+          output_path =
+            Path.join(
+              System.tmp_dir!(),
+              "elm-pebble-editor-check-#{System.unique_integer([:positive])}.js"
+            )
+
+          try do
+            {output, exit_code} =
+              System.cmd(
+                elm_bin,
+                ["make" | entries] ++ ["--report=json", "--output", output_path],
+                cd: project_dir,
+                stderr_to_stdout: true
+              )
+
+            status = if exit_code == 0, do: :ok, else: :error
+
+            diagnostics =
+              status
+              |> parse_elm_diagnostics(output, project_dir)
+              |> Diagnostics.normalize_list()
+
+            {:ok, elm_check_result(status, project_dir, output, diagnostics)}
+          after
+            File.rm(output_path)
+          end
+      end
+    else
+      {:error, reason} ->
+        diagnostics =
+          Diagnostics.normalize_list([
+            %{
+              severity: "error",
+              source: "elm",
+              message: "Could not run Elm check: #{inspect(reason)}",
+              file: nil,
+              line: nil,
+              column: nil
+            }
+          ])
+
+        {:ok, elm_check_result(:error, project_dir, inspect(reason), diagnostics)}
+    end
+  rescue
+    error -> {:error, error}
+  end
+
+  @spec run_editor_parser_check(String.t()) :: {:ok, check_result()} | {:error, term()}
+  defp run_editor_parser_check(project_dir) do
+    diagnostics =
+      project_dir
+      |> elm_source_files_for_check()
+      |> Enum.flat_map(fn path ->
+        with {:ok, source} <- File.read(path) do
+          path
+          |> parser_diagnostics_for_source(source)
+          |> Enum.map(&Map.put(&1, :file, Path.relative_to(path, project_dir)))
+        else
+          {:error, reason} ->
+            [
+              %{
+                severity: "error",
+                source: "elmc/parser",
+                message: "Could not read source file: #{inspect(reason)}",
+                file: Path.relative_to(path, project_dir),
+                line: nil,
+                column: nil
+              }
+            ]
+        end
+      end)
+      |> Diagnostics.normalize_list()
+
+    counts = Diagnostics.summary(diagnostics)
+
+    status = if counts.error_count > 0 or counts.warning_count > 0, do: :error, else: :ok
+
+    {:ok,
+     %{
+       status: status,
+       checked_path: project_dir,
+       output: parser_check_output(status, diagnostics),
+       diagnostics: diagnostics,
+       error_count: counts.error_count,
+       warning_count: counts.warning_count
+     }}
+  rescue
+    error -> {:error, error}
+  end
+
+  @spec elm_source_files_for_check(String.t()) :: [String.t()]
+  defp elm_source_files_for_check(project_dir) do
+    project_dir
+    |> Path.join("**/*.elm")
+    |> Path.wildcard()
+    |> Enum.reject(&String.contains?(&1, "/elm-stuff/"))
+    |> Enum.sort()
+  end
+
+  @spec parser_diagnostics_for_source(String.t(), String.t()) :: [diagnostic()]
+  defp parser_diagnostics_for_source(path, source) do
+    source
+    |> Ide.Tokenizer.tokenize(mode: :compiler)
+    |> Map.get(:diagnostics, [])
+    |> Enum.map(fn diag ->
+      %{
+        severity: "error",
+        source: "elmc/parser",
+        message: Map.get(diag, :message) || Map.get(diag, "message") || inspect(diag),
+        file: path,
+        line: Map.get(diag, :line) || Map.get(diag, "line"),
+        column: Map.get(diag, :column) || Map.get(diag, "column")
+      }
+    end)
+  end
+
+  @spec parser_check_output(:ok | :error, [diagnostic()]) :: String.t()
+  defp parser_check_output(:ok, _diagnostics), do: "parser check: ok"
+
+  defp parser_check_output(:error, diagnostics) do
+    diagnostics
+    |> Enum.map(fn diag ->
+      file = Map.get(diag, :file) || "unknown"
+      line = Map.get(diag, :line) || "?"
+      column = Map.get(diag, :column) || "?"
+      message = Map.get(diag, :message) || ""
+      "#{file}:#{line}:#{column}: #{message}"
+    end)
+    |> Enum.join("\n\n")
   end
 
   @spec run_elmc_compile(String.t(), String.t()) :: {:ok, compile_result()} | {:error, term()}
@@ -447,6 +625,176 @@ defmodule Ide.Compiler do
          |> Enum.map(&warning_to_diagnostic/1))
     end
   end
+
+  @spec elm_check_result(:ok | :error, String.t(), String.t(), [diagnostic()]) :: check_result()
+  defp elm_check_result(status, project_dir, output, diagnostics) do
+    counts = Diagnostics.summary(diagnostics)
+
+    %{
+      status: status,
+      checked_path: project_dir,
+      output: output,
+      diagnostics: diagnostics,
+      error_count: counts.error_count,
+      warning_count: counts.warning_count
+    }
+  end
+
+  @spec read_elm_json(String.t()) :: {:ok, map()} | {:error, term()}
+  defp read_elm_json(project_dir) do
+    project_dir
+    |> Path.join("elm.json")
+    |> File.read()
+    |> case do
+      {:ok, content} -> Jason.decode(content)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec elm_make_entries(String.t(), map()) :: {:ok, [String.t()]} | {:error, term()}
+  defp elm_make_entries(project_dir, _elm_json) when is_binary(project_dir) do
+    preferred_entries =
+      [
+        Path.join([project_dir, "src", "CompanionApp.elm"]),
+        Path.join([project_dir, "src", "Main.elm"])
+      ]
+      |> Enum.filter(&File.exists?/1)
+
+    entries =
+      case preferred_entries do
+        [] -> Path.wildcard(Path.join([project_dir, "src", "**", "*.elm"]))
+        [_ | _] -> preferred_entries
+      end
+      |> Enum.uniq()
+      |> Enum.sort()
+      |> Enum.map(&Path.relative_to(&1, project_dir))
+
+    {:ok, entries}
+  end
+
+  @spec parse_elm_diagnostics(:ok | :error, String.t(), String.t()) :: [diagnostic()]
+  defp parse_elm_diagnostics(:ok, output, _project_dir) do
+    [
+      %{
+        severity: "info",
+        source: "elm",
+        message: String.trim(output) |> empty_fallback("elm make: ok"),
+        file: nil,
+        line: nil,
+        column: nil
+      }
+    ]
+  end
+
+  defp parse_elm_diagnostics(:error, output, project_dir) do
+    case decode_elm_report(output) do
+      {:ok, %{"type" => "compile-errors", "errors" => errors}} when is_list(errors) ->
+        Enum.flat_map(errors, &elm_compile_error_diagnostics(&1, project_dir))
+
+      {:ok, %{} = report} ->
+        [elm_problem_to_diagnostic(report, Map.get(report, "path"), project_dir)]
+
+      _ ->
+        [
+          %{
+            severity: "error",
+            source: "elm",
+            message:
+              String.trim(output) |> empty_fallback("elm make failed without JSON diagnostics."),
+            file: nil,
+            line: nil,
+            column: nil
+          }
+        ]
+    end
+  end
+
+  @spec decode_elm_report(String.t()) :: {:ok, map()} | :error
+  defp decode_elm_report(output) do
+    trimmed = String.trim(output || "")
+
+    with start when is_integer(start) <- :binary.match(trimmed, "{") |> match_index(),
+         stop when is_integer(stop) <- last_match_index(trimmed, "}") do
+      trimmed
+      |> binary_part(start, stop - start + 1)
+      |> Jason.decode()
+      |> case do
+        {:ok, %{} = report} -> {:ok, report}
+        _ -> :error
+      end
+    else
+      _ -> :error
+    end
+  end
+
+  @spec elm_compile_error_diagnostics(map(), String.t()) :: [diagnostic()]
+  defp elm_compile_error_diagnostics(%{"path" => path, "problems" => problems}, project_dir)
+       when is_list(problems) do
+    Enum.map(problems, &elm_problem_to_diagnostic(&1, path, project_dir))
+  end
+
+  defp elm_compile_error_diagnostics(_, _project_dir), do: []
+
+  @spec elm_problem_to_diagnostic(map(), term(), String.t()) :: diagnostic()
+  defp elm_problem_to_diagnostic(problem, path, project_dir) when is_map(problem) do
+    region = Map.get(problem, "region", %{})
+    start = Map.get(region, "start", %{})
+
+    title =
+      problem
+      |> Map.get("title", "Elm compiler error")
+      |> to_string()
+
+    body = elm_message_to_text(Map.get(problem, "message"))
+
+    %{
+      severity: "error",
+      source: "elm",
+      message: [title, body] |> Enum.reject(&(&1 == "")) |> Enum.join("\n\n"),
+      file: normalize_elm_report_path(path, project_dir),
+      line: normalize_json_integer(Map.get(start, "line")),
+      column: normalize_json_integer(Map.get(start, "column"))
+    }
+  end
+
+  @spec normalize_elm_report_path(term(), String.t()) :: String.t() | nil
+  defp normalize_elm_report_path(path, project_dir) when is_binary(path) do
+    if Path.type(path) == :absolute do
+      Path.relative_to(path, project_dir)
+    else
+      path
+    end
+  end
+
+  defp normalize_elm_report_path(_path, _project_dir), do: nil
+
+  @spec elm_message_to_text(term()) :: String.t()
+  defp elm_message_to_text(message) when is_list(message) do
+    message
+    |> Enum.map(&elm_message_to_text/1)
+    |> Enum.join("")
+    |> String.trim()
+  end
+
+  defp elm_message_to_text(%{"string" => string}) when is_binary(string), do: string
+  defp elm_message_to_text(message) when is_binary(message), do: message
+  defp elm_message_to_text(_), do: ""
+
+  @spec match_index(term()) :: integer() | nil
+  defp match_index({index, _length}), do: index
+  defp match_index(:nomatch), do: nil
+
+  @spec last_match_index(String.t(), String.t()) :: integer() | nil
+  defp last_match_index(text, pattern) do
+    text
+    |> :binary.matches(pattern)
+    |> List.last()
+    |> match_index()
+  end
+
+  @spec normalize_json_integer(term()) :: integer() | nil
+  defp normalize_json_integer(value) when is_integer(value), do: value
+  defp normalize_json_integer(_), do: nil
 
   @spec extract_embedded_warnings(term()) :: term()
   defp extract_embedded_warnings(output) when is_binary(output) do

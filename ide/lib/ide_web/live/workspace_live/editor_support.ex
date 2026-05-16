@@ -19,7 +19,6 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
   @min_bracket_fold_span_lines 10
   @protected_editor_rel_paths [
     "src/Main.elm",
-    "src/CompanionApp.elm",
     "src/Companion/Types.elm",
     "src/Companion/GeneratedPreferences.elm",
     "src/Pebble/Ui/Resources.elm"
@@ -135,6 +134,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
   def refresh_tree(socket) do
     socket
     |> assign(:tree, Projects.list_source_tree(socket.assigns.project))
+    |> assign(:companion_app_present, Projects.companion_app_present?(socket.assigns.project))
     |> refresh_editor_dependencies()
   end
 
@@ -162,10 +162,27 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
         |> assign_dependency_lists(
           EditorDependencies.read_dependency_lists(project, packages_root)
         )
-        |> assign(:editor_deps_refresh_token, token)
-        |> start_async(:refresh_editor_dependencies, fn ->
-          {EditorDependencies.build_payload(project, packages_root, doc_root), token}
-        end)
+        |> maybe_start_editor_dependencies_refresh(project, packages_root, doc_root, token)
+    end
+  end
+
+  @spec maybe_start_editor_dependencies_refresh(term(), map(), String.t(), String.t(), integer()) ::
+          term()
+  defp maybe_start_editor_dependencies_refresh(socket, project, packages_root, doc_root, token) do
+    if connected?(socket) do
+      socket
+      |> assign(:editor_deps_usage_refresh_token, token)
+      |> assign(:editor_deps_docs_refresh_token, token)
+      |> start_async(:refresh_editor_dependency_usage, fn ->
+        {EditorDependencies.build_dependency_payload(project, packages_root), token}
+      end)
+      |> start_async(:refresh_editor_dependencies, fn ->
+        {EditorDependencies.build_docs_payload(project, doc_root), token}
+      end)
+    else
+      socket
+      |> assign(:editor_deps_usage_refresh_token, nil)
+      |> assign(:editor_deps_docs_refresh_token, nil)
     end
   end
 
@@ -811,7 +828,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     if max_line < 1 do
       nil
     else
-      max_line..1
+      Range.new(max_line, 1, -1)
       |> Enum.find(fn line_no ->
         line = Enum.at(lines, line_no - 1, "")
         String.trim(line) != ""

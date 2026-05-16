@@ -10,16 +10,34 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
   def bitmap_upload_output([]), do: "No file uploaded."
 
   def bitmap_upload_output(results) when is_list(results) do
-    ok_count = Enum.count(results, &is_map/1)
-    "Uploaded #{ok_count} bitmap#{if ok_count == 1, do: "", else: "s"}."
+    upload_summary(results, "bitmap", "bitmaps")
   end
 
   @spec font_upload_output(term()) :: term()
   def font_upload_output([]), do: "No file uploaded."
 
   def font_upload_output(results) when is_list(results) do
-    ok_count = Enum.count(results, &is_map/1)
-    "Uploaded #{ok_count} source font#{if ok_count == 1, do: "", else: "s"}."
+    upload_summary(results, "source font", "source fonts")
+  end
+
+  defp upload_summary(results, singular, plural) do
+    uploaded =
+      Enum.count(
+        results,
+        &(is_map(&1) and not Map.get(&1, :duplicate) and not Map.has_key?(&1, :error))
+      )
+
+    duplicates = Enum.count(results, &(is_map(&1) and Map.get(&1, :duplicate)))
+    failed = Enum.count(results, &(is_map(&1) and Map.has_key?(&1, :error)))
+
+    [
+      "Uploaded #{uploaded} #{if uploaded == 1, do: singular, else: plural}.",
+      duplicates > 0 &&
+        "Skipped #{duplicates} duplicate #{if duplicates == 1, do: singular, else: plural}.",
+      failed > 0 && "#{failed} failed."
+    ]
+    |> Enum.reject(&(&1 in [false, nil]))
+    |> Enum.join(" ")
   end
 
   @spec load_font_sources(term()) :: term()

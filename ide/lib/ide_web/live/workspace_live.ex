@@ -3,6 +3,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   alias Ide.Formatter
   alias Ide.Formatter.EditPatch
+  alias Ide.Compiler
   alias Ide.GitHub.Push, as: GitHubPush
   alias Ide.Emulator
   alias Ide.PebblePreferences
@@ -84,7 +85,8 @@ defmodule IdeWeb.WorkspaceLive do
           selected_emulator_target: selected_emulator_target,
           emulator_mode: emulator_mode,
           packages_target_root: preferred_packages_target_root(socket, project),
-          debugger_timeline_mode: project_debugger_timeline_mode(project)
+          debugger_timeline_mode: project_debugger_timeline_mode(project),
+          companion_app_present: Projects.companion_app_present?(project)
         }
 
         {:noreply,
@@ -93,7 +95,7 @@ defmodule IdeWeb.WorkspaceLive do
          |> maybe_initialize_forms(project)
          |> maybe_open_editor_default_file(project, previous_pane)
          |> refresh_editor_dependencies()
-         |> DebuggerSupport.refresh()
+         |> maybe_refresh_debugger()
          |> maybe_check_emulator_installation()
          |> maybe_schedule_debugger_auto_fire_refresh()}
     end
@@ -106,10 +108,12 @@ defmodule IdeWeb.WorkspaceLive do
     existing_tab = Enum.find(socket.assigns.tabs, &(&1.id == tab_id))
 
     if existing_tab do
+      existing_tab = refresh_tab_read_only(existing_tab)
       selected_state = existing_tab.editor_state || %{}
 
       {:noreply,
        socket
+       |> update_tab_by_id(tab_id, fn _tab -> existing_tab end)
        |> assign(:active_tab_id, tab_id)
        |> assign(:opening_file_id, nil)
        |> assign(:opening_file_label, nil)
@@ -158,7 +162,8 @@ defmodule IdeWeb.WorkspaceLive do
     project = socket.assigns.project
     rel_path = normalize_editor_src_rel_path(rel_path)
 
-    with {:ok, module_name} <- module_name_from_rel_path(rel_path),
+    with :ok <- validate_creatable_source_root(project, source_root),
+         {:ok, module_name} <- module_name_from_rel_path(rel_path),
          :ok <- validate_new_elm_module_name(module_name),
          :ok <-
            Projects.write_source_file(
@@ -186,6 +191,9 @@ defmodule IdeWeb.WorkspaceLive do
            :error,
            "Elm module names must use slash-separated segments that each start with a capital letter."
          )}
+
+      {:error, :invalid_source_root} ->
+        {:noreply, put_flash(socket, :error, "Please choose an editable source root.")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not create file: #{inspect(reason)}")}
@@ -232,7 +240,7 @@ defmodule IdeWeb.WorkspaceLive do
          put_flash(
            socket,
            :error,
-           "Main.elm, CompanionApp.elm, Companion/Types.elm, and Pebble/Ui/Resources.elm cannot be renamed."
+           "Main.elm, Companion/Types.elm, and Pebble/Ui/Resources.elm cannot be renamed."
          )}
 
       {:error, reason} ->
@@ -279,13 +287,18 @@ defmodule IdeWeb.WorkspaceLive do
              put_flash(
                socket,
                :error,
-               "Main.elm, CompanionApp.elm, Companion/Types.elm, and Pebble/Ui/Resources.elm cannot be deleted."
+               "Main.elm, Companion/Types.elm, and Pebble/Ui/Resources.elm cannot be deleted."
              )}
         end
     end
   end
 
   def handle_event("select-tab", %{"id" => id}, socket) do
+    socket =
+      update_tab_by_id(socket, id, fn tab ->
+        refresh_tab_read_only(tab)
+      end)
+
     selected_tab = Enum.find(socket.assigns.tabs, &(&1.id == id))
     selected_state = (selected_tab && selected_tab.editor_state) || %{}
 
@@ -323,13 +336,19 @@ defmodule IdeWeb.WorkspaceLive do
     active = active_tab(socket)
     active_rel_path = active && active.rel_path
 
-    if read_only_tab?(active) do
-      {:noreply, socket}
-    else
-      {:noreply,
-       socket
-       |> update_tab(fn tab -> %{tab | content: content, dirty: true} end)
-       |> assign_tokenization(content, active_rel_path)}
+    cond do
+      read_only_tab?(active) ->
+        {:noreply, socket}
+
+      active && active.content == content ->
+        {:noreply, socket}
+
+      true ->
+        {:noreply,
+         socket
+         |> update_tab(fn tab -> %{tab | content: content, dirty: true} end)
+         |> assign_tokenization(content, active_rel_path)
+         |> clear_editor_check(active)}
     end
   end
 
@@ -337,13 +356,19 @@ defmodule IdeWeb.WorkspaceLive do
     active = active_tab(socket)
     active_rel_path = active && active.rel_path
 
-    if read_only_tab?(active) do
-      {:noreply, socket}
-    else
-      {:noreply,
-       socket
-       |> update_tab(fn tab -> %{tab | content: content, dirty: true} end)
-       |> assign_tokenization(content, active_rel_path)}
+    cond do
+      read_only_tab?(active) ->
+        {:noreply, socket}
+
+      active && active.content == content ->
+        {:noreply, socket}
+
+      true ->
+        {:noreply,
+         socket
+         |> update_tab(fn tab -> %{tab | content: content, dirty: true} end)
+         |> assign_tokenization(content, active_rel_path)
+         |> clear_editor_check(active)}
     end
   end
 
@@ -377,6 +402,7 @@ defmodule IdeWeb.WorkspaceLive do
        socket
        |> update_tab(fn tab -> %{tab | content: next_content, dirty: true} end)
        |> assign_tokenization(next_content, active_rel_path)
+       |> clear_editor_check(active)
        |> push_event("token-editor-apply-edit", edit_result)}
     else
       {:noreply, socket}
@@ -424,17 +450,21 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
+  def handle_event("editor-submit", %{"editor_action" => "format"} = params, socket) do
+    handle_event("format-file", params, socket)
+  end
+
+  def handle_event("editor-submit", params, socket) do
+    handle_event("save-file", params, socket)
+  end
+
   def handle_event("format-file", params, socket) do
     case active_tab(socket) do
       nil ->
         {:noreply, put_flash(socket, :error, "No active file to format.")}
 
       tab ->
-        tab =
-          case params do
-            %{"content" => content} when is_binary(content) -> %{tab | content: content}
-            _ -> tab
-          end
+        tab = tab_with_save_content(tab, params)
 
         if read_only_tab?(tab) do
           {:noreply, put_flash(socket, :error, "Generated files are read-only.")}
@@ -477,7 +507,7 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  def handle_event("save-file", _params, socket) do
+  def handle_event("save-file", params, socket) do
     case active_tab(socket) do
       nil ->
         {:noreply, put_flash(socket, :error, "No active file to save.")}
@@ -486,6 +516,8 @@ defmodule IdeWeb.WorkspaceLive do
         if read_only_tab?(tab) do
           {:noreply, put_flash(socket, :error, "Generated files are read-only.")}
         else
+          tab = tab_with_save_content(tab, params)
+
           {content_to_save, flash_message, format_output, auto_format_last_result} =
             prepare_content_for_save(
               socket.assigns.project,
@@ -527,6 +559,8 @@ defmodule IdeWeb.WorkspaceLive do
                 else
                   socket
                 end
+
+              socket = schedule_editor_check(socket, tab)
 
               {:noreply, put_flash(socket, :info, flash_message)}
 
@@ -764,13 +798,14 @@ defmodule IdeWeb.WorkspaceLive do
 
         {:noreply,
          socket
+         |> assign(:project, Map.get(result, :project, project))
          |> assign(:packages_last_add_result, result)
          |> refresh_tree()
          |> PackagesFlow.refresh_preview()
          |> put_flash(:info, message)}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not add package: #{inspect(reason)}")}
+        {:noreply, put_flash(socket, :error, package_add_error(reason))}
     end
   end
 
@@ -798,6 +833,15 @@ defmodule IdeWeb.WorkspaceLive do
            "Required packages (e.g. elm/core, elm/json, elm/time, Pebble) cannot be removed."
          )}
 
+      {:error, {:package_in_use, package}} ->
+        {:noreply,
+         socket
+         |> mark_dependency_used(package)
+         |> put_flash(
+           :error,
+           "#{package} is imported by current Elm source files. Remove those imports before removing the package."
+         )}
+
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not remove package: #{inspect(reason)}")}
     end
@@ -822,14 +866,16 @@ defmodule IdeWeb.WorkspaceLive do
 
   def handle_event("open-create-file-modal", _params, socket) do
     project = socket.assigns.project
+    source_roots = creatable_source_roots(project)
 
     {:noreply,
      socket
      |> assign(:create_file_modal_open, true)
+     |> assign(:create_file_source_roots, source_roots)
      |> assign(
        :new_file_form,
        to_form(
-         %{"source_root" => List.first(project.source_roots) || "watch", "rel_path" => ""},
+         %{"source_root" => List.first(source_roots) || "watch", "rel_path" => ""},
          as: :new_file
        )
      )}
@@ -837,6 +883,22 @@ defmodule IdeWeb.WorkspaceLive do
 
   def handle_event("close-create-file-modal", _params, socket) do
     {:noreply, assign(socket, :create_file_modal_open, false)}
+  end
+
+  def handle_event("add-companion-app", _params, socket) do
+    project = socket.assigns.project
+
+    case Projects.add_companion_app(project) do
+      :ok ->
+        {:noreply,
+         socket
+         |> assign(:companion_app_present, true)
+         |> put_flash(:info, "Added companion app and protocol files.")
+         |> refresh_tree()}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not add companion app: #{inspect(reason)}")}
+    end
   end
 
   def handle_event("open-rename-file-modal", _params, socket) do
@@ -863,7 +925,7 @@ defmodule IdeWeb.WorkspaceLive do
              put_flash(
                socket,
                :error,
-               "Main.elm, CompanionApp.elm, Companion/Types.elm, and Pebble/Ui/Resources.elm cannot be renamed."
+               "Main.elm, Companion/Types.elm, and Pebble/Ui/Resources.elm cannot be renamed."
              )}
         end
     end
@@ -2002,6 +2064,31 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
+  defp update_tab_by_id(socket, tab_id, updater)
+       when is_binary(tab_id) and is_function(updater, 1) do
+    tabs =
+      Enum.map(socket.assigns.tabs, fn tab ->
+        if tab.id == tab_id do
+          updater.(tab)
+        else
+          tab
+        end
+      end)
+
+    assign(socket, :tabs, tabs)
+  end
+
+  defp refresh_tab_read_only(%{source_root: source_root, rel_path: rel_path} = tab)
+       when is_binary(source_root) and is_binary(rel_path) do
+    %{
+      tab
+      | read_only:
+          tab[:read_only] || ResourceStore.read_only_generated_module?(source_root, rel_path)
+    }
+  end
+
+  defp refresh_tab_read_only(tab), do: tab
+
   @impl true
   @spec handle_async(term(), term(), term()) :: term()
   def handle_async(:run_check, result, socket),
@@ -2062,22 +2149,30 @@ defmodule IdeWeb.WorkspaceLive do
      |> put_flash(:error, "Failed to open file: #{inspect(reason)}")}
   end
 
+  def handle_async(:refresh_editor_dependency_usage, {:ok, {payload, token}}, socket) do
+    if socket.assigns[:editor_deps_usage_refresh_token] == token and
+         Map.get(payload, :dependencies_available?, true) do
+      {:noreply,
+       socket
+       |> assign(:editor_deps_usage_refresh_token, nil)
+       |> assign(:project_elm_direct, payload.direct)
+       |> assign(:project_elm_indirect, payload.indirect)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_async(:refresh_editor_dependency_usage, {:exit, _reason}, socket) do
+    {:noreply, socket}
+  end
+
   def handle_async(:refresh_editor_dependencies, {:ok, {payload, token}}, socket) do
-    if socket.assigns.editor_deps_refresh_token == token do
+    if socket.assigns[:editor_deps_docs_refresh_token] == token do
       socket =
         socket
-        |> assign(:editor_deps_refresh_token, nil)
+        |> assign(:editor_deps_docs_refresh_token, nil)
         |> assign(:package_doc_index, payload.package_doc_index)
         |> apply_doc_catalog_rows(payload.editor_doc_packages)
-
-      socket =
-        if Map.get(payload, :dependencies_available?, true) do
-          socket
-          |> assign(:project_elm_direct, payload.direct)
-          |> assign(:project_elm_indirect, payload.indirect)
-        else
-          socket
-        end
 
       {:noreply, socket}
     else
@@ -2087,6 +2182,67 @@ defmodule IdeWeb.WorkspaceLive do
 
   def handle_async(:refresh_editor_dependencies, {:exit, _reason}, socket) do
     {:noreply, socket}
+  end
+
+  def handle_async(:editor_check, {:ok, {{:ok, result}, token, source_root, rel_path}}, socket) do
+    if socket.assigns.editor_check_token == token do
+      {:noreply,
+       socket
+       |> assign(:editor_check_status, result.status)
+       |> assign(:editor_check_token, nil)
+       |> assign(:editor_check_source_root, source_root)
+       |> assign(:editor_check_rel_path, rel_path)
+       |> assign(:editor_check_diagnostics, result.diagnostics || [])
+       |> assign(:editor_check_output, result.output)
+       |> push_editor_check_lint_diagnostics(source_root, rel_path, result.diagnostics || [])}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_async(:editor_check, {:ok, {{:error, reason}, token, source_root, rel_path}}, socket) do
+    if socket.assigns.editor_check_token == token do
+      diagnostics = [
+        %{
+          severity: "error",
+          source: "editor-check",
+          message: "Could not check saved file: #{inspect(reason)}",
+          file: nil,
+          line: nil,
+          column: nil
+        }
+      ]
+
+      {:noreply,
+       socket
+       |> assign(:editor_check_status, :error)
+       |> assign(:editor_check_token, nil)
+       |> assign(:editor_check_source_root, source_root)
+       |> assign(:editor_check_rel_path, rel_path)
+       |> assign(:editor_check_diagnostics, diagnostics)
+       |> assign(:editor_check_output, inspect(reason))
+       |> push_editor_check_lint_diagnostics(source_root, rel_path, diagnostics)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_async(:editor_check, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:editor_check_status, :error)
+     |> assign(:editor_check_token, nil)
+     |> assign(:editor_check_diagnostics, [
+       %{
+         severity: "error",
+         source: "editor-check",
+         message: "Editor check task exited: #{inspect(reason)}",
+         file: nil,
+         line: nil,
+         column: nil
+       }
+     ])
+     |> assign(:editor_check_output, inspect(reason))}
   end
 
   def handle_async(:run_build, result, socket),
@@ -2822,7 +2978,7 @@ defmodule IdeWeb.WorkspaceLive do
     ~H"""
     <div
       id="workspace-live-root"
-      class="flex h-[calc(100vh-4rem)] w-full max-w-none flex-col p-4"
+      class="flex h-screen w-full max-w-none flex-col p-4"
       phx-hook="DebuggerShortcuts"
       data-pane={Atom.to_string(@pane)}
     >
@@ -2931,6 +3087,45 @@ defmodule IdeWeb.WorkspaceLive do
   defdelegate restore_editor_state(socket, state), to: EditorSupport
   defdelegate focus_diagnostic(socket, direction), to: EditorSupport
   defdelegate elm_source_file?(rel_path), to: EditorSupport
+  defdelegate push_editor_lint_diagnostics(socket, diagnostics), to: EditorSupport
+
+  @spec tab_with_save_content(map(), map()) :: map()
+  defp tab_with_save_content(tab, %{"content" => content}) when is_binary(content) do
+    %{tab | content: content}
+  end
+
+  defp tab_with_save_content(tab, %{"editor" => %{"content" => content}})
+       when is_binary(content) do
+    %{tab | content: content}
+  end
+
+  defp tab_with_save_content(tab, _params), do: tab
+
+  @spec creatable_source_roots(Project.t() | nil) :: [String.t()]
+  defp creatable_source_roots(%Project{} = project) do
+    workspace_root = Projects.project_workspace_path(project)
+
+    project.source_roots
+    |> List.wrap()
+    |> Enum.reject(&(&1 == "protocol"))
+    |> Enum.filter(fn source_root ->
+      File.exists?(Path.join([workspace_root, source_root, "elm.json"]))
+    end)
+    |> case do
+      [] -> ["watch"]
+      roots -> roots
+    end
+  end
+
+  defp creatable_source_roots(_project), do: ["watch"]
+
+  @spec validate_creatable_source_root(Project.t() | nil, term()) ::
+          :ok | {:error, :invalid_source_root}
+  defp validate_creatable_source_root(project, source_root) do
+    if source_root in creatable_source_roots(project),
+      do: :ok,
+      else: {:error, :invalid_source_root}
+  end
 
   defdelegate format_source(project, tab, formatter_backend, parser_payload, tokens),
     to: EditorSupport
@@ -2954,6 +3149,37 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp debugger_import_error(:slug_mismatch),
     do: "Trace import failed: project_slug in JSON does not match this project."
+
+  @spec package_add_error(term()) :: String.t()
+  defp package_add_error({:package_not_supported_for_phone, package}) do
+    "Could not add #{package}: this package is not supported for the companion phone elm.json."
+  end
+
+  defp package_add_error(reason), do: "Could not add package: #{inspect(reason)}"
+
+  @spec mark_dependency_used(term(), String.t()) :: term()
+  defp mark_dependency_used(socket, package) when is_binary(package) do
+    socket
+    |> assign(
+      :project_elm_direct,
+      mark_dependency_rows_used(socket.assigns[:project_elm_direct], package)
+    )
+    |> assign(
+      :project_elm_indirect,
+      mark_dependency_rows_used(socket.assigns[:project_elm_indirect], package)
+    )
+  end
+
+  @spec mark_dependency_rows_used(term(), String.t()) :: [map()]
+  defp mark_dependency_rows_used(rows, package) when is_list(rows) and is_binary(package) do
+    Enum.map(rows, fn
+      %{name: ^package} = row -> Map.put(row, :used?, true)
+      %{"name" => ^package} = row -> Map.put(row, :used?, true)
+      row -> row
+    end)
+  end
+
+  defp mark_dependency_rows_used(_rows, _package), do: []
 
   @spec pane_class(term(), term()) :: term()
   defp pane_class(active, pane) when active == pane,
@@ -3130,6 +3356,89 @@ defmodule IdeWeb.WorkspaceLive do
 
   defdelegate schedule_compiler_check(socket), to: BuildFlow
   defdelegate warm_debugger_compile_context(socket, project), to: BuildFlow
+
+  @spec maybe_refresh_debugger(term()) :: term()
+  defp maybe_refresh_debugger(socket) do
+    if socket.assigns[:pane] == :debugger do
+      DebuggerSupport.refresh(socket)
+    else
+      socket
+    end
+  end
+
+  @spec schedule_editor_check(Phoenix.LiveView.Socket.t(), map()) :: Phoenix.LiveView.Socket.t()
+  defp schedule_editor_check(socket, %{source_root: source_root, rel_path: rel_path}) do
+    case socket.assigns[:project] do
+      nil ->
+        socket
+
+      project ->
+        token = System.unique_integer([:positive])
+        workspace_root = Projects.project_workspace_path(project)
+
+        socket
+        |> assign(:editor_check_status, :running)
+        |> assign(:editor_check_token, token)
+        |> assign(:editor_check_source_root, source_root)
+        |> assign(:editor_check_rel_path, rel_path)
+        |> assign(:editor_check_diagnostics, [])
+        |> assign(:editor_check_output, nil)
+        |> start_async(:editor_check, fn ->
+          result =
+            Compiler.check_source_root("#{project.slug}:editor:#{source_root}",
+              workspace_root: workspace_root,
+              source_root: source_root
+            )
+
+          {result, token, source_root, rel_path}
+        end)
+    end
+  end
+
+  @spec clear_editor_check(Phoenix.LiveView.Socket.t(), map() | nil) ::
+          Phoenix.LiveView.Socket.t()
+  defp clear_editor_check(socket, %{source_root: source_root, rel_path: rel_path}) do
+    if socket.assigns[:editor_check_source_root] == source_root and
+         socket.assigns[:editor_check_rel_path] == rel_path do
+      socket
+      |> assign(:editor_check_status, :idle)
+      |> assign(:editor_check_token, nil)
+      |> assign(:editor_check_diagnostics, [])
+      |> assign(:editor_check_output, nil)
+    else
+      socket
+    end
+  end
+
+  defp clear_editor_check(socket, _tab), do: socket
+
+  @spec push_editor_check_lint_diagnostics(
+          Phoenix.LiveView.Socket.t(),
+          String.t(),
+          String.t(),
+          [map()]
+        ) :: Phoenix.LiveView.Socket.t()
+  defp push_editor_check_lint_diagnostics(socket, source_root, rel_path, diagnostics) do
+    case active_tab(socket) do
+      %{source_root: ^source_root, rel_path: ^rel_path} ->
+        diagnostics
+        |> Enum.filter(&editor_check_diagnostic_matches_rel_path?(&1, rel_path))
+        |> then(&push_editor_lint_diagnostics(socket, &1))
+
+      _ ->
+        socket
+    end
+  end
+
+  @spec editor_check_diagnostic_matches_rel_path?(map(), String.t()) :: boolean()
+  defp editor_check_diagnostic_matches_rel_path?(diag, rel_path)
+       when is_map(diag) and is_binary(rel_path) do
+    case Map.get(diag, :file) || Map.get(diag, "file") do
+      nil -> true
+      ^rel_path -> true
+      _other -> false
+    end
+  end
 
   defdelegate run_emulator_install_flow(project, workspace_root, emulator_target, package_path),
     to: BuildFlow
