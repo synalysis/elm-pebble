@@ -12,7 +12,8 @@ defmodule Ide.Screenshots do
           emulator_target: String.t(),
           url: String.t(),
           absolute_path: String.t(),
-          captured_at: String.t()
+          captured_at: String.t(),
+          mime_type: String.t()
         }
   @type capture_result :: %{
           screenshot: screenshot(),
@@ -51,17 +52,20 @@ defmodule Ide.Screenshots do
       filename = "shot-#{timestamp()}.png"
       absolute_path = Path.join(target_dir, filename)
 
-      case PebbleToolchain.run_screenshot(project_slug, absolute_path, emulator_target) do
-        {:ok, result} ->
-          {:ok,
-           %{
-             screenshot: build_entry(project_slug, emulator_target, absolute_path),
-             output: result.output,
-             exit_code: result.exit_code,
-             command: result.command,
-             cwd: result.cwd
-           }}
+      with {:ok, result} <-
+             PebbleToolchain.run_screenshot(project_slug, absolute_path, emulator_target),
+           :ok <- write_metadata(absolute_path, "image/png") do
+        entry = build_entry(project_slug, emulator_target, absolute_path)
 
+        {:ok,
+         %{
+           screenshot: entry,
+           output: result.output,
+           exit_code: result.exit_code,
+           command: result.command,
+           cwd: result.cwd
+         }}
+      else
         {:error, reason} ->
           {:error, reason}
       end
@@ -81,8 +85,10 @@ defmodule Ide.Screenshots do
 
       absolute_path = Path.join(target_dir, "shot-#{timestamp()}.png")
 
-      case File.write(absolute_path, png) do
-        :ok -> {:ok, build_entry(project_slug, emulator_target, absolute_path)}
+      with :ok <- File.write(absolute_path, png),
+           :ok <- write_metadata(absolute_path, "image/png") do
+        {:ok, build_entry(project_slug, emulator_target, absolute_path)}
+      else
         {:error, reason} -> {:error, {:write_failed, reason}}
       end
     else
@@ -202,9 +208,15 @@ defmodule Ide.Screenshots do
       path = Path.join([root, project_slug, emulator_target, filename])
 
       case File.rm(path) do
-        :ok -> :ok
-        {:error, :enoent} -> {:error, :not_found}
-        {:error, reason} -> {:error, {:delete_failed, reason}}
+        :ok ->
+          _ = File.rm(metadata_path(path))
+          :ok
+
+        {:error, :enoent} ->
+          {:error, :not_found}
+
+        {:error, reason} ->
+          {:error, {:delete_failed, reason}}
       end
     end
   end
@@ -309,14 +321,54 @@ defmodule Ide.Screenshots do
   @spec build_entry(term(), term(), term()) :: term()
   defp build_entry(project_slug, emulator_target, absolute_path) do
     filename = Path.basename(absolute_path)
+    metadata = read_metadata(absolute_path)
 
     %{
       filename: filename,
       emulator_target: emulator_target,
       absolute_path: absolute_path,
       url: public_url(project_slug, emulator_target, filename),
+      captured_at: Map.get(metadata, "captured_at") || format_mtime(absolute_path),
+      mime_type: Map.get(metadata, "mime_type") || mime_type_from_filename(filename)
+    }
+  end
+
+  @spec write_metadata(String.t(), String.t()) :: :ok | {:error, term()}
+  defp write_metadata(absolute_path, mime_type) when is_binary(absolute_path) do
+    metadata = %{
+      schema_version: 1,
+      mime_type: mime_type,
       captured_at: format_mtime(absolute_path)
     }
+
+    case Jason.encode(metadata) do
+      {:ok, json} -> File.write(metadata_path(absolute_path), json)
+      {:error, reason} -> {:error, {:metadata_encode_failed, reason}}
+    end
+  end
+
+  @spec read_metadata(String.t()) :: map()
+  defp read_metadata(absolute_path) do
+    with {:ok, json} <- File.read(metadata_path(absolute_path)),
+         {:ok, metadata} when is_map(metadata) <- Jason.decode(json) do
+      metadata
+    else
+      _ -> %{}
+    end
+  end
+
+  @spec metadata_path(String.t()) :: String.t()
+  defp metadata_path(absolute_path), do: absolute_path <> ".json"
+
+  @spec mime_type_from_filename(String.t()) :: String.t()
+  defp mime_type_from_filename(filename) when is_binary(filename) do
+    case filename |> Path.extname() |> String.downcase() do
+      ".jpg" -> "image/jpeg"
+      ".jpeg" -> "image/jpeg"
+      ".gif" -> "image/gif"
+      ".webp" -> "image/webp"
+      _ -> "image/png"
+    end
   end
 
   @spec storage_root() :: term()

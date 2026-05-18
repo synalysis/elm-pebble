@@ -398,6 +398,64 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute native_bool_maybe_body =~ "elmc_release(#{maybe_result_var});"
   end
 
+  test "boxed Int variables in equality are not coerced to Bool" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/boxed_int_equality_project", __DIR__)
+    out_dir = Path.expand("tmp/boxed_int_equality_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> boxed_int_equality_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    refute generated_c =~ "elmc_as_bool(i) == elmc_as_bool(index)"
+    assert generated_c =~ "elmc_value_equal"
+  end
+
+  test "integer lets are not promoted to Float in Int arithmetic" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/integer_let_arithmetic_project", __DIR__)
+    out_dir = Path.expand("tmp/integer_let_arithmetic_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> integer_let_arithmetic_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_integerLetArithmetic")
+      |> List.last()
+
+    [integer_let_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+
+    refute integer_let_body =~ "native_float_headerBottom"
+    refute integer_let_body =~ "elmc_new_float"
+    assert integer_let_body =~ "height - elmc_as_int(tmp_"
+  end
+
   test "min over record Int fields lowers to native C comparison" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/native_min_record_fields_project", __DIR__)
@@ -2209,6 +2267,45 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
         else
             Just 25
+    """
+  end
+
+  defp boxed_int_equality_source do
+    """
+
+
+    replaceAt : Int -> Int -> List Int -> List Int
+    replaceAt index newValue cells =
+        List.indexedMap
+            (\\i value ->
+                if i == index then
+                    newValue
+
+                else
+                    value
+            )
+            cells
+    """
+  end
+
+  defp integer_let_arithmetic_source do
+    """
+
+
+    integerLetArithmetic : Int -> Int -> Int
+    integerLetArithmetic width height =
+        let
+            headerBottom =
+                if height <= 144 then
+                    32
+
+                else
+                    36
+
+            target =
+                2 * (height - headerBottom) - width
+        in
+        target
     """
   end
 

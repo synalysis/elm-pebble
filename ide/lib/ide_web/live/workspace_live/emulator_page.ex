@@ -96,6 +96,14 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             >
               Companion preferences
             </button>
+            <button
+              type="button"
+              data-emulator-screenshot
+              disabled
+              class="rounded bg-white px-3 py-2 text-xs font-semibold text-zinc-800 ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Save screenshot
+            </button>
           </div>
         </div>
         <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(320px,1fr)_18rem]">
@@ -175,13 +183,6 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
                   class="rounded bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 shadow-sm hover:bg-zinc-200"
                 >
                   Tap
-                </button>
-                <button
-                  type="button"
-                  data-emulator-screenshot
-                  class="rounded bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 shadow-sm hover:bg-zinc-200"
-                >
-                  Canvas screenshot
                 </button>
               </div>
             </div>
@@ -309,17 +310,28 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <.button phx-click="run-emulator-install" disabled={@pebble_install_status == :running}>
-              {if @pebble_install_status == :running,
-                do: "Launching...",
-                else: "Launch / Install PBW"}
+            <.button
+              phx-click="toggle-external-emulator"
+              disabled={@pebble_install_status == :running or @emulator_stop_status == :running}
+            >
+              {external_emulator_toggle_label(
+                @external_emulator_running,
+                @pebble_install_status,
+                @emulator_stop_status
+              )}
             </.button>
             <.button
-              phx-click="stop-emulator"
-              disabled={@emulator_stop_status == :running}
-              class="!bg-zinc-200 !text-zinc-800 hover:!bg-zinc-300"
+              phx-click="capture-screenshot"
+              disabled={
+                screenshot_button_disabled?(
+                  @emulator_mode,
+                  @external_emulator_running,
+                  @screenshot_status
+                )
+              }
+              class="!bg-white !text-zinc-800 ring-1 ring-zinc-200 hover:!bg-zinc-50"
             >
-              {if @emulator_stop_status == :running, do: "Stopping...", else: "Stop"}
+              {screenshot_button_label(@screenshot_status)}
             </.button>
           </div>
         </div>
@@ -600,10 +612,17 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
       <div class="mt-6 border-t border-zinc-200 pt-4">
         <h3 class="text-sm font-semibold">Screenshots</h3>
         <div class="mt-2 flex items-center gap-2">
-          <.button phx-click="capture-screenshot" disabled={@screenshot_status == :running}>
-            {if @screenshot_status == :running,
-              do: "Capturing screenshot...",
-              else: "Capture screenshot"}
+          <.button
+            phx-click="capture-screenshot"
+            disabled={
+              screenshot_button_disabled?(
+                @emulator_mode,
+                @external_emulator_running,
+                @screenshot_status
+              )
+            }
+          >
+            {screenshot_button_label(@screenshot_status)}
           </.button>
           <span class="text-xs text-zinc-600">
             Status: {check_status_label(@screenshot_status)}
@@ -685,7 +704,14 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
                 </a>
                 <p class="mt-2 truncate font-mono">{shot.filename}</p>
                 <p class="text-zinc-600">{shot.captured_at}</p>
-                <div class="mt-2 flex justify-end">
+                <div class="mt-2 flex justify-end gap-2">
+                  <a
+                    href={shot.url}
+                    download={shot.filename}
+                    class="rounded bg-white px-2 py-1 text-[11px] font-medium text-zinc-800 ring-1 ring-zinc-200 hover:bg-zinc-50"
+                  >
+                    Download
+                  </a>
                   <button
                     type="button"
                     phx-click="delete-screenshot"
@@ -710,6 +736,20 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   defp check_status_label(:running), do: "running"
   defp check_status_label(:ok), do: "ok"
   defp check_status_label(:error), do: "error"
+
+  defp screenshot_button_label(:running), do: "Saving screenshot..."
+  defp screenshot_button_label(_status), do: "Save screenshot"
+
+  defp screenshot_button_disabled?(_mode, _external_running?, :running), do: true
+  defp screenshot_button_disabled?("external", true, _status), do: false
+  defp screenshot_button_disabled?(_mode, _external_running?, _status), do: true
+
+  defp external_emulator_toggle_label(_running?, :running, _stop_status), do: "Launching..."
+  defp external_emulator_toggle_label(_running?, _install_status, :running), do: "Stopping..."
+  defp external_emulator_toggle_label(true, _install_status, _stop_status), do: "Stop"
+
+  defp external_emulator_toggle_label(_running?, _install_status, _stop_status),
+    do: "Launch / Install PBW"
 
   @spec emulator_installation_summary(term()) :: String.t()
   defp emulator_installation_summary(%{status: :checking, platform: platform}),

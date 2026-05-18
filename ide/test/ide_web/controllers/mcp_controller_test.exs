@@ -19,6 +19,29 @@ defmodule IdeWeb.McpControllerTest do
     :ok
   end
 
+  test "GET /api/mcp reports POST-only HTTP transport", %{conn: conn} do
+    conn =
+      conn
+      |> put_req_header("accept", "application/json")
+      |> get(~p"/api/mcp")
+
+    body = json_response(conn, 405)
+    assert get_resp_header(conn, "allow") == ["POST"]
+    assert body["transport"] == "http"
+    assert body["methods"] == ["POST"]
+  end
+
+  test "GET /api/mcp tolerates event-stream probes", %{conn: conn} do
+    conn =
+      conn
+      |> put_req_header("accept", "text/event-stream")
+      |> get(~p"/api/mcp")
+
+    body = json_response(conn, 405)
+    assert get_resp_header(conn, "allow") == ["POST"]
+    assert body["methods"] == ["POST"]
+  end
+
   test "POST /api/mcp handles initialize over HTTP", %{conn: conn} do
     conn =
       conn
@@ -50,7 +73,7 @@ defmodule IdeWeb.McpControllerTest do
 
     assert initialize["id"] == 1
     assert tools_list["id"] == 2
-    assert Enum.any?(tools_list["result"]["tools"], &(&1["name"] == "projects.list"))
+    assert Enum.any?(tools_list["result"]["tools"], &(&1["name"] == "projects_list"))
   end
 
   test "capability query parameter cannot escalate beyond configured HTTP scope", %{conn: conn} do
@@ -68,9 +91,9 @@ defmodule IdeWeb.McpControllerTest do
       |> get_in(["result", "tools"])
       |> Enum.map(& &1["name"])
 
-    assert "projects.list" in tool_names
-    refute "files.write" in tool_names
-    refute "compiler.compile" in tool_names
+    assert "projects_list" in tool_names
+    refute "files_write" in tool_names
+    refute "compiler_compile" in tool_names
   end
 
   test "disabled MCP HTTP setting returns forbidden", %{conn: conn} do

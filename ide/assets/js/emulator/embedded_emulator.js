@@ -171,6 +171,7 @@ export class EmbeddedEmulatorHost {
     this.launchButton = this.el.querySelector("[data-emulator-launch]")
     this.installButton = this.el.querySelector("[data-emulator-install]")
     this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
+    this.screenshotButton = this.el.querySelector("[data-emulator-screenshot]")
     this.storageRows = this.el.querySelector("[data-emulator-storage-rows]")
     this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
     this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
@@ -182,7 +183,7 @@ export class EmbeddedEmulatorHost {
     this.preferencesButton?.addEventListener("click", () => this.loadCompanionPreferences())
     this.storageResetButton?.addEventListener("click", () => this.resetStorage())
     this.storageAddButton?.addEventListener("click", () => this.saveNewStorageEntry())
-    this.el.querySelector("[data-emulator-screenshot]")?.addEventListener("click", () => this.captureScreenshot())
+    this.screenshotButton?.addEventListener("click", () => this.captureScreenshot())
     this.el.querySelector("[data-emulator-config-cancel]")?.addEventListener("click", () => this.cancelConfig())
     this.configPanel?.addEventListener("click", event => {
       if (event.target === this.configPanel) this.cancelConfig()
@@ -227,6 +228,7 @@ export class EmbeddedEmulatorHost {
     this.launchButton = this.el.querySelector("[data-emulator-launch]")
     this.installButton = this.el.querySelector("[data-emulator-install]")
     this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
+    this.screenshotButton = this.el.querySelector("[data-emulator-screenshot]")
     this.storageRows = this.el.querySelector("[data-emulator-storage-rows]")
     this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
     this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
@@ -382,6 +384,7 @@ export class EmbeddedEmulatorHost {
     this.rfbCanvas = this.canvas
     this.vncConnecting = false
     this.reconnectingVnc = false
+    this.updateControlButtons()
     // #region agent log
     agentDebugLog("initial", "H19,H20,H21", "embedded_emulator.js:vnc:create", "noVNC RFB object created", {
       sessionId: this.session?.id,
@@ -1268,17 +1271,29 @@ export class EmbeddedEmulatorHost {
     return row
   }
 
-  captureScreenshot() {
+  async captureScreenshot() {
     if (!this.canvas) return
     const canvas = this.canvas.querySelector("canvas")
     if (!canvas) {
       this.setStatus("No embedded emulator canvas is available yet")
       return
     }
-    const link = document.createElement("a")
-    link.download = `embedded-emulator-${Date.now()}.png`
-    link.href = canvas.toDataURL("image/png")
-    link.click()
+
+    try {
+      this.setStatus("Saving embedded emulator screenshot...")
+      const result = await postJSON(`/api/wasm-emulator/projects/${encodeURIComponent(this.el.dataset.projectSlug)}/screenshot`, {
+        platform: this.el.dataset.emulatorTarget || "embedded",
+        image: canvas.toDataURL("image/png")
+      })
+
+      if (result.screenshot) {
+        this.hook.pushEvent("wasm-screenshot-saved", {screenshot: result.screenshot})
+      }
+
+      this.setStatus("Saved embedded emulator screenshot")
+    } catch (error) {
+      this.setStatus(`Could not save embedded emulator screenshot: ${error.message}`)
+    }
   }
 
   startPing() {
@@ -1396,6 +1411,7 @@ export class EmbeddedEmulatorHost {
     this.setButtonDisabled(this.launchButton, this.launching || this.stopping)
     this.setButtonDisabled(this.installButton, this.launching || this.installing || this.stopping || !this.installReady())
     this.setButtonDisabled(this.preferencesButton, this.launching || this.stopping || !hasSession)
+    this.setButtonDisabled(this.screenshotButton, this.launching || this.stopping || !this.canCaptureScreenshot())
     this.setButtonDisabled(this.storageAddButton, this.launching || this.stopping || !hasSession)
     this.setButtonDisabled(this.storageResetButton, this.launching || this.stopping || !hasSession || this.storageEntries.size === 0)
 
@@ -1411,6 +1427,10 @@ export class EmbeddedEmulatorHost {
 
   installReady() {
     return !!(this.session?.backend_enabled && this.session?.install_path && !this.sessionEnded)
+  }
+
+  canCaptureScreenshot() {
+    return !!this.canvas?.querySelector("canvas")
   }
 
   setButtonDisabled(button, disabled) {

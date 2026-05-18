@@ -1172,6 +1172,18 @@ defmodule IdeWeb.WorkspaceLive do
      end)}
   end
 
+  def handle_event(
+        "toggle-external-emulator",
+        _params,
+        %{assigns: %{external_emulator_running: true}} = socket
+      ) do
+    handle_event("stop-emulator", %{}, socket)
+  end
+
+  def handle_event("toggle-external-emulator", _params, socket) do
+    handle_event("run-emulator-install", %{}, socket)
+  end
+
   def handle_event("external-emulator-control", params, socket) do
     project = socket.assigns.project
     emulator_target = socket.assigns.selected_emulator_target
@@ -1589,6 +1601,7 @@ defmodule IdeWeb.WorkspaceLive do
      |> assign(:project, project)
      |> assign(:selected_emulator_target, target)
      |> assign(:emulator_mode, mode)
+     |> assign(:external_emulator_running, false)
      |> assign(:emulator_mode_options, ToolchainPresenter.emulator_mode_options(target))
      |> assign(:emulator_form, to_form(%{"target" => target, "mode" => mode}, as: :emulator))
      |> check_emulator_installation()}
@@ -1639,6 +1652,12 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_event("debugger-set-timeline-mode", %{"mode" => mode}, socket) do
+    mode =
+      normalize_project_debugger_timeline_mode(
+        mode,
+        Map.get(socket.assigns, :companion_app_present, false)
+      )
+
     socket = DebuggerSupport.set_debugger_timeline_mode(socket, mode)
 
     case socket.assigns.project do
@@ -2408,6 +2427,7 @@ defmodule IdeWeb.WorkspaceLive do
     {:noreply,
      socket
      |> assign(:pebble_install_status, result.status)
+     |> assign(:external_emulator_running, result.status == :ok)
      |> assign(:pebble_install_output, ToolchainPresenter.render_toolchain_output(result))}
   end
 
@@ -2415,6 +2435,7 @@ defmodule IdeWeb.WorkspaceLive do
     {:noreply,
      socket
      |> assign(:pebble_install_status, :error)
+     |> assign(:external_emulator_running, false)
      |> assign(:pebble_install_output, emulator_install_error_message(reason))}
   end
 
@@ -2422,6 +2443,7 @@ defmodule IdeWeb.WorkspaceLive do
     {:noreply,
      socket
      |> assign(:pebble_install_status, :error)
+     |> assign(:external_emulator_running, false)
      |> assign(:pebble_install_output, "Emulator install task exited: #{inspect(reason)}")}
   end
 
@@ -2429,6 +2451,7 @@ defmodule IdeWeb.WorkspaceLive do
     {:noreply,
      socket
      |> assign(:emulator_stop_status, result.status)
+     |> assign(:external_emulator_running, result.status != :ok)
      |> assign(:emulator_stop_output, ToolchainPresenter.render_toolchain_output(result))}
   end
 
@@ -3620,6 +3643,9 @@ defmodule IdeWeb.WorkspaceLive do
   @spec persist_project_debugger_timeline_mode(Project.t(), String.t()) :: Project.t()
   defp persist_project_debugger_timeline_mode(%Project{} = project, mode)
        when mode in ["watch", "companion", "mixed", "separate"] do
+    mode =
+      normalize_project_debugger_timeline_mode(mode, Projects.companion_app_present?(project))
+
     settings = project.debugger_settings || %{}
     updated_settings = Map.put(settings, "timeline_mode", mode)
 
@@ -3695,12 +3721,25 @@ defmodule IdeWeb.WorkspaceLive do
   @spec project_debugger_timeline_mode(Project.t()) :: String.t()
   defp project_debugger_timeline_mode(%Project{} = project) do
     settings = project.debugger_settings || %{}
+    companion_app_present? = Projects.companion_app_present?(project)
 
     case Map.get(settings, "timeline_mode") do
-      mode when mode in ["watch", "companion", "mixed", "separate"] -> mode
-      _ -> "mixed"
+      mode when mode in ["watch", "companion", "mixed", "separate"] ->
+        normalize_project_debugger_timeline_mode(mode, companion_app_present?)
+
+      _ ->
+        "mixed"
     end
   end
+
+  @spec normalize_project_debugger_timeline_mode(term(), boolean()) :: String.t()
+  defp normalize_project_debugger_timeline_mode(_mode, false), do: "watch"
+
+  defp normalize_project_debugger_timeline_mode(mode, true)
+       when mode in ["watch", "companion", "mixed", "separate"],
+       do: mode
+
+  defp normalize_project_debugger_timeline_mode(_mode, true), do: "mixed"
 
   @spec project_emulator_target(term()) :: String.t()
   defp project_emulator_target(%Project{} = project) do

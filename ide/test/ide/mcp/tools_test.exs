@@ -7,6 +7,16 @@ defmodule Ide.Mcp.ToolsTest do
     def check(_slug, _opts),
       do: {:ok, %{status: :ok, checked_path: ".", diagnostics: [], output: "ok"}}
 
+    def check_source_root(_slug, opts),
+      do:
+        {:ok,
+         %{
+           status: :ok,
+           checked_path: opts[:source_root] || ".",
+           diagnostics: [],
+           output: "ok"
+         }}
+
     def compile(_slug, _opts),
       do:
         {:ok,
@@ -152,6 +162,36 @@ defmodule Ide.Mcp.ToolsTest do
   end
 
   defmodule MockScreenshots do
+    def list(_slug, _opts) do
+      root = Path.join(System.tmp_dir!(), "ide_mcp_mock_screenshots")
+      chalk_path = Path.join([root, "chalk", "shot-new.png"])
+      basalt_path = Path.join([root, "basalt", "shot-old.png"])
+      File.mkdir_p!(Path.dirname(chalk_path))
+      File.mkdir_p!(Path.dirname(basalt_path))
+      File.write!(chalk_path, <<137, 80, 78, 71, 13, 10, 26, 10, "new">>)
+      File.write!(basalt_path, <<137, 80, 78, 71, 13, 10, 26, 10, "old">>)
+
+      {:ok,
+       [
+         %{
+           filename: "shot-new.png",
+           emulator_target: "chalk",
+           url: "/screenshots/mock/chalk/shot-new.png",
+           absolute_path: chalk_path,
+           captured_at: "2026-01-01 00:00:01",
+           mime_type: "image/png"
+         },
+         %{
+           filename: "shot-old.png",
+           emulator_target: "basalt",
+           url: "/screenshots/mock/basalt/shot-old.png",
+           absolute_path: basalt_path,
+           captured_at: "2026-01-01 00:00:00",
+           mime_type: "image/png"
+         }
+       ]}
+    end
+
     def capture(_slug, opts) do
       target = opts[:emulator_target] || "basalt"
 
@@ -162,7 +202,8 @@ defmodule Ide.Mcp.ToolsTest do
            emulator_target: target,
            url: "/screenshots/mock/#{target}/shot-mock.png",
            absolute_path: "/tmp/mock/#{target}/shot-mock.png",
-           captured_at: "2026-01-01 00:00:00"
+           captured_at: "2026-01-01 00:00:00",
+           mime_type: "image/png"
          },
          output: "captured",
          exit_code: 0,
@@ -190,56 +231,71 @@ defmodule Ide.Mcp.ToolsTest do
     tool_defs = Tools.tool_definitions([:read, :build])
     tool_names = Enum.map(tool_defs, & &1.name)
 
-    assert "projects.list" in tool_names
-    assert "files.read" in tool_names
-    assert "packages.search" in tool_names
-    assert "packages.details" in tool_names
-    assert "packages.versions" in tool_names
-    assert "packages.readme" in tool_names
-    assert "projects.graph" in tool_names
-    assert "audit.recent" in tool_names
-    assert "compiler.check_cached" in tool_names
-    assert "compiler.check_recent" in tool_names
-    assert "compiler.compile_cached" in tool_names
-    assert "compiler.compile_recent" in tool_names
-    assert "compiler.manifest_cached" in tool_names
-    assert "compiler.manifest_recent" in tool_names
-    assert "sessions.recent_activity" in tool_names
-    assert "sessions.summary" in tool_names
-    assert "sessions.trace_health" in tool_names
-    assert "traces.bundle" in tool_names
-    assert "traces.summary" in tool_names
-    assert "traces.export" in tool_names
-    assert "traces.exports_list" in tool_names
-    assert "traces.policy" in tool_names
-    assert "traces.policy_validate" in tool_names
-    assert "debugger.state" in tool_names
-    assert "debugger.cursor_inspect" in tool_names
-    assert "debugger.export_trace" in tool_names
-    assert "pebble.package" in tool_names
-    assert "pebble.install" in tool_names
-    assert "screenshots.capture" in tool_names
-    refute "traces.export_write" in tool_names
-    refute "traces.exports_prune" in tool_names
-    refute "traces.maintenance" in tool_names
-    refute "projects.create" in tool_names
-    refute "projects.delete" in tool_names
-    refute "debugger.start" in tool_names
-    refute "debugger.reset" in tool_names
-    refute "debugger.import_trace" in tool_names
-    refute "debugger.reload" in tool_names
-    refute "debugger.step" in tool_names
-    refute "debugger.tick" in tool_names
-    refute "debugger.auto_tick_start" in tool_names
-    refute "debugger.auto_tick_stop" in tool_names
-    refute "debugger.replay_recent" in tool_names
-    refute "debugger.continue_from_snapshot" in tool_names
-    assert "compiler.check" in tool_names
-    assert "compiler.compile" in tool_names
-    assert "compiler.manifest" in tool_names
-    refute "files.write" in tool_names
-    refute "packages.add_to_elm_json" in tool_names
-    refute "packages.remove_from_elm_json" in tool_names
+    assert Enum.all?(tool_names, &Regex.match?(~r/^[A-Za-z0-9_]+$/, &1))
+    assert "projects_list" in tool_names
+    assert "files_read" in tool_names
+    assert "files_stat" in tool_names
+    assert "files_read_range" in tool_names
+    assert "files_search" in tool_names
+    assert "projects_diff" in tool_names
+    assert "packages_search" in tool_names
+    assert "packages_details" in tool_names
+    assert "packages_versions" in tool_names
+    assert "packages_readme" in tool_names
+    assert "screenshots_list" in tool_names
+    assert "screenshots_read" in tool_names
+    assert "projects_graph" in tool_names
+    assert "audit_recent" in tool_names
+    assert "compiler_check_cached" in tool_names
+    assert "compiler_check_recent" in tool_names
+    assert "compiler_compile_cached" in tool_names
+    assert "compiler_compile_recent" in tool_names
+    assert "compiler_manifest_cached" in tool_names
+    assert "compiler_manifest_recent" in tool_names
+    assert "sessions_recent_activity" in tool_names
+    assert "sessions_summary" in tool_names
+    assert "sessions_trace_health" in tool_names
+    assert "traces_bundle" in tool_names
+    assert "traces_summary" in tool_names
+    assert "traces_export" in tool_names
+    assert "traces_exports_list" in tool_names
+    assert "traces_policy" in tool_names
+    assert "traces_policy_validate" in tool_names
+    assert "debugger_state" in tool_names
+    assert "debugger_cursor_inspect" in tool_names
+    assert "debugger_render_tree" in tool_names
+    assert "debugger_models" in tool_names
+    assert "debugger_timeline" in tool_names
+    assert "debugger_surface_state" in tool_names
+    assert "debugger_watch_profiles" in tool_names
+    assert "debugger_export_trace" in tool_names
+    assert "pebble_package" in tool_names
+    assert "pebble_install" in tool_names
+    assert "screenshots_capture" in tool_names
+    refute "traces_export_write" in tool_names
+    refute "traces_exports_prune" in tool_names
+    refute "traces_maintenance" in tool_names
+    refute "projects_create" in tool_names
+    refute "projects_delete" in tool_names
+    refute "debugger_start" in tool_names
+    refute "debugger_reset" in tool_names
+    refute "debugger_set_watch_profile" in tool_names
+    refute "debugger_import_trace" in tool_names
+    refute "debugger_reload" in tool_names
+    refute "debugger_step" in tool_names
+    refute "debugger_tick" in tool_names
+    refute "debugger_auto_tick_start" in tool_names
+    refute "debugger_auto_tick_stop" in tool_names
+    refute "debugger_replay_recent" in tool_names
+    refute "debugger_continue_from_snapshot" in tool_names
+    assert "compiler_check" in tool_names
+    assert "compiler_check_source_root" in tool_names
+    assert "compiler_compile" in tool_names
+    assert "compiler_manifest" in tool_names
+    refute "files_write" in tool_names
+    refute "files_patch" in tool_names
+    refute "packages_add_to_elm_json" in tool_names
+    refute "packages_remove_from_elm_json" in tool_names
     assert Enum.all?(tool_defs, &(is_binary(&1.version) and &1.version != ""))
     assert is_binary(Tools.catalog_version())
   end
@@ -315,6 +371,79 @@ defmodule Ide.Mcp.ToolsTest do
     assert installed.install_result.status == :ok
     assert installed.install_result.exit_code == 0
 
+    assert {:ok, screenshots} =
+             Tools.call(
+               "screenshots.list",
+               %{"slug" => "mcp-mutate"},
+               [:read]
+             )
+
+    assert screenshots.slug == "mcp-mutate"
+    assert screenshots.count == 2
+    mock_screenshot_root = Path.join(System.tmp_dir!(), "ide_mcp_mock_screenshots")
+    chalk_screenshot_path = Path.join([mock_screenshot_root, "chalk", "shot-new.png"])
+    basalt_screenshot_path = Path.join([mock_screenshot_root, "basalt", "shot-old.png"])
+
+    assert [
+             %{
+               filename: "shot-new.png",
+               target_device: "chalk",
+               emulator_target: "chalk",
+               captured_at: "2026-01-01 00:00:01",
+               timestamp: "2026-01-01 00:00:01",
+               mime_type: "image/png",
+               url: "/screenshots/mock/chalk/shot-new.png",
+               absolute_path: ^chalk_screenshot_path
+             },
+             %{
+               filename: "shot-old.png",
+               target_device: "basalt",
+               emulator_target: "basalt",
+               captured_at: "2026-01-01 00:00:00",
+               timestamp: "2026-01-01 00:00:00",
+               mime_type: "image/png",
+               url: "/screenshots/mock/basalt/shot-old.png",
+               absolute_path: ^basalt_screenshot_path
+             }
+           ] = screenshots.screenshots
+
+    assert {:ok, screenshot_data} =
+             Tools.call(
+               "screenshots.read",
+               %{
+                 "slug" => "mcp-mutate",
+                 "emulator_target" => "chalk",
+                 "filename" => "shot-new.png"
+               },
+               [:read]
+             )
+
+    expected_png = <<137, 80, 78, 71, 13, 10, 26, 10, "new">>
+    assert screenshot_data.slug == "mcp-mutate"
+    assert screenshot_data.screenshot.filename == "shot-new.png"
+    assert screenshot_data.screenshot.target_device == "chalk"
+    assert screenshot_data.mime_type == "image/png"
+    assert screenshot_data.encoding == "base64"
+    assert screenshot_data.bytes == byte_size(expected_png)
+
+    assert screenshot_data.sha256 ==
+             Base.encode16(:crypto.hash(:sha256, expected_png), case: :lower)
+
+    assert screenshot_data.content_base64 == Base.encode64(expected_png)
+
+    assert {:error, read_denied} =
+             Tools.call(
+               "screenshots.read",
+               %{
+                 "slug" => "mcp-mutate",
+                 "emulator_target" => "chalk",
+                 "filename" => "shot-new.png"
+               },
+               [:publish]
+             )
+
+    assert String.contains?(read_denied, "not permitted")
+
     assert {:ok, screenshot} =
              Tools.call(
                "screenshots.capture",
@@ -362,6 +491,11 @@ defmodule Ide.Mcp.ToolsTest do
              Tools.call("packages.search", %{"query" => "elm/http"}, [:read])
 
     assert pkg.name == "elm/http"
+
+    assert {:ok, %{packages: [published_name_pkg]}} =
+             Tools.call("packages_search", %{"query" => "elm/http"}, [:read])
+
+    assert published_name_pkg.name == "elm/http"
 
     assert {:ok, %{name: "elm/http", compatibility: compatibility}} =
              Tools.call("packages.details", %{"package" => "elm/http"}, [:read])
@@ -432,7 +566,12 @@ defmodule Ide.Mcp.ToolsTest do
                  "slug" => project.slug,
                  "source_root" => "watch",
                  "rel_path" => "src/Main.elm",
-                 "content" => "module Main exposing (main)"
+                 "content" => """
+                 module Main exposing (main)
+
+                 main =
+                     "hello"
+                 """
                },
                [:edit]
              )
@@ -449,6 +588,96 @@ defmodule Ide.Mcp.ToolsTest do
              )
 
     assert String.contains?(content, "module Main")
+
+    assert {:ok, stat} =
+             Tools.call(
+               "files.stat",
+               %{
+                 "slug" => project.slug,
+                 "source_root" => "watch",
+                 "rel_path" => "src/Main.elm"
+               },
+               [:read]
+             )
+
+    assert stat.bytes == byte_size(content)
+    assert stat.sha256 == Base.encode16(:crypto.hash(:sha256, content), case: :lower)
+    assert is_binary(stat.mtime)
+
+    assert {:ok, range} =
+             Tools.call(
+               "files.read_range",
+               %{
+                 "slug" => project.slug,
+                 "source_root" => "watch",
+                 "rel_path" => "src/Main.elm",
+                 "offset" => 3,
+                 "limit" => 2
+               },
+               [:read]
+             )
+
+    assert range.total_lines >= 4
+    assert [%{line: 3, text: "main ="}, %{line: 4, text: "    \"hello\""}] = range.lines
+
+    assert {:ok, search} =
+             Tools.call(
+               "files.search",
+               %{"slug" => project.slug, "source_root" => "watch", "query" => "hello"},
+               [:read]
+             )
+
+    assert [%{source_root: "watch", rel_path: "src/Main.elm", line: 4}] = search.matches
+
+    assert {:ok, patched} =
+             Tools.call(
+               "files.patch",
+               %{
+                 "slug" => project.slug,
+                 "source_root" => "watch",
+                 "rel_path" => "src/Main.elm",
+                 "old_string" => "\"hello\"",
+                 "new_string" => "\"patched\"",
+                 "expected_sha256" => stat.sha256
+               },
+               [:edit]
+             )
+
+    assert patched.old_sha256 == stat.sha256
+    assert patched.new_sha256 != stat.sha256
+
+    assert {:ok, %{content: patched_content}} =
+             Tools.call(
+               "files.read",
+               %{
+                 "slug" => project.slug,
+                 "source_root" => "watch",
+                 "rel_path" => "src/Main.elm"
+               },
+               [:read]
+             )
+
+    assert String.contains?(patched_content, "\"patched\"")
+
+    assert {:error, stale_reason} =
+             Tools.call(
+               "files.patch",
+               %{
+                 "slug" => project.slug,
+                 "source_root" => "watch",
+                 "rel_path" => "src/Main.elm",
+                 "old_string" => "\"patched\"",
+                 "new_string" => "\"stale\"",
+                 "expected_sha256" => stat.sha256
+               },
+               [:edit]
+             )
+
+    assert String.contains?(stale_reason, "stale_file")
+
+    assert {:ok, diff} = Tools.call("projects.diff", %{"slug" => project.slug}, [:read])
+    assert diff.slug == project.slug
+    assert is_binary(diff.diff)
 
     assert {:error, reason} =
              Tools.call(
@@ -510,6 +739,15 @@ defmodule Ide.Mcp.ToolsTest do
     assert is_integer(error_count)
     assert is_integer(warning_count)
 
+    assert {:ok, %{slug: "mcp-check", source_root: "watch", error_count: root_error_count}} =
+             Tools.call(
+               "compiler.check_source_root",
+               %{"slug" => project.slug, "source_root" => "watch"},
+               [:build]
+             )
+
+    assert is_integer(root_error_count)
+
     assert {:ok, %{cached: true, slug: "mcp-check", result: result}} =
              Tools.call("compiler.check_cached", %{"slug" => project.slug}, [:read])
 
@@ -566,6 +804,26 @@ defmodule Ide.Mcp.ToolsTest do
     refute Map.has_key?(redacted, "content")
     assert redacted["content_redacted"] == true
     assert redacted["content_bytes"] == 3
+    assert redacted["slug"] == "demo"
+  end
+
+  test "audit arguments redact patch content for files.patch" do
+    args = %{
+      "slug" => "demo",
+      "source_root" => "watch",
+      "rel_path" => "src/Main.elm",
+      "old_string" => "before",
+      "new_string" => "after"
+    }
+
+    redacted = Tools.audit_arguments("files.patch", args)
+
+    refute Map.has_key?(redacted, "old_string")
+    refute Map.has_key?(redacted, "new_string")
+    assert redacted["old_string_redacted"] == true
+    assert redacted["old_string_bytes"] == 6
+    assert redacted["new_string_redacted"] == true
+    assert redacted["new_string_bytes"] == 5
     assert redacted["slug"] == "demo"
   end
 
@@ -1346,6 +1604,20 @@ defmodule Ide.Mcp.ToolsTest do
     assert started.running == true
     assert started.seq >= 1
 
+    assert {:ok, %{watch_profiles: watch_profiles}} =
+             Tools.call("debugger.watch_profiles", %{}, [:read])
+
+    assert Enum.any?(watch_profiles, &(&1["id"] == "basalt"))
+
+    assert {:ok, %{state: profile_state}} =
+             Tools.call(
+               "debugger.set_watch_profile",
+               %{"slug" => project.slug, "watch_profile_id" => "basalt"},
+               [:edit]
+             )
+
+    assert profile_state.watch_profile_id == "basalt"
+
     assert {:error, reason} =
              Tools.call(
                "debugger.reload",
@@ -1873,6 +2145,73 @@ defmodule Ide.Mcp.ToolsTest do
     assert Enum.any?(inspect_latest.view_renders, &(&1.target == "watch"))
     assert inspect_latest.elm_introspect.watch["module"] == "McpSnap"
     assert inspect_latest.elm_introspect.watch["init_model"]["n"] == 1
+
+    assert {:ok, render_tree} =
+             Tools.call(
+               "debugger.render_tree",
+               %{"slug" => project.slug, "target" => "watch"},
+               [:read]
+             )
+
+    assert render_tree.slug == project.slug
+    assert render_tree.target == "watch"
+    assert render_tree.screen.width > 0
+    assert render_tree.screen.height > 0
+    assert render_tree.node_count >= 1
+    assert [%{path: "0", type: root_type, bounds: root_bounds} | _] = render_tree.nodes
+    assert is_binary(root_type)
+    assert is_map(root_bounds)
+
+    assert {:ok, models_payload} =
+             Tools.call("debugger.models", %{"slug" => project.slug}, [:read])
+
+    assert models_payload.slug == project.slug
+    assert is_map(models_payload.models.watch.model)
+    assert is_map(models_payload.models.companion.model)
+    refute Map.has_key?(models_payload.models.watch.model, "runtime_view_output")
+
+    assert {:ok, watch_model_payload} =
+             Tools.call(
+               "debugger.models",
+               %{"slug" => project.slug, "target" => "watch", "include_view_output" => true},
+               [:read]
+             )
+
+    assert [:watch] = Map.keys(watch_model_payload.models)
+
+    assert {:ok, timeline_payload} =
+             Tools.call(
+               "debugger.timeline",
+               %{"slug" => project.slug, "event_limit" => 5},
+               [:read]
+             )
+
+    assert timeline_payload.slug == project.slug
+    assert timeline_payload.count > 0
+    assert [%{seq: seq, type: type, summary: summary} | _] = timeline_payload.timeline
+    assert is_integer(seq)
+    assert is_binary(type)
+    assert is_binary(summary)
+
+    assert {:ok, surface_payload} =
+             Tools.call(
+               "debugger.surface_state",
+               %{
+                 "slug" => project.slug,
+                 "target" => "watch",
+                 "include_render_tree" => true
+               },
+               [:read]
+             )
+
+    assert surface_payload.slug == project.slug
+    assert surface_payload.target == "watch"
+    assert is_map(surface_payload.model.model)
+
+    assert is_map(surface_payload.runtime_fingerprint) or
+             is_nil(surface_payload.runtime_fingerprint)
+
+    assert is_map(surface_payload.render_tree)
 
     assert {:ok, _} =
              Debugger.ingest_elmc_check(project.slug, %{

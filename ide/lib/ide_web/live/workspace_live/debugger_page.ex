@@ -96,12 +96,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
                 id="debugger-timeline-copy"
                 text={
                   @debugger_rows
-                  |> DebuggerSupport.debugger_rows_for_mode(@debugger_timeline_mode)
+                  |> DebuggerSupport.debugger_rows_for_mode(
+                    debugger_visible_timeline_mode(@debugger_timeline_mode, @companion_app_present)
+                  )
                   |> DebuggerSupport.debugger_timeline_text()
                 }
                 title="Copy visible timeline as raw text"
               />
-              <form phx-change="debugger-set-timeline-mode">
+              <form :if={@companion_app_present} phx-change="debugger-set-timeline-mode">
                 <select
                   name="mode"
                   class="rounded border border-zinc-300 bg-white px-1.5 py-1 text-[11px] text-zinc-800"
@@ -119,14 +121,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             </div>
           </div>
           <div
-            :if={@debugger_timeline_mode != "separate"}
+            :if={
+              debugger_visible_timeline_mode(@debugger_timeline_mode, @companion_app_present) !=
+                "separate"
+            }
             class="mt-2 min-h-0 flex-1 overflow-auto rounded border border-zinc-200 bg-white"
           >
             <.debugger_debugger_timeline_rows
               rows={
                 DebuggerSupport.debugger_rows_for_mode(
                   @debugger_rows,
-                  @debugger_timeline_mode
+                  debugger_visible_timeline_mode(@debugger_timeline_mode, @companion_app_present)
                 )
               }
               selected_row={@debugger_selected_row}
@@ -134,7 +139,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             />
           </div>
           <div
-            :if={@debugger_timeline_mode == "separate"}
+            :if={
+              debugger_visible_timeline_mode(@debugger_timeline_mode, @companion_app_present) ==
+                "separate"
+            }
             class="mt-2 grid min-h-0 flex-1 grid-rows-2 gap-2"
           >
             <div class="min-h-0 overflow-auto rounded border border-zinc-200 bg-white">
@@ -159,7 +167,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             </div>
           </div>
         </div>
-        <div class="col-span-12 grid min-h-0 grid-cols-2 gap-3 lg:col-span-4">
+        <div class={[
+          "col-span-12 grid min-h-0 gap-3 lg:col-span-4",
+          if(@companion_app_present, do: "grid-cols-2", else: "grid-cols-1")
+        ]}>
           <div class="flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2">
             <div class="flex items-center justify-between gap-2">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-600">
@@ -180,7 +191,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               disabled_subscriptions={@debugger_disabled_subscriptions}
             />
           </div>
-          <div class="flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2">
+          <div
+            :if={@companion_app_present}
+            class="flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2"
+          >
             <div class="flex items-center justify-between gap-2">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-600">
                 Companion model
@@ -2984,6 +2998,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   @spec debugger_state_running?(term()) :: boolean()
   defp debugger_state_running?(%{running: true}), do: true
   defp debugger_state_running?(_), do: false
+
+  @spec debugger_visible_timeline_mode(String.t(), boolean()) :: String.t()
+  defp debugger_visible_timeline_mode(_mode, false), do: "watch"
+  defp debugger_visible_timeline_mode(mode, true), do: mode
 
   @spec selected_debugger_watch_profile_id(term(), term()) :: String.t()
   defp selected_debugger_watch_profile_id(%{watch_profile_id: watch_profile_id}, _project)

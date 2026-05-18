@@ -53,7 +53,7 @@ defmodule Ide.Mcp.Server do
       {:error, reason} ->
         {:error, reason}
 
-      "\r\n" ->
+      line when line in ["\r\n", "\n"] ->
         case content_length do
           nil -> {:error, :missing_content_length}
           len -> {:ok, len}
@@ -94,7 +94,11 @@ defmodule Ide.Mcp.Server do
   @spec write_message(term()) :: term()
   defp write_message(payload) do
     encoded = Jason.encode!(payload)
-    IO.binwrite("Content-Length: #{byte_size(encoded)}\r\n\r\n")
-    IO.binwrite(encoded)
+    IO.binwrite(:stdio, [
+      "Content-Length: ",
+      Integer.to_string(byte_size(encoded)),
+      "\r\n\r\n",
+      encoded
+    ])
   end
 end

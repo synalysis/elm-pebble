@@ -41,6 +41,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:pebble_install_output, nil)
     |> assign(:emulator_stop_status, :idle)
     |> assign(:emulator_stop_output, nil)
+    |> assign(:external_emulator_running, false)
     |> assign(:emulator_installation_status, nil)
     |> assign(:emulator_dependency_install_status, :idle)
     |> assign(:emulator_dependency_install_output, nil)

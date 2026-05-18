@@ -24,7 +24,7 @@ defmodule Ide.Mcp.Tools do
   @type maybe_slug :: String.t() | nil
   @type maybe_trace_id :: String.t() | nil
   @tool_version "1.0.0"
-  @catalog_version "2026-05-23"
+  @catalog_version "2026-05-27"
 
   @read_tools [
     %{
@@ -55,6 +55,96 @@ defmodule Ide.Mcp.Tools do
           slug: %{type: "string"},
           source_root: %{type: "string"},
           rel_path: %{type: "string"}
+        }
+      }
+    },
+    %{
+      name: "files.stat",
+      description:
+        "Return metadata for a source file, including byte size, mtime, and SHA-256 revision hash.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug", "source_root", "rel_path"],
+        properties: %{
+          slug: %{type: "string"},
+          source_root: %{type: "string"},
+          rel_path: %{type: "string"}
+        }
+      }
+    },
+    %{
+      name: "files.read_range",
+      description: "Read a line range from a source file in a project root.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug", "source_root", "rel_path", "offset", "limit"],
+        properties: %{
+          slug: %{type: "string"},
+          source_root: %{type: "string"},
+          rel_path: %{type: "string"},
+          offset: %{type: "integer", minimum: 1, description: "1-based first line to read."},
+          limit: %{type: "integer", minimum: 1, maximum: 1000}
+        }
+      }
+    },
+    %{
+      name: "files.search",
+      description: "Search project source files with a literal text query.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug", "query"],
+        properties: %{
+          slug: %{type: "string"},
+          query: %{type: "string"},
+          source_root: %{type: "string"},
+          limit: %{type: "integer", minimum: 1, maximum: 200}
+        }
+      }
+    },
+    %{
+      name: "projects.diff",
+      description: "Return git diff output for one project workspace, when available.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          limit_bytes: %{type: "integer", minimum: 1, maximum: 200_000}
+        }
+      }
+    },
+    %{
+      name: "screenshots.list",
+      description:
+        "List saved screenshots for a project, including target device, timestamp, URL, and stored path.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string", description: "Project slug."}
+        }
+      }
+    },
+    %{
+      name: "screenshots.read",
+      description:
+        "Read one saved project screenshot as base64-encoded binary data with MIME type and metadata.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug", "emulator_target", "filename"],
+        properties: %{
+          slug: %{type: "string", description: "Project slug."},
+          emulator_target: %{type: "string", description: "Target device/emulator folder."},
+          filename: %{
+            type: "string",
+            description: "Screenshot filename returned by screenshots.list."
+          }
         }
       }
     },
@@ -400,6 +490,100 @@ defmodule Ide.Mcp.Tools do
           lifecycle_limit: %{type: "integer", minimum: 1, maximum: 100}
         }
       }
+    },
+    %{
+      name: "debugger.render_tree",
+      description:
+        "Read the current debugger-rendered tree and flattened node bounds for a runtime surface.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          target: %{
+            type: "string",
+            enum: ["watch", "companion", "phone"],
+            description: "Runtime surface to inspect (default: watch)."
+          },
+          include_tree: %{
+            type: "boolean",
+            description: "If true, include the full normalized rendered tree."
+          }
+        }
+      }
+    },
+    %{
+      name: "debugger.models",
+      description:
+        "Read compact watch, companion, and phone debugger models without full event snapshots.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          target: %{
+            type: "string",
+            enum: ["watch", "companion", "phone"],
+            description: "Optional single runtime surface."
+          },
+          include_view_output: %{
+            type: "boolean",
+            description: "If true, include runtime_view_output rows in returned models."
+          }
+        }
+      }
+    },
+    %{
+      name: "debugger.timeline",
+      description: "Read compact debugger timeline rows without full runtime snapshots.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          event_limit: %{type: "integer", minimum: 1, maximum: 500},
+          since_seq: %{type: "integer", minimum: 0},
+          types: %{
+            type: "array",
+            items: %{type: "string"},
+            description: "Optional event type filter list."
+          }
+        }
+      }
+    },
+    %{
+      name: "debugger.surface_state",
+      description:
+        "Read one debugger surface model, runtime fingerprint, protocol messages, and optional render bounds.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          target: %{
+            type: "string",
+            enum: ["watch", "companion", "phone"],
+            description: "Runtime surface to inspect (default: watch)."
+          },
+          include_view_output: %{
+            type: "boolean",
+            description: "If true, include runtime_view_output rows in the returned model."
+          },
+          include_render_tree: %{
+            type: "boolean",
+            description: "If true, include flattened rendered node bounds for the surface."
+          }
+        }
+      }
+    },
+    %{
+      name: "debugger.watch_profiles",
+      description: "List watch profiles available to debugger launch contexts.",
+      inputSchema: %{type: "object", additionalProperties: false, properties: %{}}
     }
   ]
 
@@ -456,6 +640,27 @@ defmodule Ide.Mcp.Tools do
           source_root: %{type: "string"},
           rel_path: %{type: "string"},
           content: %{type: "string"}
+        }
+      }
+    },
+    %{
+      name: "files.patch",
+      description:
+        "Replace one expected string in a source file, guarded by optional SHA-256 revision.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug", "source_root", "rel_path", "old_string", "new_string"],
+        properties: %{
+          slug: %{type: "string"},
+          source_root: %{type: "string"},
+          rel_path: %{type: "string"},
+          old_string: %{type: "string"},
+          new_string: %{type: "string"},
+          expected_sha256: %{
+            type: "string",
+            description: "Optional SHA-256 of current file content from files.stat."
+          }
         }
       }
     },
@@ -568,6 +773,23 @@ defmodule Ide.Mcp.Tools do
       }
     },
     %{
+      name: "debugger.set_watch_profile",
+      description: "Set the debugger watch profile and relaunch context for a project.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug", "watch_profile_id"],
+        properties: %{
+          slug: %{type: "string"},
+          watch_profile_id: %{type: "string"},
+          launch_reason: %{
+            type: "string",
+            description: "Optional launch reason constructor name, defaulting to LaunchUser."
+          }
+        }
+      }
+    },
+    %{
       name: "debugger.reload",
       description:
         "Simulate IDE hot reload after a file change (revision bump, update_in, protocol, view renders). Matches save-hook behavior.",
@@ -583,7 +805,7 @@ defmodule Ide.Mcp.Tools do
           source_root: %{
             type: "string",
             description:
-              "watch | protocol | phone — drives which surface leads the hot-reload simulation.",
+              "watch | protocol | phone - drives which surface leads the hot-reload simulation.",
             enum: ["watch", "protocol", "phone"]
           }
         }
@@ -776,6 +998,22 @@ defmodule Ide.Mcp.Tools do
       }
     },
     %{
+      name: "compiler.check_source_root",
+      description: "Run the editor-style compiler check for one source root.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug", "source_root"],
+        properties: %{
+          slug: %{type: "string"},
+          source_root: %{
+            type: "string",
+            description: "Source root to check, such as watch, protocol, or phone."
+          }
+        }
+      }
+    },
+    %{
       name: "compiler.compile",
       description: "Run elmc compile for a project and return diagnostics.",
       inputSchema: %{
@@ -806,6 +1044,14 @@ defmodule Ide.Mcp.Tools do
   ]
 
   @publish_tools []
+  @all_tools @read_tools ++ @edit_tools ++ @build_tools ++ @publish_tools
+  @public_tool_names_by_internal Map.new(@all_tools, fn %{name: name} ->
+                                   {name, String.replace(name, ".", "_")}
+                                 end)
+  @internal_tool_names_by_public Map.new(@public_tool_names_by_internal, fn {internal, public} ->
+                                   {public, internal}
+                                 end)
+  @internal_tool_names MapSet.new(Map.keys(@public_tool_names_by_internal))
 
   @spec tool_definitions([capability()]) :: [map()]
   def tool_definitions(capabilities) do
@@ -815,6 +1061,7 @@ defmodule Ide.Mcp.Tools do
     |> add_if(:build in capabilities, @build_tools)
     |> add_if(:publish in capabilities, @publish_tools)
     |> Enum.map(&Map.put_new(&1, :version, @tool_version))
+    |> Enum.map(&publish_tool_name/1)
   end
 
   @spec catalog_version() :: String.t()
@@ -822,37 +1069,54 @@ defmodule Ide.Mcp.Tools do
 
   @spec call(String.t(), map(), [capability()]) :: {:ok, map()} | {:error, String.t()}
   def call(name, args, capabilities) when is_binary(name) and is_map(args) do
-    if authorized?(name, capabilities) do
-      do_call(name, args)
+    internal_name = internal_tool_name(name)
+
+    if authorized?(internal_name, capabilities) do
+      do_call(internal_name, args)
     else
       {:error, "tool not permitted by current capability scope"}
     end
   end
 
   @spec audit_arguments(String.t(), map()) :: map()
-  def audit_arguments("files.write", %{"content" => content} = args) when is_binary(content) do
+  def audit_arguments(name, args) when is_binary(name) and is_map(args) do
+    name
+    |> internal_tool_name()
+    |> do_audit_arguments(args)
+  end
+
+  @spec do_audit_arguments(String.t(), map()) :: map()
+  defp do_audit_arguments("files.write", %{"content" => content} = args)
+       when is_binary(content) do
     args
     |> Map.drop(["content"])
     |> Map.put("content_redacted", true)
     |> Map.put("content_bytes", byte_size(content))
   end
 
-  def audit_arguments("debugger.import_trace", %{"export_json" => json} = args)
-      when is_binary(json) do
+  defp do_audit_arguments("files.patch", args) do
+    args
+    |> redact_patch_argument("old_string")
+    |> redact_patch_argument("new_string")
+  end
+
+  defp do_audit_arguments("debugger.import_trace", %{"export_json" => json} = args)
+       when is_binary(json) do
     args
     |> Map.drop(["export_json"])
     |> Map.put("export_json_redacted", true)
     |> Map.put("export_json_bytes", byte_size(json))
   end
 
-  def audit_arguments("debugger.reload", %{"source" => source} = args) when is_binary(source) do
+  defp do_audit_arguments("debugger.reload", %{"source" => source} = args)
+       when is_binary(source) do
     args
     |> Map.drop(["source"])
     |> Map.put("source_redacted", true)
     |> Map.put("source_bytes", byte_size(source))
   end
 
-  def audit_arguments(_name, args) when is_map(args), do: args
+  defp do_audit_arguments(_name, args) when is_map(args), do: args
 
   @spec do_call(String.t(), map()) :: tool_result()
   defp do_call("projects.list", _args) do
@@ -945,6 +1209,110 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
+  defp do_call("files.stat", %{
+         "slug" => slug,
+         "source_root" => source_root,
+         "rel_path" => rel_path
+       }) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, absolute_path} <- project_source_file_path(project, source_root, rel_path),
+         {:ok, stat} <- File.stat(absolute_path),
+         {:ok, content} <- File.read(absolute_path) do
+      {:ok,
+       %{
+         slug: slug,
+         source_root: source_root,
+         rel_path: rel_path,
+         bytes: stat.size,
+         mtime: format_file_mtime(stat.mtime),
+         sha256: sha256_hex(content)
+       }}
+    else
+      {:error, reason} -> {:error, "stat failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("files.read_range", %{
+         "slug" => slug,
+         "source_root" => source_root,
+         "rel_path" => rel_path,
+         "offset" => offset,
+         "limit" => limit
+       }) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, content} <- Projects.read_source_file(project, source_root, rel_path) do
+      lines = String.split(content, "\n")
+      offset = max(offset, 1)
+      limit = clamp_limit(limit)
+
+      selected =
+        lines
+        |> Enum.drop(offset - 1)
+        |> Enum.take(limit)
+        |> Enum.with_index(offset)
+        |> Enum.map(fn {line, line_number} -> %{line: line_number, text: line} end)
+
+      {:ok,
+       %{
+         slug: slug,
+         source_root: source_root,
+         rel_path: rel_path,
+         offset: offset,
+         limit: limit,
+         total_lines: length(lines),
+         lines: selected
+       }}
+    else
+      {:error, reason} -> {:error, "read range failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("files.search", %{"slug" => slug, "query" => query} = args)
+       when is_binary(query) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, roots} <- search_source_roots(project, Map.get(args, "source_root")) do
+      limit = args |> Map.get("limit", 50) |> parse_limit()
+
+      matches =
+        roots
+        |> Enum.flat_map(&search_source_root(project, &1, query))
+        |> Enum.take(limit)
+
+      {:ok,
+       %{
+         slug: slug,
+         query: query,
+         count: length(matches),
+         matches: matches
+       }}
+    else
+      {:error, reason} -> {:error, "search failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("projects.diff", %{"slug" => slug} = args) do
+    with {:ok, project} <- fetch_project(slug) do
+      workspace = Projects.project_workspace_path(project)
+      limit_bytes = args |> Map.get("limit_bytes", 50_000) |> parse_diff_limit()
+
+      case System.cmd("git", ["-C", workspace, "diff", "--", "."], stderr_to_stdout: true) do
+        {output, exit_code} ->
+          truncated? = byte_size(output) > limit_bytes
+
+          {:ok,
+           %{
+             slug: slug,
+             workspace_path: workspace,
+             exit_code: exit_code,
+             truncated: truncated?,
+             diff: binary_part(output, 0, min(byte_size(output), limit_bytes))
+           }}
+      end
+    else
+      {:error, reason} -> {:error, "project diff failed: #{inspect(reason)}"}
+    end
+  end
+
   defp do_call("packages.search", args) do
     query = Map.get(args, "query", "")
     platform_target = parse_platform_target(Map.get(args, "platform_target"))
@@ -998,6 +1366,35 @@ defmodule Ide.Mcp.Tools do
       {:ok, %{saved: true, slug: slug, source_root: source_root, rel_path: rel_path}}
     else
       {:error, reason} -> {:error, "write failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call(
+         "files.patch",
+         %{
+           "slug" => slug,
+           "source_root" => source_root,
+           "rel_path" => rel_path,
+           "old_string" => old_string,
+           "new_string" => new_string
+         } = args
+       ) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, current} <- Projects.read_source_file(project, source_root, rel_path),
+         :ok <- validate_expected_sha256(current, Map.get(args, "expected_sha256")),
+         {:ok, patched} <- replace_once(current, old_string, new_string),
+         :ok <- Projects.write_source_file(project, source_root, rel_path, patched) do
+      {:ok,
+       %{
+         saved: true,
+         slug: slug,
+         source_root: source_root,
+         rel_path: rel_path,
+         old_sha256: sha256_hex(current),
+         new_sha256: sha256_hex(patched)
+       }}
+    else
+      {:error, reason} -> {:error, "patch failed: #{inspect(reason)}"}
     end
   end
 
@@ -1055,6 +1452,39 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
+  defp do_call("compiler.check_source_root", %{
+         "slug" => slug,
+         "source_root" => source_root
+       }) do
+    compiler = compiler_module()
+
+    with {:ok, project} <- fetch_project(slug),
+         true <- source_root in project.source_roots,
+         {:ok, result} <-
+           compiler.check_source_root("#{slug}:#{source_root}",
+             workspace_root: Projects.project_workspace_path(project),
+             source_root: source_root
+           ) do
+      diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
+      counts = Diagnostics.summary(diagnostics)
+
+      {:ok,
+       %{
+         slug: slug,
+         source_root: source_root,
+         status: result.status,
+         checked_path: result.checked_path,
+         diagnostics: diagnostics,
+         error_count: counts.error_count,
+         warning_count: counts.warning_count,
+         output: result.output
+       }}
+    else
+      false -> {:error, "check source root failed: :invalid_source_root"}
+      {:error, reason} -> {:error, "check source root failed: #{inspect(reason)}"}
+    end
+  end
+
   defp do_call("pebble.package", %{"slug" => slug}) do
     toolchain = pebble_toolchain_module()
 
@@ -1096,6 +1526,52 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
+  defp do_call("screenshots.list", %{"slug" => slug}) do
+    screenshots = screenshots_module()
+
+    with {:ok, _project} <- fetch_project(slug),
+         {:ok, shots} <- screenshots.list(slug, []) do
+      entries = Enum.map(shots, &mcp_screenshot_entry/1)
+
+      {:ok,
+       %{
+         slug: slug,
+         count: length(entries),
+         screenshots: entries
+       }}
+    else
+      {:error, reason} -> {:error, "screenshot list failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("screenshots.read", %{
+         "slug" => slug,
+         "emulator_target" => emulator_target,
+         "filename" => filename
+       }) do
+    screenshots = screenshots_module()
+
+    with {:ok, _project} <- fetch_project(slug),
+         {:ok, shots} <- screenshots.list(slug, []),
+         {:ok, shot} <- find_screenshot(shots, emulator_target, filename),
+         {:ok, data} <- File.read(Map.fetch!(shot, :absolute_path)) do
+      metadata = mcp_screenshot_entry(shot)
+
+      {:ok,
+       %{
+         slug: slug,
+         screenshot: metadata,
+         mime_type: metadata.mime_type,
+         encoding: "base64",
+         bytes: byte_size(data),
+         sha256: Base.encode16(:crypto.hash(:sha256, data), case: :lower),
+         content_base64: Base.encode64(data)
+       }}
+    else
+      {:error, reason} -> {:error, "screenshot read failed: #{inspect(reason)}"}
+    end
+  end
+
   defp do_call("screenshots.capture", %{"slug" => slug} = args) do
     screenshots = screenshots_module()
 
@@ -1124,7 +1600,8 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, project} <- fetch_project(slug),
          {:ok, result} <-
-           compiler.compile(slug, workspace_root: Projects.project_workspace_path(project)) do
+           compiler.compile(slug, workspace_root: Projects.project_workspace_path(project)),
+         :ok <- ingest_compile_result(slug, project, result) do
       diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
       counts = Diagnostics.summary(diagnostics)
 
@@ -1547,6 +2024,121 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
+  defp do_call("debugger.render_tree", %{"slug" => slug} = args) do
+    target = Map.get(args, "target", "watch")
+    include_tree? = truthy?(Map.get(args, "include_tree"))
+
+    with {:ok, target_atom} <- parse_render_tree_target(target),
+         {:ok, _project} <- fetch_project(slug),
+         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1),
+         {:ok, runtime} <- debugger_surface_runtime(state, target_atom),
+         %{} = tree <- DebuggerSupport.rendered_tree(runtime) do
+      screen = debugger_surface_screen(state, runtime, target_atom)
+      nodes = flatten_rendered_nodes(tree, screen.width, screen.height)
+
+      payload = %{
+        slug: slug,
+        target: Atom.to_string(target_atom),
+        screen: screen,
+        root_type: rendered_node_type(tree),
+        node_count: length(nodes),
+        nodes: nodes
+      }
+
+      {:ok, if(include_tree?, do: Map.put(payload, :tree, tree), else: payload)}
+    else
+      {:ok, nil} -> {:error, "debugger render_tree failed: :no_rendered_tree"}
+      nil -> {:error, "debugger render_tree failed: :no_rendered_tree"}
+      {:error, reason} -> {:error, "debugger render_tree failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.models", %{"slug" => slug} = args) do
+    include_view_output? = truthy?(Map.get(args, "include_view_output"))
+
+    with {:ok, targets} <- parse_optional_debugger_targets(Map.get(args, "target")),
+         {:ok, _project} <- fetch_project(slug),
+         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
+      models =
+        targets
+        |> Enum.map(fn target ->
+          {target, surface_model_payload(state, target, include_view_output?)}
+        end)
+        |> Map.new()
+
+      {:ok,
+       %{
+         slug: slug,
+         seq: Map.get(state, :seq),
+         running: Map.get(state, :running, false),
+         revision: Map.get(state, :revision),
+         watch_profile_id: Map.get(state, :watch_profile_id),
+         models: models
+       }}
+    else
+      {:error, reason} -> {:error, "debugger models failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.timeline", %{"slug" => slug} = args) do
+    with {:ok, _project} <- fetch_project(slug),
+         {:ok, state} <-
+           Debugger.snapshot(slug,
+             event_limit: parse_event_limit(args["event_limit"]),
+             since_seq: parse_since_seq(args["since_seq"]),
+             types: parse_event_types(args["types"])
+           ) do
+      events = Map.get(state, :events) || []
+
+      {:ok,
+       %{
+         slug: slug,
+         seq: Map.get(state, :seq),
+         count: length(events),
+         timeline: Enum.map(events, &compact_debugger_event/1)
+       }}
+    else
+      {:error, reason} -> {:error, "debugger timeline failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.surface_state", %{"slug" => slug} = args) do
+    target = Map.get(args, "target", "watch")
+    include_view_output? = truthy?(Map.get(args, "include_view_output"))
+    include_render_tree? = truthy?(Map.get(args, "include_render_tree"))
+
+    with {:ok, target_atom} <- parse_render_tree_target(target),
+         {:ok, _project} <- fetch_project(slug),
+         {:ok, state} <- Debugger.snapshot(slug, event_limit: 100),
+         {:ok, runtime} <- debugger_surface_runtime(state, target_atom) do
+      events = Map.get(state, :events) || []
+      screen = debugger_surface_screen(state, runtime, target_atom)
+      render_tree = maybe_render_tree_payload(runtime, screen, include_render_tree?)
+
+      {:ok,
+       %{
+         slug: slug,
+         seq: Map.get(state, :seq),
+         target: Atom.to_string(target_atom),
+         screen: screen,
+         model: surface_model_payload(state, target_atom, include_view_output?),
+         last_message: map_get_any(runtime, [:last_message, "last_message"], nil),
+         protocol_messages: map_get_any(runtime, [:protocol_messages, "protocol_messages"], []),
+         runtime_fingerprint:
+           events
+           |> DebuggerSupport.runtime_fingerprints_at_cursor(nil)
+           |> Map.get(target_atom),
+         render_tree: render_tree
+       }}
+    else
+      {:error, reason} -> {:error, "debugger surface_state failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.watch_profiles", _args) do
+    {:ok, %{watch_profiles: Debugger.watch_profiles()}}
+  end
+
   defp do_call("debugger.start", %{"slug" => slug}) do
     with {:ok, _project} <- fetch_project(slug),
          {:ok, state} <- Debugger.start_session(slug) do
@@ -1565,13 +2157,34 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
+  defp do_call(
+         "debugger.set_watch_profile",
+         %{
+           "slug" => slug,
+           "watch_profile_id" => watch_profile_id
+         } = args
+       ) do
+    attrs = %{
+      watch_profile_id: watch_profile_id,
+      launch_reason: Map.get(args, "launch_reason")
+    }
+
+    with {:ok, _project} <- fetch_project(slug),
+         {:ok, state} <- Debugger.set_watch_profile(slug, attrs) do
+      {:ok, %{slug: slug, state: state}}
+    else
+      {:error, reason} -> {:error, "debugger set_watch_profile failed: #{inspect(reason)}"}
+    end
+  end
+
   defp do_call("debugger.reload", %{"slug" => slug, "rel_path" => rel_path} = args)
        when is_binary(rel_path) do
-    source = Map.get(args, "source") || ""
     reason = Map.get(args, "reason") || "mcp_reload"
     source_root = Map.get(args, "source_root") || "watch"
 
-    with {:ok, _project} <- fetch_project(slug),
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, source} <-
+           debugger_reload_source(project, source_root, rel_path, Map.get(args, "source")),
          {:ok, state} <-
            Debugger.reload(slug, %{
              rel_path: rel_path,
@@ -2053,6 +2666,12 @@ defmodule Ide.Mcp.Tools do
   defp authorized?("projects.list", capabilities), do: :read in capabilities
   defp authorized?("projects.tree", capabilities), do: :read in capabilities
   defp authorized?("files.read", capabilities), do: :read in capabilities
+  defp authorized?("files.stat", capabilities), do: :read in capabilities
+  defp authorized?("files.read_range", capabilities), do: :read in capabilities
+  defp authorized?("files.search", capabilities), do: :read in capabilities
+  defp authorized?("projects.diff", capabilities), do: :read in capabilities
+  defp authorized?("screenshots.list", capabilities), do: :read in capabilities
+  defp authorized?("screenshots.read", capabilities), do: :read in capabilities
   defp authorized?("packages.search", capabilities), do: :read in capabilities
   defp authorized?("packages.details", capabilities), do: :read in capabilities
   defp authorized?("packages.versions", capabilities), do: :read in capabilities
@@ -2077,9 +2696,15 @@ defmodule Ide.Mcp.Tools do
   defp authorized?("debugger.state", capabilities), do: :read in capabilities
   defp authorized?("debugger.export_trace", capabilities), do: :read in capabilities
   defp authorized?("debugger.cursor_inspect", capabilities), do: :read in capabilities
+  defp authorized?("debugger.render_tree", capabilities), do: :read in capabilities
+  defp authorized?("debugger.models", capabilities), do: :read in capabilities
+  defp authorized?("debugger.timeline", capabilities), do: :read in capabilities
+  defp authorized?("debugger.surface_state", capabilities), do: :read in capabilities
+  defp authorized?("debugger.watch_profiles", capabilities), do: :read in capabilities
   defp authorized?("projects.create", capabilities), do: :edit in capabilities
   defp authorized?("projects.delete", capabilities), do: :edit in capabilities
   defp authorized?("files.write", capabilities), do: :edit in capabilities
+  defp authorized?("files.patch", capabilities), do: :edit in capabilities
   defp authorized?("packages.add_to_elm_json", capabilities), do: :edit in capabilities
   defp authorized?("packages.remove_from_elm_json", capabilities), do: :edit in capabilities
   defp authorized?("traces.export_write", capabilities), do: :edit in capabilities
@@ -2087,6 +2712,7 @@ defmodule Ide.Mcp.Tools do
   defp authorized?("traces.maintenance", capabilities), do: :edit in capabilities
   defp authorized?("debugger.start", capabilities), do: :edit in capabilities
   defp authorized?("debugger.reset", capabilities), do: :edit in capabilities
+  defp authorized?("debugger.set_watch_profile", capabilities), do: :edit in capabilities
   defp authorized?("debugger.reload", capabilities), do: :edit in capabilities
   defp authorized?("debugger.step", capabilities), do: :edit in capabilities
   defp authorized?("debugger.tick", capabilities), do: :edit in capabilities
@@ -2099,6 +2725,7 @@ defmodule Ide.Mcp.Tools do
   defp authorized?("pebble.install", capabilities), do: :build in capabilities
   defp authorized?("screenshots.capture", capabilities), do: :build in capabilities
   defp authorized?("compiler.check", capabilities), do: :build in capabilities
+  defp authorized?("compiler.check_source_root", capabilities), do: :build in capabilities
   defp authorized?("compiler.compile", capabilities), do: :build in capabilities
   defp authorized?("compiler.manifest", capabilities), do: :build in capabilities
   defp authorized?(_, _), do: false
@@ -2106,6 +2733,20 @@ defmodule Ide.Mcp.Tools do
   @spec add_if(list(), boolean(), list()) :: list()
   defp add_if(list, true, entries), do: list ++ entries
   defp add_if(list, false, _entries), do: list
+
+  @spec publish_tool_name(map()) :: map()
+  defp publish_tool_name(%{name: name} = tool) when is_binary(name) do
+    %{tool | name: Map.fetch!(@public_tool_names_by_internal, name)}
+  end
+
+  @spec internal_tool_name(String.t()) :: String.t()
+  defp internal_tool_name(name) when is_binary(name) do
+    cond do
+      MapSet.member?(@internal_tool_names, name) -> name
+      internal = Map.get(@internal_tool_names_by_public, name) -> internal
+      true -> name
+    end
+  end
 
   @spec count_files([map()]) :: non_neg_integer()
   defp count_files(nodes) when is_list(nodes) do
@@ -2143,6 +2784,20 @@ defmodule Ide.Mcp.Tools do
   defp put_opt_map(map, _key, ""), do: map
   defp put_opt_map(map, key, value), do: Map.put(map, key, value)
 
+  @spec redact_patch_argument(map(), String.t()) :: map()
+  defp redact_patch_argument(args, key) do
+    case Map.get(args, key) do
+      value when is_binary(value) ->
+        args
+        |> Map.delete(key)
+        |> Map.put("#{key}_redacted", true)
+        |> Map.put("#{key}_bytes", byte_size(value))
+
+      _other ->
+        args
+    end
+  end
+
   @spec parse_platform_target(term()) :: term()
   defp parse_platform_target("watch"), do: :watch
   defp parse_platform_target("phone"), do: :phone
@@ -2175,6 +2830,210 @@ defmodule Ide.Mcp.Tools do
       {:error, _reason} -> 0
     end
   end
+
+  @spec ingest_compile_result(String.t(), map(), map()) :: :ok
+  defp ingest_compile_result(slug, project, result)
+       when is_binary(slug) and is_map(result) do
+    attrs =
+      result
+      |> Map.put_new(:source_root, compile_result_source_root(project, result))
+
+    case Debugger.ingest_elmc_compile(slug, attrs) do
+      {:ok, _state} -> :ok
+      _ -> :ok
+    end
+  end
+
+  defp ingest_compile_result(_slug, _project, _result), do: :ok
+
+  @spec compile_result_source_root(map(), map()) :: String.t()
+  defp compile_result_source_root(project, result) when is_map(result) do
+    workspace = Projects.project_workspace_path(project)
+    compiled_path = Map.get(result, :compiled_path) || Map.get(result, "compiled_path")
+
+    with path when is_binary(path) <- compiled_path,
+         relative when relative != path <- Path.relative_to(path, workspace),
+         [source_root | _] <- Path.split(relative),
+         true <- source_root in project.source_roots do
+      source_root
+    else
+      _ -> List.first(project.source_roots) || "watch"
+    end
+  end
+
+  @spec project_source_file_path(map(), String.t(), String.t()) ::
+          {:ok, String.t()} | {:error, atom()}
+  defp project_source_file_path(project, source_root, rel_path)
+       when is_binary(source_root) and is_binary(rel_path) do
+    if source_root in project.source_roots do
+      source_base = Path.join(Projects.project_workspace_path(project), source_root)
+      expanded = Path.expand(rel_path, source_base)
+      allowed_prefix = source_base <> "/"
+
+      cond do
+        expanded == source_base -> {:error, :invalid_path}
+        String.starts_with?(expanded, allowed_prefix) -> {:ok, expanded}
+        true -> {:error, :invalid_path}
+      end
+    else
+      {:error, :invalid_source_root}
+    end
+  end
+
+  defp project_source_file_path(_project, _source_root, _rel_path), do: {:error, :invalid_path}
+
+  @spec format_file_mtime(:calendar.datetime()) :: String.t()
+  defp format_file_mtime(mtime) do
+    case NaiveDateTime.from_erl(mtime) do
+      {:ok, ndt} -> NaiveDateTime.to_string(ndt)
+      _ -> "unknown"
+    end
+  end
+
+  @spec sha256_hex(binary()) :: String.t()
+  defp sha256_hex(content), do: Base.encode16(:crypto.hash(:sha256, content), case: :lower)
+
+  @spec validate_expected_sha256(binary(), term()) :: :ok | {:error, atom()}
+  defp validate_expected_sha256(_content, nil), do: :ok
+  defp validate_expected_sha256(_content, ""), do: :ok
+
+  defp validate_expected_sha256(content, expected) when is_binary(expected) do
+    if sha256_hex(content) == String.downcase(expected) do
+      :ok
+    else
+      {:error, :stale_file}
+    end
+  end
+
+  defp validate_expected_sha256(_content, _expected), do: {:error, :invalid_expected_sha256}
+
+  @spec replace_once(binary(), binary(), binary()) :: {:ok, binary()} | {:error, atom()}
+  defp replace_once(_content, "", _new_string), do: {:error, :empty_old_string}
+
+  defp replace_once(content, old_string, new_string)
+       when is_binary(old_string) and is_binary(new_string) do
+    case :binary.matches(content, old_string) do
+      [] -> {:error, :old_string_not_found}
+      [_match] -> {:ok, String.replace(content, old_string, new_string, global: false)}
+      _many -> {:error, :old_string_not_unique}
+    end
+  end
+
+  defp replace_once(_content, _old_string, _new_string), do: {:error, :invalid_patch}
+
+  @spec search_source_roots(map(), term()) :: {:ok, [String.t()]} | {:error, atom()}
+  defp search_source_roots(project, nil), do: {:ok, project.source_roots}
+  defp search_source_roots(project, ""), do: {:ok, project.source_roots}
+
+  defp search_source_roots(project, source_root) when is_binary(source_root) do
+    if source_root in project.source_roots do
+      {:ok, [source_root]}
+    else
+      {:error, :invalid_source_root}
+    end
+  end
+
+  defp search_source_roots(_project, _source_root), do: {:error, :invalid_source_root}
+
+  @spec search_source_root(map(), String.t(), String.t()) :: [map()]
+  defp search_source_root(_project, _source_root, ""), do: []
+
+  defp search_source_root(project, source_root, query) do
+    project
+    |> Projects.list_source_tree()
+    |> Enum.find_value([], fn
+      %{source_root: ^source_root, nodes: nodes} -> nodes
+      _ -> nil
+    end)
+    |> flatten_tree_files()
+    |> Enum.flat_map(fn rel_path ->
+      case Projects.read_source_file(project, source_root, rel_path) do
+        {:ok, content} -> search_file_content(source_root, rel_path, content, query)
+        {:error, _reason} -> []
+      end
+    end)
+  end
+
+  @spec flatten_tree_files([map()]) :: [String.t()]
+  defp flatten_tree_files(nodes) when is_list(nodes) do
+    Enum.flat_map(nodes, fn
+      %{type: :file, rel_path: rel_path} -> [rel_path]
+      %{type: :dir, children: children} -> flatten_tree_files(children)
+      %{"type" => :file, "rel_path" => rel_path} -> [rel_path]
+      %{"type" => :dir, "children" => children} -> flatten_tree_files(children)
+      _ -> []
+    end)
+  end
+
+  @spec search_file_content(String.t(), String.t(), binary(), String.t()) :: [map()]
+  defp search_file_content(source_root, rel_path, content, query) do
+    content
+    |> String.split("\n")
+    |> Enum.with_index(1)
+    |> Enum.flat_map(fn {line, line_number} ->
+      if String.contains?(line, query) do
+        [%{source_root: source_root, rel_path: rel_path, line: line_number, text: line}]
+      else
+        []
+      end
+    end)
+  end
+
+  @spec parse_diff_limit(term()) :: pos_integer()
+  defp parse_diff_limit(value) when is_integer(value), do: value |> max(1) |> min(200_000)
+
+  defp parse_diff_limit(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {parsed, _} -> parse_diff_limit(parsed)
+      _ -> 50_000
+    end
+  end
+
+  defp parse_diff_limit(_value), do: 50_000
+
+  @spec mcp_screenshot_entry(map()) :: map()
+  defp mcp_screenshot_entry(shot) when is_map(shot) do
+    target = Map.get(shot, :emulator_target)
+    captured_at = Map.get(shot, :captured_at)
+
+    %{
+      filename: Map.get(shot, :filename),
+      target_device: target,
+      emulator_target: target,
+      captured_at: captured_at,
+      timestamp: captured_at,
+      mime_type: Map.get(shot, :mime_type) || screenshot_mime_type(Map.get(shot, :filename)),
+      url: Map.get(shot, :url),
+      absolute_path: Map.get(shot, :absolute_path)
+    }
+  end
+
+  @spec find_screenshot([map()], String.t(), String.t()) :: {:ok, map()} | {:error, atom()}
+  defp find_screenshot(shots, emulator_target, filename) do
+    case Enum.find(shots, &screenshot_match?(&1, emulator_target, filename)) do
+      nil -> {:error, :screenshot_not_found}
+      shot -> {:ok, shot}
+    end
+  end
+
+  @spec screenshot_match?(map(), String.t(), String.t()) :: boolean()
+  defp screenshot_match?(shot, emulator_target, filename) do
+    Map.get(shot, :emulator_target) == emulator_target and Map.get(shot, :filename) == filename and
+      is_binary(Map.get(shot, :absolute_path))
+  end
+
+  @spec screenshot_mime_type(String.t() | nil) :: String.t()
+  defp screenshot_mime_type(filename) when is_binary(filename) do
+    case filename |> Path.extname() |> String.downcase() do
+      ".jpg" -> "image/jpeg"
+      ".jpeg" -> "image/jpeg"
+      ".gif" -> "image/gif"
+      ".webp" -> "image/webp"
+      _ -> "image/png"
+    end
+  end
+
+  defp screenshot_mime_type(_filename), do: "application/octet-stream"
 
   @spec parse_since(term()) :: {:ok, maybe_since()} | {:error, String.t()}
   defp parse_since(nil), do: {:ok, nil}
@@ -2252,6 +3111,356 @@ defmodule Ide.Mcp.Tools do
   @spec truthy?(term()) :: boolean()
   defp truthy?(value) when value in [true, 1, "1", "true", "TRUE", "True"], do: true
   defp truthy?(_), do: false
+
+  @spec parse_render_tree_target(term()) :: {:ok, :watch | :companion | :phone} | {:error, atom()}
+  defp parse_render_tree_target(nil), do: {:ok, :watch}
+  defp parse_render_tree_target(""), do: {:ok, :watch}
+  defp parse_render_tree_target("watch"), do: {:ok, :watch}
+  defp parse_render_tree_target("companion"), do: {:ok, :companion}
+  defp parse_render_tree_target("phone"), do: {:ok, :phone}
+  defp parse_render_tree_target(:watch), do: {:ok, :watch}
+  defp parse_render_tree_target(:companion), do: {:ok, :companion}
+  defp parse_render_tree_target(:phone), do: {:ok, :phone}
+  defp parse_render_tree_target(_target), do: {:error, :invalid_target}
+
+  @spec parse_optional_debugger_targets(term()) ::
+          {:ok, [:watch | :companion | :phone]} | {:error, atom()}
+  defp parse_optional_debugger_targets(nil), do: {:ok, [:watch, :companion, :phone]}
+  defp parse_optional_debugger_targets(""), do: {:ok, [:watch, :companion, :phone]}
+
+  defp parse_optional_debugger_targets(target) do
+    case parse_render_tree_target(target) do
+      {:ok, target_atom} -> {:ok, [target_atom]}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec debugger_surface_runtime(map(), atom()) :: {:ok, map() | nil} | {:error, atom()}
+  defp debugger_surface_runtime(state, target) when target in [:watch, :companion, :phone] do
+    {:ok, Map.get(state, target)}
+  end
+
+  defp debugger_surface_runtime(_state, _target), do: {:error, :invalid_target}
+
+  @spec surface_model_payload(map(), atom(), boolean()) :: map()
+  defp surface_model_payload(state, target, include_view_output?)
+       when target in [:watch, :companion, :phone] do
+    runtime = Map.get(state, target) || %{}
+    model = runtime_model_map(runtime)
+
+    %{
+      target: Atom.to_string(target),
+      model: compact_debugger_model(model, include_view_output?),
+      runtime_model:
+        model
+        |> map_get_any(["runtime_model", :runtime_model], %{})
+        |> compact_debugger_model(include_view_output?),
+      model_keys: model |> Map.keys() |> Enum.map(&to_string/1) |> Enum.sort(),
+      runtime_model_keys:
+        model
+        |> map_get_any(["runtime_model", :runtime_model], %{})
+        |> model_keys(),
+      last_message: map_get_any(runtime, [:last_message, "last_message"], nil),
+      view_tree_type:
+        runtime
+        |> map_get_any(["view_tree", :view_tree], %{})
+        |> rendered_node_type()
+    }
+  end
+
+  @spec compact_debugger_model(term(), boolean()) :: map()
+  defp compact_debugger_model(model, include_view_output?) when is_map(model) do
+    drop_keys =
+      [
+        "elm_executor_core_ir",
+        :elm_executor_core_ir,
+        "elm_executor_core_ir_b64",
+        :elm_executor_core_ir_b64,
+        "elm_executor_metadata",
+        :elm_executor_metadata,
+        "elm_introspect",
+        :elm_introspect
+      ] ++
+        if include_view_output? do
+          []
+        else
+          ["runtime_view_output", :runtime_view_output]
+        end
+
+    Map.drop(model, drop_keys)
+  end
+
+  defp compact_debugger_model(_model, _include_view_output?), do: %{}
+
+  @spec model_keys(term()) :: [String.t()]
+  defp model_keys(model) when is_map(model),
+    do: model |> Map.keys() |> Enum.map(&to_string/1) |> Enum.sort()
+
+  defp model_keys(_model), do: []
+
+  @spec maybe_render_tree_payload(map() | nil, map(), boolean()) :: map() | nil
+  defp maybe_render_tree_payload(runtime, screen, true) when is_map(runtime) do
+    case DebuggerSupport.rendered_tree(runtime) do
+      %{} = tree ->
+        nodes = flatten_rendered_nodes(tree, screen.width, screen.height)
+
+        %{
+          root_type: rendered_node_type(tree),
+          node_count: length(nodes),
+          nodes: nodes
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  defp maybe_render_tree_payload(_runtime, _screen, _include?), do: nil
+
+  @spec compact_debugger_event(map()) :: map()
+  defp compact_debugger_event(event) when is_map(event) do
+    payload = Map.get(event, :payload) || Map.get(event, "payload") || %{}
+
+    %{
+      seq: Map.get(event, :seq) || Map.get(event, "seq"),
+      type: Map.get(event, :type) || Map.get(event, "type"),
+      target: compact_event_target(payload),
+      summary: compact_event_summary(event, payload),
+      payload: compact_event_payload(payload)
+    }
+  end
+
+  @spec compact_event_target(map()) :: String.t() | nil
+  defp compact_event_target(payload) when is_map(payload) do
+    value =
+      map_get_any(
+        payload,
+        [
+          :target,
+          "target",
+          :source_root,
+          "source_root",
+          :from,
+          "from"
+        ],
+        nil
+      )
+
+    if is_nil(value), do: nil, else: to_string(value)
+  end
+
+  @spec compact_event_summary(map(), map()) :: String.t()
+  defp compact_event_summary(event, payload) do
+    type = Map.get(event, :type) || Map.get(event, "type") || "event"
+
+    [
+      map_get_any(payload, [:message, "message"], nil),
+      map_get_any(payload, [:reason, "reason"], nil),
+      map_get_any(payload, [:rel_path, "rel_path"], nil),
+      map_get_any(payload, [:revision, "revision"], nil)
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(&to_string/1)
+    |> case do
+      [] -> to_string(type)
+      parts -> Enum.join([to_string(type) | parts], " · ")
+    end
+  end
+
+  @spec compact_event_payload(map()) :: map()
+  defp compact_event_payload(payload) when is_map(payload) do
+    payload
+    |> Map.take([
+      :target,
+      "target",
+      :message,
+      "message",
+      :message_source,
+      "message_source",
+      :rel_path,
+      "rel_path",
+      :source_root,
+      "source_root",
+      :reason,
+      "reason",
+      :revision,
+      "revision",
+      :status,
+      "status",
+      :error_count,
+      "error_count",
+      :warning_count,
+      "warning_count",
+      :from,
+      "from",
+      :to,
+      "to"
+    ])
+    |> stringify_map_keys()
+  end
+
+  @spec stringify_map_keys(map()) :: map()
+  defp stringify_map_keys(map) when is_map(map) do
+    Map.new(map, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  @spec debugger_reload_source(map(), String.t(), String.t(), term()) ::
+          {:ok, String.t()} | {:error, term()}
+  defp debugger_reload_source(_project, _source_root, _rel_path, source) when is_binary(source),
+    do: {:ok, source}
+
+  defp debugger_reload_source(project, source_root, rel_path, _source) do
+    case Projects.read_source_file(project, source_root, rel_path) do
+      {:ok, source} -> {:ok, source}
+      {:error, :enoent} -> {:ok, ""}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec debugger_surface_screen(map(), map(), atom()) :: map()
+  defp debugger_surface_screen(state, runtime, :watch) do
+    launch_screen =
+      state
+      |> Map.get(:launch_context, %{})
+      |> map_get_any(["screen", :screen], %{})
+
+    model = runtime_model_map(runtime)
+
+    %{
+      width:
+        integer_or_default(
+          map_get_any(
+            launch_screen,
+            ["width", :width],
+            map_get_any(model, ["screen_width"], 144)
+          ),
+          144
+        ),
+      height:
+        integer_or_default(
+          map_get_any(
+            launch_screen,
+            ["height", :height],
+            map_get_any(model, ["screen_height"], 168)
+          ),
+          168
+        )
+    }
+  end
+
+  defp debugger_surface_screen(_state, runtime, _target) do
+    box =
+      runtime
+      |> map_get_any(["view_tree", :view_tree], %{})
+      |> map_get_any(["box", :box], %{})
+
+    %{
+      width: integer_or_default(map_get_any(box, ["w", :w], nil), 0),
+      height: integer_or_default(map_get_any(box, ["h", :h], nil), 0)
+    }
+  end
+
+  @spec runtime_model_map(map()) :: map()
+  defp runtime_model_map(runtime) when is_map(runtime) do
+    case map_get_any(runtime, ["model", :model], %{}) do
+      model when is_map(model) -> model
+      _ -> %{}
+    end
+  end
+
+  defp runtime_model_map(_runtime), do: %{}
+
+  @spec flatten_rendered_nodes(map(), integer(), integer()) :: [map()]
+  defp flatten_rendered_nodes(tree, screen_w, screen_h) do
+    do_flatten_rendered_nodes(tree, "0", tree, screen_w, screen_h)
+  end
+
+  @spec do_flatten_rendered_nodes(map(), String.t(), map(), integer(), integer()) :: [map()]
+  defp do_flatten_rendered_nodes(node, path, root, screen_w, screen_h) when is_map(node) do
+    current = %{
+      path: path,
+      type: rendered_node_type(node),
+      label: rendered_node_label(node),
+      bounds:
+        DebuggerSupport.rendered_node_bounds(root, path, screen_w, screen_h) ||
+          rendered_box_bounds(node),
+      source: map_get_any(node, ["source", :source], nil)
+    }
+
+    children =
+      node
+      |> map_get_any(["children", :children], [])
+      |> Enum.filter(&is_map/1)
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {child, index} ->
+        do_flatten_rendered_nodes(child, "#{path}.#{index}", root, screen_w, screen_h)
+      end)
+
+    [current | children]
+  end
+
+  defp do_flatten_rendered_nodes(_node, _path, _root, _screen_w, _screen_h), do: []
+
+  @spec rendered_node_type(term()) :: String.t()
+  defp rendered_node_type(node) when is_map(node) do
+    node
+    |> map_get_any(["type", :type], "")
+    |> to_string()
+  end
+
+  defp rendered_node_type(_node), do: ""
+
+  @spec rendered_node_label(term()) :: String.t() | nil
+  defp rendered_node_label(node) when is_map(node) do
+    case map_get_any(node, ["label", :label, "text", :text], nil) do
+      nil -> nil
+      value -> to_string(value)
+    end
+  end
+
+  defp rendered_node_label(_node), do: nil
+
+  @spec rendered_box_bounds(term()) :: map() | nil
+  defp rendered_box_bounds(node) when is_map(node) do
+    case map_get_any(node, ["box", :box], nil) do
+      %{} = box ->
+        %{
+          x: integer_or_default(map_get_any(box, ["x", :x], nil), 0),
+          y: integer_or_default(map_get_any(box, ["y", :y], nil), 0),
+          w: integer_or_default(map_get_any(box, ["w", :w], nil), 0),
+          h: integer_or_default(map_get_any(box, ["h", :h], nil), 0)
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  defp rendered_box_bounds(_node), do: nil
+
+  @spec map_get_any(map(), [term()], term()) :: term()
+  defp map_get_any(map, keys, default) when is_map(map) and is_list(keys) do
+    Enum.find_value(keys, default, fn key ->
+      case Map.fetch(map, key) do
+        {:ok, value} -> value
+        :error -> nil
+      end
+    end)
+  end
+
+  defp map_get_any(_map, _keys, default), do: default
+
+  @spec integer_or_default(term(), integer()) :: integer()
+  defp integer_or_default(value, _default) when is_integer(value), do: value
+
+  defp integer_or_default(value, default) when is_binary(value) do
+    case Integer.parse(value) do
+      {parsed, _} -> parsed
+      _ -> default
+    end
+  end
+
+  defp integer_or_default(_value, default), do: default
 
   @spec include_replay_metadata?(term()) :: boolean()
   defp include_replay_metadata?(nil), do: true

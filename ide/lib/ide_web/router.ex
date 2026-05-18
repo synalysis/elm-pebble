@@ -43,6 +43,10 @@ defmodule IdeWeb.Router do
   end
 
   scope "/api", IdeWeb do
+    get "/mcp", McpController, :show
+  end
+
+  scope "/api", IdeWeb do
     pipe_through :api
 
     post "/mcp", McpController, :create

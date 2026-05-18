@@ -46,7 +46,7 @@ defmodule Ide.Acp.AgentProtocolTest do
       )
 
     assert update["method"] == "session/update"
-    assert update["params"]["update"]["content"]["text"] =~ "projects.list"
+    assert update["params"]["update"]["content"]["text"] =~ "projects_list"
     assert response["result"]["stopReason"] == "end_turn"
   end
 
@@ -72,7 +72,7 @@ defmodule Ide.Acp.AgentProtocolTest do
           "method" => "session/prompt",
           "params" => %{
             "sessionId" => session_id,
-            "prompt" => [%{"type" => "text", "text" => "/tool projects.list {}"}]
+            "prompt" => [%{"type" => "text", "text" => "/tool projects_list {}"}]
           }
         },
         state

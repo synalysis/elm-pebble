@@ -11,7 +11,9 @@
   "editor_theme": "system",
   "formatter_backend": "elm_format",
   "mcp_http_capabilities": [
-    "read"
+    "read",
+    "edit",
+    "build"
   ],
   "mcp_http_enabled": true,
   "mcp_http_port": 4000

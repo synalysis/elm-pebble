@@ -991,6 +991,7 @@ defmodule Elmc.Backend.CCodegen do
       acc =
         case normalize_type_name(arg_type) do
           "Int" -> put_boxed_int_binding(acc, arg, true)
+          "Bool" -> put_boxed_bool_binding(acc, arg, true)
           _other -> if enum_type?(arg_type), do: put_boxed_int_binding(acc, arg, true), else: acc
         end
 
@@ -1384,7 +1385,8 @@ defmodule Elmc.Backend.CCodegen do
   defp native_float_let?(name, value_expr, in_expr, env) when is_binary(name) or is_atom(name) do
     usage = native_float_usage(name, in_expr)
 
-    native_float_expr?(value_expr, env) and usage.total > 0 and usage.boxed == 0 and
+    native_float_expr?(value_expr, env) and not native_int_expr?(value_expr, env) and
+      usage.total > 0 and usage.boxed == 0 and
       usage.native > 0 and not binding_used_in_lambda?(name, in_expr)
   end
 
@@ -1400,7 +1402,9 @@ defmodule Elmc.Backend.CCodegen do
 
   defp native_bool_usage(name, expr, module_name, decl_map) do
     base_contexts = collect_bool_contexts(name, expr, :boxed)
-    native_arg_contexts = collect_native_bool_function_arg_contexts(name, expr, module_name, decl_map)
+
+    native_arg_contexts =
+      collect_native_bool_function_arg_contexts(name, expr, module_name, decl_map)
 
     usage =
       base_contexts
@@ -1465,7 +1469,9 @@ defmodule Elmc.Backend.CCodegen do
     child_contexts =
       expr
       |> Map.values()
-      |> Enum.flat_map(&collect_native_bool_function_arg_contexts(name, &1, module_name, decl_map))
+      |> Enum.flat_map(
+        &collect_native_bool_function_arg_contexts(name, &1, module_name, decl_map)
+      )
 
     own_contexts ++ child_contexts
   end
@@ -4151,7 +4157,8 @@ defmodule Elmc.Backend.CCodegen do
   defp native_function_call_target?(target, args, decl_map) do
     case Map.fetch(decl_map, target) do
       {:ok, decl} ->
-        length(args || []) == length(decl.args || []) and native_function_args?(decl, elem(target, 0), decl_map)
+        length(args || []) == length(decl.args || []) and
+          native_function_args?(decl, elem(target, 0), decl_map)
 
       :error ->
         false
@@ -9294,6 +9301,30 @@ defmodule Elmc.Backend.CCodegen do
 
   defp boxed_int_binding?(_env, _name), do: false
 
+  defp put_boxed_bool_binding(env, name, true) when is_binary(name) or is_atom(name) do
+    boxed_bools = Map.get(env, :__boxed_bool_bindings__, MapSet.new())
+    Map.put(env, :__boxed_bool_bindings__, MapSet.put(boxed_bools, binding_key(name)))
+  end
+
+  defp put_boxed_bool_binding(env, name, _is_bool) when is_binary(name) or is_atom(name) do
+    boxed_bools =
+      env
+      |> Map.get(:__boxed_bool_bindings__, MapSet.new())
+      |> MapSet.delete(binding_key(name))
+
+    Map.put(env, :__boxed_bool_bindings__, boxed_bools)
+  end
+
+  defp put_boxed_bool_binding(env, _name, _is_bool), do: env
+
+  defp boxed_bool_binding?(env, name) when is_binary(name) or is_atom(name) do
+    env
+    |> Map.get(:__boxed_bool_bindings__, MapSet.new())
+    |> MapSet.member?(binding_key(name))
+  end
+
+  defp boxed_bool_binding?(_env, _name), do: false
+
   defp put_boxed_string_binding(env, name, true) when is_binary(name) or is_atom(name) do
     boxed_strings = Map.get(env, :__boxed_string_bindings__, MapSet.new())
     Map.put(env, :__boxed_string_bindings__, MapSet.put(boxed_strings, binding_key(name)))
@@ -11161,21 +11192,21 @@ defmodule Elmc.Backend.CCodegen do
           case operator do
             "__eq__" ->
               """
-                    #{left_code}
-                      #{right_code}
-                      const elmc_int_t #{out} = elmc_value_equal(#{left_var}, #{right_var});
-              elmc_release(#{left_var});
-              elmc_release(#{right_var});
-            """
+                      #{left_code}
+                        #{right_code}
+                        const elmc_int_t #{out} = elmc_value_equal(#{left_var}, #{right_var});
+                elmc_release(#{left_var});
+                elmc_release(#{right_var});
+              """
 
             "__neq__" ->
               """
-            #{left_code}
-              #{right_code}
-              const elmc_int_t #{out} = !elmc_value_equal(#{left_var}, #{right_var});
-              elmc_release(#{left_var});
-              elmc_release(#{right_var});
-            """
+              #{left_code}
+                #{right_code}
+                const elmc_int_t #{out} = !elmc_value_equal(#{left_var}, #{right_var});
+                elmc_release(#{left_var});
+                elmc_release(#{right_var});
+              """
 
             _ ->
               cmp_var = "__cmp_bool_#{next}"
@@ -11189,14 +11220,14 @@ defmodule Elmc.Backend.CCodegen do
                 end
 
               """
-            #{left_code}
-              #{right_code}
-              ElmcValue *#{cmp_var} = elmc_basics_compare(#{left_var}, #{right_var});
-              const elmc_int_t #{out} = elmc_as_int(#{cmp_var}) #{comparison} 0;
-              elmc_release(#{cmp_var});
-              elmc_release(#{left_var});
-              elmc_release(#{right_var});
-            """
+              #{left_code}
+                #{right_code}
+                ElmcValue *#{cmp_var} = elmc_basics_compare(#{left_var}, #{right_var});
+                const elmc_int_t #{out} = elmc_as_int(#{cmp_var}) #{comparison} 0;
+                elmc_release(#{cmp_var});
+                elmc_release(#{left_var});
+                elmc_release(#{right_var});
+              """
           end
 
         {code, out, next}
@@ -11510,7 +11541,7 @@ defmodule Elmc.Backend.CCodegen do
   defp native_bool_expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name),
     do:
       is_binary(native_bool_binding(env, name)) or
-        match?({:ok, source} when is_binary(source), Map.fetch(env, name)) or
+        boxed_bool_binding?(env, name) or
         typed_bool_expr?(%{op: :var, name: name}, env)
 
   defp native_bool_expr?(%{op: :field_access}, _env), do: true

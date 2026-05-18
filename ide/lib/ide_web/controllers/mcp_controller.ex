@@ -7,6 +7,17 @@ defmodule IdeWeb.McpController do
   @doc """
   Handles MCP JSON-RPC over HTTP.
   """
+  def show(conn, _params) do
+    conn
+    |> put_resp_header("allow", "POST")
+    |> put_status(:method_not_allowed)
+    |> json(%{
+      "error" => "MCP HTTP endpoint accepts JSON-RPC POST requests.",
+      "transport" => "http",
+      "methods" => ["POST"]
+    })
+  end
+
   def create(conn, %{"_json" => request_body}) when is_list(request_body) do
     create(conn, request_body)
   end
