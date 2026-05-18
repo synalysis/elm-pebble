@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive do
   alias Ide.Formatter
   alias Ide.Formatter.EditPatch
   alias Ide.Compiler
+  alias Ide.EmulatorSupport
   alias Ide.GitHub.Push, as: GitHubPush
   alias Ide.Emulator
   alias Ide.PebblePreferences
@@ -1578,19 +1579,17 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_event("set-emulator-target", %{"emulator" => params}, socket) do
-    project =
-      socket.assigns.project
-      |> persist_project_emulator_target(Map.get(params, "target"))
-      |> persist_project_emulator_mode(Map.get(params, "mode"))
+    target = normalize_emulator_target(Map.get(params, "target"))
+    mode = normalize_emulator_mode(target, Map.get(params, "mode"))
 
-    target = project_emulator_target(project)
-    mode = project_emulator_mode(project)
+    project = persist_project_emulator_selection(socket.assigns.project, target, mode)
 
     {:noreply,
      socket
      |> assign(:project, project)
      |> assign(:selected_emulator_target, target)
      |> assign(:emulator_mode, mode)
+     |> assign(:emulator_mode_options, ToolchainPresenter.emulator_mode_options(target))
      |> assign(:emulator_form, to_form(%{"target" => target, "mode" => mode}, as: :emulator))
      |> check_emulator_installation()}
   end
@@ -3632,11 +3631,16 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp persist_project_debugger_timeline_mode(project, _mode), do: project
 
-  @spec persist_project_emulator_target(Project.t() | term(), term()) :: term()
-  defp persist_project_emulator_target(%Project{} = project, target) do
-    selected = normalize_emulator_target(target)
+  @spec persist_project_emulator_selection(Project.t() | term(), String.t(), String.t()) :: term()
+  defp persist_project_emulator_selection(%Project{} = project, target, mode) do
+    selected_target = normalize_emulator_target(target)
+    selected_mode = normalize_emulator_mode(selected_target, mode)
     settings = project.debugger_settings || %{}
-    updated_settings = Map.put(settings, "emulator_target", selected)
+
+    updated_settings =
+      settings
+      |> Map.put("emulator_target", selected_target)
+      |> Map.put("emulator_mode", selected_mode)
 
     case Projects.update_project(project, %{"debugger_settings" => updated_settings}) do
       {:ok, updated} -> updated
@@ -3644,21 +3648,7 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  defp persist_project_emulator_target(project, _target), do: project
-
-  @spec persist_project_emulator_mode(Project.t() | term(), term()) :: term()
-  defp persist_project_emulator_mode(%Project{} = project, mode) do
-    selected = normalize_emulator_mode(mode)
-    settings = project.debugger_settings || %{}
-    updated_settings = Map.put(settings, "emulator_mode", selected)
-
-    case Projects.update_project(project, %{"debugger_settings" => updated_settings}) do
-      {:ok, updated} -> updated
-      {:error, _} -> project
-    end
-  end
-
-  defp persist_project_emulator_mode(project, _mode), do: project
+  defp persist_project_emulator_selection(project, _target, _mode), do: project
 
   @spec persist_project_debugger_watch_profile(Project.t(), String.t()) :: Project.t()
   defp persist_project_debugger_watch_profile(%Project{} = project, watch_profile_id)
@@ -3723,10 +3713,12 @@ defmodule IdeWeb.WorkspaceLive do
   @spec project_emulator_mode(term()) :: String.t()
   defp project_emulator_mode(%Project{} = project) do
     settings = project.debugger_settings || %{}
-    normalize_emulator_mode(Map.get(settings, "emulator_mode"))
+    target = project_emulator_target(project)
+    normalize_emulator_mode(target, Map.get(settings, "emulator_mode"))
   end
 
-  defp project_emulator_mode(_), do: "embedded"
+  defp project_emulator_mode(_),
+    do: normalize_emulator_mode(default_emulator_target(), "embedded")
 
   @spec project_debugger_watch_profile_id(Project.t()) :: String.t()
   defp project_debugger_watch_profile_id(%Project{} = project) do
@@ -4197,28 +4189,8 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   @spec normalize_emulator_target(term()) :: String.t()
-  defp normalize_emulator_target(target) when is_binary(target) do
-    target = String.trim(target)
-    targets = ToolchainPresenter.emulator_targets()
+  defp normalize_emulator_target(target), do: EmulatorSupport.normalize_target(target)
 
-    cond do
-      target in targets -> target
-      default_emulator_target() in targets -> default_emulator_target()
-      targets != [] -> hd(targets)
-      true -> default_emulator_target()
-    end
-  end
-
-  defp normalize_emulator_target(_), do: normalize_emulator_target(default_emulator_target())
-
-  @spec normalize_emulator_mode(term()) :: String.t()
-  defp normalize_emulator_mode(mode) when is_binary(mode) do
-    case String.trim(mode) do
-      "external" -> "external"
-      "wasm" -> "wasm"
-      _ -> "embedded"
-    end
-  end
-
-  defp normalize_emulator_mode(_), do: "embedded"
+  @spec normalize_emulator_mode(String.t() | nil, term()) :: String.t()
+  defp normalize_emulator_mode(target, mode), do: EmulatorSupport.normalize_mode(target, mode)
 end

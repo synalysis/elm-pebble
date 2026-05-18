@@ -57,6 +57,10 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:emulator_targets, ToolchainPresenter.emulator_targets())
     |> assign(:selected_emulator_target, default_emulator_target)
     |> assign(
+      :emulator_mode_options,
+      ToolchainPresenter.emulator_mode_options(default_emulator_target)
+    )
+    |> assign(
       :emulator_form,
       to_form(%{"target" => default_emulator_target, "mode" => "embedded"}, as: :emulator)
     )
@@ -188,6 +192,7 @@ defmodule IdeWeb.WorkspaceLive.State do
   def assign_project(socket, %Project{} = project, settings, data) when is_map(data) do
     publish_readiness = Map.fetch!(data, :publish_readiness)
     selected_emulator_target = Map.fetch!(data, :selected_emulator_target)
+    emulator_mode = Map.fetch!(data, :emulator_mode)
 
     socket
     |> assign(:project, project)
@@ -233,11 +238,15 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:github_push_output, nil)
     |> assign(:packages_target_root, Map.fetch!(data, :packages_target_root))
     |> assign(:selected_emulator_target, selected_emulator_target)
-    |> assign(:emulator_mode, Map.fetch!(data, :emulator_mode))
+    |> assign(:emulator_mode, emulator_mode)
+    |> assign(
+      :emulator_mode_options,
+      ToolchainPresenter.emulator_mode_options(selected_emulator_target)
+    )
     |> assign(
       :emulator_form,
       to_form(
-        %{"target" => selected_emulator_target, "mode" => Map.fetch!(data, :emulator_mode)},
+        %{"target" => selected_emulator_target, "mode" => emulator_mode},
         as: :emulator
       )
     )

@@ -53,10 +53,39 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     assert html =~ "WASM Emulator"
     assert has_element?(view, "span[data-wasm-firmware]")
     refute has_element?(view, "select[data-wasm-firmware]")
-    assert has_element?(view, "a[data-phx-link='patch'][href='/projects/#{project.slug}/emulator']")
+
+    assert has_element?(
+             view,
+             "a[data-phx-link='patch'][href='/projects/#{project.slug}/emulator']"
+           )
 
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
     assert has_element?(view, "select[name='emulator[mode]'] option[selected][value='wasm']")
+  end
+
+  test "emulator pane hides unsupported wasm mode for gabbro", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceGabbroWasmSettings",
+               "slug" => "workspace-gabbro-wasm-settings",
+               "target_type" => "app"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
+
+    view
+    |> form("form[phx-change='set-emulator-target']", %{
+      "emulator" => %{"target" => "gabbro", "mode" => "wasm"}
+    })
+    |> render_change()
+
+    updated = Projects.get_project_by_slug(project.slug)
+    assert updated.debugger_settings["emulator_target"] == "gabbro"
+    assert updated.debugger_settings["emulator_mode"] == "embedded"
+
+    refute has_element?(view, "select[name='emulator[mode]'] option[value='wasm']")
+    assert has_element?(view, "select[name='emulator[mode]'] option[selected][value='embedded']")
+    refute render(view) =~ "WASM Emulator"
   end
 
   test "project settings pane saves release metadata and github config", %{conn: conn} do

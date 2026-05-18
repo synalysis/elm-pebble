@@ -754,10 +754,16 @@ defmodule Elmc.Runtime.Generator do
       ElmcRecord record;
     } ElmcRecordCell;
 
+    typedef struct {
+      ElmcValue value;
+      ElmcClosure closure;
+    } ElmcClosureCell;
+
     #define ELMC_MAYBE_CELL_SCALAR ((elmc_int_t)0x1EC012)
     #define ELMC_RESULT_CELL_SCALAR ((elmc_int_t)0x1EC013)
     #define ELMC_TUPLE2_CELL_SCALAR ((elmc_int_t)0x1EC014)
     #define ELMC_RECORD_CELL_SCALAR ((elmc_int_t)0x1EC015)
+    #define ELMC_CLOSURE_CELL_SCALAR ((elmc_int_t)0x1EC016)
 
     typedef struct {
       int active;
@@ -785,6 +791,7 @@ defmodule Elmc.Runtime.Generator do
     static int elmc_result_cell_release(ElmcValue *value);
     static int elmc_tuple2_cell_release(ElmcValue *value);
     static int elmc_record_cell_release(ElmcValue *value);
+    static int elmc_closure_cell_release(ElmcValue *value);
     static ElmcValue *elmc_record_cell_alloc(int field_count, const char **field_names, ElmcValue **field_values, int take);
 
     #if ELMC_ALLOC_TRACE
@@ -958,6 +965,14 @@ defmodule Elmc.Runtime.Generator do
       if (!value || value->tag != ELMC_TAG_RECORD || value->scalar != ELMC_RECORD_CELL_SCALAR) return 0;
       ElmcRecordCell *cell = (ElmcRecordCell *)value;
       if (value->payload != &cell->record) return 0;
+      free(cell);
+      return 1;
+    }
+
+    static int elmc_closure_cell_release(ElmcValue *value) {
+      if (!value || value->tag != ELMC_TAG_CLOSURE || value->scalar != ELMC_CLOSURE_CELL_SCALAR) return 0;
+      ElmcClosureCell *cell = (ElmcClosureCell *)value;
+      if (value->payload != &cell->closure) return 0;
       free(cell);
       return 1;
     }
@@ -1977,20 +1992,27 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_closure_new(ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures) {
-      ElmcClosure *clo = (ElmcClosure *)elmc_malloc(sizeof(ElmcClosure), __func__);
-      if (!clo) return NULL;
+      if (capture_count < 0) return NULL;
+      size_t captures_size = sizeof(ElmcValue *) * (size_t)capture_count;
+      ElmcClosureCell *cell = (ElmcClosureCell *)elmc_malloc(sizeof(ElmcClosureCell) + captures_size, __func__);
+      if (!cell) return NULL;
+      ElmcClosure *clo = &cell->closure;
       clo->fn = fn;
       clo->arity = arity;
       clo->capture_count = capture_count;
       clo->captures = NULL;
       if (capture_count > 0) {
-        clo->captures = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * capture_count, __func__);
-        if (!clo->captures) { free(clo); return NULL; }
+        clo->captures = (ElmcValue **)(cell + 1);
         for (int i = 0; i < capture_count; i++) {
           clo->captures[i] = elmc_retain(captures[i]);
         }
       }
-      return elmc_alloc(ELMC_TAG_CLOSURE, clo);
+      cell->value.rc = 1;
+      cell->value.tag = ELMC_TAG_CLOSURE;
+      cell->value.payload = clo;
+      cell->value.scalar = ELMC_CLOSURE_CELL_SCALAR;
+      ELMC_ALLOCATED += 1;
+      return &cell->value;
     }
 
     ElmcValue *elmc_closure_call(ElmcValue *closure, ElmcValue **args, int argc) {
@@ -4422,6 +4444,10 @@ defmodule Elmc.Runtime.Generator do
         ElmcClosure *clo = (ElmcClosure *)value->payload;
         for (int i = 0; i < clo->capture_count; i++) {
           if (clo->captures[i]) elmc_release(clo->captures[i]);
+        }
+        if (elmc_closure_cell_release(value)) {
+          ELMC_RELEASED += 1;
+          return;
         }
         free(clo->captures);
       }

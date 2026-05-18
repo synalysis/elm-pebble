@@ -1,7 +1,7 @@
 defmodule IdeWeb.WorkspaceLive.ToolchainPresenter do
   @moduledoc false
 
-  alias Ide.PebbleToolchain
+  alias Ide.EmulatorSupport
 
   @spec render_toolchain_output(map()) :: String.t()
   def render_toolchain_output(result) do
@@ -92,7 +92,12 @@ defmodule IdeWeb.WorkspaceLive.ToolchainPresenter do
 
   @spec emulator_targets() :: [String.t()]
   def emulator_targets do
-    PebbleToolchain.supported_emulator_targets()
+    EmulatorSupport.supported_targets()
+  end
+
+  @spec emulator_mode_options(String.t() | nil) :: [{String.t(), String.t()}]
+  def emulator_mode_options(target) do
+    EmulatorSupport.mode_options(target)
   end
 
   @spec publish_readiness([map()], [String.t()]) :: [map()]

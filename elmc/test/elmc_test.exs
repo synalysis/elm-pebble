@@ -76,6 +76,7 @@ defmodule ElmcTest do
 
     assert runtime =~ "ElmcValue *elmc_closure_new"
     assert runtime =~ "ElmcValue *elmc_alloc"
+    assert runtime =~ "elmc_closure_cell_release"
   end
 
   test "runtime stores int and bool scalars inline" do
@@ -134,6 +135,7 @@ defmodule ElmcTest do
     assert runtime =~ "ElmcResultCell"
     assert runtime =~ "ElmcTuple2Cell"
     assert runtime =~ "ElmcRecordCell"
+    assert runtime =~ "ElmcClosureCell"
     assert runtime =~ "return elmc_list_cell_alloc(head, tail, 0);"
     assert runtime =~ "return elmc_list_cell_alloc(head, tail, 1);"
     assert runtime =~ "return elmc_record_cell_alloc(field_count, field_names, field_values, 0);"
@@ -141,10 +143,11 @@ defmodule ElmcTest do
     assert runtime =~ "if (value->tag == ELMC_TAG_LIST && elmc_list_cell_release(value))"
     assert runtime =~ "if (value->tag == ELMC_TAG_TUPLE2 && elmc_tuple2_cell_release(value))"
     assert runtime =~ "if (elmc_record_cell_release(value))"
+    assert runtime =~ "if (elmc_closure_cell_release(value))"
     refute runtime =~ "ELMC_LIST_POOL_CAPACITY"
   end
 
-  test "runtime list cell optimization compiles and releases cells" do
+  test "runtime cell optimizations compile and release cells" do
     out_dir = Path.expand("tmp/runtime_list_cell_compile", __DIR__)
     runtime_dir = Path.join(out_dir, "runtime")
     harness_path = Path.join(out_dir, "list_cell_harness.c")
@@ -158,6 +161,12 @@ defmodule ElmcTest do
     File.write!(harness_path, """
     #include "elmc_runtime.h"
     #include <stdint.h>
+
+    static ElmcValue *add_capture(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+      (void)argc;
+      if (capture_count != 1) return elmc_new_int(-1);
+      return elmc_new_int(elmc_as_int(captures[0]) + elmc_as_int(args[0]));
+    }
 
     int main(void) {
       ElmcValue *one = elmc_new_int(1);
@@ -173,13 +182,24 @@ defmodule ElmcTest do
       const char *field_names[] = {"value"};
       ElmcValue *field_values[] = {one};
       ElmcValue *record = elmc_record_new(1, field_names, field_values);
+      ElmcValue *captured = elmc_new_int(100);
+      ElmcValue *closure_captures[] = {captured};
+      ElmcValue *closure = elmc_closure_new(add_capture, 1, 1, closure_captures);
+      elmc_release(captured);
+      ElmcValue *arg = elmc_new_int(23);
+      ElmcValue *closure_args[] = {arg};
+      ElmcValue *sum = elmc_closure_call(closure, closure_args, 1);
+      int sum_ok = elmc_as_int(sum) == 123;
       elmc_release(c);
       elmc_release(record);
       elmc_release(ok);
       elmc_release(maybe);
       elmc_release(tuple);
+      elmc_release(sum);
+      elmc_release(arg);
+      elmc_release(closure);
       elmc_release(one);
-      return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 1;
+      return sum_ok && elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 1;
     }
     """)
 

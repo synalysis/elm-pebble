@@ -53,7 +53,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
           field={@emulator_form[:mode]}
           type="select"
           label="Emulator"
-          options={emulator_mode_options()}
+          options={@emulator_mode_options}
         />
       </.form>
 
@@ -732,14 +732,6 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   defp emulator_setup_needs_attention?(%{error: error}) when is_binary(error), do: true
   defp emulator_setup_needs_attention?(_), do: false
-
-  defp emulator_mode_options do
-    [
-      {"Embedded in IDE", "embedded"},
-      {"External Pebble emulator", "external"},
-      {"WASM in browser", "wasm"}
-    ]
-  end
 
   defp embedded_emulator_mode?("external"), do: false
   defp embedded_emulator_mode?("wasm"), do: false

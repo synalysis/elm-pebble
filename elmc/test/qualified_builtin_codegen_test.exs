@@ -650,6 +650,37 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert native_call_body =~ "elmc_fn_Main_nativeBoolBranch_native(enabled, 7)"
     refute native_call_body =~ "elmc_new_bool(enabled)"
+
+    refute generated_c =~ "elmc_fn_Main_nativeBoolCaptured_native"
+
+    assert generated_c =~
+             "static ElmcValue *elmc_fn_Main_nativeBoolBoxedUse_native(ElmcValue * const enabled, const elmc_int_t value)"
+
+    compare_branch_body =
+      generated_c
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolCompareBranch_native")
+      |> List.last()
+
+    [native_compare_branch_body | _rest] =
+      String.split(compare_branch_body, "ElmcValue *elmc_fn_", parts: 2)
+
+    assert native_compare_branch_body =~ "if ((left == right))"
+    refute native_compare_branch_body =~ "elmc_new_bool(left == right)"
+    refute native_compare_branch_body =~ "elmc_value_equal"
+
+    compare_call_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_nativeBoolCompareCall")
+      |> List.last()
+
+    [native_compare_call_body | _rest] =
+      String.split(compare_call_body, "ElmcValue *elmc_fn_", parts: 2)
+
+    assert native_compare_call_body =~
+             "elmc_fn_Main_nativeBoolBranch_native(!((elmc_as_bool(left) == elmc_as_bool(right))), 3)"
+
+    refute native_compare_call_body =~ "elmc_new_bool"
+    refute native_compare_call_body =~ "elmc_value_equal"
   end
 
   test "let Int expressions passed to native helper Int args stay unboxed" do
@@ -2280,6 +2311,42 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     nativeBoolCall : Bool -> String
     nativeBoolCall enabled =
         nativeBoolBranch enabled 7
+
+
+    nativeBoolCaptured : Bool -> Int -> Int
+    nativeBoolCaptured enabled value =
+        let
+            test _ =
+                enabled
+        in
+        if test value then
+            value
+
+        else
+            0
+
+
+    nativeBoolBoxedUse : Bool -> Int -> Int
+    nativeBoolBoxedUse enabled value =
+        if List.member enabled [ True ] then
+            value
+
+        else
+            0
+
+
+    nativeBoolCompareBranch : Bool -> Bool -> String
+    nativeBoolCompareBranch left right =
+        if left == right then
+            "same"
+
+        else
+            "diff"
+
+
+    nativeBoolCompareCall : Bool -> Bool -> String
+    nativeBoolCompareCall left right =
+        nativeBoolBranch (left /= right) 3
     """
   end
 

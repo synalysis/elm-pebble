@@ -163,7 +163,7 @@ defmodule Elmc.Backend.CCodegen do
     wrapper_targets =
       generic_wrapper_targets(ir, opts, decl_map, direct_command_targets(ir, opts, decl_map))
 
-    generic_native_prototypes = generic_native_function_prototypes(ir, generic_targets)
+    generic_native_prototypes = generic_native_function_prototypes(ir, generic_targets, decl_map)
 
     function_defs =
       ir.modules
@@ -604,7 +604,7 @@ defmodule Elmc.Backend.CCodegen do
          decl_map,
          emit_wrapper?
        ) do
-    if native_function_args?(decl) do
+    if native_function_args?(decl, module_name, decl_map) do
       emit_native_function_def(
         decl,
         module_name,
@@ -633,7 +633,7 @@ defmodule Elmc.Backend.CCodegen do
        ) do
     arg_names = decl.args || []
     c_arg_bindings = c_arg_bindings(arg_names)
-    arg_kinds = native_function_arg_kinds(decl)
+    arg_kinds = native_function_arg_kinds(decl, module_name, decl_map)
     {entry_probe, exit_probe} = generated_debug_probes(module_name, decl.name)
 
     wrapper_bindings =
@@ -701,7 +701,7 @@ defmodule Elmc.Backend.CCodegen do
 
     """
     #{wrapper_def}
-    static ElmcValue *#{c_name}_native(#{native_function_params(decl)}) {
+    static ElmcValue *#{c_name}_native(#{native_function_params(decl, module_name, decl_map)}) {
       #{unused_casts}
       #{entry_probe}
       #{body_code}
@@ -711,31 +711,31 @@ defmodule Elmc.Backend.CCodegen do
     """
   end
 
-  defp generic_native_function_prototypes(ir, generic_targets) do
+  defp generic_native_function_prototypes(ir, generic_targets, decl_map) do
     ir.modules
     |> Enum.flat_map(fn mod ->
       mod.declarations
       |> Enum.filter(
         &(&1.kind == :function and MapSet.member?(generic_targets, {mod.name, &1.name}) and
-            native_function_args?(&1))
+            native_function_args?(&1, mod.name, decl_map))
       )
       |> Enum.map(fn decl ->
         c_name = module_fn_name(mod.name, decl.name)
-        "static ElmcValue *#{c_name}_native(#{native_function_params(decl)});"
+        "static ElmcValue *#{c_name}_native(#{native_function_params(decl, mod.name, decl_map)});"
       end)
     end)
     |> Enum.join("\n")
   end
 
-  defp native_function_args?(decl) do
+  defp native_function_args?(decl, module_name, decl_map) do
     decl
-    |> native_function_arg_kinds()
+    |> native_function_arg_kinds(module_name, decl_map)
     |> Enum.any?(&(&1 in [:native_int, :native_bool]))
   end
 
-  defp native_function_params(decl) do
+  defp native_function_params(decl, module_name, decl_map) do
     c_arg_bindings(decl.args || [])
-    |> Enum.zip(native_function_arg_kinds(decl))
+    |> Enum.zip(native_function_arg_kinds(decl, module_name, decl_map))
     |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, kind} ->
       case kind do
         :native_int -> "const elmc_int_t #{c_arg}"
@@ -745,7 +745,9 @@ defmodule Elmc.Backend.CCodegen do
     end)
   end
 
-  defp native_function_arg_kinds(%{args: args, type: type, expr: expr})
+  defp native_function_arg_kinds(decl, module_name, decl_map)
+
+  defp native_function_arg_kinds(%{args: args, type: type, expr: expr}, module_name, decl_map)
        when is_list(args) and is_binary(type) do
     arg_types = function_arg_types(type)
 
@@ -761,7 +763,11 @@ defmodule Elmc.Backend.CCodegen do
           end
 
         "Bool" ->
-          :native_bool
+          if native_function_bool_arg_safe?(arg, expr, module_name, decl_map) do
+            :native_bool
+          else
+            :boxed
+          end
 
         _other ->
           :boxed
@@ -769,7 +775,7 @@ defmodule Elmc.Backend.CCodegen do
     end)
   end
 
-  defp native_function_arg_kinds(%{args: args, type: type})
+  defp native_function_arg_kinds(%{args: args, type: type}, _module_name, _decl_map)
        when is_list(args) and is_binary(type) do
     arg_types = function_arg_types(type)
 
@@ -789,13 +795,18 @@ defmodule Elmc.Backend.CCodegen do
     end)
   end
 
-  defp native_function_arg_kinds(%{args: args}) when is_list(args),
+  defp native_function_arg_kinds(%{args: args}, _module_name, _decl_map) when is_list(args),
     do: Enum.map(args, fn _ -> :boxed end)
 
-  defp native_function_arg_kinds(_decl), do: []
+  defp native_function_arg_kinds(_decl, _module_name, _decl_map), do: []
 
   defp native_function_int_arg_safe?(arg, expr) do
     usage = native_int_usage(arg, expr || %{op: :int_literal, value: 0})
+    (usage.total == 0 or usage.boxed == 0) and not binding_used_in_lambda?(arg, expr)
+  end
+
+  defp native_function_bool_arg_safe?(arg, expr, module_name, decl_map) do
+    usage = native_bool_usage(arg, expr || %{op: :int_literal, value: 0}, module_name, decl_map)
     (usage.total == 0 or usage.boxed == 0) and not binding_used_in_lambda?(arg, expr)
   end
 
@@ -1333,7 +1344,7 @@ defmodule Elmc.Backend.CCodegen do
         nil
 
       decl ->
-        arg_kinds = native_function_arg_kinds(decl)
+        arg_kinds = native_function_arg_kinds(decl, elem(target, 0), decl_map)
 
         if Enum.any?(arg_kinds, &(&1 in [:native_int, :native_bool])) do
           {args, arg_kinds}
@@ -1387,24 +1398,87 @@ defmodule Elmc.Backend.CCodegen do
 
   defp pebble_angle_let?(_name, _value_expr, _in_expr), do: false
 
-  defp native_bool_usage(name, expr) do
-    name
-    |> collect_bool_contexts(expr, :boxed)
-    |> Enum.reduce(%{total: 0, boxed: 0, tests: 0}, fn context, acc ->
+  defp native_bool_usage(name, expr, module_name, decl_map) do
+    base_contexts = collect_bool_contexts(name, expr, :boxed)
+    native_arg_contexts = collect_native_bool_function_arg_contexts(name, expr, module_name, decl_map)
+
+    usage =
+      base_contexts
+      |> Enum.reduce(%{total: 0, boxed: 0, tests: 0}, fn context, acc ->
+        %{
+          total: acc.total + 1,
+          boxed: acc.boxed + if(context == :boxed, do: 1, else: 0),
+          tests: acc.tests + if(context == :bool_test, do: 1, else: 0)
+        }
+      end)
+
+    native_arg_contexts
+    |> Enum.reduce(usage, fn context, acc ->
+      boxed =
+        if context == :bool_test do
+          max(acc.boxed - 1, 0)
+        else
+          acc.boxed
+        end
+
       %{
-        total: acc.total + 1,
-        boxed: acc.boxed + if(context == :boxed, do: 1, else: 0),
-        tests: acc.tests + if(context == :bool_test, do: 1, else: 0)
+        acc
+        | boxed: boxed,
+          tests: acc.tests + if(context == :bool_test, do: 1, else: 0)
       }
     end)
   end
 
-  defp native_bool_let?(name, value_expr, in_expr) when is_binary(name) or is_atom(name) do
-    usage = native_bool_usage(name, in_expr)
-    bool_expr?(value_expr) and usage.total > 0 and usage.boxed == 0 and usage.tests > 0
+  defp native_bool_let?(name, value_expr, in_expr, env)
+
+  defp native_bool_let?(name, value_expr, in_expr, env) when is_binary(name) or is_atom(name) do
+    usage =
+      native_bool_usage(
+        name,
+        in_expr,
+        Map.get(env, :__module__),
+        Map.get(env, :__program_decls__, %{})
+      )
+
+    bool_expr?(value_expr) and usage.total > 0 and usage.boxed == 0 and usage.tests > 0 and
+      not binding_used_in_lambda?(name, in_expr)
   end
 
-  defp native_bool_let?(_name, _value_expr, _in_expr), do: false
+  defp native_bool_let?(_name, _value_expr, _in_expr, _env), do: false
+
+  defp collect_native_bool_function_arg_contexts(name, expr, module_name, decl_map)
+       when is_map(expr) do
+    own_contexts =
+      case native_function_call_arg_kinds(expr, module_name, decl_map) do
+        {args, arg_kinds} ->
+          args
+          |> Enum.zip(arg_kinds)
+          |> Enum.flat_map(fn
+            {arg, :native_bool} -> collect_bool_contexts(name, arg, :bool_test)
+            {_arg, _kind} -> []
+          end)
+
+        nil ->
+          []
+      end
+
+    child_contexts =
+      expr
+      |> Map.values()
+      |> Enum.flat_map(&collect_native_bool_function_arg_contexts(name, &1, module_name, decl_map))
+
+    own_contexts ++ child_contexts
+  end
+
+  defp collect_native_bool_function_arg_contexts(name, exprs, module_name, decl_map)
+       when is_list(exprs),
+       do:
+         Enum.flat_map(
+           exprs,
+           &collect_native_bool_function_arg_contexts(name, &1, module_name, decl_map)
+         )
+
+  defp collect_native_bool_function_arg_contexts(_name, _expr, _module_name, _decl_map), do: []
 
   defp collect_bool_contexts(name, %{op: :var, name: var_name}, context) do
     if same_binding?(name, var_name), do: [context], else: []
@@ -1432,6 +1506,54 @@ defmodule Elmc.Backend.CCodegen do
     else
       value_contexts ++ collect_bool_contexts(name, in_expr, context)
     end
+  end
+
+  defp collect_bool_contexts(name, %{op: :lambda, args: args, body: body}, _context)
+       when is_list(args) do
+    if Enum.any?(args, &same_binding?(name, &1)) do
+      []
+    else
+      collect_bool_contexts(name, body, :boxed)
+    end
+  end
+
+  defp collect_bool_contexts(name, %{op: :call, name: call_name, args: args}, _context)
+       when is_list(args) do
+    arg_context =
+      if call_name in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] do
+        :bool_test
+      else
+        :boxed
+      end
+
+    Enum.flat_map(args, &collect_bool_contexts(name, &1, arg_context))
+  end
+
+  defp collect_bool_contexts(name, %{op: :qualified_call, target: target, args: args}, _context)
+       when is_list(args) do
+    arg_context =
+      if qualified_builtin_operator_name(target) in [
+           "__eq__",
+           "__neq__",
+           "__lt__",
+           "__lte__",
+           "__gt__",
+           "__gte__"
+         ] do
+        :bool_test
+      else
+        :boxed
+      end
+
+    Enum.flat_map(args, &collect_bool_contexts(name, &1, arg_context))
+  end
+
+  defp collect_bool_contexts(
+         name,
+         %{op: :runtime_call, function: "elmc_basics_not", args: [value]},
+         _context
+       ) do
+    collect_bool_contexts(name, value, :bool_test)
   end
 
   defp collect_bool_contexts(name, expr, context) when is_map(expr),
@@ -1983,7 +2105,8 @@ defmodule Elmc.Backend.CCodegen do
 
   defp compile_native_function_call(module_name, name, args, env, counter) do
     decl = env |> Map.get(:__program_decls__, %{}) |> Map.fetch!({module_name, name})
-    arg_kinds = native_function_arg_kinds(decl)
+    decl_map = Map.get(env, :__program_decls__, %{})
+    arg_kinds = native_function_arg_kinds(decl, module_name, decl_map)
 
     {arg_code, arg_refs, release_refs, counter} =
       args
@@ -2029,7 +2152,7 @@ defmodule Elmc.Backend.CCodegen do
     |> Map.get({module_name, name})
     |> case do
       nil -> false
-      decl -> native_function_args?(decl)
+      decl -> native_function_args?(decl, module_name, Map.get(env, :__program_decls__, %{}))
     end
   end
 
@@ -2513,7 +2636,7 @@ defmodule Elmc.Backend.CCodegen do
          counter
        ) do
     cond do
-      native_bool_let?(name, value_expr, in_expr) ->
+      native_bool_let?(name, value_expr, in_expr, env) ->
         {value_code, value_ref, counter} = compile_native_bool_expr(value_expr, env, counter)
         next = counter + 1
         native_var = "native_bool_#{safe_c_suffix(name)}_#{next}"
@@ -4028,7 +4151,7 @@ defmodule Elmc.Backend.CCodegen do
   defp native_function_call_target?(target, args, decl_map) do
     case Map.fetch(decl_map, target) do
       {:ok, decl} ->
-        length(args || []) == length(decl.args || []) and native_function_args?(decl)
+        length(args || []) == length(decl.args || []) and native_function_args?(decl, elem(target, 0), decl_map)
 
       :error ->
         false
@@ -10986,35 +11109,58 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
+  defp compile_native_bool_expr(
+         %{op: :runtime_call, function: "elmc_basics_not", args: [value]},
+         env,
+         counter
+       ) do
+    {code, ref, counter} = compile_native_bool_expr(value, env, counter)
+    {code, "!(#{ref})", counter}
+  end
+
   defp compile_native_bool_expr(expr, env, counter),
     do: compile_native_bool_fallback(expr, env, counter)
 
   defp compile_native_bool_compare(left, right, operator, env, counter) do
-    if native_int_compare_safe?(operator, left, right, env) do
-      {left_code, left_ref, counter} = compile_native_int_expr(left, env, counter)
-      {right_code, right_ref, counter} = compile_native_int_expr(right, env, counter)
+    cond do
+      native_bool_compare_safe?(operator, left, right, env) ->
+        {left_code, left_ref, counter} = compile_native_bool_expr(left, env, counter)
+        {right_code, right_ref, counter} = compile_native_bool_expr(right, env, counter)
 
-      comparison =
-        case operator do
-          "__eq__" -> "=="
-          "__neq__" -> "!="
-          "__lt__" -> "<"
-          "__lte__" -> "<="
-          "__gt__" -> ">"
-          "__gte__" -> ">="
-        end
+        comparison =
+          case operator do
+            "__eq__" -> "=="
+            "__neq__" -> "!="
+          end
 
-      {left_code <> right_code, "(#{left_ref} #{comparison} #{right_ref})", counter}
-    else
-      {left_code, left_var, counter} = compile_expr(left, env, counter)
-      {right_code, right_var, counter} = compile_expr(right, env, counter)
-      next = counter + 1
-      out = "native_cmp_#{next}"
+        {left_code <> right_code, "(#{left_ref} #{comparison} #{right_ref})", counter}
 
-      code =
-        case operator do
-          "__eq__" ->
-            """
+      native_int_compare_safe?(operator, left, right, env) ->
+        {left_code, left_ref, counter} = compile_native_int_expr(left, env, counter)
+        {right_code, right_ref, counter} = compile_native_int_expr(right, env, counter)
+
+        comparison =
+          case operator do
+            "__eq__" -> "=="
+            "__neq__" -> "!="
+            "__lt__" -> "<"
+            "__lte__" -> "<="
+            "__gt__" -> ">"
+            "__gte__" -> ">="
+          end
+
+        {left_code <> right_code, "(#{left_ref} #{comparison} #{right_ref})", counter}
+
+      true ->
+        {left_code, left_var, counter} = compile_expr(left, env, counter)
+        {right_code, right_var, counter} = compile_expr(right, env, counter)
+        next = counter + 1
+        out = "native_cmp_#{next}"
+
+        code =
+          case operator do
+            "__eq__" ->
+              """
                     #{left_code}
                       #{right_code}
                       const elmc_int_t #{out} = elmc_value_equal(#{left_var}, #{right_var});
@@ -11022,8 +11168,8 @@ defmodule Elmc.Backend.CCodegen do
               elmc_release(#{right_var});
             """
 
-          "__neq__" ->
-            """
+            "__neq__" ->
+              """
             #{left_code}
               #{right_code}
               const elmc_int_t #{out} = !elmc_value_equal(#{left_var}, #{right_var});
@@ -11031,18 +11177,18 @@ defmodule Elmc.Backend.CCodegen do
               elmc_release(#{right_var});
             """
 
-          _ ->
-            cmp_var = "__cmp_bool_#{next}"
+            _ ->
+              cmp_var = "__cmp_bool_#{next}"
 
-            comparison =
-              case operator do
-                "__lt__" -> "<"
-                "__lte__" -> "<="
-                "__gt__" -> ">"
-                "__gte__" -> ">="
-              end
+              comparison =
+                case operator do
+                  "__lt__" -> "<"
+                  "__lte__" -> "<="
+                  "__gt__" -> ">"
+                  "__gte__" -> ">="
+                end
 
-            """
+              """
             #{left_code}
               #{right_code}
               ElmcValue *#{cmp_var} = elmc_basics_compare(#{left_var}, #{right_var});
@@ -11051,11 +11197,18 @@ defmodule Elmc.Backend.CCodegen do
               elmc_release(#{left_var});
               elmc_release(#{right_var});
             """
-        end
+          end
 
-      {code, out, next}
+        {code, out, next}
     end
   end
+
+  defp native_bool_compare_safe?(operator, left, right, env)
+       when operator in ["__eq__", "__neq__"] do
+    native_bool_expr?(left, env) and native_bool_expr?(right, env)
+  end
+
+  defp native_bool_compare_safe?(_operator, _left, _right, _env), do: false
 
   defp compile_native_bool_fallback(expr, env, counter) do
     {code, var, counter} = compile_expr(expr, env, counter)
@@ -11364,6 +11517,9 @@ defmodule Elmc.Backend.CCodegen do
 
   defp native_bool_expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, env),
     do: native_bool_expr?(then_expr, env) and native_bool_expr?(else_expr, env)
+
+  defp native_bool_expr?(%{op: :runtime_call, function: "elmc_basics_not", args: [value]}, env),
+    do: native_bool_expr?(value, env)
 
   defp native_bool_expr?(expr, env), do: bool_expr?(expr) or typed_bool_expr?(expr, env)
 
