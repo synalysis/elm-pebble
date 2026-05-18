@@ -1083,7 +1083,10 @@ defmodule Elmc.Backend.CCodegen do
         %{
           op: :call,
           name: "__add__",
-          args: [substitute_expr(expr, substitutions), %{op: :int_literal, value: value}]
+          args: [
+            substitute_expr(expr, Map.delete(substitutions, name)),
+            %{op: :int_literal, value: value}
+          ]
         }
 
       :error ->
@@ -1097,7 +1100,10 @@ defmodule Elmc.Backend.CCodegen do
         %{
           op: :call,
           name: "__sub__",
-          args: [substitute_expr(expr, substitutions), %{op: :int_literal, value: value}]
+          args: [
+            substitute_expr(expr, Map.delete(substitutions, name)),
+            %{op: :int_literal, value: value}
+          ]
         }
 
       :error ->
@@ -1113,8 +1119,8 @@ defmodule Elmc.Backend.CCodegen do
       op: :call,
       name: "__add__",
       args: [
-        substitute_expr(left_expr, substitutions),
-        substitute_expr(right_expr, substitutions)
+        substitute_expr(left_expr, Map.delete(substitutions, left)),
+        substitute_expr(right_expr, Map.delete(substitutions, right))
       ]
     }
   end
@@ -5055,11 +5061,11 @@ defmodule Elmc.Backend.CCodegen do
     case special_value_from_target(normalized, args) do
       nil ->
         cond do
-          normalized == "Pebble.Ui.text" and length(args) == 3 ->
+          normalized == "Pebble.Ui.text" and length(args) == 4 ->
             collect_direct_function_arg_contexts(
               name,
               args,
-              [:boxed, :boxed, :native_string],
+              [:boxed, :boxed, :boxed, :native_string],
               env
             )
 
@@ -5577,7 +5583,7 @@ defmodule Elmc.Backend.CCodegen do
         counter
       )
 
-  defp direct_emit_qualified("Pebble.Ui.text", [font, bounds, value], env, counter),
+  defp direct_emit_qualified("Pebble.Ui.text", [font, options, bounds, value], env, counter),
     do:
       direct_append_text_command(
         draw_kind(:text),
@@ -5586,7 +5592,8 @@ defmodule Elmc.Backend.CCodegen do
           field_access_expr(bounds, "x"),
           field_access_expr(bounds, "y"),
           field_access_expr(bounds, "w"),
-          field_access_expr(bounds, "h")
+          field_access_expr(bounds, "h"),
+          text_options_expr(options)
         ],
         value,
         env,
@@ -6720,6 +6727,22 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
+  defp record_field_expr(%{op: :qualified_call, target: target, args: args}, field)
+       when is_binary(target) do
+    case special_value_from_target(normalize_special_target(target), args || []) do
+      nil -> nil
+      rewritten -> record_field_expr(rewritten, field)
+    end
+  end
+
+  defp record_field_expr(%{op: :call, name: name, args: args}, field)
+       when is_binary(name) do
+    case special_value_from_target(name, args || []) do
+      nil -> nil
+      rewritten -> record_field_expr(rewritten, field)
+    end
+  end
+
   defp record_field_expr(%{op: :var}, _field), do: nil
 
   defp record_field_expr(%{op: :field_access}, _field), do: nil
@@ -6850,7 +6873,7 @@ defmodule Elmc.Backend.CCodegen do
         ]
       )
 
-  defp special_value_from_target("Pebble.Ui.text", [font_id, bounds, value]),
+  defp special_value_from_target("Pebble.Ui.text", [font_id, options, bounds, value]),
     do:
       encoded_text_cmd_expr(
         draw_kind(:text),
@@ -6860,9 +6883,47 @@ defmodule Elmc.Backend.CCodegen do
           field_access_expr(bounds, "y"),
           field_access_expr(bounds, "w"),
           field_access_expr(bounds, "h"),
+          text_options_expr(options),
           value
         ]
       )
+
+  defp special_value_from_target("Pebble.Ui.defaultTextOptions", []),
+    do: %{
+      op: :record_literal,
+      fields: [
+        %{name: "alignment", expr: %{op: :int_literal, value: 1}},
+        %{name: "overflow", expr: %{op: :int_literal, value: 0}}
+      ]
+    }
+
+  defp special_value_from_target("Pebble.Ui.alignLeft", [options]),
+    do: text_options_update_expr(options, "alignment", 0)
+
+  defp special_value_from_target("Pebble.Ui.alignCenter", [options]),
+    do: text_options_update_expr(options, "alignment", 1)
+
+  defp special_value_from_target("Pebble.Ui.alignRight", [options]),
+    do: text_options_update_expr(options, "alignment", 2)
+
+  defp special_value_from_target("Pebble.Ui.wordWrap", [options]),
+    do: text_options_update_expr(options, "overflow", 0)
+
+  defp special_value_from_target("Pebble.Ui.trailingEllipsis", [options]),
+    do: text_options_update_expr(options, "overflow", 1)
+
+  defp special_value_from_target("Pebble.Ui.fillOverflow", [options]),
+    do: text_options_update_expr(options, "overflow", 2)
+
+  defp special_value_from_target("Pebble.Ui.AlignLeft", []), do: %{op: :int_literal, value: 0}
+  defp special_value_from_target("Pebble.Ui.AlignCenter", []), do: %{op: :int_literal, value: 1}
+  defp special_value_from_target("Pebble.Ui.AlignRight", []), do: %{op: :int_literal, value: 2}
+  defp special_value_from_target("Pebble.Ui.WordWrap", []), do: %{op: :int_literal, value: 0}
+
+  defp special_value_from_target("Pebble.Ui.TrailingEllipsis", []),
+    do: %{op: :int_literal, value: 1}
+
+  defp special_value_from_target("Pebble.Ui.Fill", []), do: %{op: :int_literal, value: 2}
 
   defp special_value_from_target("Pebble.Ui.Color.indexed", [value]), do: value
 
@@ -8971,9 +9032,9 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   @spec encoded_text_cmd_expr(non_neg_integer(), [map()]) :: map()
-  defp encoded_text_cmd_expr(kind, [font_id, x, y, w, h, value]) do
-    payload = [font_id, x, y, w, h, value]
-    %{op: :tuple2, left: %{op: :int_literal, value: kind}, right: tuple_chain(payload)}
+  defp encoded_text_cmd_expr(kind, args) when is_list(args) and length(args) >= 2 do
+    {value, payload} = List.pop_at(args, -1)
+    %{op: :tuple2, left: %{op: :int_literal, value: kind}, right: tuple_chain(payload ++ [value])}
   end
 
   defp encoded_text_cmd_expr(_kind, _args), do: %{op: :unsupported}
@@ -9023,6 +9084,39 @@ defmodule Elmc.Backend.CCodegen do
   defp field_access_expr(arg_expr, field) when is_map(arg_expr) and is_binary(field) do
     %{op: :field_access, arg: arg_expr, field: field}
   end
+
+  @spec text_options_expr(map()) :: map()
+  defp text_options_expr(options) when is_map(options) do
+    alignment = field_access_expr(options, "alignment")
+    overflow = field_access_expr(options, "overflow")
+
+    %{
+      op: :call,
+      name: "__add__",
+      args: [
+        alignment,
+        %{
+          op: :call,
+          name: "__mul__",
+          args: [overflow, %{op: :int_literal, value: 4}]
+        }
+      ]
+    }
+  end
+
+  defp text_options_expr(_options), do: %{op: :int_literal, value: 1}
+
+  @spec text_options_update_expr(map(), String.t(), integer()) :: map()
+  defp text_options_update_expr(options, field, value)
+       when is_map(options) and is_binary(field) and is_integer(value) do
+    %{
+      op: :record_update,
+      base: options,
+      fields: [%{name: field, expr: %{op: :int_literal, value: value}}]
+    }
+  end
+
+  defp text_options_update_expr(_options, _field, _value), do: %{op: :unsupported}
 
   @spec tuple_chain([map()]) :: map()
   defp tuple_chain([single]), do: single

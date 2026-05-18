@@ -94,6 +94,7 @@ defmodule Ide.Mcp.Server do
   @spec write_message(term()) :: term()
   defp write_message(payload) do
     encoded = Jason.encode!(payload)
+
     IO.binwrite(:stdio, [
       "Content-Length: ",
       Integer.to_string(byte_size(encoded)),

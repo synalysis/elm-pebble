@@ -120,6 +120,7 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     assert page =~ "0x1a7a: \"DataLogging\""
     assert page =~ "appRunStateStarted"
     assert page =~ "Treating AppRunState start for ${part.kind} as final install completion"
+
     assert page =~
              "installAck?.cookie === cookie || (finalPart && installAck?.cookie === 0)"
 

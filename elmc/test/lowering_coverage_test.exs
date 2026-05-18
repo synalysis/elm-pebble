@@ -31,7 +31,12 @@ defmodule Elmc.LoweringCoverageTest do
     collect_unsupported(value_expr) ++ collect_unsupported(in_expr)
   end
 
-  defp collect_unsupported(%{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr}) do
+  defp collect_unsupported(%{
+         op: :if,
+         cond: cond_expr,
+         then_expr: then_expr,
+         else_expr: else_expr
+       }) do
     collect_unsupported(cond_expr) ++
       collect_unsupported(then_expr) ++ collect_unsupported(else_expr)
   end

@@ -726,7 +726,7 @@ textAt color bounds value =
     Ui.group
         (Ui.context
             [ Ui.textColor color ]
-            [ Ui.text Resources.DefaultFont bounds value ]
+            [ Ui.text Resources.DefaultFont Ui.defaultTextOptions bounds value ]
         )
 
 

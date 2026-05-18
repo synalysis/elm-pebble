@@ -237,7 +237,7 @@ drawCentered model textColor y height value =
     PebbleUi.group
         (PebbleUi.context
             [ PebbleUi.textColor textColor ]
-            [ PebbleUi.text UiResources.Jersey { x = 0, y = y, w = model.screenW, h = height } value ]
+            [ PebbleUi.text UiResources.Jersey PebbleUi.defaultTextOptions { x = 0, y = y, w = model.screenW, h = height } value ]
         )
 
 

@@ -169,14 +169,14 @@ view model =
     Ui.toUiNode
         ([ Ui.clear Color.white
          , Ui.drawBitmapInRect Resources.NoBitmap { x = 0, y = 0, w = 1, h = 1 }
-         , Ui.text Resources.DefaultFont { x = 4, y = 4, w = 130, h = 20 } ("Run " ++ String.fromInt model.score)
-         , Ui.text Resources.DefaultFont { x = 4, y = 24, w = 130, h = 20 } ("Saved " ++ String.fromInt model.savedScore)
+         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 4, w = 130, h = 20 } ("Run " ++ String.fromInt model.score)
+         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 24, w = 130, h = 20 } ("Saved " ++ String.fromInt model.savedScore)
          , Ui.fillRect { x = 24, y = model.playerY, w = 12, h = 14 } Color.black
          ]
             ++ Sprite.parallaxBitmap Resources.NoBitmap { x = 0, y = 148, w = 144, h = 16 } (model.offset // 3)
             ++ List.map (drawTile model.offset) model.tiles
             ++ (if model.paused then
-                    [ Ui.text Resources.DefaultFont { x = 42, y = 76, w = 80, h = 24 } "PAUSED" ]
+                    [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 42, y = 76, w = 80, h = 24 } "PAUSED" ]
 
                 else
                     []

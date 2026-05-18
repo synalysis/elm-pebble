@@ -1084,6 +1084,33 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute native_helper_body =~ "? (const char *)tmp_"
   end
 
+  test "text options encode alignment and overflow in direct draw commands" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/text_options_project", __DIR__)
+    out_dir = Path.expand("tmp/text_options_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, text_options_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "out_cmds[*count].p5 = (0 + (0 * 4));"
+    assert generated_c =~ "out_cmds[*count].p5 = (1 + (1 * 4));"
+    assert generated_c =~ "out_cmds[*count].p5 = (2 + (2 * 4));"
+  end
+
   test "direct command Int lets stay native inside bounds records" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/direct_native_let_bounds_project", __DIR__)
@@ -1118,6 +1145,30 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert use_body =~ "out_cmds[*count].p2 = direct_native_let_y_"
     refute use_body =~ "elmc_new_int((screenW - 64))"
     refute use_body =~ "elmc_new_int((screenH - 36))"
+  end
+
+  test "record helper inlining does not recursively substitute self-referential offsets" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/self_referential_substitution_project", __DIR__)
+    out_dir = Path.expand("tmp/self_referential_substitution_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> self_referential_substitution_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "static int elmc_fn_Main_selfReferentialOps_commands_append_native"
+    assert generated_c =~ "out_cmds[*count].p0 = ((x - 1) - 1);"
   end
 
   test "direct command Int if lets stay native through both branches" do
@@ -1882,7 +1933,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
             Ui.textLabel Resources.DefaultFont { x = index * 10, y = 0 } (String.fromInt value)
 
         else
-            Ui.text Resources.DefaultFont { x = index * 10, y = 0, w = 10, h = 10 } (String.fromInt value)
+            Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = index * 10, y = 0, w = 10, h = 10 } (String.fromInt value)
 
 
     main : Program Decode.Value Model Msg
@@ -2546,7 +2597,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
         PebbleUi.group
             (PebbleUi.context
                 [ PebbleUi.textColor color ]
-                [ PebbleUi.text UiResources.DefaultFont { x = 1, y = 2, w = 30, h = 12 } value ]
+                [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = 1, y = 2, w = 30, h = 12 } value ]
             )
 
 
@@ -2555,7 +2606,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
         PebbleUi.group
             (PebbleUi.context
                 [ PebbleUi.textColor color ]
-                [ PebbleUi.text UiResources.DefaultFont { x = 1, y = 2, w = 30, h = 12 } value ]
+                [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = 1, y = 2, w = 30, h = 12 } value ]
             )
 
 
@@ -2564,7 +2615,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
         PebbleUi.group
             (PebbleUi.context
                 [ PebbleUi.textColor color ]
-                [ PebbleUi.text UiResources.DefaultFont { x = 1, y = 2, w = 30, h = 12 } value ]
+                [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = 1, y = 2, w = 30, h = 12 } value ]
             )
 
 
@@ -2573,7 +2624,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
         PebbleUi.group
             (PebbleUi.context
                 [ PebbleUi.textColor color ]
-                [ PebbleUi.text UiResources.DefaultFont { x = 1, y = 2, w = 30, h = 12 } value ]
+                [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = 1, y = 2, w = 30, h = 12 } value ]
             )
 
 
@@ -2636,7 +2687,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     nativeTextBounds : PebbleUi.Rect -> String -> List PebbleUi.RenderOp
     nativeTextBounds bounds value =
-        PebbleUi.text UiResources.DefaultFont bounds value
+        PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions bounds value
 
 
     nativeTextHelper : Int -> String
@@ -2646,7 +2697,60 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     nativeTextFromHelper : Int -> List PebbleUi.RenderOp
     nativeTextFromHelper value =
-        PebbleUi.text UiResources.DefaultFont { x = 1, y = 2, w = 30, h = 12 } (nativeTextHelper value)
+        PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = 1, y = 2, w = 30, h = 12 } (nativeTextHelper value)
+    """
+  end
+
+  defp text_options_source do
+    """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    init : Platform.LaunchContext -> ( Model, Cmd Msg )
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update : Msg -> Model -> ( Model, Cmd Msg )
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions : Model -> Sub Msg
+    subscriptions _ =
+        Sub.none
+
+
+    view : Model -> Ui.UiNode
+    view _ =
+        Ui.toUiNode
+            [ Ui.text Resources.DefaultFont (Ui.alignLeft Ui.defaultTextOptions) { x = 0, y = 0, w = 30, h = 12 } "Left"
+            , Ui.text Resources.DefaultFont (Ui.trailingEllipsis Ui.defaultTextOptions) { x = 0, y = 12, w = 30, h = 12 } "Center"
+            , Ui.text Resources.DefaultFont (Ui.fillOverflow (Ui.alignRight Ui.defaultTextOptions)) { x = 0, y = 24, w = 30, h = 12 } "Right"
+            ]
+
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
     """
   end
 
@@ -2663,7 +2767,22 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
             y =
                 screenH - 36
         in
-        [ PebbleUi.text UiResources.DefaultFont { x = x, y = y, w = 60, h = 18 } "Alt" ]
+        [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = x, y = y, w = 60, h = 18 } "Alt" ]
+    """
+  end
+
+  defp self_referential_substitution_source do
+    """
+
+
+    selfReferentialBounds : Int -> { x : Int, y : Int, w : Int, h : Int }
+    selfReferentialBounds x =
+        { x = x - 1, y = 0, w = 10, h = 10 }
+
+
+    selfReferentialOps : Int -> List PebbleUi.RenderOp
+    selfReferentialOps x =
+        [ PebbleUi.rect (selfReferentialBounds (x - 1)) PebbleColor.black ]
     """
   end
 

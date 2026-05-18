@@ -111,6 +111,7 @@ defmodule Ide.CompilerTest do
 
     assert :ok = ProjectTemplates.apply_template("game-2048", workspace_root)
     source_path = Path.join([workspace_root, "watch", "src", "Main.elm"])
+    original_line_count = source_path |> File.read!() |> String.split("\n") |> length()
     File.write!(source_path, File.read!(source_path) <> "\nAaa bbb ccc = dde\nabababab\n")
 
     assert {:ok, result} =
@@ -120,8 +121,16 @@ defmodule Ide.CompilerTest do
              )
 
     assert result.status == :error
-    assert Enum.any?(result.diagnostics, &(&1.file == "src/Main.elm" and &1.line == 401))
-    assert Enum.any?(result.diagnostics, &(&1.file == "src/Main.elm" and &1.line == 402))
+
+    assert Enum.any?(
+             result.diagnostics,
+             &(&1.file == "src/Main.elm" and &1.line == original_line_count + 1)
+           )
+
+    assert Enum.any?(
+             result.diagnostics,
+             &(&1.file == "src/Main.elm" and &1.line == original_line_count + 2)
+           )
   end
 
   test "check_source_root validates companion app with Elm compiler" do

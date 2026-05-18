@@ -796,7 +796,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
             cells
 
     drawCell index value =
-        Ui.text Resources.DefaultFont { x = index, y = 0, w = 10, h = 10 } (String.fromInt value)
+        Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = index, y = 0, w = 10, h = 10 } (String.fromInt value)
 
     main : Program Decode.Value Model msg
     main =
@@ -892,7 +892,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
                 ++ parallaxBitmap Resources.NoBitmap { x = 0, y = 100, w = 20, h = 8 } model.offset
                 ++ List.map (drawItem model.offset) model.items
                 ++ (if model.paused then
-                        [ Ui.text Resources.DefaultFont { x = 4, y = 4, w = 40, h = 12 } "PAUSED" ]
+                        [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 4, w = 40, h = 12 } "PAUSED" ]
 
                     else
                         []

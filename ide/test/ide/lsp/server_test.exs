@@ -6,7 +6,12 @@ defmodule Ide.Lsp.ServerTest do
   test "initializes with editor language capabilities" do
     {messages, _state} =
       Server.handle(
-        Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => "initialize", "params" => %{}}),
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "initialize",
+          "params" => %{}
+        }),
         Server.new("demo")
       )
 

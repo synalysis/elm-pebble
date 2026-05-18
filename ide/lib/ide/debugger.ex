@@ -4440,7 +4440,9 @@ defmodule Ide.Debugger do
           "w" => integer_or_zero(map_value(row, "w")),
           "h" => integer_or_zero(map_value(row, "h")),
           "font_id" => integer_or_zero(map_value(row, "font_id")),
-          "text" => to_string(map_value(row, "text") || "")
+          "text" => to_string(map_value(row, "text") || ""),
+          "text_align" => to_string(map_value(row, "text_align") || "center"),
+          "text_overflow" => to_string(map_value(row, "text_overflow") || "word_wrap")
         }
         |> maybe_put_rendered_source(row)
 

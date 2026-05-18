@@ -30,7 +30,10 @@ defmodule Ide.Emulator.PebbleProtocol.CRC32 do
 
       _ ->
         padding = :binary.copy(<<0>>, 4 - byte_size(rest))
-        <<word::little-32>> = :binary.bin_to_list(padding <> rest) |> Enum.reverse() |> :binary.list_to_bin()
+
+        <<word::little-32>> =
+          :binary.bin_to_list(padding <> rest) |> Enum.reverse() |> :binary.list_to_bin()
+
         full_words ++ [word]
     end
   end

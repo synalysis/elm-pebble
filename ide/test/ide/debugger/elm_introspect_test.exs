@@ -309,7 +309,7 @@ defmodule Ide.Debugger.ElmIntrospectTest do
     view _ =
         Ui.toUiNode
             [ Ui.clear Color.white
-            , Ui.text 1 { x = 4, y = 8, w = 100, h = 20 } "OK"
+            , Ui.text 1 Ui.defaultTextOptions { x = 4, y = 8, w = 100, h = 20 } "OK"
             ]
     """
 

@@ -380,8 +380,8 @@ view : Model -> Ui.UiNode
 view model =
     Ui.toUiNode
         ([ Ui.clear Color.white
-         , Ui.text Resources.DefaultFont { x = 4, y = 4, w = 132, h = 16 } ("2048  Best " ++ String.fromInt model.best)
-         , Ui.text Resources.DefaultFont { x = 4, y = 20, w = 132, h = 12 } "Back L  Up U  Sel R  Down D"
+         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 4, w = 132, h = 16 } ("2048  Best " ++ String.fromInt model.best)
+         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 20, w = 132, h = 12 } "Back L  Up U  Sel R  Down D"
          ]
             ++ List.indexedMap drawCell model.cells
         )
@@ -409,7 +409,7 @@ drawCell index value =
             , Ui.textColor Color.black
             ]
             [ Ui.rect { x = x, y = y, w = 28, h = 28 } Color.black
-            , Ui.text Resources.DefaultFont { x = x + 2, y = y + 5, w = 24, h = 18 } label
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x + 2, y = y + 5, w = 24, h = 18 } label
             ]
         )
 

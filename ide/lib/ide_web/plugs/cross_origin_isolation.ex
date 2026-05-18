@@ -26,6 +26,9 @@ defmodule IdeWeb.Plugs.CrossOriginIsolation do
   end
 
   defp workspace_pane_path?(path) do
-    Regex.match?(~r{/projects/[^/]+/(editor|resources|packages|debugger|build|publish|emulator|settings)$}, path)
+    Regex.match?(
+      ~r{/projects/[^/]+/(editor|resources|packages|debugger|build|publish|emulator|settings)$},
+      path
+    )
   end
 end

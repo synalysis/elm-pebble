@@ -1070,6 +1070,23 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
+  defp promote_runtime_node_args(%{"type" => "text", "children" => children} = node)
+       when is_list(children) and length(children) == 6 do
+    values = Enum.map(children, &runtime_expr_scalar/1)
+
+    if Enum.all?(values, &(!is_nil(&1))) do
+      ["font_id", "x", "y", "w", "h", "text"]
+      |> Enum.zip(values)
+      |> Enum.reduce(Map.put(node, "children", []), fn {field, value}, acc ->
+        put_runtime_node_arg(acc, field, value)
+      end)
+      |> Map.put("text_align", "center")
+      |> Map.put("text_overflow", "word_wrap")
+    else
+      node
+    end
+  end
+
   defp promote_runtime_node_args(%{"children" => children} = node) when is_list(children) do
     type = Map.get(node, "type")
     fields = runtime_node_arg_fields(type)
@@ -1096,6 +1113,14 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   @spec put_runtime_node_arg(map(), String.t(), term()) :: map()
   defp put_runtime_node_arg(node, "text", value) when is_map(node) do
     Map.put(node, "text", normalize_text_value(value) || "")
+  end
+
+  defp put_runtime_node_arg(node, "text_align", value) when is_map(node) do
+    Map.put(node, "text_align", text_alignment_name(value))
+  end
+
+  defp put_runtime_node_arg(node, "text_overflow", value) when is_map(node) do
+    Map.put(node, "text_overflow", text_overflow_name(value))
   end
 
   defp put_runtime_node_arg(node, field, value) when is_map(node) do
@@ -1138,7 +1163,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       "rotatedBitmap" -> ["bitmap_id", "src_w", "src_h", "angle", "center_x", "center_y"]
       "textInt" -> ["font_id", "x", "y", "value"]
       "textLabel" -> ["font_id", "x", "y", "text"]
-      "text" -> ["font_id", "x", "y", "w", "h", "text"]
+      "text" -> ["font_id", "x", "y", "w", "h", "text_align", "text_overflow", "text"]
       _ -> []
     end
   end
@@ -1876,7 +1901,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
         "text" ->
           case text_args_from_node(node, ints, runtime_model, eval_context) do
-            {:ok, [font_id, x, y, w, h, text]}
+            {:ok, [font_id, x, y, w, h, alignment, overflow, text]}
             when is_integer(font_id) and is_integer(x) and is_integer(y) and is_integer(w) and
                    is_integer(h) and is_binary(text) ->
               [
@@ -1887,7 +1912,9 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
                   "w" => w,
                   "h" => h,
                   "text" => text,
-                  "font_id" => font_id
+                  "font_id" => font_id,
+                  "text_align" => text_alignment_name(alignment),
+                  "text_overflow" => text_overflow_name(overflow)
                 }
               ]
 
@@ -2901,15 +2928,15 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   @spec text_args_from_node(term(), term(), term(), term()) :: term()
   defp text_args_from_node(node, ints, runtime_model, eval_context)
        when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
-    case require_ints(ints, 5) do
-      {:ok, [font_id, x, y, w, h | _]} ->
+    case text_box_int_args_from_node(node, ints, runtime_model, eval_context) do
+      {:ok, [font_id, x, y, w, h, alignment, overflow]} ->
         field_text = Map.get(node, "text") || Map.get(node, :text)
 
         if text = normalize_text_value(field_text) do
-          {:ok, [font_id, x, y, w, h, text]}
+          {:ok, [font_id, x, y, w, h, alignment, overflow, text]}
         else
-          case node_children(node) do
-            [_font_node, _x_node, _y_node, _w_node, _h_node, text_node | _] ->
+          case List.last(node_children(node)) do
+            text_node when is_map(text_node) ->
               text =
                 eval_view_text(text_node, runtime_model, eval_context) ||
                   text_node
@@ -2917,9 +2944,9 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
                   |> normalize_text_value() ||
                   ""
 
-              {:ok, [font_id, x, y, w, h, text]}
+              {:ok, [font_id, x, y, w, h, alignment, overflow, text]}
 
-            _ ->
+            nil ->
               :error
           end
         end
@@ -2930,6 +2957,120 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   end
 
   defp text_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
+
+  defp text_box_int_args_from_node(node, ints, runtime_model, eval_context)
+       when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
+    case require_ints(ints, 7) do
+      {:ok, [font_id, x, y, w, h, alignment, overflow | _]} ->
+        {:ok, [font_id, x, y, w, h, alignment, overflow]}
+
+      :error ->
+        case require_ints(ints, 5) do
+          {:ok, [font_id, x, y, w, h | _]} ->
+            alignment = text_alignment_value(Map.get(node, "text_align") || Map.get(node, :text_align))
+            overflow = text_overflow_value(Map.get(node, "text_overflow") || Map.get(node, :text_overflow))
+            {:ok, [font_id, x, y, w, h, alignment, overflow]}
+
+          :error ->
+            text_int_args_from_children(node_children(node), runtime_model, eval_context)
+        end
+    end
+  end
+
+  defp text_box_int_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
+
+  defp text_int_args_from_children(children, runtime_model, eval_context) when is_list(children) do
+    case children do
+      [font_node, options_node, bounds_node, _text_node] ->
+        with font_id when is_integer(font_id) <- eval_view_int(font_node, runtime_model, eval_context),
+             {:ok, [x, y, w, h]} <- rect_quad_from_node(bounds_node, runtime_model, eval_context),
+             {:ok, [alignment, overflow]} <-
+               text_options_from_node(options_node, runtime_model, eval_context) do
+          {:ok, [font_id, x, y, w, h, alignment, overflow]}
+        else
+          _ -> :error
+        end
+
+      [font_node, x_node, y_node, w_node, h_node, alignment_node, overflow_node, _text_node | _] ->
+        with font_id when is_integer(font_id) <- eval_view_int(font_node, runtime_model, eval_context),
+             x when is_integer(x) <- eval_view_int(x_node, runtime_model, eval_context),
+             y when is_integer(y) <- eval_view_int(y_node, runtime_model, eval_context),
+             w when is_integer(w) <- eval_view_int(w_node, runtime_model, eval_context),
+             h when is_integer(h) <- eval_view_int(h_node, runtime_model, eval_context),
+             alignment when is_integer(alignment) <-
+               eval_view_int(alignment_node, runtime_model, eval_context),
+             overflow when is_integer(overflow) <-
+               eval_view_int(overflow_node, runtime_model, eval_context) do
+          {:ok, [font_id, x, y, w, h, alignment, overflow]}
+        else
+          _ -> :error
+        end
+
+      [font_node, x_node, y_node, w_node, h_node, _text_node | _] ->
+        with font_id when is_integer(font_id) <- eval_view_int(font_node, runtime_model, eval_context),
+             x when is_integer(x) <- eval_view_int(x_node, runtime_model, eval_context),
+             y when is_integer(y) <- eval_view_int(y_node, runtime_model, eval_context),
+             w when is_integer(w) <- eval_view_int(w_node, runtime_model, eval_context),
+             h when is_integer(h) <- eval_view_int(h_node, runtime_model, eval_context) do
+          {:ok, [font_id, x, y, w, h, 1, 0]}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp text_int_args_from_children(_children, _runtime_model, _eval_context), do: :error
+
+  defp text_options_from_node(node, runtime_model, eval_context)
+       when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
+    type = to_string(node["type"] || node[:type] || "")
+
+    case type do
+      "record" ->
+        fields =
+          node
+          |> node_children()
+          |> Enum.filter(&(to_string(&1["type"] || &1[:type] || "") == "field"))
+
+        alignment =
+          fields
+          |> Enum.find(&(to_string(&1["label"] || &1[:label] || "") == "alignment"))
+          |> field_value_int(runtime_model, eval_context)
+
+        overflow =
+          fields
+          |> Enum.find(&(to_string(&1["label"] || &1[:label] || "") == "overflow"))
+          |> field_value_int(runtime_model, eval_context)
+
+        if is_integer(alignment) and is_integer(overflow),
+          do: {:ok, [alignment, overflow]},
+          else: {:ok, [1, 0]}
+
+      _ ->
+        {:ok, [1, 0]}
+    end
+  end
+
+  defp text_options_from_node(_node, _runtime_model, _eval_context), do: {:ok, [1, 0]}
+
+  defp text_alignment_value("left"), do: 0
+  defp text_alignment_value("right"), do: 2
+  defp text_alignment_value(_), do: 1
+
+  defp text_overflow_value("trailing_ellipsis"), do: 1
+  defp text_overflow_value("fill"), do: 2
+  defp text_overflow_value(_), do: 0
+
+  defp text_alignment_name(0), do: "left"
+  defp text_alignment_name(2), do: "right"
+  defp text_alignment_name(_), do: "center"
+
+  defp text_overflow_name(1), do: "trailing_ellipsis"
+  defp text_overflow_name(2), do: "fill"
+  defp text_overflow_name(_), do: "word_wrap"
 
   @spec view_tree_source(term()) :: term()
   defp view_tree_source(message) when is_binary(message) and message != "",

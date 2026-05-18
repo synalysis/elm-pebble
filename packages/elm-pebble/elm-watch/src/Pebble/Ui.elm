@@ -10,8 +10,14 @@ module Pebble.Ui exposing
     , Rect
     , RenderOp
     , Rotation
+    , TextAlignment(..)
+    , TextOptions
+    , TextOverflow(..)
     , UiNode
     , WindowNode
+    , alignCenter
+    , alignLeft
+    , alignRight
     , antialiased
     , arc
     , canvasLayer
@@ -19,10 +25,12 @@ module Pebble.Ui exposing
     , clear
     , compositingMode
     , context
+    , defaultTextOptions
     , drawBitmapInRect
     , drawRotatedBitmap
     , fillCircle
     , fillColor
+    , fillOverflow
     , fillRadial
     , fillRect
     , group
@@ -43,8 +51,10 @@ module Pebble.Ui exposing
     , textInt
     , textLabel
     , toUiNode
+    , trailingEllipsis
     , window
     , windowStack
+    , wordWrap
     )
 
 {-| Retained virtual UI model for Pebble rendering.
@@ -76,7 +86,7 @@ render bridge to keep view logic in pure Elm.
 
 # Resources, labels and path/context helpers
 
-@docs Label, Context, Bitmap, Font, Path, Point, Rect, Rotation, context, path, rotationFromPebbleAngle, rotationFromDegrees
+@docs Label, Context, Bitmap, Font, Path, Point, Rect, Rotation, TextAlignment, TextOverflow, TextOptions, defaultTextOptions, alignLeft, alignCenter, alignRight, wordWrap, trailingEllipsis, fillOverflow, context, path, rotationFromPebbleAngle, rotationFromDegrees
 
 
 # Drawing settings
@@ -111,7 +121,7 @@ type LayerNode
 type RenderOp
     = TextInt Font Int Int Int
     | TextLabel Font Int Int Label
-    | Text Font Int Int Int Int String
+    | Text Font Int Int Int Int Int Int String
     | Clear Int
     | Pixel Int Int Int
     | Line Int Int Int Int Int
@@ -175,6 +185,30 @@ type alias Rect =
     , y : Int
     , w : Int
     , h : Int
+    }
+
+
+{-| Horizontal alignment for text drawn inside a rectangle.
+-}
+type TextAlignment
+    = AlignLeft
+    | AlignCenter
+    | AlignRight
+
+
+{-| Overflow behavior for text that does not fit inside its rectangle.
+-}
+type TextOverflow
+    = WordWrap
+    | TrailingEllipsis
+    | Fill
+
+
+{-| Options passed to Pebble text layout.
+-}
+type alias TextOptions =
+    { alignment : TextAlignment
+    , overflow : TextOverflow
     }
 
 
@@ -255,9 +289,60 @@ textLabel font pos label =
 
 {-| Draw a string in the given rectangle using a resource font.
 -}
-text : Font -> Rect -> String -> RenderOp
-text font bounds value =
-    Text font bounds.x bounds.y bounds.w bounds.h value
+text : Font -> TextOptions -> Rect -> String -> RenderOp
+text font options bounds value =
+    Text font bounds.x bounds.y bounds.w bounds.h (textAlignmentToInt options.alignment) (textOverflowToInt options.overflow) value
+
+
+{-| Default Pebble text options: centered, word-wrapped text.
+-}
+defaultTextOptions : TextOptions
+defaultTextOptions =
+    { alignment = AlignCenter
+    , overflow = WordWrap
+    }
+
+
+{-| Set text alignment to left.
+-}
+alignLeft : TextOptions -> TextOptions
+alignLeft options =
+    { options | alignment = AlignLeft }
+
+
+{-| Set text alignment to center.
+-}
+alignCenter : TextOptions -> TextOptions
+alignCenter options =
+    { options | alignment = AlignCenter }
+
+
+{-| Set text alignment to right.
+-}
+alignRight : TextOptions -> TextOptions
+alignRight options =
+    { options | alignment = AlignRight }
+
+
+{-| Use Pebble word wrapping for overflow.
+-}
+wordWrap : TextOptions -> TextOptions
+wordWrap options =
+    { options | overflow = WordWrap }
+
+
+{-| Use Pebble trailing ellipsis for overflow.
+-}
+trailingEllipsis : TextOptions -> TextOptions
+trailingEllipsis options =
+    { options | overflow = TrailingEllipsis }
+
+
+{-| Use Pebble fill overflow behavior.
+-}
+fillOverflow : TextOptions -> TextOptions
+fillOverflow options =
+    { options | overflow = Fill }
 
 
 {-| Clear the canvas to a color.
@@ -364,6 +449,32 @@ rotationFromDegrees degrees =
 rotationToPebbleAngle : Rotation -> Int
 rotationToPebbleAngle (Rotation angle) =
     angle
+
+
+textAlignmentToInt : TextAlignment -> Int
+textAlignmentToInt alignment =
+    case alignment of
+        AlignLeft ->
+            0
+
+        AlignCenter ->
+            1
+
+        AlignRight ->
+            2
+
+
+textOverflowToInt : TextOverflow -> Int
+textOverflowToInt overflow =
+    case overflow of
+        WordWrap ->
+            0
+
+        TrailingEllipsis ->
+            1
+
+        Fill ->
+            2
 
 
 {-| Draw a filled path.

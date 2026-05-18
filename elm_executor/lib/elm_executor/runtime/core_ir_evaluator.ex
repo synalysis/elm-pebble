@@ -1026,6 +1026,41 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           _ -> :no_builtin
         end
 
+      {"pebble.ui.defaulttextoptions", []} ->
+        {:ok, %{"alignment" => 1, "overflow" => 0}}
+
+      {"pebble.ui.alignleft", [options]} ->
+        update_text_option(options, "alignment", 0)
+
+      {"pebble.ui.aligncenter", [options]} ->
+        update_text_option(options, "alignment", 1)
+
+      {"pebble.ui.alignright", [options]} ->
+        update_text_option(options, "alignment", 2)
+
+      {"pebble.ui.wordwrap", [options]} ->
+        update_text_option(options, "overflow", 0)
+
+      {"pebble.ui.trailingellipsis", [options]} ->
+        update_text_option(options, "overflow", 1)
+
+      {"pebble.ui.filloverflow", [options]} ->
+        update_text_option(options, "overflow", 2)
+
+      {"pebble.ui.text", [font_id, options, bounds, value]} ->
+        with {:ok, normalized_font_id} <- normalize_font_id(font_id),
+             {:ok, {alignment, overflow}} <- normalize_text_options(options),
+             {:ok, {x, y, w, h}} <- normalize_rect(bounds),
+             {:ok, normalized_text} <- normalize_text_value(value) do
+          {:ok,
+           ui_node(
+             "text",
+             Enum.map([normalized_font_id, x, y, w, h, alignment, overflow, normalized_text], &expr_node/1)
+           )}
+        else
+          _ -> :no_builtin
+        end
+
       {"pebble.ui.text", [font_id, bounds, value]} ->
         with {:ok, normalized_font_id} <- normalize_font_id(font_id),
              {:ok, {x, y, w, h}} <- normalize_rect(bounds),
@@ -3145,6 +3180,61 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   end
 
   defp normalize_rect(_), do: :error
+
+  @spec normalize_text_options(term()) :: {:ok, {integer(), integer()}} | :error
+  defp normalize_text_options({:function_ref, "Pebble.Ui.defaultTextOptions"}), do: {:ok, {1, 0}}
+  defp normalize_text_options({:function_ref, "Ui.defaultTextOptions"}), do: {:ok, {1, 0}}
+
+  defp normalize_text_options(value) when is_map(value) do
+    alignment = Map.get(value, "alignment") || Map.get(value, :alignment)
+    overflow = Map.get(value, "overflow") || Map.get(value, :overflow)
+
+    with {:ok, normalized_alignment} <- normalize_text_alignment(alignment),
+         {:ok, normalized_overflow} <- normalize_text_overflow(overflow) do
+      {:ok, {normalized_alignment, normalized_overflow}}
+    end
+  end
+
+  defp normalize_text_options(_), do: :error
+
+  defp update_text_option(options, field, value) when is_binary(field) and is_integer(value) do
+    case normalize_text_options(options) do
+      {:ok, {alignment, overflow}} ->
+        next =
+          %{
+            "alignment" => alignment,
+            "overflow" => overflow
+          }
+          |> Map.put(field, value)
+
+        {:ok, next}
+
+      :error ->
+        :no_builtin
+    end
+  end
+
+  defp normalize_text_alignment(0), do: {:ok, 0}
+  defp normalize_text_alignment(1), do: {:ok, 1}
+  defp normalize_text_alignment(2), do: {:ok, 2}
+  defp normalize_text_alignment(%{"ctor" => "AlignLeft"}), do: {:ok, 0}
+  defp normalize_text_alignment(%{"ctor" => "AlignCenter"}), do: {:ok, 1}
+  defp normalize_text_alignment(%{"ctor" => "AlignRight"}), do: {:ok, 2}
+  defp normalize_text_alignment(%{ctor: "AlignLeft"}), do: {:ok, 0}
+  defp normalize_text_alignment(%{ctor: "AlignCenter"}), do: {:ok, 1}
+  defp normalize_text_alignment(%{ctor: "AlignRight"}), do: {:ok, 2}
+  defp normalize_text_alignment(_), do: :error
+
+  defp normalize_text_overflow(0), do: {:ok, 0}
+  defp normalize_text_overflow(1), do: {:ok, 1}
+  defp normalize_text_overflow(2), do: {:ok, 2}
+  defp normalize_text_overflow(%{"ctor" => "WordWrap"}), do: {:ok, 0}
+  defp normalize_text_overflow(%{"ctor" => "TrailingEllipsis"}), do: {:ok, 1}
+  defp normalize_text_overflow(%{"ctor" => "Fill"}), do: {:ok, 2}
+  defp normalize_text_overflow(%{ctor: "WordWrap"}), do: {:ok, 0}
+  defp normalize_text_overflow(%{ctor: "TrailingEllipsis"}), do: {:ok, 1}
+  defp normalize_text_overflow(%{ctor: "Fill"}), do: {:ok, 2}
+  defp normalize_text_overflow(_), do: :error
 
   @spec normalize_path(term()) ::
           {:ok, {[{integer(), integer()}], integer(), integer(), integer()}} | :error

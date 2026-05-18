@@ -43,32 +43,27 @@ defmodule Elmc.CodegenCorpusTest do
           {:ok, project} ->
             result = %{result | parse: :ok, modules: length(project.modules)}
 
-            case ElmEx.IR.Lowerer.lower_project(project) do
-              {:ok, ir} ->
-                diag_count = length(ir.diagnostics)
+            {:ok, ir} = ElmEx.IR.Lowerer.lower_project(project)
+            diag_count = length(ir.diagnostics)
 
-                func_count =
-                  ir.modules
-                  |> Enum.flat_map(& &1.declarations)
-                  |> Enum.count(&(&1.kind == :function))
+            func_count =
+              ir.modules
+              |> Enum.flat_map(& &1.declarations)
+              |> Enum.count(&(&1.kind == :function))
 
-                unsupported = count_unsupported_ops(ir)
+            unsupported = count_unsupported_ops(ir)
 
-                result = %{
-                  result
-                  | lower: :ok,
-                    diagnostics: diag_count,
-                    functions: func_count,
-                    unsupported_ops: unsupported
-                }
+            result = %{
+              result
+              | lower: :ok,
+                diagnostics: diag_count,
+                functions: func_count,
+                unsupported_ops: unsupported
+            }
 
-                case Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false}) do
-                  {:ok, _} -> %{result | codegen: :ok}
-                  {:error, _} -> %{result | codegen: :error}
-                end
-
-              {:error, _} ->
-                %{result | lower: :error}
+            case Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false}) do
+              {:ok, _} -> %{result | codegen: :ok}
+              {:error, _} -> %{result | codegen: :error}
             end
 
           {:error, _} ->

@@ -1226,7 +1226,7 @@ defmodule Elmc.PebbleShimTest do
                 , Ui.textColor Color.black
                 ]
                 [ Ui.rect { x = x, y = 42, w = 28, h = 28 } Color.black
-                , Ui.text Resources.DefaultFont { x = x + 2, y = 47, w = 24, h = 18 } label
+                , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x + 2, y = 47, w = 24, h = 18 } label
                 ]
             )
 

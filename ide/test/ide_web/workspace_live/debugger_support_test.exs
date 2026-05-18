@@ -1135,6 +1135,33 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert text.text_align == "center"
   end
 
+  test "debugger preview preserves explicit text alignment and overflow" do
+    runtime = %{
+      model: %{
+        "runtime_view_output" => [
+          %{
+            "kind" => "text",
+            "x" => 4,
+            "y" => 12,
+            "w" => 80,
+            "h" => 20,
+            "text" => "Right",
+            "text_align" => "right",
+            "text_overflow" => "trailing_ellipsis"
+          }
+        ]
+      }
+    }
+
+    [text] = DebuggerPreview.svg_ops(nil, runtime)
+
+    assert text.kind == :text_label
+    assert text.text_align == "right"
+    assert text.text_overflow == "trailing_ellipsis"
+    assert text.x == 4
+    assert text.w == 80
+  end
+
   test "debugger preview restores parent style after nested contexts" do
     runtime = %{
       model: %{

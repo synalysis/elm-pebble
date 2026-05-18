@@ -2933,6 +2933,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_path_d(_op, _close_shape?), do: ""
 
   @spec debugger_text_svg_x(term()) :: number()
+  defp debugger_text_svg_x(%{text_align: "left", x: x}) when is_number(x), do: x
+
+  defp debugger_text_svg_x(%{text_align: "right", x: x, w: w}) when is_number(x) and is_number(w),
+    do: x + w
+
   defp debugger_text_svg_x(%{x: x, w: w}) when is_number(x) and is_number(w), do: x + w / 2
   defp debugger_text_svg_x(%{x: x}) when is_number(x), do: x
   defp debugger_text_svg_x(_op), do: 0
@@ -2952,7 +2957,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_text_svg_font_size(_op), do: 11
 
   @spec debugger_text_svg_anchor(term()) :: String.t() | nil
+  defp debugger_text_svg_anchor(%{text_align: "left", w: w}) when is_number(w), do: "start"
   defp debugger_text_svg_anchor(%{text_align: "center", w: w}) when is_number(w), do: "middle"
+  defp debugger_text_svg_anchor(%{text_align: "right", w: w}) when is_number(w), do: "end"
   defp debugger_text_svg_anchor(_op), do: nil
 
   @spec debugger_text_svg_baseline(term()) :: String.t() | nil

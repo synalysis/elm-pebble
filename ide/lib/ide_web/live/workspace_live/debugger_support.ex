@@ -939,7 +939,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
           "w" => map_integer_value(row, "w", 0),
           "h" => map_integer_value(row, "h", 0),
           "font_id" => map_integer_value(row, "font_id", 0),
-          "text" => to_string(Map.get(row, "text") || Map.get(row, :text) || "")
+          "text" => to_string(Map.get(row, "text") || Map.get(row, :text) || ""),
+          "text_align" =>
+            to_string(Map.get(row, "text_align") || Map.get(row, :text_align) || "center"),
+          "text_overflow" =>
+            to_string(
+              Map.get(row, "text_overflow") || Map.get(row, :text_overflow) || "word_wrap"
+            )
         }
         |> maybe_put_rendered_source(row)
 
@@ -1525,6 +1531,23 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
+  defp promote_rendered_node_args(%{"type" => "text", "children" => children} = node)
+       when is_list(children) and length(children) == 6 do
+    values = Enum.map(children, &rendered_expr_scalar/1)
+
+    if Enum.all?(values, &(!is_nil(&1))) do
+      ["font_id", "x", "y", "w", "h", "text"]
+      |> Enum.zip(values)
+      |> Enum.reduce(Map.put(node, "children", []), fn {field, value}, acc ->
+        put_rendered_node_arg(acc, field, value)
+      end)
+      |> Map.put("text_align", "center")
+      |> Map.put("text_overflow", "word_wrap")
+    else
+      node
+    end
+  end
+
   defp promote_rendered_node_args(%{"children" => children} = node) when is_list(children) do
     fields = rendered_node_arg_fields(Map.get(node, "type"))
 
@@ -1552,9 +1575,27 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     Map.put(node, "text", normalize_rendered_text(value) || "")
   end
 
+  defp put_rendered_node_arg(node, "text_align", value) when is_map(node) do
+    Map.put(node, "text_align", rendered_text_alignment(value))
+  end
+
+  defp put_rendered_node_arg(node, "text_overflow", value) when is_map(node) do
+    Map.put(node, "text_overflow", rendered_text_overflow(value))
+  end
+
   defp put_rendered_node_arg(node, field, value) when is_map(node) do
     Map.put(node, field, value)
   end
+
+  defp rendered_text_alignment(0), do: "left"
+  defp rendered_text_alignment(2), do: "right"
+  defp rendered_text_alignment(value) when is_binary(value), do: value
+  defp rendered_text_alignment(_), do: "center"
+
+  defp rendered_text_overflow(1), do: "trailing_ellipsis"
+  defp rendered_text_overflow(2), do: "fill"
+  defp rendered_text_overflow(value) when is_binary(value), do: value
+  defp rendered_text_overflow(_), do: "word_wrap"
 
   @spec normalize_rendered_text_field(map()) :: map()
   defp normalize_rendered_text_field(%{"text" => value} = node) do
@@ -1616,7 +1657,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       "rotatedBitmap" -> ["bitmap_id", "src_w", "src_h", "angle", "center_x", "center_y"]
       "textInt" -> ["font_id", "x", "y", "value"]
       "textLabel" -> ["font_id", "x", "y", "text"]
-      "text" -> ["font_id", "x", "y", "w", "h", "text"]
+      "text" -> ["font_id", "x", "y", "w", "h", "text_align", "text_overflow", "text"]
       _ -> []
     end
   end

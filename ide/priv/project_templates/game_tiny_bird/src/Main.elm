@@ -151,15 +151,15 @@ view model =
         ([ Ui.clear Color.white
          , Ui.drawBitmapInRect Resources.NoBitmap { x = 0, y = 0, w = 1, h = 1 }
          , Ui.fillRect { x = 18, y = model.birdY, w = 14, h = 14 } Color.black
-         , Ui.text Resources.DefaultFont { x = 4, y = 4, w = 120, h = 20 } ("Score " ++ String.fromInt model.score)
-         , Ui.text Resources.DefaultFont { x = 4, y = 24, w = 120, h = 20 } ("Best " ++ String.fromInt model.best)
+         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 4, w = 120, h = 20 } ("Score " ++ String.fromInt model.score)
+         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 24, w = 120, h = 20 } ("Best " ++ String.fromInt model.best)
          ]
             ++ List.concatMap drawTube model.tubes
             ++ (if model.alive then
                     []
 
                 else
-                    [ Ui.text Resources.DefaultFont { x = 24, y = 76, w = 100, h = 28 } "Press Up" ]
+                    [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 24, y = 76, w = 100, h = 28 } "Press Up" ]
                )
         )
 

@@ -2426,8 +2426,13 @@ defmodule Ide.DebuggerTest do
     assert runtime_model["dtMs"] == 16
     assert runtime_model["elapsedMs"] == runtime_model["frame"] * 16
 
-    assert get_in(triggered, [:watch, :model, "runtime_message_source"]) == "subscription_auto_fire"
-    assert String.starts_with?(get_in(triggered, [:watch, :model, "runtime_last_message"]), "FrameTick ")
+    assert get_in(triggered, [:watch, :model, "runtime_message_source"]) ==
+             "subscription_auto_fire"
+
+    assert String.starts_with?(
+             get_in(triggered, [:watch, :model, "runtime_last_message"]),
+             "FrameTick "
+           )
 
     assert Enum.any?(triggered.events, fn event ->
              message = Map.get(event.payload, :message) || Map.get(event.payload, "message") || ""
@@ -2789,7 +2794,10 @@ defmodule Ide.DebuggerTest do
              })
 
     debugger_rows = after_inject.debugger_timeline
-    assert Enum.map(debugger_rows, & &1.seq) == Enum.to_list(length(debugger_rows)..1)
+
+    assert Enum.map(debugger_rows, & &1.seq) ==
+             Enum.to_list(Range.new(length(debugger_rows), 1, -1))
+
     assert Enum.any?(debugger_rows, &(&1.type == "init" and &1.seq == 1))
 
     watch_row =

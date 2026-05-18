@@ -157,8 +157,10 @@ defmodule Ide.Acp.AgentProtocol do
     end
   end
 
-  defp format_mcp_response(%{"result" => %{"content" => [%{"text" => text}], "isError" => false}}),
-    do: text
+  defp format_mcp_response(%{
+         "result" => %{"content" => [%{"text" => text}], "isError" => false}
+       }),
+       do: text
 
   defp format_mcp_response(%{"result" => %{"content" => [%{"text" => text}], "isError" => true}}),
     do: "Tool error: " <> text

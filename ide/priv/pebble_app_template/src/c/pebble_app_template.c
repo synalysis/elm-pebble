@@ -835,6 +835,32 @@ static GColor color_from_code(int64_t value) {
 #endif
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
+static GTextAlignment text_alignment_from_options(int32_t options) {
+  switch (options & 0x3) {
+  case 0:
+    return GTextAlignmentLeft;
+  case 2:
+    return GTextAlignmentRight;
+  case 1:
+  default:
+    return GTextAlignmentCenter;
+  }
+}
+
+static GTextOverflowMode text_overflow_from_options(int32_t options) {
+  switch ((options >> 2) & 0x3) {
+  case 1:
+    return GTextOverflowModeTrailingEllipsis;
+  case 2:
+    return GTextOverflowModeFill;
+  case 0:
+  default:
+    return GTextOverflowModeWordWrap;
+  }
+}
+#endif
+
 #if ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
 static GCompOp compositing_from_code(int64_t value) {
   switch ((int)value) {
@@ -1433,8 +1459,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         if (rect_params_are_valid(cmd->p3, cmd->p4)) {
           graphics_draw_text(ctx, cmd->text, font,
                              rect_from_params(cmd->p1, cmd->p2, cmd->p3, cmd->p4),
-                             GTextOverflowModeWordWrap,
-                             GTextAlignmentCenter, NULL);
+                             text_overflow_from_options(cmd->p5),
+                             text_alignment_from_options(cmd->p5), NULL);
         }
         if (should_unload && font) fonts_unload_custom_font(font);
         drew_text = true;

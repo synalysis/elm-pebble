@@ -552,6 +552,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
       "center_y" -> :center_y
       "value" -> :value
       "text_align" -> :text_align
+      "text_overflow" -> :text_overflow
       "font_size" -> :font_size
       "source" -> :source
       _ -> nil
@@ -969,8 +970,35 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     base = %{kind: :text_label, x: x, y: y, text: text}
 
     case map_integers_required(op, ["w", "h"]) do
-      {:ok, [w, h]} -> Map.merge(base, %{w: w, h: h, text_align: "center", font_size: h})
-      :error -> base
+      {:ok, [w, h]} ->
+        Map.merge(base, %{
+          w: w,
+          h: h,
+          text_align:
+            normalized_text_alignment(Map.get(op, "text_align") || Map.get(op, :text_align)),
+          text_overflow:
+            normalized_text_overflow(Map.get(op, "text_overflow") || Map.get(op, :text_overflow)),
+          font_size: h
+        })
+
+      :error ->
+        base
+    end
+  end
+
+  defp normalized_text_alignment(value) do
+    case to_string(value || "center") do
+      "left" -> "left"
+      "right" -> "right"
+      _ -> "center"
+    end
+  end
+
+  defp normalized_text_overflow(value) do
+    case to_string(value || "word_wrap") do
+      "trailing_ellipsis" -> "trailing_ellipsis"
+      "fill" -> "fill"
+      _ -> "word_wrap"
     end
   end
 
@@ -1461,7 +1489,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
             "y" => Map.get(node, "y") || Map.get(node, :y),
             "w" => Map.get(node, "w") || Map.get(node, :w),
             "h" => Map.get(node, "h") || Map.get(node, :h),
-            "text" => Map.get(node, "text") || Map.get(node, :text)
+            "text" => Map.get(node, "text") || Map.get(node, :text),
+            "text_align" =>
+              normalized_text_alignment(Map.get(node, "text_align") || Map.get(node, :text_align)),
+            "text_overflow" =>
+              normalized_text_overflow(
+                Map.get(node, "text_overflow") || Map.get(node, :text_overflow)
+              )
           }
 
         "textInt" ->
@@ -1842,6 +1876,51 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
       "text" ->
         case node_children(node) do
+          [_font_node, x_node, y_node, w_node, h_node, value_node | _] ->
+            with x when is_integer(x) <- node_int_value(x_node, model),
+                 y when is_integer(y) <- node_int_value(y_node, model),
+                 w when is_integer(w) <- node_int_value(w_node, model),
+                 h when is_integer(h) <- node_int_value(h_node, model) do
+              [
+                %{
+                  kind: :text_label,
+                  x: clamp(x, 0, @default_screen_w - 1),
+                  y: clamp(y, 0, @default_screen_h),
+                  w: clamp(w, 1, @default_screen_w),
+                  h: clamp(h, 1, @default_screen_h),
+                  font_size: clamp(h, 1, @default_screen_h),
+                  text_align: "center",
+                  text_overflow: "word_wrap",
+                  text: text_label_from_node(value_node, model)
+                }
+              ]
+            else
+              _ ->
+                unresolved_node("text", length(ints), 6)
+            end
+
+          [_font_node, options_node, bounds_node, value_node | _] ->
+            with {:ok, [x, y, w, h]} <- rect_node_ints(bounds_node, model) do
+              {alignment, overflow} = text_option_names_from_node(options_node, model)
+
+              [
+                %{
+                  kind: :text_label,
+                  x: clamp(x, 0, @default_screen_w - 1),
+                  y: clamp(y, 0, @default_screen_h),
+                  w: clamp(w, 1, @default_screen_w),
+                  h: clamp(h, 1, @default_screen_h),
+                  font_size: clamp(h, 1, @default_screen_h),
+                  text_align: alignment,
+                  text_overflow: overflow,
+                  text: text_label_from_node(value_node, model)
+                }
+              ]
+            else
+              _ ->
+                unresolved_node("text", length(ints), 6)
+            end
+
           [_font_node, bounds_node, value_node | _] ->
             with {:ok, [x, y, w, h]} <- rect_node_ints(bounds_node, model) do
               [
@@ -1853,6 +1932,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
                   h: clamp(h, 1, @default_screen_h),
                   font_size: clamp(h, 1, @default_screen_h),
                   text_align: "center",
+                  text_overflow: "word_wrap",
                   text: text_label_from_node(value_node, model)
                 }
               ]
@@ -2157,6 +2237,25 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   @spec point_node_ints(term(), term()) :: {:ok, [integer()]} | :error
   defp point_node_ints(node, model), do: record_field_ints(node, ["x", "y"], model)
+
+  @spec text_option_names_from_node(term(), term()) :: {String.t(), String.t()}
+  defp text_option_names_from_node(node, model) do
+    case record_field_ints(node, ["alignment", "overflow"], model) do
+      {:ok, [alignment, overflow]} ->
+        {text_alignment_name(alignment), text_overflow_name(overflow)}
+
+      :error ->
+        {"center", "word_wrap"}
+    end
+  end
+
+  defp text_alignment_name(0), do: "left"
+  defp text_alignment_name(2), do: "right"
+  defp text_alignment_name(_), do: "center"
+
+  defp text_overflow_name(1), do: "trailing_ellipsis"
+  defp text_overflow_name(2), do: "fill"
+  defp text_overflow_name(_), do: "word_wrap"
 
   @spec record_field_ints(term(), [String.t()], term()) :: {:ok, [integer()]} | :error
   defp record_field_ints(node, keys, model) when is_map(node) and is_list(keys) do
