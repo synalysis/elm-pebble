@@ -140,6 +140,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
     imported_modules = explicit_imports(mod)
     {type_aliases, unions, functions} = declaration_names(mod)
+    function_cmd_calls = function_cmd_calls(mod)
 
     %{
       "elm_introspect" => %{
@@ -153,6 +154,7 @@ defmodule Ide.Debugger.ElmIntrospect do
         "type_aliases" => type_aliases,
         "unions" => unions,
         "functions" => functions,
+        "function_cmd_calls" => function_cmd_calls,
         "init_model" => init_model,
         "init_case_branches" => init_case_branches,
         "init_case_subject" => init_case_subject,
@@ -209,6 +211,26 @@ defmodule Ide.Debugger.ElmIntrospect do
 
     {type_aliases, unions, functions}
   end
+
+  @spec function_cmd_calls(term()) :: map()
+  defp function_cmd_calls(%Module{declarations: decls}) when is_list(decls) do
+    decls
+    |> Enum.filter(&match?(%{kind: :function_definition}, &1))
+    |> Map.new(fn
+      %{name: name, args: args, expr: expr} when is_binary(name) and is_list(args) ->
+        calls =
+          expr
+          |> extract_cmd_calls()
+          |> Enum.map(&Map.put(&1, "function_args", args))
+
+        {name, calls}
+
+      %{name: name} when is_binary(name) ->
+        {name, []}
+    end)
+  end
+
+  defp function_cmd_calls(_), do: %{}
 
   @spec explicit_imports(term()) :: term()
   defp explicit_imports(%Module{imports: im}) when is_list(im) do
@@ -766,7 +788,9 @@ defmodule Ide.Debugger.ElmIntrospect do
         "target" => target,
         "name" => view_type_name(target),
         "callback_constructor" => callback_constructor_from_args(args, bindings),
-        "arg_kinds" => Enum.map(args, &expr_arg_kind/1)
+        "callback_arg_count" => callback_arg_count_from_args(args, bindings),
+        "arg_kinds" => Enum.map(args, &expr_arg_kind/1),
+        "task_sources" => task_sources_from_args(args)
       }
     ]
   end
@@ -785,7 +809,9 @@ defmodule Ide.Debugger.ElmIntrospect do
         "target" => name,
         "name" => view_type_name(name),
         "callback_constructor" => callback_constructor_from_args(args, bindings),
-        "arg_kinds" => Enum.map(args, &expr_arg_kind/1)
+        "callback_arg_count" => callback_arg_count_from_args(args, bindings),
+        "arg_kinds" => Enum.map(args, &expr_arg_kind/1),
+        "task_sources" => task_sources_from_args(args)
       }
     ]
   end
@@ -835,6 +861,81 @@ defmodule Ide.Debugger.ElmIntrospect do
   end
 
   defp callback_constructor_from_args(_, _), do: nil
+
+  @spec callback_arg_count_from_args(term(), term()) :: non_neg_integer()
+  defp callback_arg_count_from_args(args, bindings)
+       when is_list(args) and is_map(bindings) do
+    args
+    |> Enum.reverse()
+    |> Enum.find_value(&callback_arg_count_from_expr(&1, bindings, MapSet.new(), 0))
+    |> case do
+      count when is_integer(count) and count >= 0 -> count
+      _ -> 0
+    end
+  end
+
+  defp callback_arg_count_from_args(_, _), do: 0
+
+  @spec callback_arg_count_from_expr(term(), term(), term(), term()) :: non_neg_integer() | nil
+  defp callback_arg_count_from_expr(_expr, _bindings, _seen, depth) when depth > 10, do: nil
+
+  defp callback_arg_count_from_expr(
+         %{op: :constructor_call, args: args},
+         _bindings,
+         _seen,
+         _depth
+       )
+       when is_list(args),
+       do: length(args)
+
+  defp callback_arg_count_from_expr(%{op: :constructor_call}, _bindings, _seen, _depth), do: 0
+
+  defp callback_arg_count_from_expr(%{op: :var, name: name}, bindings, seen, depth)
+       when is_binary(name) and is_map(bindings) do
+    if MapSet.member?(seen, name) do
+      nil
+    else
+      case Map.get(bindings, name) do
+        nil -> nil
+        expr -> callback_arg_count_from_expr(expr, bindings, MapSet.put(seen, name), depth + 1)
+      end
+    end
+  end
+
+  defp callback_arg_count_from_expr(_, _, _, _), do: nil
+
+  @spec task_sources_from_args(term()) :: [String.t()]
+  defp task_sources_from_args(args) when is_list(args) do
+    args
+    |> Enum.flat_map(&qualified_call_targets/1)
+    |> Enum.uniq()
+  end
+
+  defp task_sources_from_args(_), do: []
+
+  @spec qualified_call_targets(term()) :: [String.t()]
+  defp qualified_call_targets(%{op: :qualified_call, target: target, args: args})
+       when is_binary(target) and is_list(args) do
+    [target | Enum.flat_map(args, &qualified_call_targets/1)]
+  end
+
+  defp qualified_call_targets(%{op: :call, name: name, args: args})
+       when is_binary(name) and is_list(args) do
+    [name | Enum.flat_map(args, &qualified_call_targets/1)]
+  end
+
+  defp qualified_call_targets(%{op: :constructor_call, args: args}) when is_list(args),
+    do: Enum.flat_map(args, &qualified_call_targets/1)
+
+  defp qualified_call_targets(%{op: :lambda, body: body}), do: qualified_call_targets(body)
+
+  defp qualified_call_targets(%{op: :tuple2, left: left, right: right}),
+    do: qualified_call_targets(left) ++ qualified_call_targets(right)
+
+  defp qualified_call_targets(%{op: :list_literal, items: items}) when is_list(items),
+    do: Enum.flat_map(items, &qualified_call_targets/1)
+
+  defp qualified_call_targets(_), do: []
 
   @spec callback_constructor_from_expr(term(), term(), term(), term()) :: term()
   defp callback_constructor_from_expr(_expr, _bindings, _seen, depth) when depth > 10, do: nil

@@ -24,13 +24,61 @@ defmodule Ide.Mcp.Tools do
   @type maybe_slug :: String.t() | nil
   @type maybe_trace_id :: String.t() | nil
   @tool_version "1.0.0"
-  @catalog_version "2026-05-27"
+  @catalog_version "2026-05-28"
+
+  @simulator_settings_schema %{
+    type: "object",
+    additionalProperties: false,
+    properties: %{
+      battery_percent: %{type: "integer", minimum: 0, maximum: 100},
+      charging: %{type: "boolean"},
+      connected: %{type: "boolean"},
+      clock_24h: %{type: "boolean"},
+      latitude: %{type: "number", minimum: -90, maximum: 90},
+      longitude: %{type: "number", minimum: -180, maximum: 180},
+      accuracy: %{type: "number", minimum: 0, maximum: 100_000}
+    }
+  }
+
+  @github_settings_schema %{
+    type: "object",
+    additionalProperties: false,
+    properties: %{
+      owner: %{type: "string"},
+      repo: %{type: "string"},
+      branch: %{type: "string"}
+    }
+  }
+
+  @release_defaults_schema %{
+    type: "object",
+    additionalProperties: false,
+    properties: %{
+      version_label: %{type: "string"},
+      tags: %{type: "string"},
+      target_platforms: %{type: "array", items: %{type: "string"}},
+      capabilities: %{type: "array", items: %{type: "string"}}
+    }
+  }
 
   @read_tools [
     %{
       name: "projects.list",
       description: "List known IDE projects.",
       inputSchema: %{type: "object", additionalProperties: false, properties: %{}}
+    },
+    %{
+      name: "projects.settings",
+      description:
+        "Read persisted project settings used by IDE automation, including release defaults, GitHub config, and debugger settings.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"}
+        }
+      }
     },
     %{
       name: "projects.tree",
@@ -581,6 +629,57 @@ defmodule Ide.Mcp.Tools do
       }
     },
     %{
+      name: "debugger.simulator_settings",
+      description:
+        "Read persisted and active debugger simulator inputs for watch device data and companion APIs.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"}
+        }
+      }
+    },
+    %{
+      name: "debugger.configuration",
+      description:
+        "Read persisted companion configuration values and the current debugger configuration model.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"}
+        }
+      }
+    },
+    %{
+      name: "debugger.auto_fire",
+      description:
+        "Read debugger auto-fire settings persisted for a project and active runtime state.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"}
+        }
+      }
+    },
+    %{
+      name: "debugger.disabled_subscriptions",
+      description: "Read debugger subscription enable/disable settings for a project.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"}
+        }
+      }
+    },
+    %{
       name: "debugger.watch_profiles",
       description: "List watch profiles available to debugger launch contexts.",
       inputSchema: %{type: "object", additionalProperties: false, properties: %{}}
@@ -625,6 +724,34 @@ defmodule Ide.Mcp.Tools do
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
+        }
+      }
+    },
+    %{
+      name: "projects.update_settings",
+      description:
+        "Update safe persisted project settings such as name, target type, release defaults, GitHub config, and selected debugger/emulator preferences.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          name: %{type: "string"},
+          target_type: %{type: "string", enum: ["app", "watchface", "companion"]},
+          active: %{type: "boolean"},
+          release_defaults: @release_defaults_schema,
+          github: @github_settings_schema,
+          debugger: %{
+            type: "object",
+            additionalProperties: false,
+            properties: %{
+              timeline_mode: %{type: "string", enum: ["watch", "companion", "mixed", "separate"]},
+              watch_profile_id: %{type: "string"},
+              emulator_target: %{type: "string"},
+              emulator_mode: %{type: "string", enum: ["embedded", "external", "wasm"]}
+            }
+          }
         }
       }
     },
@@ -786,6 +913,63 @@ defmodule Ide.Mcp.Tools do
             type: "string",
             description: "Optional launch reason constructor name, defaulting to LaunchUser."
           }
+        }
+      }
+    },
+    %{
+      name: "debugger.set_simulator_settings",
+      description:
+        "Persist and apply debugger simulator inputs for watch device data and companion geolocation.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug", "settings"],
+        properties: %{
+          slug: %{type: "string"},
+          settings: @simulator_settings_schema
+        }
+      }
+    },
+    %{
+      name: "debugger.save_configuration",
+      description: "Persist and apply companion configuration values in the debugger.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug", "values"],
+        properties: %{
+          slug: %{type: "string"},
+          values: %{type: "object", additionalProperties: true}
+        }
+      }
+    },
+    %{
+      name: "debugger.set_auto_fire",
+      description: "Persist and apply debugger natural subscription auto-fire settings.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug", "target", "enabled"],
+        properties: %{
+          slug: %{type: "string"},
+          target: %{type: "string", enum: ["watch", "companion", "protocol", "phone"]},
+          trigger: %{type: "string"},
+          enabled: %{type: "boolean"}
+        }
+      }
+    },
+    %{
+      name: "debugger.set_subscription_enabled",
+      description: "Persist and apply debugger subscription enable/disable settings.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug", "target", "trigger", "enabled"],
+        properties: %{
+          slug: %{type: "string"},
+          target: %{type: "string", enum: ["watch", "companion", "protocol", "phone"]},
+          trigger: %{type: "string"},
+          enabled: %{type: "boolean"}
         }
       }
     },
@@ -1135,6 +1319,14 @@ defmodule Ide.Mcp.Tools do
     {:ok, %{projects: projects}}
   end
 
+  defp do_call("projects.settings", %{"slug" => slug}) do
+    with {:ok, project} <- fetch_project(slug) do
+      {:ok, project_settings_payload(project)}
+    else
+      {:error, reason} -> {:error, "project settings failed: #{inspect(reason)}"}
+    end
+  end
+
   defp do_call("projects.tree", %{"slug" => slug}) do
     with {:ok, project} <- fetch_project(slug) do
       {:ok, %{slug: slug, tree: Projects.list_source_tree(project)}}
@@ -1184,6 +1376,17 @@ defmodule Ide.Mcp.Tools do
 
       {:error, reason} ->
         {:error, "project create failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("projects.update_settings", %{"slug" => slug} = args) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, attrs} <- project_settings_update_attrs(project, args),
+         {:ok, updated} <- Projects.update_project(project, attrs) do
+      {:ok, project_settings_payload(updated)}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, "project settings update failed: #{inspect(reason)}"}
     end
   end
 
@@ -2139,6 +2342,73 @@ defmodule Ide.Mcp.Tools do
     {:ok, %{watch_profiles: Debugger.watch_profiles()}}
   end
 
+  defp do_call("debugger.simulator_settings", %{"slug" => slug}) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
+      persisted = project_simulator_settings(project)
+      active = Map.get(state, :simulator_settings) || persisted
+      {:ok, %{slug: slug, settings: active, persisted_settings: persisted}}
+    else
+      {:error, reason} -> {:error, "debugger simulator settings failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.configuration", %{"slug" => slug}) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
+      settings = project.debugger_settings || %{}
+      persisted_values = map_value(settings, "configuration_values") || %{}
+      companion_model = get_in(state, [:companion, :model]) || %{}
+
+      configuration =
+        map_value(companion_model, "configuration") ||
+          get_in(companion_model, ["runtime_model", "configuration"]) ||
+          %{}
+
+      {:ok,
+       %{
+         slug: slug,
+         values: persisted_values,
+         configuration: configuration
+       }}
+    else
+      {:error, reason} -> {:error, "debugger configuration failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.auto_fire", %{"slug" => slug}) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
+      settings = project.debugger_settings || %{}
+
+      {:ok,
+       %{
+         slug: slug,
+         auto_fire: map_value(settings, "auto_fire") || %{},
+         auto_fire_subscriptions: map_value(settings, "auto_fire_subscriptions") || [],
+         runtime_auto_tick: Map.get(state, :auto_tick) || %{}
+       }}
+    else
+      {:error, reason} -> {:error, "debugger auto_fire failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.disabled_subscriptions", %{"slug" => slug}) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
+      settings = project.debugger_settings || %{}
+
+      {:ok,
+       %{
+         slug: slug,
+         disabled_subscriptions: map_value(settings, "disabled_subscriptions") || [],
+         runtime_disabled_subscriptions: Map.get(state, :disabled_subscriptions) || []
+       }}
+    else
+      {:error, reason} -> {:error, "debugger disabled_subscriptions failed: #{inspect(reason)}"}
+    end
+  end
+
   defp do_call("debugger.start", %{"slug" => slug}) do
     with {:ok, _project} <- fetch_project(slug),
          {:ok, state} <- Debugger.start_session(slug) do
@@ -2174,6 +2444,79 @@ defmodule Ide.Mcp.Tools do
       {:ok, %{slug: slug, state: state}}
     else
       {:error, reason} -> {:error, "debugger set_watch_profile failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.set_simulator_settings", %{"slug" => slug, "settings" => settings})
+       when is_map(settings) do
+    with {:ok, project} <- fetch_project(slug),
+         normalized <- normalize_mcp_simulator_settings(settings),
+         {:ok, _project} <- persist_project_debugger_setting(project, "simulator", normalized),
+         {:ok, state} <- Debugger.set_simulator_settings(slug, normalized) do
+      {:ok, %{slug: slug, settings: normalized, state: state}}
+    else
+      {:error, reason} -> {:error, "debugger set_simulator_settings failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.save_configuration", %{"slug" => slug, "values" => values})
+       when is_map(values) do
+    with {:ok, project} <- fetch_project(slug),
+         values <- normalize_configuration_values(values),
+         {:ok, _project} <-
+           persist_project_debugger_setting(project, "configuration_values", values),
+         {:ok, state} <- Debugger.save_configuration(slug, values) do
+      {:ok, %{slug: slug, values: values, state: state}}
+    else
+      {:error, reason} -> {:error, "debugger save_configuration failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.set_auto_fire", %{"slug" => slug} = args) do
+    attrs = %{
+      target: map_value(args, "target"),
+      trigger: map_value(args, "trigger"),
+      enabled: map_value(args, "enabled")
+    }
+
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, project} <- persist_project_auto_fire_setting(project, attrs),
+         {:ok, state} <- Debugger.set_auto_fire(slug, attrs) do
+      settings = project.debugger_settings || %{}
+
+      {:ok,
+       %{
+         slug: slug,
+         auto_fire: map_value(settings, "auto_fire") || %{},
+         auto_fire_subscriptions: map_value(settings, "auto_fire_subscriptions") || [],
+         state: state
+       }}
+    else
+      {:error, reason} -> {:error, "debugger set_auto_fire failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.set_subscription_enabled", %{"slug" => slug} = args) do
+    attrs = %{
+      target: map_value(args, "target"),
+      trigger: map_value(args, "trigger"),
+      enabled: map_value(args, "enabled")
+    }
+
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, project} <- persist_project_disabled_subscription_setting(project, attrs),
+         {:ok, state} <- Debugger.set_subscription_enabled(slug, attrs) do
+      settings = project.debugger_settings || %{}
+
+      {:ok,
+       %{
+         slug: slug,
+         disabled_subscriptions: map_value(settings, "disabled_subscriptions") || [],
+         state: state
+       }}
+    else
+      {:error, reason} ->
+        {:error, "debugger set_subscription_enabled failed: #{inspect(reason)}"}
     end
   end
 
@@ -2654,6 +2997,278 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
+  @spec project_settings_payload(map()) :: map()
+  defp project_settings_payload(project) when is_map(project) do
+    %{
+      name: Map.get(project, :name),
+      slug: Map.get(project, :slug),
+      target_type: Map.get(project, :target_type),
+      source_roots: Map.get(project, :source_roots) || [],
+      active: Map.get(project, :active) == true,
+      release_defaults: Map.get(project, :release_defaults) || %{},
+      github: safe_github_settings(Map.get(project, :github) || %{}),
+      debugger: safe_debugger_settings(Map.get(project, :debugger_settings) || %{})
+    }
+  end
+
+  @spec project_settings_update_attrs(map(), map()) :: {:ok, map()} | {:error, String.t()}
+  defp project_settings_update_attrs(project, args) when is_map(project) and is_map(args) do
+    attrs =
+      %{}
+      |> maybe_put_string_setting(args, "name")
+      |> maybe_put_inclusion_setting(args, "target_type", ~w(app watchface companion))
+      |> maybe_put_boolean_setting(args, "active")
+
+    attrs =
+      case map_value(args, "release_defaults") do
+        release_defaults when is_map(release_defaults) ->
+          current = Map.get(project, :release_defaults) || %{}
+
+          Map.put(
+            attrs,
+            "release_defaults",
+            Map.merge(current, safe_release_defaults(release_defaults))
+          )
+
+        _ ->
+          attrs
+      end
+
+    attrs =
+      case map_value(args, "github") do
+        github when is_map(github) ->
+          current = Map.get(project, :github) || %{}
+          Map.put(attrs, "github", Map.merge(current, safe_github_settings(github)))
+
+        _ ->
+          attrs
+      end
+
+    attrs =
+      case map_value(args, "debugger") do
+        debugger when is_map(debugger) ->
+          settings =
+            (Map.get(project, :debugger_settings) || %{})
+            |> Map.merge(safe_debugger_settings_update(debugger))
+
+          Map.put(attrs, "debugger_settings", settings)
+
+        _ ->
+          attrs
+      end
+
+    {:ok, attrs}
+  end
+
+  @spec safe_release_defaults(term()) :: map()
+  defp safe_release_defaults(map) when is_map(map) do
+    %{}
+    |> maybe_put_string_setting(map, "version_label")
+    |> maybe_put_string_setting(map, "tags")
+    |> maybe_put_string_list_setting(map, "target_platforms")
+    |> maybe_put_string_list_setting(map, "capabilities")
+  end
+
+  defp safe_release_defaults(_), do: %{}
+
+  @spec safe_github_settings(term()) :: map()
+  defp safe_github_settings(map) when is_map(map) do
+    %{}
+    |> maybe_put_string_setting(map, "owner")
+    |> maybe_put_string_setting(map, "repo")
+    |> maybe_put_string_setting(map, "branch")
+  end
+
+  defp safe_github_settings(_), do: %{}
+
+  @spec safe_debugger_settings(term()) :: map()
+  defp safe_debugger_settings(map) when is_map(map) do
+    %{}
+    |> maybe_put_existing(map, "timeline_mode")
+    |> maybe_put_existing(map, "watch_profile_id")
+    |> maybe_put_existing(map, "emulator_target")
+    |> maybe_put_existing(map, "emulator_mode")
+    |> maybe_put_existing(map, "configuration_values")
+    |> maybe_put_existing(map, "auto_fire")
+    |> maybe_put_existing(map, "auto_fire_subscriptions")
+    |> maybe_put_existing(map, "disabled_subscriptions")
+    |> Map.put("simulator", normalize_mcp_simulator_settings(map_value(map, "simulator") || %{}))
+  end
+
+  defp safe_debugger_settings(_), do: %{"simulator" => Debugger.default_simulator_settings()}
+
+  @spec safe_debugger_settings_update(term()) :: map()
+  defp safe_debugger_settings_update(map) when is_map(map) do
+    %{}
+    |> maybe_put_inclusion_setting(map, "timeline_mode", ~w(watch companion mixed separate))
+    |> maybe_put_string_setting(map, "watch_profile_id")
+    |> maybe_put_string_setting(map, "emulator_target")
+    |> maybe_put_inclusion_setting(map, "emulator_mode", ~w(embedded external wasm))
+  end
+
+  defp safe_debugger_settings_update(_), do: %{}
+
+  @spec project_simulator_settings(map()) :: map()
+  defp project_simulator_settings(project) when is_map(project) do
+    project
+    |> Map.get(:debugger_settings, %{})
+    |> map_value("simulator")
+    |> normalize_mcp_simulator_settings()
+  end
+
+  @spec normalize_mcp_simulator_settings(term()) :: map()
+  defp normalize_mcp_simulator_settings(settings) when is_map(settings) do
+    defaults = Debugger.default_simulator_settings()
+
+    %{
+      "battery_percent" =>
+        settings
+        |> map_value("battery_percent")
+        |> normalize_mcp_integer(defaults["battery_percent"], 0, 100),
+      "charging" =>
+        settings
+        |> map_value("charging")
+        |> normalize_mcp_boolean(defaults["charging"]),
+      "connected" =>
+        settings
+        |> map_value("connected")
+        |> normalize_mcp_boolean(defaults["connected"]),
+      "clock_24h" =>
+        settings
+        |> map_value("clock_24h")
+        |> normalize_mcp_boolean(defaults["clock_24h"]),
+      "latitude" =>
+        settings
+        |> map_value("latitude")
+        |> normalize_mcp_float(defaults["latitude"], -90.0, 90.0),
+      "longitude" =>
+        settings
+        |> map_value("longitude")
+        |> normalize_mcp_float(defaults["longitude"], -180.0, 180.0),
+      "accuracy" =>
+        settings
+        |> map_value("accuracy")
+        |> normalize_mcp_float(defaults["accuracy"], 0.0, 100_000.0)
+    }
+  end
+
+  defp normalize_mcp_simulator_settings(_settings), do: Debugger.default_simulator_settings()
+
+  @spec normalize_configuration_values(map()) :: map()
+  defp normalize_configuration_values(values) when is_map(values) do
+    Map.new(values, fn
+      {key, list} when is_list(list) -> {to_string(key), List.last(list)}
+      {key, value} -> {to_string(key), value}
+    end)
+  end
+
+  @spec persist_project_debugger_setting(map(), String.t(), term()) ::
+          {:ok, map()} | {:error, term()}
+  defp persist_project_debugger_setting(project, key, value)
+       when is_map(project) and is_binary(key) do
+    settings =
+      project
+      |> Map.get(:debugger_settings, %{})
+      |> Map.put(key, value)
+
+    Projects.update_project(project, %{"debugger_settings" => settings})
+  end
+
+  @spec persist_project_auto_fire_setting(map(), map()) :: {:ok, map()} | {:error, term()}
+  defp persist_project_auto_fire_setting(project, attrs) when is_map(project) and is_map(attrs) do
+    target = debugger_setting_target(map_value(attrs, "target"))
+    trigger = map_value(attrs, "trigger")
+    enabled? = normalize_mcp_boolean(map_value(attrs, "enabled"), false)
+    settings = Map.get(project, :debugger_settings) || %{}
+
+    updated_settings =
+      if is_binary(trigger) and String.trim(trigger) != "" do
+        subscriptions =
+          settings
+          |> map_value("auto_fire_subscriptions")
+          |> update_project_auto_fire_subscriptions(target, trigger, enabled?)
+
+        auto_fire = map_value(settings, "auto_fire") || %{}
+
+        settings
+        |> Map.put("auto_fire", Map.put(auto_fire, target, false))
+        |> Map.put("auto_fire_subscriptions", subscriptions)
+      else
+        auto_fire = map_value(settings, "auto_fire") || %{}
+        Map.put(settings, "auto_fire", Map.put(auto_fire, target, enabled?))
+      end
+
+    Projects.update_project(project, %{"debugger_settings" => updated_settings})
+  end
+
+  @spec persist_project_disabled_subscription_setting(map(), map()) ::
+          {:ok, map()} | {:error, term()}
+  defp persist_project_disabled_subscription_setting(project, attrs)
+       when is_map(project) and is_map(attrs) do
+    target = debugger_setting_target(map_value(attrs, "target"))
+    trigger = map_value(attrs, "trigger")
+    enabled? = normalize_mcp_boolean(map_value(attrs, "enabled"), false)
+    settings = Map.get(project, :debugger_settings) || %{}
+
+    disabled_subscriptions =
+      settings
+      |> map_value("disabled_subscriptions")
+      |> update_project_disabled_subscriptions(target, trigger, enabled?)
+
+    Projects.update_project(project, %{
+      "debugger_settings" => Map.put(settings, "disabled_subscriptions", disabled_subscriptions)
+    })
+  end
+
+  @spec update_project_auto_fire_subscriptions(term(), term(), term(), boolean()) :: [map()]
+  defp update_project_auto_fire_subscriptions(subscriptions, target, trigger, enabled?) do
+    trigger = String.trim(to_string(trigger))
+
+    subscriptions =
+      subscriptions
+      |> List.wrap()
+      |> Enum.filter(&is_map/1)
+      |> Enum.reject(&(map_value(&1, "target") == target and map_value(&1, "trigger") == trigger))
+
+    if enabled? and trigger != "" do
+      [%{"target" => target, "trigger" => trigger} | subscriptions]
+    else
+      subscriptions
+    end
+    |> Enum.uniq_by(&{map_value(&1, "target"), map_value(&1, "trigger")})
+  end
+
+  @spec update_project_disabled_subscriptions(term(), term(), term(), boolean()) :: [map()]
+  defp update_project_disabled_subscriptions(subscriptions, target, trigger, enabled?)
+       when is_binary(trigger) and trigger != "" do
+    trigger = String.trim(trigger)
+
+    subscriptions =
+      subscriptions
+      |> List.wrap()
+      |> Enum.filter(&is_map/1)
+      |> Enum.reject(&(map_value(&1, "target") == target and map_value(&1, "trigger") == trigger))
+
+    if enabled? do
+      subscriptions
+    else
+      [%{"target" => target, "trigger" => trigger} | subscriptions]
+    end
+    |> Enum.uniq_by(&{map_value(&1, "target"), map_value(&1, "trigger")})
+  end
+
+  defp update_project_disabled_subscriptions(subscriptions, _target, _trigger, _enabled?),
+    do: subscriptions |> List.wrap() |> Enum.filter(&is_map/1)
+
+  @spec debugger_setting_target(term()) :: String.t()
+  defp debugger_setting_target("protocol"), do: "protocol"
+  defp debugger_setting_target("companion"), do: "phone"
+  defp debugger_setting_target("phone"), do: "phone"
+  defp debugger_setting_target(:protocol), do: "protocol"
+  defp debugger_setting_target(:companion), do: "phone"
+  defp debugger_setting_target(:phone), do: "phone"
+  defp debugger_setting_target(_target), do: "watch"
+
   @spec fetch_project(String.t()) :: {:ok, map()} | {:error, :project_not_found}
   defp fetch_project(slug) do
     case Projects.get_project_by_slug(slug) do
@@ -2664,6 +3279,7 @@ defmodule Ide.Mcp.Tools do
 
   @spec authorized?(String.t(), [capability()]) :: boolean()
   defp authorized?("projects.list", capabilities), do: :read in capabilities
+  defp authorized?("projects.settings", capabilities), do: :read in capabilities
   defp authorized?("projects.tree", capabilities), do: :read in capabilities
   defp authorized?("files.read", capabilities), do: :read in capabilities
   defp authorized?("files.stat", capabilities), do: :read in capabilities
@@ -2700,9 +3316,14 @@ defmodule Ide.Mcp.Tools do
   defp authorized?("debugger.models", capabilities), do: :read in capabilities
   defp authorized?("debugger.timeline", capabilities), do: :read in capabilities
   defp authorized?("debugger.surface_state", capabilities), do: :read in capabilities
+  defp authorized?("debugger.simulator_settings", capabilities), do: :read in capabilities
+  defp authorized?("debugger.configuration", capabilities), do: :read in capabilities
+  defp authorized?("debugger.auto_fire", capabilities), do: :read in capabilities
+  defp authorized?("debugger.disabled_subscriptions", capabilities), do: :read in capabilities
   defp authorized?("debugger.watch_profiles", capabilities), do: :read in capabilities
   defp authorized?("projects.create", capabilities), do: :edit in capabilities
   defp authorized?("projects.delete", capabilities), do: :edit in capabilities
+  defp authorized?("projects.update_settings", capabilities), do: :edit in capabilities
   defp authorized?("files.write", capabilities), do: :edit in capabilities
   defp authorized?("files.patch", capabilities), do: :edit in capabilities
   defp authorized?("packages.add_to_elm_json", capabilities), do: :edit in capabilities
@@ -2713,6 +3334,10 @@ defmodule Ide.Mcp.Tools do
   defp authorized?("debugger.start", capabilities), do: :edit in capabilities
   defp authorized?("debugger.reset", capabilities), do: :edit in capabilities
   defp authorized?("debugger.set_watch_profile", capabilities), do: :edit in capabilities
+  defp authorized?("debugger.set_simulator_settings", capabilities), do: :edit in capabilities
+  defp authorized?("debugger.save_configuration", capabilities), do: :edit in capabilities
+  defp authorized?("debugger.set_auto_fire", capabilities), do: :edit in capabilities
+  defp authorized?("debugger.set_subscription_enabled", capabilities), do: :edit in capabilities
   defp authorized?("debugger.reload", capabilities), do: :edit in capabilities
   defp authorized?("debugger.step", capabilities), do: :edit in capabilities
   defp authorized?("debugger.tick", capabilities), do: :edit in capabilities
@@ -2783,6 +3408,109 @@ defmodule Ide.Mcp.Tools do
   defp put_opt_map(map, _key, nil), do: map
   defp put_opt_map(map, _key, ""), do: map
   defp put_opt_map(map, key, value), do: Map.put(map, key, value)
+
+  @spec map_value(map(), String.t()) :: term()
+  defp map_value(map, key) when is_map(map) and is_binary(key),
+    do: Map.get(map, key) || Map.get(map, String.to_atom(key))
+
+  defp map_value(_map, _key), do: nil
+
+  @spec maybe_put_existing(map(), map(), String.t()) :: map()
+  defp maybe_put_existing(acc, source, key) when is_map(source) do
+    case map_value(source, key) do
+      nil -> acc
+      value -> Map.put(acc, key, value)
+    end
+  end
+
+  @spec maybe_put_string_setting(map(), map(), String.t()) :: map()
+  defp maybe_put_string_setting(acc, source, key) when is_map(source) do
+    case map_value(source, key) do
+      value when is_binary(value) -> Map.put(acc, key, String.trim(value))
+      _ -> acc
+    end
+  end
+
+  @spec maybe_put_string_list_setting(map(), map(), String.t()) :: map()
+  defp maybe_put_string_list_setting(acc, source, key) when is_map(source) do
+    case map_value(source, key) do
+      values when is_list(values) ->
+        values =
+          values
+          |> Enum.filter(&is_binary/1)
+          |> Enum.map(&String.trim/1)
+          |> Enum.reject(&(&1 == ""))
+
+        Map.put(acc, key, values)
+
+      _ ->
+        acc
+    end
+  end
+
+  @spec maybe_put_boolean_setting(map(), map(), String.t()) :: map()
+  defp maybe_put_boolean_setting(acc, source, key) when is_map(source) do
+    case map_value(source, key) do
+      nil -> acc
+      value -> Map.put(acc, key, normalize_mcp_boolean(value, false))
+    end
+  end
+
+  @spec maybe_put_inclusion_setting(map(), map(), String.t(), [String.t()]) :: map()
+  defp maybe_put_inclusion_setting(acc, source, key, allowed) when is_map(source) do
+    case map_value(source, key) do
+      value when is_binary(value) ->
+        value = String.trim(value)
+
+        if value in allowed do
+          Map.put(acc, key, value)
+        else
+          acc
+        end
+
+      _ ->
+        acc
+    end
+  end
+
+  @spec normalize_mcp_integer(term(), integer(), integer(), integer()) :: integer()
+  defp normalize_mcp_integer(value, _default, min, max) when is_integer(value),
+    do: value |> Kernel.max(min) |> Kernel.min(max)
+
+  defp normalize_mcp_integer(value, default, min, max) when is_binary(value) do
+    case Integer.parse(value) do
+      {parsed, _} -> normalize_mcp_integer(parsed, default, min, max)
+      :error -> default
+    end
+  end
+
+  defp normalize_mcp_integer(_value, default, _min, _max), do: default
+
+  @spec normalize_mcp_float(term(), float(), float(), float()) :: float()
+  defp normalize_mcp_float(value, _default, min, max) when is_float(value),
+    do: value |> Kernel.max(min) |> Kernel.min(max)
+
+  defp normalize_mcp_float(value, _default, min, max) when is_integer(value),
+    do: (value * 1.0) |> Kernel.max(min) |> Kernel.min(max)
+
+  defp normalize_mcp_float(value, default, min, max) when is_binary(value) do
+    case Float.parse(value) do
+      {parsed, _} -> normalize_mcp_float(parsed, default, min, max)
+      :error -> default
+    end
+  end
+
+  defp normalize_mcp_float(_value, default, _min, _max), do: default
+
+  @spec normalize_mcp_boolean(term(), boolean()) :: boolean()
+  defp normalize_mcp_boolean(value, _default) when value in [true, "true", "on", "1", 1],
+    do: true
+
+  defp normalize_mcp_boolean(value, _default) when value in [false, "false", "off", "0", 0],
+    do: false
+
+  defp normalize_mcp_boolean([value | _], default), do: normalize_mcp_boolean(value, default)
+  defp normalize_mcp_boolean(_value, default), do: default
 
   @spec redact_patch_argument(map(), String.t()) :: map()
   defp redact_patch_argument(args, key) do

@@ -69,6 +69,14 @@ defmodule Ide.Emulator.Session do
   @spec local_port(pid(), :vnc | :phone) :: pos_integer()
   def local_port(pid, kind), do: GenServer.call(pid, {:local_port, kind})
 
+  @spec control(pid(), non_neg_integer(), binary()) :: :ok | {:error, term()}
+  def control(pid, protocol, payload)
+      when is_integer(protocol) and protocol >= 0 and protocol <= 255 and is_binary(payload) do
+    GenServer.call(pid, {:control, protocol, payload}, 5_000)
+  catch
+    :exit, reason -> {:error, reason}
+  end
+
   @spec ping(pid()) :: {:ok, map()} | {:error, term()}
   def ping(pid) do
     GenServer.call(pid, :ping, 1_000)
@@ -456,6 +464,18 @@ defmodule Ide.Emulator.Session do
   end
 
   def handle_call({:local_port, :phone}, _from, state), do: {:reply, state.phone_ws_port, state}
+
+  def handle_call({:control, _protocol, _payload}, _from, %{protocol_router_pid: nil} = state),
+    do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
+
+  def handle_call({:control, protocol, payload}, _from, state) do
+    if live_pid?(state.protocol_router_pid) do
+      {:reply, Router.send_qemu_packet(state.protocol_router_pid, protocol, payload), state}
+    else
+      {:reply, {:error, :embedded_protocol_router_not_started},
+       %{state | protocol_router_pid: nil}}
+    end
+  end
 
   def handle_call(:restart_protocol_router, _from, %{protocol_router_pid: nil} = state) do
     case maybe_start_protocol_router(state) do

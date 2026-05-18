@@ -551,15 +551,19 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     })
     |> render_submit()
 
-    view
-    |> form("form[phx-submit='debugger-save-configuration']", %{
+    checked_params = %{
       "configuration" => %{
         "backgroundColor" => "blue",
         "textColor" => "yellow",
-        "showDate" => "true"
+        "showDate" => ["false", "true"]
       }
-    })
-    |> render_submit()
+    }
+
+    render_change(view, "debugger-change-configuration", checked_params)
+    draft_html = render_click(view, "debugger-jump-latest")
+    assert draft_html =~ ~r/<input(?=[^>]*checked)(?=[^>]*name="configuration\[showDate\]")/
+
+    render_submit(view, "debugger-save-configuration", checked_params)
 
     assert {:ok, saved_state} = Debugger.snapshot(project.slug, event_limit: 20)
 
@@ -612,6 +616,9 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
              "backgroundColor"
            ]) ==
              "blue"
+
+    assert get_in(restarted_state.companion, [:model, "configuration", "values", "showDate"]) ==
+             true
 
     render_click(view, "debugger-reset-configuration")
 

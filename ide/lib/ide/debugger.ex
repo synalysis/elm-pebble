@@ -17,6 +17,15 @@ defmodule Ide.Debugger do
   @history_limit 500
   @default_auto_fire_interval_ms 1_000
   @min_auto_fire_interval_ms 100
+  @agent_call_timeout_ms 30_000
+  @configuration_subscription_contract %{
+    names: ["onConfiguration"],
+    target_suffixes: [".onConfiguration"]
+  }
+  @geolocation_subscription_contract %{
+    names: ["onCurrentPosition"],
+    target_suffixes: [".onCurrentPosition"]
+  }
 
   @type runtime_event :: %{
           seq: non_neg_integer(),
@@ -43,6 +52,7 @@ defmodule Ide.Debugger do
           revision: String.t() | nil,
           watch_profile_id: String.t(),
           launch_context: map(),
+          simulator_settings: map(),
           watch: map(),
           companion: map(),
           phone: map(),
@@ -86,12 +96,17 @@ defmodule Ide.Debugger do
 
       launch_context = launch_context_for(watch_profile_id, launch_reason)
 
+      simulator_settings =
+        Map.get(state, :simulator_settings)
+        |> normalize_simulator_settings()
+
       %{
         state
         | running: true,
           revision: nil,
           watch_profile_id: watch_profile_id,
           launch_context: launch_context,
+          simulator_settings: simulator_settings,
           storage: Map.get(state, :storage, %{}),
           watch: default_watch_runtime(launch_context),
           companion: default_companion_runtime(),
@@ -105,6 +120,7 @@ defmodule Ide.Debugger do
       }
       |> attach_companion_configuration(project_slug)
       |> apply_launch_context_to_surfaces(launch_reason)
+      |> apply_simulator_settings_to_surfaces()
       |> append_event("debugger.start", %{
         launch_reason: launch_reason,
         watch_profile_id: watch_profile_id
@@ -125,12 +141,17 @@ defmodule Ide.Debugger do
 
       launch_context = launch_context_for(watch_profile_id, launch_reason)
 
+      simulator_settings =
+        Map.get(state, :simulator_settings)
+        |> normalize_simulator_settings()
+
       base =
         %{
           state
           | revision: nil,
             watch_profile_id: watch_profile_id,
             launch_context: launch_context,
+            simulator_settings: simulator_settings,
             watch: default_watch_runtime(launch_context),
             companion: default_companion_runtime(),
             phone: default_phone_runtime(),
@@ -138,6 +159,7 @@ defmodule Ide.Debugger do
             debugger_seq: 0
         }
         |> attach_companion_configuration(project_slug)
+        |> apply_simulator_settings_to_surfaces()
 
       append_event(base, "debugger.reset", %{})
     end)
@@ -183,6 +205,22 @@ defmodule Ide.Debugger do
   end
 
   @doc """
+  Returns default simulator inputs used by debugger device and companion APIs.
+  """
+  @spec default_simulator_settings() :: map()
+  def default_simulator_settings do
+    %{
+      "battery_percent" => 88,
+      "charging" => false,
+      "connected" => true,
+      "clock_24h" => true,
+      "latitude" => 48.137154,
+      "longitude" => 11.576124,
+      "accuracy" => 25.0
+    }
+  end
+
+  @doc """
   Updates the debugger watch profile and launch context used for init/runtime.
   """
   @spec set_watch_profile(String.t(), map()) :: {:ok, runtime_state()}
@@ -201,10 +239,31 @@ defmodule Ide.Debugger do
       |> ensure_phone_state()
       |> Map.put(:watch_profile_id, profile_id)
       |> apply_launch_context_to_surfaces(launch_reason)
+      |> apply_simulator_settings_to_surfaces()
       |> append_event("debugger.watch_profile_set", %{
         watch_profile_id: profile_id,
         launch_reason: launch_reason
       })
+    end)
+  end
+
+  @doc """
+  Updates debugger simulator inputs used for watch device data and companion APIs.
+  """
+  @spec set_simulator_settings(String.t(), map()) :: {:ok, runtime_state()}
+  def set_simulator_settings(project_slug, attrs \\ %{})
+      when is_binary(project_slug) and is_map(attrs) do
+    settings = normalize_simulator_settings(attrs)
+
+    update(project_slug, fn state ->
+      state
+      |> ensure_phone_state()
+      |> Map.put(:simulator_settings, settings)
+      |> apply_simulator_settings_to_surfaces()
+      |> append_event("debugger.simulator_settings_set", %{
+        simulator_settings: settings
+      })
+      |> maybe_apply_simulator_settings_geolocation_response()
     end)
   end
 
@@ -446,20 +505,95 @@ defmodule Ide.Debugger do
         }
       }
 
+      {configuration_message, configuration_message_value} =
+        configuration_message_payload(state, encoded_values, bridge_event)
+
+      seq_before_configuration_update = Map.get(state, :seq, 0)
+
+      state =
+        state
+        |> apply_step_once(
+          :companion,
+          configuration_message,
+          configuration_message_value,
+          "configuration",
+          "configuration"
+        )
+
       state
-      |> apply_step_once(
-        :companion,
-        "FromBridge",
-        %{"ctor" => "FromBridge", "args" => [bridge_event]},
-        "configuration",
-        "configuration"
+      |> maybe_apply_configuration_protocol_messages(
+        configuration,
+        changed_values,
+        seq_before_configuration_update
       )
-      |> apply_configuration_protocol_messages(configuration, changed_values)
       |> attach_companion_configuration(project_slug)
       |> put_companion_configuration_values(encoded_values)
       |> refresh_runtime_preview_for_target(:watch)
     end)
   end
+
+  @spec maybe_apply_configuration_protocol_messages(map(), term(), map(), non_neg_integer()) ::
+          map()
+  defp maybe_apply_configuration_protocol_messages(state, configuration, values, seq_before)
+       when is_map(state) and is_map(configuration) and is_map(values) and is_integer(seq_before) do
+    if configuration_protocol_events_applied?(state, seq_before) do
+      state
+    else
+      apply_configuration_protocol_messages(state, configuration, values)
+    end
+  end
+
+  defp maybe_apply_configuration_protocol_messages(state, _configuration, _values, _seq_before),
+    do: state
+
+  @spec configuration_protocol_events_applied?(map(), non_neg_integer()) :: boolean()
+  defp configuration_protocol_events_applied?(state, seq_before)
+       when is_map(state) and is_integer(seq_before) do
+    state
+    |> Map.get(:events, [])
+    |> Enum.any?(fn
+      %{seq: seq, type: type, payload: payload} ->
+        is_integer(seq) and seq > seq_before and
+          type in ["debugger.protocol_tx", "debugger.protocol_rx"] and is_map(payload) and
+          (Map.get(payload, :trigger) || Map.get(payload, "trigger")) == "configuration" and
+          (Map.get(payload, :from) || Map.get(payload, "from")) == "companion" and
+          (Map.get(payload, :to) || Map.get(payload, "to")) == "watch"
+
+      %{"seq" => seq, "type" => type, "payload" => payload} ->
+        is_integer(seq) and seq > seq_before and
+          type in ["debugger.protocol_tx", "debugger.protocol_rx"] and is_map(payload) and
+          (Map.get(payload, :trigger) || Map.get(payload, "trigger")) == "configuration" and
+          (Map.get(payload, :from) || Map.get(payload, "from")) == "companion" and
+          (Map.get(payload, :to) || Map.get(payload, "to")) == "watch"
+
+      _ ->
+        false
+    end)
+  end
+
+  defp configuration_protocol_events_applied?(_state, _seq_before), do: false
+
+  @spec configuration_message_payload(map(), map(), map()) :: {String.t(), map()}
+  defp configuration_message_payload(state, encoded_values, bridge_event)
+       when is_map(state) and is_map(encoded_values) and is_map(bridge_event) do
+    case configuration_subscription_callback(state) do
+      callback when is_binary(callback) and callback != "" ->
+        {callback, subscription_ok_message_value(callback, encoded_values)}
+
+      _ ->
+        {"FromBridge", %{"ctor" => "FromBridge", "args" => [bridge_event]}}
+    end
+  end
+
+  defp configuration_message_payload(_state, _encoded_values, bridge_event),
+    do: {"FromBridge", %{"ctor" => "FromBridge", "args" => [bridge_event]}}
+
+  @spec configuration_subscription_callback(map()) :: String.t() | nil
+  defp configuration_subscription_callback(state) when is_map(state) do
+    subscription_callback_from_state(state, :companion, @configuration_subscription_contract)
+  end
+
+  defp configuration_subscription_callback(_state), do: nil
 
   @doc """
   Reloads persisted companion configuration values without sending them to the app.
@@ -1029,15 +1163,19 @@ defmodule Ide.Debugger do
     :ok = ensure_started()
 
     updated =
-      Agent.get_and_update(__MODULE__, fn store ->
-        current =
-          store
-          |> get_or_default_state(project_slug)
-          |> ensure_phone_state()
+      Agent.get_and_update(
+        __MODULE__,
+        fn store ->
+          current =
+            store
+            |> get_or_default_state(project_slug)
+            |> ensure_phone_state()
 
-        next = updater.(current)
-        {next, Map.put(store, project_slug, next)}
-      end)
+          next = updater.(current)
+          {next, Map.put(store, project_slug, next)}
+        end,
+        @agent_call_timeout_ms
+      )
 
     {:ok, updated}
   end
@@ -1187,18 +1325,10 @@ defmodule Ide.Debugger do
 
     message_source = source_override || msg_source
 
-    runtime_protocol_events =
-      if message_source == "configuration" do
-        []
-      else
-        Map.get(runtime_result, :protocol_events, [])
-      end
+    runtime_protocol_events = Map.get(runtime_result, :protocol_events, [])
 
     command_protocol_events =
       cond do
-        message_source == "configuration" ->
-          []
-
         runtime_protocol_events == [] ->
           protocol_events_for_model_commands(state, model, target, message)
 
@@ -1277,6 +1407,8 @@ defmodule Ide.Debugger do
         updated_model,
         message_source
       )
+      |> maybe_apply_geolocation_response(target, message, updated_model, message_source)
+      |> maybe_apply_static_task_followups(target, message, message_value, message_source)
 
     maybe_apply_runtime_followups(
       updated_state,
@@ -1384,6 +1516,273 @@ defmodule Ide.Debugger do
 
   defp maybe_apply_init_protocol_events(state, _target), do: state
 
+  @spec maybe_apply_init_geolocation_response(term(), term()) :: term()
+  defp maybe_apply_init_geolocation_response(state, target)
+       when is_map(state) and target in [:watch, :companion, :phone] do
+    ei = get_in(state, [target, :model, "elm_introspect"])
+
+    with true <- geolocation_init_requested?(ei),
+         callback when is_binary(callback) and callback != "" <-
+           geolocation_subscription_callback(ei) do
+      location = debugger_geolocation_location(state)
+
+      state
+      |> append_event("debugger.geolocation", %{
+        target: source_root_for_target(target),
+        response_message: callback,
+        response_value: location
+      })
+      |> apply_subscription_ok_response(
+        target,
+        callback,
+        location,
+        "init_geolocation",
+        "geolocation"
+      )
+    else
+      _ -> state
+    end
+  end
+
+  defp maybe_apply_init_geolocation_response(state, _target), do: state
+
+  @spec maybe_apply_simulator_settings_geolocation_response(term()) :: term()
+  defp maybe_apply_simulator_settings_geolocation_response(state) when is_map(state) do
+    maybe_apply_geolocation_subscription_response(state, :companion, "simulator_settings")
+  end
+
+  defp maybe_apply_simulator_settings_geolocation_response(state), do: state
+
+  @spec maybe_apply_geolocation_response(term(), term(), term(), term(), term()) :: term()
+  defp maybe_apply_geolocation_response(state, _target, _message, _model, "geolocation"),
+    do: state
+
+  defp maybe_apply_geolocation_response(state, _target, _message, _model, "init_geolocation"),
+    do: state
+
+  defp maybe_apply_geolocation_response(state, target, message, model, _message_source)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
+              is_map(model) do
+    ei = Map.get(model, "elm_introspect")
+    current_ctor = message_constructor(message)
+    callback = geolocation_subscription_callback(ei)
+
+    with true <- is_binary(callback) and callback != "",
+         true <- current_ctor != callback,
+         true <- geolocation_update_branch_requests_command?(ei, current_ctor) do
+      location = debugger_geolocation_location(state)
+
+      state
+      |> append_event("debugger.geolocation", %{
+        target: source_root_for_target(target),
+        response_message: callback,
+        response_value: location
+      })
+      |> apply_subscription_ok_response(target, callback, location, "geolocation", "geolocation")
+    else
+      _ -> state
+    end
+  end
+
+  defp maybe_apply_geolocation_response(state, _target, _message, _model, _message_source),
+    do: state
+
+  @spec maybe_apply_geolocation_subscription_response(term(), term(), String.t()) :: term()
+  defp maybe_apply_geolocation_subscription_response(state, target, source)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(source) do
+    ei = get_in(state, [target, :model, "elm_introspect"])
+    callback = geolocation_subscription_callback(ei)
+
+    if is_binary(callback) and callback != "" do
+      location = debugger_geolocation_location(state)
+
+      state
+      |> append_event("debugger.geolocation", %{
+        target: source_root_for_target(target),
+        response_message: callback,
+        response_value: location
+      })
+      |> apply_subscription_ok_response(target, callback, location, source, "geolocation")
+    else
+      state
+    end
+  end
+
+  defp maybe_apply_geolocation_subscription_response(state, _target, _source), do: state
+
+  @spec geolocation_update_branch_requests_command?(term(), String.t() | nil) :: boolean()
+  defp geolocation_update_branch_requests_command?(ei, current_ctor)
+       when is_map(ei) and is_binary(current_ctor) and current_ctor != "" do
+    ei
+    |> introspect_cmd_calls("update_cmd_calls")
+    |> update_cmd_calls_for_message(current_ctor)
+    |> Enum.any?(fn row ->
+      cmd_call_requests_geolocation?(ei, row)
+    end)
+  end
+
+  defp geolocation_update_branch_requests_command?(_ei, _current_ctor), do: false
+
+  @spec cmd_call_requests_geolocation?(term(), term()) :: boolean()
+  defp cmd_call_requests_geolocation?(ei, row) when is_map(ei) and is_map(row) do
+    cond do
+      cmd_call_name?(row, "currentPosition") or
+          cmd_call_target_ends_with?(row, ".currentPosition") ->
+        true
+
+      true ->
+        helper_name = Map.get(row, "target") || Map.get(row, "name")
+
+        ei
+        |> Map.get("function_cmd_calls", %{})
+        |> case do
+          helpers when is_map(helpers) -> Map.get(helpers, helper_name, [])
+          _ -> []
+        end
+        |> Enum.any?(
+          &(cmd_call_name?(&1, "currentPosition") or
+              cmd_call_target_ends_with?(&1, ".currentPosition"))
+        )
+    end
+  end
+
+  defp cmd_call_requests_geolocation?(_ei, _row), do: false
+
+  @spec geolocation_init_requested?(term()) :: boolean()
+  defp geolocation_init_requested?(ei) when is_map(ei) do
+    init_requested? =
+      ei
+      |> introspect_cmd_calls("init_cmd_calls")
+      |> Enum.any?(fn row ->
+        cmd_call_name?(row, "currentPosition") or
+          cmd_call_target_ends_with?(row, ".currentPosition")
+      end)
+
+    # The debugger cannot always statically inline local command helpers. A
+    # declared geolocation subscription is still a clear app-level contract that
+    # the companion can receive a current-position result.
+    init_requested? or is_binary(geolocation_subscription_callback(ei))
+  end
+
+  defp geolocation_init_requested?(_ei), do: false
+
+  @spec geolocation_subscription_callback(term()) :: String.t() | nil
+  defp geolocation_subscription_callback(ei) when is_map(ei) do
+    subscription_callback(ei, @geolocation_subscription_contract)
+  end
+
+  defp geolocation_subscription_callback(_ei), do: nil
+
+  @spec cmd_call_name?(map(), String.t()) :: boolean()
+  defp cmd_call_name?(row, name) when is_map(row) and is_binary(name),
+    do: Map.get(row, "name") == name
+
+  defp cmd_call_name?(_row, _name), do: false
+
+  @spec cmd_call_target_ends_with?(map(), String.t()) :: boolean()
+  defp cmd_call_target_ends_with?(row, suffix) when is_map(row) and is_binary(suffix) do
+    case Map.get(row, "target") do
+      target when is_binary(target) -> String.ends_with?(target, suffix)
+      _ -> false
+    end
+  end
+
+  defp cmd_call_target_ends_with?(_row, _suffix), do: false
+
+  @spec debugger_geolocation_location(term()) :: map()
+  defp debugger_geolocation_location(state) when is_map(state) do
+    settings =
+      state
+      |> Map.get(:simulator_settings)
+      |> normalize_simulator_settings()
+
+    %{
+      "latitude" => settings["latitude"],
+      "longitude" => settings["longitude"],
+      "accuracy" => settings["accuracy"]
+    }
+  end
+
+  defp debugger_geolocation_location(_state),
+    do: debugger_geolocation_location(%{simulator_settings: default_simulator_settings()})
+
+  @spec subscription_ok_message_value(String.t(), term()) :: map()
+  defp subscription_ok_message_value(callback, payload) when is_binary(callback) do
+    subscription_result_message_value(callback, "Ok", payload)
+  end
+
+  @spec apply_subscription_ok_response(
+          map(),
+          :watch | :companion | :phone,
+          String.t(),
+          term(),
+          String.t(),
+          String.t()
+        ) :: map()
+  defp apply_subscription_ok_response(state, target, callback, payload, source, trigger)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(callback) and
+              is_binary(source) and is_binary(trigger) do
+    apply_step_once(
+      state,
+      target,
+      callback,
+      subscription_ok_message_value(callback, payload),
+      source,
+      trigger
+    )
+  end
+
+  @spec subscription_result_message_value(String.t(), String.t(), term()) :: map()
+  defp subscription_result_message_value(callback, result_ctor, payload)
+       when is_binary(callback) and is_binary(result_ctor) do
+    %{
+      "ctor" => callback,
+      "args" => [
+        %{
+          "ctor" => result_ctor,
+          "args" => [payload]
+        }
+      ]
+    }
+  end
+
+  @spec subscription_callback_from_state(map(), :watch | :companion | :phone, map()) ::
+          String.t() | nil
+  defp subscription_callback_from_state(state, target, contract)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_map(contract) do
+    state
+    |> get_in([target, :model, "elm_introspect"])
+    |> subscription_callback(contract)
+  end
+
+  defp subscription_callback_from_state(_state, _target, _contract), do: nil
+
+  @spec subscription_callback(term(), map()) :: String.t() | nil
+  defp subscription_callback(ei, contract) when is_map(ei) and is_map(contract) do
+    names = Map.get(contract, :names, []) |> List.wrap()
+    target_suffixes = Map.get(contract, :target_suffixes, []) |> List.wrap()
+
+    ei
+    |> introspect_cmd_calls("subscription_calls")
+    |> Enum.find_value(fn row ->
+      if subscription_call_matches?(row, names, target_suffixes) do
+        callback = Map.get(row, "callback_constructor")
+        if is_binary(callback) and callback != "", do: callback, else: nil
+      end
+    end)
+  end
+
+  defp subscription_callback(_ei, _contract), do: nil
+
+  @spec subscription_call_matches?(map(), [String.t()], [String.t()]) :: boolean()
+  defp subscription_call_matches?(row, names, target_suffixes)
+       when is_map(row) and is_list(names) and is_list(target_suffixes) do
+    Enum.any?(names, &cmd_call_name?(row, &1)) or
+      Enum.any?(target_suffixes, &cmd_call_target_ends_with?(row, &1))
+  end
+
+  defp subscription_call_matches?(_row, _names, _target_suffixes), do: false
+
   defp protocol_events_from_cmd_call(state, :watch, cmd_call, model) when is_map(cmd_call) do
     name = (Map.get(cmd_call, "name") || Map.get(cmd_call, :name) || "") |> to_string()
     target = (Map.get(cmd_call, "target") || Map.get(cmd_call, :target) || "") |> to_string()
@@ -1420,14 +1819,37 @@ defmodule Ide.Debugger do
        when is_map(model) and target in [:watch, :companion, :phone] and is_binary(message) do
     current_ctor = message_constructor(message)
 
-    model
-    |> Map.get("elm_introspect")
+    ei = Map.get(model, "elm_introspect")
+
+    ei
     |> introspect_cmd_calls("update_cmd_calls")
     |> update_cmd_calls_for_message(current_ctor)
+    |> expand_helper_cmd_calls(ei)
     |> Enum.flat_map(&protocol_events_from_cmd_call(state, target, &1, model))
   end
 
   defp protocol_events_for_model_commands(_state, _model, _target, _message), do: []
+
+  @spec expand_helper_cmd_calls([map()], term()) :: [map()]
+  defp expand_helper_cmd_calls(calls, ei) when is_list(calls) and is_map(ei) do
+    helpers =
+      case Map.get(ei, "function_cmd_calls", %{}) do
+        value when is_map(value) -> value
+        _ -> %{}
+      end
+
+    Enum.flat_map(calls, fn row ->
+      helper_name = Map.get(row, "target") || Map.get(row, "name")
+
+      case Map.get(helpers, helper_name) do
+        helper_calls when is_list(helper_calls) and helper_calls != [] -> helper_calls
+        _ -> [row]
+      end
+    end)
+  end
+
+  defp expand_helper_cmd_calls(calls, _ei) when is_list(calls), do: calls
+  defp expand_helper_cmd_calls(_calls, _ei), do: []
 
   @spec protocol_message_payload_for_cmd_call(
           term(),
@@ -1825,6 +2247,161 @@ defmodule Ide.Debugger do
   defp maybe_apply_runtime_followups(state, _target, _message, _message_source, _followups),
     do: state
 
+  @spec maybe_apply_static_task_followups(term(), term(), term(), term(), term()) :: term()
+  defp maybe_apply_static_task_followups(
+         state,
+         _target,
+         _message,
+         _message_value,
+         "runtime_followup"
+       ),
+       do: state
+
+  defp maybe_apply_static_task_followups(state, target, message, message_value, _message_source)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) do
+    model = get_in(state, [target, :model]) || %{}
+    ei = Map.get(model, "elm_introspect")
+    current_ctor = message_constructor(message)
+    target_name = source_root_for_target(target)
+
+    ei
+    |> static_task_followup_rows(current_ctor)
+    |> Enum.take(3)
+    |> Enum.reduce(state, fn row, acc ->
+      callback = Map.get(row, "callback_constructor")
+
+      with true <- is_binary(callback) and callback != "" and callback != current_ctor,
+           {:ok, followup_value} <- static_task_followup_message_value(row, message_value, acc) do
+        acc
+        |> append_event("debugger.package_cmd", %{
+          target: target_name,
+          package: "elm/core",
+          response_message: callback,
+          command: %{
+            "kind" => "cmd.task.perform",
+            "task_sources" => Map.get(row, "task_sources", [])
+          }
+        })
+        |> apply_step_once(
+          target,
+          callback,
+          followup_value,
+          "runtime_followup",
+          "runtime_followup"
+        )
+      else
+        _ -> acc
+      end
+    end)
+  end
+
+  defp maybe_apply_static_task_followups(
+         state,
+         _target,
+         _message,
+         _message_value,
+         _message_source
+       ),
+       do: state
+
+  @spec static_task_followup_rows(term(), String.t() | nil) :: [map()]
+  defp static_task_followup_rows(ei, current_ctor)
+       when is_map(ei) and is_binary(current_ctor) and current_ctor != "" do
+    helper_calls =
+      ei
+      |> Map.get("function_cmd_calls", %{})
+      |> case do
+        value when is_map(value) -> value
+        _ -> %{}
+      end
+
+    ei
+    |> introspect_cmd_calls("update_cmd_calls")
+    |> update_cmd_calls_for_message(current_ctor)
+    |> Enum.flat_map(fn row ->
+      helper_name = Map.get(row, "target") || Map.get(row, "name")
+
+      case Map.get(helper_calls, helper_name) do
+        calls when is_list(calls) -> calls
+        _ -> []
+      end
+    end)
+    |> Enum.filter(fn row ->
+      cmd_call_name?(row, "perform") or cmd_call_target_ends_with?(row, ".perform")
+    end)
+  end
+
+  defp static_task_followup_rows(_ei, _current_ctor), do: []
+
+  @spec static_task_followup_message_value(map(), term(), map()) :: {:ok, map()} | :error
+  defp static_task_followup_message_value(row, current_message_value, state)
+       when is_map(row) and is_map(state) do
+    callback = Map.get(row, "callback_constructor")
+    captured_count = Map.get(row, "callback_arg_count", 0)
+
+    with true <- is_binary(callback) and callback != "",
+         {:ok, task_value} <- static_task_value(Map.get(row, "task_sources", []), state) do
+      captured_args = captured_message_args(current_message_value, captured_count)
+      {:ok, %{"ctor" => callback, "args" => captured_args ++ [task_value]}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp static_task_followup_message_value(_row, _current_message_value, _state), do: :error
+
+  @spec captured_message_args(term(), term()) :: [term()]
+  defp captured_message_args(_message_value, count) when not is_integer(count) or count <= 0,
+    do: []
+
+  defp captured_message_args(%{"args" => args}, count) when is_list(args) do
+    args
+    |> Enum.flat_map(&unwrap_result_payload/1)
+    |> Enum.take(count)
+  end
+
+  defp captured_message_args(%{args: args}, count) when is_list(args) do
+    args
+    |> Enum.flat_map(&unwrap_result_payload/1)
+    |> Enum.take(count)
+  end
+
+  defp captured_message_args(_message_value, _count), do: []
+
+  @spec unwrap_result_payload(term()) :: [term()]
+  defp unwrap_result_payload(%{"ctor" => "Ok", "args" => [value]}), do: [value]
+  defp unwrap_result_payload(%{ctor: "Ok", args: [value]}), do: [value]
+  defp unwrap_result_payload(value), do: [value]
+
+  @spec static_task_value(term(), map()) :: {:ok, term()} | :error
+  defp static_task_value(sources, _state) when is_list(sources) do
+    cond do
+      "Time.now" in sources and "Time.getZoneName" in sources ->
+        {:ok, {static_time_posix(), static_time_zone_name()}}
+
+      "Time.now" in sources ->
+        {:ok, static_time_posix()}
+
+      "Time.getZoneName" in sources ->
+        {:ok, static_time_zone_name()}
+
+      true ->
+        :error
+    end
+  end
+
+  defp static_task_value(_sources, _state), do: :error
+
+  @spec static_time_posix() :: map()
+  defp static_time_posix do
+    %{"ctor" => "Posix", "args" => [System.system_time(:millisecond)]}
+  end
+
+  @spec static_time_zone_name() :: map()
+  defp static_time_zone_name do
+    %{"ctor" => "Offset", "args" => [utc_offset_minutes_now()]}
+  end
+
   @spec apply_runtime_http_followup(term(), term(), term(), term(), term(), term()) :: term()
   defp apply_runtime_http_followup(state, target, target_name, package, command, followup_message)
        when target in [:watch, :companion, :phone] and is_map(command) do
@@ -2045,16 +2622,20 @@ defmodule Ide.Debugger do
     })
   end
 
-  defp finalize_device_request(%{kind: "battery_level"} = req, _model) do
-    Map.put(req, :preview, %{"batteryLevel" => 88})
+  defp finalize_device_request(%{kind: "battery_level"} = req, model) do
+    settings = simulator_settings_from_model(model)
+    Map.put(req, :preview, %{"batteryLevel" => settings["battery_percent"]})
   end
 
-  defp finalize_device_request(%{kind: "connection_status"} = req, _model) do
-    Map.put(req, :preview, %{"connected" => true})
+  defp finalize_device_request(%{kind: "connection_status"} = req, model) do
+    settings = simulator_settings_from_model(model)
+    Map.put(req, :preview, %{"connected" => settings["connected"]})
   end
 
-  defp finalize_device_request(%{kind: "clock_style_24h"} = req, _model),
-    do: Map.put(req, :preview, true)
+  defp finalize_device_request(%{kind: "clock_style_24h"} = req, model) do
+    settings = simulator_settings_from_model(model)
+    Map.put(req, :preview, settings["clock_24h"])
+  end
 
   defp finalize_device_request(%{kind: "timezone_is_set"} = req, _model),
     do: Map.put(req, :preview, true)
@@ -3286,7 +3867,7 @@ defmodule Ide.Debugger do
     state
     |> subscription_runtime_value(target, "batteryLevel")
     |> unwrap_elm_maybe()
-    |> normalize_integer(88)
+    |> normalize_integer(simulator_settings_from_state(state)["battery_percent"])
     |> min(100)
     |> max(0)
   end
@@ -3296,12 +3877,21 @@ defmodule Ide.Debugger do
     state
     |> subscription_runtime_value(target, "connected")
     |> unwrap_elm_maybe()
-    |> normalize_boolean(true)
+    |> normalize_boolean(simulator_settings_from_state(state)["connected"])
     |> then(fn
       true -> "True"
       false -> "False"
     end)
   end
+
+  @spec simulator_settings_from_state(term()) :: map()
+  defp simulator_settings_from_state(state) when is_map(state) do
+    state
+    |> Map.get(:simulator_settings)
+    |> normalize_simulator_settings()
+  end
+
+  defp simulator_settings_from_state(_state), do: default_simulator_settings()
 
   @spec subscription_runtime_value(map(), term(), String.t()) :: term()
   defp subscription_runtime_value(state, target, key) when is_map(state) and is_binary(key) do
@@ -3332,12 +3922,65 @@ defmodule Ide.Debugger do
   defp normalize_integer(_value, default) when is_integer(default), do: default
 
   @spec normalize_boolean(term(), boolean()) :: boolean()
+  defp normalize_boolean(values, default) when is_list(values),
+    do: Enum.any?(values, &normalize_boolean(&1, default))
+
   defp normalize_boolean(value, _default) when is_boolean(value), do: value
   defp normalize_boolean("True", _default), do: true
   defp normalize_boolean("False", _default), do: false
   defp normalize_boolean("true", _default), do: true
   defp normalize_boolean("false", _default), do: false
   defp normalize_boolean(_value, default) when is_boolean(default), do: default
+
+  @spec normalize_simulator_settings(term()) :: map()
+  defp normalize_simulator_settings(settings) when is_map(settings) do
+    defaults = default_simulator_settings()
+
+    %{
+      "battery_percent" =>
+        settings
+        |> map_value("battery_percent")
+        |> normalize_integer(defaults["battery_percent"])
+        |> min(100)
+        |> max(0),
+      "charging" => normalize_boolean(map_value(settings, "charging"), defaults["charging"]),
+      "connected" => normalize_boolean(map_value(settings, "connected"), defaults["connected"]),
+      "clock_24h" => normalize_boolean(map_value(settings, "clock_24h"), defaults["clock_24h"]),
+      "latitude" =>
+        normalize_float(map_value(settings, "latitude"), defaults["latitude"], -90.0, 90.0),
+      "longitude" =>
+        normalize_float(map_value(settings, "longitude"), defaults["longitude"], -180.0, 180.0),
+      "accuracy" =>
+        normalize_float(map_value(settings, "accuracy"), defaults["accuracy"], 0.0, 100_000.0)
+    }
+  end
+
+  defp normalize_simulator_settings(_settings), do: default_simulator_settings()
+
+  @spec simulator_settings_from_model(term()) :: map()
+  defp simulator_settings_from_model(model) when is_map(model) do
+    model
+    |> map_value("simulator_settings")
+    |> normalize_simulator_settings()
+  end
+
+  defp simulator_settings_from_model(_model), do: default_simulator_settings()
+
+  @spec normalize_float(term(), float(), float(), float()) :: float()
+  defp normalize_float(value, _default, min_value, max_value) when is_float(value),
+    do: value |> min(max_value) |> max(min_value)
+
+  defp normalize_float(value, _default, min_value, max_value) when is_integer(value),
+    do: (value * 1.0) |> min(max_value) |> max(min_value)
+
+  defp normalize_float(value, default, min_value, max_value) when is_binary(value) do
+    case Float.parse(String.trim(value)) do
+      {parsed, ""} -> parsed |> min(max_value) |> max(min_value)
+      _ -> default
+    end
+  end
+
+  defp normalize_float(_value, default, _min_value, _max_value), do: default
 
   @spec best_message_for_trigger(term(), term()) :: String.t()
   defp best_message_for_trigger(known_messages, trigger)
@@ -4859,6 +5502,7 @@ defmodule Ide.Debugger do
       persisted_project_watch_profile_id(project_slug) || default_watch_profile_id()
 
     launch_context = launch_context_for(watch_profile_id, "LaunchUser")
+    simulator_settings = persisted_project_simulator_settings(project_slug)
 
     %{
       project_slug: project_slug,
@@ -4866,6 +5510,7 @@ defmodule Ide.Debugger do
       revision: nil,
       watch_profile_id: watch_profile_id,
       launch_context: launch_context,
+      simulator_settings: simulator_settings,
       watch: default_watch_runtime(launch_context),
       companion: default_companion_runtime(),
       phone: default_phone_runtime(),
@@ -4877,6 +5522,7 @@ defmodule Ide.Debugger do
       debugger_seq: 0,
       seq: 0
     }
+    |> apply_simulator_settings_to_surfaces()
   end
 
   @spec persisted_project_watch_profile_id(term()) :: String.t() | nil
@@ -4903,6 +5549,23 @@ defmodule Ide.Debugger do
   end
 
   defp persisted_project_watch_profile_id(_project_slug), do: nil
+
+  @spec persisted_project_simulator_settings(term()) :: map()
+  defp persisted_project_simulator_settings(project_slug) when is_binary(project_slug) do
+    try do
+      with %{debugger_settings: settings} when is_map(settings) <-
+             Projects.get_project_by_slug(project_slug),
+           simulator when is_map(simulator) <- Map.get(settings, "simulator") do
+        normalize_simulator_settings(simulator)
+      else
+        _ -> default_simulator_settings()
+      end
+    rescue
+      _ -> default_simulator_settings()
+    end
+  end
+
+  defp persisted_project_simulator_settings(_project_slug), do: default_simulator_settings()
 
   @spec default_auto_tick() :: map()
   defp default_auto_tick do
@@ -5183,6 +5846,9 @@ defmodule Ide.Debugger do
   defp encode_configuration_value(_control, value), do: value
 
   @spec truthy_configuration_value?(term()) :: boolean()
+  defp truthy_configuration_value?(values) when is_list(values),
+    do: Enum.any?(values, &truthy_configuration_value?/1)
+
   defp truthy_configuration_value?(value) when value in [true, "true", "True", "on", "1", 1],
     do: true
 
@@ -5438,7 +6104,13 @@ defmodule Ide.Debugger do
     |> ensure_protocol_surface_runtime_model(:phone)
     |> Map.put(:watch_profile_id, watch_profile_id)
     |> Map.put(:launch_context, launch_context)
+    |> Map.update(
+      :simulator_settings,
+      default_simulator_settings(),
+      &normalize_simulator_settings/1
+    )
     |> apply_launch_context_to_watch_model_only()
+    |> apply_simulator_settings_to_surfaces()
   end
 
   @spec protocol_surface_model(String.t()) :: map()
@@ -5524,6 +6196,43 @@ defmodule Ide.Debugger do
 
   defp merge_launch_context_model(model, _launch_context) when is_map(model), do: model
   defp merge_launch_context_model(_model, _launch_context), do: %{}
+
+  @spec apply_simulator_settings_to_surfaces(term()) :: map()
+  defp apply_simulator_settings_to_surfaces(state) when is_map(state) do
+    settings = normalize_simulator_settings(Map.get(state, :simulator_settings))
+
+    state
+    |> Map.put(:simulator_settings, settings)
+    |> update_in([:watch, :model], &merge_simulator_settings_model(&1 || %{}, settings))
+    |> update_in([:companion, :model], &merge_simulator_settings_model(&1 || %{}, settings))
+    |> update_in([:phone, :model], &merge_simulator_settings_model(&1 || %{}, settings))
+  end
+
+  defp apply_simulator_settings_to_surfaces(_state),
+    do: %{simulator_settings: default_simulator_settings()}
+
+  @spec merge_simulator_settings_model(term(), map()) :: map()
+  defp merge_simulator_settings_model(model, settings) when is_map(model) and is_map(settings) do
+    model = Map.put(model, "simulator_settings", settings)
+
+    case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
+      runtime_model when is_map(runtime_model) ->
+        preview = %{
+          "batteryLevel" => settings["battery_percent"],
+          "connected" => settings["connected"],
+          "charging" => settings["charging"],
+          "clock_style_24h" => settings["clock_24h"]
+        }
+
+        Map.put(model, "runtime_model", merge_matching_preview_fields(runtime_model, preview))
+
+      _ ->
+        model
+    end
+  end
+
+  defp merge_simulator_settings_model(model, _settings) when is_map(model), do: model
+  defp merge_simulator_settings_model(_model, _settings), do: %{}
 
   @spec hydrate_runtime_model_for_message(term(), term()) :: map()
   defp hydrate_runtime_model_for_message(model, message) when is_map(model) do
@@ -6470,6 +7179,7 @@ defmodule Ide.Debugger do
     state
     |> Map.put(:running, true)
     |> apply_launch_context_to_surfaces("LaunchUser")
+    |> apply_simulator_settings_to_surfaces()
     |> Map.put(:revision, revision)
     |> put_in([:watch, :last_message], reload_pulse(:watch, source_root))
     |> put_in([:watch, :model, "revision"], revision)
@@ -6525,6 +7235,7 @@ defmodule Ide.Debugger do
             )
             |> maybe_apply_init_device_data_responses(introspect_target_key(source_root))
             |> maybe_apply_init_protocol_events(introspect_target_key(source_root))
+            |> maybe_apply_init_geolocation_response(introspect_target_key(source_root))
 
           payload =
             if introspect_event_worth_logging?(ei) do
@@ -7261,6 +7972,7 @@ defmodule Ide.Debugger do
       "running" => Map.get(state, :running, false),
       "watch_profile_id" => Map.get(state, :watch_profile_id),
       "launch_context" => normalize_term(Map.get(state, :launch_context, %{})),
+      "simulator_settings" => normalize_term(simulator_settings_from_state(state)),
       "runtime_fingerprint_compare" => normalize_term(runtime_fingerprint_compare),
       "seq" => Map.get(state, :seq, 0),
       "watch" => normalize_term(Map.get(state, :watch, %{}))
@@ -7623,6 +8335,7 @@ defmodule Ide.Debugger do
       revision: Map.get(body, "revision"),
       watch_profile_id: parse_watch_profile_id(Map.get(body, "watch_profile_id")),
       launch_context: normalize_term(Map.get(body, "launch_context") || %{}),
+      simulator_settings: normalize_simulator_settings(Map.get(body, "simulator_settings")),
       watch: import_watch(Map.get(body, "watch", %{})),
       companion: import_companion(Map.get(body, "companion", %{})),
       phone: import_phone(Map.get(body, "phone", %{})),
@@ -7636,7 +8349,9 @@ defmodule Ide.Debugger do
       seq: parse_optional_step_cursor_seq(Map.get(body, "seq")) || 0
     }
 
-    ensure_phone_state(parsed_state)
+    parsed_state
+    |> ensure_phone_state()
+    |> apply_simulator_settings_to_surfaces()
   end
 
   @spec import_event(map()) :: runtime_event()

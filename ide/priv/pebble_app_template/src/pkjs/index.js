@@ -1,10 +1,13 @@
 var pendingIncoming = [];
+var pendingGeolocationIncoming = [];
 var incomingPort = null;
+var geolocationIncomingPort = null;
 var protocol = require("./companion-protocol.js");
 var generatedConfigurationUrl = null;
 var configurationStorageKey = "elm-pebble.configuration.response";
 var appMessageKeyNamesById = {};
 var appMessageKeyIdsByName = {};
+var geolocationWatches = {};
 
 function readStoredConfigurationResponse() {
     if (typeof localStorage === "undefined" || !localStorage) {
@@ -109,10 +112,74 @@ function deliverIncoming(payload) {
     }
 }
 
+function deliverGeolocationIncoming(payload) {
+    console.log("geolocation bridge -> Elm companion", JSON.stringify(payload));
+    if (geolocationIncomingPort) {
+        geolocationIncomingPort.send(payload);
+    } else {
+        pendingGeolocationIncoming.push(payload);
+    }
+}
+
 function openConfigurationUrl(url) {
     if (url && typeof Pebble.openURL === "function") {
         console.log("opening companion configuration", url);
         Pebble.openURL(url);
+    }
+}
+
+function geolocationAvailable() {
+    return typeof navigator !== "undefined" && navigator.geolocation;
+}
+
+function deliverGeolocationPosition(position) {
+    var coords = position && position.coords ? position.coords : {};
+    var payload = {
+        event: "geolocation.position",
+        payload: {
+            latitude: Number(coords.latitude),
+            longitude: Number(coords.longitude),
+            accuracy: Number(coords.accuracy || 0)
+        }
+    };
+    deliverIncoming(payload);
+    deliverGeolocationIncoming(payload);
+}
+
+function deliverGeolocationError(error) {
+    var payload = {
+        event: "geolocation.error",
+        payload: {
+            message: error && error.message ? String(error.message) : "Geolocation unavailable"
+        }
+    };
+    deliverIncoming(payload);
+    deliverGeolocationIncoming(payload);
+}
+
+function handleGeolocationCommand(payload) {
+    if (!geolocationAvailable()) {
+        deliverGeolocationError({ message: "Geolocation unavailable" });
+        return;
+    }
+
+    if (payload.op === "getCurrentPosition") {
+        navigator.geolocation.getCurrentPosition(deliverGeolocationPosition, deliverGeolocationError);
+        return;
+    }
+
+    if (payload.op === "watch") {
+        var watchId = navigator.geolocation.watchPosition(deliverGeolocationPosition, deliverGeolocationError);
+        geolocationWatches[payload.id || String(watchId)] = watchId;
+        return;
+    }
+
+    if (payload.op === "clearWatch") {
+        var requestedId = payload.payload && payload.payload.watchId;
+        var watchKey = String(requestedId);
+        var storedId = geolocationWatches[watchKey];
+        navigator.geolocation.clearWatch(typeof storedId === "number" ? storedId : requestedId);
+        delete geolocationWatches[watchKey];
     }
 }
 
@@ -122,6 +189,12 @@ function handleOutgoing(payload) {
             console.log("Elm companion requested configuration", JSON.stringify(payload.payload || {}));
             openConfigurationUrl((payload.payload && payload.payload.url) || generatedConfigurationUrl);
         }
+        return;
+    }
+
+    if (payload && payload.api === "geolocation") {
+        console.log("Elm companion geolocation command", JSON.stringify({ id: payload.id, op: payload.op }));
+        handleGeolocationCommand(payload);
         return;
     }
 
@@ -232,10 +305,23 @@ Pebble.addEventListener("ready", function () {
         });
     }
 
+    if (app.ports && app.ports.geolocationOutgoing) {
+        app.ports.geolocationOutgoing.subscribe(function (payload) {
+            handleOutgoing(payload);
+        });
+    }
+
     if (app.ports && app.ports.incoming) {
         incomingPort = app.ports.incoming;
         while (pendingIncoming.length > 0) {
             incomingPort.send(pendingIncoming.shift());
+        }
+    }
+
+    if (app.ports && app.ports.geolocationIncoming) {
+        geolocationIncomingPort = app.ports.geolocationIncoming;
+        while (pendingGeolocationIncoming.length > 0) {
+            geolocationIncomingPort.send(pendingGeolocationIncoming.shift());
         }
     }
 });

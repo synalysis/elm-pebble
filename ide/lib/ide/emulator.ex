@@ -59,6 +59,14 @@ defmodule Ide.Emulator do
     end
   end
 
+  @spec control(String.t(), non_neg_integer(), binary()) :: :ok | {:error, term()}
+  def control(id, protocol, payload)
+      when is_binary(id) and is_integer(protocol) and is_binary(payload) do
+    with {:ok, pid} <- lookup(id) do
+      Session.control(pid, protocol, payload)
+    end
+  end
+
   @spec kill(String.t()) :: :ok
   def kill(id) when is_binary(id) do
     case lookup(id) do

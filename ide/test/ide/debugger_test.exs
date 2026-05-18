@@ -604,6 +604,112 @@ defmodule Ide.DebuggerTest do
     refute get_in(st, [:watch, :model, "elm_introspect"])
   end
 
+  test "phone reload simulates companion geolocation on init" do
+    slug = "sim-intro-geolocation-#{System.unique_integer([:positive])}"
+
+    source = """
+    module GeoSnap exposing (..)
+
+    import Companion.Geolocation as Geolocation exposing (Location)
+
+    type Msg
+        = CurrentPosition (Result String Location)
+
+    init _ =
+        ( { location = Nothing }, sendSnapshot )
+
+    sendSnapshot =
+        requestCurrentLocation
+
+    requestCurrentLocation =
+        Geolocation.currentPosition
+
+    update msg model =
+        case msg of
+            CurrentPosition result ->
+                ( { model | location = Just result }, Cmd.none )
+
+    subscriptions model =
+        Geolocation.onCurrentPosition CurrentPosition
+
+    view m =
+        Ui.root []
+    """
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, st} =
+             Debugger.reload(slug, %{
+               rel_path: "phone/src/CompanionApp.elm",
+               source: source,
+               reason: "phone_geolocation",
+               source_root: "phone"
+             })
+
+    assert Enum.any?(st.events, fn event ->
+             event.type == "debugger.geolocation" and
+               get_in(event.payload, [:response_value, "latitude"]) == 48.137154 and
+               get_in(event.payload, [:response_value, "longitude"]) == 11.576124 and
+               get_in(event.payload, [:response_value, "accuracy"]) == 25
+           end)
+
+    assert Enum.any?(st.debugger_timeline, fn row ->
+             row.target == "phone" and row.message == "CurrentPosition" and
+               row.message_source == "init_geolocation"
+           end)
+  end
+
+  test "simulator settings drive companion geolocation payload" do
+    slug = "sim-intro-geolocation-settings-#{System.unique_integer([:positive])}"
+
+    source = """
+    module GeoSettingsSnap exposing (..)
+
+    import Companion.Geolocation as Geolocation exposing (Location)
+
+    type Msg
+        = CurrentPosition (Result String Location)
+
+    init _ =
+        ( { location = Nothing }, Geolocation.currentPosition )
+
+    update msg model =
+        case msg of
+            CurrentPosition result ->
+                ( { model | location = Just result }, Cmd.none )
+
+    subscriptions model =
+        Geolocation.onCurrentPosition CurrentPosition
+
+    view m =
+        Ui.root []
+    """
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.set_simulator_settings(slug, %{
+               "latitude" => "47.123456",
+               "longitude" => "10.654321",
+               "accuracy" => "9.5"
+             })
+
+    assert {:ok, st} =
+             Debugger.reload(slug, %{
+               rel_path: "phone/src/CompanionApp.elm",
+               source: source,
+               reason: "phone_geolocation_settings",
+               source_root: "phone"
+             })
+
+    assert Enum.any?(st.events, fn event ->
+             event.type == "debugger.geolocation" and
+               get_in(event.payload, [:response_value, "latitude"]) == 47.123456 and
+               get_in(event.payload, [:response_value, "longitude"]) == 10.654321 and
+               get_in(event.payload, [:response_value, "accuracy"]) == 9.5
+           end)
+  end
+
   test "phone reload drives the visible companion surface" do
     slug = "sim-intro-phone-#{System.unique_integer([:positive])}"
 

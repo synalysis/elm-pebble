@@ -397,12 +397,12 @@ defmodule Ide.ProjectTemplates do
         "direct" => %{
           "elm/core" => "1.0.5",
           "elm/http" => "2.0.0",
-          "elm/json" => "1.1.3"
+          "elm/json" => "1.1.3",
+          "elm/time" => "1.0.0"
         },
         "indirect" => %{
           "elm/bytes" => "1.0.8",
-          "elm/file" => "1.0.5",
-          "elm/time" => "1.0.0"
+          "elm/file" => "1.0.5"
         }
       },
       "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}

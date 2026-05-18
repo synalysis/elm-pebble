@@ -14,6 +14,21 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Task do
   def eval("maperror", [fun, task], ops), do: task_map_error(fun, task, ops)
   def eval("sequence", [tasks], ops) when is_list(tasks), do: ops.sequence.(tasks)
 
+  def eval("perform", [tagger, {:task, :ok, value}], ops) do
+    with {:ok, message_value} <- ops.call.(tagger, [value]) do
+      {:ok,
+       %{
+         "kind" => "cmd.task.perform",
+         "message" => message_name(message_value),
+         "message_value" => message_value,
+         "value" => value
+       }}
+    end
+  end
+
+  def eval("perform", [_tagger, {:task, :err, _error}], _ops),
+    do: {:ok, %{"kind" => "cmd.none"}}
+
   def eval("perform", [tagger, task], _ops),
     do: {:ok, %{"kind" => "cmd.task.perform", "tagger" => tagger, "task" => task}}
 
@@ -21,6 +36,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Task do
     do: {:ok, %{"kind" => "cmd.task.attempt", "tagger" => tagger, "task" => task}}
 
   def eval(_function_name, _values, _ops), do: :no_builtin
+
+  defp message_name(%{"ctor" => ctor}) when is_binary(ctor), do: ctor
+  defp message_name(%{ctor: ctor}) when is_binary(ctor), do: ctor
+  defp message_name({tag, _payload}) when is_integer(tag), do: "tag:#{tag}"
+  defp message_name(tag) when is_integer(tag), do: "tag:#{tag}"
+  defp message_name(_message_value), do: "TaskPerformed"
 
   defp map_n(fun, tasks, ops) do
     case sequence_tasks(tasks) do

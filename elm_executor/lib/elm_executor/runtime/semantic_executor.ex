@@ -36,6 +36,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     source = map_value(request, :source) || ""
     introspect = map_value(request, :introspect)
     introspect = if is_map(introspect), do: introspect, else: %{}
+    source_module = map_value(introspect, :module)
     current_model = map_value(request, :current_model)
     current_model = if is_map(current_model), do: current_model, else: %{}
     current_view_tree = map_value(request, :current_view_tree)
@@ -45,8 +46,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
     artifact_core_ir = map_value(request, :elm_executor_core_ir)
     core_ir = source_core_ir_fallback(artifact_core_ir, source, rel_path)
-    eval_context = evaluator_context(core_ir)
-    artifact_eval_context = evaluator_context(artifact_core_ir)
+    eval_context = evaluator_context(core_ir, source_module)
     static_init_model = map_value(introspect, :init_model)
 
     base_runtime_model =
@@ -69,8 +69,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       case message do
         msg when is_binary(msg) and msg != "" ->
           case evaluate_update_from_core_ir(
-                 artifact_core_ir,
-                 artifact_eval_context,
+                 core_ir,
+                 eval_context,
                  msg,
                  message_value,
                  base_runtime_model
@@ -695,6 +695,11 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp flatten_runtime_commands(%{"kind" => "cmd.device." <> _rest} = command), do: [command]
 
   defp flatten_runtime_commands(%{kind: "cmd.device." <> _rest} = command),
+    do: [stringify_command_keys(command)]
+
+  defp flatten_runtime_commands(%{"kind" => "cmd.task." <> _rest} = command), do: [command]
+
+  defp flatten_runtime_commands(%{kind: "cmd.task." <> _rest} = command),
     do: [stringify_command_keys(command)]
 
   defp flatten_runtime_commands(%{"kind" => "cmd.unsupported"} = command), do: [command]
@@ -1382,9 +1387,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp flatten_constructor_payload(_value, _remaining, _acc), do: :error
 
-  @spec evaluator_context(term()) :: term()
-  defp evaluator_context(core_ir) do
-    module_name = evaluator_entry_module(core_ir)
+  @spec evaluator_context(term(), term()) :: term()
+  defp evaluator_context(core_ir, module_override) do
+    module_name =
+      case module_override do
+        value when is_binary(value) and value != "" -> value
+        _ -> evaluator_entry_module(core_ir)
+      end
 
     %{
       module: module_name,
@@ -2967,8 +2976,12 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       :error ->
         case require_ints(ints, 5) do
           {:ok, [font_id, x, y, w, h | _]} ->
-            alignment = text_alignment_value(Map.get(node, "text_align") || Map.get(node, :text_align))
-            overflow = text_overflow_value(Map.get(node, "text_overflow") || Map.get(node, :text_overflow))
+            alignment =
+              text_alignment_value(Map.get(node, "text_align") || Map.get(node, :text_align))
+
+            overflow =
+              text_overflow_value(Map.get(node, "text_overflow") || Map.get(node, :text_overflow))
+
             {:ok, [font_id, x, y, w, h, alignment, overflow]}
 
           :error ->
@@ -2979,10 +2992,12 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp text_box_int_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
 
-  defp text_int_args_from_children(children, runtime_model, eval_context) when is_list(children) do
+  defp text_int_args_from_children(children, runtime_model, eval_context)
+       when is_list(children) do
     case children do
       [font_node, options_node, bounds_node, _text_node] ->
-        with font_id when is_integer(font_id) <- eval_view_int(font_node, runtime_model, eval_context),
+        with font_id when is_integer(font_id) <-
+               eval_view_int(font_node, runtime_model, eval_context),
              {:ok, [x, y, w, h]} <- rect_quad_from_node(bounds_node, runtime_model, eval_context),
              {:ok, [alignment, overflow]} <-
                text_options_from_node(options_node, runtime_model, eval_context) do
@@ -2992,7 +3007,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
         end
 
       [font_node, x_node, y_node, w_node, h_node, alignment_node, overflow_node, _text_node | _] ->
-        with font_id when is_integer(font_id) <- eval_view_int(font_node, runtime_model, eval_context),
+        with font_id when is_integer(font_id) <-
+               eval_view_int(font_node, runtime_model, eval_context),
              x when is_integer(x) <- eval_view_int(x_node, runtime_model, eval_context),
              y when is_integer(y) <- eval_view_int(y_node, runtime_model, eval_context),
              w when is_integer(w) <- eval_view_int(w_node, runtime_model, eval_context),
@@ -3007,7 +3023,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
         end
 
       [font_node, x_node, y_node, w_node, h_node, _text_node | _] ->
-        with font_id when is_integer(font_id) <- eval_view_int(font_node, runtime_model, eval_context),
+        with font_id when is_integer(font_id) <-
+               eval_view_int(font_node, runtime_model, eval_context),
              x when is_integer(x) <- eval_view_int(x_node, runtime_model, eval_context),
              y when is_integer(y) <- eval_view_int(y_node, runtime_model, eval_context),
              w when is_integer(w) <- eval_view_int(w_node, runtime_model, eval_context),
@@ -3182,6 +3199,18 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
             }
           ]
 
+        task_command?(command) ->
+          [
+            %{
+              "message" => map_value(command, :message) || "TaskPerformed",
+              "message_value" => map_value(command, :message_value),
+              "source_root" => source_root,
+              "source" => "task_command",
+              "package" => "elm/core",
+              "command" => command
+            }
+          ]
+
         unsupported_command?(command) ->
           [
             %{
@@ -3230,6 +3259,11 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp device_command?(%{"kind" => "cmd.device." <> _rest}), do: true
   defp device_command?(%{kind: "cmd.device." <> _rest}), do: true
   defp device_command?(_), do: false
+
+  @spec task_command?(term()) :: boolean()
+  defp task_command?(%{"kind" => "cmd.task." <> _rest}), do: true
+  defp task_command?(%{kind: "cmd.task." <> _rest}), do: true
+  defp task_command?(_), do: false
 
   @spec unsupported_command?(term()) :: boolean()
   defp unsupported_command?(%{"kind" => "cmd.unsupported"}), do: true

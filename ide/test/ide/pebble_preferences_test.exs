@@ -130,6 +130,29 @@ defmodule Ide.PebblePreferencesTest do
     assert opacity.control == %{type: "slider", min: 0.0, max: 1.0, step: 0.1, default: 0.8}
   end
 
+  test "allows empty preference schemas for apps with no settings", %{root: root} do
+    write_module(root, """
+    module CompanionPreferences exposing (Settings, preferencesDefaults, settings)
+
+    import Pebble.Companion.Preferences as Preferences
+
+    type alias Settings =
+        {}
+
+    preferencesDefaults : Settings
+    preferencesDefaults =
+        {}
+
+    settings : Preferences.Schema Settings
+    settings =
+        Preferences.schema "Settings" preferencesDefaults
+    """)
+
+    assert {:ok, schema} = PebblePreferences.extract(root)
+    assert schema.title == "Settings"
+    assert schema.sections == []
+  end
+
   test "renders a static Pebble configuration page" do
     html =
       PebblePreferences.render_html(%{

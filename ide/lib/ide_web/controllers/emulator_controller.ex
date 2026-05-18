@@ -182,6 +182,28 @@ defmodule IdeWeb.EmulatorController do
 
   defp file_size(_path), do: nil
 
+  defp qemu_protocol(protocol) when is_integer(protocol) and protocol >= 0 and protocol <= 255,
+    do: {:ok, protocol}
+
+  defp qemu_protocol(protocol) when is_binary(protocol) do
+    case Integer.parse(protocol) do
+      {value, ""} -> qemu_protocol(value)
+      _ -> {:error, :invalid_qemu_protocol}
+    end
+  end
+
+  defp qemu_protocol(_protocol), do: {:error, :invalid_qemu_protocol}
+
+  defp qemu_payload(payload) when is_list(payload) do
+    if Enum.all?(payload, &(is_integer(&1) and &1 >= 0 and &1 <= 255)) do
+      {:ok, :erlang.list_to_binary(payload)}
+    else
+      {:error, :invalid_qemu_payload}
+    end
+  end
+
+  defp qemu_payload(_payload), do: {:error, :invalid_qemu_payload}
+
   @spec ping(term(), term()) :: term()
   def ping(conn, %{"id" => id}) do
     case Emulator.ping(id) do
@@ -207,6 +229,26 @@ defmodule IdeWeb.EmulatorController do
 
       {:error, reason} ->
         conn |> put_status(:unprocessable_entity) |> json(%{error: install_error_message(reason)})
+    end
+  end
+
+  @spec control(term(), term()) :: term()
+  def control(conn, %{"id" => id} = params) do
+    with {:ok, protocol} <- qemu_protocol(Map.get(params, "protocol")),
+         {:ok, payload} <- qemu_payload(Map.get(params, "payload", [])),
+         :ok <- Emulator.control(id, protocol, payload) do
+      json(conn, %{status: "ok"})
+    else
+      {:error, :not_found} ->
+        conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
+
+      {:error, :embedded_protocol_router_not_started} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "Embedded emulator protocol router is not running."})
+
+      {:error, reason} ->
+        conn |> put_status(:bad_request) |> json(%{error: inspect(reason)})
     end
   end
 

@@ -233,6 +233,7 @@ defmodule Ide.Mcp.ToolsTest do
 
     assert Enum.all?(tool_names, &Regex.match?(~r/^[A-Za-z0-9_]+$/, &1))
     assert "projects_list" in tool_names
+    assert "projects_settings" in tool_names
     assert "files_read" in tool_names
     assert "files_stat" in tool_names
     assert "files_read_range" in tool_names
@@ -267,6 +268,10 @@ defmodule Ide.Mcp.ToolsTest do
     assert "debugger_models" in tool_names
     assert "debugger_timeline" in tool_names
     assert "debugger_surface_state" in tool_names
+    assert "debugger_simulator_settings" in tool_names
+    assert "debugger_configuration" in tool_names
+    assert "debugger_auto_fire" in tool_names
+    assert "debugger_disabled_subscriptions" in tool_names
     assert "debugger_watch_profiles" in tool_names
     assert "debugger_export_trace" in tool_names
     assert "pebble_package" in tool_names
@@ -277,9 +282,14 @@ defmodule Ide.Mcp.ToolsTest do
     refute "traces_maintenance" in tool_names
     refute "projects_create" in tool_names
     refute "projects_delete" in tool_names
+    refute "projects_update_settings" in tool_names
     refute "debugger_start" in tool_names
     refute "debugger_reset" in tool_names
     refute "debugger_set_watch_profile" in tool_names
+    refute "debugger_set_simulator_settings" in tool_names
+    refute "debugger_save_configuration" in tool_names
+    refute "debugger_set_auto_fire" in tool_names
+    refute "debugger_set_subscription_enabled" in tool_names
     refute "debugger_import_trace" in tool_names
     refute "debugger_reload" in tool_names
     refute "debugger_step" in tool_names
@@ -298,6 +308,13 @@ defmodule Ide.Mcp.ToolsTest do
     refute "packages_remove_from_elm_json" in tool_names
     assert Enum.all?(tool_defs, &(is_binary(&1.version) and &1.version != ""))
     assert is_binary(Tools.catalog_version())
+
+    edit_tool_names = Tools.tool_definitions([:edit]) |> Enum.map(& &1.name)
+    assert "projects_update_settings" in edit_tool_names
+    assert "debugger_set_simulator_settings" in edit_tool_names
+    assert "debugger_save_configuration" in edit_tool_names
+    assert "debugger_set_auto_fire" in edit_tool_names
+    assert "debugger_set_subscription_enabled" in edit_tool_names
   end
 
   test "publish capability is default deny until publish tools are defined" do
@@ -462,6 +479,281 @@ defmodule Ide.Mcp.ToolsTest do
 
     assert {:ok, %{slug: "mcp-mutate", deleted: true}} =
              Tools.call("projects.delete", %{"slug" => "mcp-mutate"}, [:edit])
+  end
+
+  test "project settings tools expose only safe persisted settings" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "McpSettings",
+               "slug" => "mcp-settings",
+               "target_type" => "app"
+             })
+
+    assert {:error, denied} =
+             Tools.call(
+               "projects.update_settings",
+               %{"slug" => project.slug, "name" => "Denied"},
+               [:read]
+             )
+
+    assert String.contains?(denied, "not permitted")
+
+    assert {:ok, settings} = Tools.call("projects.settings", %{"slug" => project.slug}, [:read])
+    assert settings.name == "McpSettings"
+    assert settings.debugger["simulator"]["latitude"] == 48.137154
+
+    assert {:ok, updated} =
+             Tools.call(
+               "projects.update_settings",
+               %{
+                 "slug" => project.slug,
+                 "name" => "Mcp Settings Updated",
+                 "release_defaults" => %{
+                   "version_label" => "1.2.3",
+                   "target_platforms" => ["basalt", "chalk"]
+                 },
+                 "github" => %{"owner" => "ape", "repo" => "elm-pebble", "token" => "secret"},
+                 "debugger" => %{
+                   "emulator_target" => "chalk",
+                   "emulator_mode" => "embedded",
+                   "unsafe_key" => "ignored"
+                 }
+               },
+               [:edit]
+             )
+
+    assert updated.name == "Mcp Settings Updated"
+    assert updated.release_defaults["version_label"] == "1.2.3"
+    assert updated.github == %{"owner" => "ape", "repo" => "elm-pebble"}
+    assert updated.debugger["emulator_target"] == "chalk"
+    refute Map.has_key?(updated.debugger, "unsafe_key")
+
+    reloaded = Projects.get_project_by_slug(project.slug)
+    assert reloaded.name == "Mcp Settings Updated"
+    assert reloaded.github == %{"owner" => "ape", "repo" => "elm-pebble"}
+    assert reloaded.debugger_settings["emulator_mode"] == "embedded"
+  end
+
+  test "debugger settings tools persist and apply simulator and subscription controls" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "McpDebuggerSettings",
+               "slug" => "mcp-debugger-settings",
+               "target_type" => "watchface"
+             })
+
+    assert {:error, denied} =
+             Tools.call(
+               "debugger.set_simulator_settings",
+               %{"slug" => project.slug, "settings" => %{"battery_percent" => 25}},
+               [:read]
+             )
+
+    assert String.contains?(denied, "not permitted")
+
+    assert {:ok, %{settings: simulator}} =
+             Tools.call(
+               "debugger.set_simulator_settings",
+               %{
+                 "slug" => project.slug,
+                 "settings" => %{
+                   "battery_percent" => 12,
+                   "charging" => true,
+                   "connected" => false,
+                   "clock_24h" => true,
+                   "latitude" => "49.0",
+                   "longitude" => 8,
+                   "accuracy" => 40
+                 }
+               },
+               [:edit]
+             )
+
+    assert simulator["battery_percent"] == 12
+    assert simulator["charging"] == true
+    assert simulator["longitude"] == 8.0
+
+    assert {:ok, read_back} =
+             Tools.call("debugger.simulator_settings", %{"slug" => project.slug}, [:read])
+
+    assert read_back.settings["latitude"] == 49.0
+    assert read_back.persisted_settings == simulator
+
+    assert {:ok, %{values: values}} =
+             Tools.call(
+               "debugger.save_configuration",
+               %{"slug" => project.slug, "values" => %{"mode" => "agent", "color" => ["red"]}},
+               [:edit]
+             )
+
+    assert values == %{"mode" => "agent", "color" => "red"}
+
+    assert {:ok, configuration} =
+             Tools.call("debugger.configuration", %{"slug" => project.slug}, [:read])
+
+    assert configuration.values == values
+
+    assert {:ok, auto_fire} =
+             Tools.call(
+               "debugger.set_auto_fire",
+               %{
+                 "slug" => project.slug,
+                 "target" => "watch",
+                 "trigger" => "Time.every",
+                 "enabled" => true
+               },
+               [:edit]
+             )
+
+    assert [%{"target" => "watch", "trigger" => "Time.every"}] =
+             auto_fire.auto_fire_subscriptions
+
+    assert {:ok, disabled} =
+             Tools.call(
+               "debugger.set_subscription_enabled",
+               %{
+                 "slug" => project.slug,
+                 "target" => "watch",
+                 "trigger" => "Time.every",
+                 "enabled" => false
+               },
+               [:edit]
+             )
+
+    assert [%{"target" => "watch", "trigger" => "Time.every"}] =
+             disabled.disabled_subscriptions
+
+    reloaded = Projects.get_project_by_slug(project.slug)
+    assert reloaded.debugger_settings["simulator"]["battery_percent"] == 12
+    assert reloaded.debugger_settings["configuration_values"] == values
+
+    assert reloaded.debugger_settings["auto_fire_subscriptions"] == [
+             %{"target" => "watch", "trigger" => "Time.every"}
+           ]
+
+    assert reloaded.debugger_settings["disabled_subscriptions"] == [
+             %{"target" => "watch", "trigger" => "Time.every"}
+           ]
+  end
+
+  test "debugger configuration save uses companion subscription callback" do
+    slug = "mcp-debugger-config-callback-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "McpDebuggerConfigCallback",
+               "slug" => slug,
+               "target_type" => "app",
+               "template" => "watchface-yes"
+             })
+
+    root = Projects.project_workspace_path(project)
+    phone_source = File.read!(Path.join([root, "phone", "src", "CompanionApp.elm"]))
+    watch_source = File.read!(Path.join([root, "watch", "src", "Main.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "phone/src/CompanionApp.elm",
+               source_root: "phone",
+               source: phone_source,
+               reason: "configuration_callback_phone"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source_root: "watch",
+               source: watch_source,
+               reason: "configuration_callback_watch"
+             })
+
+    assert {:ok, %{state: state}} =
+             Tools.call("debugger.save_configuration", %{"slug" => slug, "values" => %{}}, [:edit])
+
+    timeline =
+      state.debugger_timeline
+      |> Enum.map(&{&1.target, &1.message, &1.message_source})
+
+    assert {"phone", "FromConfiguration", "configuration"} in timeline
+    refute {"phone", "FromBridge", "configuration"} in timeline
+  end
+
+  test "debugger geolocation task followup passes Yes location to watch" do
+    slug = "mcp-debugger-yes-location-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "McpDebuggerYesLocation",
+               "slug" => slug,
+               "target_type" => "app",
+               "template" => "watchface-yes"
+             })
+
+    root = Projects.project_workspace_path(project)
+    phone_source = File.read!(Path.join([root, "phone", "src", "CompanionApp.elm"]))
+    watch_source = File.read!(Path.join([root, "watch", "src", "Main.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.set_simulator_settings(slug, %{
+               "latitude" => 48.0,
+               "longitude" => 10.0,
+               "accuracy" => 25.0
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source_root: "watch",
+               source: watch_source,
+               reason: "yes_location_watch"
+             })
+
+    assert {:ok, state} =
+             Debugger.reload(slug, %{
+               rel_path: "phone/src/CompanionApp.elm",
+               source_root: "phone",
+               source: phone_source,
+               reason: "yes_location_phone"
+             })
+
+    timeline =
+      state.debugger_timeline
+      |> Enum.map(&{&1.target, &1.message, &1.message_source})
+
+    assert {"phone", "CurrentPosition", "init_geolocation"} in timeline
+    assert {"phone", "SendLocationSnapshot", "runtime_followup"} in timeline
+
+    assert Enum.any?(state.events, fn event ->
+             event.type == "debugger.protocol_rx" and
+               (Map.get(event.payload, :from) || Map.get(event.payload, "from")) == "companion" and
+               (Map.get(event.payload, :to) || Map.get(event.payload, "to")) == "watch" and
+               String.starts_with?(Map.get(event.payload, :message) || "", "ProvideLocation")
+           end)
+
+    assert Enum.any?(timeline, fn {target, message, source} ->
+             target == "watch" and source == "protocol_rx" and
+               String.starts_with?(message, "FromPhone (ProvideLocation (48000000")
+           end)
+
+    assert Enum.any?(timeline, fn {target, message, source} ->
+             target == "watch" and source == "protocol_rx" and
+               String.starts_with?(message, "FromPhone (ProvideSun (") and
+               not String.contains?(message, "ProvideSun (0, (0,")
+           end)
+
+    watch_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
+    assert watch_model["homeLatE6"] == %{"ctor" => "Just", "args" => [48_000_000]}
+    assert watch_model["homeLonE6"] == %{"ctor" => "Just", "args" => [10_000_000]}
+
+    assert %{"ctor" => "Just", "args" => [%{"sunriseMin" => sunrise, "sunsetMin" => sunset}]} =
+             watch_model["sun"]
+
+    assert is_integer(sunrise) and sunrise > 0
+    assert is_integer(sunset) and sunset > sunrise
   end
 
   test "package tools browse and add dependencies via mcp" do

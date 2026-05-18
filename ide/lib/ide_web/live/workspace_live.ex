@@ -1723,6 +1723,8 @@ defmodule IdeWeb.WorkspaceLive do
 
   def handle_event("debugger-save-configuration", %{"configuration" => values}, socket)
       when is_map(values) do
+    values = normalize_configuration_form_values(values)
+
     case socket.assigns.project do
       nil ->
         {:noreply, socket}
@@ -1734,6 +1736,7 @@ defmodule IdeWeb.WorkspaceLive do
         {:noreply,
          socket
          |> assign(:project, project)
+         |> assign(:debugger_configuration_draft_values, %{})
          |> DebuggerSupport.refresh()
          |> DebuggerSupport.jump_latest()
          |> put_flash(:info, "Saved companion configuration.")}
@@ -1741,6 +1744,18 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_event("debugger-save-configuration", _params, socket), do: {:noreply, socket}
+
+  def handle_event("debugger-change-configuration", %{"configuration" => values}, socket)
+      when is_map(values) do
+    {:noreply,
+     assign(
+       socket,
+       :debugger_configuration_draft_values,
+       normalize_configuration_form_values(values)
+     )}
+  end
+
+  def handle_event("debugger-change-configuration", _params, socket), do: {:noreply, socket}
 
   def handle_event("debugger-reset-configuration", _params, socket) do
     case socket.assigns.project do
@@ -1754,6 +1769,7 @@ defmodule IdeWeb.WorkspaceLive do
         {:noreply,
          socket
          |> assign(:project, project)
+         |> assign(:debugger_configuration_draft_values, %{})
          |> DebuggerSupport.refresh()
          |> put_flash(:info, "Reset companion configuration.")}
     end
@@ -1785,6 +1801,26 @@ defmodule IdeWeb.WorkspaceLive do
          |> put_flash(:info, "Debugger watch profile set to #{selected_watch_profile_id}.")}
     end
   end
+
+  def handle_event("debugger-save-simulator-settings", %{"debugger_simulator" => values}, socket)
+      when is_map(values) do
+    case socket.assigns.project do
+      nil ->
+        {:noreply, socket}
+
+      project ->
+        simulator_settings = normalize_debugger_simulator_settings(values)
+        project = persist_project_debugger_simulator_settings(project, simulator_settings)
+        {:ok, _state} = Ide.Debugger.set_simulator_settings(project.slug, simulator_settings)
+
+        {:noreply,
+         socket
+         |> assign(:project, project)
+         |> DebuggerSupport.refresh()}
+    end
+  end
+
+  def handle_event("debugger-save-simulator-settings", _params, socket), do: {:noreply, socket}
 
   def handle_event("debugger-tick", _params, socket) do
     case socket.assigns.project do
@@ -3691,6 +3727,121 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp persist_project_debugger_watch_profile(project, _watch_profile_id), do: project
 
+  @spec persist_project_debugger_simulator_settings(Project.t(), map()) :: Project.t()
+  defp persist_project_debugger_simulator_settings(%Project{} = project, settings)
+       when is_map(settings) do
+    current_settings = project.debugger_settings || %{}
+
+    updated_settings =
+      Map.put(current_settings, "simulator", normalize_debugger_simulator_settings(settings))
+
+    case Projects.update_project(project, %{"debugger_settings" => updated_settings}) do
+      {:ok, updated} -> updated
+      {:error, _} -> project
+    end
+  end
+
+  defp persist_project_debugger_simulator_settings(project, _settings), do: project
+
+  @spec normalize_debugger_simulator_settings(term()) :: map()
+  defp normalize_debugger_simulator_settings(settings) when is_map(settings) do
+    defaults = Ide.Debugger.default_simulator_settings()
+
+    %{
+      "battery_percent" =>
+        settings
+        |> map_get_string("battery_percent")
+        |> normalize_debugger_integer(defaults["battery_percent"], 0, 100),
+      "charging" =>
+        settings
+        |> map_get_string("charging")
+        |> normalize_debugger_boolean(defaults["charging"]),
+      "connected" =>
+        settings
+        |> map_get_string("connected")
+        |> normalize_debugger_boolean(defaults["connected"]),
+      "clock_24h" =>
+        settings
+        |> map_get_string("clock_24h")
+        |> normalize_debugger_boolean(defaults["clock_24h"]),
+      "latitude" =>
+        settings
+        |> map_get_string("latitude")
+        |> normalize_debugger_float(defaults["latitude"], -90.0, 90.0),
+      "longitude" =>
+        settings
+        |> map_get_string("longitude")
+        |> normalize_debugger_float(defaults["longitude"], -180.0, 180.0),
+      "accuracy" =>
+        settings
+        |> map_get_string("accuracy")
+        |> normalize_debugger_float(defaults["accuracy"], 0.0, 100_000.0)
+    }
+  end
+
+  defp normalize_debugger_simulator_settings(_settings),
+    do: Ide.Debugger.default_simulator_settings()
+
+  @spec map_get_string(map(), String.t()) :: term()
+  defp map_get_string(map, key) when is_map(map) and is_binary(key) do
+    case Map.fetch(map, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        Enum.find_value(map, fn
+          {atom_key, value} when is_atom(atom_key) ->
+            if Atom.to_string(atom_key) == key, do: value, else: nil
+
+          _ ->
+            nil
+        end)
+    end
+  end
+
+  @spec normalize_debugger_integer(term(), integer(), integer(), integer()) :: integer()
+  defp normalize_debugger_integer(value, _default, min_value, max_value) when is_integer(value),
+    do: value |> min(max_value) |> max(min_value)
+
+  defp normalize_debugger_integer(value, default, min_value, max_value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {parsed, ""} -> parsed |> min(max_value) |> max(min_value)
+      _ -> default
+    end
+  end
+
+  defp normalize_debugger_integer(_value, default, _min_value, _max_value), do: default
+
+  @spec normalize_debugger_float(term(), float(), float(), float()) :: float()
+  defp normalize_debugger_float(value, _default, min_value, max_value) when is_float(value),
+    do: value |> min(max_value) |> max(min_value)
+
+  defp normalize_debugger_float(value, _default, min_value, max_value) when is_integer(value),
+    do: (value * 1.0) |> min(max_value) |> max(min_value)
+
+  defp normalize_debugger_float(value, default, min_value, max_value) when is_binary(value) do
+    case Float.parse(String.trim(value)) do
+      {parsed, ""} -> parsed |> min(max_value) |> max(min_value)
+      _ -> default
+    end
+  end
+
+  defp normalize_debugger_float(_value, default, _min_value, _max_value), do: default
+
+  @spec normalize_debugger_boolean(term(), boolean()) :: boolean()
+  defp normalize_debugger_boolean(values, default) when is_list(values),
+    do: Enum.any?(values, &normalize_debugger_boolean(&1, default))
+
+  defp normalize_debugger_boolean(value, _default)
+       when value in [true, "true", "True", "on", "1", 1],
+       do: true
+
+  defp normalize_debugger_boolean(value, _default)
+       when value in [false, "false", "False", "off", "0", 0],
+       do: false
+
+  defp normalize_debugger_boolean(_value, default), do: default
+
   @spec persist_project_debugger_configuration_values(Project.t(), map()) :: Project.t()
   defp persist_project_debugger_configuration_values(%Project{} = project, values)
        when is_map(values) do
@@ -3704,6 +3855,34 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   defp persist_project_debugger_configuration_values(project, _values), do: project
+
+  @spec normalize_configuration_form_values(map()) :: map()
+  defp normalize_configuration_form_values(values) when is_map(values) do
+    Map.new(values, fn
+      {key, list} when is_list(list) -> {key, normalize_configuration_form_list_value(list)}
+      entry -> entry
+    end)
+  end
+
+  @spec normalize_configuration_form_list_value([term()]) :: term()
+  defp normalize_configuration_form_list_value(values) when is_list(values) do
+    if Enum.all?(values, &configuration_boolean_form_value?/1) do
+      Enum.any?(values, &configuration_truthy_form_value?/1)
+    else
+      List.last(values)
+    end
+  end
+
+  defp configuration_boolean_form_value?(value)
+       when value in [true, false, "true", "false", "True", "False", "on", "off", "1", "0", 1, 0],
+       do: true
+
+  defp configuration_boolean_form_value?(_value), do: false
+
+  defp configuration_truthy_form_value?(value) when value in [true, "true", "True", "on", "1", 1],
+    do: true
+
+  defp configuration_truthy_form_value?(_value), do: false
 
   @spec reset_project_debugger_configuration_values(Project.t()) :: Project.t()
   defp reset_project_debugger_configuration_values(%Project{} = project) do

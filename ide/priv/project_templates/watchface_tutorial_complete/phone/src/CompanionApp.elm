@@ -6,7 +6,6 @@ import CompanionPreferences
 import Companion.GeneratedPreferences as GeneratedPreferences
 import Http
 import Json.Decode as Decode
-import Json.Encode as Encode
 import Platform
 
 
@@ -30,7 +29,6 @@ type Msg
     = FromWatch (Result String WatchToPhone)
     | FromBridge (Result String CompanionPreferences.Settings)
     | WeatherReceived (Result Http.Error WeatherReport)
-    | DemoPosted (Result Http.Error String)
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -81,34 +79,12 @@ update msg model =
                                 weatherReportDecoder
                         }
 
-                demoPostRequest =
-                    Http.post
-                        { url = "https://postman-echo.com/post"
-                        , body =
-                            Http.jsonBody
-                                (Encode.object
-                                    [ ( "event", Encode.string "weather-request" )
-                                    , ( "location", Encode.string (locationName location) )
-                                    ]
-                                )
-                        , expect =
-                            Http.expectString
-                                (\result ->
-                                    case result of
-                                        Ok body ->
-                                            DemoPosted (Ok body)
-
-                                        Err err ->
-                                            DemoPosted (Err err)
-                                )
-                        }
             in
             ( model
             , Cmd.batch
                 [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius 0))
                 , CompanionPhone.sendPhoneToWatch (ProvideCondition Clear)
                 , weatherRequest
-                , demoPostRequest
                 ]
             )
 
@@ -144,13 +120,6 @@ update msg model =
                         ]
                     )
 
-        DemoPosted (Ok _) ->
-            ( model, Cmd.none )
-
-        DemoPosted (Err error) ->
-            ( addError ("Demo POST error: " ++ httpErrorToString error) model, Cmd.none )
-
-
 addError : String -> Model -> Model
 addError error model =
     { model | errors = model.errors ++ [ error ] }
@@ -182,22 +151,6 @@ sendSettings settings =
         , CompanionPhone.sendPhoneToWatch (SetTextColor settings.textColor)
         , CompanionPhone.sendPhoneToWatch (SetShowDate settings.showDate)
         ]
-
-
-locationName : Location -> String
-locationName location =
-    case location of
-        CurrentLocation ->
-            "CurrentLocation"
-
-        Berlin ->
-            "Berlin"
-
-        Zurich ->
-            "Zurich"
-
-        NewYork ->
-            "NewYork"
 
 
 weatherReportDecoder : Decode.Decoder WeatherReport

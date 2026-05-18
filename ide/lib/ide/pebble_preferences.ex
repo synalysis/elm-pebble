@@ -57,7 +57,6 @@ defmodule Ide.PebblePreferences do
         source
         |> parse_source()
         |> case do
-          {:ok, %{sections: []}} -> {:error, {:preferences_without_sections, path}}
           {:ok, schema} -> {:ok, schema}
         end
       else
@@ -237,7 +236,7 @@ defmodule Ide.PebblePreferences do
 
     import #{module_name} as PreferencesSchema
     import Json.Decode as Decode
-    import Pebble.Companion.AppMessage as RawBridge
+    import Companion.Phone as RawBridge
     import Pebble.Companion.Preferences as Preferences
 
 
@@ -250,7 +249,7 @@ defmodule Ide.PebblePreferences do
     `PreferencesSaved` receives a `Result String PreferencesSchema.Model`.
     -}
     onConfiguration toMsg =
-        RawBridge.onMessage (decodeConfigurationSaved >> toMsg)
+        RawBridge.onRawMessage (decodeConfigurationSaved >> toMsg)
 
 
     {-| Decode a raw bridge event produced when the configuration page closes.

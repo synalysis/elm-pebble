@@ -18,6 +18,9 @@ type alias Model =
     , best : Int
     , seed : Int
     , turn : Int
+    , screenW : Int
+    , screenH : Int
+    , isRound : Bool
     }
 
 
@@ -38,12 +41,15 @@ type Msg
 
 
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
-init _ =
+init context =
     ( { cells = emptyBoard
       , score = 0
       , best = 0
       , seed = 0
       , turn = 0
+      , screenW = context.screen.width
+      , screenH = context.screen.height
+      , isRound = context.screen.isRound
       }
     , Cmd.batch
         [ Storage.readString 2048 BestLoaded
@@ -378,23 +384,91 @@ subscriptions _ =
 
 view : Model -> Ui.UiNode
 view model =
+    let
+        layout =
+            boardLayout model
+
+        textOptions =
+            if model.isRound then
+                Ui.alignCenter Ui.defaultTextOptions
+
+            else
+                Ui.defaultTextOptions
+
+        chromeOps =
+            if model.isRound then
+                let
+                    textW =
+                        (min model.screenW model.screenH * 4) // 9
+
+                    textX =
+                        (model.screenW - textW) // 2
+                in
+                [ Ui.text Resources.DefaultFont textOptions { x = textX, y = 10, w = textW, h = 14 } "2048"
+                , Ui.text Resources.DefaultFont textOptions { x = textX, y = model.screenH - 24, w = textW, h = 14 } ("Best " ++ String.fromInt model.best)
+                ]
+
+            else
+                [ Ui.text Resources.DefaultFont textOptions { x = 4, y = 4, w = 132, h = 16 } ("2048  Best " ++ String.fromInt model.best)
+                , Ui.text Resources.DefaultFont textOptions { x = 4, y = 20, w = 132, h = 12 } "Back L  Up U  Sel R  Down D"
+                ]
+    in
     Ui.toUiNode
-        ([ Ui.clear Color.white
-         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 4, w = 132, h = 16 } ("2048  Best " ++ String.fromInt model.best)
-         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 20, w = 132, h = 12 } "Back L  Up U  Sel R  Down D"
-         ]
-            ++ List.indexedMap drawCell model.cells
+        ([ Ui.clear Color.white ]
+            ++ chromeOps
+            ++ List.indexedMap (drawCell layout) model.cells
         )
 
 
-drawCell : Int -> Int -> Ui.RenderOp
-drawCell index value =
+type alias BoardLayout =
+    { x : Int
+    , y : Int
+    , cell : Int
+    , gap : Int
+    }
+
+
+boardLayout : Model -> BoardLayout
+boardLayout model =
+    if model.isRound then
+        let
+            diameter =
+                min model.screenW model.screenH
+
+            targetBoardSize =
+                (diameter * 2) // 3
+
+            gap =
+                2
+
+            cell =
+                (targetBoardSize - gap * 3) // 4
+
+            boardSize =
+                cell * 4 + gap * 3
+        in
+        { x = (model.screenW - boardSize) // 2
+        , y = (model.screenH - boardSize) // 2
+        , cell = cell
+        , gap = gap
+        }
+
+    else
+        { x = 10
+        , y = 42
+        , cell = 28
+        , gap = 3
+        }
+
+
+drawCell : BoardLayout -> Int -> Int -> Ui.RenderOp
+drawCell layout index value =
     let
         x =
-            10 + modBy 4 index * 31
+            layout.x + modBy 4 index * (layout.cell + layout.gap)
 
         y =
-            42 + (index // 4) * 31
+            layout.y + (index // 4) * (layout.cell + layout.gap)
 
         label =
             if value == 0 then
@@ -402,14 +476,17 @@ drawCell index value =
 
             else
                 String.fromInt value
+
+        textY =
+            y + ((layout.cell - 18) // 2)
     in
     Ui.group
         (Ui.context
             [ Ui.strokeColor Color.black
             , Ui.textColor Color.black
             ]
-            [ Ui.rect { x = x, y = y, w = 28, h = 28 } Color.black
-            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x + 2, y = y + 5, w = 24, h = 18 } label
+            [ Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black
+            , Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = x, y = textY, w = layout.cell, h = 18 } label
             ]
         )
 

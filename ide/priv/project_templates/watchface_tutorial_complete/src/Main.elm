@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Companion.Types exposing (Location(..), PhoneToWatch(..), WatchToPhone(..))
+import Companion.Types exposing (Location(..), PhoneToWatch(..), Temperature(..), TutorialColor(..), WatchToPhone(..), WeatherCondition(..))
 import Companion.Watch as CompanionWatch
 import Json.Decode as Decode
 import Pebble.Events as PebbleEvents

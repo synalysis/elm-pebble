@@ -1,16 +1,19 @@
 module CompanionApp exposing (main)
 
 import Companion.GeneratedPreferences as GeneratedPreferences
+import Companion.Geolocation as Geolocation
 import Companion.Phone as CompanionPhone
-import Companion.Types exposing (AltitudeUnit(..), InternetMode(..), PhoneToWatch(..), SunMode(..), TemperatureUnit(..), TideKind(..), WatchToPhone(..), WeatherCondition(..), WindUnit(..))
+import Companion.Types exposing (PhoneToWatch(..), SunMode(..), WatchToPhone(..))
 import CompanionPreferences
-import Http
 import Json.Decode as Decode
 import Platform
+import Task
+import Time
 
 
 type alias Model =
     { settings : Maybe CompanionPreferences.Settings
+    , lastLocation : Maybe LocationSnapshot
     , errors : List String
     }
 
@@ -19,37 +22,30 @@ type alias Flags =
     Decode.Value
 
 
-type alias WeatherReport =
-    { tempC10 : Int
-    , condition : WeatherCondition
-    , windDir : Int
-    , windSpeedMs : Int
-    , precipMm10 : Int
-    , uv10 : Int
-    , pressureHpa : Int
-    , altitudeM : Int
-    }
+type alias LocationSnapshot =
+    Geolocation.Location
 
 
 type Msg
     = FromWatch (Result String WatchToPhone)
-    | FromBridge (Result String CompanionPreferences.Settings)
-    | WeatherReceived (Result Http.Error WeatherReport)
+    | FromConfiguration (Result String CompanionPreferences.Settings)
+    | CurrentPosition (Result String LocationSnapshot)
+    | SendLocationSnapshot LocationSnapshot ( Time.Posix, Time.ZoneName )
 
 
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     case GeneratedPreferences.decodeConfigurationFlags flags of
         Ok (Just settings) ->
-            ( { settings = Just settings, errors = [] }, sendSnapshot settings )
+            ( { settings = Just settings, lastLocation = Nothing, errors = [] }, sendSnapshot settings )
 
         Ok Nothing ->
-            ( { settings = Just CompanionPreferences.preferencesDefaults, errors = [] }
+            ( { settings = Just CompanionPreferences.preferencesDefaults, lastLocation = Nothing, errors = [] }
             , sendSnapshot CompanionPreferences.preferencesDefaults
             )
 
         Err error ->
-            ( { settings = Just CompanionPreferences.preferencesDefaults, errors = [ "Initial configuration error: " ++ error ] }
+            ( { settings = Just CompanionPreferences.preferencesDefaults, lastLocation = Nothing, errors = [ "Initial configuration error: " ++ error ] }
             , sendSnapshot CompanionPreferences.preferencesDefaults
             )
 
@@ -63,26 +59,22 @@ update msg model =
         FromWatch (Err error) ->
             ( addError ("Watch message error: " ++ error) model, Cmd.none )
 
-        FromBridge (Ok settings) ->
+        FromConfiguration (Ok settings) ->
             ( { model | settings = Just settings }, sendSnapshot settings )
 
-        FromBridge (Err error) ->
+        FromConfiguration (Err error) ->
             ( addError ("Configuration error: " ++ error) model, Cmd.none )
 
-        WeatherReceived result ->
-            let
-                settings =
-                    currentSettings model
-            in
-            case result of
-                Ok report ->
-                    ( model, sendReport settings report )
+        CurrentPosition (Ok location) ->
+            ( { model | lastLocation = Just location }
+            , sendLocationData location
+            )
 
-                Err error ->
-                    ( addError ("Weather request error: " ++ httpErrorToString error) model
-                    , sendReport settings (fallbackReport settings)
-                    )
+        CurrentPosition (Err error) ->
+            ( addError ("Location error: " ++ error) model, Cmd.none )
 
+        SendLocationSnapshot location ( now, zoneName ) ->
+            ( model, sendLocationSnapshot location now zoneName )
 
 currentSettings : Model -> CompanionPreferences.Settings
 currentSettings model =
@@ -90,142 +82,322 @@ currentSettings model =
 
 
 sendSnapshot : CompanionPreferences.Settings -> Cmd Msg
-sendSnapshot settings =
-    Cmd.batch
-        [ CompanionPhone.sendPhoneToWatch (ProvideLocation (round (settings.homeLatitude * 1000000)) (round (settings.homeLongitude * 1000000)) (round settings.homeTzOffsetMinutes))
-        , CompanionPhone.sendPhoneToWatch (SetUseInternet settings.internetMode)
-        , CompanionPhone.sendPhoneToWatch (SetUnits settings.temperatureUnit settings.windUnit)
-        , CompanionPhone.sendPhoneToWatch (ProvideSun 360 1080 SunCycle)
-        , CompanionPhone.sendPhoneToWatch (ProvideMoon 118 780 (moonPhaseFor settings))
-        , CompanionPhone.sendPhoneToWatch (ProvideMoonPhase (moonPhaseFor settings))
-        , if settings.showTide then
-            CompanionPhone.sendPhoneToWatch (ProvideTide 372 90 420 HighTide)
-
-          else
-            CompanionPhone.sendPhoneToWatch ClearTide
-        , if settings.internetMode == InternetEnabled then
-            fetchWeather settings
-
-          else
-            sendReport settings (fallbackReport settings)
-        ]
+sendSnapshot _ =
+    requestCurrentLocation
 
 
-fetchWeather : CompanionPreferences.Settings -> Cmd Msg
-fetchWeather settings =
-    Http.get
-        { url = weatherUrl settings
-        , expect = Http.expectJson WeatherReceived weatherDecoder
-        }
+requestCurrentLocation : Cmd Msg
+requestCurrentLocation =
+    Geolocation.currentPosition
 
 
-sendReport : CompanionPreferences.Settings -> WeatherReport -> Cmd Msg
-sendReport settings report =
+sendLocationData : LocationSnapshot -> Cmd Msg
+sendLocationData location =
+    Task.map2 (\now zoneName -> ( now, zoneName )) Time.now Time.getZoneName
+        |> Task.perform (SendLocationSnapshot location)
+
+
+sendLocationSnapshot : LocationSnapshot -> Time.Posix -> Time.ZoneName -> Cmd Msg
+sendLocationSnapshot location now zoneName =
     let
-        windSpeed =
-            if settings.windUnit == MilesPerHour then
-                round (toFloat report.windSpeedMs * 2.237)
+        tzOffsetMin =
+            timezoneOffsetForLocation location.longitude zoneName
 
-            else
-                report.windSpeedMs
+        sunriseMin =
+            sunriseMinute location tzOffsetMin
+
+        sunsetMin =
+            sunsetMinute location tzOffsetMin
+
+        moonPhase =
+            moonPhaseForLocation location
     in
     Cmd.batch
-        [ CompanionPhone.sendPhoneToWatch
-            (ProvideWeather
-                report.tempC10
-                report.condition
-                report.precipMm10
-                report.uv10
-                report.pressureHpa
-                settings.temperatureUnit
-            )
-        , CompanionPhone.sendPhoneToWatch (ProvideWind report.windDir windSpeed settings.windUnit)
-        , CompanionPhone.sendPhoneToWatch (ProvideAltitude report.altitudeM (altitudeUnit settings.windUnit))
+        [ CompanionPhone.sendPhoneToWatch (ProvideLocation (round (location.latitude * 1000000)) (round (location.longitude * 1000000)) tzOffsetMin)
+        , CompanionPhone.sendPhoneToWatch (ProvideSun sunriseMin sunsetMin SunCycle)
+        , CompanionPhone.sendPhoneToWatch (ProvideMoon 118 780 moonPhase)
+        , CompanionPhone.sendPhoneToWatch (ProvideMoonPhase moonPhase)
         ]
 
 
-altitudeUnit : WindUnit -> AltitudeUnit
-altitudeUnit unit =
-    if unit == MilesPerHour then
-        Feet
-
-    else
-        Meters
+moonPhaseForLocation : LocationSnapshot -> Int
+moonPhaseForLocation location =
+    modBy 1000000 (round (abs location.latitude * 10000 + abs location.longitude * 20000))
 
 
-weatherUrl : CompanionPreferences.Settings -> String
-weatherUrl settings =
-    "https://api.open-meteo.com/v1/forecast?latitude="
-        ++ String.fromFloat settings.homeLatitude
-        ++ "&longitude="
-        ++ String.fromFloat settings.homeLongitude
-        ++ "&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,precipitation,uv_index,surface_pressure&forecast_days=1"
+type SolarEvent
+    = SolarHours Float
+    | SolarPolarDay
+    | SolarPolarNight
 
 
-weatherDecoder : Decode.Decoder WeatherReport
-weatherDecoder =
-    Decode.map8 WeatherReport
-        (Decode.at [ "current", "temperature_2m" ] (Decode.map (\v -> round (v * 10)) Decode.float))
-        (Decode.at [ "current", "weather_code" ] (Decode.map conditionFromCode Decode.int))
-        (Decode.at [ "current", "wind_direction_10m" ] (Decode.map windSector Decode.float))
-        (Decode.at [ "current", "wind_speed_10m" ] (Decode.map round Decode.float))
-        (Decode.at [ "current", "precipitation" ] (Decode.map (\v -> round (v * 10)) Decode.float))
-        (Decode.at [ "current", "uv_index" ] (Decode.map (\v -> round (v * 10)) Decode.float))
-        (Decode.at [ "current", "surface_pressure" ] (Decode.map round Decode.float))
-        (Decode.field "elevation" (Decode.map round Decode.float))
-
-
-fallbackReport : CompanionPreferences.Settings -> WeatherReport
-fallbackReport settings =
-    { tempC10 = 180
-    , condition = Clear
-    , windDir = windSector (settings.homeLongitude * 10)
-    , windSpeedMs = 4
-    , precipMm10 = 0
-    , uv10 = 20
-    , pressureHpa = 1013
-    , altitudeM = 34
+type alias SunSnapshot =
+    { sunriseMin : Int
+    , sunsetMin : Int
+    , mode : SunMode
     }
 
 
-moonPhaseFor : CompanionPreferences.Settings -> Int
-moonPhaseFor settings =
-    modBy 1000000 (round (abs settings.homeLatitude * 10000 + abs settings.homeLongitude * 20000))
+timezoneOffsetForLocation : Float -> Time.ZoneName -> Int
+timezoneOffsetForLocation longitude zoneName =
+    let
+        phoneOffset =
+            case zoneName of
+                Time.Offset offset ->
+                    offset
 
+                Time.Name _ ->
+                    longitudeTimezoneOffset longitude
 
-windSector : Float -> Int
-windSector degrees =
-    modBy 8 (round ((degrees + 22.5) / 45))
-
-
-conditionFromCode : Int -> WeatherCondition
-conditionFromCode code =
-    if code == 0 then
-        Clear
-
-    else if code <= 3 then
-        Cloudy
-
-    else if code <= 48 then
-        Fog
-
-    else if code <= 57 then
-        Drizzle
-
-    else if code <= 67 then
-        Rain
-
-    else if code <= 77 then
-        Snow
-
-    else if code <= 86 then
-        Showers
-
-    else if code <= 99 then
-        Storm
+        guessedOffset =
+            longitudeTimezoneOffset longitude
+    in
+    if timezoneOffsetMismatch phoneOffset guessedOffset then
+        guessedOffset
 
     else
-        UnknownWeather
+        phoneOffset
+
+
+timezoneOffsetMismatch : Int -> Int -> Bool
+timezoneOffsetMismatch phoneOffset guessedOffset =
+    (phoneOffset == 0 && abs guessedOffset >= 60)
+        || (guessedOffset == 0 && abs phoneOffset >= 60)
+        || (sign phoneOffset /= sign guessedOffset && abs (phoneOffset - guessedOffset) >= 120)
+        || abs (phoneOffset - guessedOffset) >= 360
+
+
+longitudeTimezoneOffset : Float -> Int
+longitudeTimezoneOffset longitude =
+    round (longitude / 15) * 60
+
+
+sign : Int -> Int
+sign value =
+    if value < 0 then
+        -1
+
+    else if value > 0 then
+        1
+
+    else
+        0
+
+
+calcSunriseSunset : LocationSnapshot -> Int -> Time.Posix -> SunSnapshot
+calcSunriseSunset location tzOffsetMin _now =
+    { sunriseMin = sunriseMinute location tzOffsetMin
+    , sunsetMin = sunsetMinute location tzOffsetMin
+    , mode = SunCycle
+    }
+
+
+sunriseMinute : LocationSnapshot -> Int -> Int
+sunriseMinute location tzOffsetMin =
+    let
+        solarNoon =
+            720 + tzOffsetMin - round (location.longitude * 4)
+
+        daylightMinutes =
+            clamp 480 960 (900 - round (abs location.latitude * 3))
+
+        halfDaylight =
+            daylightMinutes // 2
+    in
+    modBy 1440 (solarNoon - halfDaylight)
+
+
+sunsetMinute : LocationSnapshot -> Int -> Int
+sunsetMinute location tzOffsetMin =
+    let
+        solarNoon =
+            720 + tzOffsetMin - round (location.longitude * 4)
+
+        daylightMinutes =
+            clamp 480 960 (900 - round (abs location.latitude * 3))
+
+        halfDaylight =
+            daylightMinutes // 2
+    in
+    modBy 1440 (solarNoon + halfDaylight)
+
+
+locationLocalDate : Int -> Time.Posix -> { year : Int, month : Int, day : Int }
+locationLocalDate tzOffsetMin now =
+    let
+        shifted =
+            Time.millisToPosix (Time.posixToMillis now + (tzOffsetMin * 60000))
+    in
+    { year = Time.toYear Time.utc shifted
+    , month = monthNumber (Time.toMonth Time.utc shifted)
+    , day = Time.toDay Time.utc shifted
+    }
+
+
+calcSolarEventLocalHours : Int -> Float -> Float -> Float -> Bool -> SolarEvent
+calcSolarEventLocalHours dayNumber latDeg lonDeg tzOffsetMin isSunrise =
+    let
+        lngHour =
+            lonDeg / 15
+
+        eventHour =
+            if isSunrise then
+                6
+
+            else
+                18
+
+        t =
+            toFloat dayNumber + ((eventHour - lngHour) / 24)
+
+        meanAnomaly =
+            (0.9856 * t) - 3.289
+
+        trueLongitude =
+            normalizeDegrees (meanAnomaly + (1.916 * sin (degrees meanAnomaly)) + (0.020 * sin (degrees (2 * meanAnomaly))) + 282.634)
+
+        rightAscensionDegrees =
+            normalizeDegrees (atan (0.91764 * tan (degrees trueLongitude)) * 180 / pi)
+
+        trueLongitudeQuadrant =
+            toFloat (floor (trueLongitude / 90)) * 90
+
+        rightAscensionQuadrant =
+            toFloat (floor (rightAscensionDegrees / 90)) * 90
+
+        rightAscensionHours =
+            (rightAscensionDegrees + (trueLongitudeQuadrant - rightAscensionQuadrant)) / 15
+
+        sinDec =
+            0.39782 * sin (degrees trueLongitude)
+
+        cosDec =
+            cos (asin sinDec)
+
+        cosHour =
+            (cos (degrees 90.833) - (sinDec * sin (degrees latDeg))) / (cosDec * cos (degrees latDeg))
+    in
+    if cosHour > 1 then
+        SolarPolarNight
+
+    else if cosHour < -1 then
+        SolarPolarDay
+
+    else
+        let
+            hourAngleDegrees =
+                if isSunrise then
+                    360 - (acos cosHour * 180 / pi)
+
+                else
+                    acos cosHour * 180 / pi
+
+            hourAngleHours =
+                hourAngleDegrees / 15
+
+            localMeanTime =
+                hourAngleHours + rightAscensionHours - (0.06571 * t) - 6.622
+
+            universalTime =
+                normalizeHours (localMeanTime - lngHour)
+        in
+        SolarHours (normalizeHours (universalTime + (tzOffsetMin / 60)))
+
+
+localHourToMinute : Float -> Int
+localHourToMinute hour =
+    modBy 1440 (round (hour * 60))
+
+
+dayOfYear : Int -> Int -> Int -> Int
+dayOfYear year month day =
+    let
+        monthLengths =
+            [ 31, februaryLength year, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 ]
+    in
+    List.take (month - 1) monthLengths
+        |> List.sum
+        |> (+) day
+
+
+februaryLength : Int -> Int
+februaryLength year =
+    if isLeapYear year then
+        29
+
+    else
+        28
+
+
+isLeapYear : Int -> Bool
+isLeapYear year =
+    (modBy 4 year == 0 && modBy 100 year /= 0) || modBy 400 year == 0
+
+
+normalizeDegrees : Float -> Float
+normalizeDegrees value =
+    let
+        normalized =
+            value - (toFloat (floor (value / 360)) * 360)
+    in
+    if normalized < 0 then
+        normalized + 360
+
+    else
+        normalized
+
+
+normalizeHours : Float -> Float
+normalizeHours value =
+    let
+        normalized =
+            value - (toFloat (floor (value / 24)) * 24)
+    in
+    if normalized < 0 then
+        normalized + 24
+
+    else
+        normalized
+
+
+monthNumber : Time.Month -> Int
+monthNumber month =
+    case month of
+        Time.Jan ->
+            1
+
+        Time.Feb ->
+            2
+
+        Time.Mar ->
+            3
+
+        Time.Apr ->
+            4
+
+        Time.May ->
+            5
+
+        Time.Jun ->
+            6
+
+        Time.Jul ->
+            7
+
+        Time.Aug ->
+            8
+
+        Time.Sep ->
+            9
+
+        Time.Oct ->
+            10
+
+        Time.Nov ->
+            11
+
+        Time.Dec ->
+            12
 
 
 addError : String -> Model -> Model
@@ -233,30 +405,12 @@ addError error model =
     { model | errors = model.errors ++ [ error ] }
 
 
-httpErrorToString : Http.Error -> String
-httpErrorToString error =
-    case error of
-        Http.BadUrl url ->
-            "Bad URL: " ++ url
-
-        Http.Timeout ->
-            "Timed out"
-
-        Http.NetworkError ->
-            "Network error"
-
-        Http.BadStatus status ->
-            "Bad status: " ++ String.fromInt status
-
-        Http.BadBody message ->
-            "Bad body: " ++ message
-
-
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ CompanionPhone.onWatchToPhone FromWatch
-        , GeneratedPreferences.onConfiguration FromBridge
+        , GeneratedPreferences.onConfiguration FromConfiguration
+        , Geolocation.onCurrentPosition CurrentPosition
         ]
 
 

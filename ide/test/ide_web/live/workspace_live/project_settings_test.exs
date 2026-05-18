@@ -88,6 +88,73 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     refute render(view) =~ "WASM Emulator"
   end
 
+  test "emulator pane hides wasm mode for chalk until the browser runtime boots it", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceChalkWasmSettings",
+               "slug" => "workspace-chalk-wasm-settings",
+               "target_type" => "app"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
+
+    view
+    |> form("form[phx-change='set-emulator-target']", %{
+      "emulator" => %{"target" => "chalk", "mode" => "wasm"}
+    })
+    |> render_change()
+
+    updated = Projects.get_project_by_slug(project.slug)
+    assert updated.debugger_settings["emulator_target"] == "chalk"
+    assert updated.debugger_settings["emulator_mode"] == "embedded"
+
+    refute has_element?(view, "select[name='emulator[mode]'] option[value='wasm']")
+    assert has_element?(view, "select[name='emulator[mode]'] option[selected][value='embedded']")
+    refute render(view) =~ "WASM Emulator"
+  end
+
+  test "debugger visual preview remembers simulator settings per project", %{conn: conn} do
+    slug = "workspace-debugger-simulator-settings"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceDebuggerSimulatorSettings",
+               "slug" => slug,
+               "target_type" => "app"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/debugger")
+
+    view
+    |> form("form[phx-change='debugger-save-simulator-settings']", %{
+      "debugger_simulator" => %{
+        "battery_percent" => "42",
+        "charging" => "true",
+        "connected" => "false",
+        "clock_24h" => "false",
+        "latitude" => "48.2",
+        "longitude" => "11.7",
+        "accuracy" => "12.5"
+      }
+    })
+    |> render_change()
+
+    updated = Projects.get_project_by_slug(project.slug)
+    simulator = updated.debugger_settings["simulator"]
+
+    assert simulator["battery_percent"] == 42
+    assert simulator["charging"] == true
+    assert simulator["connected"] == false
+    assert simulator["clock_24h"] == false
+    assert simulator["latitude"] == 48.2
+    assert simulator["longitude"] == 11.7
+    assert simulator["accuracy"] == 12.5
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/debugger")
+    assert has_element?(view, "input[name='debugger_simulator[battery_percent]'][value='42']")
+    assert has_element?(view, "input[name='debugger_simulator[latitude]'][value='48.2']")
+  end
+
   test "project settings pane saves release metadata and github config", %{conn: conn} do
     assert {:ok, project} =
              Projects.create_project(%{

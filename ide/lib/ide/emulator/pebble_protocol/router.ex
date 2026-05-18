@@ -32,6 +32,10 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   def send_packet(pid, endpoint, payload),
     do: GenServer.call(pid, {:send_packet, endpoint, payload})
 
+  @spec send_qemu_packet(pid(), non_neg_integer(), binary()) :: :ok
+  def send_qemu_packet(pid, protocol, payload),
+    do: GenServer.call(pid, {:send_qemu_packet, protocol, payload})
+
   @spec acquire(pid(), timeout()) :: :ok | {:error, term()}
   def acquire(pid, timeout \\ 5_000), do: GenServer.call(pid, :acquire, timeout)
 
@@ -80,6 +84,11 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   def handle_call({:send_packet, endpoint, payload}, _from, state) do
     trace_outbound(endpoint, payload)
     :ok = :gen_tcp.send(state.qemu, qemu_spp_packet(Frame.encode(endpoint, payload)))
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:send_qemu_packet, protocol, payload}, _from, state) do
+    :ok = :gen_tcp.send(state.qemu, qemu_packet(protocol, payload))
     {:reply, :ok, state}
   end
 

@@ -168,7 +168,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
           </div>
         </div>
         <div class={[
-          "col-span-12 grid min-h-0 gap-3 lg:col-span-4",
+          "col-span-12 grid min-h-0 gap-3",
+          if(@companion_app_present, do: "lg:col-span-4", else: "lg:col-span-3"),
           if(@companion_app_present, do: "grid-cols-2", else: "grid-cols-1")
         ]}>
           <div class="flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2">
@@ -209,6 +210,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             <.debugger_companion_configuration
               runtime={@debugger_companion_runtime}
               debugger_state={@debugger_state}
+              draft_values={@debugger_configuration_draft_values}
             />
             <.debugger_subscription_buttons
               title="Companion subscribed events"
@@ -219,7 +221,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             />
           </div>
         </div>
-        <div class="col-span-12 grid min-h-0 grid-cols-2 gap-3 lg:col-span-5">
+        <div class={[
+          "col-span-12 grid min-h-0 grid-cols-2 gap-3",
+          if(@companion_app_present, do: "lg:col-span-5", else: "lg:col-span-6")
+        ]}>
           <div class="flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2">
             <div class="flex items-center justify-between gap-2">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-600">
@@ -237,11 +242,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               runtime={@debugger_watch_view_runtime}
             />
           </div>
-          <div class="h-full min-h-0">
+          <div class="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1">
             <.debugger_view_preview
               runtime={@debugger_watch_view_runtime}
               project={@project}
               title="Visual preview"
+              fill={false}
               show_watch_buttons={true}
               watch_trigger_buttons={@debugger_watch_trigger_buttons}
               disabled_subscriptions={@debugger_disabled_subscriptions}
@@ -249,6 +255,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               hovered_rendered_scope={@debugger_hovered_rendered_scope}
               hovered_rendered_path={@debugger_hovered_rendered_path}
             />
+            <.debugger_simulator_settings project={@project} debugger_state={@debugger_state} />
           </div>
         </div>
       </div>
@@ -1367,6 +1374,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   attr(:runtime, :any, required: true)
   attr(:debugger_state, :any, default: nil)
+  attr(:draft_values, :map, default: %{})
 
   @spec debugger_companion_configuration(term()) :: term()
   defp debugger_companion_configuration(assigns) do
@@ -1376,6 +1384,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
           Map.get(assigns.debugger_state || %{}, "companion")
       ) ||
         debugger_companion_configuration_model(assigns.runtime)
+
+    configuration =
+      if is_map(configuration) and map_size(assigns.draft_values) > 0 do
+        debugger_put_configuration_values(configuration, assigns.draft_values)
+      else
+        configuration
+      end
 
     assigns = assign(assigns, :configuration, configuration)
 
@@ -1400,6 +1415,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       <.form
         for={%{}}
         as={:configuration}
+        phx-change="debugger-change-configuration"
         phx-submit="debugger-save-configuration"
         class="mt-2 max-h-60 overflow-auto rounded border border-zinc-100 bg-zinc-50"
       >
@@ -1462,7 +1478,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         name={"configuration[#{@field_id}]"}
         type="checkbox"
         value="true"
-        checked={@control_value == true}
+        checked={debugger_configuration_truthy?(@control_value)}
         class="mt-1 rounded border-zinc-300"
       />
       <select
@@ -1747,6 +1763,47 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
+  @spec debugger_put_configuration_values(map(), map()) :: map()
+  defp debugger_put_configuration_values(configuration, values)
+       when is_map(configuration) and is_map(values) do
+    values = Map.new(values, fn {key, value} -> {to_string(key), value} end)
+
+    configuration
+    |> Map.put("values", values)
+    |> Map.update("sections", [], fn
+      sections when is_list(sections) ->
+        Enum.map(sections, &debugger_put_configuration_section_values(&1, values))
+
+      other ->
+        other
+    end)
+  end
+
+  defp debugger_put_configuration_section_values(%{"fields" => fields} = section, values)
+       when is_list(fields) do
+    Map.put(
+      section,
+      "fields",
+      Enum.map(fields, &debugger_put_configuration_field_value(&1, values))
+    )
+  end
+
+  defp debugger_put_configuration_section_values(section, _values), do: section
+
+  defp debugger_put_configuration_field_value(
+         %{"id" => id, "control" => %{}} = field,
+         values
+       )
+       when is_binary(id) do
+    if Map.has_key?(values, id) do
+      put_in(field, ["control", "value"], Map.get(values, id))
+    else
+      field
+    end
+  end
+
+  defp debugger_put_configuration_field_value(field, _values), do: field
+
   @spec debugger_configuration_input_type(term()) :: String.t()
   defp debugger_configuration_input_type("number"), do: "number"
   defp debugger_configuration_input_type("color"), do: "color"
@@ -1759,6 +1816,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_configuration_input_value(value) when is_boolean(value), do: to_string(value)
   defp debugger_configuration_input_value(value) when is_number(value), do: to_string(value)
   defp debugger_configuration_input_value(value), do: inspect(value)
+
+  @spec debugger_configuration_truthy?(term()) :: boolean()
+  defp debugger_configuration_truthy?(values) when is_list(values),
+    do: Enum.any?(values, &debugger_configuration_truthy?/1)
+
+  defp debugger_configuration_truthy?(value) when value in [true, "true", "True", "on", "1", 1],
+    do: true
+
+  defp debugger_configuration_truthy?(_value), do: false
 
   @spec debugger_configuration_input_step(String.t(), map()) :: String.t() | number() | nil
   defp debugger_configuration_input_step("number", control) when is_map(control) do
@@ -2021,6 +2087,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:runtime, :any, required: true)
   attr(:project, :any, default: nil)
   attr(:title, :string, default: "Visual preview")
+  attr(:fill, :boolean, default: true)
   attr(:show_watch_buttons, :boolean, default: false)
   attr(:watch_trigger_buttons, :list, default: [])
   attr(:disabled_subscriptions, :list, default: [])
@@ -2069,7 +2136,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       |> assign(:clip_radius, clip_radius)
       |> assign(:clip_id, clip_id)
       |> assign(:svg_id, svg_id)
-      |> assign(:preview_svg_class, debugger_preview_svg_class(screen_round?))
+      |> assign(
+        :preview_svg_class,
+        debugger_preview_svg_class(screen_round?, assigns.show_watch_buttons)
+      )
       |> assign(:svg_ops, svg_ops)
       |> assign(:unresolved_ops, unresolved_ops)
       |> assign(:hover_box, hover_box)
@@ -2087,7 +2157,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
     ~H"""
     <div
-      class="flex h-full min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2"
+      class={[
+        "flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2",
+        if(@fill, do: "h-full", else: "shrink-0")
+      ]}
       data-copy-scope
     >
       <div class="mb-2 flex shrink-0 items-center justify-between gap-2">
@@ -2104,8 +2177,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       </div>
       <div class="mb-2 shrink-0 rounded border border-zinc-200 bg-zinc-100 p-2">
         <div class={[
-          if(@show_watch_buttons, do: "flex w-max", else: "block"),
-          "items-center justify-center gap-4 overflow-x-auto"
+          if(@show_watch_buttons, do: "flex", else: "block"),
+          "items-center justify-center gap-0.5 overflow-hidden"
         ]}>
           <.debugger_watch_button :if={@show_watch_buttons} button={@watch_button_controls.back} />
           <svg
@@ -2314,7 +2387,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               />
             </g>
           </svg>
-          <div :if={@show_watch_buttons} class="flex flex-col items-stretch gap-2">
+          <div :if={@show_watch_buttons} class="flex flex-col items-stretch gap-1">
             <.debugger_watch_button button={@watch_button_controls.up} />
             <.debugger_watch_button button={@watch_button_controls.select} />
             <.debugger_watch_button button={@watch_button_controls.down} />
@@ -2392,7 +2465,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       title={@button.title}
       data-testid={"debugger-watch-button-#{@button.id}"}
       class={[
-        "min-w-12 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide shadow-sm transition",
+        "min-w-10 rounded-full border px-1.5 py-1 text-[9px] font-semibold uppercase tracking-wide shadow-sm transition",
         if(@button.enabled,
           do: "border-zinc-500 bg-zinc-800 text-white hover:bg-zinc-700",
           else: "cursor-not-allowed border-zinc-200 bg-zinc-200 text-zinc-400"
@@ -2850,14 +2923,26 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     "debugger-preview-clip-#{:erlang.phash2(key)}"
   end
 
-  @spec debugger_preview_svg_class(boolean()) :: [String.t()]
-  defp debugger_preview_svg_class(true) do
+  @spec debugger_preview_svg_class(boolean(), boolean()) :: [String.t()]
+  defp debugger_preview_svg_class(true, true) do
+    [
+      "mx-auto min-w-0 flex-1 aspect-square max-w-52 rounded-full border border-zinc-700 bg-white shadow-inner object-contain"
+    ]
+  end
+
+  defp debugger_preview_svg_class(true, false) do
     [
       "mx-auto h-52 w-52 rounded-full border border-zinc-700 bg-white shadow-inner object-contain"
     ]
   end
 
-  defp debugger_preview_svg_class(false) do
+  defp debugger_preview_svg_class(false, true) do
+    [
+      "mx-auto min-w-0 flex-1 max-w-[11.25rem] rounded border border-zinc-700 bg-white shadow-inner object-contain"
+    ]
+  end
+
+  defp debugger_preview_svg_class(false, false) do
     [
       "mx-auto h-52 w-[11.25rem] rounded border border-zinc-700 bg-white shadow-inner object-contain"
     ]
@@ -2949,12 +3034,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   @spec debugger_text_svg_font_size(term()) :: pos_integer()
   defp debugger_text_svg_font_size(%{font_size: size}) when is_integer(size) and size > 0,
-    do: size
+    do: debugger_system_font_size(size)
 
   defp debugger_text_svg_font_size(%{h: height}) when is_integer(height) and height > 0,
-    do: height
+    do: debugger_system_font_size(height)
 
   defp debugger_text_svg_font_size(_op), do: 11
+
+  @spec debugger_system_font_size(pos_integer()) :: pos_integer()
+  defp debugger_system_font_size(requested_height) when requested_height <= 18, do: 18
+  defp debugger_system_font_size(requested_height) when requested_height <= 28, do: 24
+  defp debugger_system_font_size(requested_height) when requested_height <= 36, do: 28
+  defp debugger_system_font_size(_requested_height), do: 42
 
   @spec debugger_text_svg_anchor(term()) :: String.t() | nil
   defp debugger_text_svg_anchor(%{text_align: "left", w: w}) when is_number(w), do: "start"
@@ -3018,6 +3109,210 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp selected_debugger_watch_profile_id(_debugger_state, project),
     do: project_debugger_watch_profile_id(project)
+
+  attr :project, :any, required: true
+  attr :debugger_state, :any, default: nil
+
+  defp debugger_simulator_settings(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :settings,
+        debugger_simulator_settings_value(assigns.debugger_state, assigns.project)
+      )
+
+    ~H"""
+    <form
+      class="shrink-0 rounded border border-zinc-200 bg-white p-3 text-xs text-zinc-700"
+      phx-change="debugger-save-simulator-settings"
+    >
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <h3 class="text-sm font-semibold text-zinc-900">Simulator settings</h3>
+          <p class="mt-1 text-[11px] text-zinc-500">
+            Saved automatically for this project and used by debugger watch and companion APIs.
+          </p>
+        </div>
+      </div>
+      <div class="mt-3 grid gap-3 md:grid-cols-2">
+        <div class="rounded border border-zinc-100 bg-zinc-50 p-2">
+          <h4 class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Watch</h4>
+          <label class="mt-2 block font-medium">
+            Battery
+            <input
+              name="debugger_simulator[battery_percent]"
+              type="range"
+              min="0"
+              max="100"
+              value={@settings["battery_percent"]}
+              class="mt-1 w-full"
+            />
+            <span class="text-[11px] text-zinc-500">{@settings["battery_percent"]}%</span>
+          </label>
+          <input type="hidden" name="debugger_simulator[charging]" value="false" />
+          <label class="mt-2 flex items-center gap-2">
+            <input
+              name="debugger_simulator[charging]"
+              type="checkbox"
+              value="true"
+              checked={@settings["charging"] == true}
+            /> Charging
+          </label>
+          <input type="hidden" name="debugger_simulator[connected]" value="false" />
+          <label class="mt-2 flex items-center gap-2">
+            <input
+              name="debugger_simulator[connected]"
+              type="checkbox"
+              value="true"
+              checked={@settings["connected"] == true}
+            /> Bluetooth connected
+          </label>
+          <input type="hidden" name="debugger_simulator[clock_24h]" value="false" />
+          <label class="mt-2 flex items-center gap-2">
+            <input
+              name="debugger_simulator[clock_24h]"
+              type="checkbox"
+              value="true"
+              checked={@settings["clock_24h"] == true}
+            /> 24h time
+          </label>
+        </div>
+        <div class="rounded border border-zinc-100 bg-zinc-50 p-2">
+          <h4 class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Companion</h4>
+          <label class="mt-2 block font-medium">
+            Latitude
+            <input
+              name="debugger_simulator[latitude]"
+              type="number"
+              step="0.000001"
+              min="-90"
+              max="90"
+              value={@settings["latitude"]}
+              class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1"
+            />
+          </label>
+          <label class="mt-2 block font-medium">
+            Longitude
+            <input
+              name="debugger_simulator[longitude]"
+              type="number"
+              step="0.000001"
+              min="-180"
+              max="180"
+              value={@settings["longitude"]}
+              class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1"
+            />
+          </label>
+          <label class="mt-2 block font-medium">
+            Accuracy (m)
+            <input
+              name="debugger_simulator[accuracy]"
+              type="number"
+              step="0.1"
+              min="0"
+              value={@settings["accuracy"]}
+              class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1"
+            />
+          </label>
+        </div>
+      </div>
+    </form>
+    """
+  end
+
+  @spec debugger_simulator_settings_value(term(), term()) :: map()
+  defp debugger_simulator_settings_value(%{simulator_settings: settings}, _project)
+       when is_map(settings) do
+    normalize_debugger_simulator_settings(settings)
+  end
+
+  defp debugger_simulator_settings_value(_debugger_state, %Project{} = project) do
+    project
+    |> project_debugger_simulator_settings()
+    |> normalize_debugger_simulator_settings()
+  end
+
+  defp debugger_simulator_settings_value(_debugger_state, _project),
+    do: Debugger.default_simulator_settings()
+
+  @spec project_debugger_simulator_settings(Project.t()) :: map()
+  defp project_debugger_simulator_settings(%Project{} = project) do
+    settings = project.debugger_settings || %{}
+
+    case Map.get(settings, "simulator") do
+      simulator when is_map(simulator) -> simulator
+      _ -> %{}
+    end
+  end
+
+  @spec normalize_debugger_simulator_settings(term()) :: map()
+  defp normalize_debugger_simulator_settings(settings) when is_map(settings) do
+    defaults = Debugger.default_simulator_settings()
+
+    %{
+      "battery_percent" =>
+        normalize_debugger_integer(
+          settings["battery_percent"],
+          defaults["battery_percent"],
+          0,
+          100
+        ),
+      "charging" => normalize_debugger_boolean(settings["charging"], defaults["charging"]),
+      "connected" => normalize_debugger_boolean(settings["connected"], defaults["connected"]),
+      "clock_24h" => normalize_debugger_boolean(settings["clock_24h"], defaults["clock_24h"]),
+      "latitude" =>
+        normalize_debugger_float(settings["latitude"], defaults["latitude"], -90.0, 90.0),
+      "longitude" =>
+        normalize_debugger_float(settings["longitude"], defaults["longitude"], -180.0, 180.0),
+      "accuracy" =>
+        normalize_debugger_float(settings["accuracy"], defaults["accuracy"], 0.0, 100_000.0)
+    }
+  end
+
+  defp normalize_debugger_simulator_settings(_settings), do: Debugger.default_simulator_settings()
+
+  @spec normalize_debugger_integer(term(), integer(), integer(), integer()) :: integer()
+  defp normalize_debugger_integer(value, _default, min_value, max_value) when is_integer(value),
+    do: value |> min(max_value) |> max(min_value)
+
+  defp normalize_debugger_integer(value, default, min_value, max_value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {parsed, ""} -> parsed |> min(max_value) |> max(min_value)
+      _ -> default
+    end
+  end
+
+  defp normalize_debugger_integer(_value, default, _min_value, _max_value), do: default
+
+  @spec normalize_debugger_float(term(), float(), float(), float()) :: float()
+  defp normalize_debugger_float(value, _default, min_value, max_value) when is_float(value),
+    do: value |> min(max_value) |> max(min_value)
+
+  defp normalize_debugger_float(value, _default, min_value, max_value) when is_integer(value),
+    do: (value * 1.0) |> min(max_value) |> max(min_value)
+
+  defp normalize_debugger_float(value, default, min_value, max_value) when is_binary(value) do
+    case Float.parse(String.trim(value)) do
+      {parsed, ""} -> parsed |> min(max_value) |> max(min_value)
+      _ -> default
+    end
+  end
+
+  defp normalize_debugger_float(_value, default, _min_value, _max_value), do: default
+
+  @spec normalize_debugger_boolean(term(), boolean()) :: boolean()
+  defp normalize_debugger_boolean(values, default) when is_list(values),
+    do: Enum.any?(values, &normalize_debugger_boolean(&1, default))
+
+  defp normalize_debugger_boolean(value, _default)
+       when value in [true, "true", "True", "on", "1", 1],
+       do: true
+
+  defp normalize_debugger_boolean(value, _default)
+       when value in [false, "false", "False", "off", "0", 0],
+       do: false
+
+  defp normalize_debugger_boolean(_value, default), do: default
 
   @spec project_debugger_watch_profile_id(Project.t() | term()) :: String.t()
   defp project_debugger_watch_profile_id(%Project{} = project) do

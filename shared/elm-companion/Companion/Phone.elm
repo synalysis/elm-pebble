@@ -1,4 +1,4 @@
-port module Companion.Phone exposing (decodeWatchToPhone, onWatchToPhone, sendPhoneToWatch)
+port module Companion.Phone exposing (decodeWatchToPhone, onRawMessage, onWatchToPhone, sendBridgeCommand, sendPhoneToWatch)
 
 {-| Companion-side API for receiving watch requests and sending responses. -}
 
@@ -8,6 +8,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Pebble.Companion.AppMessage as AppMessage
 import Pebble.Companion.Codec as Codec
+import Pebble.Companion.Contract exposing (CommandEnvelope)
 
 
 port incoming : (Decode.Value -> msg) -> Sub msg
@@ -28,11 +29,28 @@ onWatchToPhone toMsg =
     incoming (decodeIncomingPayload >> Result.andThen decodeWatchToPhone >> toMsg)
 
 
+{-| Subscribe to raw bridge events from the JavaScript companion bridge.
+
+This is useful for generated helper modules that need to observe non-AppMessage
+events, such as companion configuration responses.
+-}
+onRawMessage : (Decode.Value -> msg) -> Sub msg
+onRawMessage =
+    incoming
+
+
 {-| Encode and send a typed phone-to-watch response. -}
 sendPhoneToWatch : PhoneToWatch -> Cmd msg
 sendPhoneToWatch message =
     AppMessage.send "phone-to-watch" (Internal.encodePhoneToWatch message)
         |> Codec.encodeCommand
+        |> outgoing
+
+
+{-| Send a generic command envelope to the JavaScript companion bridge. -}
+sendBridgeCommand : CommandEnvelope -> Cmd msg
+sendBridgeCommand command =
+    Codec.encodeCommand command
         |> outgoing
 
 

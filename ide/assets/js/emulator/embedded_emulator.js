@@ -145,6 +145,7 @@ export class EmbeddedEmulatorHost {
     this.phoneOpenedAt = 0
     this.logFlushScheduled = false
     this.destroyed = false
+    this.boundEmulatorButtons = new WeakSet()
     this.syncStateToDom = () => {
       if (this.destroyed) return
       if (this.status && this.currentStatus) this.status.textContent = this.currentStatus
@@ -191,15 +192,7 @@ export class EmbeddedEmulatorHost {
     this.configFrame?.addEventListener("load", () => this.maybeHandleConfigReturn(this.configFrame.contentWindow))
     document.addEventListener("keydown", this.handleConfigKeyDown)
 
-    this.el.querySelectorAll("[data-emulator-button]").forEach(button => {
-      const name = button.dataset.emulatorButton
-      button.addEventListener("pointerdown", event => {
-        event.preventDefault()
-        this.pressButton(name, true)
-      })
-      button.addEventListener("pointerup", () => this.pressButton(name, false))
-      button.addEventListener("pointerleave", () => this.pressButton(name, false))
-    })
+    this.bindEmulatorButtons()
 
     this.el.querySelector("[data-emulator-battery]")?.addEventListener("input", event => {
       this.setBattery(parseInt(event.target.value || "80", 10), this.el.querySelector("[data-emulator-charging]")?.checked)
@@ -238,6 +231,7 @@ export class EmbeddedEmulatorHost {
     }
     this.renderLog()
     this.renderStorage()
+    this.bindEmulatorButtons()
     this.updateControlButtons()
     if (this.session?.backend_enabled && this.rfb && previousCanvas && previousCanvas !== this.canvas) {
       // #region agent log
@@ -278,6 +272,7 @@ export class EmbeddedEmulatorHost {
     window.removeEventListener("focus", this.handlePageVisible)
     document.removeEventListener("visibilitychange", this.handlePageVisible)
     if (removeListeners) document.removeEventListener("keydown", this.handleConfigKeyDown)
+    this.releaseAllButtons()
     if (this.rfb) {
       const oldRfb = this.rfb
       this.rfb = null
@@ -549,6 +544,7 @@ export class EmbeddedEmulatorHost {
       if (this.destroyed || socket !== this.phoneSocket) return
       this.phoneOpenedAt = Date.now()
       this.appendLog("phone websocket open")
+      if (this.buttonState !== 0) this.sendQemu(QEMU.button, [this.buttonState])
     })
     socket.addEventListener("close", () => {
       if (this.destroyed || socket !== this.phoneSocket) return
@@ -748,13 +744,46 @@ export class EmbeddedEmulatorHost {
     this.sendQemu(QEMU.button, [this.buttonState])
   }
 
+  bindEmulatorButtons() {
+    this.el.querySelectorAll("[data-emulator-button]").forEach(button => {
+      if (this.boundEmulatorButtons.has(button)) return
+      this.boundEmulatorButtons.add(button)
+
+      const name = button.dataset.emulatorButton
+      button.addEventListener("pointerdown", event => {
+        event.preventDefault()
+        button.setPointerCapture?.(event.pointerId)
+        this.pressButton(name, true)
+      })
+
+      const release = event => {
+        if (button.hasPointerCapture?.(event.pointerId)) {
+          button.releasePointerCapture(event.pointerId)
+        }
+        this.pressButton(name, false)
+      }
+
+      button.addEventListener("pointerup", release)
+      button.addEventListener("pointercancel", release)
+      button.addEventListener("lostpointercapture", release)
+      button.addEventListener("pointerleave", release)
+    })
+  }
+
+  releaseAllButtons() {
+    if (this.buttonState === 0) return
+    this.buttonState = 0
+    this.sendQemu(QEMU.button, [0])
+  }
+
   setBattery(percent, charging) {
     this.sendQemu(QEMU.battery, [Math.max(0, Math.min(100, percent || 0)), charging ? 1 : 0])
   }
 
   sendQemu(protocol, payload) {
-    if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) return
-    this.phoneSocket.send(new Uint8Array([0x0b, protocol, ...payload]))
+    if (!this.session?.id) return
+    postJSON(`/api/emulator/${encodeURIComponent(this.session.id)}/control`, {protocol, payload})
+      .catch(error => this.appendLog(`embedded control failed: ${error.message}`))
   }
 
   sendPebbleFrame(endpoint, payload) {

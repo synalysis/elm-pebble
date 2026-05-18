@@ -285,29 +285,13 @@ faceOps model =
             model.screenH // 2
 
         radius =
-            (min model.screenW model.screenH // 2) - 8
+            (min model.screenW model.screenH // 2) - 22
 
         dial =
             drawDial model cx cy radius
-
-        corners =
-            if model.isRound then
-                []
-
-            else
-                drawCorners model
-
-        date =
-            if model.isRound then
-                []
-
-            else
-                drawDate model
     in
     [ Ui.clear Color.black ]
         ++ dial
-        ++ date
-        ++ corners
 
 
 drawDial : Model -> Int -> Int -> Int -> List Ui.RenderOp
@@ -319,20 +303,19 @@ drawDial model cx cy radius =
         sunWindow =
             Maybe.withDefault defaultSunWindow model.sun
 
+        hasSunData =
+            case model.sun of
+                Just _ ->
+                    True
+
+                Nothing ->
+                    False
+
         sunrise =
             sunWindow.sunriseMin
 
         sunset =
             sunWindow.sunsetMin
-
-        moonrise =
-            Maybe.withDefault 0 model.moonriseMin
-
-        moonset =
-            Maybe.withDefault 720 model.moonsetMin
-
-        phase =
-            Maybe.withDefault (fallbackMoonPhaseE6 model) model.moonPhaseE6
 
         dayText =
             if isDayAtTop model then
@@ -350,55 +333,60 @@ drawDial model cx cy radius =
         timeTextY =
             cy - (radius // 2) - 9
 
-        moonStart =
-            angleFromMinute moonrise
-
-        moonEnd =
-            angleFromMinute moonset
-
-        moonBounds =
-            square cx cy (radius - 3)
-
         sunriseAngle =
             angleFromMinute sunrise
 
         sunsetAngle =
             angleFromMinute sunset
 
+        moonStart =
+            sunriseAngle
+
+        moonEnd =
+            sunsetAngle
+
+        moonBounds =
+            square cx cy radius
+
         sunBounds =
-            square cx cy (radius - 18)
+            square cx cy (radius - 5)
     in
     [ Ui.fillCircle { x = cx, y = cy } radius Color.oxfordBlue ]
-        ++ [ Ui.group
-                (Ui.context
-                    [ Ui.fillColor Color.blueMoon, Ui.strokeColor Color.blueMoon ]
-                    [ Ui.fillRadial moonBounds moonStart
-                        (if moonEnd < moonStart then
-                            65536
-
-                         else
-                            moonEnd
-                        )
-                    ]
-                )
-           ]
-        ++ (if moonEnd < moonStart then
+        ++ (if hasSunData then
                 [ Ui.group
                     (Ui.context
                         [ Ui.fillColor Color.blueMoon, Ui.strokeColor Color.blueMoon ]
-                        [ Ui.fillRadial moonBounds 0 moonEnd ]
+                        [ Ui.fillRadial moonBounds moonStart
+                            (if moonEnd < moonStart then
+                                65536
+
+                             else
+                                moonEnd
+                            )
+                        ]
                     )
                 ]
+                    ++ (if moonEnd < moonStart then
+                            [ Ui.group
+                                (Ui.context
+                                    [ Ui.fillColor Color.blueMoon, Ui.strokeColor Color.blueMoon ]
+                                    [ Ui.fillRadial moonBounds 0 moonEnd ]
+                                )
+                            ]
+
+                        else
+                            []
+                       )
 
             else
                 []
            )
-        ++ [ Ui.fillCircle { x = cx, y = cy } (radius - 10) Color.black ]
-        ++ (if sunWindow.mode == PolarDay then
+        ++ [ Ui.fillCircle { x = cx, y = cy } (radius - 5) Color.black ]
+        ++ (if not hasSunData || sunWindow.mode == PolarDay then
                 [ Ui.group
                     (Ui.context
                         [ Ui.fillColor Color.chromeYellow, Ui.strokeColor Color.chromeYellow ]
-                        [ Ui.fillCircle { x = cx, y = cy } (radius - 18) Color.chromeYellow ]
+                        [ Ui.fillCircle { x = cx, y = cy } (radius - 5) Color.chromeYellow ]
                     )
                 ]
 
@@ -429,10 +417,16 @@ drawDial model cx cy radius =
                        )
            )
         ++ [ Ui.circle { x = cx, y = cy } radius Color.white
-           , Ui.circle { x = cx, y = cy } (radius - 10) Color.darkGray
+           , Ui.circle { x = cx, y = cy } (radius - 5) Color.darkGray
            ]
         ++ drawOuterScale cx cy radius
-        ++ drawMoonPhase cx moonPhaseY (max 10 (radius // 5)) phase
+        ++ (case model.moonPhaseE6 of
+                Just phase ->
+                    drawMoonPhase cx moonPhaseY (max 10 (radius // 5)) phase
+
+                Nothing ->
+                    []
+           )
         ++ [ Ui.line { x = cx, y = cy } hand Color.white
            , Ui.fillCircle { x = cx, y = cy } 4 Color.white
            , textAt dayText { x = cx - 31, y = timeTextY, w = 64, h = 18 } (timeString model)
@@ -444,23 +438,26 @@ drawOuterScale cx cy radius =
     List.concatMap
         (\hour ->
             let
-                outer =
-                    pointAt cx cy radius (angleFromMinute (hour * 60))
+                angle =
+                    angleFromMinute (hour * 60)
 
                 inner =
+                    pointAt cx cy radius angle
+
+                outer =
                     pointAt cx cy
                         (radius
-                            - (if modBy 2 hour == 0 then
-                                7
+                            + (if modBy 2 hour == 0 then
+                                5
 
                                else
-                                4
+                                9
                               )
                         )
-                        (angleFromMinute (hour * 60))
+                        angle
 
                 labelPoint =
-                    pointAt cx cy (radius - 17) (angleFromMinute (hour * 60))
+                    pointAt cx cy (radius + 16) angle
 
                 label =
                     if hour == 0 then
@@ -471,7 +468,7 @@ drawOuterScale cx cy radius =
             in
             if modBy 2 hour == 0 then
                 [ Ui.line outer inner Color.white
-                , textAt Color.lightGray { x = labelPoint.x - 7, y = labelPoint.y - 5, w = 18, h = 10 } label
+                , textAt Color.lightGray { x = labelPoint.x - 6, y = labelPoint.y - 4, w = 12, h = 8 } label
                 ]
 
             else

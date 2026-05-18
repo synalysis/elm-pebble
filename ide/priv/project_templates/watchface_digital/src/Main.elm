@@ -52,10 +52,10 @@ view : Model -> PebbleUi.UiNode
 view model =
     let
         cardW =
-            (model.screenW * 7) // 10
+            (model.screenW * 17) // 20
 
         cardH =
-            max 44 ((model.screenH * 56) // 168)
+            max 66 ((model.screenH * 70) // 168)
 
         cardX =
             (model.screenW - cardW) // 2
@@ -66,18 +66,18 @@ view model =
         cornerRadius =
             max 6 (min cardW cardH // 8)
 
-        textX =
-            cardX + (cardW // 6)
+        timeH =
+            min 52 (cardH - 8)
 
         textY =
-            cardY + ((cardH * 2) // 3)
+            cardY + ((cardH - timeH) // 2)
     in
     PebbleUi.windowStack
         [ PebbleUi.window 1
             [ PebbleUi.canvasLayer 1
                 [ PebbleUi.clear PebbleColor.white
                 , PebbleUi.roundRect { x = cardX, y = cardY, w = cardW, h = cardH } cornerRadius PebbleColor.black
-                , PebbleUi.textLabel UiResources.DefaultFont { x = textX, y = textY } model.timeString
+                , PebbleUi.text UiResources.DefaultFont (PebbleUi.alignCenter PebbleUi.defaultTextOptions) { x = cardX, y = textY, w = cardW, h = timeH } model.timeString
                 ]
             ]
         ]

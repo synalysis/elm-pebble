@@ -285,6 +285,8 @@ static GFont system_font_for_height(int64_t requested_height) {
   if (requested_height <= 18) font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   if (!font && requested_height <= 28) font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   if (!font && requested_height <= 36) font = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
+  if (!font && requested_height <= 52) font = fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
+  if (!font) font = fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
   if (!font) font = s_font;
   if (!font) font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
   return font;

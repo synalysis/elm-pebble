@@ -592,7 +592,8 @@ defmodule Ide.ProjectsTest do
     assert String.contains?(watch_main, "ProvideWind")
     assert String.contains?(watch_main, "ProvideTide")
     assert String.contains?(watch_main, "Button.onRelease Button.Down RequestRefresh")
-    assert String.contains?(watch_main, "model.isRound")
+    assert String.contains?(watch_main, "(min model.screenW model.screenH // 2) - 22")
+    assert String.contains?(watch_main, "pointAt cx cy (radius + 16) angle")
 
     assert {:ok, protocol_types} =
              Projects.read_source_file(project, "protocol", "src/Companion/Types.elm")
@@ -613,31 +614,25 @@ defmodule Ide.ProjectsTest do
     assert {:ok, companion_app} =
              Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
 
-    assert String.contains?(companion_app, "Http.get")
-    assert String.contains?(companion_app, "GeneratedPreferences.onConfiguration FromBridge")
     assert String.contains?(companion_app, "CompanionPhone.onWatchToPhone FromWatch")
-    assert String.contains?(companion_app, "ProvideAltitude")
+    assert String.contains?(companion_app, "GeneratedPreferences.onConfiguration FromConfiguration")
+    assert String.contains?(companion_app, "Geolocation.currentPosition")
+    assert String.contains?(companion_app, "Geolocation.onCurrentPosition CurrentPosition")
+    assert String.contains?(companion_app, "calcSunriseSunset location tzOffsetMin now")
+    refute String.contains?(companion_app, "ProvideAltitude")
 
     assert {:ok, companion_preferences} =
              Projects.read_source_file(project, "phone", "src/CompanionPreferences.elm")
 
     assert String.contains?(companion_preferences, "Preferences.schema \"YES Watchface\"")
-    assert String.contains?(companion_preferences, "Preferences.field \"homeLatitude\"")
-    assert String.contains?(companion_preferences, "Preferences.field \"internetMode\"")
-    assert String.contains?(companion_preferences, "Preferences.choiceOption Fahrenheit")
-    assert String.contains?(companion_preferences, "Preferences.choiceOption MilesPerHour")
+    refute String.contains?(companion_preferences, "Preferences.field \"homeLatitude\"")
+    refute String.contains?(companion_preferences, "Preferences.field \"showTide\"")
+    refute String.contains?(companion_preferences, "Preferences.choiceOption Fahrenheit")
+    refute String.contains?(companion_preferences, "Preferences.choiceOption MilesPerHour")
 
     assert {:ok, preferences_schema} = Ide.PebblePreferences.extract(Path.join(base, "phone"))
 
-    assert Enum.flat_map(preferences_schema.sections, & &1.fields) |> Enum.map(& &1.id) == [
-             "homeLatitude",
-             "homeLongitude",
-             "homeTzOffsetMinutes",
-             "internetMode",
-             "showTide",
-             "temperatureUnit",
-             "windUnit"
-           ]
+    assert Enum.flat_map(preferences_schema.sections, & &1.fields) |> Enum.map(& &1.id) == []
   end
 
   test "import project maps watch/protocol/phone directories" do

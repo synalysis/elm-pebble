@@ -14,7 +14,7 @@ defmodule Ide.EmulatorSupport do
   @target_mode_ids %{
     "aplite" => ~w(embedded external wasm),
     "basalt" => ~w(embedded external wasm),
-    "chalk" => ~w(embedded external wasm),
+    "chalk" => ~w(embedded external),
     "diorite" => ~w(embedded external wasm),
     "emery" => ~w(embedded external wasm),
     "flint" => ~w(embedded external wasm),
