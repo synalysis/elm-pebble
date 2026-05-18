@@ -41,7 +41,7 @@ export class WasmEmulatorHost {
     this.wasmPlatform = null
     this.watchPlatform = null
     this.firmware = {}
-    this.selectedFirmware = "sdk"
+    this.selectedFirmware = null
     this.assetStatus = null
     this.currentStatus = null
     this.currentAssets = null
@@ -57,7 +57,7 @@ export class WasmEmulatorHost {
     this.assets = this.el.querySelector("[data-wasm-assets]")
     this.log = this.el.querySelector("[data-wasm-log]")
     this.launchButton = this.el.querySelector("[data-wasm-launch]")
-    this.firmwareSelect = this.el.querySelector("[data-wasm-firmware]")
+    this.firmwareLabel = this.el.querySelector("[data-wasm-firmware]")
     this.installButton = this.el.querySelector("[data-wasm-install]")
     this.screenshotButton = this.el.querySelector("[data-wasm-screenshot]")
     this.progress = this.el.querySelector("[data-wasm-progress]")
@@ -68,13 +68,7 @@ export class WasmEmulatorHost {
     this.tapButton = this.el.querySelector("[data-wasm-tap]")
 
     this.launchButton?.addEventListener("click", () => this.toggleLaunch())
-    this.firmwareSelect?.addEventListener("change", () => {
-      this.selectedFirmware = this.firmwareSelect.value || "sdk"
-      this.watchPlatform = null
-      this.wasmPlatform = this.platformForFirmware(this.selectedFirmware)
-      this.renderAssetsStatus()
-      this.updateButtons()
-    })
+    this.syncSelectedFirmware()
     this.installButton?.addEventListener("click", () => this.installPbw())
     this.screenshotButton?.addEventListener("click", () => this.requestScreenshot())
     this.el.querySelector("[data-wasm-battery]")?.addEventListener("input", event => {
@@ -112,6 +106,7 @@ export class WasmEmulatorHost {
 
   updated() {
     this.mountRefs()
+    this.syncSelectedFirmware()
     this.restorePanelState()
     this.renderAssetsStatus()
     this.renderStorage()
@@ -124,7 +119,7 @@ export class WasmEmulatorHost {
     this.assets = this.el.querySelector("[data-wasm-assets]")
     this.log = this.el.querySelector("[data-wasm-log]")
     this.launchButton = this.el.querySelector("[data-wasm-launch]")
-    this.firmwareSelect = this.el.querySelector("[data-wasm-firmware]")
+    this.firmwareLabel = this.el.querySelector("[data-wasm-firmware]")
     this.installButton = this.el.querySelector("[data-wasm-install]")
     this.screenshotButton = this.el.querySelector("[data-wasm-screenshot]")
     this.progress = this.el.querySelector("[data-wasm-progress]")
@@ -148,10 +143,23 @@ export class WasmEmulatorHost {
       return true
     }
 
-    if (!sessionStorage.getItem(reloadKey)) {
-      sessionStorage.setItem(reloadKey, "1")
+    const currentPath = window.location.pathname
+    const loadedPath = (() => {
+      const navigation = performance.getEntriesByType?.("navigation")?.[0]
+      if (!navigation?.name) return currentPath
+      try {
+        return new URL(navigation.name).pathname
+      } catch (_error) {
+        return currentPath
+      }
+    })()
+    const lastAttempt = parseInt(sessionStorage.getItem(reloadKey) || "0", 10)
+    const staleAttempt = !lastAttempt || Date.now() - lastAttempt > 5000
+
+    if (loadedPath !== currentPath || staleAttempt) {
+      sessionStorage.setItem(reloadKey, String(Date.now()))
       this.setStatus("Reloading page to enable WASM cross-origin isolation...")
-      window.location.reload()
+      window.location.assign(window.location.href)
     } else {
       this.setStatus("WASM emulator requires a cross-origin isolated page. Refresh this page and try again.")
     }
@@ -166,7 +174,7 @@ export class WasmEmulatorHost {
       const installBridgeAvailable = status.install_bridge?.available === true || status.install_bridge?.["available?"] === true
       this.assetStatus = status
       this.firmware = status.firmware || {}
-      this.wasmPlatform = this.platformForFirmware(this.selectedFirmware)
+      this.syncSelectedFirmware()
 
       this.assetsAvailable = assetsAvailable
       this.installBridgeAvailable = installBridgeAvailable
@@ -200,6 +208,25 @@ export class WasmEmulatorHost {
     return this.el.dataset.emulatorTarget || "emery"
   }
 
+  supportedFirmwareForTarget() {
+    return this.selectedTarget() === "emery" ? "full" : "sdk"
+  }
+
+  syncSelectedFirmware() {
+    this.selectedFirmware = this.supportedFirmwareForTarget()
+    this.wasmPlatform = this.platformForFirmware(this.selectedFirmware)
+    this.renderFirmwareLabel()
+  }
+
+  renderFirmwareLabel() {
+    if (!this.firmwareLabel) return
+    const target = this.selectedTarget()
+    const name = this.supportedFirmwareForTarget()
+    this.firmwareLabel.textContent = name === "full" ? `Full (${target})` : `SDK (${target})`
+    this.firmwareLabel.title =
+      name === "full" ? "Emery currently boots the full firmware in the WASM UI." : "This model boots the SDK firmware."
+  }
+
   platformForFirmware(name) {
     if (name === "sdk") {
       const target = this.selectedTarget()
@@ -218,15 +245,16 @@ export class WasmEmulatorHost {
       return null
     }
 
-    return name
+    return this.firmware?.[name]?.platform ? name : null
   }
 
   launchReady() {
-    return this.assetsAvailable && !!this.firmwareAssetPath(this.firmwareSelect?.value || this.selectedFirmware || "sdk")
+    return this.assetsAvailable && !!this.firmwareAssetPath(this.selectedFirmware || this.supportedFirmwareForTarget())
   }
 
   firmwareSummary() {
     const target = this.selectedTarget()
+    const boot = this.supportedFirmwareForTarget()
     const sdkPlatforms = Object.keys(this.firmware?.sdk?.platforms || {})
     const legacyPlatform = this.firmware?.sdk?.platform || this.firmware?.sdk?.legacy?.platform
 
@@ -243,7 +271,7 @@ export class WasmEmulatorHost {
     })()
 
     const full = this.firmware?.full?.platform ? `full ${this.firmware.full.platform}` : "full unavailable"
-    return `firmware ${sdk}; ${full}`
+    return `booting ${boot === "full" ? full : sdk}; available firmware ${sdk}; ${full}`
   }
 
   toggleLaunch() {
@@ -257,7 +285,7 @@ export class WasmEmulatorHost {
   launch() {
     if (this.launching) return
     if (!this.launchReady()) {
-      this.setStatus("WASM SDK firmware for the selected watch model is not available.")
+      this.setStatus("WASM firmware for the selected watch model is not available.")
       return
     }
     this.launching = true
@@ -268,7 +296,7 @@ export class WasmEmulatorHost {
     this.resetFrame()
     this.frame.addEventListener("load", () => {
       this.frameLoaded = true
-      this.selectedFirmware = this.firmwareSelect?.value || "sdk"
+      this.syncSelectedFirmware()
       this.watchPlatform = null
       this.wasmPlatform = this.platformForFirmware(this.selectedFirmware)
       this.postToFrame({type: "launch", firmware: this.firmwareAssetPath(this.selectedFirmware)})

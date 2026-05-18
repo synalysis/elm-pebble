@@ -648,6 +648,28 @@ defmodule IdeWeb.WasmEmulatorController do
             return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
           }
 
+          function uuidToBytes(uuid) {
+            const hex = (uuid || "").replace(/-/g, "");
+            if (!/^[0-9a-fA-F]{32}$/.test(hex)) return null;
+            const bytes = new Uint8Array(16);
+            for (let index = 0; index < bytes.length; index += 1) {
+              bytes[index] = parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+            }
+            return bytes;
+          }
+
+          function bytesEqual(left, right) {
+            if (!left || !right || left.length !== right.length) return false;
+            return left.every((byte, index) => byte === right[index]);
+          }
+
+          function appRunStateStarted(frame, uuidBytes) {
+            return frame.endpoint === 0x0034 &&
+              frame.payload.length >= 17 &&
+              frame.payload[0] === 0x01 &&
+              bytesEqual(frame.payload.slice(1, 17), uuidBytes);
+          }
+
           function describeDataLoggingPayload(payload) {
             if (payload.length < 29) return `dataLogging payloadPrefix=${payloadHex(payload)}`;
             const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
@@ -1026,7 +1048,7 @@ defmodule IdeWeb.WasmEmulatorController do
             if (!insert?.ok) throw new Error(`BlobDB ${label} insert failed: ${insert?.name || "unknown"}`);
           }
 
-          async function installPart(part, appId, finalPart) {
+          async function installPart(part, appId, finalPart, appUuidBytes) {
             setStatus(`Installing ${part.kind} (${Math.round(part.size / 1024)}KB)...`);
             setInstallProgress(`Starting ${part.kind}`, 35);
             const init = concatBytes([new Uint8Array([1]), u32be(part.size), new Uint8Array([part.object_type | 0x80]), u32be(appId)]);
@@ -1052,7 +1074,15 @@ defmodule IdeWeb.WasmEmulatorController do
             if (!commitAck?.ok || commitAck.cookie !== cookie) throw new Error(`PutBytes commit failed for ${part.kind}`);
             try {
               setInstallProgress(`Installing ${part.kind}`, finalPart ? 90 : 85);
-              const installResponse = await sendAndAwait(pebbleFrame(0xbeef, putbytesPayload(5, cookie)), frame => frame.endpoint === 0xbeef, finalPart ? 120000 : 30000);
+              const installResponse = await sendAndAwait(
+                pebbleFrame(0xbeef, putbytesPayload(5, cookie)),
+                frame => frame.endpoint === 0xbeef || (finalPart && appRunStateStarted(frame, appUuidBytes)),
+                finalPart ? 120000 : 30000
+              );
+              if (finalPart && appRunStateStarted(installResponse, appUuidBytes)) {
+                log(`Treating AppRunState start for ${part.kind} as final install completion`);
+                return;
+              }
               const installAck = putbytesAck(installResponse);
               const installCookieOk = installAck?.cookie === cookie || (finalPart && installAck?.cookie === 0);
               if (!installAck?.ok || !installCookieOk) throw new Error(`PutBytes install failed for ${part.kind}`);
@@ -1081,13 +1111,14 @@ defmodule IdeWeb.WasmEmulatorController do
               setInstallProgress("Metadata accepted", 20);
               await delay(1500);
               const startFrame = b64ToBytes(plan.app_start_frame);
+              const appUuidBytes = uuidToBytes(plan.uuid);
               const fetchFrame = await requestAppFetch(startFrame);
               if (fetchFrame.payload[0] !== 1) throw new Error("Unexpected app fetch response");
               const appId = new DataView(fetchFrame.payload.buffer, fetchFrame.payload.byteOffset, fetchFrame.payload.byteLength).getUint32(17, true);
               const appIdSource = "watch";
               setInstallProgress("Watch requested app payload", 30);
               for (let index = 0; index < plan.parts.length; index += 1) {
-                await installPart(plan.parts[index], appId, index === plan.parts.length - 1);
+                await installPart(plan.parts[index], appId, index === plan.parts.length - 1, appUuidBytes);
               }
               dropDeferredDataLoggingAcks();
               setInstallProgress("Install complete", 100);

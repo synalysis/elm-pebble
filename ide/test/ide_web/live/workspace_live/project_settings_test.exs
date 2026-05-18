@@ -49,7 +49,11 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
 
     updated = Projects.get_project_by_slug(project.slug)
     assert updated.debugger_settings["emulator_mode"] == "wasm"
-    assert render(view) =~ "WASM Emulator"
+    html = render(view)
+    assert html =~ "WASM Emulator"
+    assert has_element?(view, "span[data-wasm-firmware]")
+    refute has_element?(view, "select[data-wasm-firmware]")
+    assert has_element?(view, "a[data-phx-link='patch'][href='/projects/#{project.slug}/emulator']")
 
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
     assert has_element?(view, "select[name='emulator[mode]'] option[selected][value='wasm']")

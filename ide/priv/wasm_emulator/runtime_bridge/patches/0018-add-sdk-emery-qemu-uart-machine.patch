@@ -1,0 +1,466 @@
+diff --git a/include/hw/arm/pebble.h b/include/hw/arm/pebble.h
+--- a/include/hw/arm/pebble.h
++++ b/include/hw/arm/pebble.h
+@@ -78,6 +78,7 @@ typedef struct {
+     uint32_t flash_size;
+     uint32_t ram_size;
+     uint32_t timer_period_scale;
++    bool sdk_qemu_uart;
+ 
+     /* screen sizes */
+     uint32_t num_rows;
+@@ -96,6 +97,7 @@ struct stm32f2xx {
+ };
+ 
+ struct stm32f4xx {
++    DeviceState *armv7m_dev;
+     DeviceState *spi_dev[STM32F4XX_SPI_COUNT];
+     DeviceState *i2c_dev[3];
+     DeviceState *qspi_dev;
+@@ -135,5 +137,6 @@ void stm32f4xx_init(
+             uint32_t osc_freq,
+             uint32_t osc32_freq,
+             uint32_t timer_period_scale,
++            bool skip_sdk_qemu_uart_timers,
+             struct stm32f4xx *stm,
+             ARMCPU **cpu);
+diff --git a/hw/char/stm32_pebble_uart.c b/hw/char/stm32_pebble_uart.c
+--- a/hw/char/stm32_pebble_uart.c
++++ b/hw/char/stm32_pebble_uart.c
+@@ -64,6 +64,7 @@ struct Stm32Uart {
+ 
+     /* Properties */
+     stm32_periph_t periph;
++    bool sdk_compat;
+ 
+     /* Private */
+     MemoryRegion iomem;
+@@ -90,6 +91,8 @@ struct Stm32Uart {
+     uint32_t USART_CR1_RE;
+ 
+     bool sr_read_since_ore_set;
++    uint32_t sdk_int_enable;
++    uint32_t sdk_int_status;
+ 
+     /* CharBackend for chardev connection */
+     CharBackend chr;
+@@ -113,9 +116,15 @@ static void stm32_uart_event(void *opaque, QEMUChrEvent event);
+ static void stm32_uart_update_irq(Stm32Uart *s)
+ {
+-    int new_level =
+-        (s->USART_CR1_TXEIE && s->USART_SR_TXE) ||
+-        (s->USART_CR1_TCIE && s->USART_SR_TC) ||
+-        (s->USART_CR1_RXNEIE && (s->USART_SR_RXNE || s->USART_SR_ORE));
++    int new_level;
++
++    if (s->sdk_compat) {
++        new_level = (s->sdk_int_enable & s->sdk_int_status) != 0;
++    } else {
++        new_level =
++            (s->USART_CR1_TXEIE && s->USART_SR_TXE) ||
++            (s->USART_CR1_TCIE && s->USART_SR_TC) ||
++            (s->USART_CR1_RXNEIE && (s->USART_SR_RXNE || s->USART_SR_ORE));
++    }
+ 
+     if (new_level != s->curr_irq_level) {
+         qemu_set_irq(s->irq, new_level);
+@@ -130,6 +139,9 @@ static void stm32_uart_fill_rdr(Stm32Uart *s)
+     if (s->rcv_char_bytes == 0) {
+         return;
+     }
++    if (s->sdk_compat && s->USART_SR_RXNE) {
++        return;
++    }
+ 
+     /* Pull next byte from buffer */
+     uint8_t byte = s->rcv_char_buf[0];
+@@ -137,6 +149,6 @@ static void stm32_uart_fill_rdr(Stm32Uart *s)
+     memmove(s->rcv_char_buf, s->rcv_char_buf + 1, s->rcv_char_bytes);
+ 
+-    if (s->USART_CR1_UE && s->USART_CR1_RE) {
++    if (s->sdk_compat || (s->USART_CR1_UE && s->USART_CR1_RE)) {
+         if (s->USART_SR_RXNE) {
+             /* Overrun: RDR still has unread data */
+             DPRINTF("fill_rdr: overrun error\n");
+@@ -148,6 +162,9 @@ static void stm32_uart_fill_rdr(Stm32Uart *s)
+ 
+         s->USART_RDR = byte;
+         s->USART_SR_RXNE = 1;
++        if (s->sdk_compat) {
++            s->sdk_int_status |= 2;
++        }
+         stm32_uart_update_irq(s);
+     }
+ }
+@@ -169,7 +186,7 @@ static void stm32_uart_receive(void *opaque, const uint8_t *buf, int size)
+ 
+     assert(size > 0);
+ 
+-    if (!s->USART_CR1_UE || !s->USART_CR1_RE) {
++    if (!s->sdk_compat && (!s->USART_CR1_UE || !s->USART_CR1_RE)) {
+         DPRINTF("Dropping %d chars, UART not enabled (UE=%d RE=%d)\n",
+                 size, s->USART_CR1_UE, s->USART_CR1_RE);
+         return;
+@@ -198,6 +215,38 @@ static uint64_t stm32_uart_read(void *opaque, hwaddr offset, unsigned size)
+     Stm32Uart *s = (Stm32Uart *)opaque;
+     uint32_t value;
+ 
++    if (s->sdk_compat) {
++        switch (offset) {
++        case USART_SR_OFFSET:
++            value = s->USART_RDR;
++            s->USART_SR_RXNE = 0;
++            if (!s->USART_SR_RXNE) {
++                s->sdk_int_status &= ~2u;
++            }
++            stm32_uart_fill_rdr(s);
++            stm32_uart_update_irq(s);
++            qemu_chr_fe_accept_input(&s->chr);
++            return value & 0xFF;
++
++        case USART_DR_OFFSET:
++            value = 1;
++            if (s->USART_SR_RXNE) {
++                value |= 2;
++            }
++            return value;
++
++        case USART_BRR_OFFSET:
++            return s->sdk_int_enable;
++
++        case USART_CR1_OFFSET:
++            return s->sdk_int_status;
++
++        default:
++            STM32_BAD_REG(offset, size);
++            return 0;
++        }
++    }
++
+     switch (offset) {
+     case USART_SR_OFFSET:
+         value = 0;
+@@ -248,6 +297,34 @@ static void stm32_uart_write(void *opaque, hwaddr offset,
+     Stm32Uart *s = (Stm32Uart *)opaque;
+     uint32_t value = (uint32_t)val64;
+ 
++    if (s->sdk_compat) {
++        switch (offset) {
++        case USART_SR_OFFSET: {
++            uint8_t ch = value & 0xFF;
++            if (s->chr_write_obj && s->chr_write) {
++                s->chr_write(s->chr_write_obj, &ch, 1);
++            }
++            s->sdk_int_status |= 1;
++            stm32_uart_update_irq(s);
++            break;
++        }
++
++        case USART_BRR_OFFSET:
++            s->sdk_int_enable = value & 0x3;
++            stm32_uart_update_irq(s);
++            break;
++
++        case USART_CR1_OFFSET:
++            s->sdk_int_status &= ~value;
++            stm32_uart_update_irq(s);
++            break;
++
++        default:
++            break;
++        }
++        return;
++    }
++
+     switch (offset) {
+     case USART_SR_OFFSET:
+         /* Only some bits are writable - TC can be cleared by writing 0 */
+@@ -374,6 +457,8 @@ static void stm32_uart_reset(DeviceState *dev)
+     s->USART_CR1_RE = 0;
+ 
+     s->sr_read_since_ore_set = false;
++    s->sdk_int_enable = 0;
++    s->sdk_int_status = 0;
+     s->rcv_char_bytes = 0;
+     s->curr_irq_level = 0;
+ }
+@@ -409,3 +494,4 @@ static const Property stm32_uart_properties[] = {
+     DEFINE_PROP_INT32("periph", Stm32Uart, periph, STM32_PERIPH_UNDEFINED),
++    DEFINE_PROP_BOOL("sdk-compat", Stm32Uart, sdk_compat, false),
+     DEFINE_PROP_CHR("chardev", Stm32Uart, chr),
+ };
+diff --git a/hw/arm/pebble_stm32f4xx_soc.c b/hw/arm/pebble_stm32f4xx_soc.c
+--- a/hw/arm/pebble_stm32f4xx_soc.c
++++ b/hw/arm/pebble_stm32f4xx_soc.c
+@@ -137,5 +137,6 @@ void stm32f4xx_init(
+             uint32_t osc_freq,
+             uint32_t osc32_freq,
+             uint32_t timer_period_scale,
++            bool skip_sdk_qemu_uart_timers,
+             struct stm32f4xx *stm,
+             ARMCPU **cpu)
+@@ -193,6 +194,7 @@ void stm32f4xx_init(
+ 
+     /* Create sysclk and refclk */
+     Clock *sysclk = clock_new(OBJECT(qdev_get_machine()), "SYSCLK");
+-    clock_set_hz(sysclk, SYSCLK_FRQ);
++    clock_set_hz(sysclk, skip_sdk_qemu_uart_timers ?
++                 SYSCLK_FRQ / 16 : SYSCLK_FRQ);
+ 
+     Clock *refclk = clock_new(OBJECT(qdev_get_machine()), "REFCLK");
+@@ -278,6 +279,7 @@ void stm32f4xx_init(
+     Object *stm32_container = object_new("container");
+     object_property_add_child(OBJECT(qdev_get_machine()), "stm32",
+                               stm32_container);
++    stm->armv7m_dev = armv7m_dev;
+ 
+     /* === RCC === */
+     DeviceState *rcc_dev = qdev_new("stm32f2xx_rcc");
+@@ -367,5 +369,9 @@ void stm32f4xx_init(
+     };
+     for (i = 0; i < ARRAY_LENGTH(uart_desc); ++i) {
++        if (skip_sdk_qemu_uart_timers && i == 4) {
++            stm32_uart[i] = NULL;
++            continue;
++        }
+         assert(i < STM32F4XX_UART_COUNT);
+         const stm32_periph_t periph = STM32_UART1 + i;
+         DeviceState *uart_dev = qdev_new("stm32-uart");
+@@ -447,4 +449,10 @@ void stm32f4xx_init(
+     };
+     for (i = 0; i < ARRAY_LENGTH(timer_desc); ++i) {
++        if (skip_sdk_qemu_uart_timers &&
++            (timer_desc[i].timer_num == 6 || timer_desc[i].timer_num == 14)) {
++            stm32_timer[timer_desc[i].timer_num - 1] = NULL;
++            continue;
++        }
++
+         assert(i < STM32F4XX_TIM_COUNT);
+         const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
+diff --git a/hw/arm/pebble_silk.c b/hw/arm/pebble_silk.c
+--- a/hw/arm/pebble_silk.c
++++ b/hw/arm/pebble_silk.c
+@@ -81,4 +81,5 @@ void pebble_32f412_init(MachineState *machine,
+                    32768,   /* osc32_freq */
+                    board_config->timer_period_scale,
++                   board_config->sdk_qemu_uart,
+                    &stm,
+                    &cpu);
+diff --git a/hw/arm/pebble.c b/hw/arm/pebble.c
+--- a/hw/arm/pebble.c
++++ b/hw/arm/pebble.c
+@@ -73,4 +73,99 @@
+  * Board configurations
+  * ==================================================================== */
+ 
++#define SDK_RTC_TIME_SCALE 64
++#define SDK_RTC_ALARM_ENABLE 1
++
++static MemoryRegion s_sdk_rtc_iomem;
++static QEMUTimer *s_sdk_rtc_alarm_timer;
++static qemu_irq s_sdk_rtc_alarm_irq;
++static int64_t s_sdk_rtc_epoch_ms;
++static uint32_t s_sdk_rtc_alarm_ms;
++static uint32_t s_sdk_rtc_control;
++
++static uint32_t sdk_rtc_elapsed_ms(void)
++{
++    int64_t elapsed = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) - s_sdk_rtc_epoch_ms;
++    return elapsed < 0 ? 0 : (uint32_t)(elapsed / SDK_RTC_TIME_SCALE);
++}
++
++static void sdk_rtc_update_alarm(void)
++{
++    uint32_t now_ms;
++    uint32_t delay_ms;
++    int64_t deadline_ms;
++
++    if (!s_sdk_rtc_alarm_timer) {
++        return;
++    }
++
++    if (!(s_sdk_rtc_control & SDK_RTC_ALARM_ENABLE)) {
++        timer_del(s_sdk_rtc_alarm_timer);
++        return;
++    }
++
++    now_ms = sdk_rtc_elapsed_ms();
++    delay_ms = s_sdk_rtc_alarm_ms > now_ms ? s_sdk_rtc_alarm_ms - now_ms : 0;
++    deadline_ms = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) +
++                  (int64_t)delay_ms * SDK_RTC_TIME_SCALE;
++    timer_mod(s_sdk_rtc_alarm_timer, deadline_ms);
++}
++
++static void sdk_rtc_alarm_cb(void *opaque)
++{
++    s_sdk_rtc_control &= ~SDK_RTC_ALARM_ENABLE;
++    qemu_irq_pulse(s_sdk_rtc_alarm_irq);
++}
++
++static uint64_t sdk_rtc_read(void *opaque, hwaddr offset, unsigned size)
++{
++    switch (offset) {
++    case 0x00:
++        return sdk_rtc_elapsed_ms() / 1000;
++    case 0x08:
++        return s_sdk_rtc_alarm_ms;
++    case 0x0c:
++        return s_sdk_rtc_control;
++    case 0x10:
++        return sdk_rtc_elapsed_ms();
++    default:
++        return 0;
++    }
++}
++
++static void sdk_rtc_write(void *opaque, hwaddr offset, uint64_t value,
++                          unsigned size)
++{
++    switch (offset) {
++    case 0x08:
++        s_sdk_rtc_alarm_ms = (uint32_t)value;
++        sdk_rtc_update_alarm();
++        break;
++    case 0x0c:
++        s_sdk_rtc_control = (uint32_t)value;
++        sdk_rtc_update_alarm();
++        break;
++    default:
++        break;
++    }
++}
++
++static const MemoryRegionOps sdk_rtc_ops = {
++    .read = sdk_rtc_read,
++    .write = sdk_rtc_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++};
++
++static void pebble_init_sdk_rtc(qemu_irq alarm_irq)
++{
++    s_sdk_rtc_alarm_irq = alarm_irq;
++    s_sdk_rtc_epoch_ms = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
++    s_sdk_rtc_alarm_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL,
++                                         sdk_rtc_alarm_cb, NULL);
++    memory_region_init_io(&s_sdk_rtc_iomem, NULL, &sdk_rtc_ops, NULL,
++                          "pebble-sdk-rtc", 0x100);
++    memory_region_add_subregion(get_system_memory(), 0x40005000,
++                                &s_sdk_rtc_iomem);
++}
++
+ const static PblBoardConfig s_board_config_snowy_bb = {
+@@ -116,6 +116,29 @@ const static PblBoardConfig s_board_config_snowy_emery_bb = {
+     .round_mask = false
+ };
+ 
++const static PblBoardConfig s_board_config_snowy_emery_sdk_bb = {
++    .dbgserial_uart_index = 2,       /* USART3 */
++    .pebble_control_uart_index = 1,  /* USART2 */
++    .button_map = {
++        {STM32_GPIOG_INDEX, 4, false}, /* back */
++        {STM32_GPIOG_INDEX, 3, false}, /* up */
++        {STM32_GPIOG_INDEX, 1, false}, /* select */
++        {STM32_GPIOG_INDEX, 2, false}, /* down */
++    },
++    .flash_size = 4096,
++    .ram_size = 512,
++    .timer_period_scale = 1,
++    .sdk_qemu_uart = true,
++    .num_rows = 228,
++    .num_cols = 200,
++    .num_border_rows = 0,
++    .num_border_cols = 0,
++    .row_major = true,
++    .row_inverted = true,
++    .col_inverted = true,
++    .round_mask = false
++};
++
+ const static PblBoardConfig s_board_config_s4_bb = {
+     .dbgserial_uart_index = 2,
+     .pebble_control_uart_index = 1,
+@@ -564,13 +589,14 @@ void pebble_32f439_init(MachineState *machine,
+     stm32f4xx_init(board_config->flash_size,
+                    board_config->ram_size,
+                    machine->kernel_filename,
+                    gpio,
+                    board_config->gpio_idr_masks,
+                    uart,
+                    timer,
+                    &rtc_dev,
+                    8000000, /* osc_freq */
+                    32768,   /* osc32_freq */
+                    board_config->timer_period_scale,
++                   board_config->sdk_qemu_uart,
+                    &stm,
+                    &cpu);
+@@ -607,5 +632,6 @@ void pebble_32f439_init(MachineState *machine,
+      */
+     {
+-        const uint32_t flash_size_bytes = 16 * 1024 * 1024;
++        const uint32_t flash_size_bytes =
++            board_config->sdk_qemu_uart ? 32 * 1024 * 1024 : 16 * 1024 * 1024;
+         const uint32_t sector_size = 32 * 1024;
+         BlockBackend *blk = blk_by_name("spi-flash");
+@@ -675,8 +701,27 @@ void pebble_32f439_init(MachineState *machine,
+     qdev_connect_gpio_out_named((DeviceState *)timer[11],
+                                 "pwm_ratio_changed", 0, backlight_level);
+ 
+     /* Connect UARTs */
+-    pebble_connect_uarts(uart, board_config);
++    if (board_config->sdk_qemu_uart) {
++        pebble_init_sdk_rtc(qdev_get_gpio_in(stm.armv7m_dev,
++                                             STM32_RTC_WKUP_IRQ));
++
++        DeviceState *qemu_uart_dev = qdev_new(TYPE_STM32_UART);
++        qdev_prop_set_bit(qemu_uart_dev, "sdk-compat", true);
++        stm32_init_periph(qemu_uart_dev, STM32_PERIPH_UNDEFINED, 0x40001000,
++                          qdev_get_gpio_in(stm.armv7m_dev, 1));
++
++        DeviceState *debug_uart_dev = qdev_new(TYPE_STM32_UART);
++        qdev_prop_set_bit(debug_uart_dev, "sdk-compat", true);
++        stm32_init_periph(debug_uart_dev, STM32_PERIPH_UNDEFINED, 0x40002000,
++                          qdev_get_gpio_in(stm.armv7m_dev, 2));
++
++        s_pebble_control = pebble_control_create(
++            serial_hd(1), STM32_UART(qemu_uart_dev));
++        stm32_uart_connect(STM32_UART(debug_uart_dev), serial_hd(2), 0);
++    } else {
++        pebble_connect_uarts(uart, board_config);
++    }
+ 
+     /* Init buttons */
+     pebble_init_buttons(gpio, board_config->button_map);
+@@ -710,6 +753,11 @@ static void pebble_snowy_emery_init(MachineState *machine)
+     pebble_32f439_init(machine, &s_board_config_snowy_emery_bb);
+ }
+ 
++static void pebble_snowy_emery_sdk_init(MachineState *machine)
++{
++    pebble_32f439_init(machine, &s_board_config_snowy_emery_sdk_bb);
++}
++
+ static void pebble_s4_init(MachineState *machine)
+ {
+     pebble_32f439_init(machine, &s_board_config_s4_bb);
+@@ -745,6 +793,20 @@ static void pebble_snowy_emery_machine_init(MachineClass *mc)
+ 
+ DEFINE_MACHINE_ARM("pebble-snowy-emery-bb", pebble_snowy_emery_machine_init)
+ 
++static void pebble_snowy_emery_sdk_machine_init(MachineClass *mc)
++{
++    static const char * const valid_cpu_types[] = {
++        ARM_CPU_TYPE_NAME("cortex-m4"),
++        NULL
++    };
++    mc->desc = "Pebble smartwatch (snowy/emery SDK firmware)";
++    mc->init = pebble_snowy_emery_sdk_init;
++    mc->valid_cpu_types = valid_cpu_types;
++    mc->ignore_memory_transaction_failures = true;
++}
++
++DEFINE_MACHINE_ARM("pebble-snowy-emery-sdk-bb", pebble_snowy_emery_sdk_machine_init)
++
+ static void pebble_s4_bb_machine_init(MachineClass *mc)
+ {
+     static const char * const valid_cpu_types[] = {

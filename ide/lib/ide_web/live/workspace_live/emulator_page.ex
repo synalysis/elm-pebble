@@ -433,16 +433,15 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <label class="flex items-center gap-2 text-xs font-medium text-zinc-700">
-              Firmware
-              <select
+            <div class="flex items-center gap-2 text-xs font-medium text-zinc-700">
+              <span>Firmware</span>
+              <span
                 data-wasm-firmware
-                class="min-w-20 rounded border border-zinc-300 bg-white py-1 pl-2 pr-7 text-xs text-zinc-900"
+                class="rounded border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700"
               >
-                <option value="sdk">SDK</option>
-                <option value="full">Full</option>
-              </select>
-            </label>
+                Auto
+              </span>
+            </div>
             <button
               type="button"
               data-wasm-launch

@@ -152,8 +152,14 @@ copy_micro_flash() {
 
 arm_objcopy() {
   local candidate
+  local sdk_root="${PEBBLE_SDK_ROOT:-${HOME}/.pebble-sdk/SDKs/current}"
 
-  for candidate in arm-none-eabi-objcopy llvm-objcopy; do
+  for candidate in \
+    arm-none-eabi-objcopy \
+    llvm-objcopy \
+    "${sdk_root}/toolchain/arm-none-eabi/bin/arm-none-eabi-objcopy" \
+    "/var/lib/ide/.pebble-sdk/SDKs/current/toolchain/arm-none-eabi/bin/arm-none-eabi-objcopy" \
+    "/host-pebble-sdk/SDKs/current/toolchain/arm-none-eabi/bin/arm-none-eabi-objcopy"; do
     if command -v "${candidate}" >/dev/null 2>&1; then
       command -v "${candidate}"
       return 0
@@ -166,7 +172,7 @@ arm_objcopy() {
 machine_for_platform() {
   case "$1" in
     aplite) printf '%s\n' "pebble-bb2" ;;
-    emery) printf '%s\n' "pebble-snowy-emery-bb" ;;
+    emery) printf '%s\n' "pebble-snowy-emery-sdk-bb" ;;
     basalt) printf '%s\n' "pebble-snowy-bb" ;;
     chalk) printf '%s\n' "pebble-s4-bb" ;;
     diorite | flint) printf '%s\n' "pebble-silk-bb" ;;

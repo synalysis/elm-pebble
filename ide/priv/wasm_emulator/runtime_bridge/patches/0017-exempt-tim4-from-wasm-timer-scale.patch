@@ -1,40 +1,154 @@
+diff --git a/include/hw/arm/pebble.h b/include/hw/arm/pebble.h
+--- a/include/hw/arm/pebble.h
++++ b/include/hw/arm/pebble.h
+@@ -77,6 +77,7 @@ typedef struct {
+     /* memory sizes in KBytes */
+     uint32_t flash_size;
+     uint32_t ram_size;
++    uint32_t timer_period_scale;
+ 
+     /* screen sizes */
+     uint32_t num_rows;
+@@ -118,6 +119,7 @@ void stm32f2xx_init(
+             DeviceState **stm32_rtc,
+             uint32_t osc_freq,
+             uint32_t osc32_freq,
++            uint32_t timer_period_scale,
+             struct stm32f2xx *stm,
+             ARMCPU **cpu);
+ 
+@@ -132,5 +134,6 @@ void stm32f4xx_init(
+             DeviceState **stm32_rtc,
+             uint32_t osc_freq,
+             uint32_t osc32_freq,
++            uint32_t timer_period_scale,
+             struct stm32f4xx *stm,
+             ARMCPU **cpu);
+diff --git a/hw/arm/pebble.c b/hw/arm/pebble.c
+--- a/hw/arm/pebble.c
++++ b/hw/arm/pebble.c
+@@ -84,5 +84,6 @@ const static PblBoardConfig s_board_config_snowy_bb = {
+     },
+     .flash_size = 4096,
+     .ram_size = 256,
++    .timer_period_scale = 1,
+     .num_rows = 172,
+     .num_cols = 148,
+@@ -106,5 +107,6 @@ const static PblBoardConfig s_board_config_snowy_emery_bb = {
+     },
+     .flash_size = 4096,
+     .ram_size = 512,
++    .timer_period_scale = 1,
+     .num_rows = 228,
+     .num_cols = 200,
+@@ -128,5 +130,6 @@ const static PblBoardConfig s_board_config_s4_bb = {
+     },
+     .flash_size = 4096,
+     .ram_size = 256,
++    .timer_period_scale = 1,
+     .num_rows = 180,
+     .num_cols = 180,
+@@ -150,5 +153,6 @@ const static PblBoardConfig s_board_config_bb2_ev1_ev2 = {
+     },
+     .flash_size = 4096,
+     .ram_size = 128,
++    .timer_period_scale = 1,
+     .num_rows = 172,
+     .num_cols = 148,
+@@ -173,5 +177,6 @@ const static PblBoardConfig s_board_config_bigboard = {
+     },
+     .flash_size = 4096,
+     .ram_size = 128,
++    .timer_period_scale = 1,
+     .num_rows = 172,
+     .num_cols = 148,
+@@ -191,5 +196,6 @@ const static PblBoardConfig s_board_config_spalding_gabbro_bb = {
+     },
+     .flash_size = 4096,  /* Kbytes - larger to aid in development and debugging */
+     .ram_size = 512,  /* Kbytes */
++    .timer_period_scale = 1,
+     .num_rows = 260,
+     .num_cols = 260,
+@@ -500,5 +506,6 @@ void pebble_32f2_init(MachineState *machine,
+                    &rtc_dev,
+                    8000000, /* osc_freq */
+                    32768,   /* osc32_freq */
++                   board_config->timer_period_scale,
+                    &stm,
+                    &cpu);
+@@ -588,5 +595,6 @@ void pebble_32f439_init(MachineState *machine,
+                    &rtc_dev,
+                    8000000, /* osc_freq */
+                    32768,   /* osc32_freq */
++                   board_config->timer_period_scale,
+                    &stm,
+                    &cpu);
+diff --git a/hw/arm/pebble_silk.c b/hw/arm/pebble_silk.c
+--- a/hw/arm/pebble_silk.c
++++ b/hw/arm/pebble_silk.c
+@@ -47,5 +47,6 @@ const static PblBoardConfig s_board_config_silk_bb = {
+     },
+     .flash_size = 4096,
+     .ram_size = 256,
++    .timer_period_scale = 4096,
+     .num_rows = 172,
+     .num_cols = 148,
+@@ -80,5 +81,6 @@ void pebble_32f412_init(MachineState *machine,
+                    &rtc_dev,
+                    8000000, /* osc_freq */
+                    32768,   /* osc32_freq */
++                   board_config->timer_period_scale,
+                    &stm,
+                    &cpu);
 diff --git a/hw/arm/pebble_stm32f2xx_soc.c b/hw/arm/pebble_stm32f2xx_soc.c
-index 9f06d5d..3c1e6c7 100644
 --- a/hw/arm/pebble_stm32f2xx_soc.c
 +++ b/hw/arm/pebble_stm32f2xx_soc.c
-@@ -344,6 +344,7 @@ void stm32f2xx_init(
-         assert(i < STM32F2XX_TIM_COUNT);
+@@ -102,5 +102,6 @@ void stm32f2xx_init(
+             DeviceState **stm32_rtc,
+             uint32_t osc_freq,
+             uint32_t osc32_freq,
++            uint32_t timer_period_scale,
+             struct stm32f2xx *stm,
+             ARMCPU **cpu)
+@@ -344,5 +345,7 @@ void stm32f2xx_init(
          const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
          DeviceState *timer = qdev_new("f2xx_tim");
 +        qdev_prop_set_int32(timer, "periph", periph);
++        qdev_prop_set_uint32(timer, "period-scale", timer_period_scale);
          stm32_init_periph(timer, periph, timer_desc[i].addr,
                            qdev_get_gpio_in(armv7m_dev, timer_desc[i].irq_idx));
          stm32_timer[timer_desc[i].timer_num - 1] = (Stm32Timer *)timer;
 diff --git a/hw/arm/pebble_stm32f4xx_soc.c b/hw/arm/pebble_stm32f4xx_soc.c
-index cf97f93..8e2b2c3 100644
 --- a/hw/arm/pebble_stm32f4xx_soc.c
 +++ b/hw/arm/pebble_stm32f4xx_soc.c
-@@ -448,6 +448,7 @@ void stm32f4xx_init(
-         assert(i < STM32F4XX_TIM_COUNT);
+@@ -136,5 +136,6 @@ void stm32f4xx_init(
+             DeviceState **stm32_rtc,
+             uint32_t osc_freq,
+             uint32_t osc32_freq,
++            uint32_t timer_period_scale,
+             struct stm32f4xx *stm,
+             ARMCPU **cpu)
+@@ -448,5 +449,7 @@ void stm32f4xx_init(
          const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
          DeviceState *timer = qdev_new("f2xx_tim");
 +        qdev_prop_set_int32(timer, "periph", periph);
++        qdev_prop_set_uint32(timer, "period-scale", timer_period_scale);
          stm32_init_periph(timer, periph, timer_desc[i].addr,
                            qdev_get_gpio_in(armv7m_dev, timer_desc[i].irq_idx));
          stm32_timer[timer_desc[i].timer_num - 1] = (Stm32Timer *)timer;
 diff --git a/hw/timer/stm32_pebble_tim.c b/hw/timer/stm32_pebble_tim.c
-index 6235b12..d678820 100644
 --- a/hw/timer/stm32_pebble_tim.c
 +++ b/hw/timer/stm32_pebble_tim.c
-@@ -102,6 +102,7 @@ typedef struct f2xx_tim {
+@@ -102,6 +102,8 @@ typedef struct f2xx_tim {
      MemoryRegion iomem;
      QEMUTimer *timer;
      qemu_irq irq;
 +    stm32_periph_t periph;
++    uint32_t period_scale;
      uint32_t regs[R_TIM_MAX];
  
      qemu_irq pwm_ratio_changed;
-@@ -115,6 +116,16 @@ f2xx_tim_period(f2xx_tim *s)
+@@ -115,6 +117,16 @@ f2xx_tim_period(f2xx_tim *s)
      return 31250;
  }
  
@@ -45,13 +159,13 @@ index 6235b12..d678820 100644
 +     * TIM4 drives firmware button debounce. Scaling it makes ordinary clicks
 +     * take minutes to settle, so keep it at guest firmware timing.
 +     */
-+    return s->periph == STM32_TIM4 ? 1 : STM32_TIM_WASM_PERIOD_SCALE;
++    return s->periph == STM32_TIM4 ? 1 : s->period_scale;
 +}
 +
  static int64_t
  f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
  {
-@@ -126,7 +137,7 @@ f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
+@@ -126,7 +138,7 @@ f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
      }
      return current_time +
             f2xx_tim_period(s) * s->regs[R_TIM_ARR] *
@@ -60,12 +174,14 @@ index 6235b12..d678820 100644
  }
  
  static void
-@@ -316,8 +327,12 @@ static void
+@@ -316,8 +328,14 @@ static void
  f2xx_tim_class_init(ObjectClass *klass, const void *data)
  {
      DeviceClass *dc = DEVICE_CLASS(klass);
 +    static const Property props[] = {
 +        DEFINE_PROP_INT32("periph", f2xx_tim, periph, STM32_PERIPH_UNDEFINED),
++        DEFINE_PROP_UINT32("period-scale", f2xx_tim, period_scale,
++                           STM32_TIM_WASM_PERIOD_SCALE),
 +    };
      dc->realize = f2xx_tim_realize;
      device_class_set_legacy_reset(dc, f2xx_tim_reset);

@@ -1,0 +1,91 @@
+diff --git a/include/hw/arm/pebble.h b/include/hw/arm/pebble.h
+--- a/include/hw/arm/pebble.h
++++ b/include/hw/arm/pebble.h
+@@ -80,6 +80,7 @@ typedef struct {
+     uint32_t ram_size;
+     uint32_t timer_period_scale;
+     bool sdk_qemu_uart;
++    bool pmic_mag_i2c;
+ 
+     /* screen sizes */
+     uint32_t num_rows;
+diff --git a/hw/misc/pebble_null_i2c.c b/hw/misc/pebble_null_i2c.c
+--- a/hw/misc/pebble_null_i2c.c
++++ b/hw/misc/pebble_null_i2c.c
+@@ -84,5 +84,6 @@ static void pebble_null_i2c_reset(DeviceState *dev)
+ {
+     PebbleNullI2C *pmic = PEBBLE_NULL_I2C(dev);
++    I2CSlave *slave = I2C_SLAVE(dev);
+ 
+     memset(pmic->regs, 0, sizeof(pmic->regs));
+     pmic->pointer = 0;
+@@ -92,6 +93,12 @@ static void pebble_null_i2c_reset(DeviceState *dev)
+ 
+     pmic->regs[0x90] = 0x11; /* AS3701B chip ID */
+     pmic->regs[0x91] = 0x01; /* benign revision */
++    if (slave->address == 0x28) {
++        pmic->regs[0x00] = 0x01; /* MAX14690 PMIC WHOAMI */
++        pmic->regs[0x08] = 0x01; /* MAX14690 PMIC WHOAMI */
++    } else if (slave->address == 0x0e) {
++        pmic->regs[0x07] = 0xc4; /* MAG3110 WHOAMI */
++    }
+ }
+ 
+ static void pebble_null_i2c_class_init(ObjectClass *klass, const void *data)
+diff --git a/hw/arm/pebble.c b/hw/arm/pebble.c
+--- a/hw/arm/pebble.c
++++ b/hw/arm/pebble.c
+@@ -44,6 +44,7 @@
+ #endif
+ #include "hw/qdev-properties.h"
+ #include "hw/sysbus.h"
++#include "hw/i2c/i2c.h"
+ #include "hw/ssi/ssi.h"
+ #include "hw/block/flash.h"
+ #include "hw/loader.h"
+@@ -202,6 +203,7 @@ const static PblBoardConfig s_board_config_snowy_emery_bb = {
+     .flash_size = 4096,
+     .ram_size = 512,
+     .timer_period_scale = 1,
++    .pmic_mag_i2c = true,
+     .num_rows = 228,
+     .num_cols = 200,
+     .num_border_rows = 0,
+@@ -224,6 +226,7 @@ const static PblBoardConfig s_board_config_snowy_emery_sdk_bb = {
+     .ram_size = 512,
+     .timer_period_scale = 1,
+     .sdk_qemu_uart = true,
++    .pmic_mag_i2c = true,
+     .num_rows = 228,
+     .num_cols = 200,
+     .num_border_rows = 0,
+@@ -600,6 +603,19 @@ void pebble_set_qemu_settings(DeviceState *rtc_dev)
+     f2xx_rtc_set_extra_bkup_reg(rtc_dev, 0, flags);
+ }
+ 
++static void pebble_init_pmic_mag_i2c(struct stm32f4xx *stm)
++{
++    I2CBus *bus;
++
++    if (!stm->i2c_dev[0]) {
++        return;
++    }
++
++    bus = I2C_BUS(qdev_get_child_bus(stm->i2c_dev[0], "i2c"));
++    i2c_slave_create_simple(bus, "pebble-null-i2c", 0x28);
++    i2c_slave_create_simple(bus, "pebble-null-i2c", 0x0e);
++}
++
+ /* ====================================================================
+  * STM32F2xx-based Pebble init (aplite/tintin — bb, bb2)
+  * ==================================================================== */
+@@ -715,6 +732,9 @@ void pebble_32f439_init(MachineState *machine,
+                    &cpu);
+ 
+     pebble_set_qemu_settings(rtc_dev);
++    if (board_config->pmic_mag_i2c) {
++        pebble_init_pmic_mag_i2c(&stm);
++    }
+ 
+     /* Storage flash (NOR-flash on Snowy/Emery) - 16MB at 0x60000000.
+      * Use pflash_cfi02 (AMD/JEDEC compatible) to emulate Macronix MX29VS128FB.

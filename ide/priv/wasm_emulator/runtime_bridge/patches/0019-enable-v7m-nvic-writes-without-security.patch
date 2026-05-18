@@ -1,0 +1,87 @@
+diff --git a/patches/armv7m_nvic_v7m_enable_writes.patch b/patches/armv7m_nvic_v7m_enable_writes.patch
+new file mode 100644
+--- /dev/null
++++ b/patches/armv7m_nvic_v7m_enable_writes.patch
+@@ -0,0 +1,82 @@
++diff --git a/hw/intc/armv7m_nvic.c b/hw/intc/armv7m_nvic.c
++@@ -2214,6 +2214,8 @@
++ {
++     NVICState *s = (NVICState *)opaque;
++     uint32_t offset = addr;
+++    ARMCPU *cpu = s->cpu;
+++    bool has_security = arm_feature(&cpu->env, ARM_FEATURE_M_SECURITY);
++     unsigned i, startvec, end;
++     uint32_t val;
++ 
++@@ -2233,7 +2235,7 @@
++ 
++         for (i = 0, end = size * 8; i < end && startvec + i < s->num_irq; i++) {
++             if (s->vectors[startvec + i].enabled &&
++-                (attrs.secure || s->itns[startvec + i])) {
+++                (attrs.secure || !has_security || s->itns[startvec + i])) {
++                 val |= (1 << i);
++             }
++         }
++@@ -2246,7 +2248,7 @@
++         startvec = 8 * (offset - 0x280) + NVIC_FIRST_IRQ; /* vector # */
++         for (i = 0, end = size * 8; i < end && startvec + i < s->num_irq; i++) {
++             if (s->vectors[startvec + i].pending &&
++-                (attrs.secure || s->itns[startvec + i])) {
+++                (attrs.secure || !has_security || s->itns[startvec + i])) {
++                 val |= (1 << i);
++             }
++         }
++@@ -2262,7 +2264,7 @@
++ 
++         for (i = 0, end = size * 8; i < end && startvec + i < s->num_irq; i++) {
++             if (s->vectors[startvec + i].active &&
++-                (attrs.secure || s->itns[startvec + i])) {
+++                (attrs.secure || !has_security || s->itns[startvec + i])) {
++                 val |= (1 << i);
++             }
++         }
++@@ -2272,7 +2274,7 @@
++         startvec = offset - 0x400 + NVIC_FIRST_IRQ; /* vector # */
++ 
++         for (i = 0; i < size && startvec + i < s->num_irq; i++) {
++-            if (attrs.secure || s->itns[startvec + i]) {
+++            if (attrs.secure || !has_security || s->itns[startvec + i]) {
++                 val |= s->vectors[startvec + i].prio << (8 * i);
++             }
++         }
++@@ -2343,6 +2345,8 @@
++ {
++     NVICState *s = (NVICState *)opaque;
++     uint32_t offset = addr;
+++    ARMCPU *cpu = s->cpu;
+++    bool has_security = arm_feature(&cpu->env, ARM_FEATURE_M_SECURITY);
++     unsigned i, startvec, end;
++     unsigned setval = 0;
++ 
++@@ -2363,7 +2367,7 @@
++ 
++         for (i = 0, end = size * 8; i < end && startvec + i < s->num_irq; i++) {
++             if (value & (1 << i) &&
++-                (attrs.secure || s->itns[startvec + i])) {
+++                (attrs.secure || !has_security || s->itns[startvec + i])) {
++                 s->vectors[startvec + i].enabled = setval;
++             }
++         }
++@@ -2386,7 +2390,7 @@
++              * remains set; in that case we mustn't let it be cleared.
++              */
++             if (value & (1 << i) &&
++-                (attrs.secure || s->itns[startvec + i]) &&
+++                (attrs.secure || !has_security || s->itns[startvec + i]) &&
++                 !(setval == 0 && s->vectors[startvec + i].level &&
++                   !s->vectors[startvec + i].active)) {
++                 s->vectors[startvec + i].pending = setval;
++@@ -2400,7 +2404,7 @@
++         startvec = (offset - 0x400) + NVIC_FIRST_IRQ; /* vector # */
++ 
++         for (i = 0; i < size && startvec + i < s->num_irq; i++) {
++-            if (attrs.secure || s->itns[startvec + i]) {
+++            if (attrs.secure || !has_security || s->itns[startvec + i]) {
++                 set_prio(s, startvec + i, false, (value >> (i * 8)) & 0xff);
++             }
++         }

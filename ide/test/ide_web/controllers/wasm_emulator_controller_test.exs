@@ -118,6 +118,8 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     assert page =~ "ensureQemuBluetoothConnected"
     assert page =~ "0x07d1: \"PingPong\""
     assert page =~ "0x1a7a: \"DataLogging\""
+    assert page =~ "appRunStateStarted"
+    assert page =~ "Treating AppRunState start for ${part.kind} as final install completion"
     assert page =~
              "installAck?.cookie === cookie || (finalPart && installAck?.cookie === 0)"
 
@@ -178,7 +180,7 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     assert body["install_bridge"]["available?"] == true
   end
 
-  test "workspace emulator page is cross-origin isolated for wasm iframe", %{conn: conn} do
+  test "workspace pages are cross-origin isolated for wasm pane navigation", %{conn: conn} do
     assert {:ok, project} =
              Projects.create_project(%{
                "name" => "WasmHeaders",
@@ -191,16 +193,21 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
                "debugger_settings" => %{"emulator_mode" => "wasm"}
              })
 
-    conn = get(conn, ~p"/projects/#{project.slug}/emulator")
-    html = html_response(conn, 200)
+    editor_conn = get(conn, ~p"/projects/#{project.slug}/editor")
+    assert html_response(editor_conn, 200) =~ "Editor"
+    assert get_resp_header(editor_conn, "cross-origin-opener-policy") == ["same-origin"]
+    assert get_resp_header(editor_conn, "cross-origin-embedder-policy") == ["require-corp"]
+
+    emulator_conn = get(recycle(conn), ~p"/projects/#{project.slug}/emulator")
+    html = html_response(emulator_conn, 200)
     assert html =~ "Emulator"
     assert html =~ "data-wasm-launch"
     refute html =~ "data-wasm-stop"
     assert html =~ "data-wasm-status"
     assert html =~ "data-wasm-assets"
     assert html =~ "data-wasm-log"
-    assert get_resp_header(conn, "cross-origin-opener-policy") == ["same-origin"]
-    assert get_resp_header(conn, "cross-origin-embedder-policy") == ["require-corp"]
+    assert get_resp_header(emulator_conn, "cross-origin-opener-policy") == ["same-origin"]
+    assert get_resp_header(emulator_conn, "cross-origin-embedder-policy") == ["require-corp"]
   end
 
   test "screenshot endpoint stores a browser captured png", %{conn: conn} do

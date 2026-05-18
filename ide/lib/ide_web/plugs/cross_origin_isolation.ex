@@ -22,6 +22,10 @@ defmodule IdeWeb.Plugs.CrossOriginIsolation do
   defp isolated_path?("/api/wasm-emulator" <> _), do: true
 
   defp isolated_path?(path) when is_binary(path) do
-    String.starts_with?(path, "/projects/") and String.ends_with?(path, "/emulator")
+    String.starts_with?(path, "/projects/") and workspace_pane_path?(path)
+  end
+
+  defp workspace_pane_path?(path) do
+    Regex.match?(~r{/projects/[^/]+/(editor|resources|packages|debugger|build|publish|emulator|settings)$}, path)
   end
 end
