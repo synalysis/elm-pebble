@@ -227,18 +227,27 @@ defmodule IdeWeb.WasmEmulatorController do
           let cachedHeight = 0;
           let lastProgressStatusAt = 0;
           let watchReady = false;
+          let watchReadyProbeActive = false;
           let installActive = false;
           let qemuBluetoothConnected = false;
+          let qemuRuntimeFailed = false;
           let bootDiagnosticsTimer = null;
           let lastDebugSerialBytes = 0;
+          let firstSysReset = null;
+          const deferredDataLoggingAckSessions = new Set();
           const buttons = {back: 1 << 0, up: 1 << 1, select: 1 << 2, down: 1 << 3};
 
           function post(type, payload = {}) { parent.postMessage({source: "elm-pebble-wasm-emulator", type, ...payload}, window.location.origin); }
-          function log(message) { consoleEl.textContent = `${new Date().toLocaleTimeString()} ${message}\\n${consoleEl.textContent}`.slice(0, 50000); post("log", {message}); }
+          function log(message) { consoleEl.textContent = `${new Date().toLocaleTimeString()} ${message}\\n${consoleEl.textContent}`.slice(0, 200000); post("log", {message}); }
           function setStatus(message) { statusEl.textContent = message; post("status", {message}); }
           function setInstallProgress(label, percent) { post("progress", {label, percent}); }
           function showProgress(pct) { progressEl.style.display = "block"; progressFill.style.width = `${pct}%`; }
           function hideProgress() { progressEl.style.display = "none"; }
+          function markQemuRuntimeFailed(message) {
+            qemuRuntimeFailed = true;
+            if (bootDiagnosticsTimer) clearInterval(bootDiagnosticsTimer);
+            setStatus(`QEMU runtime failed: ${message}`);
+          }
           function setProgressStatus(message) {
             statusEl.textContent = message;
             const now = performance.now();
@@ -268,7 +277,7 @@ defmodule IdeWeb.WasmEmulatorController do
               lastDebugSerialBytes = data.length;
               const decoded = decodeDebugSerial(data);
               if (decoded.length > 0) {
-                log(`${label} decoded tail (${data.length} bytes):\n${decoded.slice(-20).join("\n")}`);
+                log(`${label} decoded tail (${data.length} bytes):\\n${decoded.slice(-120).join("\\n")}`);
               } else if (force || data.length > 0) {
                 log(`${label}: ${data.length} serial bytes captured, no printable decoded tail yet`);
               }
@@ -388,7 +397,7 @@ defmodule IdeWeb.WasmEmulatorController do
             const cpu = manifest.cpu || (platform === "aplite" ? "cortex-m3" : "cortex-m4");
             const storage = firmwareStorage(manifest);
             const storageArgs = storage === "mtdblock" ?
-              ["-mtdblock", "/firmware/qemu_spi_flash.bin"] :
+              ["-drive", "if=mtd,file=/firmware/qemu_spi_flash.bin,format=raw"] :
               ["-drive", "if=none,id=spi-flash,file=/firmware/qemu_spi_flash.bin,format=raw"];
 
             return [
@@ -425,7 +434,19 @@ defmodule IdeWeb.WasmEmulatorController do
                 noInitialRun: false,
                 arguments: qemuArgsForFirmware(manifest),
                 print: text => log(text),
-                printErr: text => { if (text && !/write 0x|read 0x|DMA:|guest_errors|unsupported syscall|^DEBUG:|^\\[fps\\]/.test(text)) log(`[err] ${text}`); },
+                printErr: text => {
+                  if (!text) return;
+                  if (/program exited|unknown type|Aborted|abort\\(/i.test(text)) markQemuRuntimeFailed(text);
+                  if (text.startsWith("DEBUG SYSRESETREQ") && !firstSysReset) {
+                    firstSysReset = text;
+                    log(`[err] FIRST ${text}`);
+                  }
+                  if (/PEBBLE_RTC_BKP read/.test(text)) return;
+                  if (/PEBBLE_QSPI read-dr/.test(text)) return;
+                  if (/PEBBLE_I2C44|PEBBLE_AS3701B/.test(text)) return;
+                  if (!/write 0x|read 0x|DMA:|guest_errors|unsupported syscall|^DEBUG:|^\\[fps\\]/.test(text)) log(`[err] ${text}`);
+                },
+                onAbort: reason => markQemuRuntimeFailed(reason || "aborted"),
                 locateFile: path => `${ASSET_BASE}${path}?v=${ASSET_VERSION}`,
                 preRun: [() => {
                   try { FS.mkdir("/firmware"); } catch (_e) {}
@@ -439,7 +460,8 @@ defmodule IdeWeb.WasmEmulatorController do
                   setStatus("QEMU runtime initialized; booting Pebble firmware...");
                   startBootDiagnostics();
                   setTimeout(pumpPhoneServices, 100);
-                  post("ready");
+                  post("runtime-ready");
+                  prepareWatchCommunication();
                 }
               };
               setStatus("Loading QEMU WASM module...");
@@ -463,6 +485,11 @@ defmodule IdeWeb.WasmEmulatorController do
             if (!bit) return;
             buttonState = pressed ? (buttonState | bit) : (buttonState & ~bit);
             if (!runtimeReady || !window.Module) return;
+            try {
+              sendQemuPacket(0x0008, new Uint8Array([buttonState & 0xff]));
+            } catch (error) {
+              log(`could not send ${name} button ${pressed ? "press" : "release"}: ${error.message}`);
+            }
             if (!buttonStateAddr && Module._pebble_button_state_addr) {
               const addr = Module._pebble_button_state_addr();
               if (addr) buttonStateAddr = addr >> 2;
@@ -545,9 +572,10 @@ defmodule IdeWeb.WasmEmulatorController do
           function qemuProtocolName(protocol) {
             return {
               0x0001: "SPP",
-              0x0002: "Button",
+              0x0002: "Tap",
               0x0003: "BluetoothConnection",
               0x0005: "Battery",
+              0x0008: "Button",
               0x0009: "TimeFormat",
               0x000a: "TimelinePeek"
             }[protocol] || "Unknown";
@@ -681,6 +709,10 @@ defmodule IdeWeb.WasmEmulatorController do
               return;
             }
 
+            if (installActive && frame.endpoint === 0xbeef) {
+              return;
+            }
+
             const extra =
               frame.endpoint === 0x1a7a ? ` ${describeDataLoggingPayload(frame.payload)}` :
               frame.endpoint === 0x0010 ? describeWatchVersionPayload(frame.payload) :
@@ -737,6 +769,36 @@ defmodule IdeWeb.WasmEmulatorController do
             controlBridge().pebbleControlSend(qemuPacket(protocol, payload));
           }
 
+          async function sendQemuPacketWhenReady(protocol, payload, timeoutMs = 5000) {
+            const startedAt = Date.now();
+            let lastError = null;
+            let loggedWait = false;
+
+            while (Date.now() - startedAt < timeoutMs) {
+              if (qemuRuntimeFailed) throw new Error("QEMU runtime exited before control bridge became ready");
+              try {
+                sendQemuPacket(protocol, payload);
+                return;
+              } catch (error) {
+                lastError = error;
+                if (!loggedWait) {
+                  log(`Waiting for QEMU control bridge before ${qemuProtocolName(protocol)}: ${error.message}`);
+                  loggedWait = true;
+                }
+                await delay(100);
+              }
+            }
+
+            throw new Error(`Timed out waiting for QEMU control bridge before ${qemuProtocolName(protocol)}: ${lastError?.message || "not ready"}`);
+          }
+
+          async function ensureQemuBluetoothConnected() {
+            if (qemuBluetoothConnected) return;
+            await sendQemuPacketWhenReady(0x0003, new Uint8Array([0x01]));
+            qemuBluetoothConnected = true;
+            log("QEMU BluetoothConnection marked connected");
+          }
+
           function enableAppLogs() {
             try {
               sendPebbleFrame(pebbleFrame(0x07d6, new Uint8Array([1])));
@@ -779,7 +841,11 @@ defmodule IdeWeb.WasmEmulatorController do
             }
 
             if (frame.endpoint === 0x1a7a && [0x01, 0x02, 0x03, 0x07].includes(frame.payload[0]) && frame.payload.length >= 2) {
-              sendPebbleFrame(pebbleFrame(0x1a7a, new Uint8Array([0x85, frame.payload[1]])));
+              if (installActive) {
+                deferredDataLoggingAckSessions.add(frame.payload[1]);
+              } else {
+                sendPebbleFrame(pebbleFrame(0x1a7a, new Uint8Array([0x85, frame.payload[1]])));
+              }
               return true;
             }
 
@@ -813,7 +879,7 @@ defmodule IdeWeb.WasmEmulatorController do
 
           function pumpPhoneServices() {
             if (!runtimeReady || !window.Module) return;
-            if (!installActive) {
+            if (!installActive && !watchReadyProbeActive) {
               try {
                 recvPebbleFrames();
               } catch (error) {
@@ -868,8 +934,29 @@ defmodule IdeWeb.WasmEmulatorController do
             return await waitForFrame(matcher, timeoutMs);
           }
 
+          async function sendAndAwaitRetry(frameFactory, matcher, timeoutMs = 10000, retryMs = 1000, label = "Pebble protocol response") {
+            const startedAt = Date.now();
+            let lastError = null;
+
+            while (Date.now() - startedAt < timeoutMs) {
+              const remaining = timeoutMs - (Date.now() - startedAt);
+              sendPebbleFrame(frameFactory());
+              try {
+                return await waitForFrame(matcher, Math.min(retryMs, remaining), label);
+              } catch (error) {
+                lastError = error;
+              }
+            }
+
+            throw lastError || new Error(`Timed out waiting for ${label}`);
+          }
+
           function delay(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
+          }
+
+          function dropDeferredDataLoggingAcks() {
+            deferredDataLoggingAckSessions.clear();
           }
 
           const PUTBYTES_CHUNK_SIZE = 200;
@@ -877,27 +964,42 @@ defmodule IdeWeb.WasmEmulatorController do
 
           async function ensureWatchReady() {
             if (watchReady) return;
+            watchReadyProbeActive = true;
             setStatus("Preparing watch protocol services...");
             setInstallProgress("Preparing watch protocol", 10);
+            try {
+              await ensureQemuBluetoothConnected();
 
-            await sendAndAwait(
-              pebbleFrame(0x0010, new Uint8Array([0x00])),
-              frame => frame.endpoint === 0x0010,
-              15000
-            );
+              await sendAndAwaitRetry(
+                () => pebbleFrame(0x0010, new Uint8Array([0x00])),
+                frame => frame.endpoint === 0x0010,
+                15000,
+                1000,
+                "WatchVersion"
+              );
 
-            if (!qemuBluetoothConnected) {
-              sendQemuPacket(0x0003, new Uint8Array([0x01]));
-              qemuBluetoothConnected = true;
+              const settleUntil = Date.now() + 1500;
+              while (Date.now() < settleUntil) {
+                recvPebbleFrames();
+                await delay(100);
+              }
+
+              watchReady = true;
+            } finally {
+              watchReadyProbeActive = false;
             }
+          }
 
-            const settleUntil = Date.now() + 1500;
-            while (Date.now() < settleUntil) {
-              recvPebbleFrames();
-              await delay(100);
-            }
-
-            watchReady = true;
+          function prepareWatchCommunication() {
+            ensureWatchReady()
+              .then(() => {
+                setStatus("Watch communication ready.");
+                post("ready");
+              })
+              .catch(error => {
+                setStatus(`Waiting for watch communication: ${error.message}`);
+                if (!qemuRuntimeFailed) setTimeout(prepareWatchCommunication, 1000);
+              });
           }
 
           async function requestAppFetch(startFrame) {
@@ -987,6 +1089,7 @@ defmodule IdeWeb.WasmEmulatorController do
               for (let index = 0; index < plan.parts.length; index += 1) {
                 await installPart(plan.parts[index], appId, index === plan.parts.length - 1);
               }
+              dropDeferredDataLoggingAcks();
               setInstallProgress("Install complete", 100);
               enableAppLogs();
               return {uuid: plan.uuid, appId, appIdSource, parts: plan.parts.map(part => part.kind)};

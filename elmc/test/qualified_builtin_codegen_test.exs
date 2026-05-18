@@ -386,11 +386,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [native_bool_maybe_body | _rest] = String.split(maybe_body, "ElmcValue *elmc_fn_", parts: 2)
 
-    assert native_bool_maybe_body =~ "if (elmc_as_bool(flag))"
+    assert native_bool_maybe_body =~ "if (flag)"
 
     [_, maybe_result_var] =
       Regex.run(
-        ~r/ElmcValue \*(tmp_\d+);\s+if \(elmc_as_bool\(flag\)\)/,
+        ~r/ElmcValue \*(tmp_\d+);\s+if \(flag\)/,
         native_bool_maybe_body
       )
 
@@ -540,7 +540,16 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
 
     main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_maybe_default_string_source())
+
+    source =
+      main_path
+      |> File.read!()
+      |> String.replace(
+        "import Json.Decode as Decode",
+        "import Dict\nimport Json.Decode as Decode"
+      )
+
+    File.write!(main_path, source <> native_maybe_default_string_source())
 
     assert {:ok, _result} =
              Elmc.compile(project_dir, %{
@@ -580,6 +589,67 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute maybe_arg_body =~ "elmc_int_zero()"
     refute maybe_arg_body =~ "elmc_maybe_with_default("
     refute maybe_arg_body =~ "elmc_string_from_int"
+
+    head_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_nativeMaybeDefaultHeadString")
+      |> List.last()
+
+    [maybe_head_body | _rest] = String.split(head_body, "ElmcValue *elmc_fn_", parts: 2)
+
+    assert maybe_head_body =~ "elmc_list_head_with_default_int(0,"
+    assert maybe_head_body =~ "elmc_string_from_native_int(native_maybe_default_"
+    refute maybe_head_body =~ "elmc_list_head("
+    refute maybe_head_body =~ "elmc_maybe_with_default_int("
+
+    dict_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_nativeMaybeDefaultDictString")
+      |> List.last()
+
+    [maybe_dict_body | _rest] = String.split(dict_body, "ElmcValue *elmc_fn_", parts: 2)
+
+    assert maybe_dict_body =~ "elmc_dict_get_with_default_int(0, key,"
+    assert maybe_dict_body =~ "elmc_string_from_native_int(native_maybe_default_"
+    refute maybe_dict_body =~ "elmc_dict_get("
+    refute maybe_dict_body =~ "elmc_maybe_with_default_int("
+  end
+
+  test "typed Bool helper arguments stay native through control flow" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/native_bool_arg_project", __DIR__)
+    out_dir = Path.expand("tmp/native_bool_arg_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> native_bool_arg_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~
+             "static ElmcValue *elmc_fn_Main_nativeBoolBranch_native(const elmc_int_t enabled, const elmc_int_t value)"
+
+    assert generated_c =~ "elmc_as_bool(args[0])"
+
+    call_body =
+      generated_c
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeBoolCall_native")
+      |> List.last()
+
+    [native_call_body | _rest] = String.split(call_body, "ElmcValue *elmc_fn_", parts: 2)
+
+    assert native_call_body =~ "elmc_fn_Main_nativeBoolBranch_native(enabled, 7)"
+    refute native_call_body =~ "elmc_new_bool(enabled)"
   end
 
   test "let Int expressions passed to native helper Int args stay unboxed" do
@@ -1438,6 +1508,15 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute generated_c =~ "elmc_fn_Main_drawCell(NULL, 0)"
     assert generated_c =~ "elmc_closure_new"
 
+    draw_cell_body =
+      generated_c
+      |> String.split("static int elmc_fn_Main_drawCell_commands_append_native")
+      |> List.last()
+      |> String.split("int elmc_fn_", parts: 2)
+      |> hd()
+
+    refute draw_cell_body =~ "if (*count >= max_cmds) return 0;"
+
     File.write!(
       Path.join(out_dir, "c/top_level_function_reference_harness.c"),
       top_level_function_reference_harness_source()
@@ -2172,6 +2251,35 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     nativeMaybeDefaultStringArg : NativeMaybeDefaultStringModel -> String
     nativeMaybeDefaultStringArg model =
         nativeStringSink (String.fromInt (Maybe.withDefault 0 model.batteryLevel))
+
+
+    nativeMaybeDefaultHeadString : List Int -> String
+    nativeMaybeDefaultHeadString values =
+        String.fromInt (Maybe.withDefault 0 (List.head values))
+
+
+    nativeMaybeDefaultDictString : Int -> Dict.Dict Int Int -> String
+    nativeMaybeDefaultDictString key values =
+        String.fromInt (Maybe.withDefault 0 (Dict.get key values))
+    """
+  end
+
+  defp native_bool_arg_source do
+    """
+
+
+    nativeBoolBranch : Bool -> Int -> String
+    nativeBoolBranch enabled value =
+        if enabled then
+            String.fromInt value
+
+        else
+            "off"
+
+
+    nativeBoolCall : Bool -> String
+    nativeBoolCall enabled =
+        nativeBoolBranch enabled 7
     """
   end
 

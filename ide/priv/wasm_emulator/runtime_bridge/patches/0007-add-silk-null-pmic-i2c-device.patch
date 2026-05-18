@@ -1,0 +1,237 @@
+diff --git a/build.sh b/build.sh
+index 0783f73..00b6d67 100755
+--- a/build.sh
++++ b/build.sh
+@@ -126,6 +126,7 @@ patch_meson "${QEMU_SRC}/hw/misc/meson.build" "stm32_pebble" \
+   'stm32_pebble_flash.c',
+   'stm32_pebble_dummy.c',
+   'stm32_pebble_i2c.c',
++  'pebble_null_i2c.c',
+   'pebble_null_input.c',
+ ))"
+ 
+diff --git a/build_wasm.sh b/build_wasm.sh
+index 3ec78f1..356c00f 100644
+--- a/build_wasm.sh
++++ b/build_wasm.sh
+@@ -151,6 +151,7 @@ patch_meson hw/misc/meson.build "stm32_pebble" \
+   '"'"'stm32_pebble_flash.c'"'"',
+   '"'"'stm32_pebble_dummy.c'"'"',
+   '"'"'stm32_pebble_i2c.c'"'"',
++  '"'"'pebble_null_i2c.c'"'"',
+   '"'"'pebble_null_input.c'"'"',
+ ))"
+ 
+diff --git a/build_wasm_jit.sh b/build_wasm_jit.sh
+index 07a93ff..f1fdce7 100755
+--- a/build_wasm_jit.sh
++++ b/build_wasm_jit.sh
+@@ -159,6 +159,7 @@ patch_meson hw/misc/meson.build "stm32_pebble" \
+   '"'"'stm32_pebble_flash.c'"'"',
+   '"'"'stm32_pebble_dummy.c'"'"',
+   '"'"'stm32_pebble_i2c.c'"'"',
++  '"'"'pebble_null_i2c.c'"'"',
+   '"'"'pebble_null_input.c'"'"',
+ ))"
+ 
+diff --git a/hw/arm/pebble_silk.c b/hw/arm/pebble_silk.c
+index ae33df5..e9a2750 100644
+--- a/hw/arm/pebble_silk.c
++++ b/hw/arm/pebble_silk.c
+@@ -21,6 +21,7 @@
+ #endif
+ #include "hw/arm/pebble.h"
+ #include "hw/ssi/ssi.h"
++#include "hw/i2c/i2c.h"
+ #include "hw/qdev-properties.h"
+ #include "system/blockdev.h"
+ #include "system/block-backend.h"
+@@ -81,6 +82,11 @@ void pebble_32f412_init(MachineState *machine,
+ 
+     pebble_set_qemu_settings(rtc_dev);
+ 
++    /* Diorite firmware probes the PMIC over I2C during early boot. Model it
++     * as a benign ACKing device until detailed PMIC registers are needed. */
++    I2CBus *pmic_bus = I2C_BUS(qdev_get_child_bus(stm.i2c_dev[2], "i2c"));
++    i2c_slave_create_simple(pmic_bus, "pebble-null-i2c", 0x40);
++
+     /* === QSPI Flash (MX25U6435F) === */
+     if (stm.qspi_dev) {
+         spi = (SSIBus *)qdev_get_child_bus(stm.qspi_dev, "ssi");
+diff --git a/hw/arm/pebble_stm32f4xx_soc.c b/hw/arm/pebble_stm32f4xx_soc.c
+index 056bf28..ac214e2 100644
+--- a/hw/arm/pebble_stm32f4xx_soc.c
++++ b/hw/arm/pebble_stm32f4xx_soc.c
+@@ -437,24 +437,24 @@ void stm32f4xx_init(
+ 
+     /* === I2C === */
+-    DeviceState *i2c1 = qdev_new("f2xx_i2c");
+-    qdev_prop_set_int32(i2c1, "periph", STM32_I2C1);
+-    stm32_init_periph(i2c1, STM32_I2C1, 0x40005400,
++    stm->i2c_dev[0] = qdev_new("f2xx_i2c");
++    qdev_prop_set_int32(stm->i2c_dev[0], "periph", STM32_I2C1);
++    stm32_init_periph(stm->i2c_dev[0], STM32_I2C1, 0x40005400,
+                       qdev_get_gpio_in(armv7m_dev, STM32_I2C1_EV_IRQ));
+-    sysbus_connect_irq(SYS_BUS_DEVICE(i2c1), 1,
++    sysbus_connect_irq(SYS_BUS_DEVICE(stm->i2c_dev[0]), 1,
+                        qdev_get_gpio_in(armv7m_dev, STM32_I2C1_ER_IRQ));
+ 
+-    DeviceState *i2c2 = qdev_new("f2xx_i2c");
+-    qdev_prop_set_int32(i2c2, "periph", STM32_I2C2);
+-    stm32_init_periph(i2c2, STM32_I2C2, 0x40005800,
++    stm->i2c_dev[1] = qdev_new("f2xx_i2c");
++    qdev_prop_set_int32(stm->i2c_dev[1], "periph", STM32_I2C2);
++    stm32_init_periph(stm->i2c_dev[1], STM32_I2C2, 0x40005800,
+                       qdev_get_gpio_in(armv7m_dev, STM32_I2C2_EV_IRQ));
+-    sysbus_connect_irq(SYS_BUS_DEVICE(i2c2), 1,
++    sysbus_connect_irq(SYS_BUS_DEVICE(stm->i2c_dev[1]), 1,
+                        qdev_get_gpio_in(armv7m_dev, STM32_I2C2_ER_IRQ));
+ 
+-    DeviceState *i2c3 = qdev_new("f2xx_i2c");
+-    qdev_prop_set_int32(i2c3, "periph", STM32_I2C3);
+-    stm32_init_periph(i2c3, STM32_I2C3, 0x40005C00,
++    stm->i2c_dev[2] = qdev_new("f2xx_i2c");
++    qdev_prop_set_int32(stm->i2c_dev[2], "periph", STM32_I2C3);
++    stm32_init_periph(stm->i2c_dev[2], STM32_I2C3, 0x40005C00,
+                       qdev_get_gpio_in(armv7m_dev, STM32_I2C3_EV_IRQ));
+-    sysbus_connect_irq(SYS_BUS_DEVICE(i2c3), 1,
++    sysbus_connect_irq(SYS_BUS_DEVICE(stm->i2c_dev[2]), 1,
+                        qdev_get_gpio_in(armv7m_dev, STM32_I2C3_ER_IRQ));
+ 
+     /* === CRC === */
+diff --git a/hw/misc/pebble_null_i2c.c b/hw/misc/pebble_null_i2c.c
+new file mode 100644
+index 0000000..86a9d6a
+--- /dev/null
++++ b/hw/misc/pebble_null_i2c.c
+@@ -0,0 +1,119 @@
++/*
++ * Pebble Null I2C Device
++ *
++ * Minimal AS3701B-like I2C slave used by Silk/Diorite firmware. It models a
++ * register pointer plus enough defaults for the PMIC driver to identify the
++ * chip and report early transactions while Diorite support is still being
++ * brought up.
++ *
++ * Copyright (c) 2026 Core Devices LLC
++ * SPDX-License-Identifier: GPL-2.0-or-later
++ */
++
++#include "qemu/osdep.h"
++#include "hw/i2c/i2c.h"
++#include "qom/object.h"
++
++#define TYPE_PEBBLE_NULL_I2C "pebble-null-i2c"
++OBJECT_DECLARE_SIMPLE_TYPE(PebbleNullI2C, PEBBLE_NULL_I2C)
++
++struct PebbleNullI2C {
++    I2CSlave parent_obj;
++
++    uint8_t regs[256];
++    uint8_t pointer;
++    bool expecting_register;
++};
++
++static bool pebble_null_i2c_match_and_add(I2CSlave *candidate,
++                                          uint8_t address,
++                                          bool broadcast,
++                                          I2CNodeList *current_devs)
++{
++    if (!broadcast && address != candidate->address) {
++        return false;
++    }
++
++    I2CNode *node = g_new(struct I2CNode, 1);
++
++    node->elt = candidate;
++    QLIST_INSERT_HEAD(current_devs, node, next);
++    return true;
++}
++
++static int pebble_null_i2c_event(I2CSlave *s, enum i2c_event event)
++{
++    PebbleNullI2C *pmic = PEBBLE_NULL_I2C(s);
++
++    if (event == I2C_START_SEND) {
++        pmic->expecting_register = true;
++    }
++
++    return 0;
++}
++
++static int pebble_null_i2c_send(I2CSlave *s, uint8_t data)
++{
++    PebbleNullI2C *pmic = PEBBLE_NULL_I2C(s);
++
++    if (pmic->expecting_register) {
++        pmic->pointer = data;
++        pmic->expecting_register = false;
++        fprintf(stderr, "PEBBLE_AS3701B reg=0x%02x\n", data);
++    } else {
++        fprintf(stderr, "PEBBLE_AS3701B write reg=0x%02x val=0x%02x\n",
++                pmic->pointer, data);
++        pmic->regs[pmic->pointer++] = data;
++    }
++
++    return 0;
++}
++
++static uint8_t pebble_null_i2c_recv(I2CSlave *s)
++{
++    PebbleNullI2C *pmic = PEBBLE_NULL_I2C(s);
++
++    uint8_t value = pmic->regs[pmic->pointer++];
++
++    fprintf(stderr, "PEBBLE_AS3701B read reg=0x%02x val=0x%02x\n",
++            (uint8_t)(pmic->pointer - 1), value);
++    return value;
++}
++
++static void pebble_null_i2c_reset(DeviceState *dev)
++{
++    PebbleNullI2C *pmic = PEBBLE_NULL_I2C(dev);
++
++    memset(pmic->regs, 0, sizeof(pmic->regs));
++    pmic->pointer = 0;
++    pmic->expecting_register = true;
++
++    pmic->regs[0x90] = 0x11; /* AS3701B chip ID */
++    pmic->regs[0x91] = 0x01; /* benign revision */
++}
++
++static void pebble_null_i2c_class_init(ObjectClass *klass, const void *data)
++{
++    I2CSlaveClass *sc = I2C_SLAVE_CLASS(klass);
++    DeviceClass *dc = DEVICE_CLASS(klass);
++
++    device_class_set_legacy_reset(dc, pebble_null_i2c_reset);
++    sc->match_and_add = pebble_null_i2c_match_and_add;
++    sc->event = pebble_null_i2c_event;
++    sc->send = pebble_null_i2c_send;
++    sc->recv = pebble_null_i2c_recv;
++}
++
++static const TypeInfo pebble_null_i2c_info = {
++    .name          = TYPE_PEBBLE_NULL_I2C,
++    .parent        = TYPE_I2C_SLAVE,
++    .instance_size = sizeof(PebbleNullI2C),
++    .class_init    = pebble_null_i2c_class_init,
++};
++
++static void pebble_null_i2c_register_types(void)
++{
++    type_register_static(&pebble_null_i2c_info);
++}
++
++type_init(pebble_null_i2c_register_types)
+diff --git a/include/hw/arm/pebble.h b/include/hw/arm/pebble.h
+index 2b61c44..d354a40 100644
+--- a/include/hw/arm/pebble.h
++++ b/include/hw/arm/pebble.h
+@@ -97,5 +97,6 @@ struct stm32f2xx {
+ 
+ struct stm32f4xx {
+     DeviceState *spi_dev[STM32F4XX_SPI_COUNT];
++    DeviceState *i2c_dev[3];
+     DeviceState *qspi_dev;
+ };

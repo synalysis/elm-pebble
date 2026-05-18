@@ -349,7 +349,7 @@ defmodule Ide.ProjectsTest do
   test "watchface templates seed watch-only starter apps" do
     for {template, expected_line} <- [
           {"watchface-digital", "timeString"},
-          {"watchface-analog", "handEnd"}
+          {"watchface-analog", "handX"}
         ] do
       slug =
         "watchface-template-#{String.replace(template, "-", "_")}-#{System.unique_integer([:positive])}"

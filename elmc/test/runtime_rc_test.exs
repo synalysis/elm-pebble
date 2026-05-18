@@ -19,7 +19,7 @@ defmodule Elmc.RuntimeRCTest do
       #include <stdio.h>
 
       int main(void) {
-        ElmcValue *v = elmc_new_int(42);
+        ElmcValue *v = elmc_new_int(420);
         elmc_retain(v);
         elmc_release(v);
         elmc_release(v);

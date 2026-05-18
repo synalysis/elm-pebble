@@ -552,7 +552,7 @@ defmodule Ide.DebuggerTest do
     assert is_binary(get_in(st, [:watch, :model, "runtime_view_tree_sha256"]))
     assert String.length(get_in(st, [:watch, :model, "runtime_view_tree_sha256"])) == 64
     assert get_in(st, [:watch, :model, "elm_introspect", "module"]) == "Snap"
-    assert get_in(st, [:watch, :view_tree, "type"]) == "root"
+    assert get_in(st, [:watch, :view_tree, "type"]) == "Window"
 
     assert Enum.any?(st.events, &(&1.type == "debugger.elm_introspect"))
     assert Enum.any?(st.events, &(&1.type == "debugger.runtime_exec"))
@@ -600,7 +600,7 @@ defmodule Ide.DebuggerTest do
              })
 
     assert get_in(st, [:companion, :model, "elm_introspect", "module"]) == "ProtoSnap"
-    assert get_in(st, [:companion, :view_tree, "type"]) == "root"
+    assert get_in(st, [:companion, :view_tree, "type"]) == "CompanionRoot"
     refute get_in(st, [:watch, :model, "elm_introspect"])
   end
 
@@ -631,7 +631,7 @@ defmodule Ide.DebuggerTest do
              })
 
     assert get_in(st, [:companion, :model, "elm_introspect", "module"]) == "PhoneSnap"
-    assert get_in(st, [:companion, :view_tree, "type"]) == "root"
+    assert get_in(st, [:companion, :view_tree, "type"]) == "CompanionRoot"
   end
 
   test "snapshot trims event list while preserving sequence" do

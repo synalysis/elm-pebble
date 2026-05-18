@@ -1,0 +1,81 @@
+diff --git a/hw/block/pebble_mx25u.c b/hw/block/pebble_mx25u.c
+--- a/hw/block/pebble_mx25u.c
++++ b/hw/block/pebble_mx25u.c
+@@ -230,11 +230,15 @@ mx25u_decode_new_cmd(Flash *s, uint32_t value)
+ 
+     case READ:
+-    case FAST_READ:
+-    case QREAD:
+         s->cmd_bytes = 3;
+         s->pos = 0;
+         s->state = STATE_COLLECT_CMD_DATA;
+         break;
++    case FAST_READ:
++    case QREAD:
++        s->cmd_bytes = 4; /* 3-byte address plus 8 dummy clocks */
++        s->pos = 0;
++        s->state = STATE_COLLECT_CMD_DATA;
++        break;
+ 
+     case READ_ID:
+     case READ_QID:
+@@ -288,8 +293,8 @@ static void
+ mx25u_handle_cmd_data(Flash *s)
+ {
+-    s->current_address = (s->cmd_data[2] << 16) |
++    s->current_address = (s->cmd_data[0] << 16) |
+                          (s->cmd_data[1] << 8) |
+-                          s->cmd_data[0];
++                          s->cmd_data[2];
+     s->state = STATE_IDLE;
+ 
+     switch (s->cmd_in_progress) {
+diff --git a/hw/ssi/stm32_pebble_qspi.c b/hw/ssi/stm32_pebble_qspi.c
+--- a/hw/ssi/stm32_pebble_qspi.c
++++ b/hw/ssi/stm32_pebble_qspi.c
+@@ -61,5 +61,7 @@
+ #define CCR_ADMODE_MASK    (0x3 << 10)
+ #define CCR_ADSIZE_MASK    (0x3 << 12)
++#define CCR_DCYC_MASK      (0x1f << 18)
++#define CCR_DCYC_SHIFT     18
+ #define CCR_MODE_MASK      (0x3 << 26)
+ 
+ #define CCR_IMODE_NONE     (0x0 << 8)
+@@ -160,6 +162,17 @@ stm32f412_qspi_xfer_address(Stm32f412Qspi *s)
+     }
+ }
+ 
++static void
++stm32f412_qspi_xfer_dummy(Stm32f412Qspi *s)
++{
++    uint8_t cycles = (s->regs[R_CCR] & CCR_DCYC_MASK) >> CCR_DCYC_SHIFT;
++    uint8_t bytes = (cycles + 7) / 8;
++
++    for (uint8_t i = 0; i < bytes; ++i) {
++        ssi_transfer(s->qspi, 0);
++    }
++}
++
+ static void
+ stm32f412_qspi_start_transaction(Stm32f412Qspi *s)
+ {
+@@ -177,6 +191,8 @@ stm32f412_qspi_start_transaction(Stm32f412Qspi *s)
+     if ((s->regs[R_CCR] & CCR_ADMODE_MASK) != CCR_ADMODE_NONE) {
+         stm32f412_qspi_xfer_address(s);
+     }
++
++    stm32f412_qspi_xfer_dummy(s);
+ }
+ 
+ static uint64_t
+@@ -249,8 +265,8 @@ stm32f412_CCR_write(Stm32f412Qspi *s, uint32_t CCR, unsigned size)
+         if ((CCR & CCR_IMODE_MASK) != CCR_IMODE_NONE) {
+             DB_PRINT_L(1, "Command 0x%x to tx %" PRIi64 " B",
+                         CCR & CCR_INSTR_MASK, s->tx_remaining);
+-            QSPI_TRACE("cmd=0x%02x mode=0x%08x remaining=%" PRIi64,
+-                       CCR & CCR_INSTR_MASK, CCR & CCR_MODE_MASK,
++            QSPI_TRACE("cmd=0x%02x ccr=0x%08x mode=0x%08x remaining=%" PRIi64,
++                       CCR & CCR_INSTR_MASK, CCR, CCR & CCR_MODE_MASK,
+                        s->tx_remaining);
+         }
+     }

@@ -223,6 +223,14 @@ defmodule Elmc.Backend.Pebble do
     #endif
     #endif
 
+    #ifndef ELMC_PEBBLE_SCENE_CACHE_ENABLED
+    #if defined(PBL_PLATFORM_APLITE)
+    #define ELMC_PEBBLE_SCENE_CACHE_ENABLED 0
+    #else
+    #define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1
+    #endif
+    #endif
+
     typedef struct {
       unsigned char *bytes;
       int byte_count;
@@ -491,6 +499,23 @@ defmodule Elmc.Backend.Pebble do
     #define ELMC_PEBBLE_GENERATED_TRACE_ENTER(name) do { } while (0)
     #define ELMC_PEBBLE_GENERATED_TRACE_EXIT(name) do { } while (0)
     #define ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT(name, value) return (value)
+    #endif
+
+    #ifndef ELMC_PEBBLE_HEAP_LOG
+    #define ELMC_PEBBLE_HEAP_LOG 0
+    #endif
+
+    #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
+    static void elmc_pebble_heap_log(const char *label) {
+      APP_LOG(
+        APP_LOG_LEVEL_INFO,
+        "ELMC heap %s used=%lu free=%lu",
+        label ? label : "?",
+        (unsigned long)heap_bytes_used(),
+        (unsigned long)heap_bytes_free());
+    }
+    #else
+    #define elmc_pebble_heap_log(label) do { (void)(label); } while (0)
     #endif
 
     #ifndef ELMC_AGENT_PROBES
@@ -1543,10 +1568,24 @@ defmodule Elmc.Backend.Pebble do
       return (active & flag) != 0;
     }
 
+    static void elmc_pebble_prepare_dispatch(ElmcPebbleApp *app) {
+      if (!app) return;
+      elmc_pebble_heap_log("dispatch:prepare:before");
+      elmc_pebble_clear_view_cache(app);
+    #if !ELMC_PEBBLE_DIRTY_REGION_ENABLED
+      elmc_pebble_scene_buffer_free(&app->scene);
+      app->scene.command_count = 0;
+      app->scene.hash = 0;
+    #endif
+      elmc_pebble_mark_scene_dirty(app);
+      elmc_pebble_heap_log("dispatch:prepare:after");
+    }
+
     static int elmc_pebble_finish_dispatch(ElmcPebbleApp *app, int rc) {
       if (rc == 0) {
         elmc_pebble_mark_scene_dirty(app);
       }
+      elmc_pebble_heap_log("dispatch:after");
       return rc;
     }
 
@@ -1586,8 +1625,10 @@ defmodule Elmc.Backend.Pebble do
       app->dirty_rect_valid = 0;
       app->dirty_rect_full = 1;
     #endif
+      elmc_pebble_heap_log("init:before");
       int rc = elmc_worker_init(&app->worker, flags);
       if (rc == 0) app->initialized = 1;
+      elmc_pebble_heap_log("init:after");
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_init_with_mode", rc);
     }
 
@@ -1596,6 +1637,7 @@ defmodule Elmc.Backend.Pebble do
       if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_int", -1);
       ElmcValue *msg = elmc_new_int(tag);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_int", -2);
+      elmc_pebble_prepare_dispatch(app);
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_int", elmc_pebble_finish_dispatch(app, rc));
@@ -1617,6 +1659,7 @@ defmodule Elmc.Backend.Pebble do
       elmc_release(payload_value);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_value", -2);
 
+      elmc_pebble_prepare_dispatch(app);
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_value", elmc_pebble_finish_dispatch(app, rc));
@@ -1638,6 +1681,7 @@ defmodule Elmc.Backend.Pebble do
       elmc_release(payload_value);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_bool", -2);
 
+      elmc_pebble_prepare_dispatch(app);
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_bool", elmc_pebble_finish_dispatch(app, rc));
@@ -1659,6 +1703,7 @@ defmodule Elmc.Backend.Pebble do
       elmc_release(payload_value);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_string", -2);
 
+      elmc_pebble_prepare_dispatch(app);
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_string", elmc_pebble_finish_dispatch(app, rc));
@@ -1675,6 +1720,7 @@ defmodule Elmc.Backend.Pebble do
       elmc_release(tag_value);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -2);
 
+      elmc_pebble_prepare_dispatch(app);
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", elmc_pebble_finish_dispatch(app, rc));
@@ -1773,6 +1819,7 @@ defmodule Elmc.Backend.Pebble do
       elmc_release(payload_value);
       if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
 
+      elmc_pebble_prepare_dispatch(app);
       int rc = elmc_worker_dispatch(&app->worker, msg);
       elmc_release(msg);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", elmc_pebble_finish_dispatch(app, rc));
@@ -1997,6 +2044,9 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_ensure_scene(ElmcPebbleApp *app) {
       ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_ensure_scene");
       if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -1);
+    #if !ELMC_PEBBLE_SCENE_CACHE_ENABLED
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -2);
+    #endif
       if (!app->scene.dirty) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", 0);
       elmc_pebble_prepare_scene_rebuild(app);
       elmc_pebble_scene_reset(app);
@@ -2112,6 +2162,10 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip) {
       ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_scene_commands_from");
       if (!app || !out_cmds || max_cmds <= 0 || skip < 0) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", -1);
+    #if !ELMC_PEBBLE_SCENE_CACHE_ENABLED
+      int direct_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0);
+      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_from", direct_count);
+    #endif
       int rc = elmc_pebble_ensure_scene(app);
       if (rc == -2) {
         int fallback_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, 0);
@@ -2139,6 +2193,9 @@ defmodule Elmc.Backend.Pebble do
     static int elmc_pebble_view_commands_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe) {
       if (!app || !app->initialized || !out_cmds || max_cmds <= 0) return -1;
       if (skip < 0) return -1;
+    #if !ELMC_PEBBLE_SCENE_CACHE_ENABLED
+      return elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, skip, dedupe);
+    #endif
       int rc = elmc_pebble_ensure_scene(app);
       if (rc != 0) return rc;
       if (skip == 0 && dedupe && app->scene.command_count < max_cmds) {
@@ -2170,11 +2227,13 @@ defmodule Elmc.Backend.Pebble do
             // #region agent log
             elmc_agent_scene_probe(0xED996100);
             // #endregion
+            elmc_pebble_heap_log("view:direct:start");
             ElmcValue *direct_model = elmc_worker_model(&app->worker);
             if (!direct_model) return -2;
             ElmcValue *direct_args[] = { direct_model };
             int direct_count = #{entry_view_commands_from}(direct_args, 1, out_cmds, max_cmds, skip);
             elmc_release(direct_model);
+            elmc_pebble_heap_log("view:direct:end");
             if (direct_count < 0) return direct_count;
             // #region agent log
             elmc_agent_scene_probe(direct_count == 0 ? 0xED996120 : 0xED996121);
@@ -2230,7 +2289,9 @@ defmodule Elmc.Backend.Pebble do
               // #region agent log
               elmc_agent_scene_probe(0xED996190);
               // #endregion
+              elmc_pebble_heap_log("view:start");
               result = elmc_fn_#{String.replace(entry_module, ".", "_")}_view(args, 1);
+              elmc_pebble_heap_log("view:end");
               // #region agent log
               elmc_agent_scene_probe(0xED996191);
               // #endregion

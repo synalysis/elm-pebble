@@ -83,33 +83,51 @@ view model =
         hourIndex =
             modBy 12 (model.hour + (model.minute // 30))
 
-        ( minuteX, minuteY ) =
-            handEnd centerX centerY minuteRadius minuteIndex
+        minuteX =
+            handX centerX minuteRadius minuteIndex
 
-        ( hourX, hourY ) =
-            handEnd centerX centerY hourRadius hourIndex
+        minuteY =
+            handY centerY minuteRadius minuteIndex
 
-        markerTop =
-            handEnd centerX centerY radius 0
+        hourX =
+            handX centerX hourRadius hourIndex
 
-        markerRight =
-            handEnd centerX centerY radius 3
+        hourY =
+            handY centerY hourRadius hourIndex
 
-        markerBottom =
-            handEnd centerX centerY radius 6
+        markerTopX =
+            handX centerX radius 0
 
-        markerLeft =
-            handEnd centerX centerY radius 9
+        markerTopY =
+            handY centerY radius 0
+
+        markerRightX =
+            handX centerX radius 3
+
+        markerRightY =
+            handY centerY radius 3
+
+        markerBottomX =
+            handX centerX radius 6
+
+        markerBottomY =
+            handY centerY radius 6
+
+        markerLeftX =
+            handX centerX radius 9
+
+        markerLeftY =
+            handY centerY radius 9
     in
     PebbleUi.windowStack
         [ PebbleUi.window 1
             [ PebbleUi.canvasLayer 1
                 [ PebbleUi.clear PebbleColor.white
                 , PebbleUi.circle { x = centerX, y = centerY } radius PebbleColor.black
-                , markerPixel markerTop
-                , markerPixel markerRight
-                , markerPixel markerBottom
-                , markerPixel markerLeft
+                , markerPixel markerTopX markerTopY
+                , markerPixel markerRightX markerRightY
+                , markerPixel markerBottomX markerBottomY
+                , markerPixel markerLeftX markerLeftY
                 , PebbleUi.line { x = centerX, y = centerY } { x = hourX, y = hourY } PebbleColor.black
                 , PebbleUi.line { x = centerX, y = centerY } { x = minuteX, y = minuteY } PebbleColor.black
                 , PebbleUi.fillCircle { x = centerX, y = centerY } 4 PebbleColor.black
@@ -118,60 +136,99 @@ view model =
         ]
 
 
-markerPixel : ( Int, Int ) -> PebbleUi.RenderOp
-markerPixel ( x, y ) =
+markerPixel : Int -> Int -> PebbleUi.RenderOp
+markerPixel x y =
     PebbleUi.pixel { x = x, y = y } PebbleColor.black
 
 
-handEnd : Int -> Int -> Int -> Int -> ( Int, Int )
-handEnd centerX centerY handRadius index =
-    let
-        ( ux, uy ) =
-            unit12 index
-    in
-    ( centerX + ((ux * handRadius) // 1000)
-    , centerY + ((uy * handRadius) // 1000)
-    )
+handX : Int -> Int -> Int -> Int
+handX centerX handRadius index =
+    centerX + ((unit12X index * handRadius) // 1000)
 
 
-unit12 : Int -> ( Int, Int )
-unit12 index =
+handY : Int -> Int -> Int -> Int
+handY centerY handRadius index =
+    centerY + ((unit12Y index * handRadius) // 1000)
+
+
+unit12X : Int -> Int
+unit12X index =
     case modBy 12 index of
         0 ->
-            ( 0, -1000 )
+            0
 
         1 ->
-            ( 500, -866 )
+            500
 
         2 ->
-            ( 866, -500 )
+            866
 
         3 ->
-            ( 1000, 0 )
+            1000
 
         4 ->
-            ( 866, 500 )
+            866
 
         5 ->
-            ( 500, 866 )
+            500
 
         6 ->
-            ( 0, 1000 )
+            0
 
         7 ->
-            ( -500, 866 )
+            -500
 
         8 ->
-            ( -866, 500 )
+            -866
 
         9 ->
-            ( -1000, 0 )
+            -1000
 
         10 ->
-            ( -866, -500 )
+            -866
 
         _ ->
-            ( -500, -866 )
+            -500
+
+
+unit12Y : Int -> Int
+unit12Y index =
+    case modBy 12 index of
+        0 ->
+            -1000
+
+        1 ->
+            -866
+
+        2 ->
+            -500
+
+        3 ->
+            0
+
+        4 ->
+            500
+
+        5 ->
+            866
+
+        6 ->
+            1000
+
+        7 ->
+            866
+
+        8 ->
+            500
+
+        9 ->
+            0
+
+        10 ->
+            -500
+
+        _ ->
+            -866
 
 
 main : Program Decode.Value Model Msg

@@ -1,9 +1,17 @@
 diff --git a/build.sh b/build.sh
-index 2e83807..35616b9 100755
+index 2e83807..f7c6da2 100755
 --- a/build.sh
 +++ b/build.sh
-@@ -22,7 +22,7 @@ cp "${SCRIPT_DIR}/include/hw/arm/pebble.h" "${QEMU_SRC}/include/hw/arm/"
+@@ -16,13 +16,14 @@ fi
+ echo "=== Overlaying Pebble files onto QEMU 10.0 ==="
+ 
+ # Copy include files
+-mkdir -p "${QEMU_SRC}/include/hw/arm"
++mkdir -p "${QEMU_SRC}/include/hw/arm" "${QEMU_SRC}/include/hw/misc"
+ cp "${SCRIPT_DIR}/include/hw/arm/stm32_common.h" "${QEMU_SRC}/include/hw/arm/"
+ cp "${SCRIPT_DIR}/include/hw/arm/pebble.h" "${QEMU_SRC}/include/hw/arm/"
  cp "${SCRIPT_DIR}/include/hw/arm/stm32_clktree.h" "${QEMU_SRC}/include/hw/arm/"
++cp "${SCRIPT_DIR}/include/hw/misc/pebble_null_input.h" "${QEMU_SRC}/include/hw/misc/"
  
  # Copy hw source files (including headers in source dirs)
 -for dir in arm misc char ssi timer dma display gpio; do
@@ -11,7 +19,41 @@ index 2e83807..35616b9 100755
      if [ -d "${SCRIPT_DIR}/hw/${dir}" ]; then
          mkdir -p "${QEMU_SRC}/hw/${dir}"
          for f in "${SCRIPT_DIR}/hw/${dir}"/*; do
-@@ -108,16 +108,26 @@ patch_meson "${QEMU_SRC}/hw/timer/meson.build" "stm32_pebble" \
+@@ -35,8 +36,15 @@ done
+ echo "  Applying patches..."
+ for p in "${SCRIPT_DIR}/patches/"*.patch; do
+     [ -f "$p" ] || continue
+-    # --forward skips already-applied patches; || true so we don't fail
+-    patch -d "${QEMU_SRC}" -p1 --forward < "$p" || true
++    if patch -d "${QEMU_SRC}" -p1 --forward < "$p"; then
++        continue
++    fi
++    if patch -d "${QEMU_SRC}" -p1 --reverse --dry-run < "$p" >/dev/null 2>&1; then
++        echo "  Patch already applied: $p"
++        continue
++    fi
++    echo "Patch failed: $p" >&2
++    exit 2
+ done
+ 
+ # === Patch Kconfig ===
+@@ -82,6 +90,7 @@ patch_meson "${QEMU_SRC}/hw/arm/meson.build" "CONFIG_PEBBLE" \
+   'pebble_silk.c',
+   'pebble_control.c',
+   'pebble_stm32f4xx_soc.c',
++  'pebble_stm32f2xx_soc.c',
+ ))"
+ 
+ # hw/misc/meson.build - RCC, clktree, common, EXTI, SYSCFG, ADC, PWR, CRC, flash, dummy, I2C
+@@ -98,6 +107,7 @@ patch_meson "${QEMU_SRC}/hw/misc/meson.build" "stm32_pebble" \
+   'stm32_pebble_flash.c',
+   'stm32_pebble_dummy.c',
+   'stm32_pebble_i2c.c',
++  'pebble_null_input.c',
+ ))"
+ 
+ # hw/timer/meson.build - timers AND RTC (RTC is in timer dir)
+@@ -108,16 +118,26 @@ patch_meson "${QEMU_SRC}/hw/timer/meson.build" "stm32_pebble" \
  ))"
  
  # hw/ssi/meson.build
@@ -43,11 +85,19 @@ index 2e83807..35616b9 100755
  # hw/gpio/meson.build
  patch_meson "${QEMU_SRC}/hw/gpio/meson.build" "stm32_pebble" \
 diff --git a/build_wasm.sh b/build_wasm.sh
-index 5c98a0d..10f01d7 100644
+index 5c98a0d..47de822 100644
 --- a/build_wasm.sh
 +++ b/build_wasm.sh
-@@ -53,7 +53,7 @@ cp /pebble/include/hw/arm/pebble.h include/hw/arm/
+@@ -47,13 +47,14 @@ cp -a /qemu-src /qemu-rw
+ cd /qemu-rw
+ 
+ # Copy Pebble include files
+-mkdir -p include/hw/arm
++mkdir -p include/hw/arm include/hw/misc
+ cp /pebble/include/hw/arm/stm32_common.h include/hw/arm/
+ cp /pebble/include/hw/arm/pebble.h include/hw/arm/
  cp /pebble/include/hw/arm/stm32_clktree.h include/hw/arm/
++cp /pebble/include/hw/misc/pebble_null_input.h include/hw/misc/
  
  # Copy Pebble hw source files
 -for dir in arm misc char ssi timer dma display gpio; do
@@ -55,8 +105,20 @@ index 5c98a0d..10f01d7 100644
      if [ -d "/pebble/hw/${dir}" ]; then
          mkdir -p "hw/${dir}"
          for f in /pebble/hw/${dir}/*; do
-@@ -69,6 +69,12 @@ for p in /pebble/patches/*.patch; do
-     patch -p1 --forward < "$p" || true
+@@ -66,9 +67,23 @@ done
+ echo "  Applying patches..."
+ for p in /pebble/patches/*.patch; do
+     [ -f "$p" ] || continue
+-    patch -p1 --forward < "$p" || true
++    if patch -p1 --forward < "$p"; then
++        continue
++    fi
++    if patch -p1 --reverse --dry-run < "$p" >/dev/null 2>&1; then
++        echo "  Patch already applied: $p"
++        continue
++    fi
++    echo "Patch failed: $p" >&2
++    exit 2
  done
  
 +# Verify critical storage flash patch
@@ -68,7 +130,23 @@ index 5c98a0d..10f01d7 100644
  # Patch Kconfig
  if ! grep -q "CONFIG_PEBBLE" hw/arm/Kconfig; then
      echo "  Patching hw/arm/Kconfig..."
-@@ -134,16 +140,26 @@ patch_meson hw/timer/meson.build "stm32_pebble" \
+@@ -108,6 +123,7 @@ patch_meson hw/arm/meson.build "CONFIG_PEBBLE" \
+   '"'"'pebble_silk.c'"'"',
+   '"'"'pebble_control.c'"'"',
+   '"'"'pebble_stm32f4xx_soc.c'"'"',
++  '"'"'pebble_stm32f2xx_soc.c'"'"',
+ ))"
+ 
+ # hw/misc/meson.build
+@@ -124,6 +140,7 @@ patch_meson hw/misc/meson.build "stm32_pebble" \
+   '"'"'stm32_pebble_flash.c'"'"',
+   '"'"'stm32_pebble_dummy.c'"'"',
+   '"'"'stm32_pebble_i2c.c'"'"',
++  '"'"'pebble_null_input.c'"'"',
+ ))"
+ 
+ # hw/timer/meson.build
+@@ -134,16 +151,26 @@ patch_meson hw/timer/meson.build "stm32_pebble" \
  ))"
  
  # hw/ssi/meson.build
@@ -99,7 +177,7 @@ index 5c98a0d..10f01d7 100644
  
  # hw/gpio/meson.build
  patch_meson hw/gpio/meson.build "stm32_pebble" \
-@@ -186,7 +202,7 @@ emconfigure /qemu-rw/configure \
+@@ -186,7 +213,7 @@ emconfigure /qemu-rw/configure \
      --disable-docs \
      --disable-pie \
      --extra-cflags="-DSTM32_UART_NO_BAUD_DELAY -DTCI_INSTRUMENT -flto -msimd128" \
@@ -109,11 +187,19 @@ index 5c98a0d..10f01d7 100644
  # Build — Emscripten outputs .js extension, so target is qemu-system-arm.js
  ninja -j$(nproc) qemu-system-arm.js 2>&1
 diff --git a/build_wasm_jit.sh b/build_wasm_jit.sh
-index b43422e..58e2d21 100755
+index b43422e..df9bba0 100755
 --- a/build_wasm_jit.sh
 +++ b/build_wasm_jit.sh
-@@ -54,7 +54,7 @@ cp /pebble/include/hw/arm/pebble.h include/hw/arm/
+@@ -48,13 +48,14 @@ cp -a /qemu-src /qemu-rw
+ cd /qemu-rw
+ 
+ # Copy Pebble include files
+-mkdir -p include/hw/arm
++mkdir -p include/hw/arm include/hw/misc
+ cp /pebble/include/hw/arm/stm32_common.h include/hw/arm/
+ cp /pebble/include/hw/arm/pebble.h include/hw/arm/
  cp /pebble/include/hw/arm/stm32_clktree.h include/hw/arm/
++cp /pebble/include/hw/misc/pebble_null_input.h include/hw/misc/
  
  # Copy Pebble hw source files
 -for dir in arm misc char ssi timer dma display gpio; do
@@ -121,7 +207,40 @@ index b43422e..58e2d21 100755
      if [ -d "/pebble/hw/${dir}" ]; then
          mkdir -p "hw/${dir}"
          for f in /pebble/hw/${dir}/*; do
-@@ -148,16 +148,26 @@ patch_meson hw/timer/meson.build "stm32_pebble" \
+@@ -80,7 +81,15 @@ find hw/ include/hw/ \( -name "*.c" -o -name "*.h" \) -exec sed -i \
+ echo "  Applying patches..."
+ for p in /pebble/patches/*.patch; do
+     [ -f "$p" ] || continue
+-    patch -p1 --forward < "$p" || true
++    if patch -p1 --forward < "$p"; then
++        continue
++    fi
++    if patch -p1 --reverse --dry-run < "$p" >/dev/null 2>&1; then
++        echo "  Patch already applied: $p"
++        continue
++    fi
++    echo "Patch failed: $p" >&2
++    exit 2
+ done
+ 
+ # Patch Kconfig
+@@ -122,6 +131,7 @@ patch_meson hw/arm/meson.build "CONFIG_PEBBLE" \
+   '"'"'pebble_silk.c'"'"',
+   '"'"'pebble_control.c'"'"',
+   '"'"'pebble_stm32f4xx_soc.c'"'"',
++  '"'"'pebble_stm32f2xx_soc.c'"'"',
+ ))"
+ 
+ # hw/misc/meson.build
+@@ -138,6 +148,7 @@ patch_meson hw/misc/meson.build "stm32_pebble" \
+   '"'"'stm32_pebble_flash.c'"'"',
+   '"'"'stm32_pebble_dummy.c'"'"',
+   '"'"'stm32_pebble_i2c.c'"'"',
++  '"'"'pebble_null_input.c'"'"',
+ ))"
+ 
+ # hw/timer/meson.build
+@@ -148,16 +159,26 @@ patch_meson hw/timer/meson.build "stm32_pebble" \
  ))"
  
  # hw/ssi/meson.build
@@ -152,6 +271,293 @@ index b43422e..58e2d21 100755
  
  # hw/gpio/meson.build
  patch_meson hw/gpio/meson.build "stm32_pebble" \
+diff --git a/hw/arm/pebble.c b/hw/arm/pebble.c
+index 85d5a1e..d3e8c97 100644
+--- a/hw/arm/pebble.c
++++ b/hw/arm/pebble.c
+@@ -45,9 +45,11 @@
+ #include "hw/ssi/ssi.h"
+ #include "hw/block/flash.h"
+ #include "hw/loader.h"
++#include "system/address-spaces.h"
+ #include "hw/arm/boot.h"
+ #include "hw/arm/stm32_common.h"
+ #include "hw/arm/pebble.h"
++#include "hw/misc/pebble_null_input.h"
+ #include "pebble_control.h"
+ #include "ui/console.h"
+ #include "ui/input.h"
+@@ -134,6 +136,69 @@ const static PblBoardConfig s_board_config_s4_bb = {
+     .round_mask = true
+ };
+ 
++const static PblBoardConfig s_board_config_bb2_ev1_ev2 = {
++    .dbgserial_uart_index = 2,       /* USART3 */
++    .pebble_control_uart_index = 1,  /* USART2 */
++    .button_map = {
++        {STM32_GPIOC_INDEX, 3, false},   /* back */
++        {STM32_GPIOA_INDEX, 2, false},   /* up */
++        {STM32_GPIOC_INDEX, 6, false},   /* select */
++        {STM32_GPIOA_INDEX, 1, false},   /* down */
++    },
++    .flash_size = 4096,
++    .ram_size = 128,
++    .num_rows = 172,
++    .num_cols = 148,
++    .num_border_rows = 2,
++    .num_border_cols = 2,
++    .row_major = false,
++    .row_inverted = false,
++    .col_inverted = false,
++    .round_mask = false
++};
++
++const static PblBoardConfig s_board_config_bigboard = {
++    .dbgserial_uart_index = 2,       /* USART3 */
++    .pebble_control_uart_index = 1,  /* USART2 */
++    .button_map = {
++        {STM32_GPIOA_INDEX, 2, false}, /* back */
++        {STM32_GPIOA_INDEX, 1, false}, /* up */
++        {STM32_GPIOA_INDEX, 3, false}, /* select */
++        {STM32_GPIOC_INDEX, 9, false}, /* down */
++    },
++    .flash_size = 4096,
++    .ram_size = 128,
++    .num_rows = 172,
++    .num_cols = 148,
++    .num_border_rows = 2,
++    .num_border_cols = 2,
++    .row_major = false,
++    .row_inverted = false,
++    .col_inverted = false,
++    .round_mask = false
++};
++
++const static PblBoardConfig s_board_config_spalding_gabbro_bb = {
++    .dbgserial_uart_index = 2,       // USART3
++    .pebble_control_uart_index = 1,  // USART2
++    .button_map = {
++        {STM32_GPIOG_INDEX, 4, false}, // back
++        {STM32_GPIOG_INDEX, 3, false}, // up
++        {STM32_GPIOG_INDEX, 1, false}, // select
++        {STM32_GPIOG_INDEX, 2, false}, // down
++    },
++    .flash_size = 4096,  /* Kbytes - larger to aid in development and debugging */
++    .ram_size = 512,  /* Kbytes */
++    .num_rows = 260,
++    .num_cols = 260,
++    .num_border_rows = 0,
++    .num_border_cols = 0,
++    .row_major = true,
++    .row_inverted = false,
++    .col_inverted = false,
++    .round_mask = true
++};
++
+ /* ====================================================================
+  * Button handling
+  * ==================================================================== */
+@@ -298,6 +363,7 @@ void pebble_init_buttons(Stm32Gpio *gpio[], const PblButtonMap *map)
+         }
+     }
+     s_buttons_initialized = true;
++    pebble_set_button_state(0);
+     s_button_wakeup = qdev_get_gpio_in((DeviceState *)gpio[STM32_GPIOA_INDEX],
+                                         0);
+     QemuInputHandlerState *ihs =
+@@ -409,6 +475,88 @@ void pebble_set_qemu_settings(DeviceState *rtc_dev)
+     f2xx_rtc_set_extra_bkup_reg(rtc_dev, 0, flags);
+ }
+ 
++/* ====================================================================
++ * STM32F2xx-based Pebble init (aplite/tintin — bb, bb2)
++ * ==================================================================== */
++void pebble_32f2_init(MachineState *machine,
++                       const PblBoardConfig *board_config)
++{
++    Stm32Gpio *gpio[STM32F2XX_GPIO_COUNT];
++    Stm32Uart *uart[STM32F2XX_UART_COUNT];
++    Stm32Timer *timer[STM32F2XX_TIM_COUNT];
++    DeviceState *rtc_dev;
++    SSIBus *spi;
++    struct stm32f2xx stm;
++    ARMCPU *cpu;
++
++    stm32f2xx_init(board_config->flash_size,
++                   board_config->ram_size,
++                   machine->kernel_filename,
++                   gpio,
++                   uart,
++                   timer,
++                   &rtc_dev,
++                   8000000, /* osc_freq */
++                   32768,   /* osc32_freq */
++                   &stm,
++                   &cpu);
++
++    pebble_set_qemu_settings(rtc_dev);
++
++    /* SPI flash (n25q032a11 on SPI1, CS via GPIO A pin 4) */
++    spi = (SSIBus *)qdev_get_child_bus(stm.spi_dev[0], "ssi");
++    DeviceState *spi_flash = qdev_new("n25q032a11");
++    DriveInfo *dinfo = drive_get(IF_MTD, 0, 0);
++    if (dinfo) {
++        qdev_prop_set_drive(spi_flash, "drive", blk_by_legacy_dinfo(dinfo));
++    }
++    if (spi) {
++        ssi_realize_and_unref(spi_flash, spi, &error_fatal);
++    }
++    qemu_irq cs = qdev_get_gpio_in_named(spi_flash, SSI_GPIO_CS, 0);
++    qdev_connect_gpio_out((DeviceState *)gpio[STM32_GPIOA_INDEX], 4, cs);
++
++    /* Display (sm-lcd on SPI2) */
++    spi = (SSIBus *)qdev_get_child_bus(stm.spi_dev[1], "ssi");
++    DeviceState *display_dev = qdev_new("sm-lcd");
++    qdev_prop_set_bit(display_dev, "rotate_display", true);
++    if (spi) {
++        ssi_realize_and_unref(display_dev, spi, &error_fatal);
++    }
++
++    qemu_irq backlight_enable = qdev_get_gpio_in_named(display_dev,
++                                                        "backlight_enable", 0);
++    qdev_connect_gpio_out_named((DeviceState *)gpio[STM32_GPIOB_INDEX],
++                                "af", 5, backlight_enable);
++
++    qemu_irq backlight_level = qdev_get_gpio_in_named(display_dev,
++                                                       "backlight_level", 0);
++    qdev_connect_gpio_out_named((DeviceState *)timer[2],
++                                "pwm_ratio_changed", 0, backlight_level);
++
++    /* Connect UARTs */
++    pebble_connect_uarts(uart, board_config);
++
++    /* Init buttons */
++    pebble_init_buttons(gpio, board_config->button_map);
++
++    /* Board device (vibrate fan-out) */
++    qemu_irq display_vibe = qdev_get_gpio_in_named(display_dev,
++                                                     "vibe_ctl", 0);
++    DeviceState *board = pebble_init_board(gpio, display_vibe);
++
++    qemu_irq board_vibe_in = qdev_get_gpio_in_named(board,
++                                                      "pebble_board_vibe_in",
++                                                      0);
++    qdev_connect_gpio_out((DeviceState *)gpio[STM32_GPIOB_INDEX], 0,
++                          board_vibe_in);
++
++    /* No-op absolute-pointer handler: stops the UI from grabbing the host
++     * cursor on click for these non-touch boards. */
++    qdev_realize_and_unref(qdev_new(TYPE_PEBBLE_NULL_INPUT), NULL,
++                           &error_fatal);
++}
++
+ /* ====================================================================
+  * STM32F439-based Pebble init (snowy, emery, chalk/s4)
+  * ==================================================================== */
+@@ -440,16 +588,15 @@ void pebble_32f439_init(MachineState *machine,
+ 
+     /* Storage flash (NOR-flash on Snowy/Emery) - 16MB at 0x60000000.
+      * Use pflash_cfi02 (AMD/JEDEC compatible) to emulate Macronix MX29VS128FB.
+-     * Pass via: -drive if=none,id=spi-flash,file=firmware/qemu_spi_flash.bin,format=raw
++     * Pass via: -drive if=none,id=spi-flash,file=qemu_spi_flash.bin,format=raw
+      */
+     {
+         const uint32_t flash_size_bytes = 16 * 1024 * 1024;
+-        const uint32_t sector_size = 128 * 1024;
++        const uint32_t sector_size = 32 * 1024;
+         BlockBackend *blk = blk_by_name("spi-flash");
+         if (!blk) {
+-            fprintf(stderr, "WARNING: pflash drive 'spi-flash' not found, flash will be empty\n");
+-        } else {
+-            fprintf(stderr, "DEBUG: pflash drive 'spi-flash' found\n");
++            fprintf(stderr, "WARNING: pflash drive 'spi-flash' not found, "
++                            "flash will be empty\n");
+         }
+         pflash_cfi02_register(0x60000000,
+                               "pebble.spi_flash",
+@@ -467,6 +614,7 @@ void pebble_32f439_init(MachineState *machine,
+                               0);     /* big_endian = false */
+     }
+ 
++
+     /* === Display === */
+     spi = (SSIBus *)qdev_get_child_bus(stm.spi_dev[5], "ssi");
+     DeviceState *display_dev = qdev_new("pebble-snowy-display");
+@@ -540,6 +688,11 @@ void pebble_32f439_init(MachineState *machine,
+                                                       0);
+     qdev_connect_gpio_out((DeviceState *)gpio[STM32_GPIOF_INDEX], 4,
+                           board_vibe_in);
++
++    /* No-op absolute-pointer handler: stops the UI from grabbing the host
++     * cursor on click for these non-touch boards. */
++    qdev_realize_and_unref(qdev_new(TYPE_PEBBLE_NULL_INPUT), NULL,
++                           &error_fatal);
+ }
+ 
+ /* ====================================================================
+@@ -604,3 +757,62 @@ static void pebble_s4_bb_machine_init(MachineClass *mc)
+ }
+ 
+ DEFINE_MACHINE_ARM("pebble-s4-bb", pebble_s4_bb_machine_init)
++
++static void pebble_spalding_gabbro_init(MachineState *machine)
++{
++    pebble_32f439_init(machine, &s_board_config_spalding_gabbro_bb);
++}
++
++static void pebble_spalding_gabbro_machine_init(MachineClass *mc)
++{
++    static const char * const valid_cpu_types[] = {
++        ARM_CPU_TYPE_NAME("cortex-m4"),
++        NULL
++    };
++    mc->desc = "Pebble smartwatch (spalding, but gabbro)";
++    mc->init = pebble_spalding_gabbro_init;
++    mc->valid_cpu_types = valid_cpu_types;
++    mc->ignore_memory_transaction_failures = true;
++}
++
++DEFINE_MACHINE_ARM("pebble-spalding-gabbro-bb", pebble_spalding_gabbro_machine_init)
++
++/* --- Aplite (STM32F2xx) machines --- */
++
++static void pebble_bb2_init(MachineState *machine)
++{
++    pebble_32f2_init(machine, &s_board_config_bb2_ev1_ev2);
++}
++
++static void pebble_bb2_machine_init(MachineClass *mc)
++{
++    static const char * const valid_cpu_types[] = {
++        ARM_CPU_TYPE_NAME("cortex-m3"),
++        NULL
++    };
++    mc->desc = "Pebble smartwatch (bb2/ev1/ev2)";
++    mc->init = pebble_bb2_init;
++    mc->valid_cpu_types = valid_cpu_types;
++    mc->ignore_memory_transaction_failures = true;
++}
++
++DEFINE_MACHINE_ARM("pebble-bb2", pebble_bb2_machine_init)
++
++static void pebble_bb_init(MachineState *machine)
++{
++    pebble_32f2_init(machine, &s_board_config_bigboard);
++}
++
++static void pebble_bb_machine_init(MachineClass *mc)
++{
++    static const char * const valid_cpu_types[] = {
++        ARM_CPU_TYPE_NAME("cortex-m3"),
++        NULL
++    };
++    mc->desc = "Pebble smartwatch (bb)";
++    mc->init = pebble_bb_init;
++    mc->valid_cpu_types = valid_cpu_types;
++    mc->ignore_memory_transaction_failures = true;
++}
++
++DEFINE_MACHINE_ARM("pebble-bb", pebble_bb_machine_init)
 diff --git a/hw/arm/pebble_silk.c b/hw/arm/pebble_silk.c
 index dc7c130..7e4a354 100644
 --- a/hw/arm/pebble_silk.c
@@ -178,7 +584,7 @@ index dc7c130..7e4a354 100644
  #include "hw/boards.h"
  #if __has_include("hw/arm/machines-qom.h")
  #include "hw/arm/machines-qom.h"
-@@ -12,6 +22,10 @@
+@@ -12,6 +22,11 @@
  #define DEFINE_MACHINE_ARM DEFINE_MACHINE
  #endif
  #include "hw/arm/pebble.h"
@@ -186,10 +592,11 @@ index dc7c130..7e4a354 100644
 +#include "hw/qdev-properties.h"
 +#include "system/blockdev.h"
 +#include "system/block-backend.h"
++#include "system/address-spaces.h"
  #include "target/arm/cpu-qom.h"
  #include "qemu/error-report.h"
  
-@@ -44,8 +58,85 @@ const static PblBoardConfig s_board_config_silk_bb = {
+@@ -44,8 +59,88 @@ const static PblBoardConfig s_board_config_silk_bb = {
  void pebble_32f412_init(MachineState *machine,
                          const PblBoardConfig *board_config)
  {
@@ -235,6 +642,9 @@ index dc7c130..7e4a354 100644
 +                                                     SSI_GPIO_CS, 0);
 +        qdev_connect_gpio_out_named(stm.qspi_dev, "qspi-gpio-cs", 0,
 +                                    flash_cs);
++        /* QSPI memory-mapped mode exposes external flash at 0x90000000. */
++        memory_region_add_subregion(get_system_memory(), 0x90000000,
++                                    mx25u_get_mmap(flash_dev));
 +    }
 +
 +    /* === Display (SM-LCD on SPI2) === */
@@ -285,6 +695,428 @@ index dc7c130..7e4a354 100644
  }
  
  DEFINE_MACHINE_ARM("pebble-silk-bb", pebble_silk_bb_machine_init)
+diff --git a/hw/arm/pebble_stm32f2xx_soc.c b/hw/arm/pebble_stm32f2xx_soc.c
+new file mode 100644
+index 0000000..1d95e74
+--- /dev/null
++++ b/hw/arm/pebble_stm32f2xx_soc.c
+@@ -0,0 +1,416 @@
++/*
++ * STM32F2xx SoC initialization for Pebble smartwatch (aplite/tintin)
++ *
++ * Ported from QEMU 2.5.0-pebble8 stm32f2xx.c to QEMU 10.x APIs.
++ * Uses ARMv7MState for CPU/NVIC/SysTick and creates Pebble's custom
++ * STM32 peripheral models procedurally.
++ *
++ * Copyright (C) 2010 Andre Beckus
++ * Copyright (c) 2013-2016 Pebble Technology
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ */
++
++#include "qemu/osdep.h"
++#include "qapi/error.h"
++#include "system/address-spaces.h"
++#include "hw/arm/armv7m.h"
++#include "hw/arm/boot.h"
++#include "hw/arm/stm32_common.h"
++#include "hw/arm/pebble.h"
++#include "hw/boards.h"
++#include "hw/loader.h"
++#include "hw/misc/unimp.h"
++#include "hw/qdev-properties.h"
++#include "hw/qdev-clock.h"
++#include "hw/ssi/ssi.h"
++#include "hw/sysbus.h"
++#include "hw/block/flash.h"
++#include "qemu/log.h"
++#include "qemu/error-report.h"
++#include "system/system.h"
++#include "system/block-backend.h"
++#include "system/blockdev.h"
++#include "system/runstate.h"
++#include "system/reset.h"
++#include "exec/cpu-common.h"
++#include "target/arm/cpu-qom.h"
++#include "target/arm/cpu.h"
++
++/* SYSCLK frequency (120MHz for STM32F2xx) */
++#define SYSCLK_FRQ 120000000ULL
++
++#define FLASH_BASE_ADDRESS   0x08000000
++#define SRAM_BASE_ADDRESS    0x20000000
++
++static const char *stm32f2xx_periph_name_arr[] = {
++    ENUM_STRING(STM32_UART1),
++    ENUM_STRING(STM32_UART2),
++    ENUM_STRING(STM32_UART3),
++    ENUM_STRING(STM32_UART4),
++    ENUM_STRING(STM32_UART5),
++    ENUM_STRING(STM32_UART6),
++    ENUM_STRING(STM32_SPI1),
++    ENUM_STRING(STM32_SPI2),
++    ENUM_STRING(STM32_SPI3),
++    ENUM_STRING(STM32_I2C1),
++    ENUM_STRING(STM32_I2C2),
++    ENUM_STRING(STM32_I2C3),
++    ENUM_STRING(STM32_TIM1),
++    ENUM_STRING(STM32_TIM2),
++    ENUM_STRING(STM32_TIM3),
++    ENUM_STRING(STM32_TIM4),
++    ENUM_STRING(STM32_TIM5),
++    ENUM_STRING(STM32_TIM6),
++    ENUM_STRING(STM32_TIM7),
++    ENUM_STRING(STM32_TIM8),
++    ENUM_STRING(STM32_TIM9),
++    ENUM_STRING(STM32_TIM10),
++    ENUM_STRING(STM32_TIM11),
++    ENUM_STRING(STM32_TIM12),
++    ENUM_STRING(STM32_TIM13),
++    ENUM_STRING(STM32_TIM14),
++    ENUM_STRING(STM32_GPIOA),
++    ENUM_STRING(STM32_GPIOB),
++    ENUM_STRING(STM32_GPIOC),
++    ENUM_STRING(STM32_GPIOD),
++    ENUM_STRING(STM32_GPIOE),
++    ENUM_STRING(STM32_GPIOF),
++    ENUM_STRING(STM32_GPIOG),
++    ENUM_STRING(STM32_GPIOH),
++    ENUM_STRING(STM32_GPIOI),
++    ENUM_STRING(STM32_PERIPH_COUNT),
++};
++
++static void do_sys_reset(void *opaque, int n, int level)
++{
++    if (level) {
++        qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
++    }
++}
++
++void stm32f2xx_init(
++            ram_addr_t flash_size,        /* in KBytes */
++            ram_addr_t ram_size,          /* in KBytes */
++            const char *kernel_filename,
++            Stm32Gpio **stm32_gpio,
++            Stm32Uart **stm32_uart,
++            Stm32Timer **stm32_timer,
++            DeviceState **stm32_rtc,
++            uint32_t osc_freq,
++            uint32_t osc32_freq,
++            struct stm32f2xx *stm,
++            ARMCPU **cpu)
++{
++    MemoryRegion *system_memory = get_system_memory();
++    DeviceState *armv7m_dev;
++    int i;
++    Error *err = NULL;
++
++    /*
++     * Create ARMv7M container (CPU + NVIC + SysTick)
++     */
++    DeviceState *armv7m_wrapper = qdev_new(TYPE_ARMV7M);
++    object_property_add_child(OBJECT(qdev_get_machine()), "armv7m",
++                              OBJECT(armv7m_wrapper));
++
++    /* Flash memory region at 0x08000000 */
++    MemoryRegion *flash = g_new(MemoryRegion, 1);
++    memory_region_init_ram(flash, NULL, "stm32f2xx.flash",
++                           flash_size * 1024, &err);
++    if (err) {
++        error_report_err(err);
++        exit(1);
++    }
++    memory_region_add_subregion(system_memory, FLASH_BASE_ADDRESS, flash);
++
++    /* Flash alias at 0x00000000 */
++    MemoryRegion *flash_alias = g_new(MemoryRegion, 1);
++    memory_region_init_alias(flash_alias, NULL, "stm32f2xx.flash.alias",
++                             flash, 0, flash_size * 1024);
++    memory_region_add_subregion(system_memory, 0, flash_alias);
++
++    /* SRAM at 0x20000000 */
++    MemoryRegion *sram = g_new(MemoryRegion, 1);
++    memory_region_init_ram(sram, NULL, "stm32f2xx.sram",
++                           ram_size * 1024, &err);
++    if (err) {
++        error_report_err(err);
++        exit(1);
++    }
++    memory_region_add_subregion(system_memory, SRAM_BASE_ADDRESS, sram);
++
++    /* No CCM on STM32F2xx (unlike F4xx) */
++
++    /* Create sysclk and refclk */
++    Clock *sysclk = clock_new(OBJECT(qdev_get_machine()), "SYSCLK");
++    clock_set_hz(sysclk, SYSCLK_FRQ);
++
++    Clock *refclk = clock_new(OBJECT(qdev_get_machine()), "REFCLK");
++    clock_set_mul_div(refclk, 8, 1);
++    clock_set_source(refclk, sysclk);
++
++    /* Configure ARMv7M — cortex-m3 for STM32F2xx */
++    qdev_prop_set_uint32(armv7m_wrapper, "num-irq", STM32_MAX_IRQ);
++    qdev_prop_set_uint8(armv7m_wrapper, "num-prio-bits", 4);
++    qdev_prop_set_string(armv7m_wrapper, "cpu-type",
++                         ARM_CPU_TYPE_NAME("cortex-m3"));
++    qdev_prop_set_bit(armv7m_wrapper, "enable-bitband", true);
++    qdev_connect_clock_in(armv7m_wrapper, "cpuclk", sysclk);
++    qdev_connect_clock_in(armv7m_wrapper, "refclk", refclk);
++    object_property_set_link(OBJECT(armv7m_wrapper), "memory",
++                             OBJECT(system_memory), &error_abort);
++
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(armv7m_wrapper), &error_fatal);
++
++    armv7m_dev = armv7m_wrapper;
++
++    /* Get ARMCPU for callers that need it */
++    *cpu = ARM_CPU(first_cpu);
++
++    /* Connect SYSRESETREQ */
++    qdev_connect_gpio_out_named(armv7m_dev, "SYSRESETREQ", 0,
++                                qemu_allocate_irq(&do_sys_reset, NULL, 0));
++
++    /* Load firmware into flash memory */
++    if (kernel_filename) {
++        void *flash_buf = memory_region_get_ram_ptr(flash);
++        ssize_t image_size = load_image_size(kernel_filename, flash_buf,
++                                              flash_size * 1024);
++        if (image_size < 0) {
++            error_report("Could not load kernel '%s'", kernel_filename);
++            exit(1);
++        }
++        uint32_t *vt = (uint32_t *)flash_buf;
++        fprintf(stderr, "DEBUG: Loaded %zd bytes into flash at %p\n",
++                image_size, flash_buf);
++        fprintf(stderr, "DEBUG: Vector table: SP=0x%08x PC=0x%08x\n",
++                vt[0], vt[1]);
++    }
++
++    armv7m_load_kernel(*cpu, kernel_filename,
++                       FLASH_BASE_ADDRESS, flash_size * 1024);
++
++    Object *stm32_container = object_new("container");
++    object_property_add_child(OBJECT(qdev_get_machine()), "stm32",
++                              stm32_container);
++
++    /* === RCC === */
++    DeviceState *rcc_dev = qdev_new("stm32f2xx_rcc");
++    qdev_prop_set_uint32(rcc_dev, "osc_freq", osc_freq);
++    qdev_prop_set_uint32(rcc_dev, "osc32_freq", osc32_freq);
++    object_property_add_child(stm32_container, "rcc", OBJECT(rcc_dev));
++    stm32_init_periph(rcc_dev, STM32_RCC_PERIPH, 0x40023800,
++                      qdev_get_gpio_in(armv7m_dev, STM32_RCC_IRQ));
++
++    /* === GPIOs (9 banks: A-I) === */
++    DeviceState **gpio_dev = g_malloc0(sizeof(DeviceState *) *
++                                       STM32F2XX_GPIO_COUNT);
++    for (i = 0; i < STM32F2XX_GPIO_COUNT; i++) {
++        stm32_periph_t periph = STM32_GPIOA + i;
++        gpio_dev[i] = qdev_new("stm32f2xx_gpio");
++        qdev_prop_set_int32(gpio_dev[i], "periph", periph);
++        qdev_prop_set_uint32(gpio_dev[i], "idr-mask", 0);
++        stm32_init_periph(gpio_dev[i], periph,
++                          0x40020000 + (i * 0x400), NULL);
++        stm32_gpio[i] = (Stm32Gpio *)gpio_dev[i];
++    }
++
++    /* === EXTI === */
++    DeviceState *exti_dev = qdev_new("stm32-exti");
++    stm32_exti_set_gpio_array(STM32_EXTI(exti_dev), (stm32f2xx_gpio **)gpio_dev);
++    stm32_init_periph(exti_dev, STM32_EXTI_PERIPH, 0x40013C00, NULL);
++    SysBusDevice *exti_busdev = SYS_BUS_DEVICE(exti_dev);
++
++    /* EXTI -> NVIC IRQ connections */
++    sysbus_connect_irq(exti_busdev, 0,
++                       qdev_get_gpio_in(armv7m_dev, STM32_EXTI0_IRQ));
++    sysbus_connect_irq(exti_busdev, 1,
++                       qdev_get_gpio_in(armv7m_dev, STM32_EXTI1_IRQ));
++    sysbus_connect_irq(exti_busdev, 2,
++                       qdev_get_gpio_in(armv7m_dev, STM32_EXTI2_IRQ));
++    sysbus_connect_irq(exti_busdev, 3,
++                       qdev_get_gpio_in(armv7m_dev, STM32_EXTI3_IRQ));
++    sysbus_connect_irq(exti_busdev, 4,
++                       qdev_get_gpio_in(armv7m_dev, STM32_EXTI4_IRQ));
++    sysbus_connect_irq(exti_busdev, 5,
++                       qdev_get_gpio_in(armv7m_dev, STM32_EXTI9_5_IRQ));
++    sysbus_connect_irq(exti_busdev, 6,
++                       qdev_get_gpio_in(armv7m_dev, STM32_EXTI15_10_IRQ));
++    sysbus_connect_irq(exti_busdev, 7,
++                       qdev_get_gpio_in(armv7m_dev, STM32_PVD_IRQ));
++    sysbus_connect_irq(exti_busdev, 8,
++                       qdev_get_gpio_in(armv7m_dev, STM32_RTCAlarm_IRQ));
++    sysbus_connect_irq(exti_busdev, 9,
++                       qdev_get_gpio_in(armv7m_dev, STM32_OTG_FS_WKUP_IRQ));
++    sysbus_connect_irq(exti_busdev, 10,
++                       qdev_get_gpio_in(armv7m_dev, STM32_ETH_WKUP_IRQ));
++    sysbus_connect_irq(exti_busdev, 11,
++                       qdev_get_gpio_in(armv7m_dev, STM32_OTG_FS_WKUP_IRQ));
++    sysbus_connect_irq(exti_busdev, 12,
++                       qdev_get_gpio_in(armv7m_dev, STM32_TAMP_STAMP_IRQ));
++    sysbus_connect_irq(exti_busdev, 13,
++                       qdev_get_gpio_in(armv7m_dev, STM32_RTC_WKUP_IRQ));
++
++    /* === SYSCFG === */
++    DeviceState *syscfg_dev = qdev_new("stm32f2xx_syscfg");
++    stm32_syscfg_set_links(syscfg_dev, (Stm32Rcc *)rcc_dev, STM32_EXTI(exti_dev));
++    stm32_init_periph(syscfg_dev, STM32_SYSCFG, 0x40013800, NULL);
++
++    /* === UARTs (6 on F2xx) === */
++    struct {
++        uint32_t addr;
++        uint8_t irq_idx;
++    } const uart_desc[] = {
++        {0x40011000, STM32_UART1_IRQ},
++        {0x40004400, STM32_UART2_IRQ},
++        {0x40004800, STM32_UART3_IRQ},
++        {0x40004C00, STM32_UART4_IRQ},
++        {0x40005000, STM32_UART5_IRQ},
++        {0x40011400, STM32_UART6_IRQ},
++    };
++    for (i = 0; i < ARRAY_LENGTH(uart_desc); ++i) {
++        assert(i < STM32F2XX_UART_COUNT);
++        const stm32_periph_t periph = STM32_UART1 + i;
++        DeviceState *uart_dev = qdev_new("stm32-uart");
++        qdev_prop_set_int32(uart_dev, "periph", periph);
++        stm32_init_periph(uart_dev, periph, uart_desc[i].addr,
++                          qdev_get_gpio_in(armv7m_dev, uart_desc[i].irq_idx));
++        stm32_uart[i] = (Stm32Uart *)uart_dev;
++    }
++
++    /* === SPI (3 on F2xx) === */
++    struct {
++        uint32_t addr;
++        uint8_t irq_idx;
++    } const spi_desc[] = {
++        {0x40013000, STM32_SPI1_IRQ},
++        {0x40003800, STM32_SPI2_IRQ},
++        {0x40003C00, STM32_SPI3_IRQ},
++    };
++    for (i = 0; i < ARRAY_LENGTH(spi_desc); ++i) {
++        assert(i < STM32F2XX_SPI_COUNT);
++        const stm32_periph_t periph = STM32_SPI1 + i;
++        stm->spi_dev[i] = qdev_new("stm32f2xx_spi");
++        qdev_prop_set_int32(stm->spi_dev[i], "periph", periph);
++        stm32_init_periph(stm->spi_dev[i], periph, spi_desc[i].addr,
++                          qdev_get_gpio_in(armv7m_dev, spi_desc[i].irq_idx));
++    }
++
++    /* === ADC === */
++    DeviceState *adc_dev = qdev_new("stm32f2xx_adc");
++    stm32_init_periph(adc_dev, STM32_ADC1, 0x40012000, NULL);
++
++    /* === RTC === */
++    DeviceState *rtc_dev = qdev_new("f2xx_rtc");
++    *stm32_rtc = rtc_dev;
++    stm32_init_periph(rtc_dev, STM32_RTC, 0x40002800, NULL);
++    /* Alarm A */
++    sysbus_connect_irq(SYS_BUS_DEVICE(rtc_dev), 0,
++                       qdev_get_gpio_in(exti_dev, 17));
++    /* Alarm B */
++    sysbus_connect_irq(SYS_BUS_DEVICE(rtc_dev), 1,
++                       qdev_get_gpio_in(exti_dev, 17));
++    /* Wake up timer */
++    sysbus_connect_irq(SYS_BUS_DEVICE(rtc_dev), 2,
++                       qdev_get_gpio_in(exti_dev, 22));
++
++    /* === PWR === */
++    DeviceState *pwr_dev = qdev_new("f2xx_pwr");
++    stm32_init_periph(pwr_dev, STM32_PWR, 0x40007000, NULL);
++
++    /* === Timers === */
++    struct {
++        uint8_t timer_num;
++        uint32_t addr;
++        uint8_t irq_idx;
++    } const timer_desc[] = {
++        {2,  0x40000000, STM32_TIM2_IRQ},
++        {3,  0x40000400, STM32_TIM3_IRQ},
++        {4,  0x40000800, STM32_TIM4_IRQ},
++        {5,  0x40000C00, STM32_TIM5_IRQ},
++        {6,  0x40001000, STM32_TIM6_IRQ},
++        {7,  0x40001400, STM32_TIM7_IRQ},
++        {9,  0x40014000, STM32_TIM1_BRK_TIM9_IRQ},
++        {10, 0x40014400, STM32_TIM1_UP_TIM10_IRQ},
++        {11, 0x40014800, STM32_TIM1_TRG_COM_TIM11_IRQ},
++        {12, 0x40001800, STM32_TIM8_BRK_TIM12_IRQ},
++        {13, 0x40001C00, STM32_TIM8_UP_TIM13_IRQ},
++        {14, 0x40002000, STM32_TIM8_TRG_COMM_TIM14_IRQ},
++    };
++    for (i = 0; i < ARRAY_LENGTH(timer_desc); ++i) {
++        assert(i < STM32F2XX_TIM_COUNT);
++        const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
++        DeviceState *timer = qdev_new("f2xx_tim");
++        stm32_init_periph(timer, periph, timer_desc[i].addr,
++                          qdev_get_gpio_in(armv7m_dev, timer_desc[i].irq_idx));
++        stm32_timer[timer_desc[i].timer_num - 1] = (Stm32Timer *)timer;
++    }
++
++    /* === I2C === */
++    DeviceState *i2c1 = qdev_new("f2xx_i2c");
++    qdev_prop_set_int32(i2c1, "periph", STM32_I2C1);
++    stm32_init_periph(i2c1, STM32_I2C1, 0x40005400,
++                      qdev_get_gpio_in(armv7m_dev, STM32_I2C1_EV_IRQ));
++    sysbus_connect_irq(SYS_BUS_DEVICE(i2c1), 1,
++                       qdev_get_gpio_in(armv7m_dev, STM32_I2C1_ER_IRQ));
++
++    DeviceState *i2c2 = qdev_new("f2xx_i2c");
++    qdev_prop_set_int32(i2c2, "periph", STM32_I2C2);
++    stm32_init_periph(i2c2, STM32_I2C2, 0x40005800,
++                      qdev_get_gpio_in(armv7m_dev, STM32_I2C2_EV_IRQ));
++    sysbus_connect_irq(SYS_BUS_DEVICE(i2c2), 1,
++                       qdev_get_gpio_in(armv7m_dev, STM32_I2C2_ER_IRQ));
++
++    DeviceState *i2c3 = qdev_new("f2xx_i2c");
++    qdev_prop_set_int32(i2c3, "periph", STM32_I2C3);
++    stm32_init_periph(i2c3, STM32_I2C3, 0x40005C00,
++                      qdev_get_gpio_in(armv7m_dev, STM32_I2C3_EV_IRQ));
++    sysbus_connect_irq(SYS_BUS_DEVICE(i2c3), 1,
++                       qdev_get_gpio_in(armv7m_dev, STM32_I2C3_ER_IRQ));
++
++    /* === CRC === */
++    DeviceState *crc = qdev_new("f2xx_crc");
++    stm32_init_periph(crc, STM32_CRC, 0x40023000, NULL);
++
++    /* === DMA === */
++    static const uint8_t dma1_irqs[8] = {
++        STM32_DMA1_STREAM0_IRQ, STM32_DMA1_STREAM1_IRQ,
++        STM32_DMA1_STREAM2_IRQ, STM32_DMA1_STREAM3_IRQ,
++        STM32_DMA1_STREAM4_IRQ, STM32_DMA1_STREAM5_IRQ,
++        STM32_DMA1_STREAM6_IRQ, STM32_DMA1_STREAM7_IRQ,
++    };
++    DeviceState *dma1 = qdev_new("f2xx_dma");
++    stm32_init_periph(dma1, STM32_DMA1, 0x40026000, NULL);
++    for (i = 0; i < 8; i++) {
++        sysbus_connect_irq(SYS_BUS_DEVICE(dma1), i,
++                           qdev_get_gpio_in(armv7m_dev, dma1_irqs[i]));
++    }
++
++    static const uint8_t dma2_irqs[8] = {
++        STM32_DMA2_STREAM0_IRQ, STM32_DMA2_STREAM1_IRQ,
++        STM32_DMA2_STREAM2_IRQ, STM32_DMA2_STREAM3_IRQ,
++        STM32_DMA2_STREAM4_IRQ, STM32_DMA2_STREAM5_IRQ,
++        STM32_DMA2_STREAM6_IRQ, STM32_DMA2_STREAM7_IRQ,
++    };
++    DeviceState *dma2 = qdev_new("f2xx_dma");
++    stm32_init_periph(dma2, STM32_DMA2, 0x40026400, NULL);
++    for (i = 0; i < 8; i++) {
++        sysbus_connect_irq(SYS_BUS_DEVICE(dma2), i,
++                           qdev_get_gpio_in(armv7m_dev, dma2_irqs[i]));
++    }
++
++    /* === Unimplemented stubs === */
++    create_unimplemented_device("WWDG",    0x40002C00, 0x400);
++    create_unimplemented_device("IWDG",    0x40003000, 0x400);
++    create_unimplemented_device("SDIO",    0x40012C00, 0x400);
++    create_unimplemented_device("BxCAN1",  0x40006400, 0x400);
++    create_unimplemented_device("BxCAN2",  0x40006800, 0x400);
++    create_unimplemented_device("DAC",     0x40007400, 0x400);
++    create_unimplemented_device("FlashIF", 0x40023C00, 0x400);
++    create_unimplemented_device("BKPSRAM", 0x40024000, 0x400);
++    create_unimplemented_device("USB_OTG_FS", 0x50000000, 0x31000);
++}
 diff --git a/hw/arm/pebble_stm32f4xx_soc.c b/hw/arm/pebble_stm32f4xx_soc.c
 index 9674057..056bf28 100644
 --- a/hw/arm/pebble_stm32f4xx_soc.c
@@ -307,7 +1139,7 @@ new file mode 100644
 index 0000000..a4493c0
 --- /dev/null
 +++ b/hw/block/pebble_mx25u.c
-@@ -0,0 +1,515 @@
+@@ -0,0 +1,517 @@
 +/*
 + * Emulate a QSPI flash device following the MX25U command set.
 + * Modelled after the m25p80 emulation found in hw/block/m25p80.c.
@@ -351,6 +1183,8 @@ index 0000000..a4493c0
 +#else
 +#define DB_PRINT_L(level, ...) do {} while (0)
 +#endif
++
++#define QSPI_TRACE(...) do { } while (0)
 +
 +typedef enum {
 +    WRITE_ENABLE     = 0x06,
@@ -825,10 +1659,10 @@ index 0000000..a4493c0
 +type_init(mx25u_register_types)
 diff --git a/hw/display/pebble_sm_lcd.c b/hw/display/pebble_sm_lcd.c
 new file mode 100644
-index 0000000..215cb89
+index 0000000..e985aba
 --- /dev/null
 +++ b/hw/display/pebble_sm_lcd.c
-@@ -0,0 +1,350 @@
+@@ -0,0 +1,387 @@
 +/*-
 + * Copyright (c) 2013
 + *
@@ -865,6 +1699,12 @@ index 0000000..215cb89
 +#include "hw/qdev-properties.h"
 +#include "qapi/error.h"
 +
++#ifdef __EMSCRIPTEN__
++#include "qemu/timer.h"
++void pebble_display_wasm_set_framebuffer(uint8_t *ptr, int width, int height,
++                                         int stride);
++#endif
++
 +#define NUM_ROWS 168
 +#define NUM_COLS 144
 +#define NUM_COL_BYTES (NUM_COLS / 8)
@@ -896,6 +1736,10 @@ index 0000000..215cb89
 +     * Use the "rotate_display" property to flip it.
 +     */
 +    bool rotate_display;
++
++#ifdef __EMSCRIPTEN__
++    QEMUTimer *wasm_refresh_timer;
++#endif
 +} SmLcdState;
 +
 +#define TYPE_SM_LCD "sm-lcd"
@@ -1002,6 +1846,10 @@ index 0000000..215cb89
 +        }
 +        s->vibrate_offset *= -1;
 +        dpy_gfx_update(s->con, 0, 0, NUM_COLS, NUM_ROWS);
++#ifdef __EMSCRIPTEN__
++        pebble_display_wasm_set_framebuffer(surface_data(surface), NUM_COLS,
++                                            NUM_ROWS, surface_stride(surface));
++#endif
 +        return;
 +    }
 +
@@ -1062,6 +1910,10 @@ index 0000000..215cb89
 +    }
 +
 +    dpy_gfx_update(s->con, 0, 0, NUM_COLS, NUM_ROWS);
++#ifdef __EMSCRIPTEN__
++    pebble_display_wasm_set_framebuffer(surface_data(surface), NUM_COLS,
++                                        NUM_ROWS, surface_stride(surface));
++#endif
 +    s->redraw = false;
 +}
 +
@@ -1131,6 +1983,18 @@ index 0000000..215cb89
 +    .invalidate = sm_lcd_invalidate_display,
 +};
 +
++#ifdef __EMSCRIPTEN__
++static void sm_lcd_wasm_refresh_cb(void *opaque)
++{
++    SmLcdState *s = opaque;
++    if (s->redraw || s->vibrate_on) {
++        graphic_hw_update(s->con);
++    }
++    timer_mod(s->wasm_refresh_timer,
++              qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 100);
++}
++#endif
++
 +static void sm_lcd_realize(SSIPeripheral *dev, Error **errp)
 +{
 +    SmLcdState *s = SM_LCD(dev);
@@ -1148,6 +2012,13 @@ index 0000000..215cb89
 +                            "vibe_ctl", 1);
 +    qdev_init_gpio_in_named(DEVICE(dev), sm_lcd_power_ctl,
 +                            "power_ctl", 1);
++
++#ifdef __EMSCRIPTEN__
++    s->wasm_refresh_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL,
++                                          sm_lcd_wasm_refresh_cb, s);
++    timer_mod(s->wasm_refresh_timer,
++              qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + 100);
++#endif
 +}
 +
 +static const Property sm_lcd_properties[] = {
@@ -1179,12 +2050,120 @@ index 0000000..215cb89
 +}
 +
 +type_init(sm_lcd_register);
+diff --git a/hw/display/pebble_snowy_display.c b/hw/display/pebble_snowy_display.c
+index eb225a3..f6a29b8 100644
+--- a/hw/display/pebble_snowy_display.c
++++ b/hw/display/pebble_snowy_display.c
+@@ -94,6 +94,15 @@ EMSCRIPTEN_KEEPALIVE int pebble_display_frame_count(void) {
+ EMSCRIPTEN_KEEPALIVE uint8_t *pebble_display_data(void) {
+     return (uint8_t *)pebble_wasm_fb_ptr;
+ }
++void pebble_display_wasm_set_framebuffer(uint8_t *ptr, int width, int height,
++                                         int stride)
++{
++    pebble_wasm_fb_ptr = ptr;
++    pebble_wasm_fb_width = width;
++    pebble_wasm_fb_height = height;
++    pebble_wasm_fb_stride = stride;
++    pebble_wasm_frame_count++;
++}
+ static volatile int pebble_wasm_timer_ticks = 0;
+ static volatile int pebble_wasm_redraw_pending = 0;
+ static volatile int pebble_wasm_cpu_halted = -1;
+@@ -926,11 +935,8 @@ static void ps_display_update_display(void *arg)
+ 
+ #ifdef __EMSCRIPTEN__
+     /* Update exported framebuffer info for JavaScript rendering */
+-    pebble_wasm_fb_ptr = surface_data(surface);
+-    pebble_wasm_fb_width = s->num_cols;
+-    pebble_wasm_fb_height = s->num_rows;
+-    pebble_wasm_fb_stride = surface_stride(surface);
+-    pebble_wasm_frame_count++;
++    pebble_display_wasm_set_framebuffer(surface_data(surface), s->num_cols,
++                                        s->num_rows, surface_stride(surface));
+ #endif
+ 
+     s->redraw = false;
+diff --git a/hw/misc/pebble_null_input.c b/hw/misc/pebble_null_input.c
+new file mode 100644
+index 0000000..0964a71
+--- /dev/null
++++ b/hw/misc/pebble_null_input.c
+@@ -0,0 +1,68 @@
++/*
++ * Pebble Null Input Device
++ *
++ * Registers a no-op absolute-pointer input handler. Its sole purpose is to
++ * make qemu_input_is_absolute() return true for non-touch Pebble machines,
++ * which prevents the QEMU UI frontend from grabbing the host cursor on
++ * click. All events are dropped.
++ *
++ * Copyright (c) 2026 Core Devices LLC
++ * SPDX-License-Identifier: GPL-2.0-or-later
++ */
++
++#include "qemu/osdep.h"
++#include "hw/qdev-core.h"
++#include "ui/console.h"
++#include "ui/input.h"
++#include "qom/object.h"
++#include "hw/misc/pebble_null_input.h"
++
++OBJECT_DECLARE_SIMPLE_TYPE(PblNullInput, PEBBLE_NULL_INPUT)
++
++struct PblNullInput {
++    DeviceState parent_obj;
++
++    QemuInputHandlerState *input_handler;
++};
++
++static void pbl_null_input_event(DeviceState *dev, QemuConsole *src,
++                                  InputEvent *evt)
++{
++    /* Intentionally empty: absolute pointer events are dropped. */
++}
++
++static const QemuInputHandler pbl_null_input_handler = {
++    .name  = "Pebble Null Input",
++    .mask  = INPUT_EVENT_MASK_BTN | INPUT_EVENT_MASK_ABS,
++    .event = pbl_null_input_event,
++};
++
++static void pbl_null_input_realize(DeviceState *dev, Error **errp)
++{
++    PblNullInput *s = PEBBLE_NULL_INPUT(dev);
++
++    s->input_handler = qemu_input_handler_register(dev,
++                                                    &pbl_null_input_handler);
++    qemu_input_handler_activate(s->input_handler);
++}
++
++static void pbl_null_input_class_init(ObjectClass *klass, const void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++
++    dc->realize = pbl_null_input_realize;
++}
++
++static const TypeInfo pbl_null_input_info = {
++    .name          = TYPE_PEBBLE_NULL_INPUT,
++    .parent        = TYPE_DEVICE,
++    .instance_size = sizeof(PblNullInput),
++    .class_init    = pbl_null_input_class_init,
++};
++
++static void pbl_null_input_register_types(void)
++{
++    type_register_static(&pbl_null_input_info);
++}
++
++type_init(pbl_null_input_register_types)
 diff --git a/hw/ssi/stm32_pebble_qspi.c b/hw/ssi/stm32_pebble_qspi.c
 new file mode 100644
 index 0000000..5a52adf
 --- /dev/null
 +++ b/hw/ssi/stm32_pebble_qspi.c
-@@ -0,0 +1,322 @@
+@@ -0,0 +1,348 @@
 +/*
 + * STM32F412 QSPI Controller Emulation
 + *
@@ -1215,6 +2194,8 @@ index 0000000..5a52adf
 +#else
 +#define DB_PRINT_L(level, ...) do {} while (0)
 +#endif
++
++#define QSPI_TRACE(...) do { } while (0)
 +
 +/* QSPI Register Definitions */
 +#define R_CR   (0x00 / 4)
@@ -1296,6 +2277,7 @@ index 0000000..5a52adf
 +    CsState cs_state;
 +
 +    int64_t tx_remaining;
++    uint32_t trace_reads;
 +};
 +
 +static uint32_t
@@ -1344,16 +2326,25 @@ index 0000000..5a52adf
 +            DB_PRINT_L(1, "Read %u of %" PRIi64 " remaining",
 +                        size, s->tx_remaining);
 +            r = ssi_transfer(s->qspi, 0);
++            if (s->trace_reads < 64) {
++                QSPI_TRACE("read-dr size=%u val=0x%02x remaining=%" PRIi64,
++                           size, (uint8_t)r, s->tx_remaining);
++                s->trace_reads++;
++            }
 +            s->tx_remaining -= size;
 +            break;
 +        case R_SR:
 +            if (stm32f412_in_CCR_mode(s, CCR_MODE_AUTOMATIC_POLL)) {
 +                DB_PRINT_L(2, "POLL STATUS REG. Command? %d",
 +                            s->cs_state == CS_STATE_LOW);
++                QSPI_TRACE("poll cmd=0x%02x mask=0x%08x match=0x%08x",
++                           s->regs[R_CCR] & CCR_INSTR_MASK,
++                           s->regs[R_PSMKR], s->regs[R_PSMAR]);
 +                stm32f412_set_cs(s, CS_STATE_LOW);
 +                ssi_transfer(s->qspi, s->regs[R_CCR] & CCR_INSTR_MASK);
 +                uint8_t reg = ssi_transfer(s->qspi, 0);
 +                stm32f412_set_cs(s, CS_STATE_HIGH);
++                QSPI_TRACE("poll-reg=0x%02x", reg);
 +                DB_PRINT_L(2, "REG: 0x%" PRIx8, reg);
 +                if (stm32f412_auto_poll(s, reg)) {
 +                    s->regs[R_SR] |= R_SR_SMF;
@@ -1392,6 +2383,9 @@ index 0000000..5a52adf
 +        if ((CCR & CCR_IMODE_MASK) != CCR_IMODE_NONE) {
 +            DB_PRINT_L(1, "Command 0x%x to tx %" PRIi64 " B",
 +                        CCR & CCR_INSTR_MASK, s->tx_remaining);
++            QSPI_TRACE("cmd=0x%02x mode=0x%08x remaining=%" PRIi64,
++                       CCR & CCR_INSTR_MASK, CCR & CCR_MODE_MASK,
++                       s->tx_remaining);
 +            stm32f412_set_cs(s, CS_STATE_LOW);
 +            ssi_transfer(s->qspi, CCR & CCR_INSTR_MASK);
 +        }
@@ -1425,6 +2419,7 @@ index 0000000..5a52adf
 +        break;
 +    case R_AR: {
 +        s->regs[R_AR] = data;
++        QSPI_TRACE("addr=0x%08" PRIx64, data);
 +        uint8_t addrsize = ((s->regs[R_CCR] & CCR_ADSIZE_MASK) >> 12) + 1;
 +        stm32f412_qspi_xfer(s, data, addrsize);
 +        s->tx_remaining -= addrsize;
@@ -1439,10 +2434,17 @@ index 0000000..5a52adf
 +        break;
 +    case R_DLR:
 +        s->tx_remaining = data + 1;
++        QSPI_TRACE("dlr=%" PRIu64, data);
 +        DB_PRINT_L(1, "Set DLR to %" PRIu64 " + 1", data);
 +        break;
 +    default:
-+        s->regs[addr] = data;
++        if (addr < R_MAX) {
++            s->regs[addr] = data;
++        } else {
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "QSPI: Out of range register write 0x%x\n",
++                          (unsigned)addr);
++        }
 +        break;
 +    }
 +
@@ -1463,8 +2465,10 @@ index 0000000..5a52adf
 +stm32f412_qspi_reset(DeviceState *dev)
 +{
 +    Stm32f412Qspi *s = STM32F412_QSPI(dev);
++    memset(s->regs, 0, sizeof(s->regs));
 +    s->cs_state = CS_STATE_HIGH;
 +    s->tx_remaining = 0;
++    s->trace_reads = 0;
 +}
 +
 +static void
@@ -1481,6 +2485,7 @@ index 0000000..5a52adf
 +
 +    s->cs_state = CS_STATE_HIGH;
 +    s->tx_remaining = 0;
++    s->trace_reads = 0;
 +
 +    qdev_init_gpio_out_named(dev, &s->cs_irq, "qspi-gpio-cs", 1);
 +}
@@ -1507,11 +2512,65 @@ index 0000000..5a52adf
 +}
 +
 +type_init(stm32f412_qspi_register_types)
+diff --git a/hw/timer/stm32_pebble_rtc.c b/hw/timer/stm32_pebble_rtc.c
+index 25719d2..05d2414 100644
+--- a/hw/timer/stm32_pebble_rtc.c
++++ b/hw/timer/stm32_pebble_rtc.c
+@@ -548,8 +548,8 @@ f2xx_update_current_date_and_time(void *arg)
+     int delta = new_target_ticks - s->ticks;
+     //DPRINTF("%s: advancing target by %d ticks\n", __func__, delta);
+     if (delta < 0 || delta > 1000) {
+-        printf("DEBUG_STM32F2XX_RTC %s: detected %d mismatch between host and target ticks, "
+-              "jamming new host time into RTC without checking for alarms\n", __func__, delta);
++        DPRINTF("%s: detected %d mismatch between host and target ticks, "
++                "jamming new host time into RTC without checking for alarms\n", __func__, delta);
+         s->ticks = new_target_ticks;
+         f2xx_rtc_set_time_and_date_registers(s, &new_target_tm);
+     } else {
 diff --git a/include/hw/arm/pebble.h b/include/hw/arm/pebble.h
-index 3fe4bc8..a1e1aff 100644
+index 3fe4bc8..ec07b6e 100644
 --- a/include/hw/arm/pebble.h
 +++ b/include/hw/arm/pebble.h
-@@ -127,6 +127,10 @@ void pebble_connect_uarts(Stm32Uart *uart[], const PblBoardConfig *board_config)
+@@ -90,6 +90,10 @@ typedef struct {
+ } PblBoardConfig;
+ 
+ /* SoC context returned from init functions */
++struct stm32f2xx {
++    DeviceState *spi_dev[STM32F2XX_SPI_COUNT];
++};
++
+ struct stm32f4xx {
+     DeviceState *spi_dev[STM32F4XX_SPI_COUNT];
+     DeviceState *qspi_dev;
+@@ -101,6 +105,19 @@ struct stm32f7xx {
+ };
+ 
+ /* SoC init functions */
++void stm32f2xx_init(
++            ram_addr_t flash_size,
++            ram_addr_t ram_size,
++            const char *kernel_filename,
++            Stm32Gpio **stm32_gpio,
++            Stm32Uart **stm32_uart,
++            Stm32Timer **stm32_timer,
++            DeviceState **stm32_rtc,
++            uint32_t osc_freq,
++            uint32_t osc32_freq,
++            struct stm32f2xx *stm,
++            ARMCPU **cpu);
++
+ void stm32f4xx_init(
+             ram_addr_t flash_size,
+             ram_addr_t ram_size,
+@@ -116,6 +133,7 @@ void stm32f4xx_init(
+             ARMCPU **cpu);
+ 
+ /* Board init functions */
++void pebble_32f2_init(MachineState *machine, const PblBoardConfig *board_config);
+ void pebble_32f412_init(MachineState *machine, const PblBoardConfig *board_config);
+ void pebble_32f439_init(MachineState *machine, const PblBoardConfig *board_config);
+ void pebble_32f7xx_init(MachineState *machine, const PblBoardConfig *board_config);
+@@ -127,6 +145,10 @@ void pebble_connect_uarts(Stm32Uart *uart[], const PblBoardConfig *board_config)
  void pebble_init_buttons(Stm32Gpio *gpio[], const PblButtonMap *map);
  DeviceState *pebble_init_board(Stm32Gpio *gpio[], qemu_irq display_vibe);
  
@@ -1522,14 +2581,65 @@ index 3fe4bc8..a1e1aff 100644
  /* F7xx UART type forward declarations (stub for now) */
  typedef struct Stm32F7xxUart Stm32F7xxUart;
  
+diff --git a/include/hw/misc/pebble_null_input.h b/include/hw/misc/pebble_null_input.h
+new file mode 100644
+index 0000000..7d33217
+--- /dev/null
++++ b/include/hw/misc/pebble_null_input.h
+@@ -0,0 +1,17 @@
++/*
++ * Pebble Null Input Device
++ *
++ * Absolute-pointer stub so the QEMU UI frontend sees an active absolute
++ * input handler and does not grab the host cursor on click for non-touch
++ * Pebble machines.
++ *
++ * Copyright (c) 2026 Core Devices LLC
++ * SPDX-License-Identifier: GPL-2.0-or-later
++ */
++
++#ifndef HW_MISC_PEBBLE_NULL_INPUT_H
++#define HW_MISC_PEBBLE_NULL_INPUT_H
++
++#define TYPE_PEBBLE_NULL_INPUT "pebble-null-input"
++
++#endif /* HW_MISC_PEBBLE_NULL_INPUT_H */
+diff --git a/patches/emscripten_icount_min_budget.patch b/patches/emscripten_icount_min_budget.patch
+index 62ff3e2..7071c1d 100644
+--- a/patches/emscripten_icount_min_budget.patch
++++ b/patches/emscripten_icount_min_budget.patch
+@@ -1,9 +1,9 @@
+ --- a/accel/tcg/tcg-accel-ops-icount.c
+ +++ b/accel/tcg/tcg-accel-ops-icount.c
+-@@ -60,7 +60,17 @@ static int64_t icount_get_limit(void)
++@@ -60,7 +60,18 @@ static int64_t icount_get_limit(void)
+              deadline = INT32_MAX;
+          }
+-
++ 
+ -        return icount_round(deadline);
+ +        {
+ +            int64_t result = icount_round(deadline);
+diff --git a/patches/emscripten_skip_io_recompile.patch b/patches/emscripten_skip_io_recompile.patch
+index e9693ed..6c0dabe 100644
+--- a/patches/emscripten_skip_io_recompile.patch
++++ b/patches/emscripten_skip_io_recompile.patch
+@@ -1,6 +1,6 @@
+ --- a/accel/tcg/cputlb.c
+ +++ b/accel/tcg/cputlb.c
+-@@ -1280,7 +1280,17 @@ static MemoryRegionSection *io_prepare(hwaddr *out_offset, CPUState *cpu,
++@@ -1280,8 +1280,19 @@ static MemoryRegionSection *io_prepare(hwaddr *out_offset, CPUState *cpu,
+      mr_offset = (xlat & TARGET_PAGE_MASK) + addr;
+      cpu->mem_io_pc = retaddr;
+      if (!cpu->neg.can_do_io) {
 diff --git a/patches/wasm_cpu_longjmp_cleanup.patch b/patches/wasm_cpu_longjmp_cleanup.patch
 new file mode 100644
-index 0000000..a7e7fed
+index 0000000..4f87781
 --- /dev/null
 +++ b/patches/wasm_cpu_longjmp_cleanup.patch
 @@ -0,0 +1,16 @@
-+--- a/accel/tcg/cpu-exec.c	2026-05-16 17:34:02.958225923 +0200
-++++ b/accel/tcg/cpu-exec.c	2026-05-16 17:34:02.983390905 +0200
++--- a/accel/tcg/cpu-exec.c
+++++ b/accel/tcg/cpu-exec.c
 +@@ -510,8 +510,12 @@
 + 
 + static void cpu_exec_longjmp_cleanup(CPUState *cpu)
@@ -1546,17 +2656,18 @@ index 0000000..a7e7fed
 +     clear_helper_retaddr();
 diff --git a/patches/wasm_rcu_read_unlock_depth.patch b/patches/wasm_rcu_read_unlock_depth.patch
 new file mode 100644
-index 0000000..bdcc44c
+index 0000000..0138dc7
 --- /dev/null
 +++ b/patches/wasm_rcu_read_unlock_depth.patch
-@@ -0,0 +1,17 @@
-+--- a/include/qemu/rcu.h	2026-05-16 17:49:40.322558999 +0200
-++++ b/include/qemu/rcu.h	2026-05-16 17:49:40.336388245 +0200
-+@@ -98,7 +98,13 @@
+@@ -0,0 +1,19 @@
++--- a/include/qemu/rcu.h
+++++ b/include/qemu/rcu.h
++@@ -98,8 +98,14 @@ static inline void rcu_read_unlock(void)
 + {
 +     struct rcu_reader_data *p_rcu_reader = get_ptr_rcu_reader();
 + 
 +-    assert(p_rcu_reader->depth != 0);
++-    if (--p_rcu_reader->depth > 0) {
 ++    if (p_rcu_reader->depth == 0) {
 ++#ifdef __EMSCRIPTEN__
 ++        return;
@@ -1564,6 +2675,7 @@ index 0000000..bdcc44c
 ++        assert(p_rcu_reader->depth != 0);
 ++#endif
 ++    }
-+     if (--p_rcu_reader->depth > 0) {
+++    if (--p_rcu_reader->depth > 0) {
 +         return;
 +     }
++ 

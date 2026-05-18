@@ -1,0 +1,91 @@
+diff --git a/hw/misc/stm32_pebble_i2c.c b/hw/misc/stm32_pebble_i2c.c
+index 5877460..d21d7f4 100644
+--- a/hw/misc/stm32_pebble_i2c.c
++++ b/hw/misc/stm32_pebble_i2c.c
+@@ -124,6 +124,7 @@ typedef struct f2xx_i2c {
+ 
+     int32_t rx;
+     int rx_full;
++    int rx_pending;
+     uint16_t regs[R_I2C_MAX];
+ 
+ } f2xx_i2c;
+@@ -183,13 +183,15 @@ f2xx_i2c_read(void *arg, hwaddr offset, unsigned size)
+         qemu_log_mask(LOG_GUEST_ERROR, "Out of range I2C read, offset 0x%x\n",
+           (unsigned)offset << 2);
+     }
+ 
+-    /* SR1 read is part of the flag-clearing sequence */
+-    if (offset == R_I2C_SR1) {
+-        s->rx_full = 0;
+-    }
+     /* Reading SR2 after SR1 clears ADDR and STOPF */
+     if (offset == R_I2C_SR2) {
+         s->regs[R_I2C_SR1] &= ~(R_I2C_SR1_ADDR_BIT | R_I2C_SR1_STOPF_BIT);
++        if (s->rx_pending) {
++            s->rx_pending = 0;
++            s->rx_full = 1;
++            s->regs[R_I2C_DR] = s->rx & 0xFF;
++            s->regs[R_I2C_SR1] |= R_I2C_SR1_RxNE_BIT;
++        }
+         f2xx_i2c_update_irq(s);
+     }
+@@ -232,6 +228,11 @@ f2xx_i2c_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
+         if (data & R_I2C_CR1_START_BIT) {
+             /* Generate the normal start condition so firmware can write the
+              * address byte and get an immediate AF if no slave acknowledges. */
++            fprintf(stderr, "PEBBLE_I2C%d START sr1=0x%04x sr2=0x%04x\n",
++                    s->periph, s->regs[R_I2C_SR1], s->regs[R_I2C_SR2]);
++            s->regs[R_I2C_SR1] &= ~(R_I2C_SR1_ADDR_BIT | R_I2C_SR1_BTF_BIT |
++                                     R_I2C_SR1_RxNE_BIT | R_I2C_SR1_TxE_BIT);
++            s->rx_full = 0;
+             s->regs[R_I2C_SR1] |= R_I2C_SR1_SB_BIT;
+             s->regs[R_I2C_SR2] |= R_I2C_SR2_MSL_BIT | R_I2C_SR2_BUSY_BIT;
+             s->regs[offset] &= ~R_I2C_CR1_START_BIT;
+@@ -258,22 +263,35 @@ f2xx_i2c_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
+             uint8_t addr = (uint8_t)data >> 1;
+             int is_recv = data & 1;
+-            s->regs[R_I2C_SR1] &= ~R_I2C_SR1_SB_BIT;
++            s->regs[R_I2C_SR1] &= ~(R_I2C_SR1_SB_BIT | R_I2C_SR1_BTF_BIT |
++                                     R_I2C_SR1_RxNE_BIT | R_I2C_SR1_TxE_BIT);
++            fprintf(stderr, "PEBBLE_I2C%d ADDR addr=0x%02x read=%d\n",
++                    s->periph, addr, is_recv);
+             if (i2c_start_transfer(s->bus, addr, is_recv)) {
+                 /* NACK → no slave at this address */
++                fprintf(stderr, "PEBBLE_I2C%d NACK addr=0x%02x\n", s->periph, addr);
+                 s->regs[R_I2C_SR1] |= R_I2C_SR1_AF_BIT;
+                 s->regs[R_I2C_SR2] &= ~(R_I2C_SR2_MSL_BIT |
+                                           R_I2C_SR2_BUSY_BIT);
+             } else {
+                 /* ACK → slave responded, address phase complete */
+-                s->regs[R_I2C_SR1] |= R_I2C_SR1_ADDR_BIT | R_I2C_SR1_TxE_BIT;
+-                if (!is_recv) {
++                s->regs[R_I2C_SR1] |= R_I2C_SR1_ADDR_BIT;
++                if (is_recv) {
++                    s->rx = i2c_recv(s->bus);
++                    s->rx_pending = 1;
++                    s->regs[R_I2C_DR] = s->rx & 0xFF;
++                    fprintf(stderr, "PEBBLE_I2C%d RX ready val=0x%02x\n",
++                            s->periph, s->rx & 0xFF);
++                    s->regs[R_I2C_SR2] &= ~R_I2C_SR2_TRA_BIT;
++                } else {
++                    s->regs[R_I2C_SR1] |= R_I2C_SR1_TxE_BIT;
+                     s->regs[R_I2C_SR2] |= R_I2C_SR2_TRA_BIT;
+                 }
+             }
+         } else {
+             /* Data byte transfer */
++            fprintf(stderr, "PEBBLE_I2C%d TX data=0x%02x\n", s->periph, (uint8_t)data);
+             if (i2c_send(s->bus, (uint8_t)data)) {
+                 s->regs[R_I2C_SR1] |= R_I2C_SR1_AF_BIT;
+             } else {
+                 s->regs[R_I2C_SR1] |= R_I2C_SR1_TxE_BIT | R_I2C_SR1_BTF_BIT;
+             }
+@@ -317,6 +326,7 @@ f2xx_i2c_reset(DeviceState *dev)
+     memset(s->regs, 0, sizeof(s->regs));
+     s->rx = 0;
+     s->rx_full = 0;
++    s->rx_pending = 0;
+     qemu_set_irq(s->evt_irq, 0);
+     qemu_set_irq(s->err_irq, 0);
+ }

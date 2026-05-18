@@ -1,0 +1,75 @@
+diff --git a/hw/arm/pebble_stm32f2xx_soc.c b/hw/arm/pebble_stm32f2xx_soc.c
+index 9f06d5d..3c1e6c7 100644
+--- a/hw/arm/pebble_stm32f2xx_soc.c
++++ b/hw/arm/pebble_stm32f2xx_soc.c
+@@ -344,6 +344,7 @@ void stm32f2xx_init(
+         assert(i < STM32F2XX_TIM_COUNT);
+         const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
+         DeviceState *timer = qdev_new("f2xx_tim");
++        qdev_prop_set_int32(timer, "periph", periph);
+         stm32_init_periph(timer, periph, timer_desc[i].addr,
+                           qdev_get_gpio_in(armv7m_dev, timer_desc[i].irq_idx));
+         stm32_timer[timer_desc[i].timer_num - 1] = (Stm32Timer *)timer;
+diff --git a/hw/arm/pebble_stm32f4xx_soc.c b/hw/arm/pebble_stm32f4xx_soc.c
+index cf97f93..8e2b2c3 100644
+--- a/hw/arm/pebble_stm32f4xx_soc.c
++++ b/hw/arm/pebble_stm32f4xx_soc.c
+@@ -448,6 +448,7 @@ void stm32f4xx_init(
+         assert(i < STM32F4XX_TIM_COUNT);
+         const stm32_periph_t periph = STM32_TIM1 + timer_desc[i].timer_num - 1;
+         DeviceState *timer = qdev_new("f2xx_tim");
++        qdev_prop_set_int32(timer, "periph", periph);
+         stm32_init_periph(timer, periph, timer_desc[i].addr,
+                           qdev_get_gpio_in(armv7m_dev, timer_desc[i].irq_idx));
+         stm32_timer[timer_desc[i].timer_num - 1] = (Stm32Timer *)timer;
+diff --git a/hw/timer/stm32_pebble_tim.c b/hw/timer/stm32_pebble_tim.c
+index 6235b12..d678820 100644
+--- a/hw/timer/stm32_pebble_tim.c
++++ b/hw/timer/stm32_pebble_tim.c
+@@ -102,6 +102,7 @@ typedef struct f2xx_tim {
+     MemoryRegion iomem;
+     QEMUTimer *timer;
+     qemu_irq irq;
++    stm32_periph_t periph;
+     uint32_t regs[R_TIM_MAX];
+ 
+     qemu_irq pwm_ratio_changed;
+@@ -115,6 +116,16 @@ f2xx_tim_period(f2xx_tim *s)
+     return 31250;
+ }
+ 
++static uint32_t
++f2xx_tim_period_scale(f2xx_tim *s)
++{
++    /*
++     * TIM4 drives firmware button debounce. Scaling it makes ordinary clicks
++     * take minutes to settle, so keep it at guest firmware timing.
++     */
++    return s->periph == STM32_TIM4 ? 1 : STM32_TIM_WASM_PERIOD_SCALE;
++}
++
+ static int64_t
+ f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
+ {
+@@ -126,7 +137,7 @@ f2xx_tim_next_transition(f2xx_tim *s, int64_t current_time)
+     }
+     return current_time +
+            f2xx_tim_period(s) * s->regs[R_TIM_ARR] *
+-               STM32_TIM_WASM_PERIOD_SCALE;
++               f2xx_tim_period_scale(s);
+ }
+ 
+ static void
+@@ -316,8 +327,12 @@ static void
+ f2xx_tim_class_init(ObjectClass *klass, const void *data)
+ {
+     DeviceClass *dc = DEVICE_CLASS(klass);
++    static const Property props[] = {
++        DEFINE_PROP_INT32("periph", f2xx_tim, periph, STM32_PERIPH_UNDEFINED),
++    };
+     dc->realize = f2xx_tim_realize;
+     device_class_set_legacy_reset(dc, f2xx_tim_reset);
++    device_class_set_props(dc, props);
+ }
+ 
+ static const TypeInfo

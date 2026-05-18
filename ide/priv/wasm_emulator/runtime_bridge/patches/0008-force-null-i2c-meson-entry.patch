@@ -1,0 +1,57 @@
+diff --git a/build.sh b/build.sh
+index 00b6d67..18a0321 100755
+--- a/build.sh
++++ b/build.sh
+@@ -111,6 +111,14 @@ patch_meson "${QEMU_SRC}/hw/misc/meson.build" "stm32_pebble" \
+   'pebble_null_input.c',
+ ))"
+ 
++if ! grep -q "pebble_null_i2c.c" "${QEMU_SRC}/hw/misc/meson.build"; then
++    python3 - "${QEMU_SRC}/hw/misc/meson.build" <<'PY'
++import pathlib, sys
++path = pathlib.Path(sys.argv[1])
++path.write_text(path.read_text().replace("'stm32_pebble_i2c.c',", "'stm32_pebble_i2c.c',\n  'pebble_null_i2c.c',"))
++PY
++fi
++
+ # hw/timer/meson.build - timers AND RTC (RTC is in timer dir)
+ patch_meson "${QEMU_SRC}/hw/timer/meson.build" "stm32_pebble" \
+ "system_ss.add(when: 'CONFIG_PEBBLE', if_true: files(
+diff --git a/build_wasm.sh b/build_wasm.sh
+index 356c00f..965bc07 100644
+--- a/build_wasm.sh
++++ b/build_wasm.sh
+@@ -151,6 +151,14 @@ patch_meson hw/misc/meson.build "stm32_pebble" \
+   '"'"'pebble_null_input.c'"'"',
+ ))"
+ 
++if ! grep -q "pebble_null_i2c.c" hw/misc/meson.build; then
++    python3 - hw/misc/meson.build <<'"'"'PY'"'"'
++import pathlib, sys
++path = pathlib.Path(sys.argv[1])
++path.write_text(path.read_text().replace("'"'"'stm32_pebble_i2c.c'"'"',", "'"'"'stm32_pebble_i2c.c'"'"',\n  '"'"'pebble_null_i2c.c'"'"',"))
++PY
++fi
++
+ # hw/timer/meson.build
+ patch_meson hw/timer/meson.build "stm32_pebble" \
+ "system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files(
+diff --git a/build_wasm_jit.sh b/build_wasm_jit.sh
+index f1fdce7..e45a3bb 100755
+--- a/build_wasm_jit.sh
++++ b/build_wasm_jit.sh
+@@ -159,6 +159,14 @@ patch_meson hw/misc/meson.build "stm32_pebble" \
+   '"'"'pebble_null_input.c'"'"',
+ ))"
+ 
++if ! grep -q "pebble_null_i2c.c" hw/misc/meson.build; then
++    python3 - hw/misc/meson.build <<'"'"'PY'"'"'
++import pathlib, sys
++path = pathlib.Path(sys.argv[1])
++path.write_text(path.read_text().replace("'"'"'stm32_pebble_i2c.c'"'"',", "'"'"'stm32_pebble_i2c.c'"'"',\n  '"'"'pebble_null_i2c.c'"'"',"))
++PY
++fi
++
+ # hw/timer/meson.build
+ patch_meson hw/timer/meson.build "stm32_pebble" \
+ "system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files(

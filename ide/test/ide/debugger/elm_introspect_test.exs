@@ -230,9 +230,19 @@ defmodule Ide.Debugger.ElmIntrospectTest do
     assert "textLabel" in types
   end
 
-  test "analyze_source keeps tuple selector operand nodes for watchface analog source" do
-    path = Path.expand("../../../priv/project_templates/watchface_analog/src/Main.elm", __DIR__)
-    source = File.read!(path)
+  test "analyze_source keeps tuple selector operand nodes" do
+    source = """
+    module Main exposing (view)
+
+    view model =
+        let
+            ( x, y ) =
+                ( 1, 2 )
+        in
+        Ui.root
+            [ Ui.pixel { x = x, y = y } Color.black
+            ]
+    """
 
     assert {:ok, %{"elm_introspect" => ei}} =
              ElmIntrospect.analyze_source(source, "Main.elm")

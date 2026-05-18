@@ -1,0 +1,21 @@
+diff --git a/hw/misc/stm32_pebble_i2c.c b/hw/misc/stm32_pebble_i2c.c
+index 63d3d8c..5877460 100644
+--- a/hw/misc/stm32_pebble_i2c.c
++++ b/hw/misc/stm32_pebble_i2c.c
+@@ -230,12 +230,10 @@ f2xx_i2c_write(void *arg, hwaddr offset, uint64_t data, unsigned size)
+     case R_I2C_CR1:
+         s->regs[offset] = data;
+         if (data & R_I2C_CR1_START_BIT) {
+-            /* Match QEMU 2.5 behavior: immediately fail with bus error.
+-             * No I2C slave devices are emulated, so any transfer would NACK.
+-             * Setting BERR lets the firmware error ISR handle it instantly
+-             * instead of going through the full SB→address→AF chain that
+-             * causes ~3s timeout per probe. */
+-            s->regs[R_I2C_SR1] |= R_I2C_SR1_BERR_BIT;
++            /* Generate the normal start condition so firmware can write the
++             * address byte and get an immediate AF if no slave acknowledges. */
++            s->regs[R_I2C_SR1] |= R_I2C_SR1_SB_BIT;
++            s->regs[R_I2C_SR2] |= R_I2C_SR2_MSL_BIT | R_I2C_SR2_BUSY_BIT;
+             s->regs[offset] &= ~R_I2C_CR1_START_BIT;
+         }
+         if (data & R_I2C_CR1_STOP_BIT) {

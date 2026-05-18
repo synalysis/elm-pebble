@@ -1,0 +1,49 @@
+diff --git a/hw/dma/stm32_pebble_dma.c b/hw/dma/stm32_pebble_dma.c
+index dfbbafb..acf6103 100644
+--- a/hw/dma/stm32_pebble_dma.c
++++ b/hw/dma/stm32_pebble_dma.c
+@@ -91,6 +91,16 @@ typedef struct f2xx_dma {
+     f2xx_dma_stream stream[R_DMA_Sx_COUNT];
+ } f2xx_dma;
+ 
++static void
++f2xx_dma_stream_complete(f2xx_dma_stream *s, int stream_no)
++{
++    s->ndtr = 0;
++    s->cr &= ~R_DMA_SxCR_EN;
++    s->isr |= R_DMA_ISR_TCIF;
++    DPRINTF("stream %d TC, isr=0x%02x\n", stream_no, s->isr);
++    qemu_set_irq(s->irq, 1);
++}
++
+ /* Pack ISR bits from four streams, for {L,H}ISR. */
+ static uint32_t
+ f2xx_dma_pack_isr(struct f2xx_dma *s, int start_stream)
+@@ -206,7 +216,12 @@ f2xx_dma_stream_start(f2xx_dma_stream *s, int stream_no)
+     }
+-    /* XXX Skip USART, as pacing control is not yet in place. */
+-    if (s->par == 0x40011004) {
+-        qemu_log_mask(LOG_UNIMP, "f2xx dma: skipping USART\n");
++    /*
++     * USART DMA is used for debug output and is not paced by this model yet.
++     * Complete it without synchronously walking every byte through MMIO.
++     */
++    if (s->par == 0x40011004) {
++        DPRINTF("stream %d complete-unpaced-serial par=0x%08x\n",
++                stream_no, s->par);
++        f2xx_dma_stream_complete(s, stream_no);
+         return;
+     }
+ 
+@@ -241,10 +256,7 @@ f2xx_dma_stream_start(f2xx_dma_stream *s, int stream_no)
+         }
+     }
+     /* Transfer complete. */
+-    s->cr &= ~R_DMA_SxCR_EN;
+-    s->isr |= R_DMA_ISR_TCIF;
+-    DPRINTF("stream %d TC, isr=0x%02x\n", stream_no, s->isr);
+-    qemu_set_irq(s->irq, 1);
++    f2xx_dma_stream_complete(s, stream_no);
+ }
+ 
+ /* Per-stream register write. */

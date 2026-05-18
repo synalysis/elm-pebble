@@ -95,8 +95,6 @@ defmodule Elmc.CoreDifferentialConformanceTest do
 
     expected_calls = [
       "elmc_basics_clamp(",
-      "elmc_basics_max(",
-      "elmc_basics_min(",
       "elmc_bitwise_and(",
       "elmc_bitwise_xor(",
       "elmc_bitwise_shift_left_by(",
@@ -117,6 +115,9 @@ defmodule Elmc.CoreDifferentialConformanceTest do
     Enum.each(expected_calls, fn call ->
       assert String.contains?(generated_c, call), "missing generated call: #{call}"
     end)
+
+    assert generated_c =~ ~r/native_max_\d+/
+    assert generated_c =~ ~r/native_min_\d+/
   end
 
   test "process runtime uses Pebble timer hooks under platform guard" do

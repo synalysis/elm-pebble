@@ -24,7 +24,12 @@ def configure(ctx):
     if os.environ.get('ELMC_PEBBLE_TRACE_FUNCTIONS') in ('1', 'true', 'TRUE', 'yes', 'YES'):
         for env in ctx.all_envs.values():
             env.append_value('CFLAGS', ['-DELMC_PEBBLE_TRACE_FUNCTIONS=1'])
-
+    if os.environ.get('ELMC_PEBBLE_HEAP_LOG') in ('1', 'true', 'TRUE', 'yes', 'YES'):
+        for env in ctx.all_envs.values():
+            env.append_value('CFLAGS', ['-DELMC_PEBBLE_HEAP_LOG=1'])
+    if os.environ.get('ELMC_ALLOC_TRACE') in ('1', 'true', 'TRUE', 'yes', 'YES'):
+        for env in ctx.all_envs.values():
+            env.append_value('CFLAGS', ['-DELMC_ALLOC_TRACE=1'])
 
 def build(ctx):
     ctx.load('pebble_sdk')
@@ -37,6 +42,8 @@ def build(ctx):
         ctx.env = ctx.all_envs[platform]
         ctx.set_group(ctx.env.PLATFORM_NAME)
         app_elf = '{}/pebble-app.elf'.format(ctx.env.BUILD_DIR)
+        app_map = '{}/pebble-app.map'.format(ctx.env.BUILD_DIR)
+        ctx.env.append_value('LINKFLAGS', ['-Wl,-Map,{}'.format(app_map)])
         ctx.pbl_build(
             source=ctx.path.ant_glob(
                 'src/c/**/*.c',

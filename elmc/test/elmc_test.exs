@@ -88,9 +88,16 @@ defmodule ElmcTest do
     header = File.read!(Path.join(runtime_dir, "elmc_runtime.h"))
     runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
 
+    assert header =~ "uint16_t rc;"
+    assert header =~ "uint8_t tag;"
     assert header =~ "elmc_int_t scalar;"
+    assert runtime =~ "static ElmcValue ELMC_BOOL_FALSE"
+    assert runtime =~ "#define ELMC_SMALL_INT_MAX 64"
+    assert runtime =~ "static const ElmcValue ELMC_SMALL_INTS"
+    assert runtime =~ "static ElmcValue ELMC_MAYBE_NOTHING"
+    assert runtime =~ "return &ELMC_MAYBE_NOTHING;"
     assert runtime =~ "return elmc_alloc_scalar(ELMC_TAG_INT, value);"
-    assert runtime =~ "return elmc_alloc_scalar(ELMC_TAG_BOOL, value != 0);"
+    assert runtime =~ "return value ? &ELMC_BOOL_TRUE : &ELMC_BOOL_FALSE;"
     assert runtime =~ "return value->scalar;"
     refute runtime =~ "malloc(sizeof(elmc_int_t))"
   end
@@ -108,8 +115,102 @@ defmodule ElmcTest do
     assert runtime =~ "return &ELMC_EMPTY_STRING;"
     assert runtime =~ "static void elmc_log_alloc_failed_once"
     assert runtime =~ "ELMC allocation failed in %s"
-    assert runtime =~ "static void *elmc_malloc(size_t size, const char *context)"
-    assert runtime =~ "elmc_malloc(sizeof(ElmcValue), __func__)"
+    assert runtime =~ "static void *elmc_malloc_impl(size_t size, const char *context"
+    assert runtime =~ "elmc_malloc_impl(sizeof(ElmcValue), __func__"
     refute runtime =~ "if (!out) return elmc_new_string(\"\");"
+  end
+
+  test "runtime stores list value and cons payload in one allocation" do
+    runtime_dir = Path.expand("tmp/runtime_list_cell", __DIR__)
+
+    File.rm_rf!(runtime_dir)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir)
+
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime =~ "ElmcListCell"
+    assert runtime =~ "ElmcMaybeCell"
+    assert runtime =~ "ElmcResultCell"
+    assert runtime =~ "ElmcTuple2Cell"
+    assert runtime =~ "ElmcRecordCell"
+    assert runtime =~ "return elmc_list_cell_alloc(head, tail, 0);"
+    assert runtime =~ "return elmc_list_cell_alloc(head, tail, 1);"
+    assert runtime =~ "return elmc_record_cell_alloc(field_count, field_names, field_values, 0);"
+    assert runtime =~ "return elmc_record_cell_alloc(field_count, field_names, field_values, 1);"
+    assert runtime =~ "if (value->tag == ELMC_TAG_LIST && elmc_list_cell_release(value))"
+    assert runtime =~ "if (value->tag == ELMC_TAG_TUPLE2 && elmc_tuple2_cell_release(value))"
+    assert runtime =~ "if (elmc_record_cell_release(value))"
+    refute runtime =~ "ELMC_LIST_POOL_CAPACITY"
+  end
+
+  test "runtime list cell optimization compiles and releases cells" do
+    out_dir = Path.expand("tmp/runtime_list_cell_compile", __DIR__)
+    runtime_dir = Path.join(out_dir, "runtime")
+    harness_path = Path.join(out_dir, "list_cell_harness.c")
+    binary_path = Path.join(out_dir, "list_cell_harness")
+
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(out_dir)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir)
+
+    File.write!(harness_path, """
+    #include "elmc_runtime.h"
+    #include <stdint.h>
+
+    int main(void) {
+      ElmcValue *one = elmc_new_int(1);
+      ElmcValue *nil = elmc_list_nil();
+      ElmcValue *a = elmc_list_cons(one, nil);
+      ElmcValue *b = elmc_list_cons(one, a);
+      elmc_release(a);
+      ElmcValue *c = elmc_list_cons(one, b);
+      elmc_release(b);
+      ElmcValue *tuple = elmc_tuple2(one, c);
+      ElmcValue *maybe = elmc_maybe_just(one);
+      ElmcValue *ok = elmc_result_ok(tuple);
+      const char *field_names[] = {"value"};
+      ElmcValue *field_values[] = {one};
+      ElmcValue *record = elmc_record_new(1, field_names, field_values);
+      elmc_release(c);
+      elmc_release(record);
+      elmc_release(ok);
+      elmc_release(maybe);
+      elmc_release(tuple);
+      elmc_release(one);
+      return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 1;
+    }
+    """)
+
+    cc =
+      System.find_executable("cc") || System.find_executable("gcc") ||
+        System.find_executable("clang")
+
+    assert is_binary(cc)
+
+    {compile_out, compile_code} =
+      System.cmd(
+        cc,
+        [
+          "-std=c11",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-DELMC_PEBBLE_INT32",
+          "-Iruntime",
+          "runtime/elmc_runtime.c",
+          "list_cell_harness.c",
+          "-o",
+          "list_cell_harness"
+        ],
+        cd: out_dir,
+        stderr_to_stdout: true
+      )
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
+    assert run_code == 0, run_out
   end
 end

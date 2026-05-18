@@ -1,0 +1,24 @@
+diff --git a/build_wasm.sh b/build_wasm.sh
+index bb4b989..3ec78f1 100644
+--- a/build_wasm.sh
++++ b/build_wasm.sh
+@@ -123,7 +123,6 @@ patch_meson hw/arm/meson.build "CONFIG_PEBBLE" \
+   '"'"'pebble_silk.c'"'"',
+   '"'"'pebble_control.c'"'"',
+   '"'"'pebble_stm32f4xx_soc.c'"'"',
+-  '"'"'pebble_stm32f2xx_soc.c'"'"',
+ ))"
+ 
+ if ! grep -q "arm_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'pebble_stm32f2xx_soc.c'"'"'))" hw/arm/meson.build; then
+diff --git a/build_wasm_jit.sh b/build_wasm_jit.sh
+index 0e977b3..07a93ff 100755
+--- a/build_wasm_jit.sh
++++ b/build_wasm_jit.sh
+@@ -131,7 +131,6 @@ patch_meson hw/arm/meson.build "CONFIG_PEBBLE" \
+   '"'"'pebble_silk.c'"'"',
+   '"'"'pebble_control.c'"'"',
+   '"'"'pebble_stm32f4xx_soc.c'"'"',
+-  '"'"'pebble_stm32f2xx_soc.c'"'"',
+ ))"
+ 
+ if ! grep -q "arm_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'pebble_stm32f2xx_soc.c'"'"'))" hw/arm/meson.build; then

@@ -211,8 +211,8 @@ spawnTile seed cells =
 spawnTileWithSeed : Int -> List Int -> ( List Int, Int )
 spawnTileWithSeed seed cells =
     let
-        emptyIndexes =
-            indexedEmptyCells cells
+        emptyCount =
+            countEmpty cells
 
         seedAfterChoice =
             advanceSeed seed
@@ -221,7 +221,7 @@ spawnTileWithSeed seed cells =
             advanceSeed seedAfterChoice
 
         tileIndex =
-            Maybe.withDefault -1 (listAt (randomIndex (List.length emptyIndexes) seedAfterChoice) emptyIndexes)
+            nthEmptyIndex (randomIndex emptyCount seedAfterChoice) cells
 
         tileValue =
             if randomIndex 10 seedAfterTile == 0 then
@@ -230,7 +230,7 @@ spawnTileWithSeed seed cells =
             else
                 2
     in
-    if emptyIndexes == [] then
+    if emptyCount == 0 then
         ( cells, seedAfterTile )
 
     else
@@ -251,18 +251,43 @@ randomIndex maxExclusive seed =
         modBy maxExclusive seed
 
 
-indexedEmptyCells : List Int -> List Int
-indexedEmptyCells cells =
-    cells
-        |> List.indexedMap
-            (\index value ->
-                if value == 0 then
+countEmpty : List Int -> Int
+countEmpty cells =
+    case cells of
+        [] ->
+            0
+
+        value :: rest ->
+            (if value == 0 then
+                1
+
+             else
+                0
+            )
+                + countEmpty rest
+
+
+nthEmptyIndex : Int -> List Int -> Int
+nthEmptyIndex target cells =
+    nthEmptyIndexHelp target 0 cells
+
+
+nthEmptyIndexHelp : Int -> Int -> List Int -> Int
+nthEmptyIndexHelp target index cells =
+    case cells of
+        [] ->
+            -1
+
+        value :: rest ->
+            if value == 0 then
+                if target == 0 then
                     index
 
                 else
-                    -1
-            )
-        |> List.filter ((<=) 0)
+                    nthEmptyIndexHelp (target - 1) (index + 1) rest
+
+            else
+                nthEmptyIndexHelp target (index + 1) rest
 
 
 setCell : Int -> Int -> List Int -> List Int

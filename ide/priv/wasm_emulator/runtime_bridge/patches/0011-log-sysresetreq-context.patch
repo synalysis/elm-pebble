@@ -1,0 +1,36 @@
+diff --git a/hw/arm/pebble_stm32f4xx_soc.c b/hw/arm/pebble_stm32f4xx_soc.c
+index 9674057..4cce3a1 100644
+--- a/hw/arm/pebble_stm32f4xx_soc.c
++++ b/hw/arm/pebble_stm32f4xx_soc.c
+@@ -105,6 +105,22 @@ static void debug_post_reset(void *opaque)
+ static void do_sys_reset(void *opaque, int n, int level)
+ {
+     if (level) {
++        ARMCPU *cpu = opaque;
++        CPUState *cs = CPU(cpu);
++        uint32_t stack_lr = 0;
++        bool have_stack_lr =
++            cpu_memory_rw_debug(cs, cpu->env.regs[13] + 4, &stack_lr,
++                                sizeof(stack_lr), 0) == 0;
++
++        fprintf(stderr,
++                "DEBUG SYSRESETREQ: R13=0x%08x R14=0x%08x R15=0x%08x "
++                "thumb=%d xpsr=0x%08x",
++                cpu->env.regs[13], cpu->env.regs[14], cpu->env.regs[15],
++                cpu->env.thumb, xpsr_read(&cpu->env));
++        if (have_stack_lr) {
++            fprintf(stderr, " stack_lr=0x%08x", stack_lr);
++        }
++        fprintf(stderr, "\n");
+         qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+     }
+ }
+@@ -199,7 +215,7 @@ void stm32f4xx_init(
+ 
+     /* Connect SYSRESETREQ */
+     qdev_connect_gpio_out_named(armv7m_dev, "SYSRESETREQ", 0,
+-                                qemu_allocate_irq(&do_sys_reset, NULL, 0));
++                                qemu_allocate_irq(&do_sys_reset, *cpu, 0));
+ 
+     /*
+      * Load firmware into flash memory.

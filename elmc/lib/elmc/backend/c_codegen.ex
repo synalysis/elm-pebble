@@ -644,6 +644,9 @@ defmodule Elmc.Backend.CCodegen do
           :native_int ->
             "elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? elmc_as_int(args[#{index}]) : 0;"
 
+          :native_bool ->
+            "elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? elmc_as_bool(args[#{index}]) : 0;"
+
           :boxed ->
             "ElmcValue *#{c_arg} = (argc > #{index}) ? args[#{index}] : NULL;"
         end
@@ -660,6 +663,7 @@ defmodule Elmc.Backend.CCodegen do
       |> Enum.reduce(%{__module__: module_name}, fn {{source_arg, c_arg, _index}, kind}, acc ->
         case kind do
           :native_int -> put_native_int_binding(acc, source_arg, c_arg)
+          :native_bool -> put_native_bool_binding(acc, source_arg, c_arg)
           :boxed -> Map.put(acc, source_arg, c_arg)
         end
       end)
@@ -726,7 +730,7 @@ defmodule Elmc.Backend.CCodegen do
   defp native_function_args?(decl) do
     decl
     |> native_function_arg_kinds()
-    |> Enum.any?(&(&1 == :native_int))
+    |> Enum.any?(&(&1 in [:native_int, :native_bool]))
   end
 
   defp native_function_params(decl) do
@@ -735,6 +739,7 @@ defmodule Elmc.Backend.CCodegen do
     |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, kind} ->
       case kind do
         :native_int -> "const elmc_int_t #{c_arg}"
+        :native_bool -> "const elmc_int_t #{c_arg}"
         :boxed -> "ElmcValue * const #{c_arg}"
       end
     end)
@@ -755,6 +760,9 @@ defmodule Elmc.Backend.CCodegen do
             :boxed
           end
 
+        "Bool" ->
+          :native_bool
+
         _other ->
           :boxed
       end
@@ -771,6 +779,9 @@ defmodule Elmc.Backend.CCodegen do
       case Enum.at(arg_types, index) |> normalize_type_name() do
         "Int" ->
           :native_int
+
+        "Bool" ->
+          :native_bool
 
         _other ->
           :boxed
@@ -1324,7 +1335,7 @@ defmodule Elmc.Backend.CCodegen do
       decl ->
         arg_kinds = native_function_arg_kinds(decl)
 
-        if Enum.any?(arg_kinds, &(&1 == :native_int)) do
+        if Enum.any?(arg_kinds, &(&1 in [:native_int, :native_bool])) do
           {args, arg_kinds}
         else
           nil
@@ -1982,6 +1993,10 @@ defmodule Elmc.Backend.CCodegen do
         case kind do
           :native_int ->
             {code, ref, c2} = compile_native_int_expr(arg_expr, env, c)
+            {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc, c2}
+
+          :native_bool ->
+            {code, ref, c2} = compile_native_bool_expr(arg_expr, env, c)
             {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc, c2}
 
           :boxed ->
@@ -4382,6 +4397,7 @@ defmodule Elmc.Backend.CCodegen do
       #{arg_bindings}
       #{unused_casts}
       if (!out_cmds || !count || !emitted || max_cmds <= 0) return -1;
+      int direct_stop = 0;
       #{body_code}
       return 0;
     }
@@ -4461,6 +4477,7 @@ defmodule Elmc.Backend.CCodegen do
     static int #{c_name}_commands_append_native(#{native_direct_command_params(decl)}, ElmcGeneratedPebbleDrawCmd * const out_cmds, const int max_cmds, const int skip, int * const count, int * const emitted) {
       #{unused_casts}
       if (!out_cmds || !count || !emitted || max_cmds <= 0) return -1;
+      int direct_stop = 0;
       #{body_code}
       return 0;
     }
@@ -4560,9 +4577,11 @@ defmodule Elmc.Backend.CCodegen do
           {:ok, body_code, counter} ->
             {:ok,
              """
-             #{value_code}
+             if (!direct_stop) {
+             #{indent(value_code, 2)}
                const elmc_int_t #{native_var} = #{value_ref};
              #{indent(body_code, 2)}
+             }
              """, counter}
 
           :error ->
@@ -4586,9 +4605,11 @@ defmodule Elmc.Backend.CCodegen do
           {:ok, body_code, counter} ->
             {:ok,
              """
-             #{value_code}
+             if (!direct_stop) {
+             #{indent(value_code, 2)}
              #{indent(body_code, 2)}
                #{cleanup_code}
+             }
              """, counter}
 
           :error ->
@@ -4608,9 +4629,11 @@ defmodule Elmc.Backend.CCodegen do
           {:ok, body_code, counter} ->
             {:ok,
              """
-             #{value_code}
+             if (!direct_stop) {
+             #{indent(value_code, 2)}
                #{body_code}
                elmc_release(#{value_var});
+             }
              """, counter}
 
           :error ->
@@ -4762,9 +4785,11 @@ defmodule Elmc.Backend.CCodegen do
       end
 
     """
+    if (!direct_stop) {
     #{cond_code}
     #{body}
     #{cond_release}
+    }
     """
   end
 
@@ -5142,7 +5167,7 @@ defmodule Elmc.Backend.CCodegen do
            #{range_code}
             elmc_int_t direct_index_#{next} = 0;
             elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
-            for (elmc_int_t direct_item_i_#{next} = #{first_ref}; ; direct_item_i_#{next} += direct_step_#{next}) {
+            for (elmc_int_t direct_item_i_#{next} = #{first_ref}; !direct_stop; direct_item_i_#{next} += direct_step_#{next}) {
                ElmcValue *direct_index_value_#{next} = elmc_new_int(direct_index_#{next});
                ElmcValue *direct_item_value_#{next} = elmc_new_int(direct_item_i_#{next});
                ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 2, 1)}] = {0};
@@ -5157,8 +5182,7 @@ defmodule Elmc.Backend.CCodegen do
                  return direct_rc_#{next};
                }
                if (*count >= max_cmds) {
-           #{prefix_releases}
-                 return 0;
+                 direct_stop = 1;
                }
                if (direct_item_i_#{next} == #{last_ref}) break;
                direct_index_#{next} += 1;
@@ -5175,7 +5199,7 @@ defmodule Elmc.Backend.CCodegen do
            #{prefix_code}
            ElmcValue *direct_cursor_#{next} = #{list_var};
               elmc_int_t direct_index_#{next} = 0;
-           while (direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+           while (!direct_stop && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
              ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
              ElmcValue *direct_index_value_#{next} = elmc_new_int(direct_index_#{next});
              ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 2, 1)}] = {0};
@@ -5190,9 +5214,7 @@ defmodule Elmc.Backend.CCodegen do
                return direct_rc_#{next};
              }
              if (*count >= max_cmds) {
-               elmc_release(#{list_var});
-           #{prefix_releases}
-               return 0;
+               direct_stop = 1;
              }
              direct_index_#{next} += 1;
              direct_cursor_#{next} = direct_node_#{next}->tail;
@@ -5243,7 +5265,7 @@ defmodule Elmc.Backend.CCodegen do
            #{prefix_code}
            #{range_code}
             elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
-            for (elmc_int_t direct_item_i_#{next} = #{first_ref}; ; direct_item_i_#{next} += direct_step_#{next}) {
+            for (elmc_int_t direct_item_i_#{next} = #{first_ref}; !direct_stop; direct_item_i_#{next} += direct_step_#{next}) {
                ElmcValue *direct_item_value_#{next} = elmc_new_int(direct_item_i_#{next});
                ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 1, 1)}] = {0};
            #{prefix_bindings}
@@ -5255,8 +5277,7 @@ defmodule Elmc.Backend.CCodegen do
                  return direct_rc_#{next};
                }
                if (*count >= max_cmds) {
-           #{prefix_releases}
-                 return 0;
+                 direct_stop = 1;
                }
                if (direct_item_i_#{next} == #{last_ref}) break;
              }
@@ -5271,7 +5292,7 @@ defmodule Elmc.Backend.CCodegen do
            #{list_code}
            #{prefix_code}
            ElmcValue *direct_cursor_#{next} = #{list_var};
-           while (direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+           while (!direct_stop && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
              ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
              ElmcValue *direct_call_args_#{next}[#{max(prefix_count + 1, 1)}] = {0};
            #{prefix_bindings}
@@ -5283,9 +5304,7 @@ defmodule Elmc.Backend.CCodegen do
                return direct_rc_#{next};
              }
              if (*count >= max_cmds) {
-               elmc_release(#{list_var});
-           #{prefix_releases}
-               return 0;
+               direct_stop = 1;
              }
              direct_cursor_#{next} = direct_node_#{next}->tail;
            }
@@ -5539,19 +5558,25 @@ defmodule Elmc.Backend.CCodegen do
     if Enum.any?(arg_kinds, &(&1 != :boxed)) do
       {:ok,
        """
+       if (!direct_stop) {
        #{arg_code}
          int direct_rc_#{next} = #{c_name}_commands_append_native(#{arg_list}, out_cmds, max_cmds, skip, count, emitted);
        #{releases}
          if (direct_rc_#{next} < 0) return direct_rc_#{next};
+         if (*count >= max_cmds) direct_stop = 1;
+       }
        """, next}
     else
       {:ok,
        """
+       if (!direct_stop) {
        #{arg_code}
          ElmcValue *direct_call_args_#{next}[#{max(argc, 1)}] = { #{arg_list} };
          int direct_rc_#{next} = #{c_name}_commands_append(direct_call_args_#{next}, #{argc}, out_cmds, max_cmds, skip, count, emitted);
        #{releases}
          if (direct_rc_#{next} < 0) return direct_rc_#{next};
+         if (*count >= max_cmds) direct_stop = 1;
+       }
        """, next}
     end
   end
@@ -5615,9 +5640,8 @@ defmodule Elmc.Backend.CCodegen do
            """
            #{range_code}
             elmc_int_t direct_step_#{next} = (#{first_ref} <= #{last_ref}) ? 1 : -1;
-            for (elmc_int_t direct_item_i_#{next} = #{first_ref}; ; direct_item_i_#{next} += direct_step_#{next}) {
+            for (elmc_int_t direct_item_i_#{next} = #{first_ref}; !direct_stop; direct_item_i_#{next} += direct_step_#{next}) {
            #{indent(body_code, 4)}
-               if (*count >= max_cmds) return 0;
                if (direct_item_i_#{next} == #{last_ref}) break;
              }
            """, counter}
@@ -5635,13 +5659,9 @@ defmodule Elmc.Backend.CCodegen do
            """
            #{list_code}
              ElmcValue *direct_cursor_#{next} = #{list_var};
-             while (direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+             while (!direct_stop && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
                ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
            #{indent(body_code, 4)}
-               if (*count >= max_cmds) {
-                 elmc_release(#{list_var});
-                 return 0;
-               }
                direct_cursor_#{next} = direct_node_#{next}->tail;
              }
              elmc_release(#{list_var});
@@ -5701,14 +5721,16 @@ defmodule Elmc.Backend.CCodegen do
 
     {:ok,
      """
-      if (*emitted >= skip && *count < max_cmds) {
+      if (!direct_stop && *emitted >= skip && *count < max_cmds) {
      #{indent(code, 4)}
         elmc_generated_draw_init(&out_cmds[*count], #{draw_kind_c_name(kind)});
          #{assignments}
          *count += 1;
        }
-      *emitted += 1;
-      if (*count >= max_cmds) return 0;
+      if (!direct_stop) {
+        *emitted += 1;
+        if (*count >= max_cmds) direct_stop = 1;
+      }
      """, next}
   end
 
@@ -5826,7 +5848,7 @@ defmodule Elmc.Backend.CCodegen do
 
     {:ok,
      """
-       if (*emitted >= skip && *count < max_cmds) {
+       if (!direct_stop && *emitted >= skip && *count < max_cmds) {
      #{indent(code, 2)}
      #{indent(text_code, 2)}
         elmc_generated_draw_init(&out_cmds[*count], #{draw_kind_c_name(kind)});
@@ -5835,8 +5857,10 @@ defmodule Elmc.Backend.CCodegen do
          *count += 1;
      #{indent(text_release_code, 4)}
        }
-       *emitted += 1;
-       if (*count >= max_cmds) return 0;
+       if (!direct_stop) {
+         *emitted += 1;
+         if (*count >= max_cmds) direct_stop = 1;
+       }
      """, counter}
   end
 
@@ -5844,6 +5868,10 @@ defmodule Elmc.Backend.CCodegen do
     escaped = escape_c_string(value)
 
     {"", direct_text_copy_from("\"#{escaped}\""), "", counter}
+  end
+
+  defp direct_text_copy_code(%{op: :call, name: "__append__", args: [left, right]}, env, counter) do
+    direct_text_copy_append_code(left, right, env, counter)
   end
 
   defp direct_text_copy_code(%{op: :var, name: name}, env, counter) do
@@ -5874,6 +5902,38 @@ defmodule Elmc.Backend.CCodegen do
     else
       direct_text_copy_boxed_code(text_expr, env, counter)
     end
+  end
+
+  defp direct_text_copy_append_code(left, right, env, counter) do
+    {left_code, left_ref, left_cleanup, counter} = compile_native_string_expr(left, env, counter)
+
+    {right_code, right_ref, right_cleanup, counter} =
+      compile_native_string_expr(right, env, counter)
+
+    cleanup_code =
+      (left_cleanup ++ right_cleanup)
+      |> Enum.map_join("\n", fn var -> "elmc_release(#{var});" end)
+
+    copy_code = """
+    {
+      int direct_text_i = 0;
+      const char *direct_text = #{left_ref};
+      while (direct_text && direct_text[direct_text_i] && direct_text_i < 63) {
+        out_cmds[*count].text[direct_text_i] = direct_text[direct_text_i];
+        direct_text_i++;
+      }
+      const char *direct_text_right = #{right_ref};
+      int direct_text_right_i = 0;
+      while (direct_text_right && direct_text_right[direct_text_right_i] && direct_text_i < 63) {
+        out_cmds[*count].text[direct_text_i] = direct_text_right[direct_text_right_i];
+        direct_text_i++;
+        direct_text_right_i++;
+      }
+      out_cmds[*count].text[direct_text_i] = '\\0';
+    }
+    """
+
+    {left_code <> right_code, copy_code, cleanup_code, counter}
   end
 
   defp direct_text_copy_boxed_code(text_expr, env, counter) do
@@ -5938,7 +5998,7 @@ defmodule Elmc.Backend.CCodegen do
 
       {:ok,
        """
-         if (*emitted >= skip && *count < max_cmds) {
+         if (!direct_stop && *emitted >= skip && *count < max_cmds) {
        #{indent(code, 4)}
        #{indent(offset_x_code, 4)}
        #{indent(offset_y_code, 4)}
@@ -5951,8 +6011,10 @@ defmodule Elmc.Backend.CCodegen do
        #{Enum.join(point_assignments, "\n")}
            *count += 1;
          }
-         *emitted += 1;
-         if (*count >= max_cmds) return 0;
+         if (!direct_stop) {
+           *emitted += 1;
+           if (*count >= max_cmds) direct_stop = 1;
+         }
        """, counter}
     else
       _ -> :error
@@ -6255,6 +6317,60 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
+  defp compile_native_string_expr(
+         %{op: :runtime_call, function: "elmc_append", args: [left, right]} = expr,
+         env,
+         counter
+       ) do
+    if native_string_expr?(left, env) and native_string_expr?(right, env) do
+      {left_code, left_ref, left_cleanup, counter} =
+        compile_native_string_expr(left, env, counter)
+
+      {right_code, right_ref, right_cleanup, counter} =
+        compile_native_string_expr(right, env, counter)
+
+      next = counter + 1
+      buffer = "native_string_buf_#{next}"
+      out = "native_string_#{next}"
+
+      code = """
+      #{left_code}#{right_code}
+        char #{buffer}[96];
+        int #{buffer}_i = 0;
+        const char *#{buffer}_left = #{left_ref};
+        while (#{buffer}_left && #{buffer}_left[#{buffer}_i] && #{buffer}_i < (int)sizeof(#{buffer}) - 1) {
+          #{buffer}[#{buffer}_i] = #{buffer}_left[#{buffer}_i];
+          #{buffer}_i++;
+        }
+        const char *#{buffer}_right = #{right_ref};
+        int #{buffer}_right_i = 0;
+        while (#{buffer}_right && #{buffer}_right[#{buffer}_right_i] && #{buffer}_i < (int)sizeof(#{buffer}) - 1) {
+          #{buffer}[#{buffer}_i] = #{buffer}_right[#{buffer}_right_i];
+          #{buffer}_i++;
+          #{buffer}_right_i++;
+        }
+        #{buffer}[#{buffer}_i] = '\\0';
+        const char *#{out} = #{buffer};
+      """
+
+      {code, out, left_cleanup ++ right_cleanup, next}
+    else
+      compile_native_string_fallback(expr, env, counter)
+    end
+  end
+
+  defp compile_native_string_expr(
+         %{op: :call, name: "__append__", args: [left, right]},
+         env,
+         counter
+       ) do
+    compile_native_string_expr(
+      %{op: :runtime_call, function: "elmc_append", args: [left, right]},
+      env,
+      counter
+    )
+  end
+
   defp compile_native_string_expr(expr, env, counter),
     do: compile_native_string_fallback(expr, env, counter)
 
@@ -6306,8 +6422,6 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
-  defp native_string_expr?(%{op: :call} = expr, env), do: typed_string_expr?(expr, env)
-
   defp native_string_expr?(
          %{op: :runtime_call, function: "elmc_string_from_int", args: [value]},
          env
@@ -6319,6 +6433,11 @@ defmodule Elmc.Backend.CCodegen do
          env
        ),
        do: native_string_expr?(left, env) and native_string_expr?(right, env)
+
+  defp native_string_expr?(%{op: :call, name: "__append__", args: [left, right]}, env),
+    do: native_string_expr?(left, env) and native_string_expr?(right, env)
+
+  defp native_string_expr?(%{op: :call} = expr, env), do: typed_string_expr?(expr, env)
 
   defp native_string_expr?(_expr, _env), do: false
 
@@ -10228,6 +10347,58 @@ defmodule Elmc.Backend.CCodegen do
 
     {maybe_code, maybe_ref, release_maybe, counter} =
       case maybe do
+        %{op: :qualified_call, target: "List.head", args: [list]} ->
+          {code, var, counter} = compile_expr(list, env, counter)
+          {code, "elmc_list_head_with_default_int(#{default_ref}, #{var})", var, counter}
+
+        %{op: :runtime_call, function: "elmc_list_head", args: [list]} ->
+          {code, var, counter} = compile_expr(list, env, counter)
+          {code, "elmc_list_head_with_default_int(#{default_ref}, #{var})", var, counter}
+
+        %{op: :qualified_call, target: "Array.get", args: [index, array]} ->
+          {index_code, index_ref, counter} = compile_native_int_expr(index, env, counter)
+          {array_code, array_var, counter} = compile_expr(array, env, counter)
+
+          {
+            index_code <> array_code,
+            "elmc_array_get_with_default_int(#{default_ref}, #{index_ref}, #{array_var})",
+            array_var,
+            counter
+          }
+
+        %{op: :runtime_call, function: "elmc_array_get", args: [index, array]} ->
+          {index_code, index_ref, counter} = compile_native_int_expr(index, env, counter)
+          {array_code, array_var, counter} = compile_expr(array, env, counter)
+
+          {
+            index_code <> array_code,
+            "elmc_array_get_with_default_int(#{default_ref}, #{index_ref}, #{array_var})",
+            array_var,
+            counter
+          }
+
+        %{op: :qualified_call, target: "Dict.get", args: [key, dict]} ->
+          {key_code, key_ref, counter} = compile_native_int_expr(key, env, counter)
+          {dict_code, dict_var, counter} = compile_expr(dict, env, counter)
+
+          {
+            key_code <> dict_code,
+            "elmc_dict_get_with_default_int(#{default_ref}, #{key_ref}, #{dict_var})",
+            dict_var,
+            counter
+          }
+
+        %{op: :runtime_call, function: "elmc_dict_get", args: [key, dict]} ->
+          {key_code, key_ref, counter} = compile_native_int_expr(key, env, counter)
+          {dict_code, dict_var, counter} = compile_expr(dict, env, counter)
+
+          {
+            key_code <> dict_code,
+            "elmc_dict_get_with_default_int(#{default_ref}, #{key_ref}, #{dict_var})",
+            dict_var,
+            counter
+          }
+
         %{op: :field_access, arg: arg, field: field} when is_binary(arg) ->
           case Map.fetch(env, arg) do
             {:ok, source} when is_binary(source) ->

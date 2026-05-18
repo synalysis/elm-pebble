@@ -2433,7 +2433,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
   test "engine normalizes lowered Pebble Ui constructor tuples after transforms" do
     canvas_layer_expr = %{
       "op" => :tuple2,
-      "left" => %{"op" => :int_literal, "value" => 1},
+      "left" => %{"op" => :int_literal, "value" => 1002},
       "right" => %{
         "op" => :tuple2,
         "left" => %{"op" => :int_literal, "value" => 1},
@@ -2443,7 +2443,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
 
     window_expr = %{
       "op" => :tuple2,
-      "left" => %{"op" => :int_literal, "value" => 1},
+      "left" => %{"op" => :int_literal, "value" => 1001},
       "right" => %{
         "op" => :tuple2,
         "left" => %{"op" => :int_literal, "value" => 1},
@@ -2453,7 +2453,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
 
     wrap_ops_body = %{
       "op" => :tuple2,
-      "left" => %{"op" => :int_literal, "value" => 1},
+      "left" => %{"op" => :int_literal, "value" => 1000},
       "right" => %{"op" => :list_literal, "items" => [window_expr]}
     }
 

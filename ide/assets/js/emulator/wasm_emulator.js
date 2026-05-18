@@ -34,6 +34,7 @@ export class WasmEmulatorHost {
     this.logLines = []
     this.frameLoaded = false
     this.runtimeReady = false
+    this.watchReady = false
     this.launching = false
     this.installing = false
     this.screenshotPending = false
@@ -47,6 +48,7 @@ export class WasmEmulatorHost {
     this.progressState = null
     this.storageEntries = new Map()
     this.handleMessage = event => this.onMessage(event)
+    this.buttonState = 0
   }
 
   mount() {
@@ -91,13 +93,18 @@ export class WasmEmulatorHost {
       const name = button.dataset.wasmButton
       button.addEventListener("pointerdown", event => {
         event.preventDefault()
+        button.setPointerCapture?.(event.pointerId)
         this.sendButton(name, true)
       })
       button.addEventListener("pointerup", () => this.sendButton(name, false))
       button.addEventListener("pointerleave", () => this.sendButton(name, false))
+      button.addEventListener("pointercancel", () => this.sendButton(name, false))
+      button.addEventListener("lostpointercapture", () => this.sendButton(name, false))
     })
 
     window.addEventListener("message", this.handleMessage)
+    this.handleWindowBlur = () => this.releaseButtons()
+    window.addEventListener("blur", this.handleWindowBlur)
     if (!this.ensureCrossOriginIsolation()) return
     this.checkAssets()
     this.updateButtons()
@@ -130,6 +137,8 @@ export class WasmEmulatorHost {
 
   destroy() {
     window.removeEventListener("message", this.handleMessage)
+    if (this.handleWindowBlur) window.removeEventListener("blur", this.handleWindowBlur)
+    this.releaseButtons()
   }
 
   ensureCrossOriginIsolation() {
@@ -254,6 +263,7 @@ export class WasmEmulatorHost {
     this.launching = true
     this.frameLoaded = false
     this.runtimeReady = false
+    this.watchReady = false
     this.setStatus("Loading WASM emulator frame...")
     this.resetFrame()
     this.frame.addEventListener("load", () => {
@@ -273,6 +283,7 @@ export class WasmEmulatorHost {
     this.resetFrame()
     this.frameLoaded = false
     this.runtimeReady = false
+    this.watchReady = false
     this.watchPlatform = null
     this.installing = false
     this.screenshotPending = false
@@ -293,7 +304,7 @@ export class WasmEmulatorHost {
   async installPbw() {
     if (this.installing) return
     if (!this.installReady()) {
-      this.setStatus("Wait until the WASM emulator runtime is ready before installing a PBW.")
+      this.setStatus("Wait until the WASM watch communication is ready before installing a PBW.")
       return
     }
     this.installing = true
@@ -346,7 +357,21 @@ export class WasmEmulatorHost {
 
   sendButton(name, pressed) {
     if (!this.runtimeReady) return
+    const bits = {back: 1 << 0, up: 1 << 1, select: 1 << 2, down: 1 << 3}
+    const bit = bits[name]
+    if (!bit) return
+    const nextState = pressed ? (this.buttonState | bit) : (this.buttonState & ~bit)
+    if (nextState === this.buttonState) return
+    this.buttonState = nextState
     this.postToFrame({type: "button", name, pressed})
+  }
+
+  releaseButtons() {
+    if (!this.runtimeReady || this.buttonState === 0) return
+    for (const name of ["back", "up", "select", "down"]) {
+      this.postToFrame({type: "button", name, pressed: false})
+    }
+    this.buttonState = 0
   }
 
   setBattery(percent, charging) {
@@ -370,9 +395,13 @@ export class WasmEmulatorHost {
     if (message.type === "loaded") {
       this.frameLoaded = true
       this.setStatus(message.isolated ? "WASM emulator frame loaded" : "WASM emulator frame loaded without cross-origin isolation")
+    } else if (message.type === "runtime-ready") {
+      this.runtimeReady = true
+      this.setStatus("WASM emulator runtime ready; waiting for watch communication...")
     } else if (message.type === "ready") {
       this.runtimeReady = true
-      this.setStatus("WASM emulator runtime ready")
+      this.watchReady = true
+      this.setStatus("WASM watch communication ready")
     } else if (message.type === "status") {
       this.setStatus(message.message)
     } else if (message.type === "log") {
@@ -524,6 +553,6 @@ export class WasmEmulatorHost {
   }
 
   installReady() {
-    return this.runtimeReady && this.installBridgeAvailable && !this.installing
+    return this.watchReady && this.installBridgeAvailable && !this.installing
   }
 }

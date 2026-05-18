@@ -1,0 +1,138 @@
+diff --git a/hw/ssi/stm32_pebble_qspi.c b/hw/ssi/stm32_pebble_qspi.c
+index 0000000..0000000 100644
+--- a/hw/ssi/stm32_pebble_qspi.c
++++ b/hw/ssi/stm32_pebble_qspi.c
+@@ -113,6 +113,7 @@ struct Stm32f412Qspi {
+     CsState cs_state;
+ 
+     int64_t tx_remaining;
++    bool transaction_started;
+     uint32_t trace_reads;
+ };
+ 
+@@ -149,6 +150,35 @@ stm32f412_set_cs(Stm32f412Qspi *s, CsState state)
+     }
+ }
+ 
++static void
++stm32f412_qspi_xfer_address(Stm32f412Qspi *s)
++{
++    uint8_t addrsize = ((s->regs[R_CCR] & CCR_ADSIZE_MASK) >> 12) + 1;
++
++    for (int i = addrsize - 1; i >= 0; --i) {
++        ssi_transfer(s->qspi, (s->regs[R_AR] >> (i * 8)) & 0xff);
++    }
++}
++
++static void
++stm32f412_qspi_start_transaction(Stm32f412Qspi *s)
++{
++    if (s->transaction_started) {
++        return;
++    }
++
++    s->transaction_started = true;
++    stm32f412_set_cs(s, CS_STATE_LOW);
++
++    if ((s->regs[R_CCR] & CCR_IMODE_MASK) != CCR_IMODE_NONE) {
++        ssi_transfer(s->qspi, s->regs[R_CCR] & CCR_INSTR_MASK);
++    }
++
++    if ((s->regs[R_CCR] & CCR_ADMODE_MASK) != CCR_ADMODE_NONE) {
++        stm32f412_qspi_xfer_address(s);
++    }
++}
++
+ static uint64_t
+ stm32f412_qspi_read(void *arg, hwaddr offset, unsigned size)
+ {
+@@ -162,6 +192,7 @@ stm32f412_qspi_read(void *arg, hwaddr offset, unsigned size)
+         case R_DR:
+             DB_PRINT_L(1, "Read %u of %" PRIi64 " remaining",
+                         size, s->tx_remaining);
++            stm32f412_qspi_start_transaction(s);
+             r = ssi_transfer(s->qspi, 0);
+             if (s->trace_reads < 64) {
+                 QSPI_TRACE("read-dr size=%u val=0x%02x remaining=%" PRIi64,
+@@ -201,6 +232,7 @@ stm32f412_qspi_read(void *arg, hwaddr offset, unsigned size)
+ 
+     if (s->tx_remaining <= 0) {
+         stm32f412_set_cs(s, CS_STATE_HIGH);
++        s->transaction_started = false;
+         s->regs[R_SR] &= ~R_SR_TCF;
+         s->regs[R_SR] &= ~R_SR_BSY;
+     }
+@@ -211,23 +243,23 @@ stm32f412_qspi_read(void *arg, hwaddr offset, unsigned size)
+ static void
+ stm32f412_CCR_write(Stm32f412Qspi *s, uint32_t CCR, unsigned size)
+ {
+-    if ((CCR & CCR_ADMODE_MASK) != CCR_ADMODE_NONE) {
+-        uint8_t addrsize = ((CCR & CCR_ADSIZE_MASK) >> 12) + 1;
+-        DB_PRINT_L(1, "Adding %" PRIu8 " for address", addrsize);
+-        s->tx_remaining += addrsize;
+-    }
++    s->regs[R_CCR] = CCR;
++    s->transaction_started = false;
+     if ((CCR & CCR_MODE_MASK) != CCR_MODE_AUTOMATIC_POLL) {
+         if ((CCR & CCR_IMODE_MASK) != CCR_IMODE_NONE) {
+             DB_PRINT_L(1, "Command 0x%x to tx %" PRIi64 " B",
+                         CCR & CCR_INSTR_MASK, s->tx_remaining);
+             QSPI_TRACE("cmd=0x%02x mode=0x%08x remaining=%" PRIi64,
+                        CCR & CCR_INSTR_MASK, CCR & CCR_MODE_MASK,
+                        s->tx_remaining);
+-            stm32f412_set_cs(s, CS_STATE_LOW);
+-            ssi_transfer(s->qspi, CCR & CCR_INSTR_MASK);
+         }
+     }
+-    s->regs[R_CCR] = CCR;
++
++    if ((CCR & CCR_MODE_MASK) == CCR_MODE_INDIRECT_WRITE &&
++        (CCR & CCR_ADMODE_MASK) == CCR_ADMODE_NONE &&
++        s->tx_remaining <= 0) {
++        stm32f412_qspi_start_transaction(s);
++    }
+ }
+ 
+ static void
+@@ -257,9 +288,6 @@ stm32f412_qspi_write(void *arg, hwaddr addr, uint64_t data, unsigned size)
+     case R_AR: {
+         s->regs[R_AR] = data;
+         QSPI_TRACE("addr=0x%08" PRIx64, data);
+-        uint8_t addrsize = ((s->regs[R_CCR] & CCR_ADSIZE_MASK) >> 12) + 1;
+-        stm32f412_qspi_xfer(s, data, addrsize);
+-        s->tx_remaining -= addrsize;
+         break;
+     }
+     case R_DR:
+@@ -266,6 +294,7 @@ stm32f412_qspi_write(void *arg, hwaddr addr, uint64_t data, unsigned size)
+         DB_PRINT_L(2, "Write %u of %" PRIi64 " remaining",
+                     size, s->tx_remaining);
+         s->regs[R_DR] = 0;
++        stm32f412_qspi_start_transaction(s);
+         stm32f412_qspi_xfer(s, data, size);
+         s->tx_remaining -= size;
+         break;
+@@ -287,6 +316,7 @@ stm32f412_qspi_write(void *arg, hwaddr addr, uint64_t data, unsigned size)
+ 
+     if (s->tx_remaining <= 0) {
+         stm32f412_set_cs(s, CS_STATE_HIGH);
++        s->transaction_started = false;
+     }
+ 
+     s->regs[R_SR] |= R_SR_TCF;
+@@ -302,6 +332,7 @@ stm32f412_qspi_reset(DeviceState *dev)
+     memset(s->regs, 0, sizeof(s->regs));
+     s->cs_state = CS_STATE_HIGH;
+     s->tx_remaining = 0;
++    s->transaction_started = false;
+     s->trace_reads = 0;
+ }
+ 
+@@ -321,6 +352,7 @@ stm32f412_qspi_realize(DeviceState *dev, Error **errp)
+ 
+     s->cs_state = CS_STATE_HIGH;
+     s->tx_remaining = 0;
++    s->transaction_started = false;
+     s->trace_reads = 0;
+ 
+     qdev_init_gpio_out_named(dev, &s->cs_irq, "qspi-gpio-cs", 1);

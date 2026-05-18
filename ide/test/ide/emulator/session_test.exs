@@ -119,19 +119,13 @@ defmodule Ide.Emulator.SessionTest do
 
       assert {:ok, session_pid} = Emulator.lookup(info.id)
 
-      child =
-        spawn(fn ->
-          receive do
-            :stop -> :ok
-          end
-        end)
+      assert {:ok, child} = Agent.start_link(fn -> :ok end)
 
       :sys.replace_state(session_pid, fn state -> %{state | qemu_pid: child} end)
       send(session_pid, {:EXIT, child, :normal})
 
       assert wait_until(fn -> not Process.alive?(session_pid) end)
       assert wait_until(fn -> Emulator.lookup(info.id) == {:error, :not_found} end)
-      send(child, :stop)
     end)
   end
 

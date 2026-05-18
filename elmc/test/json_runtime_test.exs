@@ -173,7 +173,7 @@ defmodule Elmc.JsonRuntimeTest do
       elmc_release(int_decoder);
 
       int_decoder = elmc_json_decode_int_decoder();
-      ElmcValue *inc_closure = elmc_closure_new(inc, 0, NULL);
+      ElmcValue *inc_closure = elmc_closure_new(inc, 0, 0, NULL);
       ElmcValue *map_decoder = elmc_json_decode_map(inc_closure, int_decoder);
       ElmcValue *r6 = decode(map_decoder, "9");
       if (result_int(r6) != 10) return 6;
@@ -187,7 +187,7 @@ defmodule Elmc.JsonRuntimeTest do
       int_decoder = elmc_json_decode_int_decoder();
       ElmcValue *a_decoder = elmc_json_decode_field(field_a, int_decoder);
       ElmcValue *b_decoder = elmc_json_decode_field(field_b, int_decoder);
-      ElmcValue *sum_closure = elmc_closure_new(sum2, 0, NULL);
+      ElmcValue *sum_closure = elmc_closure_new(sum2, 0, 0, NULL);
       ElmcValue *map2_decoder = elmc_json_decode_map2(sum_closure, a_decoder, b_decoder);
       ElmcValue *r7 = decode(map2_decoder, "{\\"a\\":2,\\"b\\":5}");
       if (result_int(r7) != 7) return 7;
@@ -203,7 +203,7 @@ defmodule Elmc.JsonRuntimeTest do
       ElmcValue *kind = elmc_new_string("kind");
       int_decoder = elmc_json_decode_int_decoder();
       ElmcValue *kind_decoder = elmc_json_decode_field(kind, int_decoder);
-      ElmcValue *name_closure = elmc_closure_new(name_decoder, 0, NULL);
+      ElmcValue *name_closure = elmc_closure_new(name_decoder, 0, 0, NULL);
       ElmcValue *and_then_decoder = elmc_json_decode_and_then(name_closure, kind_decoder);
       ElmcValue *r8 = decode(and_then_decoder, "{\\"kind\\":1,\\"name\\":\\"demo\\"}");
       const char *name = result_string(r8);

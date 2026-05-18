@@ -1,0 +1,36 @@
+diff --git a/build_wasm.sh b/build_wasm.sh
+index 36e4f55..bb4b989 100644
+--- a/build_wasm.sh
++++ b/build_wasm.sh
+@@ -128,6 +128,13 @@ patch_meson hw/arm/meson.build "CONFIG_PEBBLE" \
+   '"'"'pebble_stm32f2xx_soc.c'"'"',
+ ))"
+ 
++if ! grep -q "arm_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'pebble_stm32f2xx_soc.c'"'"'))" hw/arm/meson.build; then
++    cat >> hw/arm/meson.build <<'"'"'MEOF'"'"'
++
++arm_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'pebble_stm32f2xx_soc.c'"'"'))
++MEOF
++fi
++
+ # hw/misc/meson.build
+ patch_meson hw/misc/meson.build "stm32_pebble" \
+ "system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files(
+diff --git a/build_wasm_jit.sh b/build_wasm_jit.sh
+index d9401bd..0e977b3 100755
+--- a/build_wasm_jit.sh
++++ b/build_wasm_jit.sh
+@@ -136,6 +136,13 @@ patch_meson hw/arm/meson.build "CONFIG_PEBBLE" \
+   '"'"'pebble_stm32f2xx_soc.c'"'"',
+ ))"
+ 
++if ! grep -q "arm_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'pebble_stm32f2xx_soc.c'"'"'))" hw/arm/meson.build; then
++    cat >> hw/arm/meson.build <<'"'"'MEOF'"'"'
++
++arm_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files('"'"'pebble_stm32f2xx_soc.c'"'"'))
++MEOF
++fi
++
+ # hw/misc/meson.build
+ patch_meson hw/misc/meson.build "stm32_pebble" \
+ "system_ss.add(when: '"'"'CONFIG_PEBBLE'"'"', if_true: files(

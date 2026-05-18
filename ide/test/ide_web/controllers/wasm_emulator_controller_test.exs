@@ -104,7 +104,7 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     assert page =~ "watch-info"
     assert page =~ "maybeRespondToPhoneService"
     assert page =~ "qemuArgsForFirmware"
-    assert page =~ "mtdblock"
+    assert page =~ "if=mtd,file=/firmware/qemu_spi_flash.bin,format=raw"
     assert page =~ "return manifest.storage || \"pflash\";"
     assert page =~ "requiredSpiFlashSize"
     assert page =~ "padded.fill(0xff)"
@@ -112,8 +112,15 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     assert page =~ "dataLogging command="
     assert page =~ "qemu-control host->watch protocol="
     assert page =~ "BluetoothConnection"
+    assert page =~ "Waiting for QEMU control bridge before"
+    assert page =~ "QEMU runtime exited before control bridge became ready"
+    assert page =~ "QEMU runtime failed:"
+    assert page =~ "ensureQemuBluetoothConnected"
     assert page =~ "0x07d1: \"PingPong\""
     assert page =~ "0x1a7a: \"DataLogging\""
+    assert page =~
+             "installAck?.cookie === cookie || (finalPart && installAck?.cookie === 0)"
+
     assert get_resp_header(page_conn, "cross-origin-opener-policy") == ["same-origin"]
     assert get_resp_header(page_conn, "cross-origin-embedder-policy") == ["require-corp"]
 
