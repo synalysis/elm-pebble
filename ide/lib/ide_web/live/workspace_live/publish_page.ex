@@ -41,13 +41,15 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
 
       <.form
         for={@release_summary_form}
-        id="release-summary-form"
-        phx-change="update-release-summary"
+        id="publish-form"
+        phx-change="update-publish-form"
+        phx-submit="submit-publish-release"
+        phx-debounce="300"
         class="mt-4 rounded border border-zinc-200 p-3"
       >
         <h3 class="text-sm font-semibold">Release Summary</h3>
         <p class="mt-1 text-xs text-zinc-600">
-          Used when generating release notes and handoff metadata. Version and tags are edited in Project Settings.
+          Changelog is sent to the App Store as release notes. Version and tags are edited in Project Settings.
         </p>
         <p class="mt-2 text-xs text-zinc-600">
           Version: <span class="font-mono">{@release_summary_form["version_label"].value}</span>
@@ -84,6 +86,9 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
               class="min-h-20 w-full rounded border border-zinc-300 px-2 py-1.5"
               placeholder="- Added ...&#10;- Fixed ..."
             ><%= @release_summary_form["changelog"].value %></textarea>
+            <span class="mt-1 block text-zinc-500">
+              Sent to the store as release notes. Submitting includes the text above even if the field still has focus.
+            </span>
           </label>
         </div>
       </.form>
@@ -217,39 +222,44 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
           <p id="firebase-login-status" class="mt-2"></p>
         </div>
 
-        <.form
-          for={%{}}
-          id="publish-submit-form"
-          phx-change="update-publish-submit-options"
-          class="mt-3 space-y-2"
-        >
-          <input type="hidden" name="publish_submit[is_published]" value="false" />
+        <div class="mt-3 space-y-2">
+          <input type="hidden" form="publish-form" name="publish_submit[is_published]" value="false" />
           <label class="inline-flex items-center gap-2 text-xs text-zinc-700">
             <input
               type="checkbox"
+              form="publish-form"
               name="publish_submit[is_published]"
               value="true"
               checked={@publish_submit_options["is_published"] == true}
             /> Make release visible immediately (unchecked uploads a draft; the store keeps showing the previous public version)
           </label>
 
-          <input type="hidden" name="publish_submit[all_platforms]" value="false" />
+          <input type="hidden" form="publish-form" name="publish_submit[all_platforms]" value="false" />
           <label class="inline-flex items-center gap-2 text-xs text-zinc-700">
             <input
               type="checkbox"
+              form="publish-form"
               name="publish_submit[all_platforms]"
               value="true"
               checked={@publish_submit_options["all_platforms"] == true}
             /> Capture static screenshots for all platforms during publish
           </label>
-        </.form>
+          <p class="text-xs text-zinc-500">
+            All saved screenshots per platform are uploaded on submit; the store screenshot set is replaced (not appended).
+          </p>
+        </div>
 
         <div class="mt-3 flex flex-wrap items-center gap-2">
-          <.button phx-click="submit-publish-release" disabled={@publish_submit_status == :running}>
+          <button
+            type="submit"
+            form="publish-form"
+            class="rounded bg-zinc-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
+            disabled={@publish_submit_status == :running}
+          >
             {if @publish_submit_status == :running,
               do: "Submitting to App Store...",
               else: "Submit to App Store"}
-          </.button>
+          </button>
           <span class="text-xs text-zinc-600">Status: {status_label(@publish_submit_status)}</span>
         </div>
         <pre

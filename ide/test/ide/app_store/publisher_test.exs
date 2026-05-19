@@ -94,6 +94,8 @@ defmodule Ide.AppStore.PublisherTest do
     assert release_body =~ "1.0.1"
     assert release_body =~ ~s(name="isPublished")
     assert release_body =~ "true"
+    assert release_body =~ ~s(name="replaceScreenshots")
+    assert release_body =~ "true"
     assert release_body =~ ~s(name="screenshots_basalt"; filename="basalt_shot_1.png")
     assert release_body =~ ~s(name="pbwFile"; filename="app.pbw")
   end

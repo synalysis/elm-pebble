@@ -10,10 +10,16 @@ defmodule IdeWeb.WorkspaceLive.PublishFlowTest do
              PublishFlow.default_release_summary(project)
   end
 
-  test "bump_release_summary increments semver patch" do
-    summary = %{"version_label" => "2.4.9", "tags" => "watchface"}
+  test "default_release_summary reads changelog draft from project defaults" do
+    project = %{release_defaults: %{"changelog" => "- Fixed chalk layout"}}
 
-    assert %{"version_label" => "2.4.10", "tags" => "watchface"} =
+    assert PublishFlow.default_release_summary(project)["changelog"] == "- Fixed chalk layout"
+  end
+
+  test "bump_release_summary increments semver patch" do
+    summary = %{"version_label" => "2.4.9", "tags" => "watchface", "changelog" => "Ship notes"}
+
+    assert %{"version_label" => "2.4.10", "tags" => "watchface", "changelog" => ""} =
              PublishFlow.bump_release_summary(summary)
   end
 
@@ -74,6 +80,56 @@ defmodule IdeWeb.WorkspaceLive.PublishFlowTest do
     assert Path.basename(staged_chalk) == "chalk_shot_20260519.png"
     assert File.regular?(staged_emery)
     assert File.regular?(staged_chalk)
+  end
+
+  test "publish_ready_screenshot_groups keeps all valid shots per platform" do
+    root =
+      Path.join(System.tmp_dir!(), "ide_publish_flow_test_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(root)
+    on_exit(fn -> File.rm_rf(root) end)
+
+    first_path = Path.join(root, "basalt_shot_a.png")
+    second_path = Path.join(root, "basalt_shot_b.png")
+    File.write!(first_path, png_header(144, 168))
+    File.write!(second_path, png_header(144, 168))
+
+    first = %{emulator_target: "basalt", absolute_path: first_path}
+    second = %{emulator_target: "basalt", absolute_path: second_path}
+
+    assert [{"basalt", shots}] =
+             PublishFlow.publish_ready_screenshot_groups([{"basalt", [first, second]}])
+
+    assert length(shots) == 2
+    assert Enum.map(shots, & &1.absolute_path) |> Enum.sort() ==
+             [first_path, second_path] |> Enum.sort()
+  end
+
+  test "stage_publish_screenshots stages every valid screenshot per platform" do
+    root =
+      Path.join(System.tmp_dir!(), "ide_publish_flow_test_#{System.unique_integer([:positive])}")
+
+    app_root = Path.join(root, "app")
+    source_dir = Path.join(root, "source")
+    File.mkdir_p!(app_root)
+    File.mkdir_p!(source_dir)
+    on_exit(fn -> File.rm_rf(root) end)
+
+    first = Path.join(source_dir, "basalt_shot_a.png")
+    second = Path.join(source_dir, "basalt_shot_b.png")
+    File.write!(first, png_header(144, 168))
+    File.write!(second, png_header(144, 168))
+
+    assert {:ok, staged} =
+             PublishFlow.stage_publish_screenshots(app_root, [
+               {"basalt", [%{absolute_path: first}, %{absolute_path: second}]}
+             ])
+
+    assert length(staged) == 2
+    assert Enum.sort(Enum.map(staged, &Path.basename/1)) == [
+             "basalt_shot_a.png",
+             "basalt_shot_b.png"
+           ]
   end
 
   test "stage_publish_screenshots skips screenshots with wrong dimensions" do

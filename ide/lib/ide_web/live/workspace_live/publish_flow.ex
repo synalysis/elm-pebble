@@ -15,7 +15,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
       "version_label" => Map.get(defaults, "version_label", ""),
       "release_channel" => Map.get(defaults, "release_channel", "stable"),
       "tags" => Map.get(defaults, "tags", ""),
-      "changelog" => ""
+      "changelog" => Map.get(defaults, "changelog", "")
     }
   end
 
@@ -147,6 +147,16 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
       {:error, error}
   end
 
+  @doc """
+  Drops screenshots that fail platform dimension checks; keeps every valid shot per target.
+  """
+  @spec publish_ready_screenshot_groups([{String.t(), [map()]}]) :: [{String.t(), [map()]}]
+  def publish_ready_screenshot_groups(screenshot_groups) when is_list(screenshot_groups) do
+    Enum.map(screenshot_groups, fn {target, shots} ->
+      {target, Enum.filter(shots, &valid_screenshot_dimensions?(target, &1))}
+    end)
+  end
+
   @spec stage_publish_screenshots(String.t(), [{String.t(), [map()]}]) ::
           {:ok, [String.t()]} | {:error, term()}
   def stage_publish_screenshots(app_root, screenshot_groups)
@@ -155,9 +165,9 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
 
     with :ok <- reset_dir(output_dir) do
       screenshot_groups
+      |> publish_ready_screenshot_groups()
       |> Enum.flat_map(fn {target, shots} ->
         shots
-        |> Enum.filter(&valid_screenshot_dimensions?(target, &1))
         |> Enum.with_index(1)
         |> Enum.map(&stage_screenshot(output_dir, target, &1))
       end)
@@ -482,6 +492,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
       |> Map.put("release_channel", release_summary["release_channel"] || "stable")
       |> Map.put("version_label", release_summary["version_label"] || "")
       |> Map.put("tags", release_summary["tags"] || "")
+      |> Map.put("changelog", release_summary["changelog"] || "")
 
     %{
       "latest_published_version" => latest_version,
@@ -539,8 +550,13 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     version_label = Map.get(summary, "version_label", "")
 
     case bump_patch_version(version_label) do
-      {:ok, next_version} -> Map.put(summary, "version_label", next_version)
-      :error -> summary
+      {:ok, next_version} ->
+        summary
+        |> Map.put("version_label", next_version)
+        |> Map.put("changelog", "")
+
+      :error ->
+        summary
     end
   end
 

@@ -96,6 +96,7 @@ defmodule Ide.AppStore.Publisher do
            "Publish Version: #{ctx.version}",
            publish_version_warning(metadata.version, ctx.version),
            visibility_line(ctx.is_published),
+           release_notes_line(ctx.release_notes),
            "Platforms: #{Enum.join(metadata.platforms, ", ")}"
          ]
          |> Enum.reject(&is_nil/1)
@@ -177,7 +178,7 @@ defmodule Ide.AppStore.Publisher do
       "version" => ctx.version,
       "releaseNotes" => ctx.release_notes,
       "isPublished" => bool_string(ctx.is_published),
-      "replaceScreenshots" => "false"
+      "replaceScreenshots" => replace_screenshots_string(ctx.screenshots)
     }
 
     files = [{"pbwFile", ctx.artifact_path}] ++ screenshot_files(ctx.screenshots)
@@ -495,6 +496,23 @@ defmodule Ide.AppStore.Publisher do
     do:
       "Release visibility: draft (not public yet — enable “Make release visible immediately” or publish from the developer dashboard)"
 
+  defp release_notes_line(notes) do
+    trimmed = notes |> to_string() |> String.trim()
+
+    if trimmed == "" do
+      "Release notes: (empty — add changelog text on the Publish page before submit)"
+    else
+      preview =
+        trimmed
+        |> String.split("\n", parts: 2)
+        |> hd()
+        |> String.slice(0, 80)
+
+      suffix = if String.length(trimmed) > String.length(preview), do: "…", else: ""
+      "Release notes: #{String.length(trimmed)} characters (#{preview}#{suffix})"
+    end
+  end
+
   defp prepare_upload_artifact(artifact_path) do
     case normalize_pbw_uuid(artifact_path) do
       {:ok, path, nil} ->
@@ -610,6 +628,10 @@ defmodule Ide.AppStore.Publisher do
 
   defp bool_string(true), do: "true"
   defp bool_string(false), do: "false"
+
+  defp replace_screenshots_string([]), do: "false"
+  defp replace_screenshots_string(paths) when is_list(paths), do: "true"
+  defp replace_screenshots_string(_), do: "false"
 
   defp mime_type(path) do
     case Path.extname(path) |> String.downcase() do

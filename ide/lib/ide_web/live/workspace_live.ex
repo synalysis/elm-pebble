@@ -1350,13 +1350,49 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  def handle_event("update-release-summary", %{"release_summary" => params}, socket) do
-    summary = PublishFlow.merge_release_summary(socket.assigns.release_summary, params)
+  def handle_event("update-release-summary", params, socket) do
+    handle_event("update-publish-form", params, socket)
+  end
+
+  def handle_event("update-publish-form", params, socket) do
+    socket =
+      case Map.get(params, "release_summary") do
+        %{} = release_params ->
+          summary = PublishFlow.merge_release_summary(socket.assigns.release_summary, release_params)
+
+          socket
+          |> assign(:release_summary, summary)
+          |> assign(:release_summary_form, to_form(summary, as: :release_summary))
+
+        _ ->
+          socket
+      end
+
+    socket =
+      case Map.get(params, "publish_submit") do
+        %{} = submit_params ->
+          options = merge_publish_submit_options(socket.assigns.publish_submit_options, submit_params)
+          assign(socket, :publish_submit_options, options)
+
+        _ ->
+          socket
+      end
+
+    project = socket.assigns.project
+    readiness = socket.assigns.publish_readiness
+    warnings = PublishFlow.publish_warnings(project, readiness, socket.assigns.release_summary)
 
     {:noreply,
      socket
-     |> assign(:release_summary, summary)
-     |> assign(:release_summary_form, to_form(summary, as: :release_summary))}
+     |> assign(:publish_warnings, warnings)
+     |> assign(
+       :publish_summary,
+       PublishFlow.publish_summary(socket.assigns.publish_checks, warnings, readiness)
+     )}
+  end
+
+  def handle_event("update-publish-submit-options", params, socket) do
+    handle_event("update-publish-form", params, socket)
   end
 
   def handle_event("firebase-auth-refreshed", %{"id_token" => id_token}, socket) do
@@ -1473,15 +1509,33 @@ defmodule IdeWeb.WorkspaceLive do
      end)}
   end
 
-  def handle_event("update-publish-submit-options", %{"publish_submit" => params}, socket) do
-    options = merge_publish_submit_options(socket.assigns.publish_submit_options, params)
-    {:noreply, assign(socket, :publish_submit_options, options)}
-  end
+  def handle_event("submit-publish-release", params, socket) do
+    release_summary =
+      case Map.get(params, "release_summary") do
+        %{} = release_params ->
+          PublishFlow.merge_release_summary(socket.assigns.release_summary, release_params)
 
-  def handle_event("submit-publish-release", _params, socket) do
+        _ ->
+          socket.assigns.release_summary
+      end
+
+    options =
+      case Map.get(params, "publish_submit") do
+        %{} = submit_params ->
+          merge_publish_submit_options(socket.assigns.publish_submit_options, submit_params)
+
+        _ ->
+          socket.assigns.publish_submit_options
+      end
+
+    socket =
+      socket
+      |> assign(:release_summary, release_summary)
+      |> assign(:release_summary_form, to_form(release_summary, as: :release_summary))
+      |> assign(:publish_submit_options, options)
+
     project = socket.assigns.project
     app_root = socket.assigns.publish_app_root
-    options = socket.assigns.publish_submit_options
     firebase_id_token = socket.assigns[:firebase_id_token]
     firebase_id_token_exp = socket.assigns[:firebase_id_token_exp]
 
@@ -1521,6 +1575,15 @@ defmodule IdeWeb.WorkspaceLive do
            "App Store description required. Add one in Project Settings before submitting a new app."
          )}
 
+      PublishFlow.store_release_notes(release_summary) == "" ->
+        {:noreply,
+         socket
+         |> assign(:publish_submit_status, :error)
+         |> assign(
+           :publish_submit_output,
+           "Changelog is empty. Add release notes in the Changelog field, then submit again."
+         )}
+
       true ->
         app_description = publish_app_description(project)
         screenshot_groups = socket.assigns.screenshot_groups
@@ -1528,8 +1591,8 @@ defmodule IdeWeb.WorkspaceLive do
         submit_opts = [
           app_root: app_root,
           artifact_path: socket.assigns.publish_artifact_path,
-          release_notes: PublishFlow.store_release_notes(socket.assigns.release_summary),
-          version: socket.assigns.release_summary["version_label"],
+          release_notes: PublishFlow.store_release_notes(release_summary),
+          version: release_summary["version_label"],
           description: app_description,
           is_published: options["is_published"] == true,
           all_platforms: options["all_platforms"] == true,
@@ -3762,8 +3825,9 @@ defmodule IdeWeb.WorkspaceLive do
       |> PublishFlow.publish_project_attrs_from_submit(submitted_release_summary)
       |> Map.update!("release_defaults", fn defaults ->
         defaults
-        |> Map.put("version_label", next_release_summary["version_label"] || "")
-        |> Map.put("tags", next_release_summary["tags"] || "")
+      |> Map.put("version_label", next_release_summary["version_label"] || "")
+      |> Map.put("tags", next_release_summary["tags"] || "")
+      |> Map.put("changelog", next_release_summary["changelog"] || "")
       end)
 
     case Projects.update_project(project, attrs) do
