@@ -2568,7 +2568,7 @@ defmodule Ide.DebuggerTest do
           ( { model | count = model.count + 1 }, Cmd.none )
 
     subscriptions _ =
-      Events.onTick Tick
+      Events.onSecondChange Tick
     """
 
     {:ok, _} = Debugger.start_session(slug)
@@ -2583,7 +2583,7 @@ defmodule Ide.DebuggerTest do
     assert {:ok, disabled} =
              Debugger.set_subscription_enabled(slug, %{
                target: "watch",
-               trigger: "on_tick",
+               trigger: "on_second_change",
                enabled: "false"
              })
 
@@ -2592,7 +2592,7 @@ defmodule Ide.DebuggerTest do
     assert {:ok, blocked} =
              Debugger.inject_trigger(slug, %{
                target: "watch",
-               trigger: "on_tick",
+               trigger: "on_second_change",
                message: "Tick"
              })
 
@@ -2604,7 +2604,7 @@ defmodule Ide.DebuggerTest do
     assert {:ok, enabled} =
              Debugger.set_subscription_enabled(slug, %{
                target: "watch",
-               trigger: "on_tick",
+               trigger: "on_second_change",
                enabled: "true"
              })
 
@@ -2613,7 +2613,7 @@ defmodule Ide.DebuggerTest do
     assert {:ok, triggered} =
              Debugger.inject_trigger(slug, %{
                target: "watch",
-               trigger: "on_tick",
+               trigger: "on_second_change",
                message: "Tick"
              })
 
@@ -2671,7 +2671,7 @@ defmodule Ide.DebuggerTest do
       ( model, Cmd.none )
 
     subscriptions _ =
-      Evts.batch [ Evts.onTick Tick, Evts.onMinuteChange MinuteChanged ]
+      Evts.batch [ Evts.onSecondChange Tick, Evts.onMinuteChange MinuteChanged ]
     """
 
     {:ok, _} = Debugger.start_session(slug)
@@ -2686,7 +2686,7 @@ defmodule Ide.DebuggerTest do
     assert {:ok, trigger_rows} = Debugger.available_triggers(slug, %{"target" => "watch"})
 
     assert Enum.any?(trigger_rows, fn row ->
-             row.trigger == "on_tick" and row.message == "Tick"
+             row.trigger == "on_second_change" and row.message == "Tick"
            end)
 
     assert Enum.any?(trigger_rows, fn row ->
@@ -3036,7 +3036,7 @@ defmodule Ide.DebuggerTest do
       ( model, Cmd.none )
 
     subscriptions _ =
-      Evts.batch [ Evts.onTick Tick, Evts.onMinuteChange MinuteChanged ]
+      Evts.batch [ Evts.onSecondChange Tick, Evts.onMinuteChange MinuteChanged ]
     """
 
     {:ok, _} = Debugger.start_session(slug)
@@ -3051,13 +3051,16 @@ defmodule Ide.DebuggerTest do
     assert {:ok, enabled} =
              Debugger.set_auto_fire(slug, %{
                target: "watch",
-               trigger: "on_tick",
+               trigger: "on_second_change",
                enabled: "true"
              })
 
     assert enabled.auto_tick.enabled == true
     assert enabled.auto_tick.targets == ["watch"]
-    assert enabled.auto_tick.subscriptions == [%{"target" => "watch", "trigger" => "on_tick"}]
+
+    assert enabled.auto_tick.subscriptions == [
+             %{"target" => "watch", "trigger" => "on_second_change"}
+           ]
 
     enabled_seq = enabled.seq
     Process.sleep(1_150)

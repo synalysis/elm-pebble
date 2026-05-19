@@ -862,14 +862,14 @@ defmodule Ide.FormatterTest do
     module Main exposing (subs)
 
     subs =
-        PebbleEvents.batch [ PebbleEvents.onTick Tick, PebbleButton.onPress PebbleButton.Up UpPressed, PebbleButton.onPress PebbleButton.Select SelectPressed, PebbleButton.onPress PebbleButton.Down DownPressed, PebbleAccel.onTap AccelTap ]
+        PebbleEvents.batch [ PebbleEvents.onSecondChange Tick, PebbleButton.onPress PebbleButton.Up UpPressed, PebbleButton.onPress PebbleButton.Select SelectPressed, PebbleButton.onPress PebbleButton.Down DownPressed, PebbleAccel.onTap AccelTap ]
     """
 
     assert {:ok, result} = Formatter.format(source)
 
     assert String.contains?(
              result.formatted_source,
-             "    PebbleEvents.batch\n        [ PebbleEvents.onTick Tick"
+             "    PebbleEvents.batch\n        [ PebbleEvents.onSecondChange Tick"
            )
 
     assert String.contains?(result.formatted_source, "        , PebbleAccel.onTap AccelTap")
@@ -881,7 +881,7 @@ defmodule Ide.FormatterTest do
     module Main exposing (subs)
 
     subs =
-        PebbleEvents.batch [ PebbleEvents.onTick Tick, PebbleButton.onPress PebbleButton.Up UpPressed
+        PebbleEvents.batch [ PebbleEvents.onSecondChange Tick, PebbleButton.onPress PebbleButton.Up UpPressed
            , PebbleButton.onPress PebbleButton.Select SelectPressed
            , PebbleButton.onPress PebbleButton.Down DownPressed
            , PebbleAccel.onTap AccelTap ]
@@ -891,7 +891,7 @@ defmodule Ide.FormatterTest do
 
     assert String.contains?(
              result.formatted_source,
-             "    PebbleEvents.batch\n        [ PebbleEvents.onTick Tick"
+             "    PebbleEvents.batch\n        [ PebbleEvents.onSecondChange Tick"
            )
 
     assert String.contains?(
@@ -906,7 +906,7 @@ defmodule Ide.FormatterTest do
 
     subs =
         PebbleEvents.batch
-            [ PebbleEvents.onTick Tick
+            [ PebbleEvents.onSecondChange Tick
             , PebbleButton.onPress PebbleButton.Up UpPressed
             , PebbleAccel.onTap AccelTap ]
     """

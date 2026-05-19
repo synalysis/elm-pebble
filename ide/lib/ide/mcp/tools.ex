@@ -252,6 +252,21 @@ defmodule Ide.Mcp.Tools do
       }
     },
     %{
+      name: "packages.module_docs",
+      description:
+        "Read Markdown API documentation for one exposed Elm package module, including internal Pebble packages.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["package", "module"],
+        properties: %{
+          package: %{type: "string"},
+          module: %{type: "string"},
+          version: %{type: "string", description: "Version string; defaults to latest."}
+        }
+      }
+    },
+    %{
       name: "projects.graph",
       description: "Return project context graph with workspace and file counts.",
       inputSchema: %{type: "object", additionalProperties: false, properties: %{}}
@@ -1552,6 +1567,18 @@ defmodule Ide.Mcp.Tools do
     case Packages.readme(package, version, []) do
       {:ok, payload} -> {:ok, payload}
       {:error, reason} -> {:error, "packages readme failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("packages.module_docs", %{"package" => package, "module" => module_name} = args) do
+    version = Map.get(args, "version", "latest")
+
+    case Packages.module_doc_markdown(package, version, module_name, []) do
+      {:ok, markdown} ->
+        {:ok, %{package: package, version: version, module: module_name, markdown: markdown}}
+
+      {:error, reason} ->
+        {:error, "packages module docs failed: #{inspect(reason)}"}
     end
   end
 
@@ -3292,6 +3319,7 @@ defmodule Ide.Mcp.Tools do
   defp authorized?("packages.details", capabilities), do: :read in capabilities
   defp authorized?("packages.versions", capabilities), do: :read in capabilities
   defp authorized?("packages.readme", capabilities), do: :read in capabilities
+  defp authorized?("packages.module_docs", capabilities), do: :read in capabilities
   defp authorized?("projects.graph", capabilities), do: :read in capabilities
   defp authorized?("audit.recent", capabilities), do: :read in capabilities
   defp authorized?("compiler.check_cached", capabilities), do: :read in capabilities

@@ -243,6 +243,7 @@ defmodule Ide.Mcp.ToolsTest do
     assert "packages_details" in tool_names
     assert "packages_versions" in tool_names
     assert "packages_readme" in tool_names
+    assert "packages_module_docs" in tool_names
     assert "screenshots_list" in tool_names
     assert "screenshots_read" in tool_names
     assert "projects_graph" in tool_names
@@ -736,20 +737,30 @@ defmodule Ide.Mcp.ToolsTest do
 
     assert Enum.any?(timeline, fn {target, message, source} ->
              target == "watch" and source == "protocol_rx" and
-               String.starts_with?(message, "FromPhone (ProvideLocation (48000000")
+               String.starts_with?(message, "FromPhone (ProvideLocation 48000000")
            end)
 
     assert Enum.any?(timeline, fn {target, message, source} ->
              target == "watch" and source == "protocol_rx" and
-               String.starts_with?(message, "FromPhone (ProvideSun (") and
-               not String.contains?(message, "ProvideSun (0, (0,")
+               String.starts_with?(message, "FromPhone (ProvideSun ") and
+               String.contains?(message, "SunCycle") and
+               not String.contains?(message, "ProvideSun 0 0")
            end)
 
     watch_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
     assert watch_model["homeLatE6"] == %{"ctor" => "Just", "args" => [48_000_000]}
     assert watch_model["homeLonE6"] == %{"ctor" => "Just", "args" => [10_000_000]}
 
-    assert %{"ctor" => "Just", "args" => [%{"sunriseMin" => sunrise, "sunsetMin" => sunset}]} =
+    assert %{
+             "ctor" => "Just",
+             "args" => [
+               %{
+                 "mode" => %{"ctor" => "SunCycle", "args" => []},
+                 "sunriseMin" => sunrise,
+                 "sunsetMin" => sunset
+               }
+             ]
+           } =
              watch_model["sun"]
 
     assert is_integer(sunrise) and sunrise > 0
@@ -800,6 +811,19 @@ defmodule Ide.Mcp.ToolsTest do
 
     assert {:ok, %{readme: "# elm/http latest"}} =
              Tools.call("packages.readme", %{"package" => "elm/http"}, [:read])
+
+    assert {:ok, %{markdown: markdown}} =
+             Tools.call(
+               "packages.module_docs",
+               %{
+                 "package" => "elm-pebble/companion-core",
+                 "module" => "Pebble.Companion.Battery"
+               },
+               [:read]
+             )
+
+    assert String.contains?(markdown, "Phone battery information")
+    assert String.contains?(markdown, "current phone battery status")
 
     assert {:error, reason} =
              Tools.call(

@@ -181,7 +181,7 @@ handlePlatformMsg msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    PebbleEvents.batch [ PebbleEvents.onTick Tick, PebbleButton.onPress PebbleButton.Up UpPressed, PebbleButton.onPress PebbleButton.Select SelectPressed, PebbleButton.onPress PebbleButton.Down DownPressed, PebbleAccel.onTap AccelTap ]
+    PebbleEvents.batch [ PebbleEvents.onSecondChange Tick, PebbleButton.onPress PebbleButton.Up UpPressed, PebbleButton.onPress PebbleButton.Select SelectPressed, PebbleButton.onPress PebbleButton.Down DownPressed, PebbleAccel.onTap AccelTap ]
 
 
 {-| Produce the retained virtual UI tree for rendering. -}

@@ -31,12 +31,14 @@ module Elm.Kernel.PebbleWatch exposing
     , onButtonSelect
     , onButtonUp
     , onConnectionChange
+    , onDayChange
     , onFrame
     , onHealthEvent
     , onHourChange
     , onMinuteChange
+    , onMonthChange
     , onSecondChange
-    , onTick
+    , onYearChange
     , storageDelete
     , storageReadInt
     , storageReadString
@@ -319,14 +321,9 @@ vibesDoublePulse =
     Cmd.none
 
 
-onTick : (Int -> msg) -> Sub msg
-onTick _ =
-    Sub.none
-
-
 onSecondChange : (Int -> msg) -> Sub msg
-onSecondChange =
-    onTick
+onSecondChange _ =
+    Sub.none
 
 
 onFrame : Int -> (a -> msg) -> Sub msg
@@ -341,6 +338,21 @@ onHourChange _ =
 
 onMinuteChange : (Int -> msg) -> Sub msg
 onMinuteChange _ =
+    Sub.none
+
+
+onDayChange : (Int -> msg) -> Sub msg
+onDayChange _ =
+    Sub.none
+
+
+onMonthChange : (Int -> msg) -> Sub msg
+onMonthChange _ =
+    Sub.none
+
+
+onYearChange : (Int -> msg) -> Sub msg
+onYearChange _ =
     Sub.none
 
 

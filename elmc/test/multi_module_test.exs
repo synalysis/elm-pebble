@@ -36,7 +36,7 @@ defmodule Elmc.MultiModuleTest do
     assert String.contains?(generated_c, "elmc_fn_Main_view")
     assert String.contains?(generated_c, "elmc_fn_CoreCompliance_foldSum")
     assert String.contains?(generated_c, "elmc_fn_Pebble_Cmd_none")
-    assert String.contains?(generated_c, "elmc_fn_Pebble_Events_onTick")
+    assert String.contains?(generated_c, "elmc_fn_Pebble_Events_onSecondChange")
 
     # No un-namespaced function definitions (except lambdas)
     lines = String.split(generated_c, "\n")

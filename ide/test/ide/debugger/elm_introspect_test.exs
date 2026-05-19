@@ -364,7 +364,7 @@ defmodule Ide.Debugger.ElmIntrospectTest do
         [ Ui.line { x = Tuple.first pair, y = Tuple.second pair } { x = 3, y = 4 } Color.black ]
 
     subscriptions _ =
-        Ui.onTick Tick
+        Ui.onSecondChange Tick
 
     main =
         Ui.watchApp
@@ -1148,7 +1148,7 @@ defmodule Ide.Debugger.ElmIntrospectTest do
       | U
 
   subscriptions _ =
-      Evts.batch [ Evts.onTick T, Evts.onTap U ]
+      Evts.batch [ Evts.onSecondChange T, Evts.onTap U ]
 
   init _ =
       ( {}, Cmd.none )
@@ -1163,14 +1163,14 @@ defmodule Ide.Debugger.ElmIntrospectTest do
 
     ops = ei["subscription_ops"]
     assert is_list(ops)
-    assert Enum.any?(ops, &String.contains?(&1, "onTick"))
+    assert Enum.any?(ops, &String.contains?(&1, "onSecondChange"))
     assert Enum.any?(ops, &String.contains?(&1, "onTap"))
 
     calls = ei["subscription_calls"]
 
     assert Enum.any?(
              calls,
-             &match?(%{"event_kind" => "on_tick", "callback_constructor" => "T"}, &1)
+             &match?(%{"event_kind" => "on_second_change", "callback_constructor" => "T"}, &1)
            )
 
     assert Enum.any?(
@@ -1195,7 +1195,7 @@ defmodule Ide.Debugger.ElmIntrospectTest do
           Home ->
               Sub.none
           Settings ->
-              Evts.batch [ Evts.onTick T, Evts.onTap U ]
+              Evts.batch [ Evts.onSecondChange T, Evts.onTap U ]
 
   init _ =
       ( {}, Cmd.none )
@@ -1213,7 +1213,7 @@ defmodule Ide.Debugger.ElmIntrospectTest do
 
     assert ei["subscriptions_params"] == ["model"]
     ops = ei["subscription_ops"]
-    assert Enum.any?(ops, &String.contains?(&1, "onTick"))
+    assert Enum.any?(ops, &String.contains?(&1, "onSecondChange"))
     assert Enum.any?(ops, &String.contains?(&1, "onTap"))
     assert "Home" in ei["subscriptions_case_branches"]
     assert "Settings" in ei["subscriptions_case_branches"]
@@ -1229,7 +1229,7 @@ defmodule Ide.Debugger.ElmIntrospectTest do
   subscriptions _ =
       case wat of
           X ->
-              Evts.batch [ Evts.onTick T ]
+              Evts.batch [ Evts.onSecondChange T ]
 
   init _ =
       ( {}, Cmd.none )

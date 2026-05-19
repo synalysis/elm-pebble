@@ -338,6 +338,9 @@ defmodule Elmc.Backend.Pebble do
     #define ELMC_PEBBLE_SUB_FRAME (1 << 13)
     #define ELMC_PEBBLE_SUB_BUTTON_RAW (1 << 14)
     #define ELMC_PEBBLE_SUB_ACCEL_DATA (1 << 15)
+    #define ELMC_PEBBLE_SUB_DAY (1 << 16)
+    #define ELMC_PEBBLE_SUB_MONTH (1 << 17)
+    #define ELMC_PEBBLE_SUB_YEAR (1 << 18)
     #define ELMC_PEBBLE_SUB_HEALTH (1LL << 31)
 
     int elmc_pebble_init(ElmcPebbleApp *app, ElmcValue *flags);
@@ -374,6 +377,9 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_dispatch_frame(ElmcPebbleApp *app, int64_t dt_ms, int64_t elapsed_ms, int64_t frame);
     int elmc_pebble_dispatch_hour(ElmcPebbleApp *app, int hour);
     int elmc_pebble_dispatch_minute(ElmcPebbleApp *app, int minute);
+    int elmc_pebble_dispatch_day(ElmcPebbleApp *app, int day);
+    int elmc_pebble_dispatch_month(ElmcPebbleApp *app, int month);
+    int elmc_pebble_dispatch_year(ElmcPebbleApp *app, int year);
     int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd);
     int elmc_pebble_view_command(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmd);
     int elmc_pebble_view_commands(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
@@ -469,6 +475,9 @@ defmodule Elmc.Backend.Pebble do
 
     hour_tag = pick_tag(msg_constructors, ["HourChanged"])
     minute_tag = pick_tag(msg_constructors, ["MinuteChanged"])
+    day_tag = pick_tag(msg_constructors, ["DayChanged"])
+    month_tag = pick_tag(msg_constructors, ["MonthChanged"])
+    year_tag = pick_tag(msg_constructors, ["YearChanged"])
     direct_view_macro = direct_command_macro(entry_module, "view")
 
     entry_view_commands_from =
@@ -2000,6 +2009,27 @@ defmodule Elmc.Backend.Pebble do
       return elmc_pebble_dispatch_tag_value(app, #{minute_tag}, minute);
     }
 
+    int elmc_pebble_dispatch_day(ElmcPebbleApp *app, int day) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_DAY)) return -8;
+      if (#{day_tag} <= 0) return -6;
+      return elmc_pebble_dispatch_tag_value(app, #{day_tag}, day);
+    }
+
+    int elmc_pebble_dispatch_month(ElmcPebbleApp *app, int month) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_MONTH)) return -8;
+      if (#{month_tag} <= 0) return -6;
+      return elmc_pebble_dispatch_tag_value(app, #{month_tag}, month);
+    }
+
+    int elmc_pebble_dispatch_year(ElmcPebbleApp *app, int year) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_YEAR)) return -8;
+      if (#{year_tag} <= 0) return -6;
+      return elmc_pebble_dispatch_tag_value(app, #{year_tag}, year);
+    }
+
     int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd) {
       if (!app || !app->initialized || !out_cmd) return -1;
       ElmcValue *cmd = elmc_worker_take_cmd(&app->worker);
@@ -2686,9 +2716,24 @@ defmodule Elmc.Backend.Pebble do
     |> Map.merge(%{
       tick_events:
         uses_time_every or
+          uses_target?(targets, "Pebble.Events.onSecondChange") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onSecondChange") or
           pick_tag(msg_constructors, ["Tick", "Increment", "UpPressed"], fallback: -1) > 0,
-      hour_events: uses_target?(targets, "Pebble.Events.onHourChange"),
-      minute_events: uses_target?(targets, "Pebble.Events.onMinuteChange"),
+      hour_events:
+        uses_target?(targets, "Pebble.Events.onHourChange") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onHourChange"),
+      minute_events:
+        uses_target?(targets, "Pebble.Events.onMinuteChange") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onMinuteChange"),
+      day_events:
+        uses_target?(targets, "Pebble.Events.onDayChange") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onDayChange"),
+      month_events:
+        uses_target?(targets, "Pebble.Events.onMonthChange") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onMonthChange"),
+      year_events:
+        uses_target?(targets, "Pebble.Events.onYearChange") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onYearChange"),
       frame_events:
         uses_target?(targets, "Pebble.Frame.every") or
           uses_target?(targets, "Pebble.Frame.atFps") or
@@ -2752,6 +2797,9 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_TICK_EVENTS", flags[:tick_events]},
       {"ELMC_PEBBLE_FEATURE_HOUR_EVENTS", flags[:hour_events]},
       {"ELMC_PEBBLE_FEATURE_MINUTE_EVENTS", flags[:minute_events]},
+      {"ELMC_PEBBLE_FEATURE_DAY_EVENTS", flags[:day_events]},
+      {"ELMC_PEBBLE_FEATURE_MONTH_EVENTS", flags[:month_events]},
+      {"ELMC_PEBBLE_FEATURE_YEAR_EVENTS", flags[:year_events]},
       {"ELMC_PEBBLE_FEATURE_FRAME_EVENTS", flags[:frame_events]},
       {"ELMC_PEBBLE_FEATURE_BUTTON_EVENTS", flags[:button_events]},
       {"ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS", flags[:raw_button_events]},

@@ -4028,9 +4028,14 @@ defmodule IdeWeb.WorkspaceLive do
           {"integer", Integer.to_string(now.second),
            append_single_payload(constructor, now.second)}
 
-        contains_any?(normalized_trigger, ["on_tick", "ontick", "tick"]) ->
-          {"integer", Integer.to_string(now.second),
-           append_single_payload(constructor, now.second)}
+        contains_any?(normalized_trigger, ["on_day_change", "ondaychange"]) ->
+          {"integer", Integer.to_string(now.day), append_single_payload(constructor, now.day)}
+
+        contains_any?(normalized_trigger, ["on_month_change", "onmonthchange"]) ->
+          {"integer", Integer.to_string(now.month), append_single_payload(constructor, now.month)}
+
+        contains_any?(normalized_trigger, ["on_year_change", "onyearchange"]) ->
+          {"integer", Integer.to_string(now.year), append_single_payload(constructor, now.year)}
 
         true ->
           {"message", "", constructor}

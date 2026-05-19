@@ -615,10 +615,16 @@ defmodule Ide.ProjectsTest do
              Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
 
     assert String.contains?(companion_app, "CompanionPhone.onWatchToPhone FromWatch")
-    assert String.contains?(companion_app, "GeneratedPreferences.onConfiguration FromConfiguration")
+
+    assert String.contains?(
+             companion_app,
+             "GeneratedPreferences.onConfiguration FromConfiguration"
+           )
+
     assert String.contains?(companion_app, "Geolocation.currentPosition")
     assert String.contains?(companion_app, "Geolocation.onCurrentPosition CurrentPosition")
-    assert String.contains?(companion_app, "calcSunriseSunset location tzOffsetMin now")
+    assert String.contains?(companion_app, "sunriseMinute location tzOffsetMin")
+    assert String.contains?(companion_app, "sunsetMinute location tzOffsetMin")
     refute String.contains?(companion_app, "ProvideAltitude")
 
     assert {:ok, companion_preferences} =

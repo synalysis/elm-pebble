@@ -169,7 +169,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
       ( model, Cmd.none )
 
     subscriptions _ =
-      Events.batch [ Events.onTick Tick, Events.onMinuteChange MinuteChanged ]
+      Events.batch [ Events.onSecondChange Tick, Events.onMinuteChange MinuteChanged ]
     """
 
     {:ok, _} = Debugger.start_session(slug)
@@ -188,7 +188,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
       |> DebuggerSupport.refresh()
 
     assert Enum.any?(socket.assigns.debugger_watch_trigger_buttons, fn row ->
-             row.trigger == "on_tick" and row.message == "Tick"
+             row.trigger == "on_second_change" and row.message == "Tick"
            end)
 
     assert Enum.any?(socket.assigns.debugger_watch_trigger_buttons, fn row ->
@@ -1777,7 +1777,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
           "update_case_subject" => "msg",
           "update_cmd_ops" => ["Cmd.none"],
           "update_params" => ["msg", "model"],
-          "subscription_ops" => ["onTick(T)", "Sub.none"],
+          "subscription_ops" => ["onSecondChange(T)", "Sub.none"],
           "main_program" => %{
             "target" => "Platform.worker",
             "kind" => "worker",
@@ -1828,7 +1828,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert out =~ "ports:"
     assert out =~ "port module: yes"
     assert out =~ "toJs"
-    assert out =~ "onTick"
+    assert out =~ "onSecondChange"
     assert out =~ "init:"
     assert out =~ "init Cmd:"
     assert out =~ "Cmd.none"

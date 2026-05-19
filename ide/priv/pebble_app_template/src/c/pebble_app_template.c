@@ -1566,6 +1566,38 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     }
   }
 #endif
+#if ELMC_PEBBLE_FEATURE_DAY_EVENTS
+  if ((units_changed & DAY_UNIT) != 0 && tick_time) {
+    int rc = elmc_pebble_dispatch_day(&s_elm_app, tick_time->tm_mday);
+    APP_LOG(APP_LOG_LEVEL_INFO, "day dispatch day=%d rc=%d", tick_time->tm_mday, rc);
+    if (rc == 0) {
+      apply_pending_cmd();
+      render_model();
+    }
+  }
+#endif
+#if ELMC_PEBBLE_FEATURE_MONTH_EVENTS
+  if ((units_changed & MONTH_UNIT) != 0 && tick_time) {
+    int month = tick_time->tm_mon + 1;
+    int rc = elmc_pebble_dispatch_month(&s_elm_app, month);
+    APP_LOG(APP_LOG_LEVEL_INFO, "month dispatch month=%d rc=%d", month, rc);
+    if (rc == 0) {
+      apply_pending_cmd();
+      render_model();
+    }
+  }
+#endif
+#if ELMC_PEBBLE_FEATURE_YEAR_EVENTS
+  if ((units_changed & YEAR_UNIT) != 0 && tick_time) {
+    int year = tick_time->tm_year + 1900;
+    int rc = elmc_pebble_dispatch_year(&s_elm_app, year);
+    APP_LOG(APP_LOG_LEVEL_INFO, "year dispatch year=%d rc=%d", year, rc);
+    if (rc == 0) {
+      apply_pending_cmd();
+      render_model();
+    }
+  }
+#endif
 #if ELMC_PEBBLE_FEATURE_TICK_EVENTS
   if (elmc_pebble_tick(&s_elm_app) == 0) {
     apply_pending_cmd();
@@ -2180,7 +2212,7 @@ static void init(void) {
       s_frame_interval_ms = frame_interval_from_subscriptions();
     }
 #endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && (ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS)
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && (ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS || ELMC_PEBBLE_FEATURE_DAY_EVENTS || ELMC_PEBBLE_FEATURE_MONTH_EVENTS || ELMC_PEBBLE_FEATURE_YEAR_EVENTS)
     tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
 #endif
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_ACCEL_EVENTS
@@ -2222,7 +2254,7 @@ static void init(void) {
 static void deinit(void) {
   ELMC_PEBBLE_TRACE_ENTER("deinit");
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "app deinit start");
-#if ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS
+#if ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS || ELMC_PEBBLE_FEATURE_DAY_EVENTS || ELMC_PEBBLE_FEATURE_MONTH_EVENTS || ELMC_PEBBLE_FEATURE_YEAR_EVENTS
   tick_timer_service_unsubscribe();
 #endif
   if (s_timer) {

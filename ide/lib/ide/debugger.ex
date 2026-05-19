@@ -26,6 +26,58 @@ defmodule Ide.Debugger do
     names: ["onCurrentPosition"],
     target_suffixes: [".onCurrentPosition"]
   }
+  @companion_bridge_subscription_contracts [
+    %{
+      source: "battery",
+      names: ["onBattery"],
+      target_suffixes: [".onBattery"],
+      payload: :battery
+    },
+    %{
+      source: "locale",
+      names: ["onLocale"],
+      target_suffixes: [".onLocale"],
+      payload: :locale
+    },
+    %{
+      source: "network",
+      names: ["onNetwork"],
+      target_suffixes: [".onNetwork"],
+      payload: :network
+    },
+    %{
+      source: "notifications",
+      names: ["onNotifications"],
+      target_suffixes: [".onNotifications"],
+      payload: :notifications
+    },
+    %{
+      source: "weather",
+      names: ["onWeather"],
+      target_suffixes: [".onWeather"],
+      payload: :weather
+    },
+    %{
+      source: "calendar",
+      names: ["onCalendar"],
+      target_suffixes: [".onCalendar"],
+      payload: :calendar
+    },
+    %{
+      source: "environment",
+      names: ["onEnvironment"],
+      target_suffixes: [".onEnvironment"],
+      payload: :environment
+    }
+  ]
+  @storage_result_contract %{
+    names: ["onStorage"],
+    target_suffixes: [".onStorage"]
+  }
+  @preferences_result_contract %{
+    names: ["onPreference"],
+    target_suffixes: [".onPreference"]
+  }
 
   @type runtime_event :: %{
           seq: non_neg_integer(),
@@ -214,6 +266,29 @@ defmodule Ide.Debugger do
       "charging" => false,
       "connected" => true,
       "clock_24h" => true,
+      "timezone_id" => "Europe/Berlin",
+      "timezone_offset_min" => 120,
+      "locale" => "en-US",
+      "language" => "en",
+      "region" => "US",
+      "network_online" => true,
+      "notifications_enabled" => true,
+      "quiet_hours" => false,
+      "weather" => %{
+        "temperatureC" => 21,
+        "condition" => "clear",
+        "humidityPercent" => 50,
+        "pressureHpa" => 1013,
+        "windKph" => 8
+      },
+      "calendar_events" => [],
+      "storage_values" => %{},
+      "preferences" => %{},
+      "environment" => %{
+        "sun" => %{"sunriseMin" => 420, "sunsetMin" => 1200, "polarDay" => false},
+        "moon" => %{"moonriseMin" => 900, "moonsetMin" => 300, "phaseE6" => 500_000},
+        "tide" => nil
+      },
       "latitude" => 48.137154,
       "longitude" => 11.576124,
       "accuracy" => 25.0
@@ -264,6 +339,7 @@ defmodule Ide.Debugger do
         simulator_settings: settings
       })
       |> maybe_apply_simulator_settings_geolocation_response()
+      |> maybe_apply_simulator_settings_companion_bridge_responses()
     end)
   end
 
@@ -905,9 +981,11 @@ defmodule Ide.Debugger do
 
     contains_any?(normalized, ["on_minute_change", "onminutechange"]) or
       contains_any?(normalized, ["on_hour_change", "onhourchange"]) or
+      contains_any?(normalized, ["on_day_change", "ondaychange"]) or
+      contains_any?(normalized, ["on_month_change", "onmonthchange"]) or
+      contains_any?(normalized, ["on_year_change", "onyearchange"]) or
       contains_any?(normalized, ["on_battery_change", "onbatterychange"]) or
       contains_any?(normalized, ["on_connection_change", "onconnectionchange"]) or
-      contains_any?(normalized, ["on_tick", "ontick"]) or
       contains_any?(normalized, ["on_second_change", "onsecondchange"])
   end
 
@@ -1340,6 +1418,7 @@ defmodule Ide.Debugger do
 
     protocol_events =
       (runtime_protocol_events ++ command_protocol_events)
+      |> normalize_protocol_events_from_schema(state)
       |> enrich_protocol_events(trigger, message_source)
 
     updated_model =
@@ -1408,6 +1487,13 @@ defmodule Ide.Debugger do
         message_source
       )
       |> maybe_apply_geolocation_response(target, message, updated_model, message_source)
+      |> maybe_apply_companion_bridge_command_responses(
+        target,
+        message,
+        updated_model,
+        message_source
+      )
+      |> maybe_apply_companion_bridge_responses(target, message_source)
       |> maybe_apply_static_task_followups(target, message, message_value, message_source)
 
     maybe_apply_runtime_followups(
@@ -1553,6 +1639,28 @@ defmodule Ide.Debugger do
 
   defp maybe_apply_simulator_settings_geolocation_response(state), do: state
 
+  @spec maybe_apply_simulator_settings_companion_bridge_responses(term()) :: term()
+  defp maybe_apply_simulator_settings_companion_bridge_responses(state) when is_map(state) do
+    maybe_apply_companion_bridge_subscription_responses(state, :companion, "simulator_settings")
+  end
+
+  defp maybe_apply_simulator_settings_companion_bridge_responses(state), do: state
+
+  @spec maybe_apply_init_companion_bridge_commands(term(), term()) :: term()
+  defp maybe_apply_init_companion_bridge_commands(state, :companion = target)
+       when is_map(state) do
+    model = get_in(state, [target, :model]) || %{}
+    ei = Map.get(model, "elm_introspect")
+
+    ei
+    |> introspect_cmd_calls("init_cmd_calls")
+    |> expand_helper_cmd_calls(ei)
+    |> companion_bridge_requests_from_cmd_calls()
+    |> apply_companion_bridge_requests(state, target, "init_companion_bridge")
+  end
+
+  defp maybe_apply_init_companion_bridge_commands(state, _target), do: state
+
   @spec maybe_apply_geolocation_response(term(), term(), term(), term(), term()) :: term()
   defp maybe_apply_geolocation_response(state, _target, _message, _model, "geolocation"),
     do: state
@@ -1586,6 +1694,472 @@ defmodule Ide.Debugger do
 
   defp maybe_apply_geolocation_response(state, _target, _message, _model, _message_source),
     do: state
+
+  @spec maybe_apply_companion_bridge_command_responses(term(), term(), term(), term(), term()) ::
+          term()
+  defp maybe_apply_companion_bridge_command_responses(
+         state,
+         :companion = target,
+         message,
+         model,
+         message_source
+       )
+       when is_map(state) and is_binary(message) and is_map(model) do
+    if message_source in ["companion_bridge_command", "init_companion_bridge"] do
+      state
+    else
+      current_ctor = message_constructor(message)
+      ei = Map.get(model, "elm_introspect")
+
+      ei
+      |> introspect_cmd_calls("update_cmd_calls")
+      |> update_cmd_calls_for_message(current_ctor)
+      |> expand_helper_cmd_calls(ei)
+      |> companion_bridge_requests_from_cmd_calls()
+      |> apply_companion_bridge_requests(state, target, "companion_bridge_command")
+    end
+  end
+
+  defp maybe_apply_companion_bridge_command_responses(
+         state,
+         _target,
+         _message,
+         _model,
+         _message_source
+       ),
+       do: state
+
+  @spec maybe_apply_companion_bridge_responses(term(), term(), term()) :: term()
+  defp maybe_apply_companion_bridge_responses(state, :companion = target, message_source)
+       when is_map(state) do
+    if message_source in ([
+                            "companion_bridge",
+                            "companion_bridge_command",
+                            "init_companion_bridge",
+                            "simulator_settings"
+                          ] ++
+                            companion_bridge_sources()) do
+      state
+    else
+      maybe_apply_companion_bridge_subscription_responses(state, target, "companion_bridge")
+    end
+  end
+
+  defp maybe_apply_companion_bridge_responses(state, _target, _message_source), do: state
+
+  @spec maybe_apply_companion_bridge_subscription_responses(term(), term(), String.t()) :: term()
+  defp maybe_apply_companion_bridge_subscription_responses(state, :companion = target, source)
+       when is_map(state) and is_binary(source) do
+    Enum.reduce(@companion_bridge_subscription_contracts, state, fn contract, acc ->
+      callback = subscription_callback_from_state(acc, target, contract)
+
+      case callback do
+        value when is_binary(value) and value != "" ->
+          payload = companion_bridge_payload(acc, Map.fetch!(contract, :payload))
+          trigger = Map.fetch!(contract, :source)
+
+          acc
+          |> append_event("debugger.companion_bridge", %{
+            target: source_root_for_target(target),
+            api: trigger,
+            response_message: callback,
+            response_value: payload
+          })
+          |> apply_subscription_ok_response(target, callback, payload, source, trigger)
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
+  defp maybe_apply_companion_bridge_subscription_responses(state, _target, _source), do: state
+
+  defp companion_bridge_sources do
+    Enum.map(@companion_bridge_subscription_contracts, &Map.fetch!(&1, :source))
+  end
+
+  @spec companion_bridge_payload(map(), atom()) :: term()
+  defp companion_bridge_payload(state, kind) when is_map(state) do
+    settings = simulator_settings_from_state(state)
+
+    case kind do
+      :battery ->
+        %{"percent" => settings["battery_percent"], "charging" => settings["charging"]}
+
+      :locale ->
+        %{
+          "locale" => settings["locale"],
+          "language" => settings["language"],
+          "region" => settings["region"],
+          "uses24h" => settings["clock_24h"]
+        }
+
+      :network ->
+        settings["network_online"]
+
+      :notifications ->
+        %{
+          "quietHours" => settings["quiet_hours"],
+          "notificationsEnabled" => settings["notifications_enabled"]
+        }
+
+      :weather ->
+        [settings["weather"]]
+
+      :calendar ->
+        settings["calendar_events"]
+
+      :environment ->
+        settings["environment"]
+    end
+  end
+
+  @spec companion_bridge_requests_from_cmd_calls(term()) :: [map()]
+  defp companion_bridge_requests_from_cmd_calls(calls) when is_list(calls) do
+    calls
+    |> Enum.flat_map(&companion_bridge_request_from_cmd_call/1)
+    |> Enum.uniq_by(
+      &{Map.get(&1, :api), Map.get(&1, :op), Map.get(&1, :key), inspect(Map.get(&1, :value))}
+    )
+  end
+
+  defp companion_bridge_requests_from_cmd_calls(_calls), do: []
+
+  @spec companion_bridge_request_from_cmd_call(term()) :: [map()]
+  defp companion_bridge_request_from_cmd_call(row) when is_map(row) do
+    name = (Map.get(row, "name") || "") |> to_string()
+    target = (Map.get(row, "target") || "") |> to_string()
+    normalized = String.downcase(target)
+    args = Map.get(row, "arg_values") || []
+
+    cond do
+      companion_call_target?(normalized, "battery") and name in ["current", "status", "subscribe"] ->
+        [%{api: "battery", op: "status"}]
+
+      companion_call_target?(normalized, "locale") and name in ["current", "status", "subscribe"] ->
+        [%{api: "locale", op: "status"}]
+
+      companion_call_target?(normalized, "network") and name in ["current", "status", "subscribe"] ->
+        [%{api: "network", op: "status"}]
+
+      companion_call_target?(normalized, "notifications") and
+          name in ["current", "status", "subscribe"] ->
+        [%{api: "notifications", op: "status"}]
+
+      companion_call_target?(normalized, "weather") and
+          name in ["current", "forecast", "subscribe"] ->
+        [%{api: "weather", op: name}]
+
+      companion_call_target?(normalized, "calendar") and
+          name in ["current", "nextEvent", "upcoming", "subscribe"] ->
+        [%{api: "calendar", op: name}]
+
+      companion_call_target?(normalized, "environment") and name in ["current", "subscribe"] ->
+        [%{api: "environment", op: "current"}]
+
+      companion_call_target?(normalized, "storage") and name in ["get", "set", "remove", "clear"] ->
+        [%{api: "storage", op: name, key: companion_arg_string(args, 0), value: Enum.at(args, 1)}]
+
+      companion_call_target?(normalized, "preferences") and name in ["get", "set", "subscribe"] ->
+        [
+          %{
+            api: "preferences",
+            op: name,
+            key: companion_arg_string(args, 0),
+            value: Enum.at(args, 1)
+          }
+        ]
+
+      companion_call_target?(normalized, "geolocation") and
+          name in ["currentPosition", "getCurrentPosition"] ->
+        [%{api: "geolocation", op: "getCurrentPosition"}]
+
+      true ->
+        []
+    end
+  end
+
+  defp companion_bridge_request_from_cmd_call(_row), do: []
+
+  defp companion_call_target?(target, module_name)
+       when is_binary(target) and is_binary(module_name) do
+    String.contains?(target, module_name <> ".") or
+      String.contains?(target, "companion." <> module_name)
+  end
+
+  @spec companion_arg_string(term(), non_neg_integer()) :: String.t() | nil
+  defp companion_arg_string(args, index) when is_list(args) do
+    case Enum.at(args, index) do
+      value when is_binary(value) -> value
+      _ -> nil
+    end
+  end
+
+  defp companion_arg_string(_args, _index), do: nil
+
+  @spec apply_companion_bridge_requests([map()], map(), :companion, String.t()) :: map()
+  defp apply_companion_bridge_requests(requests, state, :companion = target, source)
+       when is_list(requests) and is_map(state) and is_binary(source) do
+    Enum.reduce(requests, state, &apply_companion_bridge_request(&2, target, &1, source))
+  end
+
+  defp apply_companion_bridge_requests(_requests, state, _target, _source), do: state
+
+  @spec apply_companion_bridge_request(map(), :companion, map(), String.t()) :: map()
+  defp apply_companion_bridge_request(state, target, %{api: "storage"} = request, source) do
+    callback = subscription_callback_from_state(state, target, @storage_result_contract)
+
+    case callback do
+      value when is_binary(value) and value != "" ->
+        {next_state, result} = companion_storage_result(state, request)
+
+        apply_companion_bridge_callback(
+          next_state,
+          target,
+          callback,
+          result,
+          source,
+          "storage",
+          request
+        )
+
+      _ ->
+        state
+    end
+  end
+
+  defp apply_companion_bridge_request(state, target, %{api: "preferences"} = request, source) do
+    callback = subscription_callback_from_state(state, target, @preferences_result_contract)
+
+    case callback do
+      value when is_binary(value) and value != "" ->
+        {next_state, result} = companion_preferences_result(state, request)
+
+        apply_companion_bridge_callback(
+          next_state,
+          target,
+          callback,
+          result,
+          source,
+          "preferences",
+          request
+        )
+
+      _ ->
+        state
+    end
+  end
+
+  defp apply_companion_bridge_request(state, target, %{api: "geolocation"}, source) do
+    callback =
+      geolocation_subscription_callback(get_in(state, [target, :model, "elm_introspect"]))
+
+    case callback do
+      value when is_binary(value) and value != "" ->
+        apply_companion_bridge_callback(
+          state,
+          target,
+          callback,
+          {:ok, debugger_geolocation_location(state)},
+          source,
+          "geolocation",
+          %{api: "geolocation", op: "getCurrentPosition"}
+        )
+
+      _ ->
+        state
+    end
+  end
+
+  defp apply_companion_bridge_request(state, target, %{api: api} = request, source)
+       when is_binary(api) do
+    contract =
+      Enum.find(@companion_bridge_subscription_contracts, &(Map.fetch!(&1, :source) == api))
+
+    callback = if contract, do: subscription_callback_from_state(state, target, contract)
+
+    case {contract, callback} do
+      {%{} = found_contract, value} when is_binary(value) and value != "" ->
+        payload = companion_bridge_payload(state, Map.fetch!(found_contract, :payload))
+
+        apply_companion_bridge_callback(
+          state,
+          target,
+          callback,
+          {:ok, payload},
+          source,
+          api,
+          request
+        )
+
+      _ ->
+        state
+    end
+  end
+
+  defp apply_companion_bridge_request(state, _target, _request, _source), do: state
+
+  defp apply_companion_bridge_callback(state, target, callback, result, source, api, request)
+       when is_map(state) and is_binary(callback) and is_binary(source) and is_binary(api) do
+    {result_ctor, payload} =
+      case result do
+        {:ok, value} -> {"Ok", value}
+        {:error, message} -> {"Err", message}
+      end
+
+    state
+    |> append_event("debugger.companion_bridge", %{
+      target: source_root_for_target(target),
+      api: api,
+      op: Map.get(request, :op),
+      response_message: callback,
+      response_value: payload,
+      result: result_ctor
+    })
+    |> apply_step_once(
+      target,
+      callback,
+      subscription_result_message_value(callback, result_ctor, payload),
+      source,
+      api
+    )
+  end
+
+  @spec companion_storage_result(map(), map()) :: {map(), {:ok, term()} | {:error, String.t()}}
+  defp companion_storage_result(state, request) when is_map(state) and is_map(request) do
+    settings = simulator_settings_from_state(state)
+    values = Map.get(settings, "storage_values", %{})
+    key = Map.get(request, :key)
+
+    case Map.get(request, :op) do
+      "get" ->
+        case key && Map.get(values, key) do
+          nil -> {state, {:error, "Storage key not found"}}
+          value -> {state, {:ok, storage_value_to_elm_value(value)}}
+        end
+
+      "set" ->
+        stored = command_value_to_storage_value(Map.get(request, :value))
+
+        {put_simulator_setting_nested(state, "storage_values", key, stored),
+         {:ok, storage_value_to_elm_value(stored)}}
+
+      "remove" ->
+        {put_simulator_setting_nested(state, "storage_values", key, nil),
+         {:ok, %{"ctor" => "JsonValue", "args" => [%{}]}}}
+
+      "clear" ->
+        {put_simulator_setting(state, "storage_values", %{}),
+         {:ok, %{"ctor" => "JsonValue", "args" => [%{}]}}}
+
+      _ ->
+        {state, {:error, "Unsupported storage operation"}}
+    end
+  end
+
+  @spec companion_preferences_result(map(), map()) ::
+          {map(), {:ok, term()} | {:error, String.t()}}
+  defp companion_preferences_result(state, request) when is_map(state) and is_map(request) do
+    settings = simulator_settings_from_state(state)
+    values = Map.get(settings, "preferences", %{})
+    key = Map.get(request, :key)
+
+    case Map.get(request, :op) do
+      "get" ->
+        value = if key, do: Map.get(values, key), else: nil
+        {state, {:ok, {key || "", value}}}
+
+      "set" ->
+        value = command_json_value(Map.get(request, :value))
+
+        {put_simulator_setting_nested(state, "preferences", key, value),
+         {:ok, {key || "", value}}}
+
+      "subscribe" ->
+        {state, {:ok, {"", values}}}
+
+      _ ->
+        {state, {:error, "Unsupported preferences operation"}}
+    end
+  end
+
+  defp storage_value_to_elm_value(%{"kind" => "string", "value" => value}) when is_binary(value),
+    do: %{"ctor" => "StringValue", "args" => [value]}
+
+  defp storage_value_to_elm_value(%{"kind" => "int", "value" => value}) when is_integer(value),
+    do: %{"ctor" => "IntValue", "args" => [value]}
+
+  defp storage_value_to_elm_value(%{"kind" => "bool", "value" => value}) when is_boolean(value),
+    do: %{"ctor" => "BoolValue", "args" => [value]}
+
+  defp storage_value_to_elm_value(%{"kind" => "json", "value" => value}),
+    do: %{"ctor" => "JsonValue", "args" => [value]}
+
+  defp storage_value_to_elm_value(value), do: %{"ctor" => "JsonValue", "args" => [value]}
+
+  defp command_value_to_storage_value(%{"$ctor" => ctor, "$args" => [value | _]})
+       when ctor in ["StringValue", "Storage.StringValue"] and is_binary(value),
+       do: %{"kind" => "string", "value" => value}
+
+  defp command_value_to_storage_value(%{"$ctor" => ctor, "$args" => [value | _]})
+       when ctor in ["IntValue", "Storage.IntValue"] and is_integer(value),
+       do: %{"kind" => "int", "value" => value}
+
+  defp command_value_to_storage_value(%{"$ctor" => ctor, "$args" => [value | _]})
+       when ctor in ["BoolValue", "Storage.BoolValue"] and is_boolean(value),
+       do: %{"kind" => "bool", "value" => value}
+
+  defp command_value_to_storage_value(%{"$ctor" => _ctor, "$args" => [value | _]}),
+    do: %{"kind" => "json", "value" => value}
+
+  defp command_value_to_storage_value(value), do: %{"kind" => "json", "value" => value}
+
+  defp command_json_value(%{"$call" => target, "$args" => [value | _]})
+       when is_binary(target) do
+    cond do
+      String.ends_with?(target, ".string") and is_binary(value) -> value
+      String.ends_with?(target, ".int") and is_integer(value) -> value
+      String.ends_with?(target, ".bool") and is_boolean(value) -> value
+      true -> %{"$call" => target, "$args" => [value]}
+    end
+  end
+
+  defp command_json_value(value), do: value
+
+  defp put_simulator_setting(state, key, value) when is_map(state) and is_binary(key) do
+    settings =
+      state
+      |> simulator_settings_from_state()
+      |> Map.put(key, value)
+      |> normalize_simulator_settings()
+
+    Map.put(state, :simulator_settings, settings)
+  end
+
+  defp put_simulator_setting_nested(state, _key, nil, _value), do: state
+
+  defp put_simulator_setting_nested(state, key, child_key, nil)
+       when is_map(state) and is_binary(key) and is_binary(child_key) do
+    values =
+      state
+      |> simulator_settings_from_state()
+      |> Map.get(key, %{})
+      |> Map.delete(child_key)
+
+    put_simulator_setting(state, key, values)
+  end
+
+  defp put_simulator_setting_nested(state, key, child_key, value)
+       when is_map(state) and is_binary(key) and is_binary(child_key) do
+    values =
+      state
+      |> simulator_settings_from_state()
+      |> Map.get(key, %{})
+      |> Map.put(child_key, value)
+
+    put_simulator_setting(state, key, values)
+  end
 
   @spec maybe_apply_geolocation_subscription_response(term(), term(), String.t()) :: term()
   defp maybe_apply_geolocation_subscription_response(state, target, source)
@@ -2082,6 +2656,226 @@ defmodule Ide.Debugger do
   end
 
   defp protocol_tx_rx_events(_from, _to, _message, _trigger, _message_value), do: []
+
+  @spec normalize_protocol_events_from_schema([map()], map()) :: [map()]
+  defp normalize_protocol_events_from_schema(protocol_events, state)
+       when is_list(protocol_events) and is_map(state) do
+    case project_protocol_schema(state) do
+      {:ok, schema} ->
+        Enum.map(protocol_events, &normalize_protocol_event_from_schema(&1, schema))
+
+      {:error, _} ->
+        protocol_events
+    end
+  end
+
+  defp normalize_protocol_events_from_schema(protocol_events, _state), do: protocol_events
+
+  @spec normalize_protocol_event_from_schema(term(), map()) :: map()
+  defp normalize_protocol_event_from_schema(event, schema)
+       when is_map(event) and is_map(schema) do
+    type = Map.get(event, :type) || Map.get(event, "type")
+    payload = Map.get(event, :payload) || Map.get(event, "payload")
+
+    if is_binary(type) and is_map(payload) do
+      normalized_payload = normalize_protocol_payload_from_schema(payload, schema)
+      %{type: type, payload: normalized_payload}
+    else
+      event
+    end
+  end
+
+  defp normalize_protocol_event_from_schema(event, _schema), do: event
+
+  @spec normalize_protocol_payload_from_schema(map(), map()) :: map()
+  defp normalize_protocol_payload_from_schema(payload, schema)
+       when is_map(payload) and is_map(schema) do
+    from = Map.get(payload, :from) || Map.get(payload, "from")
+    to = Map.get(payload, :to) || Map.get(payload, "to")
+    message = Map.get(payload, :message) || Map.get(payload, "message")
+    message_value = Map.get(payload, :message_value) || Map.get(payload, "message_value")
+
+    direction =
+      cond do
+        from == "watch" and to in ["companion", "phone"] -> :watch_to_phone
+        from in ["companion", "phone"] and to == "watch" -> :phone_to_watch
+        true -> nil
+      end
+
+    case normalize_protocol_message_value_from_schema(schema, direction, message_value, message) do
+      {normalized_message, normalized_value} ->
+        payload
+        |> Map.put(:message, normalized_message)
+        |> Map.put(:message_value, normalized_value)
+
+      :error ->
+        payload
+    end
+  end
+
+  @spec normalize_protocol_message_value_from_schema(map(), atom() | nil, term(), term()) ::
+          {String.t(), map()} | :error
+  defp normalize_protocol_message_value_from_schema(schema, direction, message_value, message)
+       when direction in [:watch_to_phone, :phone_to_watch] and is_map(schema) do
+    ctor = protocol_message_ctor(message_value) || message_constructor(message)
+
+    with ctor when is_binary(ctor) and ctor != "" <- ctor,
+         %{fields: fields} <- protocol_schema_message(schema, direction, ctor),
+         args <- protocol_message_args(message_value, length(fields)) do
+      normalized_args =
+        fields
+        |> Enum.zip(args)
+        |> Enum.map(fn {field, value} ->
+          normalize_protocol_wire_value(schema, value, Map.get(field, :wire_type))
+        end)
+
+      normalized_value = %{"ctor" => ctor, "args" => protocol_constructor_args(normalized_args)}
+      {protocol_message_display(ctor, normalized_args), normalized_value}
+    else
+      _ -> :error
+    end
+  end
+
+  defp normalize_protocol_message_value_from_schema(
+         _schema,
+         _direction,
+         _message_value,
+         _message
+       ),
+       do: :error
+
+  @spec protocol_constructor_args([term()]) :: [term()]
+  defp protocol_constructor_args([]), do: []
+  defp protocol_constructor_args([_one] = args), do: args
+  defp protocol_constructor_args(args) when is_list(args), do: [protocol_tuple_payload(args)]
+
+  @spec protocol_tuple_payload([term()]) :: term()
+  defp protocol_tuple_payload([one]), do: one
+  defp protocol_tuple_payload([left | rest]), do: {left, protocol_tuple_payload(rest)}
+
+  @spec protocol_schema_message(map(), :watch_to_phone | :phone_to_watch, String.t()) ::
+          map() | nil
+  defp protocol_schema_message(schema, direction, ctor)
+       when is_map(schema) and is_binary(ctor) do
+    schema
+    |> Map.get(direction, [])
+    |> Enum.find(&(Map.get(&1, :name) == ctor))
+  end
+
+  @spec protocol_message_ctor(term()) :: String.t() | nil
+  defp protocol_message_ctor(%{"ctor" => ctor}) when is_binary(ctor), do: ctor
+  defp protocol_message_ctor(%{ctor: ctor}) when is_binary(ctor), do: ctor
+  defp protocol_message_ctor(_), do: nil
+
+  @spec protocol_message_args(term(), non_neg_integer()) :: [term()]
+  defp protocol_message_args(%{"args" => args}, field_count) when is_list(args),
+    do: flatten_protocol_args(args, field_count)
+
+  defp protocol_message_args(%{args: args}, field_count) when is_list(args),
+    do: flatten_protocol_args(args, field_count)
+
+  defp protocol_message_args(_message_value, _field_count), do: []
+
+  @spec flatten_protocol_args([term()], non_neg_integer()) :: [term()]
+  defp flatten_protocol_args(args, field_count)
+       when is_list(args) and is_integer(field_count) and field_count > 0 do
+    cond do
+      length(args) == field_count ->
+        args
+
+      length(args) == 1 ->
+        flatten_protocol_tuple_chain(hd(args), field_count)
+
+      length(args) < field_count ->
+        case List.last(args) do
+          nil ->
+            args
+
+          tail ->
+            prefix = Enum.drop(args, -1)
+            flattened_tail = flatten_protocol_tuple_chain(tail, field_count - length(prefix))
+            prefix ++ flattened_tail
+        end
+
+      true ->
+        Enum.take(args, field_count)
+    end
+  end
+
+  defp flatten_protocol_args(args, _field_count) when is_list(args), do: args
+
+  @spec flatten_protocol_tuple_chain(term(), non_neg_integer()) :: [term()]
+  defp flatten_protocol_tuple_chain(value, count) when is_integer(count) and count > 0 do
+    do_flatten_protocol_tuple_chain(value, count, [])
+  end
+
+  defp flatten_protocol_tuple_chain(value, _count), do: [value]
+
+  defp do_flatten_protocol_tuple_chain(value, 1, acc), do: Enum.reverse([value | acc])
+
+  defp do_flatten_protocol_tuple_chain({left, right}, count, acc) when count > 1,
+    do: do_flatten_protocol_tuple_chain(right, count - 1, [left | acc])
+
+  defp do_flatten_protocol_tuple_chain(
+         %{"type" => "tuple2", "children" => [left, right]},
+         count,
+         acc
+       )
+       when count > 1,
+       do: do_flatten_protocol_tuple_chain(right, count - 1, [left | acc])
+
+  defp do_flatten_protocol_tuple_chain(%{type: "tuple2", children: [left, right]}, count, acc)
+       when count > 1,
+       do: do_flatten_protocol_tuple_chain(right, count - 1, [left | acc])
+
+  defp do_flatten_protocol_tuple_chain(value, _count, acc), do: Enum.reverse([value | acc])
+
+  @spec normalize_protocol_wire_value(map(), term(), term()) :: term()
+  defp normalize_protocol_wire_value(schema, value, {:enum, type})
+       when is_map(schema) and is_binary(type) do
+    cond do
+      protocol_constructor_value?(value) ->
+        value
+
+      is_integer(value) ->
+        enum_values = Map.get(schema, :enums, %{}) |> Map.get(type, [])
+        ctor = Enum.at(enum_values, value - 1) || Enum.at(enum_values, value)
+
+        if is_binary(ctor) and ctor != "" do
+          %{"ctor" => ctor, "args" => []}
+        else
+          value
+        end
+
+      true ->
+        value
+    end
+  end
+
+  defp normalize_protocol_wire_value(_schema, value, _wire_type), do: value
+
+  @spec protocol_constructor_value?(term()) :: boolean()
+  defp protocol_constructor_value?(%{"ctor" => ctor}) when is_binary(ctor), do: true
+  defp protocol_constructor_value?(%{ctor: ctor}) when is_binary(ctor), do: true
+  defp protocol_constructor_value?(_value), do: false
+
+  @spec protocol_message_display(String.t(), [term()]) :: String.t()
+  defp protocol_message_display(ctor, args) when is_binary(ctor) and is_list(args) do
+    case args do
+      [] -> ctor
+      _ -> ctor <> " " <> Enum.map_join(args, " ", &protocol_arg_display/1)
+    end
+  end
+
+  @spec protocol_arg_display(term()) :: String.t()
+  defp protocol_arg_display(%{"ctor" => ctor, "args" => []}) when is_binary(ctor), do: ctor
+  defp protocol_arg_display(%{ctor: ctor, args: []}) when is_binary(ctor), do: ctor
+  defp protocol_arg_display(value) when is_binary(value), do: inspect(value)
+
+  defp protocol_arg_display(value) when is_integer(value) or is_float(value) or is_boolean(value),
+    do: to_string(value)
+
+  defp protocol_arg_display(value), do: inspect(value)
 
   @spec preserve_protocol_runtime_metadata(map(), map()) :: map()
   defp preserve_protocol_runtime_metadata(model, previous_model)
@@ -3779,8 +4573,7 @@ defmodule Ide.Debugger do
             subscription_message_arity(state, target, message_text) == 1 ->
           "#{message_text} #{Jason.encode!(subscription_frame_payload(state, target))}"
 
-        (String.contains?(t, "ontick") or String.contains?(t, "tick") or
-           String.contains?(t, "secondchange") or String.contains?(t, "onsecond")) and
+        (String.contains?(t, "secondchange") or String.contains?(t, "onsecond")) and
             subscription_message_arity(state, target, message_text) == 1 ->
           "#{message_text} #{now.second}"
 
@@ -3790,6 +4583,15 @@ defmodule Ide.Debugger do
 
         String.contains?(t, "hourchange") or String.contains?(t, "onhour") ->
           "#{message_text} #{now.hour}"
+
+        String.contains?(t, "daychange") or String.contains?(t, "onday") ->
+          "#{message_text} #{now.day}"
+
+        String.contains?(t, "monthchange") or String.contains?(t, "onmonth") ->
+          "#{message_text} #{now.month}"
+
+        String.contains?(t, "yearchange") or String.contains?(t, "onyear") ->
+          "#{message_text} #{now.year}"
 
         String.contains?(t, "batterychange") or String.contains?(t, "onbattery") ->
           "#{message_text} #{subscription_battery_level(state, target)}"
@@ -3946,6 +4748,33 @@ defmodule Ide.Debugger do
       "charging" => normalize_boolean(map_value(settings, "charging"), defaults["charging"]),
       "connected" => normalize_boolean(map_value(settings, "connected"), defaults["connected"]),
       "clock_24h" => normalize_boolean(map_value(settings, "clock_24h"), defaults["clock_24h"]),
+      "timezone_id" =>
+        normalize_string(map_value(settings, "timezone_id"), defaults["timezone_id"]),
+      "timezone_offset_min" =>
+        settings
+        |> map_value("timezone_offset_min")
+        |> normalize_integer(defaults["timezone_offset_min"]),
+      "locale" => normalize_string(map_value(settings, "locale"), defaults["locale"]),
+      "language" => normalize_string(map_value(settings, "language"), defaults["language"]),
+      "region" => normalize_string(map_value(settings, "region"), defaults["region"]),
+      "network_online" =>
+        normalize_boolean(map_value(settings, "network_online"), defaults["network_online"]),
+      "notifications_enabled" =>
+        normalize_boolean(
+          map_value(settings, "notifications_enabled"),
+          defaults["notifications_enabled"]
+        ),
+      "quiet_hours" =>
+        normalize_boolean(map_value(settings, "quiet_hours"), defaults["quiet_hours"]),
+      "weather" => normalize_json_map(map_value(settings, "weather"), defaults["weather"]),
+      "calendar_events" =>
+        normalize_json_list(map_value(settings, "calendar_events"), defaults["calendar_events"]),
+      "storage_values" =>
+        normalize_json_map(map_value(settings, "storage_values"), defaults["storage_values"]),
+      "preferences" =>
+        normalize_json_map(map_value(settings, "preferences"), defaults["preferences"]),
+      "environment" =>
+        normalize_json_map(map_value(settings, "environment"), defaults["environment"]),
       "latitude" =>
         normalize_float(map_value(settings, "latitude"), defaults["latitude"], -90.0, 90.0),
       "longitude" =>
@@ -3956,6 +4785,15 @@ defmodule Ide.Debugger do
   end
 
   defp normalize_simulator_settings(_settings), do: default_simulator_settings()
+
+  defp normalize_string(value, _default) when is_binary(value) and value != "", do: value
+  defp normalize_string(_value, default) when is_binary(default), do: default
+
+  defp normalize_json_map(value, _default) when is_map(value), do: value
+  defp normalize_json_map(_value, default) when is_map(default), do: default
+
+  defp normalize_json_list(value, _default) when is_list(value), do: value
+  defp normalize_json_list(_value, default) when is_list(default), do: default
 
   @spec simulator_settings_from_model(term()) :: map()
   defp simulator_settings_from_model(model) when is_map(model) do
@@ -4343,9 +5181,6 @@ defmodule Ide.Debugger do
       frame_subscription_trigger?(trigger) ->
         true
 
-      contains_any?(trigger, ["on_tick", "ontick", "tick"]) ->
-        true
-
       contains_any?(trigger, ["on_second_change", "onsecondchange", "second"]) ->
         Map.get(clock, "second") != now.second
 
@@ -4354,6 +5189,15 @@ defmodule Ide.Debugger do
 
       contains_any?(trigger, ["on_hour_change", "onhourchange", "hour"]) ->
         Map.get(clock, "hour") != now.hour
+
+      contains_any?(trigger, ["on_day_change", "ondaychange", "day"]) ->
+        Map.get(clock, "day") != now.day
+
+      contains_any?(trigger, ["on_month_change", "onmonthchange", "month"]) ->
+        Map.get(clock, "month") != now.month
+
+      contains_any?(trigger, ["on_year_change", "onyearchange", "year"]) ->
+        Map.get(clock, "year") != now.year
 
       true ->
         false
@@ -4375,6 +5219,9 @@ defmodule Ide.Debugger do
       state
       |> Map.get(:auto_fire_clock, %{})
       |> Map.put(source_root_for_target(target), %{
+        "year" => now.year,
+        "month" => now.month,
+        "day" => now.day,
         "hour" => now.hour,
         "minute" => now.minute,
         "second" => now.second
@@ -5415,6 +6262,7 @@ defmodule Ide.Debugger do
             "event_kind" => Map.get(row, "event_kind") || Map.get(row, :event_kind),
             "label" => Map.get(row, "label") || Map.get(row, :label),
             "arg_snippets" => Map.get(row, "arg_snippets") || Map.get(row, :arg_snippets) || [],
+            "arg_values" => Map.get(row, "arg_values") || Map.get(row, :arg_values) || [],
             "arg_kinds" => Map.get(row, "arg_kinds") || Map.get(row, :arg_kinds) || []
           }
         end)
@@ -6221,7 +7069,15 @@ defmodule Ide.Debugger do
           "batteryLevel" => settings["battery_percent"],
           "connected" => settings["connected"],
           "charging" => settings["charging"],
-          "clock_style_24h" => settings["clock_24h"]
+          "clock_style_24h" => settings["clock_24h"],
+          "timezone_id" => settings["timezone_id"],
+          "timezone_offset_min" => settings["timezone_offset_min"],
+          "locale" => settings["locale"],
+          "language" => settings["language"],
+          "region" => settings["region"],
+          "network_online" => settings["network_online"],
+          "notifications_enabled" => settings["notifications_enabled"],
+          "quiet_hours" => settings["quiet_hours"]
         }
 
         Map.put(model, "runtime_model", merge_matching_preview_fields(runtime_model, preview))
@@ -7236,6 +8092,7 @@ defmodule Ide.Debugger do
             |> maybe_apply_init_device_data_responses(introspect_target_key(source_root))
             |> maybe_apply_init_protocol_events(introspect_target_key(source_root))
             |> maybe_apply_init_geolocation_response(introspect_target_key(source_root))
+            |> maybe_apply_init_companion_bridge_commands(introspect_target_key(source_root))
 
           payload =
             if introspect_event_worth_logging?(ei) do

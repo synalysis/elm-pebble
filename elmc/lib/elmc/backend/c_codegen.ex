@@ -7346,12 +7346,7 @@ defmodule Elmc.Backend.CCodegen do
   defp special_value_from_target("Elm.Kernel.PebbleWatch.vibesDoublePulse", _args),
     do: %{op: :int_literal, value: command_kind(:vibes_double_pulse)}
 
-  defp special_value_from_target("Pebble.Events.onTick", _args), do: %{op: :int_literal, value: 1}
-
   defp special_value_from_target("Pebble.Events.onSecondChange", _args),
-    do: %{op: :int_literal, value: 1}
-
-  defp special_value_from_target("Elm.Kernel.PebbleWatch.onTick", _args),
     do: %{op: :int_literal, value: 1}
 
   defp special_value_from_target("Elm.Kernel.PebbleWatch.onSecondChange", _args),
@@ -7395,6 +7390,24 @@ defmodule Elmc.Backend.CCodegen do
 
   defp special_value_from_target("Elm.Kernel.PebbleWatch.onMinuteChange", _args),
     do: %{op: :int_literal, value: 2048}
+
+  defp special_value_from_target("Pebble.Events.onDayChange", _args),
+    do: %{op: :int_literal, value: 65_536}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.onDayChange", _args),
+    do: %{op: :int_literal, value: 65_536}
+
+  defp special_value_from_target("Pebble.Events.onMonthChange", _args),
+    do: %{op: :int_literal, value: 131_072}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.onMonthChange", _args),
+    do: %{op: :int_literal, value: 131_072}
+
+  defp special_value_from_target("Pebble.Events.onYearChange", _args),
+    do: %{op: :int_literal, value: 262_144}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.onYearChange", _args),
+    do: %{op: :int_literal, value: 262_144}
 
   defp special_value_from_target("Pebble.Button.onPress", _args),
     do: %{op: :int_literal, value: 16384}
@@ -8982,12 +8995,14 @@ defmodule Elmc.Backend.CCodegen do
 
   defp subscription_item_mask(%{op: :qualified_call, target: target}) when is_binary(target) do
     case normalize_special_target(target) do
-      "Pebble.Events.onTick" -> 1
       "Pebble.Events.onSecondChange" -> 1
       "Pebble.Frame.every" -> 8192
       "Pebble.Frame.atFps" -> 8192
       "Pebble.Events.onHourChange" -> 1024
       "Pebble.Events.onMinuteChange" -> 2048
+      "Pebble.Events.onDayChange" -> 65_536
+      "Pebble.Events.onMonthChange" -> 131_072
+      "Pebble.Events.onYearChange" -> 262_144
       "Pebble.Button.on" -> 16384
       "Pebble.Button.onPress" -> 16384
       "Pebble.Button.onRelease" -> 16384
@@ -9014,6 +9029,9 @@ defmodule Elmc.Backend.CCodegen do
       "Elm.Kernel.PebbleWatch.onHourChange" -> 1024
       "Elm.Kernel.PebbleWatch.onMinuteChange" -> 2048
       "Elm.Kernel.PebbleWatch.onSecondChange" -> 1
+      "Elm.Kernel.PebbleWatch.onDayChange" -> 65_536
+      "Elm.Kernel.PebbleWatch.onMonthChange" -> 131_072
+      "Elm.Kernel.PebbleWatch.onYearChange" -> 262_144
       "Elm.Kernel.Time.every" -> 1
       _ -> 0
     end

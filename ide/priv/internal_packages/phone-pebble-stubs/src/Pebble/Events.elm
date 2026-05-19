@@ -1,4 +1,12 @@
-module Pebble.Events exposing (batch, onHourChange, onMinuteChange, onSecondChange, onTick)
+module Pebble.Events exposing
+    ( batch
+    , onDayChange
+    , onHourChange
+    , onMinuteChange
+    , onMonthChange
+    , onSecondChange
+    , onYearChange
+    )
 
 
 batch : List (Sub msg) -> Sub msg
@@ -11,11 +19,6 @@ onSecondChange _ =
     Sub.none
 
 
-onTick : (Int -> msg) -> Sub msg
-onTick =
-    onSecondChange
-
-
 onHourChange : (Int -> msg) -> Sub msg
 onHourChange _ =
     Sub.none
@@ -23,4 +26,19 @@ onHourChange _ =
 
 onMinuteChange : (Int -> msg) -> Sub msg
 onMinuteChange _ =
+    Sub.none
+
+
+onDayChange : (Int -> msg) -> Sub msg
+onDayChange _ =
+    Sub.none
+
+
+onMonthChange : (Int -> msg) -> Sub msg
+onMonthChange _ =
+    Sub.none
+
+
+onYearChange : (Int -> msg) -> Sub msg
+onYearChange _ =
     Sub.none

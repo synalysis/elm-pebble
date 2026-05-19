@@ -21,9 +21,16 @@ It is intentionally limited to APIs available in the Pebble companion (PebbleKit
 | Open external URL | Pebble open URL API | `Pebble.Navigation` or `Pebble.Browser` | missing | Simple `openUrl : String -> Cmd msg` with explicit error callback variant |
 | HTTP client | Original Elm compiler / debugger substitution | `elm/http` | implemented for companion apps | Use normal `elm/http`; the debugger/runtime bridge substitutes companion execution details |
 | WebSocket client | `WebSocket` | `Pebble.Companion.WebSocket` | implemented (contract layer) | Explicit connection state + `Cmd`/`Sub` split, typed close/error reasons |
-| Local companion storage | localStorage/companion persistence | `Pebble.Companion.Storage` | implemented (contract layer) | Key/value API with typed codecs; avoid ad-hoc tagged unions in user land |
+| Local companion storage | localStorage/companion persistence | `Pebble.Companion.Storage` / `Companion.Storage` | implemented | Key/value API with typed codecs; avoid ad-hoc tagged unions in user land |
 | Geolocation (if enabled in companion runtime) | browser geolocation | `Pebble.Companion.Geolocation` | implemented (contract layer) | `getCurrentPosition` + `watchPosition` with typed coordinates/errors |
-| Connectivity status (network reachability) | browser navigator/connectivity events | `Pebble.Companion.Network` | implemented (contract layer) | `onStatusChange` subscription + query command |
+| Connectivity status (network reachability) | browser navigator/connectivity events | `Pebble.Companion.Network` / `Companion.Network` | implemented | `current` command + `onNetwork` subscription with `Result String Bool` |
+| Phone locale and 12/24h preference | browser `navigator.language` / runtime context | `Pebble.Companion.Locale` / `Companion.Locale` | implemented | `current` command + `onLocale` subscription with language, region, and clock preference |
+| Phone battery | browser Battery Status API where available | `Pebble.Companion.Battery` / `Companion.Battery` | implemented with unsupported fallback | `current` command + `onBattery` subscription returning percent and charging |
+| Calendar | platform calendar bridge when available | `Pebble.Companion.Calendar` / `Companion.Calendar` | typed contract, unsupported fallback | `current`/`upcoming` commands + typed permission-aware errors |
+| Weather | platform/Pebble-provided weather only | `Pebble.Companion.Weather` / `Companion.Weather` | typed contract, unsupported fallback | `current`/`forecast` commands; no HTTP wrapper |
+| Notifications | platform notification status when available | `Pebble.Companion.Notifications` / `Companion.Notifications` | typed contract, unsupported fallback | quiet-hours and notification-enabled status |
+| User preferences | phone-side preference persistence | `Pebble.Companion.Preferences` / `Companion.Preferences` | implemented | typed command envelopes with JSON values and `Result String` app boundary |
+| Environment (sun/moon/tide) | platform context plus location/time contracts | `Pebble.Companion.Environment` / `Companion.Environment` | typed contract, simulator fixtures | typed sun, moon, and tide snapshots; unsupported when runtime lacks data |
 | JS logs/diagnostics | companion console and structured errors | Bridge `error` envelope (`Pebble.Companion.Contract`) | implemented (envelope) | Typed log levels and structured error values for app callbacks |
 
 ## Explicitly Out of Scope (Watch-Only)

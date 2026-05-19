@@ -110,6 +110,58 @@
       ]
     },
     {
+      "name": "battery",
+      "ops": [
+        "status",
+        "subscribe"
+      ]
+    },
+    {
+      "name": "locale",
+      "ops": [
+        "status",
+        "subscribe"
+      ]
+    },
+    {
+      "name": "calendar",
+      "ops": [
+        "nextEvent",
+        "upcoming",
+        "subscribe"
+      ]
+    },
+    {
+      "name": "weather",
+      "ops": [
+        "current",
+        "forecast",
+        "subscribe"
+      ]
+    },
+    {
+      "name": "notifications",
+      "ops": [
+        "status",
+        "subscribe"
+      ]
+    },
+    {
+      "name": "preferences",
+      "ops": [
+        "get",
+        "set",
+        "subscribe"
+      ]
+    },
+    {
+      "name": "environment",
+      "ops": [
+        "current",
+        "subscribe"
+      ]
+    },
+    {
       "name": "webSocket",
       "ops": [
         "connect",

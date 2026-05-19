@@ -81,6 +81,133 @@
     ]
   },
   {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Current phone battery charge and charging state.",
+        "name": "BatteryInfo",
+        "type": "{ percent : Int\n, charging : Bool\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Phone battery information exposed by the companion bridge.\n\n# Types\n@docs BatteryInfo, Event\n\n# Commands\n@docs status, subscribe\n\n# Events\n@docs decode",
+    "name": "Pebble.Companion.Battery",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Status",
+            [
+              "BatteryInfo"
+            ]
+          ],
+          [
+            "Error",
+            [
+              "String"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Battery events emitted by the companion bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Request the current phone battery status.",
+        "name": "status",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Subscribe to phone battery status changes when supported.",
+        "name": "subscribe",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Decode a pushed battery bridge event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "A calendar entry normalized for companion apps.",
+        "name": "CalendarEvent",
+        "type": "{ id : String\n, title : String\n, location : Maybe String\n, startMillis : Int\n, endMillis : Int\n, allDay : Bool\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Calendar information exposed by the companion bridge.\n\n# Types\n@docs CalendarEvent, Event\n\n# Commands\n@docs nextEvent, upcoming, subscribe\n\n# Events\n@docs decode",
+    "name": "Pebble.Companion.Calendar",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Next",
+            [
+              "(Maybe",
+              "CalendarEvent)"
+            ]
+          ],
+          [
+            "Upcoming",
+            [
+              "(List",
+              "CalendarEvent)"
+            ]
+          ],
+          [
+            "Error",
+            [
+              "String"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Calendar events emitted by the companion bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Request the next calendar event, if available.",
+        "name": "nextEvent",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Request a bounded list of upcoming calendar events.",
+        "name": "upcoming",
+        "type": "String -> Int -> CommandEnvelope"
+      },
+      {
+        "comment": "Subscribe to calendar changes when the platform bridge supports them.",
+        "name": "subscribe",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Decode a pushed calendar bridge event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
+      }
+    ]
+  },
+  {
     "aliases": [],
     "binops": [],
     "comment": "Open and observe the Pebble companion configuration page.\n\n    Pebble.Companion.Configuration.open \"settings\" \"https://example.com/config\"\n\n# Events\n@docs Event, decode\n\n# Commands\n@docs open, subscribe",
@@ -122,6 +249,81 @@
         "comment": "Subscribe to configuration close events.",
         "name": "subscribe",
         "type": "String -> CommandEnvelope"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Sun cycle information in local minutes after midnight.",
+        "name": "SunInfo",
+        "type": "{ sunriseMin : Int\n, sunsetMin : Int\n, polarDay : Bool\n}"
+      },
+      {
+        "args": [],
+        "comment": "Moon timing and phase information.",
+        "name": "MoonInfo",
+        "type": "{ moonriseMin : Maybe Int\n, moonsetMin : Maybe Int\n, phaseE6 : Int\n}"
+      },
+      {
+        "args": [],
+        "comment": "Tide information for the next notable tide event.",
+        "name": "TideInfo",
+        "type": "{ nextMin : Int\n, levelCm : Int\n, rising : Bool\n}"
+      },
+      {
+        "args": [],
+        "comment": "Available environmental information from the companion bridge.",
+        "name": "EnvironmentInfo",
+        "type": "{ sun : Maybe SunInfo\n, moon : Maybe MoonInfo\n, tide : Maybe TideInfo\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Environmental snapshots derived from phone/Pebble context.\n\nThe bridge owns the calculation source. Apps receive typed sun, moon, and tide\nvalues without parsing labels or guessing fields.\n\n# Types\n@docs SunInfo, MoonInfo, TideInfo, EnvironmentInfo, Event\n\n# Commands\n@docs current, subscribe\n\n# Events\n@docs decode",
+    "name": "Pebble.Companion.Environment",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Current",
+            [
+              "EnvironmentInfo"
+            ]
+          ],
+          [
+            "Error",
+            [
+              "String"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Environment events emitted by the companion bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Request the current environment snapshot.",
+        "name": "current",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Subscribe to environment updates when supported.",
+        "name": "subscribe",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Decode a pushed environment bridge event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
       }
     ]
   },
@@ -245,6 +447,63 @@
     ]
   },
   {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Locale, language, region, and clock format from phone context.",
+        "name": "LocaleInfo",
+        "type": "{ locale : String\n, language : String\n, region : String\n, uses24h : Bool\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Phone locale and regional preferences exposed by the companion bridge.\n\n# Types\n@docs LocaleInfo, Event\n\n# Commands\n@docs status, subscribe\n\n# Events\n@docs decode",
+    "name": "Pebble.Companion.Locale",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Status",
+            [
+              "LocaleInfo"
+            ]
+          ],
+          [
+            "Error",
+            [
+              "String"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Locale events emitted by the companion bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Request the current phone locale status.",
+        "name": "status",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Subscribe to locale changes when supported.",
+        "name": "subscribe",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Decode a pushed locale bridge event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
+      }
+    ]
+  },
+  {
     "aliases": [],
     "binops": [],
     "comment": "Query and observe phone network status.\n\n    Pebble.Companion.Network.status \"network-status\"\n\n# Events\n@docs Event, decode\n\n# Commands\n@docs status, subscribe",
@@ -283,6 +542,125 @@
       },
       {
         "comment": "Subscribe to network status changes.",
+        "name": "subscribe",
+        "type": "String -> CommandEnvelope"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Phone notification availability and quiet-hours state.",
+        "name": "NotificationStatus",
+        "type": "{ quietHours : Bool\n, notificationsEnabled : Bool\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Notification and quiet-hours status exposed by the companion bridge.\n\n# Types\n@docs NotificationStatus, Event\n\n# Commands\n@docs status, subscribe\n\n# Events\n@docs decode",
+    "name": "Pebble.Companion.Notifications",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Status",
+            [
+              "NotificationStatus"
+            ]
+          ],
+          [
+            "Error",
+            [
+              "String"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Notification status events emitted by the companion bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Request the current notification status.",
+        "name": "status",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Subscribe to notification status changes when supported.",
+        "name": "subscribe",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Decode a pushed notification bridge event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Generic persistent user preferences exposed by the companion bridge.\n\nApp-specific generated configuration remains in `GeneratedPreferences`; this\nmodule is for bridge-managed phone-side preference values.\n\n# Events\n@docs Event, decode\n\n# Commands\n@docs get, set, subscribe",
+    "name": "Pebble.Companion.Preferences",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Value",
+            [
+              "String",
+              "Decode.Value"
+            ]
+          ],
+          [
+            "Saved",
+            [
+              "String"
+            ]
+          ],
+          [
+            "Error",
+            [
+              "String"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Preference events emitted by the companion bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Decode a pushed preference bridge event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
+      },
+      {
+        "comment": "Request a preference value by key.",
+        "name": "get",
+        "type": "String -> String -> CommandEnvelope"
+      },
+      {
+        "comment": "Save a preference value by key.",
+        "name": "set",
+        "type": "String -> String -> Encode.Value -> CommandEnvelope"
+      },
+      {
+        "comment": "Subscribe to preference changes when supported.",
         "name": "subscribe",
         "type": "String -> CommandEnvelope"
       }
@@ -398,6 +776,123 @@
         "comment": "Delete a timeline pin by id.",
         "name": "deletePin",
         "type": "String -> String -> CommandEnvelope"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "Current or forecast weather values.",
+        "name": "WeatherInfo",
+        "type": "{ temperatureC : Int\n, condition : Condition\n, humidityPercent : Maybe Int\n, pressureHpa : Maybe Int\n, windKph : Maybe Int\n}"
+      }
+    ],
+    "binops": [],
+    "comment": "Weather snapshots exposed by the Pebble companion bridge.\n\nThis module models platform-provided weather data. Generic HTTP fetching remains\nthe responsibility of `elm/http`.\n\n# Types\n@docs Condition, WeatherInfo, Event\n\n# Commands\n@docs current, forecast, subscribe\n\n# Events\n@docs decode, conditionDecoder",
+    "name": "Pebble.Companion.Weather",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Clear",
+            []
+          ],
+          [
+            "Cloudy",
+            []
+          ],
+          [
+            "Fog",
+            []
+          ],
+          [
+            "Drizzle",
+            []
+          ],
+          [
+            "Rain",
+            []
+          ],
+          [
+            "Snow",
+            []
+          ],
+          [
+            "Showers",
+            []
+          ],
+          [
+            "Storm",
+            []
+          ],
+          [
+            "UnknownWeather",
+            []
+          ]
+        ],
+        "comment": "Platform-normalized weather condition.",
+        "name": "Condition"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "Current",
+            [
+              "WeatherInfo"
+            ]
+          ],
+          [
+            "Forecast",
+            [
+              "(List",
+              "WeatherInfo)"
+            ]
+          ],
+          [
+            "Error",
+            [
+              "String"
+            ]
+          ],
+          [
+            "Unknown",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Weather events emitted by the companion bridge.",
+        "name": "Event"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Request current weather conditions.",
+        "name": "current",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Request forecast weather snapshots.",
+        "name": "forecast",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Subscribe to weather updates when supported.",
+        "name": "subscribe",
+        "type": "String -> CommandEnvelope"
+      },
+      {
+        "comment": "Decode a pushed weather bridge event.",
+        "name": "decode",
+        "type": "BridgeEvent -> Event"
+      },
+      {
+        "comment": "Decode a string weather condition into the typed `Condition`.",
+        "name": "conditionDecoder",
+        "type": "Decode.Decoder Condition"
       }
     ]
   },

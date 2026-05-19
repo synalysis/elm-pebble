@@ -8,6 +8,8 @@ var configurationStorageKey = "elm-pebble.configuration.response";
 var appMessageKeyNamesById = {};
 var appMessageKeyIdsByName = {};
 var geolocationWatches = {};
+var companionStorage = {};
+var companionPreferences = {};
 
 function readStoredConfigurationResponse() {
     if (typeof localStorage === "undefined" || !localStorage) {
@@ -157,6 +159,203 @@ function deliverGeolocationError(error) {
     deliverGeolocationIncoming(payload);
 }
 
+function deliverBridgeError(api, message) {
+    deliverIncoming({
+        event: api + ".error",
+        payload: {
+            message: message,
+            type: "unsupported",
+            retryable: false
+        }
+    });
+}
+
+function deliverBridgeResult(id, ok, payload, error) {
+    var envelope = {
+        id: id || "bridge-result",
+        ok: !!ok
+    };
+
+    if (payload) {
+        envelope.payload = payload;
+    }
+    if (error) {
+        envelope.error = error;
+    }
+
+    deliverIncoming(envelope);
+}
+
+function localePayload() {
+    var locale = "en-US";
+
+    if (typeof navigator !== "undefined" && typeof navigator.language === "string" && navigator.language !== "") {
+        locale = navigator.language;
+    }
+
+    var parts = locale.split(/[-_]/);
+    var language = parts[0] || "en";
+    var region = parts[1] || "";
+    var uses24h = false;
+
+    try {
+        uses24h = !new Intl.DateTimeFormat(locale, { hour: "numeric" }).format(new Date(2020, 0, 1, 13)).match(/AM|PM/i);
+    } catch (_error) {
+        uses24h = false;
+    }
+
+    return {
+        locale: locale,
+        language: language,
+        region: region,
+        uses24h: uses24h
+    };
+}
+
+function deliverLocaleStatus() {
+    deliverIncoming({
+        event: "locale.status",
+        payload: localePayload()
+    });
+}
+
+function deliverNetworkStatus() {
+    deliverIncoming({
+        event: "network.status",
+        payload: {
+            online: typeof navigator === "undefined" || typeof navigator.onLine !== "boolean" ? true : navigator.onLine
+        }
+    });
+}
+
+function deliverBatteryStatus() {
+    if (typeof navigator !== "undefined" && typeof navigator.getBattery === "function") {
+        navigator.getBattery().then(function (battery) {
+            deliverIncoming({
+                event: "battery.status",
+                payload: {
+                    percent: Math.round(Number(battery.level || 0) * 100),
+                    charging: !!battery.charging
+                }
+            });
+        }, function (error) {
+            deliverBridgeError("battery", error && error.message ? String(error.message) : "Battery information unavailable");
+        });
+        return;
+    }
+
+    deliverBridgeError("battery", "Battery information unavailable");
+}
+
+function encodeStorageValue(value) {
+    if (typeof value === "string") {
+        return { kind: "string", value: value };
+    }
+    if (typeof value === "number") {
+        return { kind: "int", value: Math.round(value) };
+    }
+    if (typeof value === "boolean") {
+        return { kind: "bool", value: value };
+    }
+    return { kind: "json", value: value };
+}
+
+function storagePayloadValue(payload) {
+    if (!payload || !payload.value) {
+        return null;
+    }
+
+    return payload.value;
+}
+
+function handleStorageCommand(payload) {
+    var body = payload.payload || {};
+    var key = typeof body.key === "string" ? body.key : "";
+
+    if (payload.op === "set") {
+        companionStorage[key] = storagePayloadValue(body);
+        deliverBridgeResult(payload.id, true, { key: key });
+        return;
+    }
+
+    if (payload.op === "get") {
+        if (Object.prototype.hasOwnProperty.call(companionStorage, key)) {
+            deliverBridgeResult(payload.id, true, companionStorage[key]);
+        } else {
+            deliverBridgeResult(payload.id, false, null, {
+                type: "not_found",
+                message: "Storage key not found",
+                retryable: false
+            });
+        }
+        return;
+    }
+
+    if (payload.op === "remove") {
+        delete companionStorage[key];
+        deliverBridgeResult(payload.id, true, { key: key });
+        return;
+    }
+
+    if (payload.op === "clear") {
+        companionStorage = {};
+        deliverBridgeResult(payload.id, true, {});
+    }
+}
+
+function handlePreferencesCommand(payload) {
+    var body = payload.payload || {};
+    var key = typeof body.key === "string" ? body.key : "";
+
+    if (payload.op === "set") {
+        companionPreferences[key] = body.value;
+        deliverIncoming({
+            event: "preferences.saved",
+            payload: { key: key }
+        });
+        return;
+    }
+
+    if (payload.op === "get") {
+        deliverIncoming({
+            event: "preferences.value",
+            payload: {
+                key: key,
+                value: Object.prototype.hasOwnProperty.call(companionPreferences, key) ? companionPreferences[key] : null
+            }
+        });
+        return;
+    }
+
+    if (payload.op === "subscribe") {
+        Object.keys(companionPreferences).forEach(function (storedKey) {
+            deliverIncoming({
+                event: "preferences.value",
+                payload: {
+                    key: storedKey,
+                    value: companionPreferences[storedKey]
+                }
+            });
+        });
+    }
+}
+
+function handleEnvironmentCommand() {
+    deliverBridgeError("environment", "Environment data unavailable without platform location and tide support");
+}
+
+function handleWeatherCommand() {
+    deliverBridgeError("weather", "Weather data unavailable from this Pebble companion runtime");
+}
+
+function handleCalendarCommand() {
+    deliverBridgeError("calendar", "Calendar data unavailable from this Pebble companion runtime");
+}
+
+function handleNotificationsCommand() {
+    deliverBridgeError("notifications", "Notification status unavailable from this Pebble companion runtime");
+}
+
 function handleGeolocationCommand(payload) {
     if (!geolocationAvailable()) {
         deliverGeolocationError({ message: "Geolocation unavailable" });
@@ -195,6 +394,51 @@ function handleOutgoing(payload) {
     if (payload && payload.api === "geolocation") {
         console.log("Elm companion geolocation command", JSON.stringify({ id: payload.id, op: payload.op }));
         handleGeolocationCommand(payload);
+        return;
+    }
+
+    if (payload && payload.api === "network") {
+        deliverNetworkStatus();
+        return;
+    }
+
+    if (payload && payload.api === "battery") {
+        deliverBatteryStatus();
+        return;
+    }
+
+    if (payload && payload.api === "locale") {
+        deliverLocaleStatus();
+        return;
+    }
+
+    if (payload && payload.api === "storage") {
+        handleStorageCommand(payload);
+        return;
+    }
+
+    if (payload && payload.api === "preferences") {
+        handlePreferencesCommand(payload);
+        return;
+    }
+
+    if (payload && payload.api === "environment") {
+        handleEnvironmentCommand(payload);
+        return;
+    }
+
+    if (payload && payload.api === "weather") {
+        handleWeatherCommand(payload);
+        return;
+    }
+
+    if (payload && payload.api === "calendar") {
+        handleCalendarCommand(payload);
+        return;
+    }
+
+    if (payload && payload.api === "notifications") {
+        handleNotificationsCommand(payload);
         return;
     }
 

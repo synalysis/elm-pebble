@@ -40,6 +40,9 @@ type Msg
     | ConnectionChanged Bool
     | HourChanged Int
     | MinuteChanged Int
+    | DayChanged Int
+    | MonthChanged Int
+    | YearChanged Int
     | GotCurrentDateTime PebbleTime.CurrentDateTime
     | GotTime String
     | GotClockStyle24h Bool
@@ -79,7 +82,9 @@ coveredSurfaceFunctions =
     , "Pebble.Events.onHourChange"
     , "Pebble.Events.onMinuteChange"
     , "Pebble.Events.onSecondChange"
-    , "Pebble.Events.onTick"
+    , "Pebble.Events.onDayChange"
+    , "Pebble.Events.onMonthChange"
+    , "Pebble.Events.onYearChange"
     , "Pebble.Frame.atFps"
     , "Pebble.Frame.every"
     , "Pebble.Health.accessible"
@@ -224,6 +229,15 @@ update msg model =
         MinuteChanged value ->
             ( { model | ticks = value }, Cmd.none )
 
+        DayChanged value ->
+            ( { model | ticks = value }, Cmd.none )
+
+        MonthChanged value ->
+            ( { model | ticks = value }, Cmd.none )
+
+        YearChanged value ->
+            ( { model | ticks = value }, Cmd.none )
+
         GotCurrentDateTime value ->
             ( { model | ticks = value.hour }, Cmd.none )
 
@@ -307,8 +321,7 @@ update msg model =
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     PebbleEvents.batch
-        [ PebbleEvents.onTick Tick
-        , PebbleEvents.onSecondChange Tick
+        [ PebbleEvents.onSecondChange Tick
         , PebbleButton.onPress PebbleButton.Up ButtonUp
         , PebbleButton.onPress PebbleButton.Select ButtonSelect
         , PebbleButton.onPress PebbleButton.Down ButtonDown
@@ -317,6 +330,9 @@ subscriptions _ =
         , PebbleButton.onLongPress PebbleButton.Down ButtonLongDown
         , PebbleEvents.onHourChange HourChanged
         , PebbleEvents.onMinuteChange MinuteChanged
+        , PebbleEvents.onDayChange DayChanged
+        , PebbleEvents.onMonthChange MonthChanged
+        , PebbleEvents.onYearChange YearChanged
         , PebbleAccel.onTap AccelTap
         , PebbleSystem.onBatteryChange BatteryChanged
         , PebbleSystem.onConnectionChange ConnectionChanged

@@ -790,6 +790,8 @@ defmodule Ide.Debugger.ElmIntrospect do
         "callback_constructor" => callback_constructor_from_args(args, bindings),
         "callback_arg_count" => callback_arg_count_from_args(args, bindings),
         "arg_kinds" => Enum.map(args, &expr_arg_kind/1),
+        "arg_snippets" => Enum.map(args, &subscription_arg_snippet/1),
+        "arg_values" => Enum.map(args, &expr_to_json_value(&1, 0, 4)),
         "task_sources" => task_sources_from_args(args)
       }
     ]
@@ -811,6 +813,8 @@ defmodule Ide.Debugger.ElmIntrospect do
         "callback_constructor" => callback_constructor_from_args(args, bindings),
         "callback_arg_count" => callback_arg_count_from_args(args, bindings),
         "arg_kinds" => Enum.map(args, &expr_arg_kind/1),
+        "arg_snippets" => Enum.map(args, &subscription_arg_snippet/1),
+        "arg_values" => Enum.map(args, &expr_to_json_value(&1, 0, 4)),
         "task_sources" => task_sources_from_args(args)
       }
     ]
@@ -1085,6 +1089,9 @@ defmodule Ide.Debugger.ElmIntrospect do
   defp subscription_arg_snippet(%{op: :var, name: n}) when is_binary(n), do: n
 
   defp subscription_arg_snippet(%{op: :int_literal, value: v}), do: Integer.to_string(v)
+
+  defp subscription_arg_snippet(%{op: :string_literal, value: v}) when is_binary(v),
+    do: inspect(v)
 
   defp subscription_arg_snippet(_), do: ""
 
