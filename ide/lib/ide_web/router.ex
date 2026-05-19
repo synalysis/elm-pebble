@@ -44,6 +44,7 @@ defmodule IdeWeb.Router do
     pipe_through [:browser, :authenticated_browser]
 
     get "/projects/:id/export", ProjectExportController, :show
+    get "/projects/:slug/store_assets/:name", StoreAssetController, :show
 
     live_session :default, on_mount: [IdeWeb.AuthHooks] do
       live "/projects", ProjectsLive, :index

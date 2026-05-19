@@ -4,6 +4,7 @@ defmodule Ide.AppStore.Publisher do
   """
 
   alias Ide.Auth
+  alias Ide.StoreAssets
 
   @type command_result :: %{
           status: :ok | :error,
@@ -97,6 +98,7 @@ defmodule Ide.AppStore.Publisher do
            publish_version_warning(metadata.version, ctx.version),
            visibility_line(ctx.is_published),
            release_notes_line(ctx.release_notes),
+           store_icons_line(ctx),
            "Platforms: #{Enum.join(metadata.platforms, ", ")}"
          ]
          |> Enum.reject(&is_nil/1)
@@ -209,7 +211,12 @@ defmodule Ide.AppStore.Publisher do
       }
       |> maybe_put_category(default_category(me, metadata.app_type))
 
-    files = [{"pbwFile", ctx.artifact_path}] ++ screenshot_files(ctx.screenshots)
+    files =
+      [{"pbwFile", ctx.artifact_path}]
+      |> Kernel.++(icon_files(ctx))
+      |> Kernel.++(screenshot_files(ctx.screenshots))
+
+    fields = maybe_put_icon_prompt(fields, ctx)
 
     multipart_request(
       :post,
@@ -399,6 +406,62 @@ defmodule Ide.AppStore.Publisher do
 
   defp screenshot_files(paths) do
     Enum.map(paths, fn path -> {"screenshots_#{platform_from_capture_path(path)}", path} end)
+  end
+
+  defp icon_files(ctx) do
+    icons = Keyword.get(ctx.opts, :store_icons, %{})
+
+    [
+      {:icon_small, Map.get(icons, :icon_small)},
+      {:icon_large, Map.get(icons, :icon_large)}
+    ]
+    |> Enum.flat_map(fn
+      {field, path} when is_binary(path) and path != "" ->
+        [{icon_field_name(field), path}]
+
+      _ ->
+        []
+    end)
+  end
+
+  defp icon_field_name(key), do: StoreAssets.api_field_name(key)
+
+  defp maybe_put_icon_prompt(fields, ctx) do
+    icons = Keyword.get(ctx.opts, :store_icons, %{})
+    metadata = ctx.metadata
+
+    if metadata.app_type == "watchapp" and map_size(icons) == 0 do
+      prompt =
+        "#{metadata.app_name || "Pebble app"}: #{String.trim(ctx.description || "")}"
+        |> String.trim()
+
+      Map.put(fields, "iconPrompt", prompt)
+    else
+      fields
+    end
+  end
+
+  defp store_icons_line(ctx) do
+    icons = Keyword.get(ctx.opts, :store_icons, %{})
+
+    cond do
+      map_size(icons) == 2 ->
+        "Store icons: uploaded #{StoreAssets.required_sizes_summary()}"
+
+      map_size(icons) == 1 ->
+        parts =
+          Enum.map_join(icons, ", ", fn {key, _} ->
+            "#{StoreAssets.api_field_name(key)} (#{StoreAssets.size_label(key)})"
+          end)
+
+        "Store icons: uploaded #{parts}"
+
+      ctx.metadata.app_type == "watchapp" ->
+        "Store icons: using server iconPrompt generation (no project icons uploaded)"
+
+      true ->
+        nil
+    end
   end
 
   defp platform_from_capture_path(path) do

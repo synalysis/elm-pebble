@@ -1415,8 +1415,23 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
+  def handle_event("validate-project-settings", _params, socket) do
+    {:noreply, socket}
+  end
+
   def handle_event("save-project-settings", %{"project_settings" => params}, socket) do
     project = socket.assigns.project
+    workspace_root = Projects.project_workspace_path(project)
+
+    with :ok <- persist_store_icon_uploads(socket, workspace_root) do
+      save_project_settings(socket, project, params, workspace_root)
+    else
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
+  defp save_project_settings(socket, project, params, _workspace_root) do
     defaults = project.release_defaults || %{}
     github = project.github || %{}
 
@@ -1461,6 +1476,7 @@ defmodule IdeWeb.WorkspaceLive do
            :project_settings_form,
            to_form(State.project_settings_form_data(updated), as: :project_settings)
          )
+         |> assign(:store_assets, State.store_assets_assigns(updated))
          |> assign(:release_summary, release_summary)
          |> assign(:release_summary_form, to_form(release_summary, as: :release_summary))
          |> assign(:publish_readiness, readiness)
@@ -1474,6 +1490,43 @@ defmodule IdeWeb.WorkspaceLive do
       {:error, reason} ->
         {:noreply,
          put_flash(socket, :error, "Could not save project settings: #{inspect(reason)}")}
+    end
+  end
+
+  defp persist_store_icon_uploads(socket, workspace_root) do
+    alias Ide.StoreAssets
+
+    results =
+      [
+        {:store_icon_small, :icon_small},
+        {:store_icon_large, :icon_large}
+      ]
+      |> Enum.map(fn {upload, key} ->
+        consume_uploaded_entries(socket, upload, fn %{path: path}, _entry ->
+          case StoreAssets.save_icon(workspace_root, key, path) do
+            :ok -> {:ok, :ok}
+            {:error, reason} -> {:error, reason}
+          end
+        end)
+      end)
+      |> List.flatten()
+
+    case Enum.find(results, fn
+           {:error, _} -> true
+           _ -> false
+         end) do
+      nil ->
+        :ok
+
+      {:error, {:invalid_dimensions, %{expected: {w, h}, actual: {aw, ah}}}} ->
+        {:error,
+         "Icon must be exactly #{Ide.StoreAssets.size_label(w, h)} (uploaded image is #{aw}×#{ah} px)."}
+
+      {:error, :invalid_png} ->
+        {:error, "Store icon must be a valid PNG file."}
+
+      {:error, reason} ->
+        {:error, "Could not save store icon: #{inspect(reason)}"}
     end
   end
 
@@ -1588,6 +1641,8 @@ defmodule IdeWeb.WorkspaceLive do
         app_description = publish_app_description(project)
         screenshot_groups = socket.assigns.screenshot_groups
 
+        workspace_root = Projects.project_workspace_path(project)
+
         submit_opts = [
           app_root: app_root,
           artifact_path: socket.assigns.publish_artifact_path,
@@ -1596,7 +1651,8 @@ defmodule IdeWeb.WorkspaceLive do
           description: app_description,
           is_published: options["is_published"] == true,
           all_platforms: options["all_platforms"] == true,
-          firebase_id_token: firebase_id_token
+          firebase_id_token: firebase_id_token,
+          store_icons: Ide.StoreAssets.publish_icon_paths(workspace_root)
         ]
 
         {:noreply,

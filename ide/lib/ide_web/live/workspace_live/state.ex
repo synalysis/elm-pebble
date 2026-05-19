@@ -87,6 +87,7 @@ defmodule IdeWeb.WorkspaceLive.State do
       "is_published" => true,
       "all_platforms" => false
     })
+    |> assign(:store_assets, %{})
     |> assign(:release_summary, PublishFlow.default_release_summary(nil))
     |> assign(
       :release_summary_form,
@@ -186,6 +187,16 @@ defmodule IdeWeb.WorkspaceLive.State do
       max_entries: 10,
       max_file_size: 2_500_000
     )
+    |> allow_upload(:store_icon_small,
+      accept: ~w(.png),
+      max_entries: 1,
+      max_file_size: 500_000
+    )
+    |> allow_upload(:store_icon_large,
+      accept: ~w(.png),
+      max_entries: 1,
+      max_file_size: 1_500_000
+    )
     |> DebuggerSupport.assign_defaults()
   end
 
@@ -253,6 +264,25 @@ defmodule IdeWeb.WorkspaceLive.State do
       )
     )
     |> assign(:page_title, "#{project.name} · #{Atom.to_string(socket.assigns.live_action)}")
+    |> assign(:store_assets, store_assets_assigns(project))
+  end
+
+  @spec store_assets_assigns(Ide.Projects.Project.t()) :: map()
+  def store_assets_assigns(%Ide.Projects.Project{} = project) do
+    alias Ide.StoreAssets
+
+    workspace_root = Ide.Projects.project_workspace_path(project)
+
+    StoreAssets.status(workspace_root)
+    |> Enum.map(fn {key, info} ->
+      preview_url =
+        if info.present do
+          "/projects/#{project.slug}/store_assets/#{info.filename}"
+        end
+
+      {key, Map.put(info, :preview_url, preview_url)}
+    end)
+    |> Map.new()
   end
 
   @spec project_settings_form_data(term()) :: map()

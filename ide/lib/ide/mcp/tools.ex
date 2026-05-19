@@ -2061,7 +2061,9 @@ defmodule Ide.Mcp.Tools do
              is_published: Map.get(args, "is_published", true) == true,
              all_platforms: Map.get(args, "all_platforms", false) == true,
              gif_all_platforms: Map.get(args, "gif_all_platforms", false) == true,
-             firebase_id_token: Map.get(args, "firebase_id_token")
+             firebase_id_token: Map.get(args, "firebase_id_token"),
+             store_icons:
+               Ide.StoreAssets.publish_icon_paths(Projects.project_workspace_path(project))
            ) do
       {:ok,
        %{

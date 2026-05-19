@@ -53,6 +53,8 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         for={@project_settings_form}
         id="project-settings-form"
         phx-submit="save-project-settings"
+        phx-change="validate-project-settings"
+        multipart
         class="mt-4 space-y-4"
       >
         <section class="rounded border border-zinc-200 p-3">
@@ -144,6 +146,42 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         </section>
 
         <section class="rounded border border-zinc-200 p-3">
+          <h3 class="text-sm font-semibold">App Store graphics</h3>
+          <p class="mt-1 text-xs text-zinc-600">
+            PNG icons are sent on the first App Store listing (watchapps). Watchfaces can omit them.
+            Banner graphics ({Ide.StoreAssets.banner_size_label()} per platform) are managed in the Rebble developer portal.
+          </p>
+          <div class="mt-3 grid gap-4 md:grid-cols-2">
+            <div :for={spec <- store_icon_specs()} class="rounded border border-zinc-200 bg-zinc-50 p-3">
+              <p class="text-xs font-medium text-zinc-800">{spec.label}</p>
+              <p class="mt-1 text-xs text-zinc-500">{spec.help}</p>
+              <img
+                :if={@store_assets[spec.key].preview_url}
+                src={@store_assets[spec.key].preview_url}
+                alt={spec.label}
+                class={["mt-2 rounded border border-zinc-200 bg-white object-contain", spec.preview_class]}
+              />
+              <p :if={@store_assets[spec.key].present and @store_assets[spec.key].valid} class="mt-2 text-xs text-emerald-700">
+                Saved.
+              </p>
+              <p
+                :if={@store_assets[spec.key].present and not @store_assets[spec.key].valid}
+                class="mt-2 text-xs text-rose-700"
+              >
+                Saved file is not {spec.size_label}. Upload a replacement.
+              </p>
+              <label class="mt-2 block text-xs">
+                <span class="mb-1 block font-medium text-zinc-700">{spec.upload_label}</span>
+                <.live_file_input upload={Map.get(@uploads, spec.upload)} class="block w-full text-xs" />
+              </label>
+              <%= for err <- upload_errors(Map.get(@uploads, spec.upload)) do %>
+                <p class="mt-1 text-xs text-rose-700">{err}</p>
+              <% end %>
+            </div>
+          </div>
+        </section>
+
+        <section class="rounded border border-zinc-200 p-3">
           <h3 class="text-sm font-semibold">GitHub repository</h3>
           <p class="mt-1 text-xs text-zinc-600">
             Set target repo used by Push snapshot. Connect to GitHub from IDE Settings first.
@@ -223,6 +261,34 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
       %{id: "gabbro", label: "Build Gabbro", help: "eg Pebble Round 2."}
     ]
   end
+
+  defp store_icon_specs do
+    alias Ide.StoreAssets
+
+    uploads = %{icon_small: :store_icon_small, icon_large: :store_icon_large}
+
+    Enum.map(StoreAssets.icon_specs(), fn spec ->
+      %{
+        key: spec.key,
+        upload: Map.fetch!(uploads, spec.key),
+        label:
+          "#{StoreAssets.human_name(spec.key) |> String.capitalize()} · #{StoreAssets.size_label(spec.width, spec.height)}",
+        size_label: StoreAssets.size_label(spec.width, spec.height),
+        upload_label: "Upload PNG",
+        preview_class: preview_class(spec.key),
+        help: store_icon_help(spec.key)
+      }
+    end)
+  end
+
+  defp store_icon_help(:icon_small),
+    do: "App Store field iconSmall — compact listings and search results."
+
+  defp store_icon_help(:icon_large),
+    do: "App Store field iconLarge — app detail page and install prompts."
+
+  defp preview_class(:icon_small), do: "h-20 w-20"
+  defp preview_class(:icon_large), do: "h-28 w-28"
 
   defp capability_options do
     [
