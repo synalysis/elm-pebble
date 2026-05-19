@@ -7,10 +7,11 @@ defmodule Ide.Projects.Project do
   import Ecto.Changeset
 
   @target_types ~w(app watchface companion)
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes game-basic game-tiny-bird game-greeneys-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time game-basic game-tiny-bird game-greeneys-run game-2048)
 
   @type t :: %__MODULE__{
           id: integer() | nil,
+          owner_id: integer() | nil,
           name: String.t() | nil,
           slug: String.t() | nil,
           target_type: String.t() | nil,
@@ -32,6 +33,7 @@ defmodule Ide.Projects.Project do
         }
 
   schema "projects" do
+    belongs_to :owner, Ide.Auth.User
     field :name, :string
     field :slug, :string
     field :target_type, :string
@@ -60,6 +62,7 @@ defmodule Ide.Projects.Project do
     project
     |> cast(attrs, [
       :name,
+      :owner_id,
       :slug,
       :target_type,
       :source_roots,
@@ -83,6 +86,7 @@ defmodule Ide.Projects.Project do
     |> validate_change(:template, fn :template, value ->
       if is_nil(value) or value in @template_keys, do: [], else: [template: "is invalid"]
     end)
-    |> unique_constraint(:slug)
+    |> unique_constraint(:slug, name: :projects_owner_id_slug_index)
+    |> unique_constraint(:slug, name: :projects_local_slug_index)
   end
 end

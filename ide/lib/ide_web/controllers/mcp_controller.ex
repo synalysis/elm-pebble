@@ -24,7 +24,8 @@ defmodule IdeWeb.McpController do
 
   def create(conn, request_body) when is_list(request_body) do
     with {:ok, capabilities} <- http_capabilities(conn) do
-      responses = Protocol.batch_response(request_body, capabilities)
+      responses =
+        with_current_user(conn, fn -> Protocol.batch_response(request_body, capabilities) end)
 
       if responses == [] do
         send_resp(conn, 202, "")
@@ -38,7 +39,7 @@ defmodule IdeWeb.McpController do
 
   def create(conn, request_body) when is_map(request_body) do
     with {:ok, capabilities} <- http_capabilities(conn) do
-      case Protocol.response(request_body, capabilities) do
+      case with_current_user(conn, fn -> Protocol.response(request_body, capabilities) end) do
         nil -> send_resp(conn, 202, "")
         response -> json(conn, response)
       end
@@ -82,5 +83,20 @@ defmodule IdeWeb.McpController do
       "id" => nil,
       "error" => %{"code" => -32000, "message" => "MCP HTTP endpoint is disabled in IDE settings"}
     })
+  end
+
+  defp with_current_user(conn, fun) do
+    previous = Process.get(:ide_current_user)
+    Process.put(:ide_current_user, conn.assigns[:current_user])
+
+    try do
+      fun.()
+    after
+      if is_nil(previous) do
+        Process.delete(:ide_current_user)
+      else
+        Process.put(:ide_current_user, previous)
+      end
+    end
   end
 end

@@ -140,12 +140,42 @@ defmodule Ide.Mcp.ToolsTest do
 
   defmodule MockPebbleToolchain do
     def package(_slug, _opts) do
+      root = Path.join(System.tmp_dir!(), "ide_mcp_mock_publish")
+      app_root = Path.join(root, "app")
+      artifact_path = Path.join(root, "mock-app.pbw")
+      File.mkdir_p!(Path.join(app_root, "build"))
+      File.write!(artifact_path, "pbw")
+
+      File.write!(
+        Path.join(app_root, "build/appinfo.json"),
+        Jason.encode!(%{
+          "uuid" => "00000000-0000-0000-0000-000000000000",
+          "shortName" => "Mock",
+          "longName" => "Mock",
+          "versionLabel" => "1.0.0",
+          "companyName" => "Mock",
+          "targetPlatforms" => ["basalt", "chalk"],
+          "watchapp" => %{"watchface" => false}
+        })
+      )
+
       {:ok,
        %{
          status: :ok,
-         artifact_path: "/tmp/mock-app.pbw",
-         app_root: "/tmp/mock-app",
+         artifact_path: artifact_path,
+         app_root: app_root,
          build_result: %{status: :ok, output: "packaged"}
+       }}
+    end
+
+    def publish(_slug, opts) do
+      {:ok,
+       %{
+         status: :ok,
+         command: "pebble publish --non-interactive",
+         output: "published #{opts[:app_root]}",
+         exit_code: 0,
+         cwd: opts[:app_root]
        }}
     end
 
@@ -157,6 +187,19 @@ defmodule Ide.Mcp.ToolsTest do
          output: "installed",
          exit_code: 0,
          cwd: Path.dirname(opts[:package_path] || "/tmp/mock-app.pbw")
+       }}
+    end
+  end
+
+  defmodule MockAppStorePublisher do
+    def publish(_project, opts) do
+      {:ok,
+       %{
+         status: :ok,
+         command: "native appstore publish",
+         output: "published #{opts[:app_root]}",
+         exit_code: 0,
+         cwd: opts[:app_root]
        }}
     end
   end
@@ -266,6 +309,7 @@ defmodule Ide.Mcp.ToolsTest do
     assert "debugger_state" in tool_names
     assert "debugger_cursor_inspect" in tool_names
     assert "debugger_render_tree" in tool_names
+    assert "debugger_preview_diagnostics" in tool_names
     assert "debugger_models" in tool_names
     assert "debugger_timeline" in tool_names
     assert "debugger_surface_state" in tool_names
@@ -303,6 +347,8 @@ defmodule Ide.Mcp.ToolsTest do
     assert "compiler_check_source_root" in tool_names
     assert "compiler_compile" in tool_names
     assert "compiler_manifest" in tool_names
+    assert "publish_prepare" in tool_names
+    assert "publish_validate" in tool_names
     refute "files_write" in tool_names
     refute "files_patch" in tool_names
     refute "packages_add_to_elm_json" in tool_names
@@ -318,9 +364,12 @@ defmodule Ide.Mcp.ToolsTest do
     assert "debugger_set_subscription_enabled" in edit_tool_names
   end
 
-  test "publish capability is default deny until publish tools are defined" do
+  test "publish tools are capability scoped" do
     tool_defs = Tools.tool_definitions([:publish])
-    assert tool_defs == []
+    tool_names = Enum.map(tool_defs, & &1.name)
+    assert "publish_submit" in tool_names
+    refute "publish_prepare" in tool_names
+    refute "publish_validate" in tool_names
 
     assert {:error, reason} =
              Tools.call(
@@ -337,6 +386,7 @@ defmodule Ide.Mcp.ToolsTest do
 
     Application.put_env(:ide, Ide.Mcp.Tools,
       pebble_toolchain_module: MockPebbleToolchain,
+      app_store_publisher_module: MockAppStorePublisher,
       screenshots_module: MockScreenshots
     )
 
@@ -374,7 +424,7 @@ defmodule Ide.Mcp.ToolsTest do
     assert String.contains?(package_denied, "not permitted")
 
     assert {:ok, packaged} = Tools.call("pebble.package", %{"slug" => "mcp-mutate"}, [:build])
-    assert packaged.artifact_path == "/tmp/mock-app.pbw"
+    assert String.ends_with?(packaged.artifact_path, "mock-app.pbw")
     assert packaged.status == :ok
 
     assert {:ok, installed} =
@@ -385,7 +435,7 @@ defmodule Ide.Mcp.ToolsTest do
              )
 
     assert installed.slug == "mcp-mutate"
-    assert installed.artifact_path == "/tmp/mock-app.pbw"
+    assert String.ends_with?(installed.artifact_path, "mock-app.pbw")
     assert installed.install_result.status == :ok
     assert installed.install_result.exit_code == 0
 
@@ -482,6 +532,70 @@ defmodule Ide.Mcp.ToolsTest do
              Tools.call("projects.delete", %{"slug" => "mcp-mutate"}, [:edit])
   end
 
+  test "publish MCP tools prepare validate and submit release" do
+    previous_tools_env = Application.get_env(:ide, Ide.Mcp.Tools)
+    previous_manifest_env = Application.get_env(:ide, Ide.PublishManifest)
+
+    output_root =
+      Path.join(System.tmp_dir!(), "ide_mcp_publish_test_#{System.unique_integer([:positive])}")
+
+    Application.put_env(:ide, Ide.Mcp.Tools,
+      pebble_toolchain_module: MockPebbleToolchain,
+      app_store_publisher_module: MockAppStorePublisher,
+      screenshots_module: MockScreenshots
+    )
+
+    Application.put_env(:ide, Ide.PublishManifest, output_root: output_root)
+
+    on_exit(fn ->
+      File.rm_rf(output_root)
+
+      if previous_tools_env == nil do
+        Application.delete_env(:ide, Ide.Mcp.Tools)
+      else
+        Application.put_env(:ide, Ide.Mcp.Tools, previous_tools_env)
+      end
+
+      if previous_manifest_env == nil do
+        Application.delete_env(:ide, Ide.PublishManifest)
+      else
+        Application.put_env(:ide, Ide.PublishManifest, previous_manifest_env)
+      end
+    end)
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "McpPublish",
+               "slug" => "mcp-publish",
+               "target_type" => "app",
+               "release_defaults" => %{"target_platforms" => ["basalt", "chalk"]}
+             })
+
+    assert {:error, denied} =
+             Tools.call("publish.submit", %{"slug" => project.slug}, [:build])
+
+    assert denied =~ "not permitted"
+
+    assert {:ok, validated} =
+             Tools.call("publish.validate", %{"slug" => project.slug}, [:build])
+
+    assert validated.status == :ok
+    assert Enum.all?(validated.readiness, &(&1.status == :ok))
+
+    assert {:ok, prepared} =
+             Tools.call("publish.prepare", %{"slug" => project.slug}, [:build])
+
+    assert prepared.status == :ok
+    assert File.exists?(prepared.manifest_path)
+    assert File.exists?(prepared.release_notes_path)
+
+    assert {:ok, submitted} =
+             Tools.call("publish.submit", %{"slug" => project.slug}, [:publish])
+
+    assert submitted.status == :ok
+    assert submitted.command =~ "native appstore publish"
+  end
+
   test "project settings tools expose only safe persisted settings" do
     assert {:ok, project} =
              Projects.create_project(%{
@@ -562,6 +676,9 @@ defmodule Ide.Mcp.ToolsTest do
                    "charging" => true,
                    "connected" => false,
                    "clock_24h" => true,
+                   "use_simulated_time" => true,
+                   "simulated_time" => "07:08:09",
+                   "simulated_date" => "2026-05-19",
                    "latitude" => "49.0",
                    "longitude" => 8,
                    "accuracy" => 40
@@ -572,6 +689,9 @@ defmodule Ide.Mcp.ToolsTest do
 
     assert simulator["battery_percent"] == 12
     assert simulator["charging"] == true
+    assert simulator["use_simulated_time"] == true
+    assert simulator["simulated_time"] == "07:08:09"
+    assert simulator["simulated_date"] == "2026-05-19"
     assert simulator["longitude"] == 8.0
 
     assert {:ok, read_back} =
@@ -2477,6 +2597,39 @@ defmodule Ide.Mcp.ToolsTest do
     assert [%{path: "0", type: root_type, bounds: root_bounds} | _] = render_tree.nodes
     assert is_binary(root_type)
     assert is_map(root_bounds)
+
+    assert {:ok, preview_diag} =
+             Tools.call(
+               "debugger.preview_diagnostics",
+               %{"slug" => project.slug, "target" => "watch", "event_limit" => 25},
+               [:read]
+             )
+
+    assert preview_diag.slug == project.slug
+    assert preview_diag.target == "watch"
+    assert preview_diag.screen.width > 0
+    assert preview_diag.screen.height > 0
+    assert preview_diag.status in ["ok", "fallback", "empty"]
+
+    assert preview_diag.render_source in [
+             "runtime_view_output",
+             "runtime_view_tree",
+             "parser_view_tree",
+             "none"
+           ]
+
+    assert is_integer(preview_diag.runtime_view_output_count)
+    assert is_list(preview_diag.runtime_view_output_kinds)
+
+    assert is_nil(preview_diag.surface_tree_sha256) or
+             String.length(preview_diag.surface_tree_sha256) == 64
+
+    assert is_nil(preview_diag.fingerprint_view_tree_sha256) or
+             String.length(preview_diag.fingerprint_view_tree_sha256) == 64
+
+    assert is_list(preview_diag.latest_render_events)
+    assert is_list(preview_diag.latest_lifecycle)
+    assert is_list(preview_diag.findings)
 
     assert {:ok, models_payload} =
              Tools.call("debugger.models", %{"slug" => project.slug}, [:read])

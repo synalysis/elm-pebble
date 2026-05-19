@@ -132,6 +132,9 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
         "charging" => "true",
         "connected" => "false",
         "clock_24h" => "false",
+        "use_simulated_time" => "true",
+        "simulated_date" => "2026-05-19",
+        "simulated_time" => "07:08:09",
         "latitude" => "48.2",
         "longitude" => "11.7",
         "accuracy" => "12.5"
@@ -146,12 +149,31 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     assert simulator["charging"] == true
     assert simulator["connected"] == false
     assert simulator["clock_24h"] == false
+    assert simulator["use_simulated_time"] == true
+    assert simulator["simulated_date"] == "2026-05-19"
+    assert simulator["simulated_time"] == "07:08:09"
     assert simulator["latitude"] == 48.2
     assert simulator["longitude"] == 11.7
     assert simulator["accuracy"] == 12.5
 
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/debugger")
     assert has_element?(view, "input[name='debugger_simulator[battery_percent]'][value='42']")
+
+    assert has_element?(
+             view,
+             "input[name='debugger_simulator[use_simulated_time]'][checked]"
+           )
+
+    assert has_element?(
+             view,
+             "input[name='debugger_simulator[simulated_date]'][value='2026-05-19']"
+           )
+
+    assert has_element?(
+             view,
+             "input[name='debugger_simulator[simulated_time]'][value='07:08:09']"
+           )
+
     assert has_element?(view, "input[name='debugger_simulator[latitude]'][value='48.2']")
   end
 
@@ -169,6 +191,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     |> form("#project-settings-form", %{
       "project_settings" => %{
         "version_label" => "1.2.3",
+        "description" => "A small Pebble watchapp.",
         "tags" => "fitness,utility",
         "target_platforms" => ["basalt", "chalk"],
         "capabilities" => ["location", "health"],
@@ -183,6 +206,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
 
     updated = Projects.get_project_by_slug(project.slug)
     assert updated.release_defaults["version_label"] == "1.2.3"
+    assert updated.release_defaults["description"] == "A small Pebble watchapp."
     assert updated.release_defaults["tags"] == "fitness,utility"
     assert updated.release_defaults["target_platforms"] == ["basalt", "chalk"]
     assert updated.release_defaults["capabilities"] == ["location", "health"]

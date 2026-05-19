@@ -4,6 +4,7 @@ defmodule ElmExTest do
   alias ElmEx.Frontend.AstContract
   alias ElmEx.Frontend.Module, as: FrontendModule
   alias ElmEx.CoreIR
+  alias ElmEx.Frontend.Bridge
   alias ElmEx.IR
   alias ElmEx.IR.Lowerer
   alias ElmEx.IR.TopoSort
@@ -103,6 +104,105 @@ defmodule ElmExTest do
     }
 
     assert :ok = AstContract.validate_module(good_module)
+  end
+
+  test "frontend bridge keeps first source-directory module when overlays overlap" do
+    root = Path.join(System.tmp_dir!(), "elm-ex-overlay-#{System.unique_integer([:positive])}")
+    src = Path.join(root, "src")
+    override = Path.join(root, "override")
+    defaults = Path.join(root, "defaults")
+
+    File.mkdir_p!(Path.join(src, "Companion"))
+    File.mkdir_p!(Path.join(override, "Companion"))
+    File.mkdir_p!(Path.join(defaults, "Companion"))
+
+    File.write!(Path.join(root, "elm.json"), Jason.encode!(%{
+      "type" => "application",
+      "source-directories" => ["src", "override", "defaults"],
+      "elm-version" => "0.19.1",
+      "dependencies" => %{"direct" => %{}, "indirect" => %{}},
+      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+    }))
+
+    File.write!(Path.join(src, "Main.elm"), """
+    module Main exposing (main)
+
+    main =
+        1
+    """)
+
+    File.write!(Path.join(override, "Companion/Types.elm"), """
+    module Companion.Types exposing (WatchToPhone(..))
+
+    type WatchToPhone
+        = RequestFigure
+    """)
+
+    File.write!(Path.join(defaults, "Companion/Types.elm"), """
+    module Companion.Types exposing (WatchToPhone(..))
+
+    type WatchToPhone
+        = RequestWeather
+    """)
+
+    File.write!(Path.join(defaults, "Companion/Watch.elm"), """
+    module Companion.Watch exposing (sendWatchToPhone)
+
+    sendWatchToPhone message =
+        message
+    """)
+
+    on_exit(fn -> File.rm_rf(root) end)
+
+    assert {:ok, project} = Bridge.load_project(root)
+
+    type_modules = Enum.filter(project.modules, &(&1.name == "Companion.Types"))
+    assert [%{path: selected_path}] = type_modules
+    assert selected_path == Path.join(override, "Companion/Types.elm")
+    assert Enum.any?(project.modules, &(&1.name == "Companion.Watch"))
+  end
+
+  test "generated frontend keeps outer update branches after nested case expression" do
+    root = Path.join(System.tmp_dir!(), "elm-ex-nested-case-#{System.unique_integer([:positive])}")
+    src = Path.join(root, "src")
+    File.mkdir_p!(src)
+
+    File.write!(Path.join(root, "elm.json"), Jason.encode!(%{
+      "type" => "application",
+      "source-directories" => ["src"],
+      "elm-version" => "0.19.1",
+      "dependencies" => %{"direct" => %{}, "indirect" => %{}},
+      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+    }))
+
+    File.write!(Path.join(src, "Main.elm"), """
+    module Main exposing (..)
+
+    update msg model =
+        case msg of
+            CatalogReceived (Ok json) ->
+                case catalogNames json of
+                    [] ->
+                        ( model, Cmd.none )
+
+                    names ->
+                        ( { model | names = names }, fetchFigure 0 )
+
+            CatalogReceived (Err _) ->
+                ( model, Cmd.none )
+
+            SvgReceived (Ok svg) ->
+                ( model, sendFigureGeometry svg )
+    """)
+
+    on_exit(fn -> File.rm_rf(root) end)
+
+    assert {:ok, project} = Bridge.load_project(root)
+    main = Enum.find(project.modules, &(&1.name == "Main"))
+    update = Enum.find(main.declarations, &(&1.name == "update"))
+    %{op: :case, branches: branches} = update.expr
+
+    assert Enum.map(branches, & &1.pattern.name) == ["CatalogReceived", "CatalogReceived", "SvgReceived"]
   end
 
   # ---------------------------------------------------------------------------

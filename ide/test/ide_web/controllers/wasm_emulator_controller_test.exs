@@ -211,6 +211,22 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     assert get_resp_header(emulator_conn, "cross-origin-embedder-policy") == ["require-corp"]
   end
 
+  test "publish pane is not cross-origin isolated so Firebase popup login can communicate", %{
+    conn: conn
+  } do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "PublishAuthHeaders",
+               "slug" => "publish-auth-headers",
+               "target_type" => "app"
+             })
+
+    publish_conn = get(conn, ~p"/projects/#{project.slug}/publish")
+    assert html_response(publish_conn, 200) =~ "Publish"
+    assert get_resp_header(publish_conn, "cross-origin-opener-policy") == []
+    assert get_resp_header(publish_conn, "cross-origin-embedder-policy") == []
+  end
+
   test "screenshot endpoint stores a browser captured png", %{conn: conn} do
     assert {:ok, project} =
              Projects.create_project(%{
@@ -230,6 +246,7 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     body = json_response(conn, 200)
     assert body["status"] == "ok"
     assert body["screenshot"]["emulator_target"] == "emery"
+    assert body["screenshot"]["filename"] =~ ~r/^emery_shot_\d/
     assert File.regular?(body["screenshot"]["absolute_path"])
   end
 

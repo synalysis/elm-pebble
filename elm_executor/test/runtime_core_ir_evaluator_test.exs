@@ -84,6 +84,36 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
     assert {:ok, 42} = CoreIREvaluator.evaluate(expr)
   end
 
+  test "matches tagged tuple constructor values by constructor metadata" do
+    expr = %{
+      "op" => :case,
+      "subject" => %{"op" => :var, "name" => "msg"},
+      "branches" => [
+        %{
+          "pattern" => %{
+            "kind" => :constructor,
+            "name" => "SvgReceived",
+            "arg_pattern" => %{
+              "kind" => :constructor,
+              "name" => "Ok",
+              "arg_pattern" => %{"kind" => :var, "name" => "body"}
+            }
+          },
+          "expr" => %{"op" => :var, "name" => "body"}
+        }
+      ]
+    }
+
+    context = %{constructor_tags: [%{ctor: "SvgReceived", tag: 4}]}
+
+    assert {:ok, "<svg/>"} =
+             CoreIREvaluator.evaluate(
+               expr,
+               %{"msg" => {4, %{"ctor" => "Ok", "args" => ["<svg/>"]}}},
+               context
+             )
+  end
+
   test "constructor bind exposes payload, not constructor envelope" do
     expr = %{
       "op" => :case,
@@ -774,6 +804,20 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
                  list([0, 1])
                ])
              )
+
+    evenJust =
+      lambda(
+        ["n"],
+        %{
+          "op" => :if,
+          "cond" => call("__eq__", [qcall("Basics.modBy", [int(2), var("n")]), int(0)]),
+          "then_expr" => ctor("Just", [var("n")]),
+          "else_expr" => ctor("Nothing", [])
+        }
+      )
+
+    assert {:ok, [2, 4]} =
+             CoreIREvaluator.evaluate(qcall("List.filterMap", [evenJust, list([1, 2, 3, 4])]))
 
     assert {:ok, %{"ctor" => "Just", "args" => [3]}} =
              CoreIREvaluator.evaluate(qcall("Maybe.map", [inc, ctor("Just", [int(2)])]))

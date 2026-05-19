@@ -613,23 +613,6 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
         <h3 class="text-sm font-semibold">Screenshots</h3>
         <div class="mt-2 flex items-center gap-2">
           <.button
-            phx-click="capture-screenshot"
-            disabled={
-              screenshot_button_disabled?(
-                @emulator_mode,
-                @external_emulator_running,
-                @screenshot_status
-              )
-            }
-          >
-            {screenshot_button_label(@screenshot_status)}
-          </.button>
-          <span class="text-xs text-zinc-600">
-            Status: {check_status_label(@screenshot_status)}
-          </span>
-        </div>
-        <div class="mt-2 flex items-center gap-2">
-          <.button
             phx-click="capture-all-screenshots"
             disabled={@capture_all_status == :running}
             class="!bg-zinc-800 hover:!bg-zinc-700"

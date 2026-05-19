@@ -26,6 +26,147 @@ import {WasmEmulatorHost} from "./emulator/wasm_emulator"
 
 let Hooks = {}
 
+const firebaseScriptUrls = [
+  "https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js",
+  "https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"
+]
+
+let firebaseLoadPromise = null
+
+function authCsrfToken() {
+  const meta = document.querySelector("meta[name='csrf-token']")
+  return meta && meta.getAttribute("content")
+}
+
+function postJson(url, body) {
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-csrf-token": authCsrfToken() || ""
+    },
+    body: JSON.stringify(body || {})
+  }).then(async response => {
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`)
+    return data
+  })
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`)
+    if (existing) {
+      existing.addEventListener("load", resolve, {once: true})
+      existing.addEventListener("error", reject, {once: true})
+      if (existing.dataset.loaded === "true") resolve()
+      return
+    }
+
+    const script = document.createElement("script")
+    script.src = src
+    script.async = true
+    script.onload = () => {
+      script.dataset.loaded = "true"
+      resolve()
+    }
+    script.onerror = reject
+    document.head.appendChild(script)
+  })
+}
+
+function loadFirebase(config) {
+  if (!firebaseLoadPromise) {
+    firebaseLoadPromise = firebaseScriptUrls
+      .reduce((promise, src) => promise.then(() => loadScript(src)), Promise.resolve())
+      .then(() => {
+        if (!window.firebase.apps.length) window.firebase.initializeApp(config)
+        return window.firebase
+      })
+  }
+
+  return firebaseLoadPromise
+}
+
+function firebaseProvider(firebase, providerName) {
+  if (providerName === "github") return new firebase.auth.GithubAuthProvider()
+  if (providerName === "apple") return new firebase.auth.OAuthProvider("apple.com")
+  return new firebase.auth.GoogleAuthProvider()
+}
+
+async function firebaseLogin(config, providerName) {
+  const firebase = await loadFirebase(config)
+  const result = await firebase.auth().signInWithPopup(firebaseProvider(firebase, providerName))
+  const idToken = await result.user.getIdToken()
+  const data = await postJson("/auth/firebase", {id_token: idToken})
+  return {...data, id_token: idToken}
+}
+
+async function firebaseLogout(config) {
+  const firebase = await loadFirebase(config)
+  await firebase.auth().signOut()
+  return postJson("/auth/logout", {})
+}
+
+function authConfigFromElement(el) {
+  const raw = el.dataset.firebaseConfig || document.body.dataset.firebaseConfig
+  if (!raw) return null
+  return JSON.parse(raw)
+}
+
+document.addEventListener("click", async event => {
+  const loginButton = event.target.closest(".firebase-login")
+  const logoutButton = event.target.closest(".firebase-logout")
+  if (!loginButton && !logoutButton) return
+
+  event.preventDefault()
+  const button = loginButton || logoutButton
+  const config = authConfigFromElement(button.closest("[data-firebase-config]") || document.body)
+  const status = document.getElementById("firebase-login-status")
+
+  if (!config) {
+    if (status) status.textContent = "Firebase configuration is missing."
+    return
+  }
+
+  button.disabled = true
+  if (status) status.textContent = loginButton ? "Opening login..." : "Logging out..."
+
+  try {
+    if (loginButton) {
+      const data = await firebaseLogin(config, loginButton.dataset.provider || "google")
+      if (status) status.textContent = "Logged in."
+      if (loginButton.dataset.liveAuth === "true") {
+        window.dispatchEvent(new CustomEvent("elm-pebble-auth-refreshed", {detail: data}))
+        button.disabled = false
+      } else {
+        window.location.href = loginButton.dataset.returnTo || data.redirect_to || window.location.href
+      }
+    } else {
+      await firebaseLogout(config)
+      window.location.href = "/login"
+    }
+  } catch (error) {
+    if (status) status.textContent = error.message || String(error)
+    button.disabled = false
+  }
+})
+
+Hooks.FirebaseAuthRefresh = {
+  mounted() {
+    this.onAuthRefreshed = event => {
+      const detail = event.detail || {}
+      if (detail.id_token) this.pushEvent("firebase-auth-refreshed", {id_token: detail.id_token})
+    }
+
+    window.addEventListener("elm-pebble-auth-refreshed", this.onAuthRefreshed)
+  },
+
+  destroyed() {
+    window.removeEventListener("elm-pebble-auth-refreshed", this.onAuthRefreshed)
+  }
+}
+
 function applyIdeTheme(theme) {
   const normalized = theme === "dark" || theme === "light" ? theme : "system"
   document.body.dataset.ideTheme = normalized

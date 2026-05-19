@@ -96,6 +96,47 @@ defmodule Ide.CompanionProtocolGeneratorTest do
     end
   end
 
+  test "omits unused protocol payload storage from generated C structs" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-protocol-compact-#{System.unique_integer([:positive])}"
+      )
+
+    types = Path.join(tmp, "Types.elm")
+    header = Path.join(tmp, "generated/companion_protocol.h")
+    source = Path.join(tmp, "generated/companion_protocol.c")
+    js = Path.join(tmp, "pkjs/companion-protocol.js")
+
+    try do
+      File.mkdir_p!(Path.dirname(types))
+
+      File.write!(types, """
+      module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+
+      type WatchToPhone
+          = RequestFigure
+
+      type PhoneToWatch
+          = ProvidePiece Int Int Int Int
+      """)
+
+      assert :ok = CompanionProtocolGenerator.generate(types, header, source, js)
+
+      generated_header = File.read!(header)
+      generated_source = File.read!(source)
+
+      assert generated_header =~ "int32_t int_fields[COMPANION_PROTOCOL_MAX_FIELDS]"
+      refute generated_header =~ "string_fields"
+      refute generated_header =~ "bool_fields"
+      refute generated_header =~ "union_value_fields"
+      refute generated_header =~ "saw_union_value_fields"
+      refute generated_source =~ "saw_union_value_fields"
+    after
+      File.rm_rf(tmp)
+    end
+  end
+
   test "generates Elm internal helpers from the extracted schema" do
     tmp =
       Path.join(

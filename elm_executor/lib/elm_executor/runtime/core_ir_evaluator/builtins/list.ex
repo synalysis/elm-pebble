@@ -20,6 +20,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.List do
 
   def eval("indexedmap", [fun, xs], ops) when is_list(xs), do: ops.indexed_map.(fun, xs)
   def eval("concatmap", [fun, xs], ops) when is_list(xs), do: ops.concat_map.(fun, xs)
+  def eval("filtermap", [fun, xs], ops) when is_list(xs), do: ops.filter_map.(fun, xs)
   def eval("reverse", [xs], _ops) when is_list(xs), do: {:ok, Enum.reverse(xs)}
   def eval("append", [xs, ys], _ops) when is_list(xs) and is_list(ys), do: {:ok, xs ++ ys}
   def eval("concat", [xss], _ops) when is_list(xss), do: {:ok, Enum.flat_map(xss, &List.wrap/1)}
@@ -71,6 +72,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.List do
   def eval("filter", [fun, xs], ops) when is_list(xs), do: ops.filter.(fun, xs)
   def eval("map", [fun], _ops), do: {:ok, {:builtin_partial, "List.map", [fun]}}
   def eval("filter", [fun], _ops), do: {:ok, {:builtin_partial, "List.filter", [fun]}}
+  def eval("filtermap", [fun], _ops), do: {:ok, {:builtin_partial, "List.filterMap", [fun]}}
   def eval("foldl", [fun, init], _ops), do: {:ok, {:builtin_partial, "List.foldl", [fun, init]}}
   def eval("foldr", [fun, init], _ops), do: {:ok, {:builtin_partial, "List.foldr", [fun, init]}}
   def eval(_function_name, _values, _ops), do: :no_builtin

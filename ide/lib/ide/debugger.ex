@@ -266,6 +266,9 @@ defmodule Ide.Debugger do
       "charging" => false,
       "connected" => true,
       "clock_24h" => true,
+      "use_simulated_time" => false,
+      "simulated_time" => nil,
+      "simulated_date" => nil,
       "timezone_id" => "Europe/Berlin",
       "timezone_offset_min" => 120,
       "locale" => "en-US",
@@ -3400,8 +3403,8 @@ defmodule Ide.Debugger do
   defp device_request_from_cmd_call(_cmd_call), do: []
 
   @spec finalize_device_request(term(), term()) :: term()
-  defp finalize_device_request(%{kind: "current_time_string"} = req, _model) do
-    now = NaiveDateTime.local_now()
+  defp finalize_device_request(%{kind: "current_time_string"} = req, model) do
+    now = simulator_now_from_model(model)
     hhmm_text = Calendar.strftime(now, "%H:%M")
 
     hhmm =
@@ -3419,8 +3422,9 @@ defmodule Ide.Debugger do
     })
   end
 
-  defp finalize_device_request(%{kind: "current_date_time"} = req, _model) do
-    now = NaiveDateTime.local_now()
+  defp finalize_device_request(%{kind: "current_date_time"} = req, model) do
+    now = simulator_now_from_model(model)
+    settings = simulator_settings_from_model(model)
 
     Map.put(req, :preview, %{
       "year" => now.year,
@@ -3430,7 +3434,7 @@ defmodule Ide.Debugger do
       "hour" => now.hour,
       "minute" => now.minute,
       "second" => now.second,
-      "utcOffsetMinutes" => utc_offset_minutes_now()
+      "utcOffsetMinutes" => settings["timezone_offset_min"]
     })
   end
 
@@ -4576,7 +4580,7 @@ defmodule Ide.Debugger do
     if message_text == "" or String.contains?(message_text, " ") do
       message
     else
-      now = NaiveDateTime.local_now()
+      now = simulator_now_for_target(state, target)
       # `subscription_event_kind/1` turns e.g. `PebbleEvents.onHourChange` into `on_hour_change`.
       # Match after removing punctuation so "on_hour_change", "onHourChange", and "onhourchange"
       # all line up the same way.
@@ -4766,6 +4770,21 @@ defmodule Ide.Debugger do
       "charging" => normalize_boolean(map_value(settings, "charging"), defaults["charging"]),
       "connected" => normalize_boolean(map_value(settings, "connected"), defaults["connected"]),
       "clock_24h" => normalize_boolean(map_value(settings, "clock_24h"), defaults["clock_24h"]),
+      "use_simulated_time" =>
+        normalize_boolean(
+          map_value(settings, "use_simulated_time"),
+          defaults["use_simulated_time"]
+        ),
+      "simulated_time" =>
+        normalize_optional_string(
+          map_value(settings, "simulated_time"),
+          defaults["simulated_time"]
+        ),
+      "simulated_date" =>
+        normalize_optional_string(
+          map_value(settings, "simulated_date"),
+          defaults["simulated_date"]
+        ),
       "timezone_id" =>
         normalize_string(map_value(settings, "timezone_id"), defaults["timezone_id"]),
       "timezone_offset_min" =>
@@ -4807,6 +4826,15 @@ defmodule Ide.Debugger do
   defp normalize_string(value, _default) when is_binary(value) and value != "", do: value
   defp normalize_string(_value, default) when is_binary(default), do: default
 
+  defp normalize_optional_string(value, _default) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp normalize_optional_string(_value, default), do: default
+
   defp normalize_json_map(value, _default) when is_map(value), do: value
   defp normalize_json_map(_value, default) when is_map(default), do: default
 
@@ -4821,6 +4849,60 @@ defmodule Ide.Debugger do
   end
 
   defp simulator_settings_from_model(_model), do: default_simulator_settings()
+
+  @spec simulator_now_for_target(map(), :watch | :companion | :phone) :: NaiveDateTime.t()
+  defp simulator_now_for_target(state, target)
+       when is_map(state) and target in [:watch, :companion, :phone] do
+    state
+    |> get_in([target, :model])
+    |> simulator_now_from_model()
+  end
+
+  @spec simulator_now_from_model(term()) :: NaiveDateTime.t()
+  defp simulator_now_from_model(model) do
+    model
+    |> simulator_settings_from_model()
+    |> simulator_now_from_settings()
+  end
+
+  @spec simulator_now_from_settings(map()) :: NaiveDateTime.t()
+  defp simulator_now_from_settings(settings) when is_map(settings) do
+    fallback = NaiveDateTime.local_now()
+
+    if settings["use_simulated_time"] == true do
+      date = parse_simulated_date(settings["simulated_date"], NaiveDateTime.to_date(fallback))
+      time = parse_simulated_time(settings["simulated_time"], NaiveDateTime.to_time(fallback))
+
+      NaiveDateTime.new!(date, time)
+    else
+      fallback
+    end
+  end
+
+  defp simulator_now_from_settings(_settings), do: NaiveDateTime.local_now()
+
+  @spec parse_simulated_date(term(), Date.t()) :: Date.t()
+  defp parse_simulated_date(value, fallback) when is_binary(value) do
+    case Date.from_iso8601(String.trim(value)) do
+      {:ok, date} -> date
+      {:error, _reason} -> fallback
+    end
+  end
+
+  defp parse_simulated_date(_value, fallback), do: fallback
+
+  @spec parse_simulated_time(term(), Time.t()) :: Time.t()
+  defp parse_simulated_time(value, fallback) when is_binary(value) do
+    text = String.trim(value)
+    normalized = if Regex.match?(~r/^\d{1,2}:\d{2}$/, text), do: text <> ":00", else: text
+
+    case Time.from_iso8601(normalized) do
+      {:ok, time} -> Time.truncate(time, :second)
+      {:error, _reason} -> fallback
+    end
+  end
+
+  defp parse_simulated_time(_value, fallback), do: fallback
 
   @spec normalize_float(term(), float(), float(), float()) :: float()
   defp normalize_float(value, _default, min_value, max_value) when is_float(value),
@@ -5146,9 +5228,8 @@ defmodule Ide.Debugger do
        when is_binary(project_slug) and is_list(targets) do
     update(project_slug, fn state ->
       if Map.get(state, :running, false) do
-        now = NaiveDateTime.local_now()
-
         Enum.reduce(targets, state, fn target, acc ->
+          now = simulator_now_for_target(acc, target)
           {rows, acc} = auto_fire_subscription_candidates(acc, target, now)
 
           rows
@@ -5639,11 +5720,14 @@ defmodule Ide.Debugger do
         concrete_runtime_view_tree?(runtime_view_tree) ->
           runtime_view_tree
 
+        parser_expression_view_tree?(runtime_view_tree) ->
+          preview_unavailable_view_tree(target, "runtime view did not produce drawable output")
+
         concrete_runtime_view_tree?(previous_view_tree) ->
           previous_view_tree
 
         true ->
-          default_view_tree_for_target(target)
+          preview_unavailable_view_tree(target, "no renderable view tree")
       end
 
     base = normalize_debugger_render_tree(base)
@@ -8724,10 +8808,31 @@ defmodule Ide.Debugger do
 
     state =
       cond do
-        introspect_view_usable?(output_vt) -> put_in(state, [target, :view_tree], output_vt)
-        introspect_view_usable?(runtime_vt) -> put_in(state, [target, :view_tree], runtime_vt)
-        introspect_view_usable?(vt) -> put_in(state, [target, :view_tree], vt)
-        true -> state
+        introspect_view_usable?(output_vt) ->
+          put_in(state, [target, :view_tree], output_vt)
+
+        introspect_view_usable?(runtime_vt) ->
+          put_in(state, [target, :view_tree], runtime_vt)
+
+        parser_expression_view_tree?(runtime_vt) ->
+          put_in(
+            state,
+            [target, :view_tree],
+            preview_unavailable_view_tree(target, "runtime view did not produce drawable output")
+          )
+
+        introspect_view_usable?(vt) ->
+          put_in(state, [target, :view_tree], vt)
+
+        parser_expression_view_tree?(vt) ->
+          put_in(
+            state,
+            [target, :view_tree],
+            preview_unavailable_view_tree(target, "parser view did not produce drawable output")
+          )
+
+        true ->
+          state
       end
 
     state
@@ -8768,6 +8873,16 @@ defmodule Ide.Debugger do
        do: true
 
   defp introspect_view_usable?(_), do: false
+
+  @spec preview_unavailable_view_tree(:watch | :companion | :phone, String.t()) :: map()
+  defp preview_unavailable_view_tree(target, reason) do
+    %{
+      "type" => "previewUnavailable",
+      "label" => reason,
+      "target" => source_root_for_target(target),
+      "children" => []
+    }
+  end
 
   @spec put_view_trees_for_surface(map(), String.t(), String.t(), String.t()) :: map()
   defp put_view_trees_for_surface(state, path, revision, "phone") do

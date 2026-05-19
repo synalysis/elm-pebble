@@ -3,6 +3,8 @@ defmodule IdeWeb.WorkspaceLive do
 
   alias Ide.Formatter
   alias Ide.Formatter.EditPatch
+  alias Ide.AppStore.Publisher, as: AppStorePublisher
+  alias Ide.Auth
   alias Ide.Compiler
   alias Ide.EmulatorSupport
   alias Ide.GitHub.Push, as: GitHubPush
@@ -52,7 +54,7 @@ defmodule IdeWeb.WorkspaceLive do
   @impl true
   @spec handle_params(term(), term(), term()) :: term()
   def handle_params(%{"slug" => slug}, _uri, socket) do
-    case Projects.get_project_by_slug(slug) do
+    case Projects.get_project_by_slug(slug, socket.assigns.current_user) do
       nil ->
         {:noreply,
          socket
@@ -70,7 +72,7 @@ defmodule IdeWeb.WorkspaceLive do
         screenshots = load_screenshots(project)
         screenshot_groups = group_screenshots(screenshots)
 
-        publish_readiness = PublishFlow.publish_readiness(screenshots)
+        publish_readiness = PublishFlow.publish_readiness(project, screenshots)
 
         selected_emulator_target = project_emulator_target(project)
         emulator_mode = project_emulator_mode(project)
@@ -1226,11 +1228,13 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_event("wasm-screenshot-saved", %{"screenshot" => screenshot}, socket) do
+    project = socket.assigns.project
+
     screenshots =
       socket.assigns.screenshots
       |> EmulatorFlow.upsert_screenshot(atomize_screenshot(screenshot))
 
-    readiness = PublishFlow.publish_readiness(screenshots)
+    readiness = PublishFlow.publish_readiness(project, screenshots)
 
     warnings =
       PublishFlow.publish_warnings(
@@ -1260,9 +1264,10 @@ defmodule IdeWeb.WorkspaceLive do
     project = socket.assigns.project
     workspace_root = Projects.project_workspace_path(project)
     package_path = socket.assigns.publish_artifact_path
+    target_platforms = PublishFlow.target_platforms(project)
     token = System.unique_integer([:positive])
     lv = self()
-    target_statuses = Enum.into(socket.assigns.emulator_targets, %{}, &{&1, "pending"})
+    target_statuses = Enum.into(target_platforms, %{}, &{&1, "pending"})
 
     {:noreply,
      socket
@@ -1277,6 +1282,7 @@ defmodule IdeWeb.WorkspaceLive do
          workspace_root: workspace_root,
          target_type: project.target_type,
          project_name: project.name,
+         targets: target_platforms,
          package_path: package_path,
          close_emulator_afterwards: true,
          progress: fn msg -> send(lv, {:capture_all_progress, token, msg}) end
@@ -1294,7 +1300,7 @@ defmodule IdeWeb.WorkspaceLive do
     case Screenshots.delete(project.slug, emulator_target, filename, []) do
       :ok ->
         screenshots = load_screenshots(project)
-        readiness = PublishFlow.publish_readiness(screenshots)
+        readiness = PublishFlow.publish_readiness(project, screenshots)
 
         warnings =
           PublishFlow.publish_warnings(project, readiness, socket.assigns.release_summary)
@@ -1322,7 +1328,7 @@ defmodule IdeWeb.WorkspaceLive do
     case Screenshots.delete_target(project.slug, emulator_target, []) do
       :ok ->
         screenshots = load_screenshots(project)
-        readiness = PublishFlow.publish_readiness(screenshots)
+        readiness = PublishFlow.publish_readiness(project, screenshots)
 
         warnings =
           PublishFlow.publish_warnings(project, readiness, socket.assigns.release_summary)
@@ -1353,12 +1359,33 @@ defmodule IdeWeb.WorkspaceLive do
      |> assign(:release_summary_form, to_form(summary, as: :release_summary))}
   end
 
+  def handle_event("firebase-auth-refreshed", %{"id_token" => id_token}, socket) do
+    with {:ok, payload} <- Auth.verify_firebase_id_token(id_token),
+         {:ok, user} <- Auth.upsert_firebase_user(payload) do
+      {:noreply,
+       socket
+       |> assign(:current_user, user)
+       |> assign(:firebase_id_token, String.trim(id_token))
+       |> assign(:firebase_id_token_exp, Auth.token_exp(id_token))
+       |> assign(:publish_submit_status, :idle)
+       |> assign(:publish_submit_output, nil)
+       |> put_flash(:info, "App Store login refreshed.")}
+    else
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:publish_submit_status, :error)
+         |> assign(:publish_submit_output, "App Store login refresh failed: #{inspect(reason)}")}
+    end
+  end
+
   def handle_event("save-project-settings", %{"project_settings" => params}, socket) do
     project = socket.assigns.project
     defaults = project.release_defaults || %{}
     github = project.github || %{}
 
     version_label = String.trim(params["version_label"] || "")
+    description = String.trim(params["description"] || "")
     tags = String.trim(params["tags"] || "")
     target_platforms = State.target_platforms_form_value(params["target_platforms"])
     capabilities = State.capabilities_form_value(params["capabilities"])
@@ -1370,6 +1397,7 @@ defmodule IdeWeb.WorkspaceLive do
       "release_defaults" =>
         defaults
         |> Map.put("version_label", version_label)
+        |> Map.put("description", description)
         |> Map.put("tags", tags)
         |> Map.put("target_platforms", target_platforms)
         |> Map.put("capabilities", capabilities),
@@ -1387,6 +1415,9 @@ defmodule IdeWeb.WorkspaceLive do
           |> Map.put("version_label", version_label)
           |> Map.put("tags", tags)
 
+        readiness = PublishFlow.publish_readiness(updated, socket.assigns.screenshots)
+        warnings = PublishFlow.publish_warnings(updated, readiness, release_summary)
+
         {:noreply,
          socket
          |> assign(:project, updated)
@@ -1396,6 +1427,12 @@ defmodule IdeWeb.WorkspaceLive do
          )
          |> assign(:release_summary, release_summary)
          |> assign(:release_summary_form, to_form(release_summary, as: :release_summary))
+         |> assign(:publish_readiness, readiness)
+         |> assign(:publish_warnings, warnings)
+         |> assign(
+           :publish_summary,
+           PublishFlow.publish_summary(socket.assigns.publish_checks, warnings, readiness)
+         )
          |> put_flash(:info, "Project settings saved.")}
 
       {:error, reason} ->
@@ -1445,38 +1482,73 @@ defmodule IdeWeb.WorkspaceLive do
     project = socket.assigns.project
     app_root = socket.assigns.publish_app_root
     options = socket.assigns.publish_submit_options
+    firebase_id_token = socket.assigns[:firebase_id_token]
+    firebase_id_token_exp = socket.assigns[:firebase_id_token_exp]
 
-    if is_binary(app_root) and app_root != "" do
-      publish_notes =
-        PublishFlow.release_notes_markdown(
-          socket.assigns.publish_checks,
-          socket.assigns.publish_readiness,
-          socket.assigns.publish_artifact_path,
-          project.slug,
-          socket.assigns.release_summary
-        )
+    cond do
+      not is_binary(app_root) or app_root == "" ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "No publish app root available yet. Run Prepare Release first."
+         )}
 
-      submit_opts = [
-        app_root: app_root,
-        release_notes: publish_notes,
-        is_published: options["is_published"] == true,
-        all_platforms: options["all_platforms"] == true
-      ]
+      not is_binary(firebase_id_token) or firebase_id_token == "" ->
+        {:noreply,
+         socket
+         |> assign(:publish_submit_status, :error)
+         |> assign(
+           :publish_submit_output,
+           "App Store login required. Log in on this page before submitting the release."
+         )}
 
-      {:noreply,
-       socket
-       |> assign(:publish_submit_status, :running)
-       |> assign(:publish_submit_output, nil)
-       |> start_async(:submit_publish_release, fn ->
-         PebbleToolchain.publish(project.slug, submit_opts)
-       end)}
-    else
-      {:noreply,
-       put_flash(
-         socket,
-         :error,
-         "No publish app root available yet. Run Prepare Release first."
-       )}
+      Ide.Auth.token_expired?(firebase_id_token_exp) ->
+        {:noreply,
+         socket
+         |> assign(:publish_submit_status, :error)
+         |> assign(
+           :publish_submit_output,
+           "App Store login expired. Log in again before submitting the release."
+         )}
+
+      missing_new_app_description?(project) ->
+        {:noreply,
+         socket
+         |> assign(:publish_submit_status, :error)
+         |> assign(
+           :publish_submit_output,
+           "App Store description required. Add one in Project Settings before submitting a new app."
+         )}
+
+      true ->
+        app_description = publish_app_description(project)
+        screenshot_groups = socket.assigns.screenshot_groups
+
+        submit_opts = [
+          app_root: app_root,
+          artifact_path: socket.assigns.publish_artifact_path,
+          release_notes: PublishFlow.store_release_notes(socket.assigns.release_summary),
+          version: socket.assigns.release_summary["version_label"],
+          description: app_description,
+          is_published: options["is_published"] == true,
+          all_platforms: options["all_platforms"] == true,
+          firebase_id_token: firebase_id_token
+        ]
+
+        {:noreply,
+         socket
+         |> assign(:publish_submit_status, :running)
+         |> assign(:publish_submit_output, nil)
+         |> start_async(:submit_publish_release, fn ->
+           with {:ok, screenshot_paths} <-
+                  PublishFlow.stage_publish_screenshots(app_root, screenshot_groups) do
+             AppStorePublisher.publish(
+               project,
+               Keyword.put(submit_opts, :screenshots, screenshot_paths)
+             )
+           end
+         end)}
     end
   end
 
@@ -1484,13 +1556,14 @@ defmodule IdeWeb.WorkspaceLive do
     project = socket.assigns.project
     workspace_root = Projects.project_workspace_path(project)
     package_path = socket.assigns.publish_artifact_path
+    target_platforms = PublishFlow.target_platforms(project)
     token = System.unique_integer([:positive])
     lv = self()
-    target_statuses = Enum.into(socket.assigns.emulator_targets, %{}, &{&1, "pending"})
+    target_statuses = Enum.into(target_platforms, %{}, &{&1, "pending"})
 
     {:noreply,
      socket
-     |> put_flash(:info, "Capturing screenshots for all emulator targets...")
+     |> put_flash(:info, "Capturing screenshots for configured target platforms...")
      |> assign(:capture_all_status, :running)
      |> assign(:capture_all_token, token)
      |> assign(:capture_all_progress, "Starting screenshot capture...")
@@ -1502,6 +1575,7 @@ defmodule IdeWeb.WorkspaceLive do
          workspace_root: workspace_root,
          target_type: project.target_type,
          project_name: project.name,
+         targets: target_platforms,
          package_path: package_path,
          close_emulator_afterwards: true,
          progress: fn msg -> send(lv, {:capture_all_progress, token, msg}) end
@@ -1520,7 +1594,8 @@ defmodule IdeWeb.WorkspaceLive do
        PebbleToolchain.package(project.slug,
          workspace_root: workspace_root,
          target_type: project.target_type,
-         project_name: project.name
+         project_name: project.name,
+         target_platforms: PublishFlow.target_platforms(project)
        )
      end)}
   end
@@ -1540,7 +1615,8 @@ defmodule IdeWeb.WorkspaceLive do
        PebbleToolchain.package(project.slug,
          workspace_root: workspace_root,
          target_type: project.target_type,
-         project_name: project.name
+         project_name: project.name,
+         target_platforms: PublishFlow.target_platforms(project)
        )
      end)}
   end
@@ -1549,7 +1625,7 @@ defmodule IdeWeb.WorkspaceLive do
     project = socket.assigns.project
     artifact_path = socket.assigns.publish_artifact_path
     screenshot_groups = socket.assigns.screenshot_groups
-    required_targets = ToolchainPresenter.emulator_targets()
+    required_targets = PublishFlow.target_platforms(project)
     readiness = socket.assigns.publish_readiness
 
     {:noreply,
@@ -2527,8 +2603,9 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_async(:capture_screenshot, {:ok, {:ok, result}}, socket) do
-    screenshots = load_screenshots(socket.assigns.project)
-    readiness = PublishFlow.publish_readiness(screenshots)
+    project = socket.assigns.project
+    screenshots = load_screenshots(project)
+    readiness = PublishFlow.publish_readiness(project, screenshots)
 
     warnings =
       PublishFlow.publish_warnings(
@@ -2570,8 +2647,9 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_async(:capture_all_screenshots, {:ok, {:ok, result}}, socket) do
-    screenshots = load_screenshots(socket.assigns.project)
-    readiness = PublishFlow.publish_readiness(screenshots)
+    project = socket.assigns.project
+    screenshots = load_screenshots(project)
+    readiness = PublishFlow.publish_readiness(project, screenshots)
 
     warnings =
       PublishFlow.publish_warnings(
@@ -2673,17 +2751,18 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_async(:prepare_publish_artifact, {:ok, {:ok, result}}, socket) do
-    screenshots = load_screenshots(socket.assigns.project)
+    project = socket.assigns.project
+    screenshots = load_screenshots(project)
 
-    readiness = PublishFlow.publish_readiness(screenshots)
+    readiness = PublishFlow.publish_readiness(project, screenshots)
 
     publish_checks =
       case PublishReadiness.validate(
              artifact_path: result.artifact_path,
-             required_targets: ToolchainPresenter.emulator_targets(),
+             required_targets: PublishFlow.target_platforms(project),
              readiness: readiness,
              app_root: result.app_root,
-             project_slug: socket.assigns.project.slug
+             project_slug: project.slug
            ) do
         {:ok, validation} ->
           validation.checks
@@ -3625,6 +3704,23 @@ defmodule IdeWeb.WorkspaceLive do
     })
   end
 
+  defp missing_new_app_description?(project) do
+    blank?(project.store_app_id) and blank?(publish_app_description(project))
+  end
+
+  defp publish_app_description(project) do
+    project
+    |> Map.get(:release_defaults, %{})
+    |> case do
+      defaults when is_map(defaults) -> Map.get(defaults, "description", "")
+      _ -> ""
+    end
+    |> to_string()
+    |> String.trim()
+  end
+
+  defp blank?(value), do: is_nil(value) or String.trim(to_string(value)) == ""
+
   @spec to_bool(term()) :: term()
   defp to_bool(value) when value in [true, "true", "on", "1", 1], do: true
   defp to_bool(_), do: false
@@ -3764,6 +3860,18 @@ defmodule IdeWeb.WorkspaceLive do
         settings
         |> map_get_string("clock_24h")
         |> normalize_debugger_boolean(defaults["clock_24h"]),
+      "use_simulated_time" =>
+        settings
+        |> map_get_string("use_simulated_time")
+        |> normalize_debugger_boolean(defaults["use_simulated_time"]),
+      "simulated_time" =>
+        settings
+        |> map_get_string("simulated_time")
+        |> normalize_debugger_optional_string(defaults["simulated_time"]),
+      "simulated_date" =>
+        settings
+        |> map_get_string("simulated_date")
+        |> normalize_debugger_optional_string(defaults["simulated_date"]),
       "latitude" =>
         settings
         |> map_get_string("latitude")
@@ -3827,6 +3935,16 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   defp normalize_debugger_float(_value, default, _min_value, _max_value), do: default
+
+  @spec normalize_debugger_optional_string(term(), String.t() | nil) :: String.t() | nil
+  defp normalize_debugger_optional_string(value, _default) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp normalize_debugger_optional_string(_value, default), do: default
 
   @spec normalize_debugger_boolean(term(), boolean()) :: boolean()
   defp normalize_debugger_boolean(values, default) when is_list(values),

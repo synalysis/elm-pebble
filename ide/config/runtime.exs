@@ -24,6 +24,26 @@ github_oauth_client_id = System.get_env("GITHUB_OAUTH_CLIENT_ID")
 
 config :ide, Ide.GitHub, oauth_client_id: github_oauth_client_id
 
+config :ide, Ide.Auth,
+  mode:
+    (case String.downcase(System.get_env("IDE_AUTH_MODE", "local")) do
+       "public" -> :public
+       _ -> :local
+     end),
+  firebase_api_key:
+    System.get_env("IDE_FIREBASE_API_KEY") || "AIzaSyBZ9Cdvwwv9At2lPmc8TxyyEqSXGXejGvc",
+  firebase_auth_domain:
+    System.get_env("IDE_FIREBASE_AUTH_DOMAIN") || "coreapp-ce061.firebaseapp.com",
+  firebase_project_id: System.get_env("IDE_FIREBASE_PROJECT_ID") || "coreapp-ce061",
+  firebase_storage_bucket:
+    System.get_env("IDE_FIREBASE_STORAGE_BUCKET") || "coreapp-ce061.firebasestorage.app",
+  firebase_messaging_sender_id:
+    System.get_env("IDE_FIREBASE_MESSAGING_SENDER_ID") || "460977838956",
+  firebase_app_id:
+    System.get_env("IDE_FIREBASE_APP_ID") || "1:460977838956:web:9a11a68ec78008fe303149",
+  appstore_api_base:
+    System.get_env("IDE_APPSTORE_API_BASE") || "https://appstore-api.repebble.com"
+
 config :ide, Ide.Emulator.Session,
   enabled: System.get_env("ELM_PEBBLE_EMBEDDED_EMULATOR", "true") not in ~w(0 false no off),
   qemu_bin: System.get_env("ELM_PEBBLE_QEMU_BIN"),

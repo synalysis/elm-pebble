@@ -340,7 +340,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
           {acc,
            %{
              current
-             | body_lines: current.body_lines ++ [String.trim(line_info.raw_line)],
+             | body_lines: current.body_lines ++ [String.trim_trailing(line_info.raw_line)],
                end_line: line_info.line_no,
                in_multiline_string?: next_in_multiline_string
            }}

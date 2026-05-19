@@ -14,7 +14,7 @@ defmodule Mix.Tasks.Ide.SizeReport do
   alias Ide.ProjectTemplates
 
   @shortdoc "Reports compiler and Pebble package sizes for templates"
-  @default_templates ["watchface-yes", "game-2048", "starter"]
+  @default_templates ["watchface-yes", "watchface-tangram-time", "game-2048", "starter"]
 
   @impl Mix.Task
   def run(args) do

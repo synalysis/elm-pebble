@@ -72,6 +72,17 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
               />
             </label>
             <label class="text-xs md:col-span-2">
+              <span class="mb-1 block font-medium text-zinc-700">App Store description</span>
+              <textarea
+                name={@project_settings_form["description"].name}
+                class="min-h-24 w-full rounded border border-zinc-300 px-2 py-1.5"
+                placeholder="A short description shown on the Pebble App Store."
+              ><%= @project_settings_form["description"].value %></textarea>
+              <span class="mt-1 block text-zinc-500">
+                Required by `pebble publish --non-interactive` when creating a new App Store listing.
+              </span>
+            </label>
+            <label class="text-xs md:col-span-2">
               <span class="mb-1 block font-medium text-zinc-700">Tags (comma-separated)</span>
               <input
                 type="text"

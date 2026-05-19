@@ -32,6 +32,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:manifest_output, nil)
     |> assign(:build_status, :idle)
     |> assign(:build_output, nil)
+    |> assign(:build_issues, [])
     |> assign(:manifest_strict_mode, false)
     |> assign(:format_status, :idle)
     |> assign(:format_output, nil)
@@ -83,7 +84,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:publish_submit_status, :idle)
     |> assign(:publish_submit_output, nil)
     |> assign(:publish_submit_options, %{
-      "is_published" => false,
+      "is_published" => true,
       "all_platforms" => false
     })
     |> assign(:release_summary, PublishFlow.default_release_summary(nil))
@@ -261,6 +262,7 @@ defmodule IdeWeb.WorkspaceLive.State do
 
     %{
       "version_label" => Map.get(defaults, "version_label", ""),
+      "description" => Map.get(defaults, "description", ""),
       "tags" => Map.get(defaults, "tags", ""),
       "target_platforms" => target_platforms_form_value(Map.get(defaults, "target_platforms")),
       "capabilities" => capabilities_form_value(Map.get(defaults, "capabilities")),
@@ -273,6 +275,7 @@ defmodule IdeWeb.WorkspaceLive.State do
   def project_settings_form_data(_),
     do: %{
       "version_label" => "",
+      "description" => "",
       "tags" => "",
       "target_platforms" => supported_target_platforms(),
       "capabilities" => [],

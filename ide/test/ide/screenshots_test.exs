@@ -32,6 +32,7 @@ defmodule Ide.ScreenshotsTest do
 
     assert {:ok, stored} = Screenshots.store_png("demo", "chalk", png)
     assert stored.mime_type == "image/png"
+    assert stored.filename =~ ~r/^chalk_shot_\d/
 
     metadata_path = stored.absolute_path <> ".json"
     assert File.exists?(metadata_path)

@@ -171,10 +171,51 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
       </div>
 
       <div class="mt-4 rounded border border-zinc-200 p-3">
+        <div id="firebase-auth-refresh" phx-hook="FirebaseAuthRefresh" class="hidden"></div>
         <h3 class="text-sm font-semibold">Store Submission</h3>
         <p class="mt-1 text-xs text-zinc-600">
-          Submit directly using `pebble publish` from the prepared app workspace.
+          Submit directly to the Rebble App Store from the prepared app workspace.
         </p>
+
+        <div
+          :if={app_store_login_needed?(@current_user, @firebase_id_token, @firebase_id_token_exp)}
+          class="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+        >
+          <p class="font-semibold">
+            {app_store_login_title(@firebase_id_token, @firebase_id_token_exp)}
+          </p>
+          <p class="mt-1">
+            Log in here to refresh App Store access without leaving this page. Your changelog and
+            submit options stay in place.
+          </p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="firebase-login rounded bg-blue-600 px-3 py-1.5 font-semibold text-white"
+              data-provider="google"
+              data-live-auth="true"
+            >
+              Log in with Google
+            </button>
+            <button
+              type="button"
+              class="firebase-login rounded bg-zinc-800 px-3 py-1.5 font-semibold text-white"
+              data-provider="github"
+              data-live-auth="true"
+            >
+              Log in with GitHub
+            </button>
+            <button
+              type="button"
+              class="firebase-login rounded bg-white px-3 py-1.5 font-semibold text-zinc-900 ring-1 ring-amber-300"
+              data-provider="apple"
+              data-live-auth="true"
+            >
+              Log in with Apple
+            </button>
+          </div>
+          <p id="firebase-login-status" class="mt-2"></p>
+        </div>
 
         <.form
           for={%{}}
@@ -189,7 +230,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
               name="publish_submit[is_published]"
               value="true"
               checked={@publish_submit_options["is_published"] == true}
-            /> Make release visible immediately
+            /> Make release visible immediately (unchecked uploads a draft; the store keeps showing the previous public version)
           </label>
 
           <input type="hidden" name="publish_submit[all_platforms]" value="false" />
@@ -258,4 +299,17 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
   defp status_label(:ok), do: "ok"
   defp status_label(:error), do: "error"
   defp status_label(_), do: "unknown"
+
+  defp app_store_login_needed?(current_user, firebase_id_token, firebase_id_token_exp) do
+    is_nil(current_user) or is_nil(firebase_id_token) or
+      Ide.Auth.token_expired?(firebase_id_token_exp)
+  end
+
+  defp app_store_login_title(firebase_id_token, firebase_id_token_exp) do
+    if is_binary(firebase_id_token) and Ide.Auth.token_expired?(firebase_id_token_exp) do
+      "App Store login expired"
+    else
+      "App Store login required for publishing"
+    end
+  end
 end

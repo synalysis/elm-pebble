@@ -1780,9 +1780,11 @@ static void outbox_failed_handler(DictionaryIterator *iter, AppMessageResult rea
   ELMC_PEBBLE_TRACE_EXIT("outbox_failed_handler");
 }
 
+#if ELMC_PEBBLE_FEATURE_BUTTON_EVENTS || ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS
 static void note_user_interaction(void) {
   light_enable_interaction();
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_BUTTON_EVENTS && !ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS
 static void click_handler(ClickRecognizerRef recognizer, void *context) {

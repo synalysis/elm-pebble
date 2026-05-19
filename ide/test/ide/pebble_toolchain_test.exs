@@ -16,6 +16,58 @@ defmodule Ide.PebbleToolchainTest do
     :ok
   end
 
+  test "publish passes app description for non-interactive new app creation" do
+    root = Path.join(System.tmp_dir!(), "ide_publish_test_#{System.unique_integer([:positive])}")
+    app_root = Path.join(root, "app")
+    File.mkdir_p!(app_root)
+
+    pebble_bin = Path.join(root, "pebble")
+
+    File.write!(pebble_bin, """
+    #!/bin/sh
+    printf '%s\\n' "$@"
+    """)
+
+    File.chmod!(pebble_bin, 0o755)
+
+    original = Application.get_env(:ide, Ide.PebbleToolchain, [])
+    Application.put_env(:ide, Ide.PebbleToolchain, Keyword.put(original, :pebble_bin, pebble_bin))
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.PebbleToolchain, original)
+      File.rm_rf(root)
+    end)
+
+    assert {:ok, result} =
+             PebbleToolchain.publish("demo",
+               app_root: app_root,
+               release_notes: "First release",
+               version: "1.0.1",
+               description: "Tangram watchface for Pebble",
+               screenshots: [
+                 Path.join(app_root, "emery_1.png"),
+                 Path.join(app_root, "chalk_1.png")
+               ]
+             )
+
+    assert result.status == :ok
+    assert result.output =~ "--version"
+    assert result.output =~ "1.0.1"
+    assert result.output =~ "--description"
+    assert result.output =~ "Tangram watchface for Pebble"
+    assert result.output =~ "--screenshots"
+    assert result.output =~ "emery_1.png"
+    assert result.output =~ "chalk_1.png"
+  end
+
+  test "package metadata uses configured release version" do
+    source = File.read!("lib/ide/pebble_toolchain.ex")
+
+    assert source =~ "version = package_version(Keyword.get(opts, :version))"
+    assert source =~ ~s("version" => version)
+    assert source =~ ~s(args ++ ["--version", trimmed])
+  end
+
   test "infer_package_target_type follows Pebble.Platform watchface entrypoint" do
     slug = "toolchain-watchface-#{System.unique_integer([:positive])}"
 
@@ -130,6 +182,21 @@ defmodule Ide.PebbleToolchainTest do
       assert source =~ "appMessageKeyNamesById"
       assert source =~ "normalizeIncomingAppMessage"
       assert source =~ "normalizeOutgoingAppMessage"
+    end
+  end
+
+  test "Elm companion index serializes outgoing AppMessages" do
+    generated_source = File.read!("lib/ide/pebble_toolchain.ex")
+    template_source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+
+    for source <- [generated_source, template_source] do
+      assert source =~ "appMessageOutbox"
+      assert source =~ "appMessageSending"
+      assert source =~ "sendQueuedAppMessage"
+      assert source =~ "drainAppMessageOutbox"
+      assert source =~ "Pebble.sendAppMessage("
+      assert source =~ "setTimeout(drainAppMessageOutbox, 50)"
+      refute source =~ "Pebble.sendAppMessage(normalizeOutgoingAppMessage"
     end
   end
 
@@ -325,5 +392,86 @@ defmodule Ide.PebbleToolchainTest do
     refute File.exists?(Path.join(package.app_root, "src/pkjs/companion-protocol.js"))
     refute File.exists?(Path.join(package.app_root, "src/c/generated/companion_protocol.h"))
     refute File.exists?(Path.join(package.app_root, "src/c/generated/companion_protocol.c"))
+  end
+
+  test "package falls back to generic renderer for unsupported direct render views" do
+    slug = "toolchain-unsupported-direct-render-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Unsupported Direct Render",
+               "slug" => slug,
+               "target_type" => "app",
+               "template" => "watchface-digital"
+             })
+
+    workspace_root = Projects.project_workspace_path(project)
+    on_exit(fn -> Projects.delete_project(project) end)
+
+    unsupported_main = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    init : Platform.LaunchContext -> ( Model, Cmd Msg )
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update : Msg -> Model -> ( Model, Cmd Msg )
+    update _ model =
+        ( model, Cmd.none )
+
+
+    view : Model -> Ui.UiNode
+    view _ =
+        List.filterMap keepCommand [ Ui.clear Color.black ]
+            |> Ui.toUiNode
+
+
+    keepCommand : Ui.RenderOp -> Maybe Ui.RenderOp
+    keepCommand command =
+        Just command
+
+
+    subscriptions : Model -> Sub Msg
+    subscriptions _ =
+        Sub.none
+
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.watchface
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    assert :ok = Projects.write_source_file(project, "watch", "src/Main.elm", unsupported_main)
+
+    assert {:ok, package} =
+             PebbleToolchain.package(slug,
+               workspace_root: workspace_root,
+               target_type: project.target_type,
+               project_name: project.name,
+               target_platforms: ["chalk"]
+             )
+
+    generated_h = File.read!(Path.join(package.app_root, "src/c/elmc/c/elmc_generated.h"))
+    refute generated_h =~ "ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW"
   end
 end

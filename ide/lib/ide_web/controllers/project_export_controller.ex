@@ -5,7 +5,7 @@ defmodule IdeWeb.ProjectExportController do
 
   @spec show(term(), term()) :: term()
   def show(conn, %{"id" => id}) do
-    project = Projects.get_project!(id)
+    project = Projects.get_project!(id, conn.assigns.current_user)
 
     case Projects.export_project(project) do
       {:ok, zip_path} ->

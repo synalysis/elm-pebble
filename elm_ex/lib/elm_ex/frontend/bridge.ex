@@ -103,11 +103,42 @@ defmodule ElmEx.Frontend.Bridge do
             _ -> Path.join(project_dir, dir)
           end
 
-        Path.wildcard(Path.join([source_root, "**", "*.elm"]))
+        source_root = Path.expand(source_root)
+
+        source_root
+        |> Path.join("**/*.elm")
+        |> Path.wildcard()
+        |> Enum.map(&{source_root, &1})
       end)
-      |> Enum.uniq()
+      |> unique_module_paths_by_source_order()
 
     {:ok, module_paths}
+  end
+
+  @spec unique_module_paths_by_source_order([{String.t(), String.t()}]) :: [String.t()]
+  defp unique_module_paths_by_source_order(source_paths) do
+    {_seen, paths} =
+      Enum.reduce(source_paths, {MapSet.new(), []}, fn {source_root, path}, {seen, acc} ->
+        module_name = module_name_from_source_path(source_root, path)
+
+        if MapSet.member?(seen, module_name) do
+          {seen, acc}
+        else
+          {MapSet.put(seen, module_name), [path | acc]}
+        end
+      end)
+
+    Enum.reverse(paths)
+  end
+
+  @spec module_name_from_source_path(String.t(), String.t()) :: String.t()
+  defp module_name_from_source_path(source_root, path) do
+    path
+    |> Path.expand()
+    |> Path.relative_to(source_root)
+    |> Path.rootname()
+    |> Path.split()
+    |> Enum.join(".")
   end
 
   @spec builtin_source_dirs(map()) :: [String.t()]

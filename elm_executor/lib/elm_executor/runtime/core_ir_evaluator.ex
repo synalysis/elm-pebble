@@ -1048,31 +1048,30 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         update_text_option(options, "overflow", 2)
 
       {"pebble.ui.text", [font_id, options, bounds, value]} ->
-        with {:ok, normalized_font_id} <- normalize_font_id(font_id),
-             {:ok, {alignment, overflow}} <- normalize_text_options(options),
-             {:ok, {x, y, w, h}} <- normalize_rect(bounds),
-             {:ok, normalized_text} <- normalize_text_value(value) do
-          {:ok,
-           ui_node(
-             "text",
-             Enum.map([normalized_font_id, x, y, w, h, alignment, overflow, normalized_text], &expr_node/1)
-           )}
-        else
-          _ -> :no_builtin
-        end
+        normalized_font_id = normalize_font_id_or_default(font_id)
+        {alignment, overflow} = normalize_text_options_or_default(options)
+        {x, y, w, h} = normalize_rect_or_default(bounds)
+        normalized_text = normalize_text_value_or_default(value)
+
+        {:ok,
+         ui_node(
+           "text",
+           Enum.map(
+             [normalized_font_id, x, y, w, h, alignment, overflow, normalized_text],
+             &expr_node/1
+           )
+         )}
 
       {"pebble.ui.text", [font_id, bounds, value]} ->
-        with {:ok, normalized_font_id} <- normalize_font_id(font_id),
-             {:ok, {x, y, w, h}} <- normalize_rect(bounds),
-             {:ok, normalized_text} <- normalize_text_value(value) do
-          {:ok,
-           ui_node(
-             "text",
-             Enum.map([normalized_font_id, x, y, w, h, normalized_text], &expr_node/1)
-           )}
-        else
-          _ -> :no_builtin
-        end
+        normalized_font_id = normalize_font_id_or_default(font_id)
+        {x, y, w, h} = normalize_rect_or_default(bounds)
+        normalized_text = normalize_text_value_or_default(value)
+
+        {:ok,
+         ui_node(
+           "text",
+           Enum.map([normalized_font_id, x, y, w, h, normalized_text], &expr_node/1)
+         )}
 
       {"pebble.ui.strokewidth", [value]} when is_integer(value) ->
         {:ok, {:ui_context_setting, "stroke_width", max(value, 1)}}
@@ -1478,6 +1477,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       list_map2: &list_map2_with_callable(&1, &2, &3, env, context, stack),
       indexed_map: &indexed_map_with_callable(&1, &2, env, context, stack),
       concat_map: &concat_map_with_callable(&1, &2, env, context, stack),
+      filter_map: &filter_map_with_callable(&1, &2, env, context, stack),
       foldl: &foldl_with_callable(&1, &2, &3, env, context, stack),
       foldr: &foldr_with_callable(&1, &2, &3, env, context, stack),
       filter: &filter_with_callable(&1, &2, env, context, stack),
@@ -1918,6 +1918,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
       {"concatmap", [fun, xs]} when is_list(xs) ->
         concat_map_with_callable(fun, xs, env, context, stack)
+
+      {"filtermap", [fun, xs]} when is_list(xs) ->
+        filter_map_with_callable(fun, xs, env, context, stack)
 
       {"member", [x, xs]} when is_list(xs) ->
         {:ok, Enum.member?(xs, x)}
@@ -2446,6 +2449,27 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     |> collect_ok()
     |> case do
       {:ok, lists} -> {:ok, Enum.flat_map(lists, fn x -> if is_list(x), do: x, else: [] end)}
+      err -> err
+    end
+  end
+
+  @spec filter_map_with_callable(term(), term(), term(), term(), term()) :: term()
+  defp filter_map_with_callable(fun, xs, env, context, stack) do
+    Enum.reduce_while(xs, {:ok, []}, fn x, {:ok, acc} ->
+      case call_callable(fun, [x], env, context, stack) do
+        {:ok, maybe} ->
+          case maybe_value(maybe) do
+            {:just, value} -> {:cont, {:ok, [value | acc]}}
+            :nothing -> {:cont, {:ok, acc}}
+            :invalid -> {:halt, {:error, {:expected_maybe, maybe}}}
+          end
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, kept} -> {:ok, Enum.reverse(kept)}
       err -> err
     end
   end
@@ -3181,6 +3205,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_rect(_), do: :error
 
+  @spec normalize_rect_or_default(term()) :: {integer(), integer(), integer(), integer()}
+  defp normalize_rect_or_default(value) do
+    case normalize_rect(value) do
+      {:ok, rect} -> rect
+      :error -> {0, 0, 0, 0}
+    end
+  end
+
   @spec normalize_text_options(term()) :: {:ok, {integer(), integer()}} | :error
   defp normalize_text_options({:function_ref, "Pebble.Ui.defaultTextOptions"}), do: {:ok, {1, 0}}
   defp normalize_text_options({:function_ref, "Ui.defaultTextOptions"}), do: {:ok, {1, 0}}
@@ -3196,6 +3228,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   end
 
   defp normalize_text_options(_), do: :error
+
+  @spec normalize_text_options_or_default(term()) :: {integer(), integer()}
+  defp normalize_text_options_or_default(value) do
+    case normalize_text_options(value) do
+      {:ok, options} -> options
+      :error -> {1, 0}
+    end
+  end
 
   defp update_text_option(options, field, value) when is_binary(field) and is_integer(value) do
     case normalize_text_options(options) do
@@ -3340,6 +3380,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_font_id({:function_ref, "Pebble.Ui.Resources.DefaultFont"}), do: {:ok, 1}
   defp normalize_font_id({:function_ref, "Resources.DefaultFont"}), do: {:ok, 1}
+  defp normalize_font_id({:function_ref, name}) when is_binary(name), do: {:ok, 1}
 
   defp normalize_font_id(%{"tag" => tag}) when is_integer(tag), do: {:ok, tag}
   defp normalize_font_id(%{tag: tag}) when is_integer(tag), do: {:ok, tag}
@@ -3363,6 +3404,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_font_id(_), do: :error
 
+  @spec normalize_font_id_or_default(term()) :: integer()
+  defp normalize_font_id_or_default(value) do
+    case normalize_font_id(value) do
+      {:ok, font_id} -> font_id
+      :error -> 1
+    end
+  end
+
   @spec normalize_text_value(term()) :: {:ok, String.t()} | :error
   defp normalize_text_value(value) when is_binary(value), do: {:ok, value}
 
@@ -3370,6 +3419,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     case binary_leaves(value) do
       leaves when leaves != [] -> {:ok, Enum.join(leaves)}
       _ -> :error
+    end
+  end
+
+  @spec normalize_text_value_or_default(term()) :: String.t()
+  defp normalize_text_value_or_default(value) do
+    case normalize_text_value(value) do
+      {:ok, text} -> text
+      :error -> ""
     end
   end
 
@@ -3949,7 +4006,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       pattern = branch["pattern"] || branch[:pattern] || %{}
       expr = branch["expr"] || branch[:expr]
 
-      case match_pattern(pattern, subject) do
+      case match_pattern(pattern, subject, context) do
         {:ok, pattern_bindings} ->
           next_env = Map.merge(env, pattern_bindings)
 
@@ -3967,8 +4024,10 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp evaluate_case_branches(_branches, _subject, _env, _context, _stack),
     do: {:error, :invalid_case_branches}
 
-  @spec match_pattern(term(), term()) :: term()
-  defp match_pattern(pattern, value) when is_map(pattern) do
+  @spec match_pattern(term(), term(), term()) :: term()
+  defp match_pattern(pattern, value, context)
+
+  defp match_pattern(pattern, value, context) when is_map(pattern) do
     kind = normalize_pattern_kind(pattern["kind"] || pattern[:kind])
 
     case kind do
@@ -4005,8 +4064,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           cond do
             is_integer(tag) and is_map(arg_pattern) ->
               case value do
-                {^tag, payload} -> match_pattern(arg_pattern, payload)
-                _ -> match_constructor_by_name(name, arg_pattern, bind_name, pattern, value)
+                {^tag, payload} -> match_pattern(arg_pattern, payload, context)
+                _ -> match_constructor_by_name(name, arg_pattern, bind_name, pattern, value, context)
               end
 
             is_integer(tag) ->
@@ -4022,11 +4081,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
                   {:ok, %{}}
 
                 _ ->
-                  match_constructor_by_name(name, arg_pattern, bind_name, pattern, value)
+                  match_constructor_by_name(name, arg_pattern, bind_name, pattern, value, context)
               end
 
             true ->
-              match_constructor_by_name(name, arg_pattern, bind_name, pattern, value)
+              match_constructor_by_name(name, arg_pattern, bind_name, pattern, value, context)
           end
 
         case match_result do
@@ -4050,8 +4109,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
         case value do
           {l, r} ->
-            with {:ok, lb} <- match_pattern(left, l),
-                 {:ok, rb} <- match_pattern(right, r) do
+            with {:ok, lb} <- match_pattern(left, l, context),
+                 {:ok, rb} <- match_pattern(right, r, context) do
               {:ok, Map.merge(lb, rb)}
             end
 
@@ -4064,12 +4123,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
         cond do
           is_tuple(value) and tuple_size(value) == length(elements) ->
-            match_pattern_list(elements, Tuple.to_list(value))
+            match_pattern_list(elements, Tuple.to_list(value), context)
 
           length(elements) == 2 ->
             case value do
               {l, r} ->
-                match_pattern_list(elements, [l, r])
+                match_pattern_list(elements, [l, r], context)
 
               _ ->
                 :nomatch
@@ -4083,7 +4142,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         alias_name = pattern["name"] || pattern[:name]
         inner = pattern["pattern"] || pattern[:pattern]
 
-        case match_pattern(inner, value) do
+        case match_pattern(inner, value, context) do
           {:ok, bindings} when is_binary(alias_name) and alias_name != "" ->
             {:ok, Map.put(bindings, alias_name, value)}
 
@@ -4099,7 +4158,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  defp match_pattern(_pattern, _value), do: :nomatch
+  defp match_pattern(_pattern, _value, _context), do: :nomatch
 
   @spec normalize_pattern_kind(term()) :: term()
   defp normalize_pattern_kind("wildcard"), do: :wildcard
@@ -4119,8 +4178,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp literal_pattern_match?("False", false), do: true
   defp literal_pattern_match?(expected, value), do: expected == value
 
-  @spec match_constructor_by_name(String.t(), term(), term(), term(), term()) :: term()
-  defp match_constructor_by_name(name, arg_pattern, bind_name, pattern, value)
+  @spec match_constructor_by_name(String.t(), term(), term(), term(), term(), term()) :: term()
+  defp match_constructor_by_name(name, arg_pattern, bind_name, pattern, value, context)
        when is_binary(name) do
     short_name = short_ctor_name(name)
 
@@ -4135,7 +4194,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         {:ok, %{}}
 
       [head | tail] when short_name == "::" ->
-        match_constructor_args(pattern, arg_pattern, bind_name, [head, tail])
+        match_constructor_args(pattern, arg_pattern, bind_name, [head, tail], context)
 
       0 when short_name == "Nothing" ->
         {:ok, %{}}
@@ -4147,30 +4206,60 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       when short_name == "Just" and
              (is_integer(scalar) or is_float(scalar) or is_boolean(scalar) or is_binary(scalar)) and
              scalar != 0 ->
-        match_constructor_args(pattern, arg_pattern, bind_name, [scalar])
+        match_constructor_args(pattern, arg_pattern, bind_name, [scalar], context)
+
+      {1, payload} when short_name in ["Just", "Ok"] ->
+        match_constructor_args(pattern, arg_pattern, bind_name, [payload], context)
+
+      {0, payload} when short_name == "Err" ->
+        match_constructor_args(pattern, arg_pattern, bind_name, [payload], context)
+
+      {tag, payload} when is_integer(tag) ->
+        case constructor_tag_for_name(short_name, context) do
+          ^tag -> match_constructor_args(pattern, arg_pattern, bind_name, [payload], context)
+          _ -> :nomatch
+        end
 
       %{"ctor" => ^name, "args" => args} when is_list(args) ->
-        match_constructor_args(pattern, arg_pattern, bind_name, args)
+        match_constructor_args(pattern, arg_pattern, bind_name, args, context)
 
       %{ctor: ^name, args: args} when is_list(args) ->
-        match_constructor_args(pattern, arg_pattern, bind_name, args)
+        match_constructor_args(pattern, arg_pattern, bind_name, args, context)
 
       %{"ctor" => ^short_name, "args" => args} when is_list(args) ->
-        match_constructor_args(pattern, arg_pattern, bind_name, args)
+        match_constructor_args(pattern, arg_pattern, bind_name, args, context)
 
       %{ctor: ^short_name, args: args} when is_list(args) ->
-        match_constructor_args(pattern, arg_pattern, bind_name, args)
+        match_constructor_args(pattern, arg_pattern, bind_name, args, context)
 
       _ ->
         :nomatch
     end
   end
 
-  @spec match_constructor_args(term(), term(), term(), list()) :: term()
-  defp match_constructor_args(pattern, arg_pattern, bind_name, args) when is_list(args) do
+  @spec constructor_tag_for_name(String.t(), term()) :: integer() | nil
+  defp constructor_tag_for_name(short_name, context) when is_binary(short_name) and is_map(context) do
+    context
+    |> Map.get(:constructor_tags, [])
+    |> Enum.find_value(fn
+      %{ctor: ctor, tag: tag} when is_integer(tag) ->
+        if short_ctor_name(to_string(ctor)) == short_name, do: tag, else: nil
+
+      %{"ctor" => ctor, "tag" => tag} when is_integer(tag) ->
+        if short_ctor_name(to_string(ctor)) == short_name, do: tag, else: nil
+
+      _ ->
+        nil
+    end)
+  end
+
+  defp constructor_tag_for_name(_short_name, _context), do: nil
+
+  @spec match_constructor_args(term(), term(), term(), list(), term()) :: term()
+  defp match_constructor_args(pattern, arg_pattern, bind_name, args, context) when is_list(args) do
     cond do
       is_map(arg_pattern) and length(args) == 1 ->
-        with {:ok, bindings} <- match_pattern(arg_pattern, hd(args)) do
+        with {:ok, bindings} <- match_pattern(arg_pattern, hd(args), context) do
           if is_binary(bind_name) and bind_name != "" do
             {:ok, Map.put(bindings, bind_name, hd(args))}
           else
@@ -4179,7 +4268,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         end
 
       is_map(arg_pattern) and length(args) > 1 ->
-        with {:ok, bindings} <- match_pattern(arg_pattern, List.to_tuple(args)) do
+        with {:ok, bindings} <- match_pattern(arg_pattern, List.to_tuple(args), context) do
           if is_binary(bind_name) and bind_name != "" do
             {:ok, Map.put(bindings, bind_name, List.to_tuple(args))}
           else
@@ -4192,23 +4281,23 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
       true ->
         arg_patterns = pattern["args"] || pattern[:args] || []
-        match_pattern_list(arg_patterns, args)
+        match_pattern_list(arg_patterns, args, context)
     end
   end
 
-  @spec match_pattern_list(term(), term()) :: term()
-  defp match_pattern_list(patterns, values)
+  @spec match_pattern_list(term(), term(), term()) :: term()
+  defp match_pattern_list(patterns, values, context)
        when is_list(patterns) and is_list(values) and length(patterns) == length(values) do
     Enum.zip(patterns, values)
     |> Enum.reduce_while({:ok, %{}}, fn {pat, val}, {:ok, acc} ->
-      case match_pattern(pat, val) do
+      case match_pattern(pat, val, context) do
         {:ok, b} -> {:cont, {:ok, Map.merge(acc, b)}}
         :nomatch -> {:halt, :nomatch}
       end
     end)
   end
 
-  defp match_pattern_list(_patterns, _values), do: :nomatch
+  defp match_pattern_list(_patterns, _values, _context), do: :nomatch
 
   @spec field_access(term(), term()) :: term()
   defp field_access(base, field) when is_map(base) and is_binary(field) do

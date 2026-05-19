@@ -24,7 +24,8 @@ defmodule IdeWeb.EmulatorController do
 
     # endregion
 
-    with project when not is_nil(project) <- Projects.get_project_by_slug(slug),
+    with project when not is_nil(project) <-
+           Projects.get_project_by_slug(slug, conn.assigns[:current_user]),
          workspace_root <- Projects.project_workspace_path(project),
          :ok <- ensure_runtime_ready(platform),
          {:ok, package_result, launch_platform} <-
@@ -266,7 +267,8 @@ defmodule IdeWeb.EmulatorController do
 
   @spec companion_preferences(term(), term()) :: term()
   def companion_preferences(conn, %{"slug" => slug}) do
-    with project when not is_nil(project) <- Projects.get_project_by_slug(slug),
+    with project when not is_nil(project) <-
+           Projects.get_project_by_slug(slug, conn.assigns[:current_user]),
          phone_root <- Path.join(Projects.project_workspace_path(project), "phone"),
          true <- File.exists?(Path.join(phone_root, "elm.json")),
          {:ok, schema} when is_map(schema) <- PebblePreferences.extract(phone_root) do

@@ -410,14 +410,13 @@ view model =
 
             else
                 [ Ui.text Resources.DefaultFont textOptions { x = 4, y = 4, w = 132, h = 16 } ("2048  Best " ++ String.fromInt model.best)
-                , Ui.text Resources.DefaultFont textOptions { x = 4, y = 20, w = 132, h = 12 } "Back L  Up U  Sel R  Down D"
                 ]
     in
-    Ui.toUiNode
-        ([ Ui.clear Color.white ]
-            ++ chromeOps
-            ++ List.indexedMap (drawCell layout) model.cells
-        )
+    Ui.clear Color.white
+        :: (chromeOps
+                ++ List.indexedMap (drawCell layout) model.cells
+           )
+        |> Ui.toUiNode
 
 
 type alias BoardLayout =
@@ -454,10 +453,34 @@ boardLayout model =
         }
 
     else
-        { x = 10
-        , y = 42
-        , cell = 28
-        , gap = 3
+        let
+            boardTop =
+                26
+
+            horizontalMargin =
+                10
+
+            bottomMargin =
+                4
+
+            gap =
+                max 3 (min model.screenW model.screenH // 48)
+
+            targetBoardSize =
+                min
+                    (model.screenW - horizontalMargin * 2)
+                    (model.screenH - boardTop - bottomMargin)
+
+            cell =
+                (targetBoardSize - gap * 3) // 4
+
+            boardSize =
+                cell * 4 + gap * 3
+        in
+        { x = (model.screenW - boardSize) // 2
+        , y = boardTop
+        , cell = cell
+        , gap = gap
         }
 
 
@@ -480,15 +503,14 @@ drawCell layout index value =
         textY =
             y + ((layout.cell - 18) // 2)
     in
-    Ui.group
-        (Ui.context
-            [ Ui.strokeColor Color.black
-            , Ui.textColor Color.black
-            ]
-            [ Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black
-            , Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = x, y = textY, w = layout.cell, h = 18 } label
-            ]
-        )
+    Ui.context
+        [ Ui.strokeColor Color.black
+        , Ui.textColor Color.black
+        ]
+        [ Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black
+        , Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = x, y = textY, w = layout.cell, h = 18 } label
+        ]
+        |> Ui.group
 
 
 main : Program Decode.Value Model Msg

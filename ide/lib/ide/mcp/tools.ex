@@ -6,17 +6,21 @@ defmodule Ide.Mcp.Tools do
   alias Ide.Compiler
   alias Ide.Compiler.Diagnostics
   alias Ide.Compiler.Cache, as: CompileCache
+  alias Ide.AppStore.Publisher, as: AppStorePublisher
   alias Ide.Compiler.ManifestCache
   alias Ide.Mcp.Audit
   alias Ide.Mcp.CheckCache
   alias Ide.Packages
   alias Ide.PebbleToolchain
   alias Ide.Projects
+  alias Ide.PublishManifest
+  alias Ide.PublishReadiness
   alias Ide.Debugger
   alias Ide.Debugger.CursorSeq
   alias Ide.Debugger.RuntimeFingerprintDrift
   alias Ide.Screenshots
   alias IdeWeb.WorkspaceLive.DebuggerSupport
+  alias IdeWeb.WorkspaceLive.PublishFlow
 
   @type capability :: :read | :edit | :build | :publish
   @type tool_result :: {:ok, map()} | {:error, String.t()}
@@ -34,6 +38,21 @@ defmodule Ide.Mcp.Tools do
       charging: %{type: "boolean"},
       connected: %{type: "boolean"},
       clock_24h: %{type: "boolean"},
+      use_simulated_time: %{
+        type: "boolean",
+        description:
+          "When true, current-time device APIs and time-change subscriptions use simulated_date/simulated_time instead of the host clock."
+      },
+      simulated_time: %{
+        type: "string",
+        description:
+          "Optional debugger clock time in HH:MM or HH:MM:SS. Used when use_simulated_time is true."
+      },
+      simulated_date: %{
+        type: "string",
+        description:
+          "Optional debugger clock date in YYYY-MM-DD. Used with simulated_time for current-date/time device APIs."
+      },
       latitude: %{type: "number", minimum: -90, maximum: 90},
       longitude: %{type: "number", minimum: -180, maximum: 180},
       accuracy: %{type: "number", minimum: 0, maximum: 100_000}
@@ -577,6 +596,30 @@ defmodule Ide.Mcp.Tools do
       }
     },
     %{
+      name: "debugger.preview_diagnostics",
+      description:
+        "Explain how the debugger preview tree was selected for a runtime surface, including runtime output counts, fallback source, latest render events, and compact fingerprints.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          target: %{
+            type: "string",
+            enum: ["watch", "companion", "phone"],
+            description: "Runtime surface to diagnose (default: watch)."
+          },
+          event_limit: %{
+            type: "integer",
+            minimum: 1,
+            maximum: 500,
+            description: "Debugger event window used for render/lifecycle context (default: 100)."
+          }
+        }
+      }
+    },
+    %{
       name: "debugger.models",
       description:
         "Read compact watch, companion, and phone debugger models without full event snapshots.",
@@ -721,6 +764,7 @@ defmodule Ide.Mcp.Tools do
               "watchface-analog",
               "watchface-tutorial-complete",
               "watchface-yes",
+              "watchface-tangram-time",
               "game-basic",
               "game-tiny-bird",
               "game-greeneys-run",
@@ -1185,6 +1229,39 @@ defmodule Ide.Mcp.Tools do
       }
     },
     %{
+      name: "publish.prepare",
+      description:
+        "Build the PBW, validate publish readiness, and export publish manifest plus release notes.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"}
+        }
+      }
+    },
+    %{
+      name: "publish.validate",
+      description:
+        "Validate publish readiness for a project. By default this packages the project first so appinfo and PBW checks use current artifacts.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          package: %{
+            type: "boolean",
+            description:
+              "If false, validate the provided artifact_path/app_root without building."
+          },
+          artifact_path: %{type: "string"},
+          app_root: %{type: "string"}
+        }
+      }
+    },
+    %{
       name: "compiler.check",
       description: "Run elmc check for a project and return diagnostics.",
       inputSchema: %{
@@ -1242,7 +1319,31 @@ defmodule Ide.Mcp.Tools do
     }
   ]
 
-  @publish_tools []
+  @publish_tools [
+    %{
+      name: "publish.submit",
+      description:
+        "Submit a prepared release through the App Store API. Requires publish capability and can package first when app_root is omitted.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: false,
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          app_root: %{type: "string"},
+          release_notes: %{
+            type: "string",
+            description:
+              "User-facing release notes sent to the App Store. Omit to submit an empty changelog."
+          },
+          is_published: %{type: "boolean"},
+          all_platforms: %{type: "boolean"},
+          gif_all_platforms: %{type: "boolean"},
+          firebase_id_token: %{type: "string"}
+        }
+      }
+    }
+  ]
   @all_tools @read_tools ++ @edit_tools ++ @build_tools ++ @publish_tools
   @public_tool_names_by_internal Map.new(@all_tools, fn %{name: name} ->
                                    {name, String.replace(name, ".", "_")}
@@ -1888,6 +1989,98 @@ defmodule Ide.Mcp.Tools do
     do_call("compiler.manifest", %{"slug" => slug, "strict" => false})
   end
 
+  defp do_call("publish.prepare", %{"slug" => slug}) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, package} <- package_for_publish(project),
+         {:ok, context} <- publish_context(project, package),
+         {:ok, manifest} <-
+           PublishManifest.export(slug,
+             artifact_path: package.artifact_path,
+             screenshot_groups: context.screenshot_groups,
+             required_targets: context.required_targets,
+             readiness: context.readiness
+           ),
+         {:ok, release_notes} <-
+           PublishManifest.export_release_notes(slug, context.validation.release_notes_md) do
+      {:ok,
+       %{
+         slug: slug,
+         status: context.validation.status,
+         artifact_path: package.artifact_path,
+         app_root: package.app_root,
+         required_targets: context.required_targets,
+         readiness: context.readiness,
+         checks: context.validation.checks,
+         manifest_path: manifest.path,
+         release_notes_path: release_notes.path,
+         release_notes_md: context.validation.release_notes_md,
+         build_result: package.build_result
+       }}
+    else
+      {:error, reason} -> {:error, "publish prepare failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("publish.validate", %{"slug" => slug} = args) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, package} <- resolve_publish_validation_package(project, args),
+         {:ok, context} <- publish_context(project, package) do
+      {:ok,
+       %{
+         slug: slug,
+         status: context.validation.status,
+         artifact_path: package.artifact_path,
+         app_root: package.app_root,
+         required_targets: context.required_targets,
+         readiness: context.readiness,
+         checks: context.validation.checks,
+         release_notes_md: context.validation.release_notes_md,
+         build_result: Map.get(package, :build_result)
+       }}
+    else
+      {:error, reason} -> {:error, "publish validate failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("publish.submit", %{"slug" => slug} = args) do
+    with {:ok, project} <- fetch_project(slug),
+         {:ok, package} <- resolve_publish_submit_package(project, args),
+         {:ok, context} <- publish_context(project, package),
+         :ok <- ensure_publish_ready(context.validation),
+         release_notes <- publish_submit_release_notes(args),
+         {:ok, screenshot_paths} <-
+           PublishFlow.stage_publish_screenshots(package.app_root, context.screenshot_groups),
+         {:ok, result} <-
+           app_store_publisher_module().publish(project,
+             app_root: package.app_root,
+             artifact_path: package.artifact_path,
+             release_notes: release_notes || "",
+             version: Map.get(args, "version") || publish_version(project),
+             description: Map.get(args, "description") || publish_description(project),
+             screenshots: screenshot_paths,
+             is_published: Map.get(args, "is_published", true) == true,
+             all_platforms: Map.get(args, "all_platforms", false) == true,
+             gif_all_platforms: Map.get(args, "gif_all_platforms", false) == true,
+             firebase_id_token: Map.get(args, "firebase_id_token")
+           ) do
+      {:ok,
+       %{
+         slug: slug,
+         status: result.status,
+         command: result.command,
+         exit_code: result.exit_code,
+         cwd: result.cwd,
+         output: result.output,
+         artifact_path: package.artifact_path,
+         app_root: package.app_root,
+         readiness: context.readiness,
+         checks: context.validation.checks
+       }}
+    else
+      {:error, reason} -> {:error, "publish submit failed: #{inspect(reason)}"}
+    end
+  end
+
   defp do_call("compiler.compile_cached", %{"slug" => slug}) do
     case CompileCache.latest(slug) do
       {:ok, entry} ->
@@ -2280,6 +2473,35 @@ defmodule Ide.Mcp.Tools do
       {:ok, nil} -> {:error, "debugger render_tree failed: :no_rendered_tree"}
       nil -> {:error, "debugger render_tree failed: :no_rendered_tree"}
       {:error, reason} -> {:error, "debugger render_tree failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp do_call("debugger.preview_diagnostics", %{"slug" => slug} = args) do
+    target = Map.get(args, "target", "watch")
+    event_limit = parse_event_limit(Map.get(args, "event_limit", 100))
+
+    with {:ok, target_atom} <- parse_render_tree_target(target),
+         {:ok, _project} <- fetch_project(slug),
+         {:ok, state} <- Debugger.snapshot(slug, event_limit: event_limit),
+         {:ok, runtime} <- debugger_surface_runtime(state, target_atom) do
+      events = Map.get(state, :events) || []
+      cursor_seq = resolve_cursor_seq(events, nil)
+      runtime_fingerprints = DebuggerSupport.runtime_fingerprints_at_cursor(events, cursor_seq)
+      screen = debugger_surface_screen(state, runtime || %{}, target_atom)
+
+      {:ok,
+       preview_diagnostics_payload(
+         slug,
+         state,
+         runtime || %{},
+         target_atom,
+         screen,
+         runtime_fingerprints,
+         events,
+         cursor_seq
+       )}
+    else
+      {:error, reason} -> {:error, "debugger preview diagnostics failed: #{inspect(reason)}"}
     end
   end
 
@@ -3164,6 +3386,18 @@ defmodule Ide.Mcp.Tools do
         settings
         |> map_value("clock_24h")
         |> normalize_mcp_boolean(defaults["clock_24h"]),
+      "use_simulated_time" =>
+        settings
+        |> map_value("use_simulated_time")
+        |> normalize_mcp_boolean(defaults["use_simulated_time"]),
+      "simulated_time" =>
+        settings
+        |> map_value("simulated_time")
+        |> normalize_mcp_optional_string(defaults["simulated_time"]),
+      "simulated_date" =>
+        settings
+        |> map_value("simulated_date")
+        |> normalize_mcp_optional_string(defaults["simulated_date"]),
       "latitude" =>
         settings
         |> map_value("latitude")
@@ -3296,6 +3530,147 @@ defmodule Ide.Mcp.Tools do
   defp debugger_setting_target(:phone), do: "phone"
   defp debugger_setting_target(_target), do: "watch"
 
+  defp package_for_publish(project) do
+    toolchain = pebble_toolchain_module()
+
+    toolchain.package(project.slug,
+      workspace_root: Projects.project_workspace_path(project),
+      target_type: project.target_type,
+      project_name: project.name,
+      target_platforms: publish_target_platforms(project),
+      version: publish_version(project),
+      description: publish_description(project),
+      capabilities: publish_capabilities(project)
+    )
+  end
+
+  defp resolve_publish_validation_package(_project, %{"package" => false} = args) do
+    {:ok,
+     %{
+       status: :unknown,
+       artifact_path: Map.get(args, "artifact_path"),
+       app_root: Map.get(args, "app_root"),
+       build_result: nil
+     }}
+  end
+
+  defp resolve_publish_validation_package(project, _args), do: package_for_publish(project)
+
+  defp resolve_publish_submit_package(_project, %{"app_root" => app_root} = args)
+       when is_binary(app_root) and app_root != "" do
+    {:ok,
+     %{
+       status: :unknown,
+       artifact_path: Map.get(args, "artifact_path"),
+       app_root: app_root,
+       build_result: nil
+     }}
+  end
+
+  defp resolve_publish_submit_package(project, _args), do: package_for_publish(project)
+
+  defp publish_context(project, package) do
+    screenshots = screenshots_module()
+    required_targets = publish_target_platforms(project)
+
+    with {:ok, shots} <- screenshots.list(project.slug, []),
+         readiness <- publish_readiness(shots, required_targets),
+         screenshot_groups <- group_publish_screenshots(shots),
+         {:ok, validation} <-
+           PublishReadiness.validate(
+             artifact_path: package.artifact_path,
+             required_targets: required_targets,
+             readiness: readiness,
+             app_root: package.app_root,
+             project_slug: project.slug
+           ) do
+      {:ok,
+       %{
+         required_targets: required_targets,
+         readiness: readiness,
+         screenshot_groups: screenshot_groups,
+         validation: validation
+       }}
+    end
+  end
+
+  defp publish_readiness(shots, targets) do
+    counts =
+      shots
+      |> Enum.group_by(& &1.emulator_target)
+      |> Map.new(fn {target, values} -> {target, length(values)} end)
+
+    Enum.map(targets, fn target ->
+      count = Map.get(counts, target, 0)
+      %{target: target, count: count, status: if(count > 0, do: :ok, else: :missing)}
+    end)
+  end
+
+  defp group_publish_screenshots(shots) do
+    shots
+    |> Enum.group_by(& &1.emulator_target)
+    |> Enum.sort_by(fn {target, _shots} -> target end)
+  end
+
+  defp ensure_publish_ready(%{status: :ok}), do: :ok
+  defp ensure_publish_ready(validation), do: {:error, {:publish_not_ready, validation.checks}}
+
+  defp publish_target_platforms(project) do
+    defaults = Map.get(project, :release_defaults) || %{}
+    allowed = PebbleToolchain.supported_emulator_targets()
+    allowed_set = MapSet.new(allowed)
+
+    defaults
+    |> Map.get("target_platforms", allowed)
+    |> List.wrap()
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.filter(&MapSet.member?(allowed_set, &1))
+    |> Enum.uniq()
+    |> case do
+      [] -> allowed
+      targets -> targets
+    end
+  end
+
+  defp publish_capabilities(project) do
+    defaults = Map.get(project, :release_defaults) || %{}
+
+    defaults
+    |> Map.get("capabilities", [])
+    |> List.wrap()
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
+
+  defp publish_version(project) do
+    project
+    |> publish_defaults()
+    |> Map.get("version_label", "")
+    |> to_string()
+    |> String.trim()
+  end
+
+  defp publish_description(project) do
+    project
+    |> publish_defaults()
+    |> Map.get("description", "")
+    |> to_string()
+    |> String.trim()
+  end
+
+  defp publish_submit_release_notes(args) when is_map(args) do
+    case Map.get(args, "release_notes") do
+      notes when is_binary(notes) -> String.trim(notes)
+      _ -> ""
+    end
+  end
+
+  defp publish_defaults(project), do: Map.get(project, :release_defaults) || %{}
+
   @spec fetch_project(String.t()) :: {:ok, map()} | {:error, :project_not_found}
   defp fetch_project(slug) do
     case Projects.get_project_by_slug(slug) do
@@ -3341,6 +3716,7 @@ defmodule Ide.Mcp.Tools do
   defp authorized?("debugger.export_trace", capabilities), do: :read in capabilities
   defp authorized?("debugger.cursor_inspect", capabilities), do: :read in capabilities
   defp authorized?("debugger.render_tree", capabilities), do: :read in capabilities
+  defp authorized?("debugger.preview_diagnostics", capabilities), do: :read in capabilities
   defp authorized?("debugger.models", capabilities), do: :read in capabilities
   defp authorized?("debugger.timeline", capabilities), do: :read in capabilities
   defp authorized?("debugger.surface_state", capabilities), do: :read in capabilities
@@ -3381,6 +3757,9 @@ defmodule Ide.Mcp.Tools do
   defp authorized?("compiler.check_source_root", capabilities), do: :build in capabilities
   defp authorized?("compiler.compile", capabilities), do: :build in capabilities
   defp authorized?("compiler.manifest", capabilities), do: :build in capabilities
+  defp authorized?("publish.prepare", capabilities), do: :build in capabilities
+  defp authorized?("publish.validate", capabilities), do: :build in capabilities
+  defp authorized?("publish.submit", capabilities), do: :publish in capabilities
   defp authorized?(_, _), do: false
 
   @spec add_if(list(), boolean(), list()) :: list()
@@ -3529,6 +3908,16 @@ defmodule Ide.Mcp.Tools do
   end
 
   defp normalize_mcp_float(_value, default, _min, _max), do: default
+
+  @spec normalize_mcp_optional_string(term(), String.t() | nil) :: String.t() | nil
+  defp normalize_mcp_optional_string(value, _default) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp normalize_mcp_optional_string(_value, default), do: default
 
   @spec normalize_mcp_boolean(term(), boolean()) :: boolean()
   defp normalize_mcp_boolean(value, _default) when value in [true, "true", "on", "1", 1],
@@ -3972,6 +4361,194 @@ defmodule Ide.Mcp.Tools do
   end
 
   defp maybe_render_tree_payload(_runtime, _screen, _include?), do: nil
+
+  @spec preview_diagnostics_payload(
+          String.t(),
+          map(),
+          map(),
+          atom(),
+          map(),
+          map(),
+          [map()],
+          non_neg_integer() | nil
+        ) :: map()
+  defp preview_diagnostics_payload(
+         slug,
+         state,
+         runtime,
+         target,
+         screen,
+         runtime_fingerprints,
+         events,
+         cursor_seq
+       ) do
+    model = runtime_model_map(runtime)
+    view_tree = map_get_any(runtime, ["view_tree", :view_tree], nil)
+    rendered_tree = DebuggerSupport.rendered_tree(runtime)
+    runtime_output = runtime_view_output_rows(model)
+    render_source = preview_render_source(runtime_output, view_tree, rendered_tree)
+    nodes = preview_nodes(rendered_tree, screen)
+    root_type = rendered_node_type(rendered_tree)
+    runtime_fingerprint = Map.get(runtime_fingerprints, target)
+    surface_tree_sha256 = stable_term_sha256(view_tree)
+
+    fingerprint_view_tree_sha256 =
+      map_get_any(runtime_fingerprint || %{}, [:view_tree_sha256, "view_tree_sha256"], nil)
+
+    %{
+      slug: slug,
+      target: Atom.to_string(target),
+      seq: Map.get(state, :seq),
+      revision: Map.get(state, :revision),
+      watch_profile_id: Map.get(state, :watch_profile_id),
+      screen: screen,
+      status: preview_status(render_source, nodes),
+      render_source: render_source,
+      root_type: root_type,
+      node_count: length(nodes),
+      runtime_view_output_count: length(runtime_output),
+      runtime_view_output_kinds: runtime_view_output_kinds(runtime_output),
+      runtime_view_tree_type: rendered_node_type(view_tree),
+      model_keys: model |> Map.keys() |> Enum.map(&to_string/1) |> Enum.sort(),
+      runtime_model_keys:
+        model
+        |> map_get_any(["runtime_model", :runtime_model], %{})
+        |> model_keys(),
+      runtime_fingerprint: runtime_fingerprint,
+      surface_tree_sha256: surface_tree_sha256,
+      fingerprint_view_tree_sha256: fingerprint_view_tree_sha256,
+      latest_render_events: DebuggerSupport.render_events_at_cursor(events, cursor_seq, 8),
+      latest_lifecycle: DebuggerSupport.lifecycle_events_at_cursor(events, cursor_seq, 8),
+      findings:
+        preview_findings(
+          render_source,
+          rendered_tree,
+          runtime_output,
+          view_tree,
+          surface_tree_sha256,
+          fingerprint_view_tree_sha256
+        )
+    }
+  end
+
+  @spec runtime_view_output_rows(map()) :: [map()]
+  defp runtime_view_output_rows(model) when is_map(model) do
+    case map_get_any(model, ["runtime_view_output", :runtime_view_output], []) do
+      rows when is_list(rows) -> Enum.filter(rows, &is_map/1)
+      _ -> []
+    end
+  end
+
+  defp runtime_view_output_rows(_model), do: []
+
+  @spec runtime_view_output_kinds([map()]) :: [String.t()]
+  defp runtime_view_output_kinds(rows) when is_list(rows) do
+    rows
+    |> Enum.map(fn row ->
+      map_get_any(row, ["kind", :kind, "type", :type, "op", :op], nil)
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(&to_string/1)
+    |> Enum.uniq()
+    |> Enum.take(24)
+  end
+
+  @spec preview_render_source([map()], term(), term()) :: String.t()
+  defp preview_render_source([_ | _], _view_tree, _rendered_tree), do: "runtime_view_output"
+
+  defp preview_render_source([], %{} = view_tree, _rendered_tree) do
+    if parser_expression_view_tree?(view_tree), do: "parser_view_tree", else: "runtime_view_tree"
+  end
+
+  defp preview_render_source([], _view_tree, %{}), do: "parser_view_tree"
+  defp preview_render_source([], _view_tree, _rendered_tree), do: "none"
+
+  @spec preview_status(String.t(), [map()]) :: String.t()
+  defp preview_status("none", _nodes), do: "empty"
+  defp preview_status("parser_view_tree", _nodes), do: "fallback"
+  defp preview_status(_source, []), do: "empty"
+  defp preview_status(_source, _nodes), do: "ok"
+
+  @spec preview_nodes(term(), map()) :: [map()]
+  defp preview_nodes(%{} = tree, screen) when is_map(screen) do
+    flatten_rendered_nodes(
+      tree,
+      integer_or_default(map_get_any(screen, ["width", :width], nil), 0),
+      integer_or_default(map_get_any(screen, ["height", :height], nil), 0)
+    )
+  end
+
+  defp preview_nodes(_tree, _screen), do: []
+
+  @spec preview_findings(String.t(), term(), [map()], term(), term(), term()) :: [String.t()]
+  defp preview_findings(
+         render_source,
+         rendered_tree,
+         runtime_output,
+         view_tree,
+         surface_tree_sha256,
+         fingerprint_view_tree_sha256
+       ) do
+    []
+    |> maybe_add_finding(runtime_output == [], "no_runtime_view_output")
+    |> maybe_add_finding(rendered_tree == nil, "no_rendered_tree")
+    |> maybe_add_finding(render_source == "parser_view_tree", "using_static_parser_view_tree")
+    |> maybe_add_finding(
+      fingerprint_view_tree_sha256_mismatch?(surface_tree_sha256, fingerprint_view_tree_sha256),
+      "surface_tree_differs_from_runtime_fingerprint"
+    )
+    |> maybe_add_finding(
+      parser_expression_view_tree?(view_tree),
+      "runtime_view_tree_is_expression_outline"
+    )
+    |> Enum.reverse()
+  end
+
+  @spec maybe_add_finding([String.t()], boolean(), String.t()) :: [String.t()]
+  defp maybe_add_finding(findings, true, finding), do: [finding | findings]
+  defp maybe_add_finding(findings, false, _finding), do: findings
+
+  @spec fingerprint_view_tree_sha256_mismatch?(term(), term()) :: boolean()
+  defp fingerprint_view_tree_sha256_mismatch?(displayed, fingerprint)
+       when is_binary(displayed) and is_binary(fingerprint) and displayed != "" and
+              fingerprint != "",
+       do: displayed != fingerprint
+
+  defp fingerprint_view_tree_sha256_mismatch?(_displayed, _fingerprint), do: false
+
+  @spec stable_term_sha256(term()) :: String.t() | nil
+  defp stable_term_sha256(nil), do: nil
+
+  defp stable_term_sha256(term) do
+    :crypto.hash(:sha256, :erlang.term_to_binary(term))
+    |> Base.encode16(case: :lower)
+  end
+
+  @spec parser_expression_view_tree?(term()) :: boolean()
+  defp parser_expression_view_tree?(%{"type" => type}) when is_binary(type),
+    do: parser_expression_root_type?(type)
+
+  defp parser_expression_view_tree?(%{type: type}) when is_binary(type),
+    do: parser_expression_root_type?(type)
+
+  defp parser_expression_view_tree?(_tree), do: false
+
+  @spec parser_expression_root_type?(String.t()) :: boolean()
+  defp parser_expression_root_type?(type)
+       when type in [
+              "toUiNode",
+              "append",
+              "List",
+              "call",
+              "expr",
+              "var",
+              "withDefault",
+              "if",
+              "case"
+            ],
+       do: true
+
+  defp parser_expression_root_type?(_type), do: false
 
   @spec compact_debugger_event(map()) :: map()
   defp compact_debugger_event(event) when is_map(event) do
@@ -4812,6 +5389,12 @@ defmodule Ide.Mcp.Tools do
   defp screenshots_module do
     mcp_tools_config()
     |> Keyword.get(:screenshots_module, Screenshots)
+  end
+
+  @spec app_store_publisher_module() :: module()
+  defp app_store_publisher_module do
+    mcp_tools_config()
+    |> Keyword.get(:app_store_publisher_module, AppStorePublisher)
   end
 
   @spec resolve_install_package_path(map(), map(), module()) ::

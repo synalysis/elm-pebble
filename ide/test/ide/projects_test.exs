@@ -2,6 +2,7 @@ defmodule Ide.ProjectsTest do
   use Ide.DataCase, async: false
 
   alias Ide.Debugger
+  alias Ide.Auth.User
   alias Ide.Projects
 
   setup do
@@ -33,6 +34,47 @@ defmodule Ide.ProjectsTest do
 
     assert {:ok, _} = Projects.activate_project(second)
     assert Projects.active_project().slug == "beta"
+  end
+
+  test "project ownership scopes slugs and workspaces" do
+    {:ok, alice} =
+      %User{}
+      |> User.changeset(%{firebase_uid: "alice", email: "alice@example.test"})
+      |> Repo.insert()
+
+    {:ok, bob} =
+      %User{}
+      |> User.changeset(%{firebase_uid: "bob", email: "bob@example.test"})
+      |> Repo.insert()
+
+    assert {:ok, alice_project} =
+             Projects.create_project(
+               %{"name" => "Shared", "slug" => "shared", "target_type" => "app"},
+               alice
+             )
+
+    assert {:ok, bob_project} =
+             Projects.create_project(
+               %{"name" => "Shared", "slug" => "shared", "target_type" => "app"},
+               bob
+             )
+
+    assert Projects.get_project_by_slug("shared", alice).id == alice_project.id
+    assert Projects.get_project_by_slug("shared", bob).id == bob_project.id
+    assert Enum.map(Projects.list_projects(alice), & &1.id) == [alice_project.id]
+    assert Enum.map(Projects.list_projects(bob), & &1.id) == [bob_project.id]
+
+    assert Projects.project_workspace_path(alice_project) =~ "/users/#{alice.id}/shared"
+    assert Projects.project_workspace_path(bob_project) =~ "/users/#{bob.id}/shared"
+
+    Process.put(:ide_current_user, alice)
+
+    try do
+      assert Projects.get_project_by_slug("shared").id == alice_project.id
+      assert Enum.map(Projects.list_projects(), & &1.id) == [alice_project.id]
+    after
+      Process.delete(:ide_current_user)
+    end
   end
 
   test "source file operations across roots" do
@@ -580,6 +622,7 @@ defmodule Ide.ProjectsTest do
     assert project.target_type == "watchface"
     assert File.exists?(Path.join(base, "watch/src/Main.elm"))
     assert File.exists?(Path.join(base, "protocol/src/Companion/Types.elm"))
+    assert File.exists?(Path.join(base, "protocol/src/Companion/Watch.elm"))
     assert File.exists?(Path.join(base, "protocol/src/Companion/Internal.elm"))
     assert File.exists?(Path.join(base, "phone/src/CompanionApp.elm"))
     assert File.exists?(Path.join(base, "phone/src/CompanionPreferences.elm"))
@@ -639,6 +682,68 @@ defmodule Ide.ProjectsTest do
     assert {:ok, preferences_schema} = Ide.PebblePreferences.extract(Path.join(base, "phone"))
 
     assert Enum.flat_map(preferences_schema.sections, & &1.fields) |> Enum.map(& &1.id) == []
+  end
+
+  test "tangram time watchface template seeds watch protocol and phone" do
+    slug = "watchface-tangram-time-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Tangram Time",
+               "slug" => slug,
+               "target_type" => "app",
+               "template" => "watchface-tangram-time"
+             })
+
+    base = Projects.project_workspace_path(project)
+    assert project.target_type == "watchface"
+    assert File.exists?(Path.join(base, "watch/src/Main.elm"))
+    assert File.exists?(Path.join(base, "protocol/src/Companion/Types.elm"))
+    assert File.exists?(Path.join(base, "protocol/src/Companion/Watch.elm"))
+    assert File.exists?(Path.join(base, "protocol/src/Companion/Internal.elm"))
+    assert File.exists?(Path.join(base, "phone/src/CompanionApp.elm"))
+    refute File.exists?(Path.join(base, "phone/src/CompanionPreferences.elm"))
+
+    assert {:ok, watch_main} = Projects.read_source_file(project, "watch", "src/Main.elm")
+    assert String.contains?(watch_main, "CompanionWatch.sendWatchToPhone RequestFigure")
+    assert String.contains?(watch_main, "BeginFigure figureId")
+    assert String.contains?(watch_main, "downloadedTangram")
+    assert String.contains?(watch_main, "|> Ui.toUiNode")
+
+    assert {:ok, protocol_types} =
+             Projects.read_source_file(project, "protocol", "src/Companion/Types.elm")
+
+    assert String.contains?(protocol_types, "ProvideFigure Int")
+
+    assert String.contains?(
+             protocol_types,
+             "ProvidePiece Int Int Int Int Int Int Int Int Int Int Int"
+           )
+
+    assert String.contains?(protocol_types, "EndFigure Int")
+
+    assert {:ok, protocol_internal} =
+             Projects.read_source_file(project, "protocol", "src/Companion/Internal.elm")
+
+    assert String.contains?(protocol_internal, "Generated wire encoding and decoding helpers")
+    assert String.contains?(protocol_internal, "encodePhoneToWatch")
+    assert String.contains?(protocol_internal, "decodeWatchToPhone")
+
+    assert {:ok, companion_app} =
+             Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
+
+    assert String.contains?(companion_app, "fetchCatalog")
+    assert String.contains?(companion_app, "Time.every figureRotationInterval RotateFigure")
+    assert String.contains?(companion_app, "sendFigureGeometry figureId pieces")
+
+    assert {:ok, watch_elm_json_raw} = File.read(Path.join(base, "watch/elm.json"))
+    assert {:ok, watch_decoded} = Jason.decode(watch_elm_json_raw)
+    assert "../protocol/src" in Map.fetch!(watch_decoded, "source-directories")
+
+    assert {:ok, phone_elm_json_raw} = File.read(Path.join(base, "phone/elm.json"))
+    assert {:ok, phone_decoded} = Jason.decode(phone_elm_json_raw)
+    assert "../protocol/src" in Map.fetch!(phone_decoded, "source-directories")
+    assert get_in(phone_decoded, ["dependencies", "direct", "elm/http"]) == "2.0.0"
   end
 
   test "import project maps watch/protocol/phone directories" do

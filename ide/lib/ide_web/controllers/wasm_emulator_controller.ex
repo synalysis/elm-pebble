@@ -45,7 +45,8 @@ defmodule IdeWeb.WasmEmulatorController do
   def package(conn, %{"slug" => slug} = params) do
     platform = Map.get(params, "platform", "emery")
 
-    with project when not is_nil(project) <- Projects.get_project_by_slug(slug),
+    with project when not is_nil(project) <-
+           Projects.get_project_by_slug(slug, conn.assigns[:current_user]),
          workspace_root <- Projects.project_workspace_path(project),
          {:ok, packaged} <-
            BuildFlow.package_for_emulator_session(project, workspace_root, platform),
@@ -71,7 +72,8 @@ defmodule IdeWeb.WasmEmulatorController do
     platform = Map.get(params, "platform", "emery")
     firmware = Map.get(params, "firmware", "sdk")
 
-    with project when not is_nil(project) <- Projects.get_project_by_slug(slug),
+    with project when not is_nil(project) <-
+           Projects.get_project_by_slug(slug, conn.assigns[:current_user]),
          workspace_root <- Projects.project_workspace_path(project),
          {:ok, packaged} <-
            BuildFlow.package_for_emulator_session(project, workspace_root, platform),
@@ -90,7 +92,8 @@ defmodule IdeWeb.WasmEmulatorController do
   def screenshot(conn, %{"slug" => slug, "image" => image} = params) do
     emulator_target = Map.get(params, "platform", "wasm")
 
-    with project when not is_nil(project) <- Projects.get_project_by_slug(slug),
+    with project when not is_nil(project) <-
+           Projects.get_project_by_slug(slug, conn.assigns[:current_user]),
          {:ok, png} <- decode_png_data_url(image),
          {:ok, shot} <- Screenshots.store_png(project.slug, emulator_target, png) do
       json(conn, %{status: "ok", screenshot: shot})

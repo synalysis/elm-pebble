@@ -21,9 +21,12 @@ defmodule Ide.Projects do
   @doc """
   Lists all projects.
   """
-  @spec list_projects() :: term()
-  def list_projects do
+  @spec list_projects(term()) :: term()
+  def list_projects(user \\ :current_scope) do
+    user = current_scope_user(user)
+
     Project
+    |> scope_to_user(user)
     |> order_by([p], asc: p.name)
     |> Repo.all()
   end
@@ -31,23 +34,38 @@ defmodule Ide.Projects do
   @doc """
   Fetches a project by slug.
   """
-  @spec get_project_by_slug(term()) :: term()
-  def get_project_by_slug(slug), do: Repo.get_by(Project, slug: slug)
+  @spec get_project_by_slug(term(), term()) :: term()
+  def get_project_by_slug(slug, user \\ :current_scope) do
+    user = current_scope_user(user)
+
+    Project
+    |> scope_to_user(user)
+    |> Repo.get_by(slug: slug)
+  end
 
   @doc """
   Returns a project by id.
   """
-  @spec get_project!(term()) :: term()
-  def get_project!(id), do: Repo.get!(Project, id)
+  @spec get_project!(term(), term()) :: term()
+  def get_project!(id, user \\ :any)
+
+  def get_project!(id, :any), do: Repo.get!(Project, id)
+
+  def get_project!(id, user) do
+    Project
+    |> scope_to_user(user)
+    |> Repo.get!(id)
+  end
 
   @doc """
   Creates a project and bootstraps its source root directories.
   """
-  @spec create_project(term()) :: term()
-  def create_project(attrs) do
+  @spec create_project(term(), term()) :: term()
+  def create_project(attrs, user \\ nil) do
     attrs =
       attrs
       |> Map.new()
+      |> put_owner(user)
       |> infer_target_type_from_template()
       |> Map.put_new("source_roots", @default_source_roots)
       |> Map.put_new("template", "starter")
@@ -76,13 +94,14 @@ defmodule Ide.Projects do
   @doc """
   Imports an existing project directory into IDE workspace roots.
   """
-  @spec import_project(term(), term()) :: term()
-  def import_project(attrs, import_path) do
+  @spec import_project(term(), term(), term()) :: term()
+  def import_project(attrs, import_path, user \\ nil) do
     import_root = Path.expand(import_path)
 
     attrs =
       attrs
       |> Map.new()
+      |> put_owner(user)
       |> ProjectBundle.merge_attrs_from_manifest(import_root)
       |> Map.put_new("source_roots", @default_source_roots)
 
@@ -217,7 +236,7 @@ defmodule Ide.Projects do
   @spec activate_project(term()) :: term()
   def activate_project(%Project{} = project) do
     Repo.transaction(fn ->
-      from(p in Project, where: p.active == true)
+      active_scope_for(project)
       |> Repo.update_all(set: [active: false])
 
       project
@@ -233,10 +252,25 @@ defmodule Ide.Projects do
   @doc """
   Returns the active project when one is selected.
   """
-  @spec active_project() :: term()
-  def active_project do
-    Repo.one(from p in Project, where: p.active == true, limit: 1)
+  @spec active_project(term()) :: term()
+  def active_project(user \\ nil) do
+    Project
+    |> scope_to_user(user)
+    |> where([p], p.active == true)
+    |> limit(1)
+    |> Repo.one()
   end
+
+  @spec scope_to_user(Ecto.Queryable.t(), term()) :: Ecto.Query.t()
+  def scope_to_user(queryable, nil), do: from(p in queryable, where: is_nil(p.owner_id))
+  def scope_to_user(queryable, %{id: nil}), do: scope_to_user(queryable, nil)
+  def scope_to_user(queryable, %{id: id}), do: from(p in queryable, where: p.owner_id == ^id)
+
+  defp put_owner(attrs, nil), do: attrs
+  defp put_owner(attrs, %{id: id}) when is_integer(id), do: Map.put(attrs, "owner_id", id)
+
+  defp current_scope_user(:current_scope), do: Process.get(:ide_current_user)
+  defp current_scope_user(user), do: user
 
   @doc """
   Lists nested file tree nodes for each project source root.
@@ -437,11 +471,19 @@ defmodule Ide.Projects do
 
   @spec maybe_activate_first(term()) :: term()
   defp maybe_activate_first(project) do
-    if is_nil(active_project()) do
+    if is_nil(active_project(%{id: project.owner_id})) do
       activate_project(project)
     else
       :ok
     end
+  end
+
+  defp active_scope_for(%Project{owner_id: nil}) do
+    from(p in Project, where: p.active == true and is_nil(p.owner_id))
+  end
+
+  defp active_scope_for(%Project{owner_id: owner_id}) do
+    from(p in Project, where: p.active == true and p.owner_id == ^owner_id)
   end
 
   @spec template_key(term()) :: term()

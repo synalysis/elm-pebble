@@ -304,6 +304,163 @@ defmodule Elmc.PebbleShimTest do
     assert run_code == 0
   end
 
+  test "direct renderer substitutes helper arguments inside record field access" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_record_field_substitution_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_record_field_substitution_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_midpoint_view_app!(project_dir)
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    harness_path = Path.join(out_dir, "c/direct_record_field_substitution_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        ElmcPebbleDrawCmd cmds[4] = {0};
+        if (elmc_pebble_scene_commands_from(&app, cmds, 4, 0) != 1) return 3;
+        if (cmds[0].kind != ELMC_PEBBLE_DRAW_LINE) return 4;
+        if (cmds[0].p0 != 5 || cmds[0].p1 != 0) return 5;
+        if (cmds[0].p2 != 0 || cmds[0].p3 != 5) return 6;
+
+        elmc_pebble_deinit(&app);
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "direct_record_field_substitution_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
+  test "direct renderer preserves centered text options through record updates" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/direct_text_options_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_text_options_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_centered_text_view_app!(project_dir)
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "#define ELMC_RENDER_OP_TEXT 29"
+    assert generated_c =~ "#define ELMC_CONTEXT_TEXT_COLOR 5"
+    assert generated_c =~ "#define ELMC_COLOR_BLACK 192"
+    assert generated_c =~ "#define ELMC_SUBSCRIPTION_BUTTON_RAW 16384"
+    assert generated_c =~ "#define ELMC_TEXT_ALIGN_CENTER 1"
+    assert generated_c =~ "#define ELMC_TEXT_OVERFLOW_WORD_WRAP 0"
+
+    assert generated_c =~ "elmc_generated_draw_init(&out_cmds[*count], ELMC_RENDER_OP_TEXT);"
+
+    assert generated_c =~
+             "ELMC_TEXT_ALIGN_CENTER + (ELMC_TEXT_OVERFLOW_WORD_WRAP * (1 << ELMC_TEXT_OVERFLOW_SHIFT))"
+
+    harness_path = Path.join(out_dir, "c/direct_text_options_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        ElmcPebbleDrawCmd cmds[2] = {0};
+        if (elmc_pebble_scene_commands_from(&app, cmds, 2, 0) != 1) return 3;
+        if (cmds[0].kind != ELMC_PEBBLE_DRAW_TEXT) return 4;
+        if (cmds[0].p1 != 10 || cmds[0].p2 != 20 || cmds[0].p3 != 30 || cmds[0].p4 != 18) return 5;
+        if (cmds[0].p5 != 1) return 6;
+
+        elmc_pebble_deinit(&app);
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "direct_text_options_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
   test "pebble shim decodes appmessage payloads and drives worker loop" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for pebble shim C test")
@@ -512,7 +669,11 @@ defmodule Elmc.PebbleShimTest do
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     refute String.contains?(generated, "141733928960")
-    assert String.contains?(generated, "elmc_new_int(2170880)")
+
+    assert String.contains?(
+             generated,
+             "elmc_new_int(((ELMC_SUBSCRIPTION_FRAME_BASE + (33 << 16))))"
+           )
 
     harness_path = Path.join(out_dir, "c/frame_harness.c")
 
@@ -1023,16 +1184,11 @@ defmodule Elmc.PebbleShimTest do
         elmc_release(point_args[2]);
         elmc_release(point_args[3]);
 
-        ElmcValue *corner_args[1] = { model };
-        ElmcValue *corners = elmc_fn_Main_drawCorners(corner_args, 1);
-        if (!corners || corners->tag != ELMC_TAG_LIST || list_length(corners) < 0) return 10;
-
         ElmcValue *to_ui_args[1] = { face_ops };
         ElmcValue *manual_view = elmc_fn_Pebble_Ui_toUiNode(to_ui_args, 1);
         if (!expect_yes_ui_node(manual_view)) return 11;
 
         elmc_release(manual_view);
-        elmc_release(corners);
         elmc_release(dial);
         elmc_release(view);
         elmc_release(face_ops);
@@ -1049,7 +1205,7 @@ defmodule Elmc.PebbleShimTest do
         if (cmds[0].p0 != 0xC0) return 13;
         if (decoded < 2) return 14;
         if (cmds[1].kind != ELMC_PEBBLE_DRAW_FILL_CIRCLE) return 15;
-        if (cmds[1].p0 != 72 || cmds[1].p1 != 84 || cmds[1].p2 != 64) return 16;
+        if (cmds[1].p0 != 72 || cmds[1].p1 != 84 || cmds[1].p2 != 50) return 16;
         if (cmds[1].p3 != 0xC1) return 17;
 
         elmc_pebble_deinit(&app);
@@ -1799,6 +1955,113 @@ defmodule Elmc.PebbleShimTest do
     view model =
         Ui.toUiNode
             [ Ui.fillRect { x = 10 + model, y = 20, w = 8, h = 6 } Color.black
+            ]
+    """)
+  end
+
+  defp write_midpoint_view_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Point =
+        { x : Int, y : Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main : Program Decode.Value Int Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( 0, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        let
+            a =
+                { x = 0, y = 0 }
+
+            b =
+                { x = 10, y = 0 }
+
+            c =
+                { x = 0, y = 10 }
+        in
+        Ui.toUiNode
+            [ Ui.line (midpoint a b) (midpoint a c) Color.black
+            ]
+
+
+    midpoint : Point -> Point -> Point
+    midpoint a b =
+        { x = (a.x + b.x) // 2
+        , y = (a.y + b.y) // 2
+        }
+    """)
+  end
+
+  defp write_centered_text_view_app!(project_dir) do
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Resources as Resources
+
+
+    type Msg
+        = NoOp
+
+
+    main : Program Decode.Value Int Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( 0, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            [ Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = 10, y = 20, w = 30, h = 18 } "2"
             ]
     """)
   end

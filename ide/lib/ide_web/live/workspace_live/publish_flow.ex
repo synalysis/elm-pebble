@@ -56,16 +56,19 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
              target_type: project.target_type,
              project_name: project.name,
              target_platforms: target_platforms(project),
+             version: release_summary["version_label"],
+             description: app_description(project),
              capabilities: capabilities(project)
            ) do
+      target_platforms = target_platforms(project)
       screenshots = load_screenshots(project)
       screenshot_groups = group_screenshots(screenshots)
-      readiness = publish_readiness(screenshots)
+      readiness = publish_readiness(project, screenshots)
 
       checks =
         case PublishReadiness.validate(
                artifact_path: package_result.artifact_path,
-               required_targets: target_platforms(project),
+               required_targets: target_platforms,
                readiness: readiness,
                app_root: package_result.app_root,
                project_slug: project.slug
@@ -90,7 +93,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
         PublishManifest.export(project.slug,
           artifact_path: package_result.artifact_path,
           screenshot_groups: screenshot_groups,
-          required_targets: target_platforms(project),
+          required_targets: target_platforms,
           readiness: readiness
         )
 
@@ -144,7 +147,30 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
       {:error, error}
   end
 
-  defp target_platforms(project) do
+  @spec stage_publish_screenshots(String.t(), [{String.t(), [map()]}]) ::
+          {:ok, [String.t()]} | {:error, term()}
+  def stage_publish_screenshots(app_root, screenshot_groups)
+      when is_binary(app_root) and is_list(screenshot_groups) do
+    output_dir = Path.join([app_root, ".elm-pebble-publish", "screenshots"])
+
+    with :ok <- reset_dir(output_dir) do
+      screenshot_groups
+      |> Enum.flat_map(fn {target, shots} ->
+        shots
+        |> Enum.filter(&valid_screenshot_dimensions?(target, &1))
+        |> Enum.with_index(1)
+        |> Enum.map(&stage_screenshot(output_dir, target, &1))
+      end)
+      |> collect_results()
+    end
+  end
+
+  def stage_publish_screenshots(_app_root, _screenshot_groups), do: {:ok, []}
+
+  @spec target_platforms(map() | nil) :: [String.t()]
+  def target_platforms(nil), do: ToolchainPresenter.emulator_targets()
+
+  def target_platforms(project) do
     defaults = Map.get(project, :release_defaults, %{}) || %{}
     allowed = ToolchainPresenter.emulator_targets()
 
@@ -191,6 +217,118 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
 
   defp normalize_capabilities(_), do: []
 
+  defp reset_dir(path) do
+    _ = File.rm_rf(path)
+    File.mkdir_p(path)
+  end
+
+  defp stage_screenshot(output_dir, target, {shot, index}) do
+    source = shot_path(shot)
+    target = target |> to_string() |> String.trim()
+
+    cond do
+      target == "" ->
+        {:error, :missing_screenshot_target}
+
+      not is_binary(source) or source == "" ->
+        {:error, {:missing_screenshot_path, target}}
+
+      not File.regular?(source) ->
+        {:error, {:screenshot_not_found, source}}
+
+      true ->
+        basename = publish_screenshot_filename(target, source, index)
+        dest = Path.join(output_dir, basename)
+
+        case File.cp(source, dest) do
+          :ok -> {:ok, dest}
+          {:error, reason} -> {:error, {:screenshot_copy_failed, source, reason}}
+        end
+    end
+  end
+
+  defp shot_path(%{absolute_path: path}), do: path
+  defp shot_path(%{"absolute_path" => path}), do: path
+  defp shot_path(_), do: nil
+
+  defp normalize_screenshot_ext(ext) when ext in [".gif", ".png", ".jpg", ".jpeg"], do: ext
+  defp normalize_screenshot_ext(_), do: ".png"
+
+  defp publish_screenshot_filename(target, source, index) do
+    basename = Path.basename(source)
+
+    if String.starts_with?(basename, "#{target}_") do
+      basename
+    else
+      ext = Path.extname(source) |> normalize_screenshot_ext()
+      "#{target}_#{index}_#{Path.basename(source, Path.extname(source))}#{ext}"
+    end
+  end
+
+  defp valid_screenshot_dimensions?(target, shot) do
+    source = shot_path(shot)
+
+    case {expected_screenshot_dimensions(target), png_dimensions(source)} do
+      {nil, _} -> true
+      {{expected_w, expected_h}, {:ok, expected_w, expected_h}} -> true
+      {_expected, _actual} -> false
+    end
+  end
+
+  defp expected_screenshot_dimensions(target) do
+    case to_string(target) do
+      "aplite" -> {144, 168}
+      "basalt" -> {144, 168}
+      "diorite" -> {144, 168}
+      "flint" -> {144, 168}
+      "chalk" -> {180, 180}
+      "emery" -> {200, 228}
+      "gabbro" -> {260, 260}
+      _ -> nil
+    end
+  end
+
+  defp png_dimensions(path) when is_binary(path) do
+    with {:ok,
+          <<0x89, "PNG\r\n", 0x1A, "\n", _len::32, "IHDR", width::32, height::32, _::binary>>} <-
+           File.read(path) do
+      {:ok, width, height}
+    else
+      _ -> :error
+    end
+  end
+
+  defp png_dimensions(_), do: :error
+
+  defp collect_results(results) do
+    Enum.reduce_while(results, {:ok, []}, fn
+      {:ok, path}, {:ok, paths} -> {:cont, {:ok, [path | paths]}}
+      {:error, reason}, _acc -> {:halt, {:error, reason}}
+    end)
+    |> case do
+      {:ok, paths} -> {:ok, Enum.reverse(paths)}
+      error -> error
+    end
+  end
+
+  defp app_description(project) do
+    project
+    |> release_defaults()
+    |> Map.get("description", "")
+    |> to_string()
+    |> String.trim()
+  end
+
+  @spec store_release_notes(map()) :: String.t()
+  def store_release_notes(release_summary) when is_map(release_summary) do
+    release_summary
+    |> Map.get("changelog", "")
+    |> to_string()
+    |> String.trim()
+  end
+
+  def store_release_notes(_), do: ""
+
   @spec release_notes_markdown([map()], [map()], String.t() | nil, String.t(), map()) ::
           String.t()
   def release_notes_markdown(checks, readiness, artifact_path, project_slug, release_summary) do
@@ -228,6 +366,10 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   end
 
   @spec publish_summary([map()], [map()], [map()]) :: map()
+  def publish_summary([], warnings, _readiness) do
+    %{status: :idle, blockers: 0, warnings: length(warnings), passed: 0}
+  end
+
   def publish_summary(checks, warnings, readiness) do
     blockers = Enum.count(checks, &(&1.status != :ok))
     passed = Enum.count(checks, &(&1.status == :ok))
@@ -349,9 +491,9 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     }
   end
 
-  @spec publish_readiness([map()]) :: [map()]
-  def publish_readiness(shots) do
-    ToolchainPresenter.publish_readiness(shots, ToolchainPresenter.emulator_targets())
+  @spec publish_readiness(map() | nil, [map()]) :: [map()]
+  def publish_readiness(project, shots) do
+    ToolchainPresenter.publish_readiness(shots, target_platforms(project))
   end
 
   @spec load_screenshots(term()) :: term()

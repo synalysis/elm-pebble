@@ -542,6 +542,9 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   @spec parse_message_value(term(), term()) :: {:ok, term()} | :error
   defp parse_message_value(_message, %{} = message_value), do: {:ok, message_value}
+  defp parse_message_value(_message, {tag, _payload} = message_value) when is_integer(tag),
+    do: {:ok, message_value}
+
   defp parse_message_value(message, _message_value), do: parse_message_value(message)
 
   @spec parse_message_value(term()) :: {:ok, map()} | :error

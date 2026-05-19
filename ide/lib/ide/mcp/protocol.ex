@@ -74,7 +74,7 @@ defmodule Ide.Mcp.Protocol do
 
         {:ok,
          %{
-           "content" => [%{"type" => "text", "text" => Jason.encode!(payload)}],
+           "content" => [%{"type" => "text", "text" => Jason.encode!(json_safe(payload))}],
            "isError" => false,
            "_meta" => %{"trace_id" => trace_id}
          }}
@@ -98,6 +98,44 @@ defmodule Ide.Mcp.Protocol do
   def handle_request(_request, _capabilities) do
     {:error, -32600, "invalid request"}
   end
+
+  @doc false
+  @spec json_safe(term()) :: term()
+  def json_safe(value)
+      when is_nil(value) or is_boolean(value) or is_number(value) or is_binary(value),
+      do: value
+
+  def json_safe(value) when is_atom(value), do: Atom.to_string(value)
+
+  def json_safe(%Date{} = value), do: Date.to_iso8601(value)
+  def json_safe(%Time{} = value), do: Time.to_iso8601(value)
+  def json_safe(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
+  def json_safe(%DateTime{} = value), do: DateTime.to_iso8601(value)
+
+  def json_safe(value)
+      when is_pid(value) or is_reference(value) or is_function(value) or is_port(value),
+      do: inspect(value)
+
+  def json_safe(value) when is_tuple(value) do
+    value
+    |> Tuple.to_list()
+    |> Enum.map(&json_safe/1)
+  end
+
+  def json_safe(value) when is_list(value), do: Enum.map(value, &json_safe/1)
+
+  def json_safe(%_{} = value), do: inspect(value)
+
+  def json_safe(value) when is_map(value) do
+    Map.new(value, fn {key, member} -> {json_safe_key(key), json_safe(member)} end)
+  end
+
+  def json_safe(value), do: inspect(value)
+
+  @spec json_safe_key(term()) :: String.t()
+  defp json_safe_key(key) when is_binary(key), do: key
+  defp json_safe_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp json_safe_key(key), do: inspect(key)
 
   @spec normalize_capabilities(term()) :: capabilities()
   def normalize_capabilities(capabilities) when is_binary(capabilities) do

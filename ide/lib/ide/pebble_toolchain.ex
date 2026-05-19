@@ -93,6 +93,9 @@ defmodule Ide.PebbleToolchain do
   def publish(_project_slug, opts) do
     with {:ok, app_root} <- normalize_publish_app_root(Keyword.get(opts, :app_root)) do
       release_notes = Keyword.get(opts, :release_notes, "")
+      description = Keyword.get(opts, :description, "")
+      version = Keyword.get(opts, :version, "")
+      screenshots = Keyword.get(opts, :screenshots, [])
       is_published = Keyword.get(opts, :is_published, false)
       all_platforms = Keyword.get(opts, :all_platforms, false)
       include_gifs = Keyword.get(opts, :gif_all_platforms, false)
@@ -101,6 +104,9 @@ defmodule Ide.PebbleToolchain do
       args =
         ["publish", "--non-interactive"]
         |> maybe_append_release_notes(release_notes)
+        |> maybe_append_version(version)
+        |> maybe_append_description(description)
+        |> maybe_append_screenshots(screenshots)
         |> maybe_append_flag(is_published, "--is-published")
         |> maybe_append_flag(all_platforms, "--all-platforms")
         |> maybe_append_flag(include_gifs, "--gif-all-platforms")
@@ -814,12 +820,13 @@ defmodule Ide.PebbleToolchain do
          has_phone_companion
        ) do
     target_platforms = target_platforms_for_target_type(target_type, opts)
+    version = package_version(Keyword.get(opts, :version))
 
     package =
       %{
         "name" => project_slug,
         "author" => "elm-pebble-ide",
-        "version" => "1.0.0",
+        "version" => version,
         "keywords" => ["pebble-app"],
         "private" => true,
         "dependencies" => %{},
@@ -832,6 +839,7 @@ defmodule Ide.PebbleToolchain do
           "resources" => %{"media" => media_entries}
         }
       }
+      |> maybe_put_package_description(Keyword.get(opts, :description, ""))
       |> maybe_enable_multijs(has_phone_companion)
       |> maybe_put_message_keys(app_message_keys)
       |> maybe_put_capabilities(Keyword.get(opts, :capabilities, []))
@@ -839,6 +847,15 @@ defmodule Ide.PebbleToolchain do
 
     File.write(Path.join(app_root, "package.json"), Jason.encode!(package, pretty: true))
   end
+
+  defp maybe_put_package_description(package, description) when is_binary(description) do
+    case String.trim(description) do
+      "" -> package
+      trimmed -> Map.put(package, "description", trimmed)
+    end
+  end
+
+  defp maybe_put_package_description(package, _), do: package
 
   @spec package_has_phone_companion?(String.t()) :: boolean()
   defp package_has_phone_companion?(app_root) do
@@ -1196,13 +1213,56 @@ defmodule Ide.PebbleToolchain do
 
     with :ok <- reset_generated_dir(compile_out_dir),
          :ok <- reset_generated_dir(stage_out_dir),
-         {:ok, _} <- Elmc.compile(project_root, opts),
+         {:ok, _} <- compile_elmc_project(project_root, opts),
          :ok <- File.mkdir_p(Path.dirname(stage_out_dir)),
          {:ok, _copied} <- File.cp_r(compile_out_dir, stage_out_dir) do
       :ok
     else
       {:error, reason} -> {:error, {:elmc_compile_failed, reason}}
     end
+  end
+
+  @spec compile_elmc_project(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  defp compile_elmc_project(project_root, opts) do
+    Elmc.compile(project_root, opts)
+  rescue
+    exception in ArgumentError ->
+      if direct_render_only_view_error?(exception, opts) do
+        compile_elmc_project_with_generic_renderer(project_root, opts)
+      else
+        {:error, {:compiler_exception, exception.__struct__, Exception.message(exception)}}
+      end
+
+    exception ->
+      {:error, {:compiler_exception, exception.__struct__, Exception.message(exception)}}
+  catch
+    kind, reason ->
+      {:error, {:compiler_exception, kind, reason}}
+  end
+
+  @spec compile_elmc_project_with_generic_renderer(String.t(), map()) ::
+          {:ok, map()} | {:error, term()}
+  defp compile_elmc_project_with_generic_renderer(project_root, opts) do
+    fallback_opts = Map.put(opts, :direct_render_only, false)
+
+    with :ok <- reset_generated_dir(opts[:out_dir]) do
+      Elmc.compile(project_root, fallback_opts)
+    end
+  rescue
+    exception ->
+      {:error, {:compiler_exception, exception.__struct__, Exception.message(exception)}}
+  catch
+    kind, reason ->
+      {:error, {:compiler_exception, kind, reason}}
+  end
+
+  @spec direct_render_only_view_error?(Exception.t(), map()) :: boolean()
+  defp direct_render_only_view_error?(%ArgumentError{} = exception, opts) do
+    opts[:direct_render_only] == true and
+      String.contains?(
+        Exception.message(exception),
+        "direct_render_only requires"
+      )
   end
 
   defp reset_generated_dir(path) do
@@ -1442,6 +1502,8 @@ defmodule Ide.PebbleToolchain do
     var configurationStorageKey = "elm-pebble.configuration.response";
     var appMessageKeyNamesById = {};
     var appMessageKeyIdsByName = {};
+    var appMessageOutbox = [];
+    var appMessageSending = false;
 
     function readStoredConfigurationResponse() {
         if (typeof localStorage === "undefined" || !localStorage) {
@@ -1536,6 +1598,34 @@ defmodule Ide.PebbleToolchain do
         return normalized;
     }
 
+    function sendQueuedAppMessage(payload) {
+        appMessageOutbox.push(normalizeOutgoingAppMessage(payload || {}));
+        drainAppMessageOutbox();
+    }
+
+    function drainAppMessageOutbox() {
+        if (appMessageSending || appMessageOutbox.length === 0) {
+            return;
+        }
+
+        var payload = appMessageOutbox[0];
+        appMessageSending = true;
+
+        Pebble.sendAppMessage(
+            payload,
+            function () {
+                appMessageOutbox.shift();
+                appMessageSending = false;
+                drainAppMessageOutbox();
+            },
+            function (error) {
+                console.log("Elm companion sendAppMessage failed", JSON.stringify(error || {}));
+                appMessageSending = false;
+                setTimeout(drainAppMessageOutbox, 50);
+            }
+        );
+    }
+
     function deliverIncoming(payload) {
         console.log("bridge -> Elm companion", JSON.stringify(payload));
         if (incomingPort) {
@@ -1564,12 +1654,12 @@ defmodule Ide.PebbleToolchain do
 
         if (payload && payload.api === "appMessage" && payload.op === "send") {
             console.log("Elm companion sendAppMessage payload", JSON.stringify(payload.payload || {}));
-            Pebble.sendAppMessage(normalizeOutgoingAppMessage(payload.payload || {}));
+            sendQueuedAppMessage(payload.payload || {});
             return;
         }
 
         console.log("Elm companion sendAppMessage payload", JSON.stringify(payload));
-        Pebble.sendAppMessage(normalizeOutgoingAppMessage(payload));
+        sendQueuedAppMessage(payload);
     }
 
     function installXmlHttpRequestCompatibility() {
@@ -1749,9 +1839,47 @@ defmodule Ide.PebbleToolchain do
 
   defp maybe_append_release_notes(args, _), do: args
 
+  @spec maybe_append_version(term(), term()) :: term()
+  defp maybe_append_version(args, version) when is_binary(version) do
+    trimmed = String.trim(version)
+    if trimmed == "", do: args, else: args ++ ["--version", trimmed]
+  end
+
+  defp maybe_append_version(args, _), do: args
+
+  @spec maybe_append_description(term(), term()) :: term()
+  defp maybe_append_description(args, description) when is_binary(description) do
+    trimmed = String.trim(description)
+    if trimmed == "", do: args, else: args ++ ["--description", trimmed]
+  end
+
+  defp maybe_append_description(args, _), do: args
+
+  @spec maybe_append_screenshots(term(), term()) :: term()
+  defp maybe_append_screenshots(args, screenshots) when is_list(screenshots) do
+    paths =
+      screenshots
+      |> Enum.filter(&is_binary/1)
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+
+    if paths == [], do: args, else: args ++ ["--screenshots" | paths]
+  end
+
+  defp maybe_append_screenshots(args, _), do: args
+
   @spec maybe_append_flag(term(), term(), term()) :: term()
   defp maybe_append_flag(args, true, flag), do: args ++ [flag]
   defp maybe_append_flag(args, _enabled, _flag), do: args
+
+  defp package_version(version) when is_binary(version) do
+    case String.trim(version) do
+      "" -> "1.0.0"
+      trimmed -> trimmed
+    end
+  end
+
+  defp package_version(_), do: "1.0.0"
 
   @spec pebble_bin() :: term()
   defp pebble_bin do

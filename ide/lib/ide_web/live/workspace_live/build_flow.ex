@@ -8,6 +8,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   alias Ide.PebbleToolchain
   alias Ide.Projects
   alias IdeWeb.WorkspaceLive.DebuggerBridge
+  alias IdeWeb.WorkspaceLive.PublishFlow
+  alias IdeWeb.WorkspaceLive.ToolchainPresenter
 
   @spec handle_event(String.t(), map(), Phoenix.LiveView.Socket.t()) ::
           {:noreply, Phoenix.LiveView.Socket.t()}
@@ -15,14 +17,16 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     {:noreply, schedule_compiler_check(socket)}
   end
 
-  def handle_event("run-build", _params, socket) do
+  def handle_event("run-build", params, socket) do
     project = socket.assigns.project
     workspace_root = Projects.project_workspace_path(project)
-    strict? = socket.assigns.manifest_strict_mode
+    strict? = manifest_strict_from_params(params, socket.assigns.manifest_strict_mode)
 
     {:noreply,
      socket
+     |> assign(:manifest_strict_mode, strict?)
      |> assign(:build_status, :running)
+     |> assign(:build_issues, [])
      |> assign(:check_status, :running)
      |> assign(:compile_status, :running)
      |> assign(:manifest_status, :running)
@@ -56,10 +60,20 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
      end)}
   end
 
-  def handle_event("set-manifest-strict", %{"value" => value}, socket) do
-    strict? = value in ["true", true]
+  def handle_event("set-manifest-strict", params, socket) do
+    strict? = manifest_strict_from_params(params, socket.assigns.manifest_strict_mode)
     {:noreply, assign(socket, :manifest_strict_mode, strict?)}
   end
+
+  defp manifest_strict_from_params(%{"build" => %{"manifest_strict" => value}}, _default) do
+    value in ["true", true]
+  end
+
+  defp manifest_strict_from_params(%{"value" => value}, _default) do
+    value in ["true", true]
+  end
+
+  defp manifest_strict_from_params(_params, default), do: default == true
 
   def handle_async(:run_check, {:ok, {:ok, result}}, socket) do
     socket =
@@ -79,6 +93,9 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       socket
       |> assign(:build_status, result.status)
       |> assign(:build_output, result.output)
+      |> assign(:build_issues, result.issues)
+      |> assign(:publish_artifact_path, result.package.artifact_path)
+      |> assign(:publish_app_root, package_app_root(result.package))
       |> assign(:check_status, primary.check.status)
       |> assign(:check_output, primary.check.output)
       |> assign(:compile_status, primary.compile.status)
@@ -108,6 +125,13 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       socket
       |> assign(:build_status, :error)
       |> assign(:build_output, "Build failed before execution: #{inspect(reason)}")
+      |> assign(:build_issues, [
+        %{
+          title: "Build failed before execution",
+          message: inspect(reason),
+          detail: nil
+        }
+      ])
       |> assign(:check_status, :error)
       |> assign(:compile_status, :error)
       |> assign(:manifest_status, :error)
@@ -123,6 +147,13 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       socket
       |> assign(:build_status, :error)
       |> assign(:build_output, "Build task exited: #{inspect(reason)}")
+      |> assign(:build_issues, [
+        %{
+          title: "Build task exited",
+          message: inspect(reason),
+          detail: nil
+        }
+      ])
       |> assign(:check_status, :error)
       |> assign(:compile_status, :error)
       |> assign(:manifest_status, :error)
@@ -239,6 +270,9 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     {:noreply, socket}
   end
 
+  defp package_app_root(%{raw: %{app_root: app_root}}) when is_binary(app_root), do: app_root
+  defp package_app_root(_package), do: nil
+
   @spec schedule_compiler_check(term()) :: term()
   def schedule_compiler_check(socket) do
     case socket.assigns[:project] do
@@ -311,8 +345,12 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       Enum.find(root_results, fn result -> result.label == "watch" end) ||
         List.first(root_results)
 
+    roots_ok? = Enum.all?(root_results, fn result -> result.status == :ok end)
+    package_result = run_package_validation(project, workspace_root, roots_ok?)
+    issues = build_issues(root_results, package_result)
+
     status =
-      if Enum.all?(root_results, fn result -> result.status == :ok end),
+      if roots_ok? and package_result.status == :ok,
         do: :ok,
         else: :error
 
@@ -325,6 +363,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
         ]
         |> Enum.join("\n")
       end)
+      |> Kernel.++([render_package_validation_output(package_result)])
       |> Enum.join("\n\n")
       |> String.trim()
 
@@ -333,8 +372,264 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
        status: status,
        output: output,
        primary: primary,
+       package: package_result,
+       issues: issues,
        roots: root_results
      }}
+  end
+
+  @spec build_issues([map()], map()) :: [map()]
+  def build_issues(root_results, package_result) do
+    root_issues =
+      root_results
+      |> Enum.filter(&(&1.status != :ok))
+      |> Enum.map(fn result ->
+        %{
+          title: "Source-root build failed: #{result.label}",
+          message: "Check, compile, or manifest validation failed before PBW packaging.",
+          detail: result.root_path
+        }
+      end)
+
+    package_issues =
+      if package_result.status == :ok do
+        []
+      else
+        package_output_issues(package_result.output || inspect(package_result.raw))
+      end
+
+    root_issues ++ package_issues
+  end
+
+  @spec package_output_issues(String.t()) :: [map()]
+  def package_output_issues(output) when is_binary(output) do
+    case memory_overflow_info(output) do
+      nil ->
+        [
+          %{
+            title: "PBW packaging failed",
+            message: "Pebble SDK packaging failed. See the package log below for details.",
+            detail: nil
+          }
+        ]
+
+      info ->
+        [
+          %{
+            title: "PBW too large for #{target_label(info.target)}",
+            message:
+              "The linker says the app does not fit in the Pebble APP memory region. " <>
+                overflow_action(info.target),
+            detail: overflow_detail(info)
+          }
+        ]
+    end
+  end
+
+  def package_output_issues(_output), do: []
+
+  defp memory_overflow_info(output) do
+    normalized = String.downcase(output)
+
+    if String.contains?(normalized, "region `app' overflowed") or
+         String.contains?(normalized, "will not fit in region `app'") or
+         String.contains?(normalized, "overflowed by") do
+      %{
+        target: overflow_target(output),
+        bytes: overflow_bytes(output)
+      }
+    else
+      nil
+    end
+  end
+
+  defp overflow_target(output) do
+    lines = String.split(output, "\n")
+
+    with index when is_integer(index) <- overflow_line_index(lines) do
+      overflow_context_target(lines, index) || last_linking_target_before(lines, index)
+    else
+      _ -> first_pebble_app_target(output)
+    end
+  end
+
+  defp overflow_line_index(lines) do
+    Enum.find_index(lines, fn line ->
+      normalized = String.downcase(line)
+
+      String.contains?(normalized, "region `app' overflowed") or
+        String.contains?(normalized, "will not fit in region `app'") or
+        String.contains?(normalized, "overflowed by")
+    end)
+  end
+
+  defp overflow_context_target(lines, index) do
+    before_or_at =
+      lines
+      |> Enum.take(index + 1)
+      |> Enum.reverse()
+
+    after_overflow =
+      lines
+      |> Enum.drop(index + 1)
+
+    (before_or_at ++ after_overflow)
+    |> Enum.find_value(&pebble_app_target_from_line/1)
+  end
+
+  defp last_linking_target_before(lines, index) do
+    lines
+    |> Enum.take(index + 1)
+    |> Enum.reverse()
+    |> Enum.find_value(fn line ->
+      case Regex.run(~r/Linking\s+([a-z0-9_-]+)/i, line) do
+        [_, target] -> String.downcase(target)
+        _ -> nil
+      end
+    end)
+  end
+
+  defp first_pebble_app_target(output), do: pebble_app_target_from_line(output)
+
+  defp pebble_app_target_from_line(line) do
+    case Regex.run(~r/build\/([a-z0-9_-]+)\/pebble-app\.elf/i, line) do
+      [_, target] -> String.downcase(target)
+      _ -> nil
+    end
+  end
+
+  defp overflow_bytes(output) do
+    case Regex.run(~r/overflowed by\s+(\d+)\s+bytes/i, output) do
+      [_, bytes] -> bytes
+      _ -> nil
+    end
+  end
+
+  defp overflow_action("aplite") do
+    "Aplite is enabled; remove it from target platforms if this app should not support original black-and-white Pebble, or reduce code/resources."
+  end
+
+  defp overflow_action(_target) do
+    "Reduce generated code/resources or narrow target platforms to models that can fit the app."
+  end
+
+  defp target_label(nil), do: "target"
+  defp target_label(target) when is_binary(target), do: String.capitalize(target)
+
+  defp overflow_detail(%{target: target, bytes: bytes}) do
+    [target && "target=#{target}", bytes && "overflow=#{bytes} bytes"]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" ")
+    |> case do
+      "" -> nil
+      detail -> detail
+    end
+  end
+
+  @spec run_package_validation(term(), String.t(), boolean()) :: map()
+  def run_package_validation(_project, workspace_root, false) do
+    %{
+      status: :error,
+      artifact_path: nil,
+      output: "PBW packaging skipped: source-root build failed.",
+      raw: nil,
+      workspace_root: workspace_root
+    }
+  end
+
+  def run_package_validation(project, workspace_root, true) do
+    targets = PublishFlow.target_platforms(project)
+
+    case PebbleToolchain.package(project.slug,
+           workspace_root: workspace_root,
+           target_type: project.target_type,
+           project_name: project.name,
+           target_platforms: targets
+         ) do
+      {:ok, package} ->
+        %{
+          status: package.status,
+          artifact_path: package.artifact_path,
+          output:
+            [
+              "Configured target platforms: #{Enum.join(targets, ", ")}",
+              "Artifact: #{package.artifact_path}",
+              "",
+              ToolchainPresenter.render_publish_output(package)
+            ]
+            |> Enum.join("\n")
+            |> String.trim(),
+          raw: package,
+          workspace_root: workspace_root
+        }
+
+      {:error, reason} ->
+        %{
+          status: :error,
+          artifact_path: nil,
+          output: render_package_failure(reason, targets),
+          raw: reason,
+          workspace_root: workspace_root
+        }
+    end
+  end
+
+  @spec render_package_validation_output(map()) :: String.t()
+  def render_package_validation_output(package_result) do
+    """
+    === [pbw package] ===
+    #{package_result.output}
+    """
+    |> String.trim()
+  end
+
+  @spec render_package_failure(term(), [String.t()]) :: String.t()
+  def render_package_failure({:pebble_build_failed, %{output: output} = result}, targets)
+      when is_binary(output) do
+    [
+      "PBW packaging failed.",
+      "Configured target platforms: #{Enum.join(targets, ", ")}",
+      package_failure_hint(output, targets),
+      "",
+      ToolchainPresenter.render_toolchain_output(result)
+    ]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join("\n")
+    |> String.trim()
+  end
+
+  def render_package_failure(reason, targets) do
+    [
+      "PBW packaging failed.",
+      "Configured target platforms: #{Enum.join(targets, ", ")}",
+      package_failure_hint(inspect(reason), targets),
+      "",
+      inspect(reason)
+    ]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join("\n")
+    |> String.trim()
+  end
+
+  defp package_failure_hint(output, targets) do
+    normalized = String.downcase(output || "")
+
+    cond do
+      String.contains?(normalized, "region `app' overflowed") or
+        String.contains?(normalized, "will not fit in region `app'") or
+          String.contains?(normalized, "overflowed by") ->
+        target_hint =
+          if "aplite" in targets do
+            " Aplite is enabled; consider removing it from target platforms if the app is not intended to support the original black-and-white Pebble, or reduce generated code/resources."
+          else
+            " Reduce generated code/resources or narrow target platforms to models that can fit the app."
+          end
+
+        "Diagnosis: Pebble SDK linker output indicates a memory-region overflow.#{target_hint}"
+
+      true ->
+        nil
+    end
   end
 
   @spec run_build_pipeline_for_root(term(), term(), term(), term()) :: term()

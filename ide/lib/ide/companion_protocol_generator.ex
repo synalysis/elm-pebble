@@ -206,6 +206,40 @@ defmodule Ide.CompanionProtocolGenerator do
       |> Enum.max(fn -> 0 end)
       |> max(1)
 
+    uses_union_payloads? = companion_protocol_uses_union_payloads?(schema)
+    uses_bool_payloads? = companion_protocol_uses_payload_type?(schema, :bool)
+    uses_string_payloads? = companion_protocol_uses_payload_type?(schema, :string)
+
+    message_fields =
+      [
+        "  CompanionProtocolPhoneToWatchKind kind;",
+        "  int32_t int_fields[COMPANION_PROTOCOL_MAX_FIELDS];"
+      ] ++
+        optional_c_struct_field(
+          uses_union_payloads?,
+          "  int32_t union_value_fields[COMPANION_PROTOCOL_MAX_FIELDS];"
+        ) ++
+        optional_c_struct_field(
+          uses_bool_payloads?,
+          "  bool bool_fields[COMPANION_PROTOCOL_MAX_FIELDS];"
+        ) ++
+        optional_c_struct_field(
+          uses_string_payloads?,
+          "  char string_fields[COMPANION_PROTOCOL_MAX_FIELDS][64];"
+        )
+
+    decoder_fields =
+      [
+        "  bool saw_tag;",
+        "  int32_t tag;",
+        "  CompanionProtocolPhoneToWatchMessage message;",
+        "  bool saw_fields[COMPANION_PROTOCOL_MAX_FIELDS];"
+      ] ++
+        optional_c_struct_field(
+          uses_union_payloads?,
+          "  bool saw_union_value_fields[COMPANION_PROTOCOL_MAX_FIELDS];"
+        )
+
     """
     #ifndef COMPANION_PROTOCOL_H
     #define COMPANION_PROTOCOL_H
@@ -227,19 +261,11 @@ defmodule Ide.CompanionProtocolGenerator do
     } CompanionProtocolPhoneToWatchKind;
 
     typedef struct {
-      CompanionProtocolPhoneToWatchKind kind;
-      int32_t int_fields[COMPANION_PROTOCOL_MAX_FIELDS];
-      int32_t union_value_fields[COMPANION_PROTOCOL_MAX_FIELDS];
-      bool bool_fields[COMPANION_PROTOCOL_MAX_FIELDS];
-      char string_fields[COMPANION_PROTOCOL_MAX_FIELDS][64];
+    #{Enum.join(message_fields, "\n")}
     } CompanionProtocolPhoneToWatchMessage;
 
     typedef struct {
-      bool saw_tag;
-      int32_t tag;
-      CompanionProtocolPhoneToWatchMessage message;
-      bool saw_fields[COMPANION_PROTOCOL_MAX_FIELDS];
-      bool saw_union_value_fields[COMPANION_PROTOCOL_MAX_FIELDS];
+    #{Enum.join(decoder_fields, "\n")}
     } CompanionProtocolPhoneToWatchDecoder;
 
     bool companion_protocol_encode_watch_to_phone(DictionaryIterator *iter, int32_t tag, int32_t value);
@@ -370,7 +396,7 @@ defmodule Ide.CompanionProtocolGenerator do
       decoder->tag = 0;
       memset(&decoder->message, 0, sizeof(decoder->message));
       memset(decoder->saw_fields, 0, sizeof(decoder->saw_fields));
-      memset(decoder->saw_union_value_fields, 0, sizeof(decoder->saw_union_value_fields));
+    #{c_init_union_seen_fields(schema)}
     }
 
     void companion_protocol_phone_to_watch_decoder_push_tuple(
@@ -420,6 +446,23 @@ defmodule Ide.CompanionProtocolGenerator do
       %{wire_type: {:union, _type}} -> true
       _field -> false
     end)
+  end
+
+  defp companion_protocol_uses_payload_type?(schema, wire_type) do
+    schema.phone_to_watch
+    |> Enum.flat_map(& &1.fields)
+    |> Enum.any?(&(&1.wire_type == wire_type))
+  end
+
+  defp optional_c_struct_field(true, field), do: [field]
+  defp optional_c_struct_field(false, _field), do: []
+
+  defp c_init_union_seen_fields(schema) do
+    if companion_protocol_uses_union_payloads?(schema) do
+      "  memset(decoder->saw_union_value_fields, 0, sizeof(decoder->saw_union_value_fields));"
+    else
+      ""
+    end
   end
 
   defp companion_protocol_uses_boxed_dispatch?(schema) do

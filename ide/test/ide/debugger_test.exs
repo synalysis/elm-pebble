@@ -573,6 +573,54 @@ defmodule Ide.DebuggerTest do
     assert Map.get(p, :target) == "watch" || Map.get(p, "target") == "watch"
   end
 
+  test "watch reload replaces stale sample tree when parser preview is not renderable" do
+    slug = "sim-preview-unavailable-#{System.unique_integer([:positive])}"
+
+    source = """
+    module ParserOnly exposing (..)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+
+    init _ =
+        ( {}, Cmd.none )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view model =
+        Ui.toUiNode (ops model)
+
+    ops _ =
+        []
+
+    main : Program Decode.Value model msg
+    main =
+        Platform.watchface
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, st} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/ParserOnly.elm",
+               source: source,
+               reason: "parser_only_preview"
+             })
+
+    assert get_in(st, [:watch, :view_tree, "type"]) == "previewUnavailable"
+    refute get_in(st, [:watch, :view_tree, "type"]) == "Window"
+  end
+
   test "phone reload merges parser snapshot into companion model and view tree" do
     slug = "sim-intro-proto-#{System.unique_integer([:positive])}"
 
@@ -1559,20 +1607,28 @@ defmodule Ide.DebuggerTest do
         reason: "device_datetime_base"
       })
 
+    {:ok, _} =
+      Debugger.set_simulator_settings(slug, %{
+        "use_simulated_time" => true,
+        "simulated_date" => "2026-05-19",
+        "simulated_time" => "07:08:09",
+        "timezone_offset_min" => 120
+      })
+
     assert {:ok, ticked} = Debugger.tick(slug, %{target: "watch", count: 1})
 
     runtime_model = get_in(ticked, [:watch, :model, "runtime_model"]) || %{}
     device_preview = get_in(ticked, [:watch, :model, "debugger_device_current_date_time"]) || %{}
 
-    assert is_integer(runtime_model["year"]) and runtime_model["year"] >= 2000
-    assert is_integer(runtime_model["month"]) and runtime_model["month"] in 1..12
-    assert is_integer(runtime_model["day"]) and runtime_model["day"] in 1..31
-    assert is_integer(runtime_model["hour"]) and runtime_model["hour"] in 0..23
-    assert is_integer(runtime_model["minute"]) and runtime_model["minute"] in 0..59
-    assert is_integer(runtime_model["second"]) and runtime_model["second"] in 0..59
-    assert is_integer(runtime_model["utcOffsetMinutes"])
+    assert runtime_model["year"] == 2026
+    assert runtime_model["month"] == 5
+    assert runtime_model["day"] == 19
+    assert runtime_model["hour"] == 7
+    assert runtime_model["minute"] == 8
+    assert runtime_model["second"] == 9
+    assert runtime_model["utcOffsetMinutes"] == 120
     assert is_map(runtime_model["dayOfWeek"])
-    assert is_binary(runtime_model["dayOfWeek"]["ctor"])
+    assert runtime_model["dayOfWeek"]["ctor"] == "Tuesday"
     assert is_map(device_preview)
     assert device_preview["utcOffsetMinutes"] == runtime_model["utcOffsetMinutes"]
     assert device_preview["dayOfWeek"] == runtime_model["dayOfWeek"]["ctor"]
@@ -1628,20 +1684,15 @@ defmodule Ide.DebuggerTest do
         reason: "minute_change_sub"
       })
 
+    {:ok, _} =
+      Debugger.set_simulator_settings(slug, %{
+        "use_simulated_time" => true,
+        "simulated_time" => "07:34"
+      })
+
     assert {:ok, ticked} = Debugger.tick(slug, %{target: "watch", count: 1})
     message = get_in(ticked, [:watch, :model, "runtime_last_message"]) || ""
-    assert String.starts_with?(message, "MinuteChanged ")
-
-    minute_value =
-      message
-      |> String.replace_prefix("MinuteChanged ", "")
-      |> Integer.parse()
-      |> case do
-        {parsed, ""} -> parsed
-        _ -> -1
-      end
-
-    assert minute_value in 0..59
+    assert message == "MinuteChanged 34"
   end
 
   test "tick prefers minute subscription payload over hour when both are present" do

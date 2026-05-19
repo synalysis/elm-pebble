@@ -280,6 +280,31 @@ static bool send_companion_request(int request_tag, int request_value);
 static void flush_pending_companion_request(void);
 #endif
 
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && (ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS || ELMC_PEBBLE_FEATURE_DAY_EVENTS || ELMC_PEBBLE_FEATURE_MONTH_EVENTS || ELMC_PEBBLE_FEATURE_YEAR_EVENTS)
+static TimeUnits subscribed_time_units(void) {
+  TimeUnits units = 0;
+#if ELMC_PEBBLE_FEATURE_TICK_EVENTS
+  units |= SECOND_UNIT;
+#endif
+#if ELMC_PEBBLE_FEATURE_MINUTE_EVENTS
+  units |= MINUTE_UNIT;
+#endif
+#if ELMC_PEBBLE_FEATURE_HOUR_EVENTS
+  units |= HOUR_UNIT;
+#endif
+#if ELMC_PEBBLE_FEATURE_DAY_EVENTS
+  units |= DAY_UNIT;
+#endif
+#if ELMC_PEBBLE_FEATURE_MONTH_EVENTS
+  units |= MONTH_UNIT;
+#endif
+#if ELMC_PEBBLE_FEATURE_YEAR_EVENTS
+  units |= YEAR_UNIT;
+#endif
+  return units == 0 ? SECOND_UNIT : units;
+}
+#endif
+
 static GFont system_font_for_height(int64_t requested_height) {
   GFont font = NULL;
   if (requested_height <= 18) font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
@@ -493,6 +518,7 @@ static void apply_pending_cmd(void) {
                    : elmc_pebble_dispatch_random_int(&s_elm_app, s_random_seed);
       ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "cmd random_generate target=%lld value=%ld rc=%d",
               (long long)target, (long)s_random_seed, rc);
+      (void)rc;
       break;
     }
 #endif
@@ -912,6 +938,7 @@ static GRect rect_from_params(int64_t x, int64_t y, int64_t w, int64_t h) {
   return GRect((int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h);
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
 static GRect text_point_rect(GRect bounds, int64_t x, int64_t y) {
   int width = bounds.size.w - (int)x;
   int height = bounds.size.h - (int)y;
@@ -919,6 +946,7 @@ static GRect text_point_rect(GRect bounds, int64_t x, int64_t y) {
   if (height < 1) height = 1;
   return GRect((int16_t)x, (int16_t)y, (int16_t)width, (int16_t)height);
 }
+#endif
 
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
 static int min_int(int a, int b) {
@@ -1262,9 +1290,11 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         int16_t y1 = (int16_t)cmd->p1;
         int16_t x2 = (int16_t)cmd->p2;
         int16_t y2 = (int16_t)cmd->p3;
-        graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));
-        graphics_draw_line(ctx, GPoint(x1, y1), GPoint(x2, y2));
-        graphics_context_set_stroke_color(ctx, style_stack[style_top].stroke_color);
+        if (x1 != x2 || y1 != y2) {
+          graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));
+          graphics_draw_line(ctx, GPoint(x1, y1), GPoint(x2, y2));
+          graphics_context_set_stroke_color(ctx, style_stack[style_top].stroke_color);
+        }
         break;
       }
 #endif
@@ -1850,9 +1880,11 @@ static void outbox_failed_handler(DictionaryIterator *iter, AppMessageResult rea
   ELMC_PEBBLE_TRACE_EXIT("outbox_failed_handler");
 }
 
+#if ELMC_PEBBLE_FEATURE_BUTTON_EVENTS || ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS
 static void note_user_interaction(void) {
   light_enable_interaction();
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_BUTTON_EVENTS && !ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS
 static void click_handler(ClickRecognizerRef recognizer, void *context) {
@@ -2213,7 +2245,7 @@ static void init(void) {
     }
 #endif
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && (ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS || ELMC_PEBBLE_FEATURE_DAY_EVENTS || ELMC_PEBBLE_FEATURE_MONTH_EVENTS || ELMC_PEBBLE_FEATURE_YEAR_EVENTS)
-    tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+    tick_timer_service_subscribe(subscribed_time_units(), tick_handler);
 #endif
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_ACCEL_EVENTS
     if (s_run_mode == ELMC_PEBBLE_MODE_APP) {

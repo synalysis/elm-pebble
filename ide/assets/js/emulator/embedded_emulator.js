@@ -11,7 +11,9 @@ const CONFIG_RETURN_PATH = "/api/emulator/config-return"
 const MAX_LOG_LINES = 300
 const MAX_LOG_CHARS = 40000
 const PUTBYTES_SUMMARY_INTERVAL = 25
+const SYSTEM_LOG_SUMMARY_INTERVAL = 50
 const PHONE_BRIDGE_INSTALL_TIMEOUT_MS = 120000
+const ENDPOINT_SYSTEM_LOG = 0x07d2
 const ENDPOINT_APP_LOG = 0x07d6
 const ENDPOINT_DATA_LOGGING = 0x1a7a
 const DEBUG_STORAGE = {
@@ -40,6 +42,7 @@ const persistedStateFields = [
   "logLines",
   "storageEntries",
   "suppressedPutBytesFrames",
+  "suppressedSystemLogFrames",
   "sessionEnded",
   "phoneBridgeActive",
   "rfb",
@@ -69,6 +72,7 @@ function defaultEmulatorState(key) {
     logLines: [],
     storageEntries: new Map(),
     suppressedPutBytesFrames: 0,
+    suppressedSystemLogFrames: 0,
     sessionEnded: false,
     phoneBridgeActive: false,
     rfb: null,
@@ -864,7 +868,13 @@ export class EmbeddedEmulatorHost {
       return
     }
 
+    if (this.pebbleFrameEndpoint(frame) === ENDPOINT_SYSTEM_LOG) {
+      this.compactSystemLogFrame()
+      return
+    }
+
     this.flushPutBytesSummary()
+    this.flushSystemLogSummary()
     const message = this.describePebbleFrame(direction, frame)
     if (message) this.appendLog(message)
   }
@@ -884,6 +894,18 @@ export class EmbeddedEmulatorHost {
     const count = this.suppressedPutBytesFrames
     this.suppressedPutBytesFrames = 0
     this.appendLog(`suppressed ${count} PutBytes transfer frame${count === 1 ? "" : "s"}`, {flushTransfers: false})
+  }
+
+  compactSystemLogFrame() {
+    this.suppressedSystemLogFrames = (this.suppressedSystemLogFrames || 0) + 1
+    if (this.suppressedSystemLogFrames >= SYSTEM_LOG_SUMMARY_INTERVAL) this.flushSystemLogSummary()
+  }
+
+  flushSystemLogSummary() {
+    if (!this.suppressedSystemLogFrames) return
+    const count = this.suppressedSystemLogFrames
+    this.suppressedSystemLogFrames = 0
+    this.appendLog(`suppressed ${count} Pebble system log frame${count === 1 ? "" : "s"}`, {flushSystemLogs: false})
   }
 
   describePebbleFrame(direction, frame) {
@@ -995,6 +1017,8 @@ export class EmbeddedEmulatorHost {
         return "App run state"
       case 0x1771:
         return "App fetch"
+      case ENDPOINT_SYSTEM_LOG:
+        return "Pebble system log"
       case ENDPOINT_APP_LOG:
         return "AppLog"
       case ENDPOINT_DATA_LOGGING:
@@ -1366,6 +1390,7 @@ export class EmbeddedEmulatorHost {
 
   appendLog(message, options = {}) {
     if (options.flushTransfers !== false) this.flushPutBytesSummary()
+    if (options.flushSystemLogs !== false) this.flushSystemLogSummary()
     this.observeStorageLog(message)
     this.logLines.unshift(`${new Date().toLocaleTimeString()} ${message}`)
     this.logLines = this.logLines.slice(0, MAX_LOG_LINES)

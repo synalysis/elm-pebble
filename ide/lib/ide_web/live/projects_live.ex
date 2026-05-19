@@ -33,7 +33,7 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   def handle_event("create", %{"project" => params}, socket) do
-    case Projects.create_project(normalize_create_params(params)) do
+    case Projects.create_project(normalize_create_params(params), socket.assigns.current_user) do
       {:ok, project} ->
         {:noreply,
          socket
@@ -53,7 +53,7 @@ defmodule IdeWeb.ProjectsLive do
   def handle_event("import", %{"import" => params}, socket) do
     import_path = Map.get(params, "import_path", "")
 
-    case Projects.import_project(%{}, import_path) do
+    case Projects.import_project(%{}, import_path, socket.assigns.current_user) do
       {:ok, project} ->
         {:noreply,
          socket
@@ -81,7 +81,7 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   def handle_event("activate", %{"id" => id}, socket) do
-    project = Projects.get_project!(id)
+    project = Projects.get_project!(id, socket.assigns.current_user)
 
     case Projects.activate_project(project) do
       {:ok, _active} ->
@@ -93,7 +93,7 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
-    project = Projects.get_project!(id)
+    project = Projects.get_project!(id, socket.assigns.current_user)
 
     case Projects.delete_project(project) do
       {:ok, _deleted} ->
@@ -106,7 +106,7 @@ defmodule IdeWeb.ProjectsLive do
 
   @spec load_projects(term()) :: term()
   defp load_projects(socket) do
-    assign(socket, :projects, Projects.list_projects())
+    assign(socket, :projects, Projects.list_projects(socket.assigns.current_user))
   end
 
   @spec default_attrs() :: term()

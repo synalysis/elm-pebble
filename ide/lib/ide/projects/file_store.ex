@@ -118,6 +118,11 @@ defmodule Ide.Projects.FileStore do
   Returns an absolute path to the project workspace root.
   """
   @spec project_root(term(), term()) :: term()
+  def project_root(%Project{owner_id: owner_id, slug: slug}, projects_root)
+      when is_integer(owner_id) do
+    Path.join([projects_root, "users", Integer.to_string(owner_id), slug])
+  end
+
   def project_root(%Project{slug: slug}, projects_root), do: Path.join(projects_root, slug)
 
   @spec safe_path(term(), term(), term(), term()) :: term()

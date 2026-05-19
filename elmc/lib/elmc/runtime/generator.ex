@@ -707,6 +707,11 @@ defmodule Elmc.Runtime.Generator do
     #ifdef ELMC_PEBBLE_PLATFORM
     #include <pebble.h>
     #endif
+    #if defined(__GNUC__)
+    #define ELMC_UNUSED __attribute__((unused))
+    #else
+    #define ELMC_UNUSED
+    #endif
 
     static uint64_t ELMC_ALLOCATED = 0;
     static uint64_t ELMC_RELEASED = 0;
@@ -721,7 +726,7 @@ defmodule Elmc.Runtime.Generator do
     #{small_int_table_entries()}
     };
     static ElmcMaybe ELMC_MAYBE_NOTHING_PAYLOAD = { 0, NULL };
-    static ElmcValue ELMC_MAYBE_NOTHING = { ELMC_RC_IMMORTAL, ELMC_TAG_MAYBE, &ELMC_MAYBE_NOTHING_PAYLOAD, 0 };
+    static ElmcValue ELMC_MAYBE_NOTHING ELMC_UNUSED = { ELMC_RC_IMMORTAL, ELMC_TAG_MAYBE, &ELMC_MAYBE_NOTHING_PAYLOAD, 0 };
     static char ELMC_EMPTY_STRING_PAYLOAD[] = "";
     static ElmcValue ELMC_EMPTY_STRING = { ELMC_RC_IMMORTAL, ELMC_TAG_STRING, ELMC_EMPTY_STRING_PAYLOAD, 0 };
     static ElmcValue ELMC_LIST_NIL = { ELMC_RC_IMMORTAL, ELMC_TAG_LIST, NULL, 0 };

@@ -4,6 +4,7 @@ defmodule IdeWeb.Router do
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
+    plug IdeWeb.Plugs.FetchCurrentUser
     plug :fetch_live_flash
     plug :put_root_layout, html: {IdeWeb.Layouts, :root}
     plug :protect_from_forgery
@@ -12,6 +13,16 @@ defmodule IdeWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug :fetch_session
+    plug IdeWeb.Plugs.FetchCurrentUser
+  end
+
+  pipeline :authenticated_browser do
+    plug IdeWeb.Plugs.RequireAuth
+  end
+
+  pipeline :authenticated_api do
+    plug IdeWeb.Plugs.RequireAuth
   end
 
   pipeline :wasm_emulator do
@@ -22,17 +33,30 @@ defmodule IdeWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/login", AuthController, :login
+    get "/auth/status", AuthController, :status
+    post "/auth/firebase", AuthController, :firebase
+    post "/auth/refresh", AuthController, :refresh
+    post "/auth/logout", AuthController, :logout
+  end
+
+  scope "/", IdeWeb do
+    pipe_through [:browser, :authenticated_browser]
+
     get "/projects/:id/export", ProjectExportController, :show
-    live "/projects", ProjectsLive, :index
-    live "/settings", SettingsLive, :index
-    live "/projects/:slug/editor", WorkspaceLive, :editor
-    live "/projects/:slug/resources", WorkspaceLive, :resources
-    live "/projects/:slug/packages", WorkspaceLive, :packages
-    live "/projects/:slug/debugger", WorkspaceLive, :debugger
-    live "/projects/:slug/build", WorkspaceLive, :build
-    live "/projects/:slug/publish", WorkspaceLive, :publish
-    live "/projects/:slug/emulator", WorkspaceLive, :emulator
-    live "/projects/:slug/settings", WorkspaceLive, :settings
+
+    live_session :default, on_mount: [IdeWeb.AuthHooks] do
+      live "/projects", ProjectsLive, :index
+      live "/settings", SettingsLive, :index
+      live "/projects/:slug/editor", WorkspaceLive, :editor
+      live "/projects/:slug/resources", WorkspaceLive, :resources
+      live "/projects/:slug/packages", WorkspaceLive, :packages
+      live "/projects/:slug/debugger", WorkspaceLive, :debugger
+      live "/projects/:slug/build", WorkspaceLive, :build
+      live "/projects/:slug/publish", WorkspaceLive, :publish
+      live "/projects/:slug/emulator", WorkspaceLive, :emulator
+      live "/projects/:slug/settings", WorkspaceLive, :settings
+    end
   end
 
   scope "/", IdeWeb do
@@ -43,11 +67,13 @@ defmodule IdeWeb.Router do
   end
 
   scope "/api", IdeWeb do
+    pipe_through :api
+
     get "/mcp", McpController, :show
   end
 
   scope "/api", IdeWeb do
-    pipe_through :api
+    pipe_through [:api, :authenticated_api]
 
     post "/mcp", McpController, :create
     post "/tokenize", TokenizerController, :create

@@ -3134,8 +3134,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
           </p>
         </div>
       </div>
-      <div class="mt-3 grid gap-3 md:grid-cols-2">
-        <div class="rounded border border-zinc-100 bg-zinc-50 p-2">
+      <div class="mt-3 grid min-w-0 gap-3 md:grid-cols-2">
+        <div class="min-w-0 rounded border border-zinc-100 bg-zinc-50 p-2">
           <h4 class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Watch</h4>
           <label class="mt-2 block font-medium">
             Battery
@@ -3176,8 +3176,41 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               checked={@settings["clock_24h"] == true}
             /> 24h time
           </label>
+          <input type="hidden" name="debugger_simulator[use_simulated_time]" value="false" />
+          <label class="mt-3 flex items-center gap-2 font-medium">
+            <input
+              name="debugger_simulator[use_simulated_time]"
+              type="checkbox"
+              value="true"
+              checked={@settings["use_simulated_time"] == true}
+            /> Use simulated time
+          </label>
+          <div class="mt-3 grid min-w-0 gap-2">
+            <label class="block min-w-0 font-medium">
+              Simulated date
+              <input
+                name="debugger_simulator[simulated_date]"
+                type="date"
+                value={@settings["simulated_date"] || ""}
+                class="mt-1 w-full min-w-0 max-w-full rounded border border-zinc-300 bg-white px-2 py-1"
+              />
+            </label>
+            <label class="block min-w-0 font-medium">
+              Simulated time
+              <input
+                name="debugger_simulator[simulated_time]"
+                type="time"
+                step="1"
+                value={@settings["simulated_time"] || ""}
+                class="mt-1 w-full min-w-0 max-w-full rounded border border-zinc-300 bg-white px-2 py-1"
+              />
+            </label>
+          </div>
+          <p class="mt-1 text-[11px] text-zinc-500">
+            Disable simulated time to use the current host clock.
+          </p>
         </div>
-        <div class="rounded border border-zinc-100 bg-zinc-50 p-2">
+        <div class="min-w-0 rounded border border-zinc-100 bg-zinc-50 p-2">
           <h4 class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Companion</h4>
           <label class="mt-2 block font-medium">
             Latitude
@@ -3260,6 +3293,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       "charging" => normalize_debugger_boolean(settings["charging"], defaults["charging"]),
       "connected" => normalize_debugger_boolean(settings["connected"], defaults["connected"]),
       "clock_24h" => normalize_debugger_boolean(settings["clock_24h"], defaults["clock_24h"]),
+      "use_simulated_time" =>
+        normalize_debugger_boolean(
+          settings["use_simulated_time"],
+          defaults["use_simulated_time"]
+        ),
+      "simulated_time" =>
+        normalize_debugger_optional_string(settings["simulated_time"], defaults["simulated_time"]),
+      "simulated_date" =>
+        normalize_debugger_optional_string(settings["simulated_date"], defaults["simulated_date"]),
       "latitude" =>
         normalize_debugger_float(settings["latitude"], defaults["latitude"], -90.0, 90.0),
       "longitude" =>
@@ -3299,6 +3341,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   end
 
   defp normalize_debugger_float(_value, default, _min_value, _max_value), do: default
+
+  @spec normalize_debugger_optional_string(term(), String.t() | nil) :: String.t() | nil
+  defp normalize_debugger_optional_string(value, _default) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp normalize_debugger_optional_string(_value, default), do: default
 
   @spec normalize_debugger_boolean(term(), boolean()) :: boolean()
   defp normalize_debugger_boolean(values, default) when is_list(values),

@@ -6,7 +6,7 @@ defmodule Ide.ProjectTemplates do
   alias Ide.InternalPackages
   alias Ide.CompanionProtocolGenerator
 
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes game-basic game-tiny-bird game-greeneys-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time game-basic game-tiny-bird game-greeneys-run game-2048)
 
   @doc """
   Returns available template keys.
@@ -23,7 +23,8 @@ defmodule Ide.ProjectTemplates do
              "watchface-digital",
              "watchface-analog",
              "watchface-tutorial-complete",
-             "watchface-yes"
+             "watchface-yes",
+             "watchface-tangram-time"
            ],
       do: "watchface"
 
@@ -40,6 +41,7 @@ defmodule Ide.ProjectTemplates do
       {"Watchface: Analog (watch-only)", "watchface-analog"},
       {"Watchface tutorial: Complete", "watchface-tutorial-complete"},
       {"Watchface: YES (watch, protocol, phone)", "watchface-yes"},
+      {"Watchface: Tangram Time (watch, protocol, phone)", "watchface-tangram-time"},
       {"Game: Basic", "game-basic"},
       {"Game: Tiny Bird", "game-tiny-bird"},
       {"Game: Greeney's Run", "game-greeneys-run"},
@@ -67,6 +69,9 @@ defmodule Ide.ProjectTemplates do
 
       "watchface-yes" ->
         seed_yes_watchface_workspace(workspace_path)
+
+      "watchface-tangram-time" ->
+        seed_tangram_time_watchface_workspace(workspace_path)
 
       "game-basic" ->
         seed_watch_only_workspace(workspace_path, "game_basic")
@@ -200,9 +205,53 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
+  @spec seed_tangram_time_watchface_workspace(term()) :: term()
+  defp seed_tangram_time_watchface_workspace(workspace_path) do
+    with :ok <- seed_tangram_time_protocol(workspace_path),
+         :ok <- seed_phone_companion(workspace_path),
+         :ok <- seed_tangram_time_phone(workspace_path),
+         :ok <- seed_watch_only_workspace(workspace_path, "watchface_tangram_time") do
+      :ok
+    end
+  end
+
   @spec seed_yes_protocol(term()) :: term()
   defp seed_yes_protocol(workspace_path) do
     source_dir = Path.join(ide_root(), "priv/project_templates/watchface_yes/protocol/src")
+    target_dir = Path.join(workspace_path, "protocol/src")
+    protocol_root = Path.join(workspace_path, "protocol")
+
+    elm_json = %{
+      "type" => "application",
+      "source-directories" => ["src"],
+      "elm-version" => "0.19.1",
+      "dependencies" => %{
+        "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
+        "indirect" => %{}
+      },
+      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+    }
+
+    protocol_types = Path.join(target_dir, "Companion/Types.elm")
+    protocol_internal = Path.join(target_dir, "Companion/Internal.elm")
+
+    with :ok <- replace_dir(source_dir, target_dir),
+         :ok <-
+           CompanionProtocolGenerator.generate_elm_internal(protocol_types, protocol_internal),
+         :ok <-
+           File.write(Path.join(protocol_root, "elm.json"), Jason.encode!(elm_json, pretty: true)) do
+      :ok
+    end
+  end
+
+  @spec seed_tangram_time_protocol(term()) :: term()
+  defp seed_tangram_time_protocol(workspace_path) do
+    seed_template_protocol(workspace_path, "watchface_tangram_time")
+  end
+
+  @spec seed_template_protocol(term(), String.t()) :: term()
+  defp seed_template_protocol(workspace_path, template_dir) do
+    source_dir = Path.join(ide_root(), "priv/project_templates/#{template_dir}/protocol/src")
     target_dir = Path.join(workspace_path, "protocol/src")
     protocol_root = Path.join(workspace_path, "protocol")
 
@@ -244,6 +293,14 @@ defmodule Ide.ProjectTemplates do
          :ok <- Ide.PebblePreferences.ensure_generated_bridge(Path.join(workspace_path, "phone")) do
       :ok
     end
+  end
+
+  @spec seed_tangram_time_phone(term()) :: term()
+  defp seed_tangram_time_phone(workspace_path) do
+    source = Path.join(ide_root(), "priv/project_templates/watchface_tangram_time/phone/src")
+    target = Path.join(workspace_path, "phone/src")
+
+    copy_file(Path.join(source, "CompanionApp.elm"), Path.join(target, "CompanionApp.elm"))
   end
 
   @spec seed_watchface_tutorial_phone(term()) :: term()
@@ -324,7 +381,11 @@ defmodule Ide.ProjectTemplates do
 
   @spec watch_source_directories(term()) :: [String.t()]
   defp watch_source_directories(template_dir)
-       when template_dir in ["watchface_tutorial_complete", "watchface_yes"] do
+       when template_dir in [
+              "watchface_tutorial_complete",
+              "watchface_yes",
+              "watchface_tangram_time"
+            ] do
     [
       "src",
       "../protocol/src",

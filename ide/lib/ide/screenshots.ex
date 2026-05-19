@@ -49,11 +49,12 @@ defmodule Ide.Screenshots do
       target_dir = Path.join([storage_root, project_slug, emulator_target])
       :ok = File.mkdir_p(target_dir)
 
-      filename = "shot-#{timestamp()}.png"
+      filename = screenshot_filename(emulator_target)
       absolute_path = Path.join(target_dir, filename)
 
       with {:ok, result} <-
              PebbleToolchain.run_screenshot(project_slug, absolute_path, emulator_target),
+           :ok <- ensure_successful_screenshot(result, absolute_path),
            :ok <- write_metadata(absolute_path, "image/png") do
         entry = build_entry(project_slug, emulator_target, absolute_path)
 
@@ -83,7 +84,7 @@ defmodule Ide.Screenshots do
       target_dir = Path.join([storage_root, project_slug, emulator_target])
       :ok = File.mkdir_p(target_dir)
 
-      absolute_path = Path.join(target_dir, "shot-#{timestamp()}.png")
+      absolute_path = Path.join(target_dir, screenshot_filename(emulator_target))
 
       with :ok <- File.write(absolute_path, png),
            :ok <- write_metadata(absolute_path, "image/png") do
@@ -103,7 +104,7 @@ defmodule Ide.Screenshots do
   @spec capture_all_targets(project_slug(), opts()) ::
           {:ok, capture_all_result()} | {:error, term()}
   def capture_all_targets(project_slug, opts) do
-    targets = PebbleToolchain.supported_emulator_targets()
+    targets = capture_targets(Keyword.get(opts, :targets))
     boot_wait_ms = max(Keyword.get(opts, :boot_wait_ms, 2_500), 0)
     close_afterwards = Keyword.get(opts, :close_emulator_afterwards, true)
     install_timeout_ms = max(Keyword.get(opts, :install_timeout_ms, 45_000), 1_000)
@@ -113,88 +114,87 @@ defmodule Ide.Screenshots do
 
     progress = Keyword.get(opts, :progress)
 
-    with {:ok, package_path} <- resolve_package_path(project_slug, opts) do
-      maybe_progress(
-        progress,
-        {:phase, "Preparing screenshot capture for #{length(targets)} targets..."}
-      )
+    maybe_progress(
+      progress,
+      {:phase, "Preparing screenshot capture for #{length(targets)} targets..."}
+    )
 
-      results =
-        Enum.with_index(targets, 1)
-        |> Enum.map(fn {target, index} ->
-          maybe_progress(progress, {:phase, "[#{index}/#{length(targets)}] #{target}"})
-          maybe_progress(progress, {:target, target, :cleanup_before})
-          _ = stop_emulator_safe(project_slug, progress, target, :cleanup_before)
-          maybe_progress(progress, {:target, target, :installing})
+    results =
+      Enum.with_index(targets, 1)
+      |> Enum.map(fn {target, index} ->
+        maybe_progress(progress, {:phase, "[#{index}/#{length(targets)}] #{target}"})
+        maybe_progress(progress, {:target, target, :cleanup_before})
+        _ = stop_emulator_safe(project_slug, progress, target, :cleanup_before)
+        maybe_progress(progress, {:target, target, :installing})
 
-          result =
-            with {:ok, _install_result} <-
-                   timed_step(
-                     fn ->
-                       PebbleToolchain.run_emulator(project_slug,
-                         emulator_target: target,
-                         package_path: package_path,
-                         logs_snapshot_seconds: 1
-                       )
-                     end,
-                     install_timeout_ms
-                   ),
-                 :ok <- wait_for_app_load(boot_wait_ms),
-                 maybe_progress(progress, {:target, target, :capturing}),
-                 {:ok, shot} <-
-                   capture_with_retries(
-                     project_slug,
-                     target,
-                     screenshot_timeout_ms,
-                     screenshot_retries,
-                     retry_delay_ms,
-                     progress
-                   ) do
-              maybe_progress(progress, {:target, target, :ok})
-              maybe_progress(progress, {:target, target, :captured, shot.screenshot})
-              {:ok, shot}
-            else
-              {:error, reason} ->
-                maybe_progress(progress, {:target, target, :error, reason})
-                {:error, reason}
-            end
+        result =
+          with {:ok, package_path} <- resolve_capture_package_path(project_slug, target, opts),
+               {:ok, _install_result} <-
+                 timed_step(
+                   fn ->
+                     PebbleToolchain.run_emulator(project_slug,
+                       emulator_target: target,
+                       package_path: package_path,
+                       logs_snapshot_seconds: 1
+                     )
+                   end,
+                   install_timeout_ms
+                 ),
+               :ok <- wait_for_app_load(boot_wait_ms),
+               maybe_progress(progress, {:target, target, :capturing}),
+               {:ok, shot} <-
+                 capture_with_retries(
+                   project_slug,
+                   target,
+                   screenshot_timeout_ms,
+                   screenshot_retries,
+                   retry_delay_ms,
+                   progress
+                 ) do
+            maybe_progress(progress, {:target, target, :ok})
+            maybe_progress(progress, {:target, target, :captured, shot.screenshot})
+            {:ok, shot}
+          else
+            {:error, reason} ->
+              maybe_progress(progress, {:target, target, :error, reason})
+              {:error, reason}
+          end
 
-          maybe_progress(progress, {:target, target, :cleanup_after})
-          _ = stop_emulator_safe(project_slug, progress, target, :cleanup_after)
-          {target, result}
-        end)
+        maybe_progress(progress, {:target, target, :cleanup_after})
+        _ = stop_emulator_safe(project_slug, progress, target, :cleanup_after)
+        {target, result}
+      end)
 
-      close_result =
-        if close_afterwards do
-          maybe_progress(progress, {:phase, "Stopping emulator processes..."})
-          result = stop_emulator_safe(project_slug, progress, "all", :final_close)
-          maybe_progress(progress, {:close, result})
-          result
-        else
-          nil
-        end
+    close_result =
+      if close_afterwards do
+        maybe_progress(progress, {:phase, "Stopping emulator processes..."})
+        result = stop_emulator_safe(project_slug, progress, "all", :final_close)
+        maybe_progress(progress, {:close, result})
+        result
+      else
+        nil
+      end
 
-      captured =
-        results
-        |> Enum.flat_map(fn
-          {_target, {:ok, result}} -> [result.screenshot]
-          _ -> []
-        end)
+    captured =
+      results
+      |> Enum.flat_map(fn
+        {_target, {:ok, result}} -> [result.screenshot]
+        _ -> []
+      end)
 
-      failed =
-        results
-        |> Enum.flat_map(fn
-          {target, {:error, reason}} -> [{target, reason}]
-          _ -> []
-        end)
+    failed =
+      results
+      |> Enum.flat_map(fn
+        {target, {:error, reason}} -> [{target, reason}]
+        _ -> []
+      end)
 
-      maybe_progress(
-        progress,
-        {:phase, "Capture complete: #{length(captured)} succeeded, #{length(failed)} failed."}
-      )
+    maybe_progress(
+      progress,
+      {:phase, "Capture complete: #{length(captured)} succeeded, #{length(failed)} failed."}
+    )
 
-      {:ok, %{results: results, captured: captured, failed: failed, close_result: close_result}}
-    end
+    {:ok, %{results: results, captured: captured, failed: failed, close_result: close_result}}
   end
 
   @doc """
@@ -333,6 +333,11 @@ defmodule Ide.Screenshots do
     }
   end
 
+  @spec screenshot_filename(String.t()) :: String.t()
+  defp screenshot_filename(emulator_target) do
+    "#{emulator_target}_shot_#{timestamp()}.png"
+  end
+
   @spec write_metadata(String.t(), String.t()) :: :ok | {:error, term()}
   defp write_metadata(absolute_path, mime_type) when is_binary(absolute_path) do
     metadata = %{
@@ -429,6 +434,21 @@ defmodule Ide.Screenshots do
   defp png_signature?(<<137, 80, 78, 71, 13, 10, 26, 10, _::binary>>), do: true
   defp png_signature?(_), do: false
 
+  @spec ensure_successful_screenshot(term(), String.t()) :: :ok | {:error, term()}
+  defp ensure_successful_screenshot(%{status: :ok} = result, path) do
+    with true <- File.exists?(path),
+         {:ok, data} <- File.read(path),
+         true <- png_signature?(data) do
+      :ok
+    else
+      false -> {:error, {:screenshot_file_missing_or_invalid, result}}
+      {:error, reason} -> {:error, {:screenshot_read_failed, reason, result}}
+    end
+  end
+
+  defp ensure_successful_screenshot(result, _path),
+    do: {:error, {:pebble_screenshot_failed, result}}
+
   @spec timestamp() :: term()
   defp timestamp do
     DateTime.utc_now()
@@ -518,19 +538,61 @@ defmodule Ide.Screenshots do
 
         with workspace when is_binary(workspace) <- workspace_root,
              workspace <- String.trim(workspace),
-             false <- workspace == "",
-             {:ok, build_result} <-
-               PebbleToolchain.package("screenshot-capture",
-                 workspace_root: workspace,
-                 target_type: target_type,
-                 project_name: project_name
-               ) do
-          {:ok, build_result.artifact_path}
+             false <- workspace == "" do
+          package_opts =
+            [
+              workspace_root: workspace,
+              target_type: target_type,
+              project_name: project_name
+            ]
+            |> maybe_put_target_platforms(Keyword.get(opts, :target_platforms))
+
+          case PebbleToolchain.package("screenshot-capture", package_opts) do
+            {:ok, build_result} -> {:ok, build_result.artifact_path}
+            {:error, reason} -> {:error, reason}
+          end
         else
           _ -> {:error, :package_path_required}
         end
     end
   end
+
+  @spec resolve_capture_package_path(term(), String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  defp resolve_capture_package_path(project_slug, target, opts) do
+    case Keyword.get(opts, :package_path) do
+      path when is_binary(path) and path != "" ->
+        resolve_package_path(project_slug, opts)
+
+      _ ->
+        resolve_package_path(project_slug, Keyword.put(opts, :target_platforms, [target]))
+    end
+  end
+
+  @spec maybe_put_target_platforms(keyword(), term()) :: keyword()
+  defp maybe_put_target_platforms(opts, platforms) when is_list(platforms),
+    do: Keyword.put(opts, :target_platforms, platforms)
+
+  defp maybe_put_target_platforms(opts, _platforms), do: opts
+
+  @spec capture_targets(term()) :: [String.t()]
+  defp capture_targets(targets) when is_list(targets) do
+    allowed = PebbleToolchain.supported_emulator_targets()
+    allowed_set = MapSet.new(allowed)
+
+    targets
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.filter(&MapSet.member?(allowed_set, &1))
+    |> Enum.uniq()
+    |> case do
+      [] -> allowed
+      normalized -> normalized
+    end
+  end
+
+  defp capture_targets(_targets), do: PebbleToolchain.supported_emulator_targets()
 
   @spec normalize_filename(term()) :: term()
   defp normalize_filename(name) when is_binary(name) do

@@ -107,6 +107,54 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert result.protocol_events == []
   end
 
+  test "executes core update when message value is a tagged tuple" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Platform
+
+    type alias Model =
+        { body : String }
+
+    type Msg
+        = SvgReceived (Result String String)
+
+    init _ =
+        ( { body = "" }, Cmd.none )
+
+    update msg model =
+        case msg of
+            SvgReceived (Ok body) ->
+                ( { model | body = body }, Cmd.none )
+
+            SvgReceived (Err _) ->
+                ( model, Cmd.none )
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.worker
+            { init = init
+            , update = update
+            , subscriptions = \\_ -> Sub.none
+            }
+    """
+
+    request = %{
+      source_root: "phone",
+      rel_path: "phone/src/CompanionApp.elm",
+      source: source,
+      current_model: %{"runtime_model" => %{"body" => ""}},
+      current_view_tree: %{},
+      message: "{1, Ok}",
+      message_value: {1, %{"ctor" => "Ok", "args" => ["<svg/>"]}}
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+    assert result.model_patch["runtime_model"]["body"] == "<svg/>"
+    assert result.runtime["operation_source"] == "core_ir_update_eval"
+  end
+
   test "normalizes tuple-backed runtime model values through declared record and union types" do
     core_ir = %{
       "modules" => [
@@ -962,6 +1010,92 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert Enum.any?(result.view_output, fn row ->
              row["kind"] == "fill_rect" and
                row["source"] == %{"call" => "Ui.fillRect", "line" => 48, "path" => "src/Main.elm"}
+           end)
+  end
+
+  test "runtime view_output evaluates concatenated helper lists and unknown font resources" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+    type alias Model =
+        { screenW : Int
+        , screenH : Int
+        }
+
+    init _ =
+        ( { screenW = 144, screenH = 168 }, Cmd.none )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view model =
+        let
+            cx =
+                model.screenW // 2
+
+            cy =
+                model.screenH // 2
+        in
+        Ui.toUiNode
+            (List.concat
+                [ [ Ui.clear Color.black ]
+                , tangramPiece Color.white [ p cx cy -20 -10, p cx cy 0 -30, p cx cy 20 -10 ]
+                , [ Ui.text Resources.Gothic18 Ui.defaultTextOptions { x = cx - 30, y = cy, w = 60, h = 20 } "ELM" ]
+                ]
+            )
+
+    tangramPiece color points =
+        case points of
+            a :: b :: c :: [] ->
+                [ Ui.line a b color
+                , Ui.line b c color
+                , Ui.line c a color
+                ]
+
+            _ ->
+                []
+
+    p cx cy x y =
+        { x = cx + x, y = cy + y }
+
+    main : Program Decode.Value Model msg
+    main =
+        Platform.watchface
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    core_ir = core_ir_from_sources([{"watch/src/Main.elm", source}])
+
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: source,
+      introspect: %{},
+      current_model: %{},
+      current_view_tree: %{},
+      message: nil,
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+    refute Enum.any?(result.view_output, &(&1["kind"] == "unresolved"))
+    assert Enum.count(result.view_output, &(&1["kind"] == "line")) == 3
+
+    assert Enum.any?(result.view_output, fn row ->
+             row["kind"] == "text" and row["text"] == "ELM" and row["font_id"] == 1
            end)
   end
 

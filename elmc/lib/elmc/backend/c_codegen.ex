@@ -205,6 +205,8 @@ defmodule Elmc.Backend.CCodegen do
     #pragma GCC diagnostic ignored "-Wunused-function"
     #endif
 
+    #{generated_magic_number_defines()}
+
     #{pebble_debug_probe_prelude()}
 
     #{trig_fallback_prelude}
@@ -219,6 +221,86 @@ defmodule Elmc.Backend.CCodegen do
 
     #{direct_command_defs}
     """
+  end
+
+  defp generated_magic_number_defines do
+    """
+    #define ELMC_RENDER_OP_NONE 0
+    #define ELMC_RENDER_OP_CLEAR 2
+    #define ELMC_RENDER_OP_PIXEL 3
+    #define ELMC_RENDER_OP_LINE 4
+    #define ELMC_RENDER_OP_RECT 5
+    #define ELMC_RENDER_OP_FILL_RECT 6
+    #define ELMC_RENDER_OP_CIRCLE 7
+    #define ELMC_RENDER_OP_FILL_CIRCLE 8
+    #define ELMC_RENDER_OP_PUSH_CONTEXT 10
+    #define ELMC_RENDER_OP_POP_CONTEXT 11
+    #define ELMC_RENDER_OP_STROKE_WIDTH 12
+    #define ELMC_RENDER_OP_ANTIALIASED 13
+    #define ELMC_RENDER_OP_STROKE_COLOR 14
+    #define ELMC_RENDER_OP_FILL_COLOR 15
+    #define ELMC_RENDER_OP_TEXT_COLOR 16
+    #define ELMC_RENDER_OP_ROUND_RECT 17
+    #define ELMC_RENDER_OP_ARC 18
+    #define ELMC_RENDER_OP_CONTEXT_GROUP 19
+    #define ELMC_RENDER_OP_PATH_FILLED 20
+    #define ELMC_RENDER_OP_PATH_OUTLINE 21
+    #define ELMC_RENDER_OP_PATH_OUTLINE_OPEN 22
+    #define ELMC_RENDER_OP_FILL_RADIAL 23
+    #define ELMC_RENDER_OP_COMPOSITING_MODE 24
+    #define ELMC_RENDER_OP_BITMAP_IN_RECT 25
+    #define ELMC_RENDER_OP_ROTATED_BITMAP 26
+    #define ELMC_RENDER_OP_TEXT_INT_WITH_FONT 27
+    #define ELMC_RENDER_OP_TEXT_LABEL_WITH_FONT 28
+    #define ELMC_RENDER_OP_TEXT 29
+    #define ELMC_CONTEXT_STROKE_WIDTH 1
+    #define ELMC_CONTEXT_ANTIALIASED 2
+    #define ELMC_CONTEXT_STROKE_COLOR 3
+    #define ELMC_CONTEXT_FILL_COLOR 4
+    #define ELMC_CONTEXT_TEXT_COLOR 5
+    #define ELMC_CONTEXT_COMPOSITING_MODE 6
+    #define ELMC_UI_NODE_WINDOW_STACK 1000
+    #define ELMC_UI_NODE_WINDOW 1001
+    #define ELMC_UI_NODE_CANVAS_LAYER 1002
+    #define ELMC_BUTTON_BACK 0
+    #define ELMC_BUTTON_UP 1
+    #define ELMC_BUTTON_SELECT 2
+    #define ELMC_BUTTON_DOWN 3
+    #define ELMC_BUTTON_EVENT_PRESSED 1
+    #define ELMC_BUTTON_EVENT_RELEASED 2
+    #define ELMC_BUTTON_EVENT_LONG_PRESSED 3
+    #define ELMC_SUBSCRIPTION_SECOND_CHANGE 1
+    #define ELMC_SUBSCRIPTION_BUTTON_UP 2
+    #define ELMC_SUBSCRIPTION_BUTTON_SELECT 4
+    #define ELMC_SUBSCRIPTION_BUTTON_DOWN 8
+    #define ELMC_SUBSCRIPTION_ACCEL_TAP 16
+    #define ELMC_SUBSCRIPTION_HOUR_CHANGE 1024
+    #define ELMC_SUBSCRIPTION_MINUTE_CHANGE 2048
+    #define ELMC_SUBSCRIPTION_FRAME_BASE 8192
+    #define ELMC_SUBSCRIPTION_BUTTON_RAW 16384
+    #define ELMC_SUBSCRIPTION_DAY_CHANGE 65536
+    #define ELMC_SUBSCRIPTION_MONTH_CHANGE 131072
+    #define ELMC_SUBSCRIPTION_YEAR_CHANGE 262144
+    #define ELMC_SUBSCRIPTION_BUTTON_LONG_UP 128
+    #define ELMC_SUBSCRIPTION_BUTTON_LONG_SELECT 256
+    #define ELMC_SUBSCRIPTION_BUTTON_LONG_DOWN 512
+    #define ELMC_TEXT_ALIGN_LEFT 0
+    #define ELMC_TEXT_ALIGN_CENTER 1
+    #define ELMC_TEXT_ALIGN_RIGHT 2
+    #define ELMC_TEXT_OVERFLOW_WORD_WRAP 0
+    #define ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS 1
+    #define ELMC_TEXT_OVERFLOW_FILL 2
+    #define ELMC_TEXT_OVERFLOW_SHIFT 2
+    #{generated_color_defines()}
+    """
+  end
+
+  defp generated_color_defines do
+    @pebble_color_constants
+    |> Enum.sort_by(fn {name, _value} -> name end)
+    |> Enum.map_join("\n", fn {name, value} ->
+      "#define #{generated_color_macro(name)} #{value}"
+    end)
   end
 
   defp pebble_debug_probe_prelude do
@@ -1142,6 +1224,16 @@ defmodule Elmc.Backend.CCodegen do
     %{expr | body: substitute_expr(body, scoped)}
   end
 
+  defp substitute_expr(%{op: :field_access, arg: arg, field: field} = expr, substitutions)
+       when is_binary(arg) do
+    %{expr | arg: Map.get(substitutions, arg, arg), field: field}
+  end
+
+  defp substitute_expr(%{op: :field_call, arg: arg, args: args} = expr, substitutions)
+       when is_binary(arg) and is_list(args) do
+    %{expr | arg: Map.get(substitutions, arg, arg), args: substitute_expr(args, substitutions)}
+  end
+
   defp substitute_expr(expr, substitutions) when is_map(expr) do
     expr
     |> Enum.map(fn {key, value} -> {key, substitute_expr(value, substitutions)} end)
@@ -1155,16 +1247,23 @@ defmodule Elmc.Backend.CCodegen do
   defp substitute_expr(value, _substitutions), do: value
 
   defp inline_record_field_expr(arg_expr, field, env) do
-    with target_key when not is_nil(target_key) <- record_helper_target(arg_expr, env),
-         decl_map <- Map.get(env, :__program_decls__, %{}),
-         %{args: arg_names, expr: expr} when is_list(arg_names) <- Map.get(decl_map, target_key),
-         args <- Map.get(arg_expr, :args, []),
-         true <- length(arg_names) == length(args),
-         substituted <- substitute_expr(expr, Map.new(Enum.zip(arg_names, args))),
-         field_expr when not is_nil(field_expr) <- record_field_expr(substituted, field) do
-      field_expr
-    else
-      _ -> nil
+    case record_field_expr(arg_expr, field) do
+      nil ->
+        with target_key when not is_nil(target_key) <- record_helper_target(arg_expr, env),
+             decl_map <- Map.get(env, :__program_decls__, %{}),
+             %{args: arg_names, expr: expr} when is_list(arg_names) <-
+               Map.get(decl_map, target_key),
+             args <- Map.get(arg_expr, :args, []),
+             true <- length(arg_names) == length(args),
+             substituted <- substitute_expr(expr, Map.new(Enum.zip(arg_names, args))),
+             field_expr when not is_nil(field_expr) <- record_field_expr(substituted, field) do
+          field_expr
+        else
+          _ -> nil
+        end
+
+      field_expr ->
+        field_expr
     end
   end
 
@@ -2177,6 +2276,12 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp compile_expr(%{op: :int_literal, value: value}, _env, counter) do
+    next = counter + 1
+    var = "tmp_#{next}"
+    {"ElmcValue *#{var} = elmc_new_int(#{value});", var, next}
+  end
+
+  defp compile_expr(%{op: :c_int_expr, value: value}, _env, counter) when is_binary(value) do
     next = counter + 1
     var = "tmp_#{next}"
     {"ElmcValue *#{var} = elmc_new_int(#{value});", var, next}
@@ -5860,7 +5965,7 @@ defmodule Elmc.Backend.CCodegen do
      """
       if (!direct_stop && *emitted >= skip && *count < max_cmds) {
      #{indent(code, 4)}
-        elmc_generated_draw_init(&out_cmds[*count], #{draw_kind_c_name(kind)});
+       elmc_generated_draw_init(&out_cmds[*count], #{generated_draw_kind_macro(kind)});
          #{assignments}
          *count += 1;
        }
@@ -5988,7 +6093,7 @@ defmodule Elmc.Backend.CCodegen do
        if (!direct_stop && *emitted >= skip && *count < max_cmds) {
      #{indent(code, 2)}
      #{indent(text_code, 2)}
-        elmc_generated_draw_init(&out_cmds[*count], #{draw_kind_c_name(kind)});
+       elmc_generated_draw_init(&out_cmds[*count], #{generated_draw_kind_macro(kind)});
          #{assignments}
      #{indent(text_copy_code, 4)}
          *count += 1;
@@ -6140,7 +6245,7 @@ defmodule Elmc.Backend.CCodegen do
        #{indent(offset_x_code, 4)}
        #{indent(offset_y_code, 4)}
        #{indent(rotation_code, 4)}
-          elmc_generated_draw_init(&out_cmds[*count], #{draw_kind_c_name(kind)});
+         elmc_generated_draw_init(&out_cmds[*count], #{generated_draw_kind_macro(kind)});
            out_cmds[*count].path_point_count = #{length(points)};
            out_cmds[*count].path_offset_x = #{offset_x};
            out_cmds[*count].path_offset_y = #{offset_y};
@@ -6722,7 +6827,7 @@ defmodule Elmc.Backend.CCodegen do
     fields
     |> Enum.find(&(&1.name == field))
     |> case do
-      nil -> %{op: :field_access, arg: base, field: field}
+      nil -> record_field_expr(base, field) || %{op: :field_access, arg: base, field: field}
       %{expr: expr} -> expr
     end
   end
@@ -6759,13 +6864,45 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
-  defp draw_kind_c_name(kind), do: Elmc.Backend.Pebble.draw_kind_c_name!(kind)
   defp command_kind(kind), do: Elmc.Backend.Pebble.command_kind_id!(kind)
-  defp ui_node_kind(kind), do: Elmc.Backend.Pebble.ui_node_kind_id!(kind)
+  defp draw_kind_expr(kind), do: %{op: :c_int_expr, value: generated_draw_kind_macro(kind)}
+  defp ui_node_kind_expr(kind), do: %{op: :c_int_expr, value: generated_ui_node_kind_macro(kind)}
+  defp context_kind_expr(kind), do: %{op: :c_int_expr, value: generated_context_kind_macro(kind)}
+
+  defp generated_draw_kind_macro(kind) when is_atom(kind) do
+    kind
+    |> Atom.to_string()
+    |> String.upcase()
+    |> then(&"ELMC_RENDER_OP_#{&1}")
+  end
+
+  defp generated_draw_kind_macro(kind) when is_integer(kind) do
+    kind
+    |> Elmc.Backend.Pebble.draw_kind_c_name!()
+    |> String.replace_prefix("ELMC_PEBBLE_DRAW_", "ELMC_RENDER_OP_")
+  end
+
+  defp generated_ui_node_kind_macro(:window_stack), do: "ELMC_UI_NODE_WINDOW_STACK"
+  defp generated_ui_node_kind_macro(:window_node), do: "ELMC_UI_NODE_WINDOW"
+  defp generated_ui_node_kind_macro(:canvas_layer), do: "ELMC_UI_NODE_CANVAS_LAYER"
+
+  defp generated_context_kind_macro(:stroke_width), do: "ELMC_CONTEXT_STROKE_WIDTH"
+  defp generated_context_kind_macro(:antialiased), do: "ELMC_CONTEXT_ANTIALIASED"
+  defp generated_context_kind_macro(:stroke_color), do: "ELMC_CONTEXT_STROKE_COLOR"
+  defp generated_context_kind_macro(:fill_color), do: "ELMC_CONTEXT_FILL_COLOR"
+  defp generated_context_kind_macro(:text_color), do: "ELMC_CONTEXT_TEXT_COLOR"
+  defp generated_context_kind_macro(:compositing_mode), do: "ELMC_CONTEXT_COMPOSITING_MODE"
+
+  defp generated_color_macro(name) when is_binary(name) do
+    name
+    |> Macro.underscore()
+    |> String.upcase()
+    |> then(&"ELMC_COLOR_#{&1}")
+  end
 
   @spec special_value_from_target(String.t(), [map()]) :: map() | nil
   defp special_value_from_target("Pebble.Ui.clear", args),
-    do: encoded_cmd_expr(draw_kind(:clear), args, 1)
+    do: encoded_draw_cmd_expr(draw_kind(:clear), args, 1)
 
   defp special_value_from_target("Pebble.Ui.pixel", [pos, color]),
     do:
@@ -6776,7 +6913,7 @@ defmodule Elmc.Backend.CCodegen do
       )
 
   defp special_value_from_target("Pebble.Ui.pixel", args),
-    do: encoded_cmd_expr(draw_kind(:pixel), args, 3)
+    do: encoded_draw_cmd_expr(draw_kind(:pixel), args, 3)
 
   defp special_value_from_target("Pebble.Ui.line", [start_pos, end_pos, color]),
     do:
@@ -6793,7 +6930,7 @@ defmodule Elmc.Backend.CCodegen do
       )
 
   defp special_value_from_target("Pebble.Ui.line", args),
-    do: encoded_cmd_expr(draw_kind(:line), args, 5)
+    do: encoded_draw_cmd_expr(draw_kind(:line), args, 5)
 
   defp special_value_from_target("Pebble.Ui.rect", [bounds, color]),
     do:
@@ -6810,7 +6947,7 @@ defmodule Elmc.Backend.CCodegen do
       )
 
   defp special_value_from_target("Pebble.Ui.rect", args),
-    do: encoded_cmd_expr(draw_kind(:rect), args, 5)
+    do: encoded_draw_cmd_expr(draw_kind(:rect), args, 5)
 
   defp special_value_from_target("Pebble.Ui.fillRect", [bounds, color]),
     do:
@@ -6827,7 +6964,7 @@ defmodule Elmc.Backend.CCodegen do
       )
 
   defp special_value_from_target("Pebble.Ui.fillRect", args),
-    do: encoded_cmd_expr(draw_kind(:fill_rect), args, 5)
+    do: encoded_draw_cmd_expr(draw_kind(:fill_rect), args, 5)
 
   defp special_value_from_target("Pebble.Ui.circle", [center, radius, color]),
     do:
@@ -6838,7 +6975,7 @@ defmodule Elmc.Backend.CCodegen do
       )
 
   defp special_value_from_target("Pebble.Ui.circle", args),
-    do: encoded_cmd_expr(draw_kind(:circle), args, 4)
+    do: encoded_draw_cmd_expr(draw_kind(:circle), args, 4)
 
   defp special_value_from_target("Pebble.Ui.fillCircle", [center, radius, color]),
     do:
@@ -6849,7 +6986,7 @@ defmodule Elmc.Backend.CCodegen do
       )
 
   defp special_value_from_target("Pebble.Ui.fillCircle", args),
-    do: encoded_cmd_expr(draw_kind(:fill_circle), args, 4)
+    do: encoded_draw_cmd_expr(draw_kind(:fill_circle), args, 4)
 
   defp special_value_from_target("Pebble.Ui.textInt", [font_id, pos, value]),
     do:
@@ -6892,38 +7029,38 @@ defmodule Elmc.Backend.CCodegen do
     do: %{
       op: :record_literal,
       fields: [
-        %{name: "alignment", expr: %{op: :int_literal, value: 1}},
-        %{name: "overflow", expr: %{op: :int_literal, value: 0}}
+        %{name: "alignment", expr: text_alignment_expr(:center)},
+        %{name: "overflow", expr: text_overflow_expr(:word_wrap)}
       ]
     }
 
   defp special_value_from_target("Pebble.Ui.alignLeft", [options]),
-    do: text_options_update_expr(options, "alignment", 0)
+    do: text_options_update_expr(options, "alignment", text_alignment_expr(:left))
 
   defp special_value_from_target("Pebble.Ui.alignCenter", [options]),
-    do: text_options_update_expr(options, "alignment", 1)
+    do: text_options_update_expr(options, "alignment", text_alignment_expr(:center))
 
   defp special_value_from_target("Pebble.Ui.alignRight", [options]),
-    do: text_options_update_expr(options, "alignment", 2)
+    do: text_options_update_expr(options, "alignment", text_alignment_expr(:right))
 
   defp special_value_from_target("Pebble.Ui.wordWrap", [options]),
-    do: text_options_update_expr(options, "overflow", 0)
+    do: text_options_update_expr(options, "overflow", text_overflow_expr(:word_wrap))
 
   defp special_value_from_target("Pebble.Ui.trailingEllipsis", [options]),
-    do: text_options_update_expr(options, "overflow", 1)
+    do: text_options_update_expr(options, "overflow", text_overflow_expr(:trailing_ellipsis))
 
   defp special_value_from_target("Pebble.Ui.fillOverflow", [options]),
-    do: text_options_update_expr(options, "overflow", 2)
+    do: text_options_update_expr(options, "overflow", text_overflow_expr(:fill))
 
-  defp special_value_from_target("Pebble.Ui.AlignLeft", []), do: %{op: :int_literal, value: 0}
-  defp special_value_from_target("Pebble.Ui.AlignCenter", []), do: %{op: :int_literal, value: 1}
-  defp special_value_from_target("Pebble.Ui.AlignRight", []), do: %{op: :int_literal, value: 2}
-  defp special_value_from_target("Pebble.Ui.WordWrap", []), do: %{op: :int_literal, value: 0}
+  defp special_value_from_target("Pebble.Ui.AlignLeft", []), do: text_alignment_expr(:left)
+  defp special_value_from_target("Pebble.Ui.AlignCenter", []), do: text_alignment_expr(:center)
+  defp special_value_from_target("Pebble.Ui.AlignRight", []), do: text_alignment_expr(:right)
+  defp special_value_from_target("Pebble.Ui.WordWrap", []), do: text_overflow_expr(:word_wrap)
 
   defp special_value_from_target("Pebble.Ui.TrailingEllipsis", []),
-    do: %{op: :int_literal, value: 1}
+    do: text_overflow_expr(:trailing_ellipsis)
 
-  defp special_value_from_target("Pebble.Ui.Fill", []), do: %{op: :int_literal, value: 2}
+  defp special_value_from_target("Pebble.Ui.Fill", []), do: text_overflow_expr(:fill)
 
   defp special_value_from_target("Pebble.Ui.Color.indexed", [value]), do: value
 
@@ -6943,7 +7080,7 @@ defmodule Elmc.Backend.CCodegen do
 
   defp special_value_from_target("Pebble.Ui.Color." <> name, []) do
     case Map.fetch(@pebble_color_constants, name) do
-      {:ok, value} -> %{op: :int_literal, value: value}
+      {:ok, _value} -> %{op: :c_int_expr, value: generated_color_macro(name)}
       :error -> nil
     end
   end
@@ -6957,25 +7094,28 @@ defmodule Elmc.Backend.CCodegen do
   defp special_value_from_target("Pebble.Time.Sunday", []), do: %{op: :int_literal, value: 6}
 
   defp special_value_from_target("PushContext", args),
-    do: encoded_cmd_expr(draw_kind(:push_context), args, 0)
+    do: encoded_draw_cmd_expr(draw_kind(:push_context), args, 0)
 
   defp special_value_from_target("PopContext", args),
-    do: encoded_cmd_expr(draw_kind(:pop_context), args, 0)
+    do: encoded_draw_cmd_expr(draw_kind(:pop_context), args, 0)
 
   defp special_value_from_target("Pebble.Ui.strokeWidth", [value]),
-    do: tagged_value_expr(1, value)
+    do: tagged_value_expr(context_kind_expr(:stroke_width), value)
 
   defp special_value_from_target("Pebble.Ui.antialiased", [value]),
-    do: tagged_value_expr(2, value)
+    do: tagged_value_expr(context_kind_expr(:antialiased), value)
 
   defp special_value_from_target("Pebble.Ui.strokeColor", [value]),
-    do: tagged_value_expr(3, value)
+    do: tagged_value_expr(context_kind_expr(:stroke_color), value)
 
-  defp special_value_from_target("Pebble.Ui.fillColor", [value]), do: tagged_value_expr(4, value)
-  defp special_value_from_target("Pebble.Ui.textColor", [value]), do: tagged_value_expr(5, value)
+  defp special_value_from_target("Pebble.Ui.fillColor", [value]),
+    do: tagged_value_expr(context_kind_expr(:fill_color), value)
+
+  defp special_value_from_target("Pebble.Ui.textColor", [value]),
+    do: tagged_value_expr(context_kind_expr(:text_color), value)
 
   defp special_value_from_target("Pebble.Ui.compositingMode", [value]),
-    do: tagged_value_expr(6, value)
+    do: tagged_value_expr(context_kind_expr(:compositing_mode), value)
 
   defp special_value_from_target("Pebble.Ui.context", [settings, commands]),
     do: %{op: :tuple2, left: settings, right: commands}
@@ -6983,7 +7123,7 @@ defmodule Elmc.Backend.CCodegen do
   defp special_value_from_target("Pebble.Ui.group", [context]),
     do: %{
       op: :tuple2,
-      left: %{op: :int_literal, value: draw_kind(:context_group)},
+      left: draw_kind_expr(:context_group),
       right: context
     }
 
@@ -6991,15 +7131,15 @@ defmodule Elmc.Backend.CCodegen do
     do: path_expr(points, offset_x, offset_y, rotation)
 
   defp special_value_from_target("Pebble.Ui.pathFilled", [path]),
-    do: %{op: :tuple2, left: %{op: :int_literal, value: draw_kind(:path_filled)}, right: path}
+    do: %{op: :tuple2, left: draw_kind_expr(:path_filled), right: path}
 
   defp special_value_from_target("Pebble.Ui.pathOutline", [path]),
-    do: %{op: :tuple2, left: %{op: :int_literal, value: draw_kind(:path_outline)}, right: path}
+    do: %{op: :tuple2, left: draw_kind_expr(:path_outline), right: path}
 
   defp special_value_from_target("Pebble.Ui.pathOutlineOpen", [path]),
     do: %{
       op: :tuple2,
-      left: %{op: :int_literal, value: draw_kind(:path_outline_open)},
+      left: draw_kind_expr(:path_outline_open),
       right: path
     }
 
@@ -7019,7 +7159,7 @@ defmodule Elmc.Backend.CCodegen do
       )
 
   defp special_value_from_target("Pebble.Ui.roundRect", args),
-    do: encoded_cmd_expr(draw_kind(:round_rect), args, 6)
+    do: encoded_draw_cmd_expr(draw_kind(:round_rect), args, 6)
 
   defp special_value_from_target("Pebble.Ui.arc", [bounds, start_angle, end_angle]),
     do:
@@ -7037,7 +7177,7 @@ defmodule Elmc.Backend.CCodegen do
       )
 
   defp special_value_from_target("Pebble.Ui.arc", args),
-    do: encoded_cmd_expr(draw_kind(:arc), args, 6)
+    do: encoded_draw_cmd_expr(draw_kind(:arc), args, 6)
 
   defp special_value_from_target("Pebble.Ui.fillRadial", [bounds, start_angle, end_angle]),
     do:
@@ -7055,7 +7195,7 @@ defmodule Elmc.Backend.CCodegen do
       )
 
   defp special_value_from_target("Pebble.Ui.fillRadial", args),
-    do: encoded_cmd_expr(draw_kind(:fill_radial), args, 6)
+    do: encoded_draw_cmd_expr(draw_kind(:fill_radial), args, 6)
 
   defp special_value_from_target("Pebble.Ui.drawBitmapInRect", [bitmap, bounds]),
     do:
@@ -7072,29 +7212,29 @@ defmodule Elmc.Backend.CCodegen do
       )
 
   defp special_value_from_target("Pebble.Ui.drawBitmapInRect", args),
-    do: encoded_cmd_expr(draw_kind(:bitmap_in_rect), args, 5)
+    do: encoded_draw_cmd_expr(draw_kind(:bitmap_in_rect), args, 5)
 
   defp special_value_from_target("Pebble.Ui.drawRotatedBitmap", args),
-    do: encoded_cmd_expr(draw_kind(:rotated_bitmap), args, 6)
+    do: encoded_draw_cmd_expr(draw_kind(:rotated_bitmap), args, 6)
 
   defp special_value_from_target("Pebble.Ui.windowStack", [windows]),
     do: %{
       op: :tuple2,
-      left: %{op: :int_literal, value: ui_node_kind(:window_stack)},
+      left: ui_node_kind_expr(:window_stack),
       right: windows
     }
 
   defp special_value_from_target("Pebble.Ui.window", [window_id, layers]),
     do: %{
       op: :tuple2,
-      left: %{op: :int_literal, value: ui_node_kind(:window_node)},
+      left: ui_node_kind_expr(:window_node),
       right: %{op: :tuple2, left: window_id, right: layers}
     }
 
   defp special_value_from_target("Pebble.Ui.canvasLayer", [layer_id, ops]),
     do: %{
       op: :tuple2,
-      left: %{op: :int_literal, value: ui_node_kind(:canvas_layer)},
+      left: ui_node_kind_expr(:canvas_layer),
       right: %{op: :tuple2, left: layer_id, right: ops}
     }
 
@@ -8969,15 +9109,88 @@ defmodule Elmc.Backend.CCodegen do
 
   @spec subscription_batch_expr([map()]) :: map()
   defp subscription_batch_expr([%{op: :list_literal, items: items}]) do
-    mask =
-      Enum.reduce(items, 0, fn item, acc ->
-        Bitwise.bor(acc, subscription_item_mask(item))
-      end)
+    exprs =
+      items
+      |> Enum.map(&subscription_item_c_expr/1)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
 
-    %{op: :int_literal, value: mask}
+    if length(exprs) == length(items) and exprs != [] do
+      %{op: :c_int_expr, value: exprs |> Enum.map(&"(#{&1})") |> Enum.join(" | ")}
+    else
+      mask =
+        Enum.reduce(items, 0, fn item, acc ->
+          Bitwise.bor(acc, subscription_item_mask(item))
+        end)
+
+      %{op: :int_literal, value: mask}
+    end
   end
 
   defp subscription_batch_expr(_), do: %{op: :unsupported}
+
+  defp subscription_item_c_expr(%{op: :qualified_call, target: target, args: args})
+       when is_binary(target) and is_list(args) do
+    case normalize_special_target(target) do
+      "Pebble.Frame.every" ->
+        frame_subscription_c_expr(args)
+
+      "Pebble.Frame.atFps" ->
+        frame_fps_subscription_c_expr(args)
+
+      "Elm.Kernel.PebbleWatch.onFrame" ->
+        frame_subscription_c_expr(args)
+
+      normalized ->
+        subscription_item_c_expr(%{op: :qualified_call, target: normalized})
+    end
+  end
+
+  defp subscription_item_c_expr(%{op: :qualified_call, target: target}) when is_binary(target) do
+    case normalize_special_target(target) do
+      "Pebble.Events.onSecondChange" -> "ELMC_SUBSCRIPTION_SECOND_CHANGE"
+      "Elm.Kernel.PebbleWatch.onSecondChange" -> "ELMC_SUBSCRIPTION_SECOND_CHANGE"
+      "Pebble.Events.onHourChange" -> "ELMC_SUBSCRIPTION_HOUR_CHANGE"
+      "Elm.Kernel.PebbleWatch.onHourChange" -> "ELMC_SUBSCRIPTION_HOUR_CHANGE"
+      "Pebble.Events.onMinuteChange" -> "ELMC_SUBSCRIPTION_MINUTE_CHANGE"
+      "Elm.Kernel.PebbleWatch.onMinuteChange" -> "ELMC_SUBSCRIPTION_MINUTE_CHANGE"
+      "Pebble.Events.onDayChange" -> "ELMC_SUBSCRIPTION_DAY_CHANGE"
+      "Elm.Kernel.PebbleWatch.onDayChange" -> "ELMC_SUBSCRIPTION_DAY_CHANGE"
+      "Pebble.Events.onMonthChange" -> "ELMC_SUBSCRIPTION_MONTH_CHANGE"
+      "Elm.Kernel.PebbleWatch.onMonthChange" -> "ELMC_SUBSCRIPTION_MONTH_CHANGE"
+      "Pebble.Events.onYearChange" -> "ELMC_SUBSCRIPTION_YEAR_CHANGE"
+      "Elm.Kernel.PebbleWatch.onYearChange" -> "ELMC_SUBSCRIPTION_YEAR_CHANGE"
+      "Pebble.Button.on" -> "ELMC_SUBSCRIPTION_BUTTON_RAW"
+      "Pebble.Button.onPress" -> "ELMC_SUBSCRIPTION_BUTTON_RAW"
+      "Pebble.Button.onRelease" -> "ELMC_SUBSCRIPTION_BUTTON_RAW"
+      "Pebble.Button.onLongPress" -> "ELMC_SUBSCRIPTION_BUTTON_RAW"
+      "Elm.Kernel.PebbleWatch.onButtonRaw" -> "ELMC_SUBSCRIPTION_BUTTON_RAW"
+      "Elm.Kernel.PebbleWatch.onButtonUp" -> "ELMC_SUBSCRIPTION_BUTTON_UP"
+      "Elm.Kernel.PebbleWatch.onButtonSelect" -> "ELMC_SUBSCRIPTION_BUTTON_SELECT"
+      "Elm.Kernel.PebbleWatch.onButtonDown" -> "ELMC_SUBSCRIPTION_BUTTON_DOWN"
+      "Elm.Kernel.PebbleWatch.onButtonLongUp" -> "ELMC_SUBSCRIPTION_BUTTON_LONG_UP"
+      "Elm.Kernel.PebbleWatch.onButtonLongSelect" -> "ELMC_SUBSCRIPTION_BUTTON_LONG_SELECT"
+      "Elm.Kernel.PebbleWatch.onButtonLongDown" -> "ELMC_SUBSCRIPTION_BUTTON_LONG_DOWN"
+      "Pebble.Accel.onTap" -> "ELMC_SUBSCRIPTION_ACCEL_TAP"
+      "Elm.Kernel.PebbleWatch.onAccelTap" -> "ELMC_SUBSCRIPTION_ACCEL_TAP"
+      _ -> nil
+    end
+  end
+
+  defp subscription_item_c_expr(_), do: nil
+
+  defp frame_subscription_c_expr([%{op: :int_literal, value: ms}, _to_msg]) when is_integer(ms) do
+    "(ELMC_SUBSCRIPTION_FRAME_BASE + (#{clamp_frame_interval_ms(ms)} << 16))"
+  end
+
+  defp frame_subscription_c_expr(_args), do: "(ELMC_SUBSCRIPTION_FRAME_BASE + (33 << 16))"
+
+  defp frame_fps_subscription_c_expr([%{op: :int_literal, value: fps}, _to_msg])
+       when is_integer(fps) do
+    "(ELMC_SUBSCRIPTION_FRAME_BASE + (#{clamp_frame_interval_ms(div(1000, max(fps, 1)))} << 16))"
+  end
+
+  defp frame_fps_subscription_c_expr(_args), do: "(ELMC_SUBSCRIPTION_FRAME_BASE + (33 << 16))"
 
   @spec subscription_item_mask(map()) :: non_neg_integer()
   defp subscription_item_mask(%{op: :int_literal, value: value}) when is_integer(value), do: value
@@ -9049,10 +9262,20 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
+  @spec encoded_draw_cmd_expr(non_neg_integer(), [map()], non_neg_integer()) :: map()
+  defp encoded_draw_cmd_expr(kind, args, arity) do
+    if length(args) == arity do
+      payload = args ++ List.duplicate(%{op: :int_literal, value: 0}, max(0, 6 - arity))
+      %{op: :tuple2, left: draw_kind_expr(kind), right: tuple_chain(payload)}
+    else
+      %{op: :unsupported}
+    end
+  end
+
   @spec encoded_text_cmd_expr(non_neg_integer(), [map()]) :: map()
   defp encoded_text_cmd_expr(kind, args) when is_list(args) and length(args) >= 2 do
     {value, payload} = List.pop_at(args, -1)
-    %{op: :tuple2, left: %{op: :int_literal, value: kind}, right: tuple_chain(payload ++ [value])}
+    %{op: :tuple2, left: draw_kind_expr(kind), right: tuple_chain(payload ++ [value])}
   end
 
   defp encoded_text_cmd_expr(_kind, _args), do: %{op: :unsupported}
@@ -9116,7 +9339,7 @@ defmodule Elmc.Backend.CCodegen do
         %{
           op: :call,
           name: "__mul__",
-          args: [overflow, %{op: :int_literal, value: 4}]
+          args: [overflow, %{op: :c_int_expr, value: "(1 << ELMC_TEXT_OVERFLOW_SHIFT)"}]
         }
       ]
     }
@@ -9124,17 +9347,29 @@ defmodule Elmc.Backend.CCodegen do
 
   defp text_options_expr(_options), do: %{op: :int_literal, value: 1}
 
-  @spec text_options_update_expr(map(), String.t(), integer()) :: map()
+  @spec text_options_update_expr(map(), String.t(), map()) :: map()
   defp text_options_update_expr(options, field, value)
-       when is_map(options) and is_binary(field) and is_integer(value) do
+       when is_map(options) and is_binary(field) and is_map(value) do
     %{
       op: :record_update,
       base: options,
-      fields: [%{name: field, expr: %{op: :int_literal, value: value}}]
+      fields: [%{name: field, expr: value}]
     }
   end
 
   defp text_options_update_expr(_options, _field, _value), do: %{op: :unsupported}
+
+  defp text_alignment_expr(:left), do: %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_LEFT"}
+  defp text_alignment_expr(:center), do: %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_CENTER"}
+  defp text_alignment_expr(:right), do: %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_RIGHT"}
+
+  defp text_overflow_expr(:word_wrap),
+    do: %{op: :c_int_expr, value: "ELMC_TEXT_OVERFLOW_WORD_WRAP"}
+
+  defp text_overflow_expr(:trailing_ellipsis),
+    do: %{op: :c_int_expr, value: "ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS"}
+
+  defp text_overflow_expr(:fill), do: %{op: :c_int_expr, value: "ELMC_TEXT_OVERFLOW_FILL"}
 
   @spec tuple_chain([map()]) :: map()
   defp tuple_chain([single]), do: single
@@ -9143,9 +9378,16 @@ defmodule Elmc.Backend.CCodegen do
     %{op: :tuple2, left: head, right: tuple_chain(rest)}
   end
 
-  @spec tagged_value_expr(non_neg_integer(), map()) :: map()
+  @spec tagged_value_expr(non_neg_integer() | map(), map()) :: map()
   defp tagged_value_expr(tag, value_expr) do
-    %{op: :tuple2, left: %{op: :int_literal, value: tag}, right: value_expr}
+    left =
+      if is_map(tag) do
+        tag
+      else
+        %{op: :int_literal, value: tag}
+      end
+
+    %{op: :tuple2, left: left, right: value_expr}
   end
 
   @spec path_expr(map(), map(), map(), map()) :: map()
@@ -10208,6 +10450,10 @@ defmodule Elmc.Backend.CCodegen do
 
   defp compile_native_int_expr(%{op: :int_literal, value: value}, _env, counter),
     do: {"", "#{value}", counter}
+
+  defp compile_native_int_expr(%{op: :c_int_expr, value: value}, _env, counter)
+       when is_binary(value),
+       do: {"", value, counter}
 
   defp compile_native_int_expr(%{op: :char_literal, value: value}, _env, counter),
     do: {"", "#{value}", counter}
@@ -11464,6 +11710,8 @@ defmodule Elmc.Backend.CCodegen do
     do: boxed_int_binding?(env, name) or is_binary(native_int_binding(env, name))
 
   defp native_int_expr?(%{op: :field_access}, _env), do: true
+
+  defp native_int_expr?(%{op: :c_int_expr}, _env), do: true
 
   defp native_int_expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, env),
     do: native_int_expr?(then_expr, env) and native_int_expr?(else_expr, env)

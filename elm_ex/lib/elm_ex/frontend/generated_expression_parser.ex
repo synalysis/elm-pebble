@@ -379,8 +379,28 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     {items, current, _branch_indent, _let_depth, rest} =
       consume_case_branches(lines, [], nil, nil, 0)
 
-    normalized_items = if is_binary(current), do: items ++ [String.trim(current)], else: items
+    normalized_items =
+      if is_binary(current), do: items ++ [String.trim(current)], else: items
+
+    normalized_items = Enum.map(normalized_items, &wrap_branch_case_expression/1)
     {Enum.join(normalized_items, " ; "), rest}
+  end
+
+  @spec wrap_branch_case_expression(source()) :: source()
+  defp wrap_branch_case_expression(branch) when is_binary(branch) do
+    case String.split(branch, "->", parts: 2) do
+      [pattern, expr] ->
+        trimmed_expr = String.trim(expr)
+
+        if String.starts_with?(trimmed_expr, "case ") and String.contains?(trimmed_expr, " of ") do
+          String.trim(pattern) <> " -> (" <> trimmed_expr <> ")"
+        else
+          branch
+        end
+
+      _ ->
+        branch
+    end
   end
 
   @spec build_embedded_case_expr(source(), source()) :: source()
@@ -417,6 +437,23 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
       case_branch_start_line?(line) and (is_nil(branch_indent) or indent == branch_indent)
 
     cond do
+      is_binary(current) and is_integer(branch_indent) and case_branch_start_line?(line) and
+          indent < branch_indent ->
+        {acc, current, branch_indent, let_depth, [line | rest]}
+
+      is_binary(current) and is_integer(branch_indent) and case_branch_start_line?(line) and
+          indent > branch_indent ->
+        separator =
+          if String.ends_with?(String.trim(current), " of") do
+            " "
+          else
+            " ; "
+          end
+
+        updated = current <> separator <> String.trim(line)
+        next_depth = next_let_depth(let_depth, line)
+        consume_case_branches(rest, acc, updated, branch_indent, next_depth)
+
       starts_branch ->
         flushed = if is_binary(current), do: acc ++ [String.trim(current)], else: acc
         next_depth = next_let_depth(0, line)

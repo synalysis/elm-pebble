@@ -10,6 +10,8 @@ var appMessageKeyIdsByName = {};
 var geolocationWatches = {};
 var companionStorage = {};
 var companionPreferences = {};
+var appMessageOutbox = [];
+var appMessageSending = false;
 
 function readStoredConfigurationResponse() {
     if (typeof localStorage === "undefined" || !localStorage) {
@@ -102,6 +104,34 @@ function normalizeOutgoingAppMessage(payload) {
     });
 
     return normalized;
+}
+
+function sendQueuedAppMessage(payload) {
+    appMessageOutbox.push(normalizeOutgoingAppMessage(payload || {}));
+    drainAppMessageOutbox();
+}
+
+function drainAppMessageOutbox() {
+    if (appMessageSending || appMessageOutbox.length === 0) {
+        return;
+    }
+
+    var payload = appMessageOutbox[0];
+    appMessageSending = true;
+
+    Pebble.sendAppMessage(
+        payload,
+        function () {
+            appMessageOutbox.shift();
+            appMessageSending = false;
+            drainAppMessageOutbox();
+        },
+        function (error) {
+            console.log("Elm companion sendAppMessage failed", JSON.stringify(error || {}));
+            appMessageSending = false;
+            setTimeout(drainAppMessageOutbox, 50);
+        }
+    );
 }
 
 function deliverIncoming(payload) {
@@ -444,12 +474,12 @@ function handleOutgoing(payload) {
 
     if (payload && payload.api === "appMessage" && payload.op === "send") {
         console.log("Elm companion sendAppMessage payload", JSON.stringify(payload.payload || {}));
-        Pebble.sendAppMessage(normalizeOutgoingAppMessage(payload.payload || {}));
+        sendQueuedAppMessage(payload.payload || {});
         return;
     }
 
     console.log("Elm companion sendAppMessage payload", JSON.stringify(payload));
-    Pebble.sendAppMessage(normalizeOutgoingAppMessage(payload));
+    sendQueuedAppMessage(payload);
 }
 
 function installXmlHttpRequestCompatibility() {
