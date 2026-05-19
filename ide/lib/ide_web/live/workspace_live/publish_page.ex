@@ -176,7 +176,6 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
       </div>
 
       <div class="mt-4 rounded border border-zinc-200 p-3">
-        <div id="firebase-auth-refresh" phx-hook="FirebaseAuthRefresh" class="hidden"></div>
         <h3 class="text-sm font-semibold">Store Submission</h3>
         <p class="mt-1 text-xs text-zinc-600">
           Submit directly to the Rebble App Store from the prepared app workspace.
@@ -220,6 +219,29 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
             </button>
           </div>
           <p id="firebase-login-status" class="mt-2"></p>
+        </div>
+
+        <div
+          :if={IdeWeb.WorkspaceLive.PublishFlow.offers_ai_store_graphics?(@project, @store_assets)}
+          class="mt-3 rounded border border-blue-200 bg-blue-50 p-3 text-xs text-zinc-700"
+        >
+          <input type="hidden" form="publish-form" name="publish_submit[generate_store_graphics]" value="false" />
+          <label class="flex items-start gap-2">
+            <input
+              type="checkbox"
+              form="publish-form"
+              name="publish_submit[generate_store_graphics]"
+              value="true"
+              checked={@publish_submit_options["generate_store_graphics"] == true}
+              class="mt-0.5"
+            />
+            <span>
+              <span class="block font-medium text-zinc-900">Generate App Store icons with AI on first publish</span>
+              <span class="mt-1 block text-zinc-600">
+                Uses your App Store description from Project Settings. Only applies when creating a new listing without uploaded icons.
+              </span>
+            </span>
+          </label>
         </div>
 
         <div class="mt-3 space-y-2">

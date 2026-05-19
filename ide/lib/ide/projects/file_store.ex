@@ -4,7 +4,14 @@ defmodule Ide.Projects.FileStore do
   """
 
   alias Ide.Projects.Project
-  @hidden_directories MapSet.new(["elm-stuff", "node_modules", "_build", "deps", ".git"])
+  @hidden_directories MapSet.new([
+                      "elm-stuff",
+                      "node_modules",
+                      "_build",
+                      "deps",
+                      ".git",
+                      ".elm-pebble-github"
+                    ])
 
   # Files hidden from the editor/MCP tree (platform bridge/codegen internals).
   @editor_hidden_rel_paths %{

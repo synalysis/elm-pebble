@@ -46,7 +46,7 @@ mix test
   - `emulator_target`
   - optional `pebble_bin`
 - Emulator screenshots are captured and displayed in the IDE, grouped by watch model/emulator.
-- Screenshot assets are stored under `ide/priv/static/screenshots/<project-slug>/<emulator-target>/` and can be reused later in publish flows.
+- Screenshot assets are stored under `<project-workspace>/screenshots/<emulator-target>/` (outside `.pebble-sdk`) and can be included in GitHub snapshot pushes.
 - Emulator pane supports one-click capture for all configured watch models.
 - Build pane includes publish prep: PBW artifact generation plus screenshot coverage checklist per model.
 - Build pane can export `publish-bundle-*.json` metadata linking the PBW artifact and per-model screenshot sets.

@@ -2,6 +2,8 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
   @moduledoc false
   use IdeWeb, :html
 
+  import IdeWeb.WorkspaceLive.ProjectSettingsPage, only: [settings_nav: 1]
+
   alias Ide.Markdown
   alias Ide.Packages
 
@@ -13,26 +15,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
       class="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]"
     >
       <aside class="min-h-0 overflow-auto rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-        <nav class="mb-4 flex flex-wrap gap-2 border-b border-zinc-200 pb-2 text-sm">
-          <.link
-            patch={~p"/projects/#{@project.slug}/settings"}
-            class={project_settings_tab_class(@pane, :settings)}
-          >
-            Settings
-          </.link>
-          <.link
-            patch={~p"/projects/#{@project.slug}/resources"}
-            class={project_settings_tab_class(@pane, :resources)}
-          >
-            Resources
-          </.link>
-          <.link
-            patch={~p"/projects/#{@project.slug}/packages"}
-            class={project_settings_tab_class(@pane, :packages)}
-          >
-            Packages
-          </.link>
-        </nav>
+        <.settings_nav pane={@pane} project={@project} class="mb-4" />
         <h2 class="text-base font-semibold">Dependencies</h2>
         <p class="mt-1 text-sm text-zinc-600">
           Manage <span class="font-mono">elm.json</span>
@@ -334,13 +317,6 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
     </section>
     """
   end
-
-  @spec project_settings_tab_class(term(), term()) :: String.t()
-  defp project_settings_tab_class(active, tab) when active == tab,
-    do: "rounded bg-blue-100 px-3 py-1.5 text-blue-800"
-
-  defp project_settings_tab_class(_active, _tab),
-    do: "rounded bg-zinc-100 px-3 py-1.5 text-zinc-700"
 
   @spec package_compatibility(term(), term()) :: term()
   defp package_compatibility(entry, target_root) when is_map(entry) do

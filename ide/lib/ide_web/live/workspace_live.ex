@@ -3,11 +3,13 @@ defmodule IdeWeb.WorkspaceLive do
 
   alias Ide.Formatter
   alias Ide.Formatter.EditPatch
+  alias Ide.AppStore.Listing, as: AppStoreListing
   alias Ide.AppStore.Publisher, as: AppStorePublisher
   alias Ide.Auth
   alias Ide.Compiler
   alias Ide.EmulatorSupport
   alias Ide.GitHub.Push, as: GitHubPush
+  alias Ide.GitHub.Repositories, as: GitHubRepositories
   alias Ide.Emulator
   alias Ide.PebblePreferences
   alias Ide.PebbleToolchain
@@ -100,7 +102,8 @@ defmodule IdeWeb.WorkspaceLive do
          |> refresh_editor_dependencies()
          |> maybe_refresh_debugger()
          |> maybe_check_emulator_installation()
-         |> maybe_schedule_debugger_auto_fire_refresh()}
+         |> maybe_schedule_debugger_auto_fire_refresh()
+         |> refresh_github_repo_status()}
     end
   end
 
@@ -1223,7 +1226,7 @@ defmodule IdeWeb.WorkspaceLive do
      socket
      |> assign(:screenshot_status, :running)
      |> start_async(:capture_screenshot, fn ->
-       Screenshots.capture(project.slug, emulator_target: emulator_target)
+       Screenshots.capture(project, emulator_target: emulator_target)
      end)}
   end
 
@@ -1278,7 +1281,7 @@ defmodule IdeWeb.WorkspaceLive do
      |> assign(:capture_all_progress_lines, [])
      |> assign(:capture_all_target_statuses, target_statuses)
      |> start_async(:capture_all_screenshots, fn ->
-       Screenshots.capture_all_targets(project.slug,
+       Screenshots.capture_all_targets(project,
          workspace_root: workspace_root,
          target_type: project.target_type,
          project_name: project.name,
@@ -1297,7 +1300,7 @@ defmodule IdeWeb.WorkspaceLive do
       ) do
     project = socket.assigns.project
 
-    case Screenshots.delete(project.slug, emulator_target, filename, []) do
+    case Screenshots.delete(project, emulator_target, filename, []) do
       :ok ->
         screenshots = load_screenshots(project)
         readiness = PublishFlow.publish_readiness(project, screenshots)
@@ -1325,7 +1328,7 @@ defmodule IdeWeb.WorkspaceLive do
   def handle_event("delete-screenshot-target", %{"emulator-target" => emulator_target}, socket) do
     project = socket.assigns.project
 
-    case Screenshots.delete_target(project.slug, emulator_target, []) do
+    case Screenshots.delete_target(project, emulator_target, []) do
       :ok ->
         screenshots = load_screenshots(project)
         readiness = PublishFlow.publish_readiness(project, screenshots)
@@ -1398,136 +1401,62 @@ defmodule IdeWeb.WorkspaceLive do
   def handle_event("firebase-auth-refreshed", %{"id_token" => id_token}, socket) do
     with {:ok, payload} <- Auth.verify_firebase_id_token(id_token),
          {:ok, user} <- Auth.upsert_firebase_user(payload) do
-      {:noreply,
-       socket
-       |> assign(:current_user, user)
-       |> assign(:firebase_id_token, String.trim(id_token))
-       |> assign(:firebase_id_token_exp, Auth.token_exp(id_token))
-       |> assign(:publish_submit_status, :idle)
-       |> assign(:publish_submit_output, nil)
-       |> put_flash(:info, "App Store login refreshed.")}
+      socket =
+        socket
+        |> assign(:current_user, user)
+        |> assign(:firebase_id_token, String.trim(id_token))
+        |> assign(:firebase_id_token_exp, Auth.token_exp(id_token))
+
+      {:noreply, resume_after_firebase_auth_refresh(socket)}
     else
       {:error, reason} ->
-        {:noreply,
-         socket
-         |> assign(:publish_submit_status, :error)
-         |> assign(:publish_submit_output, "App Store login refresh failed: #{inspect(reason)}")}
+        {:noreply, fail_firebase_auth_refresh(socket, inspect(reason))}
     end
+  end
+
+  def handle_event("firebase-auth-refresh-failed", %{"error" => error}, socket) do
+    {:noreply, fail_firebase_auth_refresh(socket, to_string(error))}
   end
 
   def handle_event("validate-project-settings", _params, socket) do
     {:noreply, socket}
   end
 
-  def handle_event("save-project-settings", %{"project_settings" => params}, socket) do
+  def handle_event("save-project-settings", params, socket) do
     project = socket.assigns.project
     workspace_root = Projects.project_workspace_path(project)
+    sync_store_listing = Map.has_key?(params, "sync_store_listing")
+    section = settings_save_section(socket.assigns.pane)
 
-    with :ok <- persist_store_icon_uploads(socket, workspace_root) do
-      save_project_settings(socket, project, params, workspace_root)
+    with %{"project_settings" => settings_params} <- params,
+         :ok <- maybe_persist_store_icon_uploads(socket, workspace_root, section) do
+      save_project_settings(
+        socket,
+        project,
+        settings_params,
+        workspace_root,
+        section: section,
+        sync_store_listing: sync_store_listing
+      )
     else
       {:error, message} ->
         {:noreply, put_flash(socket, :error, message)}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Invalid project settings form.")}
     end
   end
 
-  defp save_project_settings(socket, project, params, _workspace_root) do
-    defaults = project.release_defaults || %{}
-    github = project.github || %{}
-
-    version_label = String.trim(params["version_label"] || "")
-    description = String.trim(params["description"] || "")
-    tags = String.trim(params["tags"] || "")
-    target_platforms = State.target_platforms_form_value(params["target_platforms"])
-    capabilities = State.capabilities_form_value(params["capabilities"])
-    github_owner = String.trim(params["github_owner"] || "")
-    github_repo = String.trim(params["github_repo"] || "")
-    github_branch = String.trim(params["github_branch"] || "")
-
-    attrs = %{
-      "release_defaults" =>
-        defaults
-        |> Map.put("version_label", version_label)
-        |> Map.put("description", description)
-        |> Map.put("tags", tags)
-        |> Map.put("target_platforms", target_platforms)
-        |> Map.put("capabilities", capabilities),
-      "github" =>
-        github
-        |> Map.put("owner", github_owner)
-        |> Map.put("repo", github_repo)
-        |> Map.put("branch", github_branch)
-    }
-
-    case Projects.update_project(project, attrs) do
-      {:ok, updated} ->
-        release_summary =
-          socket.assigns.release_summary
-          |> Map.put("version_label", version_label)
-          |> Map.put("tags", tags)
-
-        readiness = PublishFlow.publish_readiness(updated, socket.assigns.screenshots)
-        warnings = PublishFlow.publish_warnings(updated, readiness, release_summary)
-
-        {:noreply,
-         socket
-         |> assign(:project, updated)
-         |> assign(
-           :project_settings_form,
-           to_form(State.project_settings_form_data(updated), as: :project_settings)
-         )
-         |> assign(:store_assets, State.store_assets_assigns(updated))
-         |> assign(:release_summary, release_summary)
-         |> assign(:release_summary_form, to_form(release_summary, as: :release_summary))
-         |> assign(:publish_readiness, readiness)
-         |> assign(:publish_warnings, warnings)
-         |> assign(
-           :publish_summary,
-           PublishFlow.publish_summary(socket.assigns.publish_checks, warnings, readiness)
-         )
-         |> put_flash(:info, "Project settings saved.")}
-
-      {:error, reason} ->
-        {:noreply,
-         put_flash(socket, :error, "Could not save project settings: #{inspect(reason)}")}
-    end
+  def handle_event("refresh-github-repo-status", _params, socket) do
+    {:noreply, refresh_github_repo_status(socket)}
   end
 
-  defp persist_store_icon_uploads(socket, workspace_root) do
-    alias Ide.StoreAssets
+  def handle_event("create-github-repository", _params, socket) do
+    start_github_repository_create(socket, :create_only)
+  end
 
-    results =
-      [
-        {:store_icon_small, :icon_small},
-        {:store_icon_large, :icon_large}
-      ]
-      |> Enum.map(fn {upload, key} ->
-        consume_uploaded_entries(socket, upload, fn %{path: path}, _entry ->
-          case StoreAssets.save_icon(workspace_root, key, path) do
-            :ok -> {:ok, :ok}
-            {:error, reason} -> {:error, reason}
-          end
-        end)
-      end)
-      |> List.flatten()
-
-    case Enum.find(results, fn
-           {:error, _} -> true
-           _ -> false
-         end) do
-      nil ->
-        :ok
-
-      {:error, {:invalid_dimensions, %{expected: {w, h}, actual: {aw, ah}}}} ->
-        {:error,
-         "Icon must be exactly #{Ide.StoreAssets.size_label(w, h)} (uploaded image is #{aw}×#{ah} px)."}
-
-      {:error, :invalid_png} ->
-        {:error, "Store icon must be a valid PNG file."}
-
-      {:error, reason} ->
-        {:error, "Could not save store icon: #{inspect(reason)}"}
-    end
+  def handle_event("create-github-repository-and-push", _params, socket) do
+    start_github_repository_create(socket, :create_and_push)
   end
 
   def handle_event("prepare-release", _params, socket) do
@@ -1551,7 +1480,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   def handle_event("push-project-snapshot", _params, socket) do
     project = socket.assigns.project
-    repo_config = project.github || %{}
+    repo_config = Projects.github_config(project)
 
     {:noreply,
      socket
@@ -1652,7 +1581,10 @@ defmodule IdeWeb.WorkspaceLive do
           is_published: options["is_published"] == true,
           all_platforms: options["all_platforms"] == true,
           firebase_id_token: firebase_id_token,
-          store_icons: Ide.StoreAssets.publish_icon_paths(workspace_root)
+          store_icons: Ide.StoreAssets.publish_icon_paths(workspace_root),
+          generate_store_graphics: PublishFlow.generate_store_graphics?(project, options),
+          website: Ide.StoreListingUrls.website_url(project),
+          source: Ide.StoreListingUrls.source_url(project)
         ]
 
         {:noreply,
@@ -1690,7 +1622,7 @@ defmodule IdeWeb.WorkspaceLive do
      |> assign(:capture_all_progress_lines, [])
      |> assign(:capture_all_target_statuses, target_statuses)
      |> start_async(:capture_all_screenshots, fn ->
-       Screenshots.capture_all_targets(project.slug,
+       Screenshots.capture_all_targets(project,
          workspace_root: workspace_root,
          target_type: project.target_type,
          project_name: project.name,
@@ -2313,6 +2245,239 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
+  defp settings_save_section(:settings), do: :release
+  defp settings_save_section(:settings_store), do: :store
+  defp settings_save_section(:settings_github), do: :github
+  defp settings_save_section(_), do: :release
+
+  defp maybe_persist_store_icon_uploads(socket, workspace_root, :store),
+    do: persist_store_icon_uploads(socket, workspace_root)
+
+  defp maybe_persist_store_icon_uploads(_socket, _workspace_root, _section), do: :ok
+
+  defp save_project_settings(socket, project, params, workspace_root, opts) do
+    sync_store_listing = Keyword.get(opts, :sync_store_listing, false)
+    section = Keyword.get(opts, :section, :release)
+    defaults = project.release_defaults || %{}
+    github = project.github || %{}
+
+    release_defaults = merge_release_defaults(defaults, params, section)
+    github = merge_github_config(github, params, section)
+
+    attrs = %{
+      "release_defaults" => release_defaults,
+      "github" => github
+    }
+
+    case Projects.update_project(project, attrs) do
+      {:ok, updated} ->
+        release_summary =
+          socket.assigns.release_summary
+          |> Map.put("version_label", Map.get(updated.release_defaults || %{}, "version_label", ""))
+          |> Map.put("tags", Map.get(updated.release_defaults || %{}, "tags", ""))
+
+        readiness = PublishFlow.publish_readiness(updated, socket.assigns.screenshots)
+        warnings = PublishFlow.publish_warnings(updated, readiness, release_summary)
+
+        socket =
+          socket
+          |> assign(:project, updated)
+          |> assign(
+            :project_settings_form,
+            to_form(State.project_settings_form_data(updated), as: :project_settings)
+          )
+          |> assign(:store_assets, State.store_assets_assigns(updated))
+          |> assign(:publish_submit_options, PublishFlow.publish_submit_options(updated))
+          |> assign(:release_summary, release_summary)
+          |> assign(:release_summary_form, to_form(release_summary, as: :release_summary))
+          |> assign(:publish_readiness, readiness)
+          |> assign(:publish_warnings, warnings)
+          |> assign(
+            :publish_summary,
+            PublishFlow.publish_summary(socket.assigns.publish_checks, warnings, readiness)
+          )
+          |> refresh_github_repo_status()
+
+        {:noreply,
+         if sync_store_listing do
+           start_store_listing_sync(socket, updated, workspace_root, saved: true)
+         else
+           put_flash(socket, :info, "Project settings saved.")
+         end}
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Could not save project settings: #{inspect(reason)}")}
+    end
+  end
+
+  defp merge_release_defaults(defaults, params, :release) do
+    defaults
+    |> Map.put("version_label", String.trim(params["version_label"] || Map.get(defaults, "version_label", "")))
+    |> Map.put("description", String.trim(params["description"] || Map.get(defaults, "description", "")))
+    |> Map.put("website_url", String.trim(params["website_url"] || Map.get(defaults, "website_url", "")))
+    |> Map.put("source_url", String.trim(params["source_url"] || Map.get(defaults, "source_url", "")))
+    |> Map.put("tags", String.trim(params["tags"] || Map.get(defaults, "tags", "")))
+    |> Map.put(
+      "target_platforms",
+      target_platforms_param(params, Map.get(defaults, "target_platforms"))
+    )
+    |> Map.put("capabilities", capabilities_param(params, Map.get(defaults, "capabilities")))
+  end
+
+  defp merge_release_defaults(defaults, params, :store) do
+    Map.put(defaults, "generate_store_graphics", to_bool(Map.get(params, "generate_store_graphics")))
+  end
+
+  defp merge_release_defaults(defaults, _params, _), do: defaults
+
+  defp merge_github_config(github, params, :github) do
+    github
+    |> Map.put("owner", String.trim(params["github_owner"] || Map.get(github, "owner", "")))
+    |> Map.put("repo", String.trim(params["github_repo"] || Map.get(github, "repo", "")))
+    |> Map.put("branch", String.trim(params["github_branch"] || Map.get(github, "branch", "main")))
+    |> Map.put(
+      "visibility",
+      visibility_param(params, Map.get(github, "visibility", "private"))
+    )
+  end
+
+  defp merge_github_config(github, _params, _), do: github
+
+  defp target_platforms_param(%{"target_platforms" => platforms}, _defaults),
+    do: State.target_platforms_form_value(platforms)
+
+  defp target_platforms_param(_params, defaults), do: State.target_platforms_form_value(defaults)
+
+  defp capabilities_param(%{"capabilities" => capabilities}, _defaults),
+    do: State.capabilities_form_value(capabilities)
+
+  defp capabilities_param(_params, defaults), do: State.capabilities_form_value(defaults)
+
+  defp visibility_param(%{"github_visibility" => visibility}, _defaults),
+    do: Projects.github_visibility(visibility)
+
+  defp visibility_param(_params, default), do: Projects.github_visibility(default)
+
+  defp start_store_listing_sync(socket, project, workspace_root, opts) do
+    saved? = Keyword.get(opts, :saved, false)
+    auth_refreshed? = Keyword.get(opts, :auth_refreshed, false)
+    firebase_id_token = socket.assigns[:firebase_id_token]
+    firebase_id_token_exp = socket.assigns[:firebase_id_token_exp]
+
+    socket =
+      socket
+      |> then(fn socket ->
+        if saved?, do: put_flash(socket, :info, "Project settings saved."), else: socket
+      end)
+
+    login_needed? =
+      not is_binary(firebase_id_token) or firebase_id_token == "" or
+        Auth.token_expired?(firebase_id_token_exp)
+
+    cond do
+      login_needed? and not auth_refreshed? ->
+        request_store_listing_auth_refresh(socket, project, workspace_root)
+
+      login_needed? ->
+        assign(socket,
+          store_listing_sync_status: :error,
+          store_listing_sync_output:
+            "App Store login required. Log in on the Publish page, then try again."
+        )
+
+      true ->
+        socket
+        |> assign(:pending_store_listing_sync, nil)
+        |> assign(:store_listing_sync_status, :running)
+        |> assign(:store_listing_sync_output, nil)
+        |> start_async(:sync_store_listing_metadata, fn ->
+          AppStoreListing.update_metadata(project,
+            workspace_root: workspace_root,
+            firebase_id_token: firebase_id_token
+          )
+        end)
+    end
+  end
+
+  defp request_store_listing_auth_refresh(socket, project, workspace_root) do
+    socket
+    |> assign(:pending_store_listing_sync, %{project: project, workspace_root: workspace_root})
+    |> assign(:store_listing_sync_status, :running)
+    |> assign(:store_listing_sync_output, "Refreshing App Store login…")
+    |> push_event("request-firebase-auth-refresh", %{})
+  end
+
+  defp resume_after_firebase_auth_refresh(socket) do
+    case socket.assigns[:pending_store_listing_sync] do
+      %{project: project, workspace_root: workspace_root} ->
+        start_store_listing_sync(
+          socket,
+          project,
+          workspace_root,
+          auth_refreshed: true
+        )
+
+      _ ->
+        socket
+        |> assign(:publish_submit_status, :idle)
+        |> assign(:publish_submit_output, nil)
+        |> put_flash(:info, "App Store login refreshed.")
+    end
+  end
+
+  defp fail_firebase_auth_refresh(socket, message) do
+    case socket.assigns[:pending_store_listing_sync] do
+      nil ->
+        socket
+        |> assign(:publish_submit_status, :error)
+        |> assign(:publish_submit_output, "App Store login refresh failed: #{message}")
+
+      _ ->
+        socket
+        |> assign(:pending_store_listing_sync, nil)
+        |> assign(:store_listing_sync_status, :error)
+        |> assign(:store_listing_sync_output, "App Store login refresh failed: #{message}")
+    end
+  end
+
+  defp persist_store_icon_uploads(socket, workspace_root) do
+    alias Ide.StoreAssets
+
+    results =
+      [
+        {:store_icon_small, :icon_small},
+        {:store_icon_large, :icon_large}
+      ]
+      |> Enum.map(fn {upload, key} ->
+        consume_uploaded_entries(socket, upload, fn %{path: path}, _entry ->
+          case StoreAssets.save_icon(workspace_root, key, path) do
+            :ok -> {:ok, :ok}
+            {:error, reason} -> {:error, reason}
+          end
+        end)
+      end)
+      |> List.flatten()
+
+    case Enum.find(results, fn
+           {:error, _} -> true
+           _ -> false
+         end) do
+      nil ->
+        :ok
+
+      {:error, {:invalid_dimensions, %{expected: {w, h}, actual: {aw, ah}}}} ->
+        {:error,
+         "Icon must be exactly #{Ide.StoreAssets.size_label(w, h)} (uploaded image is #{aw}×#{ah} px)."}
+
+      {:error, :invalid_png} ->
+        {:error, "Store icon must be a valid PNG file."}
+
+      {:error, reason} ->
+        {:error, "Could not save store icon: #{inspect(reason)}"}
+    end
+  end
+
   defp update_tab_by_id(socket, tab_id, updater)
        when is_binary(tab_id) and is_function(updater, 1) do
     tabs =
@@ -2822,8 +2987,19 @@ defmodule IdeWeb.WorkspaceLive do
 
     summary = PublishFlow.publish_summary(result.checks, warnings, result.readiness)
 
+    project =
+      case Projects.ensure_app_uuid(socket.assigns.project) do
+        {:ok, updated} -> updated
+        _ -> socket.assigns.project
+      end
+
     {:noreply,
      socket
+     |> assign(:project, project)
+     |> assign(
+       :project_settings_form,
+       to_form(State.project_settings_form_data(project), as: :project_settings)
+     )
      |> assign(:prepare_release_status, :ok)
      |> assign(:prepare_release_output, result.output)
      |> assign(:publish_status, result.validation_status)
@@ -2933,6 +3109,12 @@ defmodule IdeWeb.WorkspaceLive do
         next_release_summary
       )
 
+    project =
+      case Projects.ensure_app_uuid(project) do
+        {:ok, updated} -> updated
+        _ -> project
+      end
+
     socket =
       socket
       |> assign(:project, project)
@@ -2969,14 +3151,46 @@ defmodule IdeWeb.WorkspaceLive do
      |> assign(:publish_submit_output, "Store publish task exited: #{inspect(reason)}")}
   end
 
+  def handle_async(:sync_store_listing_metadata, {:ok, {:ok, result}}, socket) do
+    socket =
+      socket
+      |> assign(:store_listing_sync_status, result.status)
+      |> assign(:store_listing_sync_output, result.output)
+
+    socket =
+      case result.project_attrs do
+        attrs when map_size(attrs) > 0 ->
+          case Projects.update_project(socket.assigns.project, attrs) do
+            {:ok, updated} -> assign(socket, :project, updated)
+            _ -> socket
+          end
+
+        _ ->
+          socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_async(:sync_store_listing_metadata, {:ok, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:store_listing_sync_status, :error)
+     |> assign(:store_listing_sync_output, "App Store sync failed: #{inspect(reason)}")}
+  end
+
+  def handle_async(:sync_store_listing_metadata, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:store_listing_sync_status, :error)
+     |> assign(:store_listing_sync_output, "App Store sync task exited: #{inspect(reason)}")}
+  end
+
   def handle_async(:push_project_snapshot, {:ok, {:ok, result}}, socket) do
     {:noreply,
      socket
      |> assign(:github_push_status, :ok)
-     |> assign(
-       :github_push_output,
-       "Pushed #{result.owner}/#{result.repo}@#{result.branch}\ncommit: #{result.commit_sha}\nurl: #{result.remote_url}"
-     )}
+     |> assign(:github_push_output, github_push_success_output(result))}
   end
 
   def handle_async(:push_project_snapshot, {:ok, {:error, reason}}, socket) do
@@ -2991,6 +3205,68 @@ defmodule IdeWeb.WorkspaceLive do
      socket
      |> assign(:github_push_status, :error)
      |> assign(:github_push_output, "Push task exited: #{inspect(reason)}")}
+  end
+
+  def handle_async(:github_repo_status_check, {:ok, status}, socket) do
+    {:noreply, assign(socket, :github_repo_status, status)}
+  end
+
+  def handle_async(:github_repo_status_check, {:exit, reason}, socket) do
+    {:noreply,
+     assign(socket, :github_repo_status, {:error, "Status check exited: #{inspect(reason)}"})}
+  end
+
+  def handle_async(:create_github_repository, {:ok, {:ok, created}}, socket) do
+    {:noreply, apply_github_repository_created(socket, created, nil)}
+  end
+
+  def handle_async(:create_github_repository, {:ok, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:github_create_status, :error)
+     |> assign(:github_push_output, "Create failed: #{format_github_push_error(reason)}")}
+  end
+
+  def handle_async(:create_github_repository, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:github_create_status, :error)
+     |> assign(:github_push_output, "Create task exited: #{inspect(reason)}")}
+  end
+
+  def handle_async(:create_github_repository_and_push, {:ok, {:ok, %{create: created, push: push}}}, socket) do
+    message =
+      "Created #{created.owner}/#{created.repo}\n#{created.html_url}\n\nPushed @#{push.branch}\ncommit: #{push.commit_sha}"
+
+    {:noreply,
+     socket
+     |> apply_github_repository_created(created, message)
+     |> assign(:github_push_status, :ok)}
+  end
+
+  def handle_async(:create_github_repository_and_push, {:ok, {:error, {:create, reason}}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:github_create_status, :error)
+     |> assign(:github_push_status, :idle)
+     |> assign(:github_push_output, "Create failed: #{format_github_push_error(reason)}")}
+  end
+
+  def handle_async(:create_github_repository_and_push, {:ok, {:error, {:push, reason}}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:github_create_status, :ok)
+     |> assign(:github_repo_status, :exists)
+     |> assign(:github_push_status, :error)
+     |> assign(:github_push_output, "Repository created, but push failed: #{format_github_push_error(reason)}")}
+  end
+
+  def handle_async(:create_github_repository_and_push, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:github_create_status, :error)
+     |> assign(:github_push_status, :error)
+     |> assign(:github_push_output, "Create and push task exited: #{inspect(reason)}")}
   end
 
   def handle_async(:prepare_publish_artifact, {:ok, {:error, reason}}, socket) do
@@ -3238,6 +3514,13 @@ defmodule IdeWeb.WorkspaceLive do
       phx-hook="DebuggerShortcuts"
       data-pane={Atom.to_string(@pane)}
     >
+      <div
+        id="firebase-auth-refresh"
+        phx-hook="FirebaseAuthRefresh"
+        class="hidden"
+        data-firebase-config={Jason.encode!(@firebase_config)}
+      >
+      </div>
       <header class="mb-4 flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 shadow-sm">
         <div class="flex min-w-0 flex-1 items-center gap-3">
           <.link
@@ -3819,7 +4102,8 @@ defmodule IdeWeb.WorkspaceLive do
     existing
     |> Map.merge(%{
       "is_published" => to_bool(Map.get(updates, "is_published")),
-      "all_platforms" => to_bool(Map.get(updates, "all_platforms"))
+      "all_platforms" => to_bool(Map.get(updates, "all_platforms")),
+      "generate_store_graphics" => to_bool(Map.get(updates, "generate_store_graphics"))
     })
   end
 
@@ -4641,7 +4925,164 @@ defmodule IdeWeb.WorkspaceLive do
     do: "GitHub is not connected. Connect from IDE Settings first."
 
   defp format_github_push_error({:git_failed, _command, output}), do: output
-  defp format_github_push_error(reason), do: inspect(reason)
+
+  defp format_github_push_error({:push_rejected, output}) do
+    """
+    Push rejected by GitHub (remote has commits not in the IDE mirror). \
+    Pull or reconcile on GitHub, then try again.
+
+    #{output}
+    """
+    |> String.trim()
+  end
+
+  defp format_github_push_error(reason), do: GitHubRepositories.format_error(reason)
+
+  defp github_push_success_output(result) do
+    commit_line =
+      if Map.get(result, :committed, true) do
+        "commit: #{result.commit_sha}"
+      else
+        "commit: #{result.commit_sha} (no file changes since last push)"
+      end
+
+    [
+      "Pushed #{result.owner}/#{result.repo}@#{result.branch}",
+      commit_line,
+      "url: #{result.remote_url}"
+    ]
+    |> Enum.join("\n")
+  end
+
+  defp refresh_github_repo_status(socket) do
+    socket = assign(socket, :github_connected?, Ide.GitHub.Credentials.connected?())
+
+    cond do
+      is_nil(socket.assigns.project) ->
+        assign(socket, :github_repo_status, :idle)
+
+      not socket.assigns.github_connected? ->
+        assign(socket, :github_repo_status, {:error, :github_not_connected})
+
+      true ->
+        config = Projects.github_config(socket.assigns.project)
+
+        case String.trim(Map.get(config, "repo", "")) do
+          "" ->
+            assign(socket, :github_repo_status, :unconfigured)
+
+          _ ->
+            socket
+            |> assign(:github_repo_status, :checking)
+            |> start_async(:github_repo_status_check, fn ->
+              GitHubRepositories.lookup_status(config)
+            end)
+        end
+    end
+  end
+
+  defp start_github_repository_create(socket, mode) do
+    project = socket.assigns.project
+    repo_config = Projects.github_config(project)
+
+    cond do
+      not socket.assigns.github_connected? ->
+        {:noreply,
+         put_flash(socket, :error, "Connect GitHub from IDE Settings before creating a repository.")}
+
+      socket.assigns.github_repo_status != :not_found ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Repository can only be created when GitHub reports it does not exist. Save settings and refresh status first."
+         )}
+
+      true ->
+        async_name =
+          case mode do
+            :create_only -> :create_github_repository
+            :create_and_push -> :create_github_repository_and_push
+          end
+
+        task_fn =
+          case mode do
+            :create_only ->
+              fn -> GitHubRepositories.create_repository(project, repo_config) end
+
+            :create_and_push ->
+              fn ->
+                case GitHubRepositories.create_repository(project, repo_config) do
+                  {:ok, created} ->
+                    push_config = github_config_for_push(repo_config, created)
+
+                    case GitHubPush.push_project_snapshot(project, push_config) do
+                      {:ok, push} -> {:ok, %{create: created, push: push}}
+                      {:error, reason} -> {:error, {:push, reason}}
+                    end
+
+                  {:error, reason} ->
+                    {:error, {:create, reason}}
+                end
+              end
+          end
+
+        {:noreply,
+         socket
+         |> assign(:github_create_status, :running)
+         |> assign(:github_push_status, if(mode == :create_and_push, do: :running, else: :idle))
+         |> assign(:github_push_output, nil)
+         |> start_async(async_name, task_fn)}
+    end
+  end
+
+  defp apply_github_repository_created(socket, created, extra_output) do
+    project = socket.assigns.project
+
+    {project, _} =
+      case maybe_persist_resolved_github_owner(project, created.owner) do
+        {:ok, updated} -> {updated, :ok}
+        _ -> {project, :error}
+      end
+
+    output =
+      [
+        extra_output,
+        "Created repository #{created.owner}/#{created.repo}",
+        created.html_url
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
+
+    socket
+    |> assign(:project, project)
+    |> assign(:github_create_status, :ok)
+    |> assign(:github_repo_status, :exists)
+    |> assign(:github_push_output, output)
+    |> assign(
+      :project_settings_form,
+      to_form(State.project_settings_form_data(project), as: :project_settings)
+    )
+  end
+
+  defp maybe_persist_resolved_github_owner(project, owner) do
+    config = Projects.github_config(project)
+
+    if String.trim(config["owner"] || "") == "" do
+      Projects.update_github_config(project, Map.put(config, "owner", owner))
+    else
+      {:ok, project}
+    end
+  end
+
+  defp github_config_for_push(repo_config, %{owner: owner}) do
+    if String.trim(Map.get(repo_config, "owner", "")) == "" do
+      Map.put(repo_config, "owner", owner)
+    else
+      repo_config
+    end
+  end
 
   @spec default_emulator_target() :: term()
   defp default_emulator_target do

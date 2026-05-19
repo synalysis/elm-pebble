@@ -109,7 +109,11 @@ async function firebaseLogout(config) {
 }
 
 function authConfigFromElement(el) {
-  const raw = el.dataset.firebaseConfig || document.body.dataset.firebaseConfig
+  const host =
+    (el && el.closest && el.closest("[data-firebase-config]")) ||
+    document.querySelector("[data-firebase-config]")
+
+  const raw = host && host.dataset.firebaseConfig
   if (!raw) return null
   return JSON.parse(raw)
 }
@@ -152,6 +156,18 @@ document.addEventListener("click", async event => {
   }
 })
 
+async function refreshFirebaseIdToken(config, providerName) {
+  const firebase = await loadFirebase(config)
+  const user = firebase.auth().currentUser
+
+  if (user) {
+    const idToken = await user.getIdToken(true)
+    return {id_token: idToken}
+  }
+
+  return firebaseLogin(config, providerName || "google")
+}
+
 Hooks.FirebaseAuthRefresh = {
   mounted() {
     this.onAuthRefreshed = event => {
@@ -160,6 +176,30 @@ Hooks.FirebaseAuthRefresh = {
     }
 
     window.addEventListener("elm-pebble-auth-refreshed", this.onAuthRefreshed)
+
+    this.handleEvent("request-firebase-auth-refresh", async payload => {
+      const config = authConfigFromElement(this.el)
+
+      if (!config) {
+        this.pushEvent("firebase-auth-refresh-failed", {
+          error: "Firebase configuration is missing."
+        })
+        return
+      }
+
+      try {
+        const data = await refreshFirebaseIdToken(config, payload.provider)
+        if (data.id_token) {
+          this.pushEvent("firebase-auth-refreshed", {id_token: data.id_token})
+        } else {
+          this.pushEvent("firebase-auth-refresh-failed", {error: "No App Store login token returned."})
+        }
+      } catch (error) {
+        this.pushEvent("firebase-auth-refresh-failed", {
+          error: error.message || String(error)
+        })
+      }
+    })
   },
 
   destroyed() {

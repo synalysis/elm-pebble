@@ -195,14 +195,36 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
         "tags" => "fitness,utility",
         "target_platforms" => ["basalt", "chalk"],
         "capabilities" => ["location", "health"],
-        "github_owner" => "elm-pebble",
-        "github_repo" => "watch",
-        "github_branch" => "main"
+        "website_url" => "https://elm-pebble.dev",
+        "source_url" => "https://github.com/elm-pebble/watch"
       }
     })
     |> render_submit()
 
     assert render(view) =~ "Project settings saved."
+
+    {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/settings/store")
+
+    view
+    |> form("#project-settings-form", %{
+      "project_settings" => %{"generate_store_graphics" => "true"}
+    })
+    |> render_submit()
+
+    assert render(view) =~ "Generate App Store icons with AI"
+
+    {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/settings/github")
+
+    view
+    |> form("#project-settings-form", %{
+      "project_settings" => %{
+        "github_owner" => "elm-pebble",
+        "github_repo" => "watch",
+        "github_branch" => "main",
+        "github_visibility" => "public"
+      }
+    })
+    |> render_submit()
 
     updated = Projects.get_project_by_slug(project.slug)
     assert updated.release_defaults["version_label"] == "1.2.3"
@@ -210,9 +232,42 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     assert updated.release_defaults["tags"] == "fitness,utility"
     assert updated.release_defaults["target_platforms"] == ["basalt", "chalk"]
     assert updated.release_defaults["capabilities"] == ["location", "health"]
+    assert updated.release_defaults["generate_store_graphics"] == true
+    assert updated.release_defaults["website_url"] == "https://elm-pebble.dev"
+    assert updated.release_defaults["source_url"] == "https://github.com/elm-pebble/watch"
     assert updated.github["owner"] == "elm-pebble"
+    assert updated.github["visibility"] == "public"
     assert updated.github["repo"] == "watch"
     assert updated.github["branch"] == "main"
+  end
+
+  test "project settings shows App Store metadata sync control", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceStoreListingSync",
+               "slug" => "workspace-store-listing-sync",
+               "target_type" => "app"
+             })
+
+    assert {:ok, view, html} = live(conn, ~p"/projects/#{project.slug}/settings")
+
+    assert html =~ "Update App Store metadata"
+    assert html =~ "App Store sync:"
+
+    view
+    |> form("#project-settings-form", %{
+      "project_settings" => %{
+        "version_label" => "1.0.0",
+        "description" => "Sync me",
+        "tags" => "",
+        "website_url" => "",
+        "source_url" => ""
+      }
+    })
+    |> render_submit(%{"sync_store_listing" => "1"})
+
+    assert render(view) =~ "Project settings saved."
+    assert render(view) =~ "Refreshing App Store login"
   end
 
   test "prepare release warns when workspace has uncommitted git changes", %{conn: conn} do

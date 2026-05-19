@@ -5,6 +5,7 @@ defmodule Ide.AppStore.Publisher do
 
   alias Ide.Auth
   alias Ide.StoreAssets
+  alias Ide.StoreListingUrls
 
   @type command_result :: %{
           status: :ok | :error,
@@ -204,6 +205,7 @@ defmodule Ide.AppStore.Publisher do
         "version" => ctx.version,
         "expectedUuid" => metadata.app_uuid,
         "description" => ctx.description,
+        "website" => website_url(ctx.opts),
         "source" => source_url(ctx.opts),
         "releaseNotes" => ctx.release_notes,
         "visible" => "true",
@@ -429,8 +431,9 @@ defmodule Ide.AppStore.Publisher do
   defp maybe_put_icon_prompt(fields, ctx) do
     icons = Keyword.get(ctx.opts, :store_icons, %{})
     metadata = ctx.metadata
+    generate? = Keyword.get(ctx.opts, :generate_store_graphics, false) == true
 
-    if metadata.app_type == "watchapp" and map_size(icons) == 0 do
+    if metadata.app_type == "watchapp" and map_size(icons) == 0 and generate? do
       prompt =
         "#{metadata.app_name || "Pebble app"}: #{String.trim(ctx.description || "")}"
         |> String.trim()
@@ -456,8 +459,11 @@ defmodule Ide.AppStore.Publisher do
 
         "Store icons: uploaded #{parts}"
 
+      ctx.metadata.app_type == "watchapp" and Keyword.get(ctx.opts, :generate_store_graphics, false) ->
+        "Store icons: will request Rebble AI icon generation (iconPrompt) on create"
+
       ctx.metadata.app_type == "watchapp" ->
-        "Store icons: using server iconPrompt generation (no project icons uploaded)"
+        "Store icons: none uploaded (enable AI generation in Project Settings or on Publish)"
 
       true ->
         nil
@@ -500,7 +506,19 @@ defmodule Ide.AppStore.Publisher do
   defp maybe_put_category(fields, nil), do: fields
   defp maybe_put_category(fields, category), do: Map.put(fields, "category", category)
 
-  defp source_url(opts), do: opts |> Keyword.get(:source, "") |> to_string() |> String.trim()
+  defp website_url(opts) do
+    opts
+    |> Keyword.get(:website, StoreListingUrls.default_website_url())
+    |> to_string()
+    |> String.trim()
+  end
+
+  defp source_url(opts) do
+    opts
+    |> Keyword.get(:source, StoreListingUrls.default_source_repo_url())
+    |> to_string()
+    |> String.trim()
+  end
 
   defp upload_summary(payload) do
     results = payload["screenshotResults"] || %{}

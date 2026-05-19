@@ -3,6 +3,7 @@ defmodule Ide.ProjectBundle do
   Reads and writes project bundle metadata used for self-contained imports/exports.
   """
 
+  alias Ide.PebbleToolchain
   alias Ide.Projects.Project
 
   @manifest_filename "elm-pebble.project.json"
@@ -98,6 +99,123 @@ defmodule Ide.ProjectBundle do
 
       {:error, _reason} ->
         attrs
+    end
+  end
+
+  @doc """
+  Reads `app_uuid` from `elm-pebble.project.json` when set.
+  """
+  @spec read_app_uuid(String.t()) :: String.t() | nil
+  def read_app_uuid(workspace_root) when is_binary(workspace_root) do
+    case read_manifest(workspace_root) do
+      {:ok, %{app_uuid: uuid}} when is_binary(uuid) -> normalize_app_uuid(uuid)
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Reads the Pebble app UUID from `.pebble-sdk/app/package.json` when present.
+  """
+  @spec package_app_uuid(String.t()) :: String.t() | nil
+  def package_app_uuid(workspace_root) when is_binary(workspace_root) do
+    path = Path.join(workspace_root, ".pebble-sdk/app/package.json")
+
+    with {:ok, source} <- File.read(path),
+         {:ok, %{"pebble" => %{"uuid" => uuid}}} <- Jason.decode(source) do
+      uuid |> to_string() |> String.trim() |> normalize_app_uuid()
+    else
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Reads the app UUID from the newest `.pbw` under `.elm-pebble-publish/` when present.
+  """
+  @spec pbw_app_uuid(String.t()) :: String.t() | nil
+  def pbw_app_uuid(workspace_root) when is_binary(workspace_root) do
+    workspace_root
+    |> Path.join(".elm-pebble-publish")
+    |> latest_pbw_path()
+    |> case do
+      nil -> nil
+      path -> uuid_from_pbw(path)
+    end
+  end
+
+  @doc """
+  Resolves a Pebble app UUID from manifest, package build, publish artifact, or project slug.
+  """
+  @spec resolve_app_uuid(String.t(), String.t() | nil) :: String.t() | nil
+  def resolve_app_uuid(workspace_root, slug \\ nil) when is_binary(workspace_root) do
+    read_app_uuid(workspace_root) ||
+      package_app_uuid(workspace_root) ||
+      pbw_app_uuid(workspace_root) ||
+      slug_app_uuid(slug)
+  end
+
+  @spec slug_app_uuid(String.t() | nil) :: String.t() | nil
+  defp slug_app_uuid(slug) when is_binary(slug) do
+    slug = String.trim(slug)
+
+    if slug != "" do
+      slug |> PebbleToolchain.deterministic_app_uuid() |> normalize_app_uuid()
+    end
+  end
+
+  defp slug_app_uuid(_), do: nil
+
+  @spec normalize_app_uuid(term()) :: String.t() | nil
+  defp normalize_app_uuid(uuid) do
+    uuid = uuid |> to_string() |> String.trim()
+
+    if uuid == "" do
+      nil
+    else
+      String.downcase(uuid)
+    end
+  end
+
+  @spec latest_pbw_path(String.t()) :: String.t() | nil
+  defp latest_pbw_path(dir) do
+    if File.dir?(dir) do
+      dir
+      |> Path.wildcard("**/*.pbw")
+      |> Enum.sort_by(&File.stat!(&1).mtime, {:desc, DateTime})
+      |> List.first()
+    end
+  end
+
+  @spec uuid_from_pbw(String.t()) :: String.t() | nil
+  defp uuid_from_pbw(path) do
+    charlist_path = String.to_charlist(path)
+
+    with {:ok, files} <- :zip.list_dir(charlist_path),
+         entry when is_binary(entry) <- pbw_metadata_entry(files),
+         {:ok, data} <- read_pbw_zip_entry(charlist_path, entry),
+         {:ok, %{"uuid" => uuid}} <- Jason.decode(data) do
+      normalize_app_uuid(uuid)
+    else
+      _ -> nil
+    end
+  end
+
+  @spec pbw_metadata_entry(list()) :: String.t() | nil
+  defp pbw_metadata_entry(files) do
+    names = Enum.map(files, fn {:zip_file, name, _, _, _, _} -> to_string(name) end)
+
+    cond do
+      "appinfo.json" in names -> "appinfo.json"
+      "manifest.json" in names -> "manifest.json"
+      true -> nil
+    end
+  end
+
+  @spec read_pbw_zip_entry(charlist(), String.t()) :: {:ok, binary()} | {:error, term()}
+  defp read_pbw_zip_entry(charlist_path, entry) do
+    charlist_entry = String.to_charlist(entry)
+
+    with {:ok, [{_, data}]} <- :zip.extract(charlist_path, [{:file, charlist_entry}, :memory]) do
+      {:ok, data}
     end
   end
 

@@ -11,6 +11,8 @@ defmodule Ide.Projects do
   alias Ide.Debugger
   alias Ide.Resources.ResourceStore
   alias Ide.ProjectBundle
+  alias Ide.PebbleToolchain
+  alias Ide.GitHub.Clone, as: GitHubClone
   alias Ide.ProjectImport
   alias Ide.ProjectTemplates
   alias Ide.PebblePreferences
@@ -69,12 +71,14 @@ defmodule Ide.Projects do
       |> infer_target_type_from_template()
       |> Map.put_new("source_roots", @default_source_roots)
       |> Map.put_new("template", "starter")
+      |> assign_default_app_uuid()
 
     Repo.transaction(fn ->
       with {:ok, project} <- %Project{} |> Project.changeset(attrs) |> Repo.insert(),
            :ok <- FileStore.ensure_roots(project, projects_root()),
            :ok <-
              ProjectTemplates.apply_template(template_key(attrs), project_workspace_path(project)),
+           :ok <- Ide.ProjectReadme.write(project_workspace_path(project), project),
            :ok <- ProjectBundle.write_manifest(project_workspace_path(project), project),
            :ok <- ensure_bitmap_generated(project) do
         maybe_activate_first(project)
@@ -85,7 +89,7 @@ defmodule Ide.Projects do
       end
     end)
     |> case do
-      {:ok, project} -> {:ok, project}
+      {:ok, project} -> ensure_app_uuid(project)
       {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
       {:error, reason} -> {:error, reason}
     end
@@ -121,9 +125,125 @@ defmodule Ide.Projects do
       end
     end)
     |> case do
-      {:ok, project} -> {:ok, project}
+      {:ok, project} -> ensure_app_uuid(project)
       {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Clones a GitHub repository and imports it as an IDE project workspace.
+  """
+  @spec import_from_github(map(), map(), term(), keyword()) :: {:ok, Project.t()} | {:error, term()}
+  def import_from_github(attrs, github_params, user \\ nil, opts \\ []) do
+    with {:ok, repo_ref} <- resolve_github_repo_ref(github_params),
+         {:ok, clone_path} <- clone_path_for_import(repo_ref, opts) do
+      try do
+        attrs
+        |> attrs_for_github_import(clone_path, repo_ref)
+        |> then(&import_project(&1, clone_path, user))
+      after
+        File.rm_rf(clone_path)
+      end
+    end
+  end
+
+  @spec clone_path_for_import(map(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  defp clone_path_for_import(repo_ref, opts) do
+    case Keyword.get(opts, :clone_path) do
+      path when is_binary(path) -> {:ok, path}
+      _ -> GitHubClone.clone(repo_ref.owner, repo_ref.repo, repo_ref.branch, opts)
+    end
+  end
+
+  @spec resolve_github_repo_ref(map()) :: {:ok, map()} | {:error, term()}
+  defp resolve_github_repo_ref(params) when is_map(params) do
+    owner = params |> Map.get("owner", Map.get(params, :owner, "")) |> to_string() |> String.trim()
+    repo = params |> Map.get("repo", Map.get(params, :repo, "")) |> to_string() |> String.trim()
+    branch = params |> Map.get("branch", Map.get(params, :branch, "main")) |> to_string() |> String.trim()
+
+    repo_url =
+      params
+      |> Map.get("repo_url", Map.get(params, :repo_url, ""))
+      |> to_string()
+      |> String.trim()
+
+    cond do
+      owner != "" and repo != "" ->
+        {:ok, %{owner: owner, repo: repo, branch: if(branch == "", do: "main", else: branch)}}
+
+      repo_url != "" ->
+        case GitHubClone.parse_repo_ref(repo_url) do
+          {:ok, parsed} ->
+            branch =
+              if branch != "" and branch != "main",
+                do: branch,
+                else: Map.get(parsed, :branch, "main")
+
+            {:ok, Map.put(parsed, :branch, branch)}
+
+          error ->
+            error
+        end
+
+      true ->
+        {:error, :missing_github_repo}
+    end
+  end
+
+  @spec attrs_for_github_import(map(), String.t(), map()) :: map()
+  defp attrs_for_github_import(attrs, clone_path, %{owner: owner, repo: repo, branch: branch}) do
+    attrs =
+      attrs
+      |> Map.new()
+      |> ProjectBundle.merge_attrs_from_manifest(clone_path)
+
+    name = Map.get(attrs, "name", "") |> to_string() |> String.trim()
+    slug = Map.get(attrs, "slug", "") |> to_string() |> String.trim()
+
+    attrs =
+      attrs
+      |> maybe_put("name", name, humanize_repo_name(repo))
+      |> maybe_put("slug", slug, slugify_repo(repo))
+      |> Map.put_new("target_type", infer_target_type(clone_path))
+      |> Map.put_new("source_roots", @default_source_roots)
+      |> Map.put("github", %{
+        "owner" => owner,
+        "repo" => repo,
+        "branch" => branch,
+        "visibility" => "private"
+      })
+
+    attrs
+  end
+
+  @spec maybe_put(map(), String.t(), String.t(), String.t()) :: map()
+  defp maybe_put(attrs, key, "", fallback), do: Map.put(attrs, key, fallback)
+  defp maybe_put(attrs, key, value, _fallback) when value != "", do: Map.put(attrs, key, value)
+
+  @spec humanize_repo_name(String.t()) :: String.t()
+  defp humanize_repo_name(repo) do
+    repo
+    |> String.replace("-", " ")
+    |> String.replace("_", " ")
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.map(&String.capitalize/1)
+    |> Enum.join(" ")
+  end
+
+  @spec slugify_repo(String.t()) :: String.t()
+  defp slugify_repo(repo) do
+    repo
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9]+/, "-")
+    |> String.trim("-")
+  end
+
+  @spec infer_target_type(String.t()) :: String.t()
+  defp infer_target_type(clone_path) do
+    case ProjectBundle.read_manifest(clone_path) do
+      {:ok, metadata} -> metadata.target_type
+      {:error, _} -> if(File.dir?(Path.join(clone_path, "phone")), do: "app", else: "watchface")
     end
   end
 
@@ -145,6 +265,36 @@ defmodule Ide.Projects do
       {:ok, zip_path}
     else
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Persists a Pebble app UUID on the project and in `elm-pebble.project.json`.
+  """
+  @spec persist_app_uuid(Project.t(), String.t()) :: {:ok, Project.t()} | {:error, term()}
+  def persist_app_uuid(%Project{} = project, uuid) when is_binary(uuid) do
+    case normalize_app_uuid(uuid) do
+      nil -> {:ok, project}
+      normalized -> update_project(project, %{"app_uuid" => normalized})
+    end
+  end
+
+  @doc """
+  Ensures the project and manifest have a Pebble app UUID when one can be resolved.
+  """
+  @spec ensure_app_uuid(Project.t()) :: {:ok, Project.t()} | {:error, term()}
+  def ensure_app_uuid(%Project{} = project) do
+    workspace = project_workspace_path(project)
+    current = normalize_app_uuid(project.app_uuid)
+
+    resolved =
+      current ||
+        ProjectBundle.resolve_app_uuid(workspace, project.slug)
+
+    case resolved do
+      nil -> {:ok, project}
+      ^current -> {:ok, project}
+      uuid -> update_project(project, %{"app_uuid" => uuid})
     end
   end
 
@@ -172,9 +322,19 @@ defmodule Ide.Projects do
     %{
       "owner" => Map.get(config, "owner", ""),
       "repo" => Map.get(config, "repo", ""),
-      "branch" => Map.get(config, "branch", "main")
+      "branch" => Map.get(config, "branch", "main"),
+      "visibility" => github_visibility(Map.get(config, "visibility", "private"))
     }
   end
+
+  @spec github_visibility(term()) :: String.t()
+  def github_visibility(value) when value in ["private", "public"], do: value
+
+  def github_visibility(value) when is_atom(value) do
+    value |> Atom.to_string() |> github_visibility()
+  end
+
+  def github_visibility(_), do: "private"
 
   @doc """
   Updates project GitHub repository config.
@@ -351,6 +511,14 @@ defmodule Ide.Projects do
   end
 
   @doc """
+  Directory for emulator screenshots inside the project workspace (outside `.pebble-sdk`).
+  """
+  @spec screenshots_path(Project.t()) :: String.t()
+  def screenshots_path(%Project{} = project) do
+    Path.join(project_workspace_path(project), "screenshots")
+  end
+
+  @doc """
   Lists bitmap resources for a project.
   """
   @spec list_bitmap_resources(term()) :: term()
@@ -509,6 +677,34 @@ defmodule Ide.Projects do
     {:ok, entries}
   rescue
     error -> {:error, error}
+  end
+
+  @spec assign_default_app_uuid(map()) :: map()
+  defp assign_default_app_uuid(attrs) do
+    case normalize_app_uuid(Map.get(attrs, "app_uuid")) do
+      nil ->
+        slug = attrs |> Map.get("slug") |> to_string() |> String.trim()
+
+        if slug != "" do
+          Map.put(attrs, "app_uuid", PebbleToolchain.deterministic_app_uuid(slug))
+        else
+          attrs
+        end
+
+      _uuid ->
+        attrs
+    end
+  end
+
+  @spec normalize_app_uuid(term()) :: String.t() | nil
+  defp normalize_app_uuid(uuid) do
+    uuid = uuid |> to_string() |> String.trim()
+
+    if uuid == "" do
+      nil
+    else
+      String.downcase(uuid)
+    end
   end
 
   @spec inside_hidden_directory?(term()) :: term()

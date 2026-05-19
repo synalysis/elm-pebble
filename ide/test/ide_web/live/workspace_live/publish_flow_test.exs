@@ -3,6 +3,22 @@ defmodule IdeWeb.WorkspaceLive.PublishFlowTest do
 
   alias IdeWeb.WorkspaceLive.PublishFlow
 
+  test "offers_ai_store_graphics? for new watchapps without uploaded icons" do
+    project = %{target_type: "app", store_app_id: nil, release_defaults: %{}}
+
+    assert PublishFlow.offers_ai_store_graphics?(project, %{})
+    refute PublishFlow.offers_ai_store_graphics?(%{project | target_type: "watchface"}, %{})
+    refute PublishFlow.offers_ai_store_graphics?(%{project | store_app_id: "existing"}, %{})
+    refute PublishFlow.offers_ai_store_graphics?(project, %{icon_small: %{present: true}})
+  end
+
+  test "generate_store_graphics? reads project defaults and publish overrides" do
+    project = %{release_defaults: %{"generate_store_graphics" => true}}
+
+    assert PublishFlow.generate_store_graphics?(project)
+    refute PublishFlow.generate_store_graphics?(project, %{"generate_store_graphics" => false})
+  end
+
   test "default_release_summary reads version and tags from project defaults" do
     project = %{release_defaults: %{"version_label" => "1.2.3", "tags" => "utility"}}
 

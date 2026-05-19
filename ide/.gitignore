@@ -45,6 +45,9 @@ ide-*.tar
 *.db-shm
 *.db-wal
 
+# GitHub OAuth token (written by IDE after connect; never commit).
+/priv/github_credentials.json
+
 # In case you use Node.js/npm, you want to ignore these.
 npm-debug.log
 /assets/node_modules/

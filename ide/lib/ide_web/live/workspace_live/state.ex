@@ -83,10 +83,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:prepare_release_output, nil)
     |> assign(:publish_submit_status, :idle)
     |> assign(:publish_submit_output, nil)
-    |> assign(:publish_submit_options, %{
-      "is_published" => true,
-      "all_platforms" => false
-    })
+    |> assign(:publish_submit_options, PublishFlow.publish_submit_options(%{}))
     |> assign(:store_assets, %{})
     |> assign(:release_summary, PublishFlow.default_release_summary(nil))
     |> assign(
@@ -165,6 +162,12 @@ defmodule IdeWeb.WorkspaceLive.State do
     )
     |> assign(:github_push_status, :idle)
     |> assign(:github_push_output, nil)
+    |> assign(:store_listing_sync_status, :idle)
+    |> assign(:store_listing_sync_output, nil)
+    |> assign(:pending_store_listing_sync, nil)
+    |> assign(:github_repo_status, :idle)
+    |> assign(:github_create_status, :idle)
+    |> assign(:github_connected?, false)
     |> assign(:auto_format_last_result, nil)
     |> assign(:bitmap_resources, [])
     |> assign(:bitmap_upload_output, nil)
@@ -249,6 +252,12 @@ defmodule IdeWeb.WorkspaceLive.State do
     )
     |> assign(:github_push_status, :idle)
     |> assign(:github_push_output, nil)
+    |> assign(:store_listing_sync_status, :idle)
+    |> assign(:store_listing_sync_output, nil)
+    |> assign(:pending_store_listing_sync, nil)
+    |> assign(:github_repo_status, :idle)
+    |> assign(:github_create_status, :idle)
+    |> assign(:github_connected?, Ide.GitHub.Credentials.connected?())
     |> assign(:packages_target_root, Map.fetch!(data, :packages_target_root))
     |> assign(:selected_emulator_target, selected_emulator_target)
     |> assign(:emulator_mode, emulator_mode)
@@ -265,6 +274,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     )
     |> assign(:page_title, "#{project.name} · #{Atom.to_string(socket.assigns.live_action)}")
     |> assign(:store_assets, store_assets_assigns(project))
+    |> assign(:publish_submit_options, PublishFlow.publish_submit_options(project))
   end
 
   @spec store_assets_assigns(Ide.Projects.Project.t()) :: map()
@@ -293,12 +303,16 @@ defmodule IdeWeb.WorkspaceLive.State do
     %{
       "version_label" => Map.get(defaults, "version_label", ""),
       "description" => Map.get(defaults, "description", ""),
+      "website_url" => Ide.StoreListingUrls.form_website_url(project),
+      "source_url" => Ide.StoreListingUrls.form_source_url(project),
       "tags" => Map.get(defaults, "tags", ""),
       "target_platforms" => target_platforms_form_value(Map.get(defaults, "target_platforms")),
       "capabilities" => capabilities_form_value(Map.get(defaults, "capabilities")),
       "github_owner" => Map.get(github, "owner", ""),
       "github_repo" => Map.get(github, "repo", ""),
-      "github_branch" => Map.get(github, "branch", "main")
+      "github_branch" => Map.get(github, "branch", "main"),
+      "github_visibility" => Map.get(github, "visibility", "private"),
+      "generate_store_graphics" => PublishFlow.generate_store_graphics?(project)
     }
   end
 
@@ -306,12 +320,16 @@ defmodule IdeWeb.WorkspaceLive.State do
     do: %{
       "version_label" => "",
       "description" => "",
+      "website_url" => Ide.StoreListingUrls.default_website_url(),
+      "source_url" => Ide.StoreListingUrls.default_source_repo_url(),
       "tags" => "",
       "target_platforms" => supported_target_platforms(),
       "capabilities" => [],
       "github_owner" => "",
       "github_repo" => "",
-      "github_branch" => "main"
+      "github_branch" => "main",
+      "github_visibility" => "private",
+      "generate_store_graphics" => false
     }
 
   @spec supported_target_platforms() :: [String.t()]

@@ -1,6 +1,7 @@
 defmodule IdeWeb.ProjectsLive do
   use IdeWeb, :live_view
 
+  alias Ide.GitHub.Credentials
   alias Ide.ProjectTemplates
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -14,7 +15,10 @@ defmodule IdeWeb.ProjectsLive do
      |> assign(:template_options, ProjectTemplates.options())
      |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
      |> assign(:show_import_form, false)
+     |> assign(:import_mode, :local)
+     |> assign(:github_connected?, Credentials.connected?())
      |> assign(:import_form, to_form(%{"import_path" => ""}, as: :import))
+     |> assign(:github_import_form, to_form(default_github_import_attrs(), as: :github_import))
      |> load_projects()}
   end
 
@@ -72,12 +76,52 @@ defmodule IdeWeb.ProjectsLive do
          )}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Import failed: #{inspect(reason)}")}
+        {:noreply, put_flash(socket, :error, "Import failed: #{format_import_error(reason)}")}
     end
+  end
+
+  def handle_event("import-github", %{"github_import" => params}, socket) do
+    if socket.assigns.github_connected? do
+      attrs = normalize_github_import_attrs(params)
+
+      case Projects.import_from_github(attrs, params, socket.assigns.current_user) do
+        {:ok, project} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Project imported from GitHub.")
+           |> load_projects()
+           |> assign(:show_import_form, false)
+           |> assign(:github_import_form, to_form(default_github_import_attrs(), as: :github_import))
+           |> push_navigate(to: ~p"/projects/#{project.slug}/editor")}
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          {:noreply,
+           put_flash(socket, :error, "Import failed: #{format_changeset_errors(changeset)}")}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "GitHub import failed: #{format_import_error(reason)}")}
+      end
+    else
+      {:noreply,
+       put_flash(socket, :error, "Connect GitHub from IDE Settings before importing a repository.")}
+    end
+  end
+
+  def handle_event("validate-github-import", %{"github_import" => params}, socket) do
+    {:noreply,
+     assign(
+       socket,
+       :github_import_form,
+       to_form(normalize_github_import_attrs(params), as: :github_import)
+     )}
   end
 
   def handle_event("toggle-import-form", _params, socket) do
     {:noreply, assign(socket, :show_import_form, not socket.assigns.show_import_form)}
+  end
+
+  def handle_event("set-import-mode", %{"mode" => mode}, socket) when mode in ["local", "github"] do
+    {:noreply, assign(socket, :import_mode, String.to_existing_atom(mode))}
   end
 
   def handle_event("activate", %{"id" => id}, socket) do
@@ -109,7 +153,7 @@ defmodule IdeWeb.ProjectsLive do
     assign(socket, :projects, Projects.list_projects(socket.assigns.current_user))
   end
 
-  @spec default_attrs() :: term()
+  @spec default_attrs() :: map()
   defp default_attrs do
     %{
       "target_type" => "app",
@@ -118,7 +162,19 @@ defmodule IdeWeb.ProjectsLive do
     }
   end
 
-  @spec normalize_create_params(term()) :: term()
+  @spec default_github_import_attrs() :: map()
+  defp default_github_import_attrs do
+    %{
+      "repo_url" => "",
+      "owner" => "",
+      "repo" => "",
+      "branch" => "main",
+      "name" => "",
+      "slug" => ""
+    }
+  end
+
+  @spec normalize_create_params(map()) :: map()
   defp normalize_create_params(params) when is_map(params) do
     template = Map.get(params, "template", "starter")
     name = Map.get(params, "name", "")
@@ -131,7 +187,28 @@ defmodule IdeWeb.ProjectsLive do
     |> Map.put_new("source_roots", ["watch", "protocol", "phone"])
   end
 
-  @spec slug_from_name(term()) :: term()
+  @spec normalize_github_import_attrs(map()) :: map()
+  defp normalize_github_import_attrs(params) when is_map(params) do
+    name = Map.get(params, "name", "") |> to_string() |> String.trim()
+    slug = Map.get(params, "slug", "") |> to_string() |> String.trim()
+
+    params =
+      params
+      |> Map.put("name", name)
+      |> Map.put("slug", if(slug == "", do: slug_from_name(name), else: slug))
+
+    case blank?(Map.get(params, "repo_url")) do
+      true ->
+        owner = Map.get(params, "owner", "") |> to_string() |> String.trim()
+        repo = Map.get(params, "repo", "") |> to_string() |> String.trim()
+        params |> Map.put("owner", owner) |> Map.put("repo", repo)
+
+      false ->
+        params
+    end
+  end
+
+  @spec slug_from_name(term()) :: String.t()
   defp slug_from_name(name) when is_binary(name) do
     name
     |> String.trim()
@@ -141,6 +218,38 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   defp slug_from_name(_), do: ""
+
+  @spec blank?(term()) :: boolean()
+  defp blank?(value) when is_binary(value), do: String.trim(value) == ""
+  defp blank?(_), do: true
+
+  @spec format_import_error(term()) :: String.t()
+  defp format_import_error(:github_not_connected),
+    do: "GitHub is not connected. Open Settings and connect your account."
+
+  defp format_import_error(:missing_github_repo),
+    do: "Enter a GitHub repository URL or owner and repository name."
+
+  defp format_import_error({:git_failed, "clone", output}), do: output
+
+  defp format_import_error({:invalid_repo_field, field}),
+    do: "Invalid repository #{field}."
+
+  defp format_import_error(:invalid_repo_ref),
+    do: "Could not parse the repository URL or owner/repo fields."
+
+  defp format_import_error(reason), do: inspect(reason)
+
+  @spec format_changeset_errors(Ecto.Changeset.t()) :: String.t()
+  defp format_changeset_errors(changeset) do
+    Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
+      Enum.reduce(opts, msg, fn {key, value}, acc ->
+        String.replace(acc, "%{#{key}}", to_string(value))
+      end)
+    end)
+    |> Enum.map(fn {field, errors} -> "#{field} #{Enum.join(errors, ", ")}" end)
+    |> Enum.join("; ")
+  end
 
   @impl true
   @spec render(term()) :: term()
@@ -192,17 +301,105 @@ defmodule IdeWeb.ProjectsLive do
           </button>
         </div>
         <div :if={@show_import_form} class="mt-4 rounded border border-zinc-200 bg-zinc-50 p-4">
-          <p class="text-sm text-zinc-600">
-            Import from a local path that contains `elm-pebble.project.json`.
-          </p>
-          <.form for={@import_form} class="mt-3 grid gap-3 md:grid-cols-4" phx-submit="import">
-            <div class="md:col-span-3">
-              <.input field={@import_form[:import_path]} type="text" label="Import path" required />
-            </div>
-            <div class="md:col-span-1 flex items-end">
-              <.button class="w-full">Import project</.button>
-            </div>
-          </.form>
+          <div class="flex flex-wrap gap-2 text-sm">
+            <button
+              type="button"
+              phx-click="set-import-mode"
+              phx-value-mode="local"
+              class={import_mode_class(@import_mode, :local)}
+            >
+              From folder
+            </button>
+            <button
+              type="button"
+              phx-click="set-import-mode"
+              phx-value-mode="github"
+              class={import_mode_class(@import_mode, :github)}
+            >
+              From GitHub
+            </button>
+          </div>
+
+          <div :if={@import_mode == :local} class="mt-4">
+            <p class="text-sm text-zinc-600">
+              Import from a local path that contains `elm-pebble.project.json` or Elm source roots.
+            </p>
+            <.form for={@import_form} class="mt-3 grid gap-3 md:grid-cols-4" phx-submit="import">
+              <div class="md:col-span-3">
+                <.input field={@import_form[:import_path]} type="text" label="Import path" required />
+              </div>
+              <div class="md:col-span-1 flex items-end">
+                <.button class="w-full">Import project</.button>
+              </div>
+            </.form>
+          </div>
+
+          <div :if={@import_mode == :github} class="mt-4">
+            <p :if={not @github_connected?} class="text-sm text-amber-700">
+              Connect GitHub from
+              <.link navigate={~p"/settings?return_to=/projects"} class="font-medium underline">
+                IDE Settings
+              </.link>
+              before importing a repository.
+            </p>
+            <p :if={@github_connected?} class="text-sm text-zinc-600">
+              Clone a repository you pushed from the IDE (or any Elm Pebble project on GitHub) into a new workspace.
+              Metadata from `elm-pebble.project.json` is applied when present.
+            </p>
+            <.form
+              for={@github_import_form}
+              id="github-import-form"
+              class="mt-3 grid gap-3 md:grid-cols-2"
+              phx-change="validate-github-import"
+              phx-submit="import-github"
+            >
+              <div class="md:col-span-2">
+                <.input
+                  field={@github_import_form[:repo_url]}
+                  type="text"
+                  label="Repository URL"
+                  placeholder="https://github.com/owner/repo"
+                  disabled={not @github_connected?}
+                />
+              </div>
+              <.input
+                field={@github_import_form[:owner]}
+                type="text"
+                label="Owner (optional if URL set)"
+                placeholder="my-org"
+                disabled={not @github_connected?}
+              />
+              <.input
+                field={@github_import_form[:repo]}
+                type="text"
+                label="Repository (optional if URL set)"
+                placeholder="my-watchface"
+                disabled={not @github_connected?}
+              />
+              <.input
+                field={@github_import_form[:branch]}
+                type="text"
+                label="Branch"
+                placeholder="main"
+                disabled={not @github_connected?}
+              />
+              <.input
+                field={@github_import_form[:name]}
+                type="text"
+                label="Project name (optional)"
+                disabled={not @github_connected?}
+              />
+              <.input
+                field={@github_import_form[:slug]}
+                type="text"
+                label="Project slug (optional)"
+                disabled={not @github_connected?}
+              />
+              <div class="md:col-span-2">
+                <.button disabled={not @github_connected?}>Import from GitHub</.button>
+              </div>
+            </.form>
+          </div>
         </div>
         <div class="mt-4 overflow-x-auto">
           <table class="min-w-full divide-y divide-zinc-200 text-sm">
@@ -272,4 +469,10 @@ defmodule IdeWeb.ProjectsLive do
     </div>
     """
   end
+
+  defp import_mode_class(current, mode) when current == mode,
+    do: "rounded bg-blue-100 px-3 py-1.5 font-medium text-blue-800"
+
+  defp import_mode_class(_current, _mode),
+    do: "rounded bg-white px-3 py-1.5 text-zinc-700 ring-1 ring-zinc-200"
 end

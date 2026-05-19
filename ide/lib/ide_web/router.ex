@@ -45,6 +45,7 @@ defmodule IdeWeb.Router do
 
     get "/projects/:id/export", ProjectExportController, :show
     get "/projects/:slug/store_assets/:name", StoreAssetController, :show
+    get "/projects/:slug/screenshots/:target/:name", ScreenshotController, :show
 
     live_session :default, on_mount: [IdeWeb.AuthHooks] do
       live "/projects", ProjectsLive, :index
@@ -57,6 +58,8 @@ defmodule IdeWeb.Router do
       live "/projects/:slug/publish", WorkspaceLive, :publish
       live "/projects/:slug/emulator", WorkspaceLive, :emulator
       live "/projects/:slug/settings", WorkspaceLive, :settings
+      live "/projects/:slug/settings/store", WorkspaceLive, :settings_store
+      live "/projects/:slug/settings/github", WorkspaceLive, :settings_github
     end
   end
 

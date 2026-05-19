@@ -81,6 +81,25 @@ defmodule Ide.StoreAssets do
     end)
   end
 
+  @spec icons_uploaded?(String.t() | map()) :: boolean()
+  def icons_uploaded?(workspace_root) when is_binary(workspace_root) do
+    workspace_root |> publish_icon_paths() |> map_size() > 0
+  end
+
+  def icons_uploaded?(store_assets) when is_map(store_assets) do
+    Enum.any?(store_assets, fn {_key, info} ->
+      is_map(info) and Map.get(info, :present) == true
+    end)
+  end
+
+  @doc """
+  True when a watchapp can request Rebble `iconPrompt` generation (no icons uploaded yet).
+  """
+  @spec ai_graphics_available?(String.t() | map()) :: boolean()
+  def ai_graphics_available?(workspace_root_or_assets) do
+    not icons_uploaded?(workspace_root_or_assets)
+  end
+
   @spec publish_icon_paths(String.t()) :: %{optional(icon_key()) => String.t()}
   def publish_icon_paths(workspace_root) when is_binary(workspace_root) do
     @icon_specs

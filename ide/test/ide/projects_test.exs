@@ -827,6 +827,49 @@ defmodule Ide.ProjectsTest do
     assert decoded["import_path"] == "."
     assert Enum.sort(decoded["source_roots"]) == ["phone", "protocol", "watch"]
     assert decoded["debugger_settings"] == %{}
+    assert is_binary(decoded["app_uuid"])
+    assert decoded["app_uuid"] == Ide.PebbleToolchain.deterministic_app_uuid(slug)
+  end
+
+  test "ensure_app_uuid writes manifest uuid from slug when missing" do
+    slug = "uuid-ensure-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "UuidEnsure",
+               "slug" => slug,
+               "target_type" => "app"
+             })
+
+    workspace = Projects.project_workspace_path(project)
+    expected = Ide.PebbleToolchain.deterministic_app_uuid(slug)
+
+    assert {:ok, raw} = File.read(Path.join(workspace, "elm-pebble.project.json"))
+    assert {:ok, %{"app_uuid" => ^expected}} = Jason.decode(raw)
+
+    {:ok, _} =
+      Projects.update_project(project, %{"app_uuid" => nil})
+
+    File.write!(
+      Path.join(workspace, "elm-pebble.project.json"),
+      Jason.encode!(%{
+        "schema_version" => 1,
+        "name" => "UuidEnsure",
+        "slug" => slug,
+        "target_type" => "app",
+        "source_roots" => ["watch", "protocol", "phone"],
+        "import_path" => "."
+      })
+    )
+
+    assert reloaded = Projects.get_project!(project.id)
+    assert reloaded.app_uuid == nil
+
+    assert {:ok, ensured} = Projects.ensure_app_uuid(reloaded)
+    assert ensured.app_uuid == expected
+
+    assert {:ok, raw_after} = File.read(Path.join(workspace, "elm-pebble.project.json"))
+    assert {:ok, %{"app_uuid" => ^expected}} = Jason.decode(raw_after)
   end
 
   test "import project reads bundle metadata and nested import path" do
@@ -909,6 +952,78 @@ defmodule Ide.ProjectsTest do
     assert "elm-pebble.project.json" in file_names
     assert "watch/src/Main.elm" in file_names
     refute "watch/.elmc-build/generated.c" in file_names
+  end
+
+  test "import_from_github imports clone path and records github config" do
+    clone_path =
+      Path.join(System.tmp_dir!(), "ide_github_import_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(Path.join(clone_path, "watch/src"))
+    File.write!(Path.join(clone_path, "watch/src/Main.elm"), "module Main exposing (main)")
+
+    File.write!(
+      Path.join(clone_path, "elm-pebble.project.json"),
+      Jason.encode!(%{
+        "schema_version" => 1,
+        "name" => "Github Import",
+        "slug" => "github-import",
+        "target_type" => "watchface",
+        "source_roots" => ["watch", "protocol", "phone"]
+      })
+    )
+
+    on_exit(fn -> File.rm_rf(clone_path) end)
+
+    assert {:ok, project} =
+             Projects.import_from_github(
+               %{},
+               %{"owner" => "pebbledev", "repo" => "my-watchface", "branch" => "main"},
+               nil,
+               clone_path: clone_path
+             )
+
+    assert project.name == "Github Import"
+    assert project.slug == "github-import"
+    assert project.github == %{
+             "owner" => "pebbledev",
+             "repo" => "my-watchface",
+             "branch" => "main",
+             "visibility" => "private"
+           }
+
+    assert {:ok, _} = Projects.read_source_file(project, "watch", "src/Main.elm")
+    refute File.exists?(clone_path)
+  end
+
+  test "import_from_github infers slug from repo when manifest is absent" do
+    clone_path =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_github_import_infer_#{System.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(Path.join(clone_path, "watch/src"))
+    File.write!(Path.join(clone_path, "watch/src/Main.elm"), "module Main exposing (main)")
+    on_exit(fn -> File.rm_rf(clone_path) end)
+
+    assert {:ok, project} =
+             Projects.import_from_github(
+               %{},
+               %{"repo_url" => "https://github.com/pebbledev/cool-watchface"},
+               nil,
+               clone_path: clone_path
+             )
+
+    assert project.name == "Cool Watchface"
+    assert project.slug == "cool-watchface"
+    assert project.target_type == "watchface"
+    assert project.github["owner"] == "pebbledev"
+    assert project.github["repo"] == "cool-watchface"
+  end
+
+  test "import_from_github returns error when repo is missing" do
+    assert {:error, :missing_github_repo} =
+             Projects.import_from_github(%{}, %{"repo_url" => "", "owner" => "", "repo" => ""})
   end
 
   test "debugger lazily boots phone companion when watch sends protocol message" do

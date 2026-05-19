@@ -65,7 +65,8 @@ defmodule Ide.Mcp.Tools do
     properties: %{
       owner: %{type: "string"},
       repo: %{type: "string"},
-      branch: %{type: "string"}
+      branch: %{type: "string"},
+      visibility: %{type: "string", enum: ["private", "public"]}
     }
   }
 
@@ -3092,7 +3093,7 @@ defmodule Ide.Mcp.Tools do
             name: project.name,
             target_type: project.target_type,
             active: project.active,
-            screenshot_count: screenshot_count(project.slug),
+            screenshot_count: screenshot_count(project),
             latest_check: latest_check,
             latest_compile: latest_compile,
             latest_manifest: latest_manifest,
@@ -3172,7 +3173,7 @@ defmodule Ide.Mcp.Tools do
             manifests_count:
               length(ManifestCache.recent(50, project.slug) |> filter_since(since)),
             actions_count: length(recent_actions),
-            screenshots_count: screenshot_count(project.slug)
+            screenshots_count: screenshot_count(project)
           }
         end)
 
@@ -3324,10 +3325,24 @@ defmodule Ide.Mcp.Tools do
 
   @spec safe_github_settings(term()) :: map()
   defp safe_github_settings(map) when is_map(map) do
-    %{}
-    |> maybe_put_string_setting(map, "owner")
-    |> maybe_put_string_setting(map, "repo")
-    |> maybe_put_string_setting(map, "branch")
+    visibility =
+      map
+      |> Map.get("visibility", Map.get(map, :visibility))
+      |> then(fn
+        v when v in ["private", "public"] -> v
+        _ -> nil
+      end)
+
+    github =
+      %{}
+      |> maybe_put_string_setting(map, "owner")
+      |> maybe_put_string_setting(map, "repo")
+      |> maybe_put_string_setting(map, "branch")
+
+    case visibility do
+      nil -> github
+      v -> Map.put(github, "visibility", v)
+    end
   end
 
   defp safe_github_settings(_), do: %{}
@@ -3970,8 +3985,15 @@ defmodule Ide.Mcp.Tools do
     |> Enum.take(limit)
   end
 
-  @spec screenshot_count(String.t()) :: non_neg_integer()
-  defp screenshot_count(project_slug) do
+  @spec screenshot_count(term()) :: non_neg_integer()
+  defp screenshot_count(%Projects.Project{} = project) do
+    case Screenshots.list(project, []) do
+      {:ok, shots} -> length(shots)
+      {:error, _reason} -> 0
+    end
+  end
+
+  defp screenshot_count(project_slug) when is_binary(project_slug) do
     case Screenshots.list(project_slug, []) do
       {:ok, shots} -> length(shots)
       {:error, _reason} -> 0

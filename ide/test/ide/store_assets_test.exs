@@ -50,6 +50,19 @@ defmodule Ide.StoreAssetsTest do
     assert StoreAssets.banner_size_label() == "720×320 px"
   end
 
+  test "icons_uploaded? and ai_graphics_available? reflect workspace files", %{workspace_root: root} do
+    refute StoreAssets.icons_uploaded?(root)
+    assert StoreAssets.ai_graphics_available?(root)
+
+    small_path = Path.join(System.tmp_dir!(), "icon_small_ai_test.png")
+    File.write!(small_path, png_header(80, 80))
+    on_exit(fn -> File.rm(small_path) end)
+
+    assert :ok = StoreAssets.save_icon(root, :icon_small, small_path)
+    assert StoreAssets.icons_uploaded?(root)
+    refute StoreAssets.ai_graphics_available?(root)
+  end
+
   defp png_header(width, height) do
     <<0x89, "PNG\r\n", 0x1A, "\n", 0::32, "IHDR", width::32, height::32, 0::32>>
   end

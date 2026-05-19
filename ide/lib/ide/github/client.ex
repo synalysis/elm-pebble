@@ -62,6 +62,31 @@ defmodule Ide.GitHub.Client do
 
   def fetch_user(_), do: {:error, :invalid_access_token}
 
+  @spec fetch_repo(String.t(), String.t(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def fetch_repo(access_token, owner, repo, opts \\ [])
+      when is_binary(access_token) and is_binary(owner) and is_binary(repo) do
+    owner = URI.encode(owner)
+    repo = URI.encode(repo)
+
+    api_request(access_token, opts, :get, "/repos/#{owner}/#{repo}", nil)
+  end
+
+  @spec create_user_repository(String.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def create_user_repository(access_token, params, opts \\ []) when is_binary(access_token) do
+    api_request(access_token, opts, :post, "/user/repos", params)
+  end
+
+  @spec create_org_repository(String.t(), String.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def create_org_repository(access_token, org, params, opts \\ [])
+      when is_binary(access_token) and is_binary(org) do
+    org = URI.encode(org)
+
+    api_request(access_token, opts, :post, "/orgs/#{org}/repos", params)
+  end
+
   @spec oauth_client_id() :: {:ok, String.t()} | {:error, :oauth_client_id_missing}
   def oauth_client_id do
     case Application.get_env(:ide, Ide.GitHub, []) |> Keyword.get(:oauth_client_id) do
@@ -82,8 +107,8 @@ defmodule Ide.GitHub.Client do
     )
   end
 
-  @spec req_api(String.t()) :: Req.Request.t()
-  defp req_api(access_token) do
+  @spec req_api(String.t(), keyword()) :: Req.Request.t()
+  defp req_api(access_token, _opts \\ []) do
     Req.new(
       base_url: "https://api.github.com",
       headers: [
@@ -95,6 +120,56 @@ defmodule Ide.GitHub.Client do
       receive_timeout: 15_000
     )
   end
+
+  @spec api_request(String.t(), keyword(), term(), String.t(), term()) ::
+          {:ok, map()} | {:error, term()}
+  defp api_request(access_token, opts, method, path, body) do
+  headers = [
+      {"accept", "application/vnd.github+json"},
+      {"authorization", "Bearer #{access_token}"},
+      {"x-github-api-version", "2022-11-28"},
+      {"user-agent", "elm-pebble-ide"}
+    ]
+
+    case Keyword.get(opts, :request_fun) do
+      fun when is_function(fun, 5) ->
+        url = "https://api.github.com" <> path
+        encoded = if is_map(body), do: Jason.encode!(body), else: body
+
+        fun.(method, url, headers, encoded, 15_000)
+        |> normalize_fun_response()
+
+      _ ->
+        request = req_api(access_token, opts)
+
+        response =
+          case {method, body} do
+            {:get, _} -> Req.get(request, url: path)
+            {:post, body} -> Req.post(request, url: path, json: body)
+          end
+
+        normalize_response(response)
+    end
+  end
+
+  @spec normalize_fun_response(term()) :: {:ok, map()} | {:error, term()}
+  defp normalize_fun_response({:ok, %{status: status, body: body}}) when status in 200..299 and is_map(body),
+    do: {:ok, body}
+
+  defp normalize_fun_response({:ok, %{status: status, body: body}}),
+    do: {:error, {:http_error, status, body}}
+
+  defp normalize_fun_response({:error, reason}), do: {:error, reason}
+  defp normalize_fun_response(other), do: other
+
+  @spec normalize_response(term()) :: {:ok, map()} | {:error, term()}
+  defp normalize_response(%Req.Response{} = response), do: normalize_body(response)
+
+  defp normalize_response({:ok, %Req.Response{} = response}), do: normalize_body(response)
+
+  defp normalize_response({:error, reason}), do: {:error, reason}
+
+  defp normalize_response(other), do: other
 
   @spec normalize_body(term()) :: {:ok, map()} | {:error, term()}
   defp normalize_body(%Req.Response{status: status, body: body})

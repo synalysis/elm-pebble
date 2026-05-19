@@ -5,7 +5,10 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   alias Ide.PublishManifest
   alias Ide.PublishReadiness
   alias Ide.Screenshots
+  alias Ide.StoreAssets
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
+
+  @generate_store_graphics_key "generate_store_graphics"
 
   @spec default_release_summary(map() | nil) :: map()
   def default_release_summary(project \\ nil) do
@@ -509,7 +512,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
 
   @spec load_screenshots(term()) :: term()
   defp load_screenshots(project) do
-    case Screenshots.list(project.slug, []) do
+    case Screenshots.list(project, []) do
       {:ok, shots} -> shots
       _ -> []
     end
@@ -531,9 +534,56 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   defp type_label(:watchface), do: "watchface"
   defp type_label(:watchapp), do: "watchapp"
 
+  @doc """
+  Whether the next App Store **create** should send `iconPrompt` for AI-generated icons.
+  """
+  @spec generate_store_graphics?(map(), map()) :: boolean()
+  def generate_store_graphics?(project, submit_options \\ %{}) do
+    case Map.get(submit_options, @generate_store_graphics_key) do
+      nil ->
+        project
+        |> release_defaults()
+        |> Map.get(@generate_store_graphics_key, false)
+        |> truthy?()
+
+      value ->
+        truthy?(value)
+    end
+  end
+
+  @doc """
+  True for new watchapps with no uploaded store icons (AI generation can be offered).
+  """
+  @spec offers_ai_store_graphics?(map(), String.t() | map()) :: boolean()
+  def offers_ai_store_graphics?(project, store_assets_or_workspace) do
+    new_store_listing?(project) and project.target_type == "app" and
+      StoreAssets.ai_graphics_available?(store_assets_or_workspace)
+  end
+
+  @spec new_store_listing?(map()) :: boolean()
+  def new_store_listing?(project) do
+    case Map.get(project, :store_app_id) do
+      id when is_binary(id) -> String.trim(id) == ""
+      _ -> true
+    end
+  end
+
+  @spec publish_submit_options(map()) :: map()
+  def publish_submit_options(project) when is_map(project) do
+    %{
+      "is_published" => true,
+      "all_platforms" => false,
+      @generate_store_graphics_key => generate_store_graphics?(project)
+    }
+  end
+
   @spec release_defaults(term()) :: term()
   defp release_defaults(%{release_defaults: defaults}) when is_map(defaults), do: defaults
   defp release_defaults(_), do: %{}
+
+  @spec truthy?(term()) :: boolean()
+  defp truthy?(value) when value in [true, "true", "on", "1", 1], do: true
+  defp truthy?(_), do: false
 
   @spec blank_to_nil(term()) :: term()
   defp blank_to_nil(value) when is_binary(value) do

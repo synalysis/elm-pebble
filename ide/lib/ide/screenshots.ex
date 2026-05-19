@@ -4,8 +4,11 @@ defmodule Ide.Screenshots do
   """
 
   alias Ide.PebbleToolchain
+  alias Ide.Projects
+  alias Ide.Projects.Project
 
   @type project_slug :: String.t()
+  @type project_ref :: Project.t() | project_slug()
   @type opts :: keyword()
   @type screenshot :: %{
           filename: String.t(),
@@ -42,11 +45,13 @@ defmodule Ide.Screenshots do
   @doc """
   Captures a screenshot from the configured emulator target.
   """
-  @spec capture(project_slug(), opts()) :: {:ok, capture_result()} | {:error, term()}
-  def capture(project_slug, opts) do
-    with {:ok, storage_root} <- storage_root(),
+  @spec capture(project_ref(), opts()) :: {:ok, capture_result()} | {:error, term()}
+  def capture(%Project{} = project, opts), do: capture(project.slug, Keyword.put(opts, :project, project))
+
+  def capture(project_slug, opts) when is_binary(project_slug) do
+    with {:ok, project_dir} <- project_storage_dir(project_slug, opts),
          emulator_target <- Keyword.get(opts, :emulator_target, configured_emulator_target()) do
-      target_dir = Path.join([storage_root, project_slug, emulator_target])
+      target_dir = Path.join(project_dir, emulator_target)
       :ok = File.mkdir_p(target_dir)
 
       filename = screenshot_filename(emulator_target)
@@ -56,7 +61,7 @@ defmodule Ide.Screenshots do
              PebbleToolchain.run_screenshot(project_slug, absolute_path, emulator_target),
            :ok <- ensure_successful_screenshot(result, absolute_path),
            :ok <- write_metadata(absolute_path, "image/png") do
-        entry = build_entry(project_slug, emulator_target, absolute_path)
+        entry = build_entry(project_slug, emulator_target, absolute_path, opts)
 
         {:ok,
          %{
@@ -76,19 +81,25 @@ defmodule Ide.Screenshots do
   @doc """
   Stores a browser-captured PNG under the same project/target screenshot storage.
   """
-  @spec store_png(project_slug(), String.t(), binary()) :: {:ok, screenshot()} | {:error, term()}
-  def store_png(project_slug, emulator_target, png) when is_binary(png) do
-    with {:ok, storage_root} <- storage_root(),
+  @spec store_png(project_ref(), String.t(), binary(), opts()) ::
+          {:ok, screenshot()} | {:error, term()}
+  def store_png(project_ref, emulator_target, png, opts \\ [])
+
+  def store_png(%Project{} = project, emulator_target, png, opts),
+    do: store_png(project.slug, emulator_target, png, Keyword.put(opts, :project, project))
+
+  def store_png(project_slug, emulator_target, png, opts) when is_binary(png) do
+    with {:ok, project_dir} <- project_storage_dir(project_slug, opts),
          {:ok, emulator_target} <- normalize_emulator_target(emulator_target),
          true <- png_signature?(png) do
-      target_dir = Path.join([storage_root, project_slug, emulator_target])
+      target_dir = Path.join(project_dir, emulator_target)
       :ok = File.mkdir_p(target_dir)
 
       absolute_path = Path.join(target_dir, screenshot_filename(emulator_target))
 
       with :ok <- File.write(absolute_path, png),
            :ok <- write_metadata(absolute_path, "image/png") do
-        {:ok, build_entry(project_slug, emulator_target, absolute_path)}
+        {:ok, build_entry(project_slug, emulator_target, absolute_path, opts)}
       else
         {:error, reason} -> {:error, {:write_failed, reason}}
       end
@@ -101,9 +112,13 @@ defmodule Ide.Screenshots do
   @doc """
   Captures screenshots for all supported emulator targets.
   """
-  @spec capture_all_targets(project_slug(), opts()) ::
+  @spec capture_all_targets(project_ref(), opts()) ::
           {:ok, capture_all_result()} | {:error, term()}
-  def capture_all_targets(project_slug, opts) do
+  def capture_all_targets(%Project{} = project, opts),
+    do: capture_all_targets(project.slug, Keyword.put(opts, :project, project))
+
+  def capture_all_targets(project_slug, opts) when is_binary(project_slug) do
+    capture_opts = Keyword.take(opts, [:project])
     targets = capture_targets(Keyword.get(opts, :targets))
     boot_wait_ms = max(Keyword.get(opts, :boot_wait_ms, 2_500), 0)
     close_afterwards = Keyword.get(opts, :close_emulator_afterwards, true)
@@ -149,7 +164,8 @@ defmodule Ide.Screenshots do
                    screenshot_timeout_ms,
                    screenshot_retries,
                    retry_delay_ms,
-                   progress
+                   progress,
+                   capture_opts
                  ) do
             maybe_progress(progress, {:target, target, :ok})
             maybe_progress(progress, {:target, target, :captured, shot.screenshot})
@@ -200,12 +216,17 @@ defmodule Ide.Screenshots do
   @doc """
   Deletes a single screenshot by emulator target and filename.
   """
-  @spec delete(project_slug(), String.t(), String.t(), opts()) :: :ok | {:error, term()}
-  def delete(project_slug, emulator_target, filename, _opts \\ []) do
-    with {:ok, root} <- storage_root(),
+  @spec delete(project_ref(), String.t(), String.t(), opts()) :: :ok | {:error, term()}
+  def delete(project_ref, emulator_target, filename, opts \\ [])
+
+  def delete(%Project{} = project, emulator_target, filename, opts),
+    do: delete(project.slug, emulator_target, filename, Keyword.put(opts, :project, project))
+
+  def delete(project_slug, emulator_target, filename, opts) do
+    with {:ok, root} <- project_storage_dir(project_slug, opts),
          {:ok, filename} <- normalize_filename(filename),
          {:ok, emulator_target} <- normalize_emulator_target(emulator_target) do
-      path = Path.join([root, project_slug, emulator_target, filename])
+      path = Path.join([root, emulator_target, filename])
 
       case File.rm(path) do
         :ok ->
@@ -224,11 +245,16 @@ defmodule Ide.Screenshots do
   @doc """
   Deletes all screenshots under one emulator target folder.
   """
-  @spec delete_target(project_slug(), String.t(), opts()) :: :ok | {:error, term()}
-  def delete_target(project_slug, emulator_target, _opts \\ []) do
-    with {:ok, root} <- storage_root(),
+  @spec delete_target(project_ref(), String.t(), opts()) :: :ok | {:error, term()}
+  def delete_target(project_ref, emulator_target, opts \\ [])
+
+  def delete_target(%Project{} = project, emulator_target, opts),
+    do: delete_target(project.slug, emulator_target, Keyword.put(opts, :project, project))
+
+  def delete_target(project_slug, emulator_target, opts) do
+    with {:ok, root} <- project_storage_dir(project_slug, opts),
          {:ok, emulator_target} <- normalize_emulator_target(emulator_target) do
-      dir = Path.join([root, project_slug, emulator_target])
+      dir = Path.join(root, emulator_target)
 
       case File.rm_rf(dir) do
         {:ok, _} -> :ok
@@ -240,18 +266,20 @@ defmodule Ide.Screenshots do
   @doc """
   Lists screenshots for a project, newest first.
   """
-  @spec list(project_slug(), opts()) :: {:ok, [screenshot()]} | {:error, term()}
-  def list(project_slug, _opts) do
-    with {:ok, root} <- storage_root() do
-      project_dir = Path.join(root, project_slug)
+  @spec list(project_ref(), opts()) :: {:ok, [screenshot()]} | {:error, term()}
+  def list(project_ref, opts \\ [])
 
+  def list(%Project{} = project, opts), do: list(project.slug, Keyword.put(opts, :project, project))
+
+  def list(project_slug, opts) when is_binary(project_slug) do
+    with {:ok, project_dir} <- project_storage_dir(project_slug, opts) do
       case File.ls(project_dir) do
         {:ok, entries} ->
           legacy_files =
             entries
             |> Enum.filter(&file_name_image?/1)
             |> Enum.map(&Path.join(project_dir, &1))
-            |> Enum.map(&build_entry(project_slug, "unknown", &1))
+            |> Enum.map(&build_entry(project_slug, "unknown", &1, opts))
 
           grouped_files =
             entries
@@ -264,7 +292,7 @@ defmodule Ide.Screenshots do
                   files
                   |> Enum.filter(&file_name_image?/1)
                   |> Enum.map(&Path.join(emulator_dir, &1))
-                  |> Enum.map(&build_entry(project_slug, emulator_target, &1))
+                  |> Enum.map(&build_entry(project_slug, emulator_target, &1, opts))
 
                 _ ->
                   []
@@ -318,8 +346,8 @@ defmodule Ide.Screenshots do
     end
   end
 
-  @spec build_entry(term(), term(), term()) :: term()
-  defp build_entry(project_slug, emulator_target, absolute_path) do
+  @spec build_entry(term(), term(), term(), opts()) :: term()
+  defp build_entry(project_slug, emulator_target, absolute_path, opts) do
     filename = Path.basename(absolute_path)
     metadata = read_metadata(absolute_path)
 
@@ -327,7 +355,7 @@ defmodule Ide.Screenshots do
       filename: filename,
       emulator_target: emulator_target,
       absolute_path: absolute_path,
-      url: public_url(project_slug, emulator_target, filename),
+      url: public_url(project_slug, emulator_target, filename, opts),
       captured_at: Map.get(metadata, "captured_at") || format_mtime(absolute_path),
       mime_type: Map.get(metadata, "mime_type") || mime_type_from_filename(filename)
     }
@@ -376,8 +404,31 @@ defmodule Ide.Screenshots do
     end
   end
 
-  @spec storage_root() :: term()
-  defp storage_root do
+  @spec project_storage_dir(project_slug(), opts()) :: {:ok, String.t()} | {:error, term()}
+  defp project_storage_dir(project_slug, opts) do
+    case Keyword.get(opts, :project) do
+      %Project{} = project ->
+        dir = Projects.screenshots_path(project)
+        :ok = File.mkdir_p(dir)
+        maybe_migrate_legacy_screenshots!(project)
+        {:ok, dir}
+
+      _ ->
+        legacy_storage_root()
+        |> case do
+          {:ok, root} ->
+            dir = Path.join(root, project_slug)
+            File.mkdir_p(dir)
+            {:ok, dir}
+
+          error ->
+            error
+        end
+    end
+  end
+
+  @spec legacy_storage_root() :: {:ok, String.t()} | {:error, term()}
+  defp legacy_storage_root do
     path =
       Application.get_env(:ide, Ide.Screenshots, [])
       |> Keyword.get(:storage_root)
@@ -389,13 +440,48 @@ defmodule Ide.Screenshots do
     end
   end
 
-  @spec public_url(term(), term(), term()) :: term()
-  defp public_url(project_slug, emulator_target, filename) do
-    prefix =
-      Application.get_env(:ide, Ide.Screenshots, [])
-      |> Keyword.get(:public_prefix, "/screenshots")
+  @spec maybe_migrate_legacy_screenshots!(Project.t()) :: :ok
+  defp maybe_migrate_legacy_screenshots!(%Project{} = project) do
+    dest = Projects.screenshots_path(project)
 
-    "#{prefix}/#{project_slug}/#{emulator_target}/#{filename}"
+    with {:ok, legacy_root} <- legacy_storage_root(),
+         legacy_dir = Path.join(legacy_root, project.slug),
+         true <- File.dir?(legacy_dir),
+         false <- workspace_screenshots_present?(dest) do
+      case File.cp_r(legacy_dir, dest) do
+        {:ok, _} -> :ok
+        {:error, _, _} -> :ok
+      end
+    else
+      _ -> :ok
+    end
+
+    :ok
+  end
+
+  @spec workspace_screenshots_present?(String.t()) :: boolean()
+  defp workspace_screenshots_present?(dir) do
+    case File.ls(dir) do
+      {:ok, []} -> false
+      {:ok, _} -> true
+      {:error, :enoent} -> false
+      {:error, _} -> true
+    end
+  end
+
+  @spec public_url(term(), term(), term(), opts()) :: term()
+  defp public_url(project_slug, emulator_target, filename, opts) do
+    case Keyword.get(opts, :project) do
+      %Project{slug: slug} ->
+        "/projects/#{slug}/screenshots/#{emulator_target}/#{filename}"
+
+      _ ->
+        prefix =
+          Application.get_env(:ide, Ide.Screenshots, [])
+          |> Keyword.get(:public_prefix, "/screenshots")
+
+        "#{prefix}/#{project_slug}/#{emulator_target}/#{filename}"
+    end
   end
 
   @spec mtime_sort(term()) :: term()
@@ -485,20 +571,23 @@ defmodule Ide.Screenshots do
     end
   end
 
-  @spec capture_with_retries(term(), term(), term(), term(), term(), term()) :: term()
+  @spec capture_with_retries(term(), term(), term(), term(), term(), term(), opts()) :: term()
   defp capture_with_retries(
          project_slug,
          target,
          screenshot_timeout_ms,
          retries,
          retry_delay_ms,
-         progress
+         progress,
+         capture_opts
        ) do
     Enum.reduce_while(1..retries, {:error, :timeout}, fn attempt, _acc ->
       maybe_progress(progress, {:target, target, :capture_attempt, attempt, retries})
 
       case timed_step(
-             fn -> capture(project_slug, emulator_target: target) end,
+             fn ->
+               capture(project_slug, Keyword.merge([emulator_target: target], capture_opts))
+             end,
              screenshot_timeout_ms
            ) do
         {:ok, shot} ->
@@ -619,4 +708,16 @@ defmodule Ide.Screenshots do
   end
 
   defp normalize_emulator_target(_), do: {:error, :emulator_target_required}
+
+  @doc false
+  @spec normalize_filename_public(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def normalize_filename_public(name), do: normalize_filename(name)
+
+  @doc false
+  @spec normalize_emulator_target_public(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def normalize_emulator_target_public(target), do: normalize_emulator_target(target)
+
+  @doc false
+  @spec mime_type_for_path(String.t()) :: String.t()
+  def mime_type_for_path(path), do: mime_type_from_filename(Path.basename(path))
 end

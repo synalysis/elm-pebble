@@ -95,7 +95,7 @@ defmodule IdeWeb.WasmEmulatorController do
     with project when not is_nil(project) <-
            Projects.get_project_by_slug(slug, conn.assigns[:current_user]),
          {:ok, png} <- decode_png_data_url(image),
-         {:ok, shot} <- Screenshots.store_png(project.slug, emulator_target, png) do
+         {:ok, shot} <- Screenshots.store_png(project, emulator_target, png) do
       json(conn, %{status: "ok", screenshot: shot})
     else
       nil ->

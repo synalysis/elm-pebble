@@ -96,7 +96,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   @spec load_screenshots(term()) :: term()
   def load_screenshots(project) do
-    case Screenshots.list(project.slug, []) do
+    case Screenshots.list(project, []) do
       {:ok, shots} -> shots
       _ -> []
     end

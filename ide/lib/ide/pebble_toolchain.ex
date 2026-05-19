@@ -1792,6 +1792,14 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
+  @doc """
+  Returns the stable Pebble app UUID for a project slug (same value written to `package.json`).
+  """
+  @spec deterministic_app_uuid(String.t()) :: String.t()
+  def deterministic_app_uuid(slug) when is_binary(slug) do
+    deterministic_uuid(slug)
+  end
+
   @spec deterministic_uuid(term()) :: term()
   defp deterministic_uuid(seed) do
     bytes =
