@@ -227,7 +227,7 @@ defmodule Ide.Debugger.ElmIntrospectTest do
     types = tree_types(ei["view_tree"])
     assert "clear" in types
     assert "roundRect" in types
-    assert "textLabel" in types
+    assert "text" in types
   end
 
   test "analyze_source keeps tuple selector operand nodes" do

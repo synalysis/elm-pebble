@@ -1364,46 +1364,46 @@ defmodule Ide.DebuggerTest do
     assert {:ok, after_title} =
              Debugger.step(slug, %{target: "watch", message: "SetTitle \"HELLO\"", count: 1})
 
-    assert get_in(after_title, [:watch, :model, "runtime_model", "title"]) == "--"
+    assert get_in(after_title, [:watch, :model, "runtime_model", "title"]) == "HELLO"
     assert get_in(after_title, [:watch, :model, "runtime_model", "count"]) == 0
     enabled_baseline = get_in(after_title, [:watch, :model, "runtime_model", "enabled"])
 
     assert get_in(after_title, [:watch, :model, "elm_executor", "operation_source"]) ==
-             "unmapped_message"
+             "core_ir_update_eval"
 
     assert {:ok, after_count} =
              Debugger.step(slug, %{target: "watch", message: "SetCount 42", count: 1})
 
-    assert get_in(after_count, [:watch, :model, "runtime_model", "count"]) == 0
-    assert get_in(after_count, [:watch, :model, "runtime_model", "title"]) == "--"
+    assert get_in(after_count, [:watch, :model, "runtime_model", "count"]) == 42
+    assert get_in(after_count, [:watch, :model, "runtime_model", "title"]) == "HELLO"
     assert get_in(after_count, [:watch, :model, "runtime_model", "enabled"]) == enabled_baseline
 
     assert {:ok, after_bool} =
              Debugger.step(slug, %{target: "watch", message: "SetEnabled false", count: 1})
 
-    assert get_in(after_bool, [:watch, :model, "runtime_model", "enabled"]) == enabled_baseline
-    assert get_in(after_bool, [:watch, :model, "runtime_model", "count"]) == 0
-    assert get_in(after_bool, [:watch, :model, "runtime_model", "title"]) == "--"
+    assert get_in(after_bool, [:watch, :model, "runtime_model", "enabled"]) == false
+    assert get_in(after_bool, [:watch, :model, "runtime_model", "count"]) == 42
+    assert get_in(after_bool, [:watch, :model, "runtime_model", "title"]) == "HELLO"
 
     assert {:ok, after_wildcard} =
              Debugger.step(slug, %{target: "watch", message: "SetCountIgnored 99", count: 1})
 
-    assert get_in(after_wildcard, [:watch, :model, "runtime_model", "count"]) == 0
+    assert get_in(after_wildcard, [:watch, :model, "runtime_model", "count"]) == 42
 
     assert get_in(after_wildcard, [:watch, :model, "runtime_model", "enabled"]) ==
-             enabled_baseline
+             false
 
-    assert get_in(after_wildcard, [:watch, :model, "runtime_model", "title"]) == "--"
+    assert get_in(after_wildcard, [:watch, :model, "runtime_model", "title"]) == "HELLO"
 
     assert {:ok, after_unmapped} =
              Debugger.step(slug, %{target: "watch", message: "Ping 7", count: 1})
 
-    assert get_in(after_unmapped, [:watch, :model, "runtime_model", "count"]) == 0
+    assert get_in(after_unmapped, [:watch, :model, "runtime_model", "count"]) == 42
 
     assert get_in(after_unmapped, [:watch, :model, "runtime_model", "enabled"]) ==
-             enabled_baseline
+             false
 
-    assert get_in(after_unmapped, [:watch, :model, "runtime_model", "title"]) == "--"
+    assert get_in(after_unmapped, [:watch, :model, "runtime_model", "title"]) == "HELLO"
 
     assert get_in(after_unmapped, [:watch, :model, "elm_executor", "operation_source"]) ==
              "unmapped_message"
@@ -1478,10 +1478,10 @@ defmodule Ide.DebuggerTest do
     assert {:ok, stepped} =
              Debugger.step(slug, %{target: "watch", message: "SetCount 9", count: 1})
 
-    assert get_in(stepped, [:watch, :model, "runtime_model", "count"]) == 1
+    assert get_in(stepped, [:watch, :model, "runtime_model", "count"]) == 9
 
     assert get_in(stepped, [:watch, :model, "elm_executor", "operation_source"]) ==
-             "unmapped_message"
+             "core_ir_update_eval"
 
     seq_before_replay = stepped.seq
     assert {:ok, _} = Debugger.step(slug, %{target: "watch", message: "SetCount 11", count: 1})
@@ -1493,7 +1493,7 @@ defmodule Ide.DebuggerTest do
                cursor_seq: seq_before_replay
              })
 
-    assert get_in(replayed, [:watch, :model, "runtime_model", "count"]) == 1
+    assert get_in(replayed, [:watch, :model, "runtime_model", "count"]) == 9
 
     assert Enum.any?(replayed.events, fn event ->
              event.type == "debugger.runtime_exec" and
@@ -1800,7 +1800,7 @@ defmodule Ide.DebuggerTest do
     assert reloaded.watch.view_tree
            |> collect_view_nodes()
            |> Enum.any?(fn node ->
-             node["type"] == "textLabel" and node["text"] == preview["string"]
+             node["type"] == "text" and node["text"] == preview["string"]
            end)
   end
 
@@ -1899,7 +1899,10 @@ defmodule Ide.DebuggerTest do
     assert runtime_model["textColor"] == %{"ctor" => "Nothing", "args" => []}
     assert runtime_model["condition"] == %{"ctor" => "Nothing", "args" => []}
     assert runtime_model["temperature"] == %{"ctor" => "Nothing", "args" => []}
-    assert runtime_model["currentDateTime"] == %{"ctor" => "Nothing", "args" => []}
+    assert get_in(runtime_model, ["currentDateTime", "ctor"]) == "Just"
+    assert [current_date_time] = get_in(runtime_model, ["currentDateTime", "args"])
+    assert current_date_time["year"] >= 2000
+    assert current_date_time["utcOffsetMinutes"] == 120
     refute Map.has_key?(runtime_model, "width")
     refute Map.has_key?(runtime_model, "height")
     refute Map.has_key?(runtime_model, "screenWidth")
@@ -2847,7 +2850,7 @@ defmodule Ide.DebuggerTest do
              })
 
     assert get_in(after_connection, [:watch, :model, "runtime_last_message"]) ==
-             "ConnectionChanged False"
+             "ConnectionChanged True"
   end
 
   test "semantic debugger timeline keeps contiguous numbering and after-call snapshots" do

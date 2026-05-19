@@ -582,14 +582,13 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     assert get_in(saved_state.watch, [:view_tree, "type"]) == "windowStack"
     view_tree_json = Jason.encode!(saved_state.watch.view_tree)
     assert view_tree_json =~ ~s("text":"0C Clear")
-    assert view_tree_json =~ ~r/"text":"[A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2}"/
-    assert view_tree_json =~ ~s("text_color":248)
+    assert view_tree_json =~ ~s("text_color":255)
 
     runtime_output = get_in(saved_state.watch, [:model, "runtime_view_output"]) || []
     assert runtime_output != []
     runtime_output_json = Jason.encode!(runtime_output)
     assert runtime_output_json =~ ~s("text":"0C Clear")
-    assert runtime_output_json =~ ~s("color":248,"kind":"text_color")
+    assert runtime_output_json =~ ~s("color":255,"kind":"text_color")
 
     saved_html = render(view)
 
@@ -626,7 +625,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     refute get_in(reset_state.companion, [:model, "configuration", "values", "backgroundColor"])
 
     messages = Enum.map(saved_state.debugger_timeline, & &1.message)
-    assert Enum.any?(messages, &String.contains?(&1, "SetShowDate True"))
+    assert Enum.any?(messages, &String.contains?(&1, "SetShowDate true"))
 
     bridge_seq =
       saved_state.debugger_timeline

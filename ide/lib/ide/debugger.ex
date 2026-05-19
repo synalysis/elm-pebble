@@ -3000,11 +3000,15 @@ defmodule Ide.Debugger do
        when target in [:watch, :companion, :phone] and is_binary(message) and is_list(followups) do
     current_ctor = message_constructor(message)
     target_name = source_root_for_target(target)
+    model = get_in(state, [target, :model]) || %{}
 
     followups
     |> Enum.filter(&is_map/1)
     |> Enum.filter(fn row ->
       cond do
+        runtime_followup_shadowed_by_device_data?(model, message, row) ->
+          false
+
         is_map(Map.get(row, "command") || Map.get(row, :command)) ->
           true
 
@@ -3040,6 +3044,20 @@ defmodule Ide.Debugger do
 
   defp maybe_apply_runtime_followups(state, _target, _message, _message_source, _followups),
     do: state
+
+  defp runtime_followup_shadowed_by_device_data?(model, message, row)
+       when is_map(model) and is_binary(message) and is_map(row) do
+    package = Map.get(row, "package") || Map.get(row, :package)
+    followup_message = Map.get(row, "message") || Map.get(row, :message)
+
+    package == "elm-pebble/elm-watch" and is_binary(followup_message) and
+      Enum.any?(device_requests_for_model(model, message), fn req ->
+        device_response_message(req) == followup_message or
+          message_constructor(device_response_message(req)) == followup_message
+      end)
+  end
+
+  defp runtime_followup_shadowed_by_device_data?(_model, _message, _row), do: false
 
   @spec maybe_apply_static_task_followups(term(), term(), term(), term(), term()) :: term()
   defp maybe_apply_static_task_followups(
