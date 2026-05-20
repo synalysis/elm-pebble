@@ -52,6 +52,8 @@ defmodule Ide.MixProject do
        compile: false,
        depth: 1},
       {:swoosh, "~> 1.5"},
+      # SMTP adapter (runtime when SMTP_RELAY is set) needs gen_smtp for :gen_smtp_client and :mimemail
+      {:gen_smtp, "~> 1.0"},
       {:finch, "~> 0.13"},
       {:req, "~> 0.5"},
       {:muontrap, "~> 1.7"},

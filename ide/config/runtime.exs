@@ -220,6 +220,7 @@ if config_env() == :prod do
       |> String.to_integer(),
     mail_from: mail_from
 
+  # Requires {:gen_smtp, "~> 1.0"} in mix.exs (provides :gen_smtp_client and :mimemail for Swoosh).
   if smtp_relay = System.get_env("SMTP_RELAY") do
     config :ide, Ide.Mailer,
       adapter: Swoosh.Adapters.SMTP,
