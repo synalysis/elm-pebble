@@ -176,15 +176,44 @@ defmodule Ide.ProjectBundle do
   end
 
   @doc """
-  Returns the newest `.pbw` path under `.elm-pebble-publish/` when present.
+  Returns the newest `.pbw` under a directory tree (non-recursive glob from `dir`).
   """
   @spec latest_pbw_path(String.t()) :: String.t() | nil
   def latest_pbw_path(dir) do
     if File.dir?(dir) do
       dir
-      |> Path.wildcard("**/*.pbw")
-      |> Enum.sort_by(&File.stat!(&1).mtime, {:desc, DateTime})
+      |> pbw_glob()
+      |> Enum.sort_by(&pbw_mtime/1, :desc)
       |> List.first()
+    end
+  end
+
+  @doc """
+  Finds the newest `.pbw` produced for a project workspace.
+
+  Checks, in order:
+
+  1. `.pebble-sdk/app/build/` (normal `pebble build` / Prepare Release output)
+  2. `.elm-pebble-publish/` (staged publish artifacts, when present)
+  """
+  @spec workspace_latest_pbw_path(String.t()) :: String.t() | nil
+  def workspace_latest_pbw_path(workspace_root) when is_binary(workspace_root) do
+    [
+      Path.join(workspace_root, ".pebble-sdk/app/build"),
+      Path.join(workspace_root, ".elm-pebble-publish"),
+      workspace_root
+    ]
+    |> Enum.find_value(&latest_pbw_path/1)
+  end
+
+  defp pbw_glob(dir) do
+    Path.wildcard(Path.join(dir, "**/*.pbw"))
+  end
+
+  defp pbw_mtime(path) do
+    case File.stat(path, time: :posix) do
+      {:ok, %{mtime: mtime}} -> mtime
+      _ -> 0
     end
   end
 

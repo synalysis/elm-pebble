@@ -516,11 +516,72 @@ defmodule Ide.Projects do
   """
   @spec latest_pbw_path(Project.t()) :: {:ok, String.t()} | {:error, :pbw_not_found}
   def latest_pbw_path(%Project{} = project) do
-    case ProjectBundle.latest_pbw_path(project_workspace_path(project)) do
+    case ProjectBundle.workspace_latest_pbw_path(project_workspace_path(project)) do
       path when is_binary(path) -> {:ok, path}
       _ -> {:error, :pbw_not_found}
     end
   end
+
+  @doc """
+  Download filename for a prepared PBW: `<slug>-<version>.pbw`.
+  """
+  @spec pbw_download_filename(Project.t()) :: String.t()
+  def pbw_download_filename(%Project{} = project) do
+    slug = pbw_filename_segment(project.slug)
+    version = pbw_release_version(project)
+    "#{slug}-#{version}.pbw"
+  end
+
+  @spec pbw_release_version(Project.t()) :: String.t()
+  defp pbw_release_version(%Project{} = project) do
+    defaults = project.release_defaults || %{}
+
+    defaults
+    |> Map.get("version_label", "")
+    |> blank_to_nil()
+    |> case do
+      nil ->
+        package_json_version(project_workspace_path(project)) ||
+          blank_to_nil(project.latest_published_version) ||
+          "0.0.0"
+
+      version ->
+        version
+    end
+    |> pbw_filename_segment()
+  end
+
+  @spec package_json_version(String.t()) :: String.t() | nil
+  defp package_json_version(workspace_root) do
+    path = Path.join(workspace_root, ".pebble-sdk/app/package.json")
+
+    with {:ok, source} <- File.read(path),
+         {:ok, %{"version" => version}} <- Jason.decode(source) do
+      version |> to_string() |> String.trim() |> blank_to_nil()
+    else
+      _ -> nil
+    end
+  end
+
+  @spec pbw_filename_segment(String.t()) :: String.t()
+  defp pbw_filename_segment(value) do
+    value
+    |> to_string()
+    |> String.trim()
+    |> String.replace(~r/[^a-zA-Z0-9._-]+/, "-")
+    |> String.trim("-")
+    |> case do
+      "" -> "unknown"
+      segment -> segment
+    end
+  end
+
+  @spec blank_to_nil(String.t()) :: String.t() | nil
+  defp blank_to_nil(value) when is_binary(value) do
+    if String.trim(value) == "", do: nil, else: String.trim(value)
+  end
+
+  defp blank_to_nil(_), do: nil
 
   @doc """
   Directory for emulator screenshots inside the project workspace (outside `.pebble-sdk`).

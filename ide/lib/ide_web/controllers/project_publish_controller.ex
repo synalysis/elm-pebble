@@ -17,7 +17,7 @@ defmodule IdeWeb.ProjectPublishController do
       true ->
         case Projects.latest_pbw_path(project) do
           {:ok, path} ->
-            filename = Path.basename(path)
+            filename = Projects.pbw_download_filename(project)
 
             conn
             |> put_resp_header("content-disposition", ~s(attachment; filename="#{filename}"))

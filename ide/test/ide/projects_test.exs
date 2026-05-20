@@ -4,6 +4,7 @@ defmodule Ide.ProjectsTest do
   alias Ide.Debugger
   alias Ide.Auth.User
   alias Ide.Projects
+  alias Ide.Projects.Project
 
   setup do
     root = Path.join(System.tmp_dir!(), "ide_projects_test_#{System.unique_integer([:positive])}")
@@ -1070,5 +1071,23 @@ defmodule Ide.ProjectsTest do
     Enum.flat_map(nodes, fn node ->
       [node.rel_path | tree_rel_paths(Map.get(node, :children, []))]
     end)
+  end
+
+  test "pbw_download_filename uses slug and release version label" do
+    project = %Project{
+      slug: "2048",
+      release_defaults: %{"version_label" => "1.2.3"}
+    }
+
+    assert Projects.pbw_download_filename(project) == "2048-1.2.3.pbw"
+  end
+
+  test "pbw_download_filename sanitizes unsafe characters" do
+    project = %Project{
+      slug: "my game",
+      release_defaults: %{"version_label" => "v 1.0 beta"}
+    }
+
+    assert Projects.pbw_download_filename(project) == "my-game-v-1.0-beta.pbw"
   end
 end
