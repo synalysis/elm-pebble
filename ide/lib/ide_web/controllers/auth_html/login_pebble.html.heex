@@ -6,27 +6,27 @@
     <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">elm-pebble IDE</p>
     <h1 class="mt-2 text-2xl font-semibold text-zinc-900">Log in to continue</h1>
     <p class="mt-2 text-sm text-zinc-600">
-      Public mode keeps each user's projects, publish tokens, and App Store access separate.
+      Sign in with your Rebble developer account. Projects and App Store publishing stay tied to your account.
     </p>
 
     <div class="mt-5 space-y-2">
       <button
         type="button"
-        class="firebase-login rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+        class="firebase-login w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
         data-provider="google"
       >
         Log in with Google
       </button>
       <button
         type="button"
-        class="firebase-login rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700"
+        class="firebase-login w-full rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700"
         data-provider="github"
       >
         Log in with GitHub
       </button>
       <button
         type="button"
-        class="firebase-login rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-200"
+        class="firebase-login w-full rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-200"
         data-provider="apple"
       >
         Log in with Apple
@@ -34,9 +34,5 @@
     </div>
 
     <p id="firebase-login-status" class="mt-4 text-sm text-zinc-600"></p>
-
-    <p :if={@auth_mode == :local} class="mt-6 text-xs text-zinc-500">
-      Local mode does not require login for editing. App Store login is only needed when publishing.
-    </p>
   </div>
 </section>

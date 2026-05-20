@@ -120,15 +120,16 @@ function authConfigFromElement(el) {
 
 document.addEventListener("click", async event => {
   const loginButton = event.target.closest(".firebase-login")
+  const sessionLogoutButton = event.target.closest(".ide-session-logout")
   const logoutButton = event.target.closest(".firebase-logout")
-  if (!loginButton && !logoutButton) return
+  if (!loginButton && !logoutButton && !sessionLogoutButton) return
 
   event.preventDefault()
-  const button = loginButton || logoutButton
+  const button = loginButton || logoutButton || sessionLogoutButton
   const config = authConfigFromElement(button.closest("[data-firebase-config]") || document.body)
   const status = document.getElementById("firebase-login-status")
 
-  if (!config) {
+  if (loginButton && !config) {
     if (status) status.textContent = "Firebase configuration is missing."
     return
   }
@@ -146,8 +147,17 @@ document.addEventListener("click", async event => {
       } else {
         window.location.href = loginButton.dataset.returnTo || data.redirect_to || window.location.href
       }
+    } else if (sessionLogoutButton) {
+      await postJson("/auth/logout", {})
+      window.location.href = "/login"
     } else {
-      await firebaseLogout(config)
+      if (config) {
+        try {
+          await firebaseLogout(config)
+        } catch (_error) {}
+      }
+
+      await postJson("/auth/logout", {})
       window.location.href = "/login"
     }
   } catch (error) {

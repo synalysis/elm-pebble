@@ -3,6 +3,8 @@ defmodule Ide.Screenshots do
   Boundary for screenshot capture/storage services.
   """
 
+  alias Ide.Auth
+  alias Ide.Emulator
   alias Ide.PebbleToolchain
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -49,6 +51,14 @@ defmodule Ide.Screenshots do
   def capture(%Project{} = project, opts), do: capture(project.slug, Keyword.put(opts, :project, project))
 
   def capture(project_slug, opts) when is_binary(project_slug) do
+    if embedded_capture_backend?() do
+      capture_embedded(project_slug, opts)
+    else
+      capture_external(project_slug, opts)
+    end
+  end
+
+  defp capture_external(project_slug, opts) do
     with {:ok, project_dir} <- project_storage_dir(project_slug, opts),
          emulator_target <- Keyword.get(opts, :emulator_target, configured_emulator_target()) do
       target_dir = Path.join(project_dir, emulator_target)
@@ -78,6 +88,14 @@ defmodule Ide.Screenshots do
     end
   end
 
+  defp capture_embedded(project_slug, opts) do
+    emulator_target = Keyword.get(opts, :emulator_target, configured_emulator_target())
+    progress = Keyword.get(opts, :progress)
+    capture_opts = Keyword.take(opts, [:project])
+
+    capture_target_embedded(project_slug, emulator_target, opts, progress, capture_opts)
+  end
+
   @doc """
   Stores a browser-captured PNG under the same project/target screenshot storage.
   """
@@ -91,7 +109,8 @@ defmodule Ide.Screenshots do
   def store_png(project_slug, emulator_target, png, opts) when is_binary(png) do
     with {:ok, project_dir} <- project_storage_dir(project_slug, opts),
          {:ok, emulator_target} <- normalize_emulator_target(emulator_target),
-         true <- png_signature?(png) do
+         true <- png_signature?(png),
+         {:ok, png} <- Ide.ScreenshotDimensions.normalize_for_store(png, emulator_target) do
       target_dir = Path.join(project_dir, emulator_target)
       :ok = File.mkdir_p(target_dir)
 
@@ -105,6 +124,7 @@ defmodule Ide.Screenshots do
       end
     else
       false -> {:error, :invalid_png}
+      {:error, reason} -> {:error, reason}
       error -> error
     end
   end
@@ -118,6 +138,14 @@ defmodule Ide.Screenshots do
     do: capture_all_targets(project.slug, Keyword.put(opts, :project, project))
 
   def capture_all_targets(project_slug, opts) when is_binary(project_slug) do
+    if embedded_capture_backend?() do
+      capture_all_targets_embedded(project_slug, opts)
+    else
+      capture_all_targets_external(project_slug, opts)
+    end
+  end
+
+  defp capture_all_targets_external(project_slug, opts) do
     capture_opts = Keyword.take(opts, [:project])
     targets = capture_targets(Keyword.get(opts, :targets))
     boot_wait_ms = max(Keyword.get(opts, :boot_wait_ms, 2_500), 0)
@@ -211,6 +239,46 @@ defmodule Ide.Screenshots do
     )
 
     {:ok, %{results: results, captured: captured, failed: failed, close_result: close_result}}
+  end
+
+  defp capture_all_targets_embedded(project_slug, opts) do
+    capture_opts = Keyword.take(opts, [:project])
+    targets = capture_targets(Keyword.get(opts, :targets))
+    progress = Keyword.get(opts, :progress)
+
+    maybe_progress(
+      progress,
+      {:phase, "Preparing embedded emulator capture for #{length(targets)} targets..."}
+    )
+
+    results =
+      Enum.with_index(targets, 1)
+      |> Enum.map(fn {target, index} ->
+        maybe_progress(progress, {:phase, "[#{index}/#{length(targets)}] #{target}"})
+        maybe_progress(progress, {:target, target, :cleanup_before})
+        {target, capture_target_embedded(project_slug, target, opts, progress, capture_opts)}
+      end)
+
+    captured =
+      results
+      |> Enum.flat_map(fn
+        {_target, {:ok, result}} -> [result.screenshot]
+        _ -> []
+      end)
+
+    failed =
+      results
+      |> Enum.flat_map(fn
+        {target, {:error, reason}} -> [{target, reason}]
+        _ -> []
+      end)
+
+    maybe_progress(
+      progress,
+      {:phase, "Capture complete: #{length(captured)} succeeded, #{length(failed)} failed."}
+    )
+
+    {:ok, %{results: results, captured: captured, failed: failed, close_result: {:ok, :embedded}}}
   end
 
   @doc """
@@ -546,6 +614,11 @@ defmodule Ide.Screenshots do
   defp maybe_progress(progress, payload) when is_function(progress, 1), do: progress.(payload)
   defp maybe_progress(_progress, _payload), do: :ok
 
+  defp progress_step(progress, payload) do
+    maybe_progress(progress, payload)
+    :ok
+  end
+
   @spec timed_step(term(), term()) :: term()
   defp timed_step(fun, timeout_ms) when is_function(fun, 0) and is_integer(timeout_ms) do
     task = Task.async(fun)
@@ -610,6 +683,163 @@ defmodule Ide.Screenshots do
   defp wait_for_app_load(ms) when is_integer(ms) and ms >= 0 do
     Process.sleep(ms)
     :ok
+  end
+
+  defp embedded_capture_backend?, do: Auth.public_mode?()
+
+  defp capture_target_embedded(project_slug, target, opts, progress, capture_opts) do
+    boot_wait_ms = max(Keyword.get(opts, :boot_wait_ms, 5_000), 0)
+    install_timeout_ms = max(Keyword.get(opts, :install_timeout_ms, 180_000), 1_000)
+    screenshot_timeout_ms = max(Keyword.get(opts, :screenshot_timeout_ms, 75_000), 1_000)
+    screenshot_retries = max(Keyword.get(opts, :screenshot_retries, 3), 1)
+    retry_delay_ms = max(Keyword.get(opts, :retry_delay_ms, 1_500), 0)
+
+    case timed_step(fn -> launch_embedded_session(project_slug, target, opts) end, install_timeout_ms) do
+      {:ok, session} ->
+        try do
+          with :ok <- wait_session_ready(session.id),
+               :ok <- progress_step(progress, {:target, target, :installing}),
+               {:ok, _install} <-
+                 timed_step(fn -> Emulator.install(session.id) end, install_timeout_ms),
+               :ok <- wait_for_app_load(boot_wait_ms),
+               :ok <- progress_step(progress, {:target, target, :capturing}),
+               {:ok, shot} <-
+                 capture_embedded_png_with_retries(
+                   session.id,
+                   screenshot_timeout_ms,
+                   screenshot_retries,
+                   retry_delay_ms,
+                   progress,
+                   target
+                 ),
+               {:ok, stored} <- store_png(project_slug, target, shot, capture_opts) do
+            maybe_progress(progress, {:target, target, :ok})
+            maybe_progress(progress, {:target, target, :captured, stored})
+
+            {:ok,
+             %{
+               screenshot: stored,
+               output: "embedded emulator",
+               exit_code: 0,
+               command: "embedded",
+               cwd: ""
+             }}
+          else
+            {:error, reason} = error ->
+              require Logger
+
+              Logger.warning(
+                "embedded screenshot capture failed for #{target}: #{inspect(reason)}"
+              )
+
+              maybe_progress(progress, {:target, target, :error, reason})
+              error
+          end
+        after
+          maybe_progress(progress, {:target, target, :cleanup_after})
+          Emulator.kill(session.id)
+        end
+
+      {:error, reason} ->
+        require Logger
+
+        Logger.warning(
+          "embedded screenshot session launch failed for #{target}: #{inspect(reason)}"
+        )
+
+        maybe_progress(progress, {:target, target, :error, reason})
+        {:error, reason}
+    end
+  end
+
+  defp launch_embedded_session(project_slug, target, opts) do
+    with {:ok, package} <- resolve_capture_package(project_slug, target, opts),
+         {:ok, info} <-
+           Emulator.launch(
+             project_slug: project_slug,
+             platform: target,
+             artifact_path: package.artifact_path,
+             has_phone_companion: Map.get(package, :has_phone_companion, false)
+           ) do
+      {:ok, info}
+    end
+  end
+
+  defp resolve_capture_package(_project_slug, target, opts) do
+    case Keyword.get(opts, :package_path) do
+      path when is_binary(path) and path != "" ->
+        {:ok, %{artifact_path: Path.expand(path), has_phone_companion: false}}
+
+      _ ->
+        workspace_root = Keyword.get(opts, :workspace_root)
+        target_type = Keyword.get(opts, :target_type, "app")
+        project_name = Keyword.get(opts, :project_name, "project")
+
+        with workspace when is_binary(workspace) <- workspace_root,
+             workspace <- String.trim(workspace),
+             false <- workspace == "" do
+          PebbleToolchain.package("screenshot-capture",
+            workspace_root: workspace,
+            target_type: target_type,
+            project_name: project_name,
+            target_platforms: [target]
+          )
+        else
+          _ -> {:error, :package_path_required}
+        end
+    end
+  end
+
+  defp wait_session_ready(session_id, attempts \\ 120) do
+    Enum.reduce_while(1..attempts, {:error, :emulator_not_ready}, fn _attempt, _acc ->
+      case Emulator.health_check(session_id) do
+        {:ok, :ok} ->
+          {:halt, :ok}
+
+        _ ->
+          Process.sleep(250)
+          {:cont, {:error, :emulator_not_ready}}
+      end
+    end)
+  end
+
+  defp capture_embedded_png_with_retries(
+         session_id,
+         screenshot_timeout_ms,
+         retries,
+         retry_delay_ms,
+         progress,
+         target
+       ) do
+    Enum.reduce_while(1..retries, {:error, :timeout}, fn attempt, _acc ->
+      maybe_progress(progress, {:target, target, :capture_attempt, attempt, retries})
+
+      firmware_timeout =
+        max(
+          screenshot_timeout_ms - 3_000,
+          Ide.Emulator.FirmwareScreenshot.capture_timeout_ms(target)
+        )
+
+      step_timeout = max(screenshot_timeout_ms, firmware_timeout + 2_000)
+
+      case timed_step(
+             fn -> Emulator.screenshot(session_id, timeout: firmware_timeout) end,
+             step_timeout
+           ) do
+        {:ok, png} when is_binary(png) ->
+          {:halt, {:ok, png}}
+
+        {:error, reason} ->
+          maybe_progress(progress, {:target, target, :capture_retry, attempt, retries, reason})
+
+          if attempt < retries do
+            _ = wait_for_app_load(retry_delay_ms)
+            {:cont, {:error, reason}}
+          else
+            {:halt, {:error, reason}}
+          end
+      end
+    end)
   end
 
   @spec resolve_package_path(term(), term()) :: term()

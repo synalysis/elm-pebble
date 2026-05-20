@@ -32,7 +32,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         </span>
       </p>
 
-      <.settings_nav pane={@pane} project={@project} />
+      <.settings_nav pane={@pane} project={@project} auth_mode={@auth_mode} />
 
       <.form
         for={@project_settings_form}
@@ -46,6 +46,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
           :if={@pane == :settings}
           project_settings_form={@project_settings_form}
           store_listing_sync_status={@store_listing_sync_status}
+          auth_mode={@auth_mode}
         />
 
         <.store_graphics_section
@@ -83,6 +84,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
 
   attr :pane, :atom, required: true
   attr :project, :map, required: true
+  attr :auth_mode, :atom, default: :local
   attr :class, :string, default: "mt-4"
 
   @spec settings_nav(map()) :: Phoenix.LiveView.Rendered.t()
@@ -96,6 +98,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         Release
       </.link>
       <.link
+        :if={@auth_mode == :public_pebble}
         patch={~p"/projects/#{@project.slug}/settings/store"}
         class={settings_tab_class(@pane, :settings_store)}
       >
@@ -125,6 +128,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
 
   attr :project_settings_form, :map, required: true
   attr :store_listing_sync_status, :atom, required: true
+  attr :auth_mode, :atom, required: true
 
   defp release_metadata_section(assigns) do
     ~H"""
@@ -133,9 +137,9 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         <div>
           <h3 class="text-sm font-semibold">Release metadata</h3>
           <p class="mt-1 text-xs text-zinc-600">
-            Version auto-increments after a successful publish submit. You can also edit it manually here.
+            {release_metadata_intro(@auth_mode)}
           </p>
-          <p class="mt-1 text-xs text-zinc-600">
+          <p :if={@auth_mode == :public_pebble} class="mt-1 text-xs text-zinc-600">
             App Store sync:
             <span class={push_status_class(@store_listing_sync_status)}>
               {status_label(@store_listing_sync_status)}
@@ -143,6 +147,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
           </p>
         </div>
         <button
+          :if={@auth_mode == :public_pebble}
           type="submit"
           name="sync_store_listing"
           value="1"
@@ -456,6 +461,16 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
     do: "rounded bg-blue-100 px-3 py-1.5 text-blue-800"
 
   def settings_tab_class(_active, _tab), do: "rounded bg-zinc-100 px-3 py-1.5 text-zinc-700"
+
+  defp release_metadata_intro(:public_pebble),
+    do:
+      "Version auto-increments after a successful publish submit. You can also edit it manually here."
+
+  defp release_metadata_intro(:public_custom),
+    do:
+      "Version and release notes for exports and PBW download. App Store listing sync is not available in this deployment."
+
+  defp release_metadata_intro(_), do: "Version and release metadata used when preparing a release."
 
   defp settings_intro(:settings),
     do: "Release metadata for publish and App Store listing sync."

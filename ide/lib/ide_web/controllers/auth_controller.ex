@@ -8,10 +8,19 @@ defmodule IdeWeb.AuthController do
     if Auth.public_mode?() and conn.assigns[:current_user] do
       redirect(conn, to: ~p"/projects")
     else
-      render(conn, :login,
+      template =
+        case Auth.mode() do
+          :public_custom -> :login_custom
+          _ -> :login_pebble
+        end
+
+      render(conn, template,
         page_title: "Log in",
         auth_mode: Auth.mode(),
-        firebase_config: Auth.firebase_config()
+        firebase_config: Auth.firebase_config(),
+        step: custom_login_step(conn.params),
+        email: custom_login_email(conn.params),
+        login_link_ttl_days: Auth.login_link_ttl_days()
       )
     end
   end
@@ -29,7 +38,8 @@ defmodule IdeWeb.AuthController do
       display_name: user && user.display_name,
       firebase_token_exp: token_exp,
       firebase_token_expired: Auth.token_expired?(token_exp),
-      has_firebase_token: is_binary(token) and token != ""
+      has_firebase_token: is_binary(token) and token != "",
+      app_store_publish_enabled: Auth.app_store_publish_enabled?()
     })
   end
 
@@ -60,6 +70,80 @@ defmodule IdeWeb.AuthController do
     conn |> put_status(:bad_request) |> json(%{error: "Missing id_token"})
   end
 
+  @spec email_continue(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def email_continue(conn, %{"email" => email}) when is_binary(email) do
+    if Auth.public_custom_mode?() do
+      email = Ide.Auth.User.normalize_email(email)
+
+      case Auth.send_login_link(email) do
+        :ok ->
+          render(conn, :login_custom,
+            page_title: "Check your email",
+            auth_mode: Auth.mode(),
+            firebase_config: Auth.firebase_config(),
+            step: :sent,
+            email: email,
+            login_link_ttl_days: Auth.login_link_ttl_days()
+          )
+
+        {:error, :invalid_email} ->
+          conn
+          |> put_flash(:error, "Enter a valid email address.")
+          |> redirect(to: ~p"/login")
+
+        {:error, :delivery_failed} ->
+          conn
+          |> put_flash(:error, "Could not send the login email. Try again in a moment.")
+          |> redirect(to: ~p"/login")
+      end
+    else
+      conn |> put_status(:not_found) |> text("Not found")
+    end
+  end
+
+  def email_continue(conn, _params) do
+    conn |> put_flash(:error, "Email is required.") |> redirect(to: ~p"/login")
+  end
+
+  @spec email_verify(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def email_verify(conn, %{"token" => token}) when is_binary(token) do
+    if Auth.public_custom_mode?() do
+      case Auth.verify_login_token(token) do
+        {:ok, user} ->
+          conn
+          |> renew_session()
+          |> put_session(:user_id, user.id)
+          |> delete_session(:firebase_id_token)
+          |> delete_session(:firebase_id_token_exp)
+          |> put_flash(:info, "You are now logged in.")
+          |> redirect(to: ~p"/projects")
+
+        {:error, :expired_token} ->
+          conn
+          |> put_flash(:error, "This login link has expired. Request a new one.")
+          |> redirect(to: ~p"/login")
+
+        {:error, :used_token} ->
+          conn
+          |> put_flash(:error, "This login link was already used. Request a new one.")
+          |> redirect(to: ~p"/login")
+
+        {:error, :invalid_token} ->
+          conn
+          |> put_flash(:error, "This login link is invalid. Request a new one.")
+          |> redirect(to: ~p"/login")
+      end
+    else
+      conn |> put_status(:not_found) |> text("Not found")
+    end
+  end
+
+  def email_verify(conn, _params) do
+    conn
+    |> put_flash(:error, "Missing login link token.")
+    |> redirect(to: ~p"/login")
+  end
+
   @spec refresh(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def refresh(conn, %{"id_token" => id_token}) do
     with user when not is_nil(user) <- conn.assigns[:current_user],
@@ -86,6 +170,18 @@ defmodule IdeWeb.AuthController do
     |> renew_session()
     |> json(%{logged_in: false})
   end
+
+  defp custom_login_step(%{"step" => "sent"}), do: :sent
+  defp custom_login_step(_), do: :email
+
+  defp custom_login_email(%{"email" => email}) when is_binary(email) do
+    email |> String.trim() |> case do
+      "" -> nil
+      value -> Ide.Auth.User.normalize_email(value)
+    end
+  end
+
+  defp custom_login_email(_), do: nil
 
   defp renew_session(conn) do
     conn

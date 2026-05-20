@@ -145,17 +145,35 @@ defmodule Ide.PebbleToolchain do
   """
   @spec run_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
   def run_emulator(_project_slug, opts) do
+    with :ok <- ensure_external_emulator_allowed() do
+      do_run_emulator(opts)
+    end
+  end
+
+  defp do_run_emulator(opts) do
     emulator_target = Keyword.get(opts, :emulator_target, configured_emulator_target())
     package_path = Keyword.get(opts, :package_path)
     install_timeout_seconds = max(Keyword.get(opts, :install_timeout_seconds, 120), 30)
+    owner = Ide.Emulator.SlotLimiter.external_owner(emulator_target)
 
-    with {:ok, package_path} <- normalize_package_path(package_path) do
-      cwd = Path.dirname(package_path)
+    with {:ok, ^owner} <-
+           Ide.Emulator.SlotLimiter.acquire(owner,
+             kind: :external,
+             platform: emulator_target,
+             timeout: emulator_slot_acquire_timeout(opts)
+           ),
+         {:ok, package_path} <- normalize_package_path(package_path),
+         cwd <- {:ok, Path.dirname(package_path)},
+         {:ok, install_result} <-
+           install_on_emulator(cwd, emulator_target, package_path, install_timeout_seconds) do
+      {:ok, attach_emulator_logs(install_result, emulator_target, cwd, opts)}
+    else
+      {:error, :timeout} = err ->
+        err
 
-      with {:ok, install_result} <-
-             install_on_emulator(cwd, emulator_target, package_path, install_timeout_seconds) do
-        {:ok, attach_emulator_logs(install_result, emulator_target, cwd, opts)}
-      end
+      {:error, reason} ->
+        Ide.Emulator.SlotLimiter.release(owner)
+        {:error, reason}
     end
   end
 
@@ -164,14 +182,44 @@ defmodule Ide.PebbleToolchain do
   """
   @spec stop_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
   def stop_emulator(_project_slug, opts \\ []) do
+    with :ok <- ensure_external_emulator_allowed() do
+      do_stop_emulator(opts)
+    end
+  end
+
+  defp do_stop_emulator(opts) do
+    emulator_target = Keyword.get(opts, :emulator_target)
+    force? = Keyword.get(opts, :force, false)
+
     args =
-      if Keyword.get(opts, :force, false) do
+      if force? do
         ["kill", "--force"]
       else
         ["kill"]
       end
 
-    run_pebble_with_timeout(args, Keyword.get(opts, :timeout_seconds, 10), opts)
+    result = run_pebble_with_timeout(args, Keyword.get(opts, :timeout_seconds, 10), opts)
+    release_external_emulator_slots(emulator_target, force?)
+    result
+  end
+
+  defp release_external_emulator_slots(emulator_target, force?) do
+    cond do
+      force? ->
+        Ide.Emulator.SlotLimiter.release_all_external()
+
+      is_binary(emulator_target) ->
+        Ide.Emulator.SlotLimiter.release_external(emulator_target)
+
+      true ->
+        :ok
+    end
+  end
+
+  defp emulator_slot_acquire_timeout(opts) do
+    Keyword.get(opts, :slot_acquire_timeout_ms) ||
+      Application.get_env(:ide, Ide.Emulator.SlotLimiter, [])
+      |> Keyword.get(:acquire_timeout_ms, 600_000)
   end
 
   @spec install_on_emulator(String.t(), String.t(), String.t(), pos_integer()) ::
@@ -314,6 +362,12 @@ defmodule Ide.PebbleToolchain do
   @spec run_screenshot(project_slug(), String.t(), String.t()) ::
           {:ok, command_result()} | {:error, term()}
   def run_screenshot(_project_slug, output_path, emulator_target) do
+    with :ok <- ensure_external_emulator_allowed() do
+      do_run_screenshot(output_path, emulator_target)
+    end
+  end
+
+  defp do_run_screenshot(output_path, emulator_target) do
     run_pebble_with_timeout(
       ["screenshot", "--emulator", emulator_target, "--no-open", output_path],
       15,
@@ -326,7 +380,13 @@ defmodule Ide.PebbleToolchain do
   """
   @spec run_emulator_control(project_slug(), String.t(), map()) ::
           {:ok, command_result()} | {:error, term()}
-  def run_emulator_control(_project_slug, emulator_target, %{} = params)
+  def run_emulator_control(_project_slug, emulator_target, %{} = params) do
+    with :ok <- ensure_external_emulator_allowed() do
+      do_run_emulator_control(emulator_target, params)
+    end
+  end
+
+  defp do_run_emulator_control(emulator_target, %{} = params)
       when is_binary(emulator_target) do
     with {:ok, args} <- emulator_control_args(emulator_target, params) do
       run_pebble_with_timeout(args, 10, [])
@@ -1996,4 +2056,12 @@ defmodule Ide.PebbleToolchain do
   end
 
   defp normalize_package_path(_), do: {:error, :package_path_required}
+
+  defp ensure_external_emulator_allowed do
+    if Ide.Auth.public_mode?() do
+      {:error, :external_emulator_disabled}
+    else
+      :ok
+    end
+  end
 end

@@ -33,6 +33,10 @@ config :ide, Ide.PebbleToolchain,
   emulator_target: "basalt",
   emulator_targets: ~w(aplite basalt chalk diorite emery flint gabbro)
 
+config :ide, Ide.Emulator.SlotLimiter,
+  max_slots: 8,
+  acquire_timeout_ms: 600_000
+
 config :ide, Ide.Emulator.Session,
   enabled: System.get_env("ELM_PEBBLE_EMBEDDED_EMULATOR", "true") not in ~w(0 false no off),
   qemu_bin: System.get_env("ELM_PEBBLE_QEMU_BIN"),

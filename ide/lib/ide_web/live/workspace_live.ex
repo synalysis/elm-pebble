@@ -1146,7 +1146,10 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_event("run-emulator-install", _params, socket) do
-    project = socket.assigns.project
+    if external_emulator_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, external_emulator_disabled_message())}
+    else
+      project = socket.assigns.project
     emulator_target = socket.assigns.selected_emulator_target
     package_path = socket.assigns.publish_artifact_path
     workspace_root = Projects.project_workspace_path(project)
@@ -1163,10 +1166,14 @@ defmodule IdeWeb.WorkspaceLive do
          package_path
        )
      end)}
+    end
   end
 
   def handle_event("stop-emulator", _params, socket) do
-    project = socket.assigns.project
+    if external_emulator_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, external_emulator_disabled_message())}
+    else
+      project = socket.assigns.project
 
     {:noreply,
      socket
@@ -1175,6 +1182,7 @@ defmodule IdeWeb.WorkspaceLive do
      |> start_async(:stop_emulator, fn ->
        PebbleToolchain.stop_emulator(project.slug, force: true)
      end)}
+    end
   end
 
   def handle_event(
@@ -1182,15 +1190,26 @@ defmodule IdeWeb.WorkspaceLive do
         _params,
         %{assigns: %{external_emulator_running: true}} = socket
       ) do
-    handle_event("stop-emulator", %{}, socket)
+    if external_emulator_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, external_emulator_disabled_message())}
+    else
+      handle_event("stop-emulator", %{}, socket)
+    end
   end
 
   def handle_event("toggle-external-emulator", _params, socket) do
-    handle_event("run-emulator-install", %{}, socket)
+    if external_emulator_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, external_emulator_disabled_message())}
+    else
+      handle_event("run-emulator-install", %{}, socket)
+    end
   end
 
   def handle_event("external-emulator-control", params, socket) do
-    project = socket.assigns.project
+    if external_emulator_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, external_emulator_disabled_message())}
+    else
+      project = socket.assigns.project
     emulator_target = socket.assigns.selected_emulator_target
 
     {:noreply,
@@ -1200,6 +1219,7 @@ defmodule IdeWeb.WorkspaceLive do
      |> start_async(:external_emulator_control, fn ->
        PebbleToolchain.run_emulator_control(project.slug, emulator_target, params)
      end)}
+    end
   end
 
   def handle_event("refresh-emulator-installation", _params, socket) do
@@ -1219,15 +1239,19 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_event("capture-screenshot", _params, socket) do
-    project = socket.assigns.project
-    emulator_target = socket.assigns.selected_emulator_target
+    if external_emulator_blocked?(socket) do
+      {:noreply, put_flash(socket, :error, external_emulator_disabled_message())}
+    else
+      project = socket.assigns.project
+      emulator_target = socket.assigns.selected_emulator_target
 
-    {:noreply,
+      {:noreply,
      socket
      |> assign(:screenshot_status, :running)
      |> start_async(:capture_screenshot, fn ->
        Screenshots.capture(project, emulator_target: emulator_target)
      end)}
+    end
   end
 
   def handle_event("wasm-screenshot-saved", %{"screenshot" => screenshot}, socket) do
@@ -1492,114 +1516,15 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_event("submit-publish-release", params, socket) do
-    release_summary =
-      case Map.get(params, "release_summary") do
-        %{} = release_params ->
-          PublishFlow.merge_release_summary(socket.assigns.release_summary, release_params)
-
-        _ ->
-          socket.assigns.release_summary
-      end
-
-    options =
-      case Map.get(params, "publish_submit") do
-        %{} = submit_params ->
-          merge_publish_submit_options(socket.assigns.publish_submit_options, submit_params)
-
-        _ ->
-          socket.assigns.publish_submit_options
-      end
-
-    socket =
-      socket
-      |> assign(:release_summary, release_summary)
-      |> assign(:release_summary_form, to_form(release_summary, as: :release_summary))
-      |> assign(:publish_submit_options, options)
-
-    project = socket.assigns.project
-    app_root = socket.assigns.publish_app_root
-    firebase_id_token = socket.assigns[:firebase_id_token]
-    firebase_id_token_exp = socket.assigns[:firebase_id_token_exp]
-
-    cond do
-      not is_binary(app_root) or app_root == "" ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "No publish app root available yet. Run Prepare Release first."
-         )}
-
-      not is_binary(firebase_id_token) or firebase_id_token == "" ->
-        {:noreply,
-         socket
-         |> assign(:publish_submit_status, :error)
-         |> assign(
-           :publish_submit_output,
-           "App Store login required. Log in on this page before submitting the release."
-         )}
-
-      Ide.Auth.token_expired?(firebase_id_token_exp) ->
-        {:noreply,
-         socket
-         |> assign(:publish_submit_status, :error)
-         |> assign(
-           :publish_submit_output,
-           "App Store login expired. Log in again before submitting the release."
-         )}
-
-      missing_new_app_description?(project) ->
-        {:noreply,
-         socket
-         |> assign(:publish_submit_status, :error)
-         |> assign(
-           :publish_submit_output,
-           "App Store description required. Add one in Project Settings before submitting a new app."
-         )}
-
-      PublishFlow.store_release_notes(release_summary) == "" ->
-        {:noreply,
-         socket
-         |> assign(:publish_submit_status, :error)
-         |> assign(
-           :publish_submit_output,
-           "Changelog is empty. Add release notes in the Changelog field, then submit again."
-         )}
-
-      true ->
-        app_description = publish_app_description(project)
-        screenshot_groups = socket.assigns.screenshot_groups
-
-        workspace_root = Projects.project_workspace_path(project)
-
-        submit_opts = [
-          app_root: app_root,
-          artifact_path: socket.assigns.publish_artifact_path,
-          release_notes: PublishFlow.store_release_notes(release_summary),
-          version: release_summary["version_label"],
-          description: app_description,
-          is_published: options["is_published"] == true,
-          all_platforms: options["all_platforms"] == true,
-          firebase_id_token: firebase_id_token,
-          store_icons: Ide.StoreAssets.publish_icon_paths(workspace_root),
-          generate_store_graphics: PublishFlow.generate_store_graphics?(project, options),
-          website: Ide.StoreListingUrls.website_url(project),
-          source: Ide.StoreListingUrls.source_url(project)
-        ]
-
-        {:noreply,
-         socket
-         |> assign(:publish_submit_status, :running)
-         |> assign(:publish_submit_output, nil)
-         |> start_async(:submit_publish_release, fn ->
-           with {:ok, screenshot_paths} <-
-                  PublishFlow.stage_publish_screenshots(app_root, screenshot_groups) do
-             AppStorePublisher.publish(
-               project,
-               Keyword.put(submit_opts, :screenshots, screenshot_paths)
-             )
-           end
-         end)}
+    unless Auth.app_store_publish_enabled?() do
+      {:noreply,
+       put_flash(
+         socket,
+         :error,
+         "Automated App Store publishing is disabled. Run Prepare Release, then download the PBW."
+       )}
+    else
+      submit_publish_release(params, socket)
     end
   end
 
@@ -2245,6 +2170,118 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
+  defp submit_publish_release(params, socket) do
+    release_summary =
+      case Map.get(params, "release_summary") do
+        %{} = release_params ->
+          PublishFlow.merge_release_summary(socket.assigns.release_summary, release_params)
+
+        _ ->
+          socket.assigns.release_summary
+      end
+
+    options =
+      case Map.get(params, "publish_submit") do
+        %{} = submit_params ->
+          merge_publish_submit_options(socket.assigns.publish_submit_options, submit_params)
+
+        _ ->
+          socket.assigns.publish_submit_options
+      end
+
+    socket =
+      socket
+      |> assign(:release_summary, release_summary)
+      |> assign(:release_summary_form, to_form(release_summary, as: :release_summary))
+      |> assign(:publish_submit_options, options)
+
+    project = socket.assigns.project
+    app_root = socket.assigns.publish_app_root
+    firebase_id_token = socket.assigns[:firebase_id_token]
+    firebase_id_token_exp = socket.assigns[:firebase_id_token_exp]
+
+    cond do
+      not is_binary(app_root) or app_root == "" ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "No publish app root available yet. Run Prepare Release first."
+         )}
+
+      not is_binary(firebase_id_token) or firebase_id_token == "" ->
+        {:noreply,
+         socket
+         |> assign(:publish_submit_status, :error)
+         |> assign(
+           :publish_submit_output,
+           "App Store login required. Log in on this page before submitting the release."
+         )}
+
+      Ide.Auth.token_expired?(firebase_id_token_exp) ->
+        {:noreply,
+         socket
+         |> assign(:publish_submit_status, :error)
+         |> assign(
+           :publish_submit_output,
+           "App Store login expired. Log in again before submitting the release."
+         )}
+
+      missing_new_app_description?(project) ->
+        {:noreply,
+         socket
+         |> assign(:publish_submit_status, :error)
+         |> assign(
+           :publish_submit_output,
+           "App Store description required. Add one in Project Settings before submitting a new app."
+         )}
+
+      PublishFlow.store_release_notes(release_summary) == "" ->
+        {:noreply,
+         socket
+         |> assign(:publish_submit_status, :error)
+         |> assign(
+           :publish_submit_output,
+           "Changelog is empty. Add release notes in the Changelog field, then submit again."
+         )}
+
+      true ->
+        app_description = publish_app_description(project)
+        screenshot_groups = socket.assigns.screenshot_groups
+
+        workspace_root = Projects.project_workspace_path(project)
+
+        submit_opts = [
+          app_root: app_root,
+          artifact_path: socket.assigns.publish_artifact_path,
+          release_notes: PublishFlow.store_release_notes(release_summary),
+          version: release_summary["version_label"],
+          description: app_description,
+          is_published: options["is_published"] == true,
+          all_platforms: options["all_platforms"] == true,
+          firebase_id_token: firebase_id_token,
+          store_icons: Ide.StoreAssets.publish_icon_paths(workspace_root),
+          generate_store_graphics: PublishFlow.generate_store_graphics?(project, options),
+          website: Ide.StoreListingUrls.website_url(project),
+          source: Ide.StoreListingUrls.source_url(project)
+        ]
+
+        {:noreply,
+         socket
+         |> assign(:publish_submit_status, :running)
+         |> assign(:publish_submit_output, nil)
+         |> start_async(:submit_publish_release, fn ->
+           with {:ok, screenshot_paths} <-
+                  PublishFlow.stage_publish_screenshots(app_root, screenshot_groups) do
+             AppStorePublisher.publish(
+               project,
+               Keyword.put(submit_opts, :screenshots, screenshot_paths)
+             )
+           end
+         end)}
+    end
+  end
+
   defp settings_save_section(:settings), do: :release
   defp settings_save_section(:settings_store), do: :store
   defp settings_save_section(:settings_github), do: :github
@@ -2256,7 +2293,8 @@ defmodule IdeWeb.WorkspaceLive do
   defp maybe_persist_store_icon_uploads(_socket, _workspace_root, _section), do: :ok
 
   defp save_project_settings(socket, project, params, workspace_root, opts) do
-    sync_store_listing = Keyword.get(opts, :sync_store_listing, false)
+    sync_store_listing =
+      Keyword.get(opts, :sync_store_listing, false) and Auth.app_store_publish_enabled?()
     section = Keyword.get(opts, :section, :release)
     defaults = project.release_defaults || %{}
     github = project.github || %{}
@@ -5095,4 +5133,12 @@ defmodule IdeWeb.WorkspaceLive do
 
   @spec normalize_emulator_mode(String.t() | nil, term()) :: String.t()
   defp normalize_emulator_mode(target, mode), do: EmulatorSupport.normalize_mode(target, mode)
+
+  defp external_emulator_blocked?(socket) do
+    socket.assigns.emulator_mode == "external" and not EmulatorSupport.external_mode_enabled?()
+  end
+
+  defp external_emulator_disabled_message do
+    "External Pebble emulator is not available on this hosted IDE. Use Embedded or WASM instead."
+  end
 end

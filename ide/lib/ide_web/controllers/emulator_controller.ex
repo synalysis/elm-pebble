@@ -411,6 +411,10 @@ defmodule IdeWeb.EmulatorController do
       "Check network access or set ELM_PEBBLE_QEMU_IMAGE_ROOT to a directory that already contains <platform>/qemu images."
   end
 
+  defp launch_error_message(:timeout) do
+    "All emulator slots are in use; timed out waiting for a free slot. Try again later."
+  end
+
   defp launch_error_message(reason), do: inspect(reason)
 
   defp install_error_message(:artifact_not_found),

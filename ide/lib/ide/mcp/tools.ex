@@ -11,6 +11,7 @@ defmodule Ide.Mcp.Tools do
   alias Ide.Mcp.Audit
   alias Ide.Mcp.CheckCache
   alias Ide.Packages
+  alias Ide.EmulatorSupport
   alias Ide.PebbleToolchain
   alias Ide.Projects
   alias Ide.PublishManifest
@@ -1363,6 +1364,7 @@ defmodule Ide.Mcp.Tools do
     |> add_if(:publish in capabilities, @publish_tools)
     |> Enum.map(&Map.put_new(&1, :version, @tool_version))
     |> Enum.map(&publish_tool_name/1)
+    |> patch_emulator_mode_tool_schemas()
   end
 
   @spec catalog_version() :: String.t()
@@ -3369,10 +3371,26 @@ defmodule Ide.Mcp.Tools do
     |> maybe_put_inclusion_setting(map, "timeline_mode", ~w(watch companion mixed separate))
     |> maybe_put_string_setting(map, "watch_profile_id")
     |> maybe_put_string_setting(map, "emulator_target")
-    |> maybe_put_inclusion_setting(map, "emulator_mode", ~w(embedded external wasm))
+    |> maybe_put_inclusion_setting(map, "emulator_mode", EmulatorSupport.allowed_mode_ids())
   end
 
   defp safe_debugger_settings_update(_), do: %{}
+
+  defp patch_emulator_mode_tool_schemas(tools) do
+    modes = EmulatorSupport.allowed_mode_ids()
+
+    Enum.map(tools, fn
+      %{name: "projects.update_settings"} = tool ->
+        update_in(
+          tool,
+          [:inputSchema, :properties, :debugger, :properties, :emulator_mode, :enum],
+          fn _ -> modes end
+        )
+
+      tool ->
+        tool
+    end)
+  end
 
   @spec project_simulator_settings(map()) :: map()
   defp project_simulator_settings(project) when is_map(project) do

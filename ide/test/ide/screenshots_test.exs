@@ -40,7 +40,7 @@ defmodule Ide.ScreenshotsTest do
   end
 
   test "stores screenshots under project workspace screenshots/", %{project: project, projects_root: projects_root} do
-    png = <<137, 80, 78, 71, 13, 10, 26, 10, "png-data">>
+    png = sample_png(180, 180)
 
     assert {:ok, stored} = Screenshots.store_png(project, "chalk", png)
     assert stored.mime_type == "image/png"
@@ -71,4 +71,39 @@ defmodule Ide.ScreenshotsTest do
 
   defp restore_env(app, key, nil), do: Application.delete_env(app, key)
   defp restore_env(app, key, value), do: Application.put_env(app, key, value)
+
+  defp sample_png(width, height) do
+    raw =
+      for _y <- 0..(height - 1), into: <<>> do
+        <<0>> <> :binary.copy(<<1, 2, 3, 255>>, width)
+      end
+      |> IO.iodata_to_binary()
+
+    z = :zlib.open()
+    :ok = :zlib.deflateInit(z)
+    compressed = :zlib.deflate(z, raw, :finish)
+    :ok = :zlib.deflateEnd(z)
+    :zlib.close(z)
+    idat = IO.iodata_to_binary(compressed)
+
+    ihdr = <<width::unsigned-big-32, height::unsigned-big-32, 8, 6, 0, 0, 0>>
+
+    IO.iodata_to_binary([
+      <<137, 80, 78, 71, 13, 10, 26, 10>>,
+      png_chunk("IHDR", ihdr),
+      png_chunk("IDAT", idat),
+      png_chunk("IEND", <<>>)
+    ])
+  end
+
+  defp png_chunk(type, data) do
+    crc = :erlang.crc32(type <> data)
+
+    <<
+      byte_size(data)::unsigned-big-32,
+      type::binary,
+      data::binary,
+      crc::unsigned-big-32
+    >>
+  end
 end

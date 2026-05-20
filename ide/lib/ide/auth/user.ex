@@ -6,17 +6,23 @@ defmodule Ide.Auth.User do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Ide.Auth.LoginToken
+
   @type t :: %__MODULE__{
           id: integer() | nil,
           firebase_uid: String.t() | nil,
           email: String.t() | nil,
-          display_name: String.t() | nil
+          display_name: String.t() | nil,
+          password_hash: String.t() | nil
         }
 
   schema "users" do
     field :firebase_uid, :string
     field :email, :string
     field :display_name, :string
+    field :password_hash, :string
+
+    has_many :login_tokens, LoginToken
     has_many :projects, Ide.Projects.Project, foreign_key: :owner_id
 
     timestamps(type: :utc_datetime)
@@ -27,6 +33,19 @@ defmodule Ide.Auth.User do
     user
     |> cast(attrs, [:firebase_uid, :email, :display_name])
     |> validate_required([:firebase_uid])
-    |> unique_constraint(:firebase_uid)
+    |> unique_constraint(:firebase_uid, name: :users_firebase_uid_index)
   end
+
+  @spec email_changeset(t(), map()) :: Ecto.Changeset.t()
+  def email_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:email, :display_name])
+    |> validate_required([:email])
+    |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/, message: "must be a valid email address")
+    |> update_change(:email, &normalize_email/1)
+    |> unique_constraint(:email, name: :users_email_index)
+  end
+
+  @spec normalize_email(String.t()) :: String.t()
+  def normalize_email(email) when is_binary(email), do: String.downcase(String.trim(email))
 end

@@ -1,17 +1,24 @@
 defmodule Ide.Auth do
   @moduledoc """
   Authentication helpers for local and public IDE modes.
+
+  Modes:
+
+  - `:local` — no login required for the IDE; App Store publish still uses Firebase on the Publish tab
+  - `:public_pebble` — Firebase login (Rebble project) for IDE access and automated App Store publish
+  - `:public_custom` — magic-link email login; publish offers PBW download instead of store submit
   """
 
   import Ecto.Query
 
+  alias Ide.Auth.Email
   alias Ide.Auth.User
   alias Ide.Repo
 
   @cloudpebble_firebase_api_key "AIzaSyBZ9Cdvwwv9At2lPmc8TxyyEqSXGXejGvc"
   @cloudpebble_firebase_project_id "coreapp-ce061"
 
-  @type auth_mode :: :local | :public
+  @type auth_mode :: :local | :public_pebble | :public_custom
 
   @spec mode() :: auth_mode()
   def mode do
@@ -20,8 +27,29 @@ defmodule Ide.Auth do
     |> normalize_mode()
   end
 
+  @doc """
+  True when the IDE requires a logged-in user (`public_pebble` or `public_custom`).
+  """
   @spec public_mode?() :: boolean()
-  def public_mode?, do: mode() == :public
+  def public_mode?, do: mode() in [:public_pebble, :public_custom]
+
+  @doc """
+  True when Firebase + Rebble App Store automated publish are used.
+  """
+  @spec public_pebble_mode?() :: boolean()
+  def public_pebble_mode?, do: mode() == :public_pebble
+
+  @doc """
+  True when users sign in with email magic links and publish via PBW download.
+  """
+  @spec public_custom_mode?() :: boolean()
+  def public_custom_mode?, do: mode() == :public_custom
+
+  @doc """
+  True when the IDE can submit releases to the Rebble App Store API.
+  """
+  @spec app_store_publish_enabled?() :: boolean()
+  def app_store_publish_enabled?, do: public_pebble_mode?()
 
   @spec firebase_config() :: map()
   def firebase_config do
@@ -41,6 +69,32 @@ defmodule Ide.Auth do
   @spec get_user(integer() | nil) :: User.t() | nil
   def get_user(nil), do: nil
   def get_user(id), do: Repo.get(User, id)
+
+  @spec send_login_link(String.t()) :: :ok | {:error, :invalid_email | :delivery_failed}
+  def send_login_link(email), do: Email.send_login_link(email)
+
+  @spec verify_login_token(String.t()) ::
+          {:ok, User.t()} | {:error, :invalid_token | :expired_token | :used_token}
+  def verify_login_token(token), do: Email.verify_login_token(token)
+
+  @spec login_link_ttl_days() :: pos_integer()
+  def login_link_ttl_days do
+    Application.get_env(:ide, __MODULE__, [])
+    |> Keyword.get(:login_link_ttl_days, 30)
+  end
+
+  @spec mail_from() :: {String.t(), String.t()}
+  def mail_from do
+    Application.get_env(:ide, __MODULE__, [])
+    |> Keyword.get(:mail_from, {"elm-pebble IDE", "noreply@elm-pebble.dev"})
+    |> normalize_mail_from()
+  end
+
+  defp normalize_mail_from({name, address}) when is_binary(name) and is_binary(address),
+    do: {name, address}
+
+  defp normalize_mail_from(address) when is_binary(address), do: {"elm-pebble IDE", address}
+  defp normalize_mail_from(_), do: {"elm-pebble IDE", "noreply@elm-pebble.dev"}
 
   @spec upsert_firebase_user(map()) :: {:ok, User.t()} | {:error, term()}
   def upsert_firebase_user(%{"localId" => uid} = payload) when is_binary(uid) and uid != "" do
@@ -143,7 +197,13 @@ defmodule Ide.Auth do
   @spec user_query() :: Ecto.Query.t()
   def user_query, do: from(u in User)
 
-  defp normalize_mode(:public), do: :public
-  defp normalize_mode("public"), do: :public
+  defp normalize_mode(:public_pebble), do: :public_pebble
+  defp normalize_mode(:public_custom), do: :public_custom
+  defp normalize_mode(:public), do: :public_pebble
+  defp normalize_mode("public_pebble"), do: :public_pebble
+  defp normalize_mode("public_custom"), do: :public_custom
+  defp normalize_mode("public"), do: :public_pebble
+  defp normalize_mode(:local), do: :local
+  defp normalize_mode("local"), do: :local
   defp normalize_mode(_), do: :local
 end

@@ -646,6 +646,9 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
         </div>
         <p class="mt-2 text-sm text-zinc-600">
           Captures are stored by project and watch model, so publishing can use one set per emulator.
+          <%= if @auth_mode in [:public_pebble, :public_custom] do %>
+            Batch capture launches the embedded emulator for each model.
+          <% end %>
         </p>
         <pre
           :if={@screenshot_output}

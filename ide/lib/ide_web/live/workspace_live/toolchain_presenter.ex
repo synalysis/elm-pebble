@@ -41,7 +41,9 @@ defmodule IdeWeb.WorkspaceLive.ToolchainPresenter do
 
     close_line =
       case result[:close_result] do
-        {:ok, close} -> "emulator_close: ok (exit_code=#{close.exit_code})"
+        {:ok, :embedded} -> "emulator_close: ok (embedded)"
+        {:ok, %{exit_code: exit_code}} -> "emulator_close: ok (exit_code=#{exit_code})"
+        {:ok, close} -> "emulator_close: ok (#{inspect(close)})"
         {:error, reason} -> "emulator_close: error (#{inspect(reason)})"
         _ -> "emulator_close: skipped"
       end

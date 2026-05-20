@@ -3,10 +3,24 @@ defmodule Ide.ProjectTemplates do
   Project template scaffolding for new IDE projects.
   """
 
-  alias Ide.InternalPackages
   alias Ide.CompanionProtocolGenerator
+  alias Ide.InternalPackages
+  alias Ide.PebbleToolchain
 
   @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time game-basic game-tiny-bird game-greeneys-run game-2048)
+
+  @template_dirs %{
+    "starter" => "starter",
+    "watchface-digital" => "watchface_digital",
+    "watchface-analog" => "watchface_analog",
+    "watchface-tutorial-complete" => "watchface_tutorial_complete",
+    "watchface-yes" => "watchface_yes",
+    "watchface-tangram-time" => "watchface_tangram_time",
+    "game-basic" => "game_basic",
+    "game-tiny-bird" => "game_tiny_bird",
+    "game-greeneys-run" => "game_greeneys_run",
+    "game-2048" => "game_2048"
+  }
 
   @doc """
   Returns available template keys.
@@ -29,6 +43,33 @@ defmodule Ide.ProjectTemplates do
       do: "watchface"
 
   def target_type_for_template(_template), do: "app"
+
+  @doc """
+  Default Pebble target platforms to enable for new projects created from `template`.
+
+  Reads optional `priv/project_templates/<dir>/template.json` with:
+
+      { "target_platforms": ["basalt", "chalk", ...] }
+
+  Templates without metadata enable every supported platform.
+  """
+  @spec target_platforms_for_template(String.t()) :: [String.t()]
+  def target_platforms_for_template(template) when template in @template_keys do
+    template
+    |> load_template_metadata()
+    |> Map.get("target_platforms")
+    |> normalize_target_platforms()
+  end
+
+  def target_platforms_for_template(_template), do: default_target_platforms()
+
+  @doc """
+  Default `release_defaults` map for a newly created project from `template`.
+  """
+  @spec default_release_defaults(String.t()) :: map()
+  def default_release_defaults(template) when is_binary(template) do
+    %{"target_platforms" => target_platforms_for_template(template)}
+  end
 
   @doc """
   Returns select options for template pickers.
@@ -647,6 +688,58 @@ defmodule Ide.ProjectTemplates do
       end
     end
   end
+
+  @spec template_dir(String.t()) :: String.t() | nil
+  defp template_dir(template), do: Map.get(@template_dirs, template)
+
+  @spec load_template_metadata(String.t()) :: map()
+  defp load_template_metadata(template) do
+    case template_dir(template) do
+      nil ->
+        %{}
+
+      dir ->
+        path = Path.join([ide_root(), "priv/project_templates", dir, "template.json"])
+
+        if File.exists?(path) do
+          case File.read(path) do
+            {:ok, content} ->
+              case Jason.decode(content) do
+                {:ok, %{} = metadata} -> metadata
+                _ -> %{}
+              end
+
+            _ ->
+              %{}
+          end
+        else
+          %{}
+        end
+    end
+  end
+
+  @spec default_target_platforms() :: [String.t()]
+  defp default_target_platforms do
+    PebbleToolchain.supported_emulator_targets()
+  end
+
+  @spec normalize_target_platforms(term()) :: [String.t()]
+  defp normalize_target_platforms(platforms) when is_list(platforms) do
+    allowed = MapSet.new(default_target_platforms())
+
+    platforms
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+    |> Enum.filter(&MapSet.member?(allowed, &1))
+    |> case do
+      [] -> default_target_platforms()
+      normalized -> normalized
+    end
+  end
+
+  defp normalize_target_platforms(_), do: default_target_platforms()
 
   @spec ide_root() :: term()
   defp ide_root do

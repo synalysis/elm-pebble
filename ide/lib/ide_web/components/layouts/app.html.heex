@@ -15,14 +15,21 @@
         {assigns[:current_user].email || assigns[:current_user].display_name || "Logged in"}
       </span>
       <.link
-        :if={is_nil(assigns[:current_user])}
+        :if={is_nil(assigns[:current_user]) and assigns[:auth_mode] in [:public_pebble, :public_custom]}
         navigate={~p"/login"}
         class="font-medium text-blue-700"
       >
-        App Store Login
+        Log in
       </.link>
       <button
-        :if={assigns[:current_user]}
+        :if={not is_nil(assigns[:current_user]) and assigns[:auth_mode] == :public_custom}
+        type="button"
+        class="ide-session-logout font-medium text-blue-700"
+      >
+        Log out
+      </button>
+      <button
+        :if={not is_nil(assigns[:current_user]) and assigns[:auth_mode] == :public_pebble}
         type="button"
         class="firebase-logout font-medium text-blue-700"
       >

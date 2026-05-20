@@ -281,37 +281,11 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   defp valid_screenshot_dimensions?(target, shot) do
     source = shot_path(shot)
 
-    case {expected_screenshot_dimensions(target), png_dimensions(source)} do
-      {nil, _} -> true
-      {{expected_w, expected_h}, {:ok, expected_w, expected_h}} -> true
-      {_expected, _actual} -> false
+    case source do
+      path when is_binary(path) -> Ide.ScreenshotDimensions.valid_store_file?(target, path)
+      _ -> false
     end
   end
-
-  defp expected_screenshot_dimensions(target) do
-    case to_string(target) do
-      "aplite" -> {144, 168}
-      "basalt" -> {144, 168}
-      "diorite" -> {144, 168}
-      "flint" -> {144, 168}
-      "chalk" -> {180, 180}
-      "emery" -> {200, 228}
-      "gabbro" -> {260, 260}
-      _ -> nil
-    end
-  end
-
-  defp png_dimensions(path) when is_binary(path) do
-    with {:ok,
-          <<0x89, "PNG\r\n", 0x1A, "\n", _len::32, "IHDR", width::32, height::32, _::binary>>} <-
-           File.read(path) do
-      {:ok, width, height}
-    else
-      _ -> :error
-    end
-  end
-
-  defp png_dimensions(_), do: :error
 
   defp collect_results(results) do
     Enum.reduce_while(results, {:ok, []}, fn

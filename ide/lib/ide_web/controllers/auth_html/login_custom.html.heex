@@ -1,0 +1,56 @@
+<section class="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6 py-12">
+  <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+    <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">elm-pebble IDE</p>
+
+    <%= cond do %>
+      <% @step == :email -> %>
+        <h1 class="mt-2 text-2xl font-semibold text-zinc-900">Log in to continue</h1>
+        <p class="mt-2 text-sm text-zinc-600">
+          Enter your email and we will send you a login link. After Prepare Release, download the PBW and publish it through your own store workflow.
+        </p>
+
+        <p :if={@flash[:error]} class="mt-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          {@flash[:error]}
+        </p>
+        <p :if={@flash[:info]} class="mt-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {@flash[:info]}
+        </p>
+
+        <form action={~p"/auth/email/continue"} method="post" class="mt-5 space-y-3">
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <label class="block text-sm">
+            <span class="mb-1 block font-medium text-zinc-700">Email</span>
+            <input
+              type="email"
+              name="email"
+              value={@email}
+              required
+              autofocus
+              autocomplete="email"
+              class="w-full rounded-lg border border-zinc-300 px-3 py-2"
+            />
+          </label>
+          <button
+            type="submit"
+            class="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+          >
+            Email me a login link
+          </button>
+        </form>
+
+      <% @step == :sent -> %>
+        <h1 class="mt-2 text-2xl font-semibold text-zinc-900">Check your email</h1>
+        <p class="mt-2 text-sm text-zinc-600">
+          If <span class="font-medium text-zinc-900">{@email}</span> can receive mail, we sent a login link.
+          Open the link on this device to sign in. The link expires in {@login_link_ttl_days} days and works once.
+        </p>
+
+        <p class="mt-5 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
+          Did not get it? Check spam, or
+          <.link href={~p"/login"} class="font-medium text-blue-700 hover:text-blue-800">
+            try another email
+          </.link>.
+        </p>
+    <% end %>
+  </div>
+</section>

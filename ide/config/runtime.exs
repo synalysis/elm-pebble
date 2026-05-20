@@ -26,8 +26,11 @@ config :ide, Ide.GitHub, oauth_client_id: github_oauth_client_id
 
 config :ide, Ide.Auth,
   mode:
-    (case String.downcase(System.get_env("IDE_AUTH_MODE", "local")) do
-       "public" -> :public
+    (case String.downcase(System.get_env("IDE_AUTH_MODE", "local") || "local") do
+       "public_pebble" -> :public_pebble
+       "public_custom" -> :public_custom
+       "public" -> :public_pebble
+       "local" -> :local
        _ -> :local
      end),
   firebase_api_key:
@@ -42,7 +45,20 @@ config :ide, Ide.Auth,
   firebase_app_id:
     System.get_env("IDE_FIREBASE_APP_ID") || "1:460977838956:web:9a11a68ec78008fe303149",
   appstore_api_base:
-    System.get_env("IDE_APPSTORE_API_BASE") || "https://appstore-api.repebble.com"
+    System.get_env("IDE_APPSTORE_API_BASE") || "https://appstore-api.repebble.com",
+  login_link_ttl_days:
+    (System.get_env("IDE_LOGIN_LINK_TTL_DAYS") || "30")
+    |> String.to_integer()
+
+config :ide, Ide.Emulator.SlotLimiter,
+  max_slots:
+    (System.get_env("ELM_PEBBLE_EMULATOR_MAX_SLOTS") || "8")
+    |> String.to_integer()
+    |> max(1),
+  acquire_timeout_ms:
+    (System.get_env("ELM_PEBBLE_EMULATOR_ACQUIRE_TIMEOUT_MS") || "600000")
+    |> String.to_integer()
+    |> max(1_000)
 
 config :ide, Ide.Emulator.Session,
   enabled: System.get_env("ELM_PEBBLE_EMBEDDED_EMULATOR", "true") not in ~w(0 false no off),
@@ -193,4 +209,26 @@ if config_env() == :prod do
   #     config :swoosh, :api_client, Swoosh.ApiClient.Hackney
   #
   # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
+
+  mail_from =
+    System.get_env("IDE_MAIL_FROM") ||
+      "noreply@#{host}"
+
+  config :ide, Ide.Auth,
+    login_link_ttl_days:
+      (System.get_env("IDE_LOGIN_LINK_TTL_DAYS") || "30")
+      |> String.to_integer(),
+    mail_from: mail_from
+
+  if smtp_relay = System.get_env("SMTP_RELAY") do
+    config :ide, Ide.Mailer,
+      adapter: Swoosh.Adapters.SMTP,
+      relay: smtp_relay,
+      username: System.get_env("SMTP_USERNAME"),
+      password: System.get_env("SMTP_PASSWORD"),
+      port: String.to_integer(System.get_env("SMTP_PORT") || "587"),
+      tls: if(System.get_env("SMTP_TLS", "always") == "never", do: :never, else: :always),
+      auth: if(System.get_env("SMTP_USERNAME"), do: :always, else: :never),
+      ssl: System.get_env("SMTP_SSL", "false") in ~w(1 true yes)
+  end
 end

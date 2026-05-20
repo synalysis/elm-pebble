@@ -69,6 +69,7 @@ defmodule Ide.Projects do
       |> Map.new()
       |> put_owner(user)
       |> infer_target_type_from_template()
+      |> merge_template_release_defaults()
       |> Map.put_new("source_roots", @default_source_roots)
       |> Map.put_new("template", "starter")
       |> assign_default_app_uuid()
@@ -511,6 +512,17 @@ defmodule Ide.Projects do
   end
 
   @doc """
+  Returns the newest prepared `.pbw` in the project workspace, if any.
+  """
+  @spec latest_pbw_path(Project.t()) :: {:ok, String.t()} | {:error, :pbw_not_found}
+  def latest_pbw_path(%Project{} = project) do
+    case ProjectBundle.latest_pbw_path(project_workspace_path(project)) do
+      path when is_binary(path) -> {:ok, path}
+      _ -> {:error, :pbw_not_found}
+    end
+  end
+
+  @doc """
   Directory for emulator screenshots inside the project workspace (outside `.pebble-sdk`).
   """
   @spec screenshots_path(Project.t()) :: String.t()
@@ -661,6 +673,22 @@ defmodule Ide.Projects do
   defp infer_target_type_from_template(attrs) do
     template = Map.get(attrs, "template", "starter")
     Map.put(attrs, "target_type", Ide.ProjectTemplates.target_type_for_template(template))
+  end
+
+  @spec merge_template_release_defaults(map()) :: map()
+  defp merge_template_release_defaults(attrs) do
+    template = Map.get(attrs, "template", "starter")
+    template_defaults = Ide.ProjectTemplates.default_release_defaults(template)
+
+    release_defaults =
+      attrs
+      |> Map.get("release_defaults", %{})
+      |> case do
+        defaults when is_map(defaults) -> defaults
+        _ -> %{}
+      end
+
+    Map.put(attrs, "release_defaults", Map.merge(template_defaults, release_defaults))
   end
 
   @spec zip_entries(term()) :: term()

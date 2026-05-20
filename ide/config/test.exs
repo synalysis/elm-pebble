@@ -14,8 +14,11 @@ config :ide, Ide.Repo,
 # you can enable the server option below.
 config :ide, IdeWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
+  url: [host: "localhost", port: 4002, scheme: "http"],
   secret_key_base: "b6ipsOJm6FpX685mhXpMwlEbam0P2ZpFfXx6N36lpKjaWuqefeD2xNfzsHxGhZ/8",
   server: false
+
+config :ide, Ide.Auth, login_link_ttl_days: 30
 
 # In test we don't send emails
 config :ide, Ide.Mailer, adapter: Swoosh.Adapters.Test

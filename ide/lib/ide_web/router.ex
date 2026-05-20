@@ -36,6 +36,8 @@ defmodule IdeWeb.Router do
     get "/login", AuthController, :login
     get "/auth/status", AuthController, :status
     post "/auth/firebase", AuthController, :firebase
+    post "/auth/email/continue", AuthController, :email_continue
+    get "/auth/email/verify", AuthController, :email_verify
     post "/auth/refresh", AuthController, :refresh
     post "/auth/logout", AuthController, :logout
   end
@@ -44,6 +46,7 @@ defmodule IdeWeb.Router do
     pipe_through [:browser, :authenticated_browser]
 
     get "/projects/:id/export", ProjectExportController, :show
+    get "/projects/:slug/publish/pbw", ProjectPublishController, :pbw
     get "/projects/:slug/store_assets/:name", StoreAssetController, :show
     get "/projects/:slug/screenshots/:target/:name", ScreenshotController, :show
 

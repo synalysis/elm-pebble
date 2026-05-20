@@ -7,6 +7,7 @@ defmodule Ide.Emulator.PebbleProtocol.Trace do
     0x07D1 => "AppMessage",
     0x07D2 => "Logs",
     0x0BB8 => "Screenshot",
+    8000 => "Screenshot",
     0x1771 => "AppFetch",
     0x1A7A => "DataLogging",
     0xB1DB => "BlobDB",

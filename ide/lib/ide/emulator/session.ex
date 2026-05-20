@@ -5,7 +5,7 @@ defmodule Ide.Emulator.Session do
 
   require Logger
 
-  alias Ide.Emulator.{PBW, PBWInstaller, SdkImages}
+  alias Ide.Emulator.{PBW, PBWInstaller, SdkImages, SlotLimiter}
   alias Ide.Emulator.PebbleProtocol.Router
   alias Ide.WatchModels
 
@@ -32,8 +32,12 @@ defmodule Ide.Emulator.Session do
           spi_image_path: String.t() | nil,
           persist_dir: String.t() | nil,
           last_ping_ms: integer(),
+          last_boot_ms: integer(),
           idle_timeout_ms: pos_integer()
         }
+
+  @spec generate_id() :: String.t()
+  def generate_id, do: random_id()
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -51,19 +55,40 @@ defmodule Ide.Emulator.Session do
   end
 
   @spec info(pid()) :: map()
-  def info(pid), do: GenServer.call(pid, :info)
+  def info(pid), do: GenServer.call(pid, :info, 30_000)
 
   @spec artifact_file_path(pid()) :: String.t() | nil
   def artifact_file_path(pid), do: GenServer.call(pid, :artifact_file_path)
 
   @spec install(pid()) :: {:ok, map()} | {:error, term()}
   def install(pid) do
-    with :ok <- GenServer.call(pid, :reset_for_install, 90_000) do
-      do_install(pid, config(:native_install_retries, 4))
+    try do
+      with :ok <- GenServer.call(pid, :prepare_for_install, 90_000) do
+        do_install(pid, config(:native_install_retries, 4))
+      end
+    after
+      _ = GenServer.call(pid, :install_finished, 5_000)
+    catch
+      :exit, {:timeout, _} -> {:error, :emulator_session_unresponsive}
+      :exit, _ -> {:error, :emulator_session_unavailable}
     end
-  catch
-    :exit, {:timeout, _} -> {:error, :emulator_session_unresponsive}
-    :exit, _ -> {:error, :emulator_session_unavailable}
+  end
+
+  @doc false
+  @spec install_reset_needed?(map()) :: boolean()
+  def install_reset_needed?(state) do
+    reuse_window_ms = config(:install_reuse_boot_window_ms, 120_000)
+
+    cond do
+      not qemu_and_router_healthy?(state) ->
+        true
+
+      now_ms() - state.last_boot_ms > reuse_window_ms ->
+        true
+
+      true ->
+        false
+    end
   end
 
   @spec local_port(pid(), :vnc | :phone) :: pos_integer()
@@ -80,6 +105,14 @@ defmodule Ide.Emulator.Session do
   @spec ping(pid()) :: {:ok, map()} | {:error, term()}
   def ping(pid) do
     GenServer.call(pid, :ping, 1_000)
+  catch
+    :exit, {:timeout, _} -> {:error, :emulator_session_unresponsive}
+    :exit, _ -> {:error, :emulator_session_unavailable}
+  end
+
+  @spec health_check(pid()) :: :ok | {:error, term()}
+  def health_check(pid) do
+    GenServer.call(pid, :health_check, 1_000)
   catch
     :exit, {:timeout, _} -> {:error, :emulator_session_unresponsive}
     :exit, _ -> {:error, :emulator_session_unavailable}
@@ -159,6 +192,9 @@ defmodule Ide.Emulator.Session do
 
   defp install_with_router(context) do
     PBWInstaller.install(context.protocol_router_pid, context.artifact_path, context.platform,
+      timeout_ms: config(:pbw_request_timeout_ms, 45_000),
+      install_retries: config(:pbw_install_retries, 3),
+      install_retry_delay_ms: config(:pbw_install_retry_delay_ms, 2_000),
       post_install_probe_timeout_ms: 1_000
     )
   end
@@ -234,6 +270,10 @@ defmodule Ide.Emulator.Session do
 
   defp retryable_install_error?({:putbytes_failed, _meta, :timeout}), do: true
   defp retryable_install_error?({:putbytes_failed, _meta, {:timeout, _observed}}), do: true
+  defp retryable_install_error?(:timeout), do: true
+  defp retryable_install_error?({:timeout, _observed}), do: true
+  defp retryable_install_error?({:blob_insert_failed, _response}), do: true
+  defp retryable_install_error?(:busy), do: true
 
   defp retryable_install_error?(_reason), do: false
 
@@ -422,6 +462,18 @@ defmodule Ide.Emulator.Session do
       }}, %{state | pypkjs_pid: nil, protocol_router_pid: nil, installing?: true}}
   end
 
+  def handle_call(:protocol_router_pid, _from, %{protocol_router_pid: pid} = state)
+      when is_pid(pid) do
+    if live_pid?(pid) do
+      {:reply, {:ok, pid}, state}
+    else
+      {:reply, {:error, :embedded_protocol_router_not_started}, %{state | protocol_router_pid: nil}}
+    end
+  end
+
+  def handle_call(:protocol_router_pid, _from, state),
+    do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
+
   def handle_call({:local_port, :vnc}, _from, state), do: {:reply, state.vnc_port, state}
 
   def handle_call({:local_port, :phone}, _from, %{pypkjs_pid: nil} = state) do
@@ -486,39 +538,40 @@ defmodule Ide.Emulator.Session do
 
   def handle_call(:restart_protocol_router, _from, state), do: {:reply, :ok, state}
 
-  def handle_call(:reset_for_install, _from, state) do
-    # region agent log
-    Ide.AgentDebugLog.log(
-      "initial",
-      "H12",
-      "session.ex:reset_for_install:start",
-      "resetting embedded emulator before install",
-      %{
-        id: state.id,
-        platform: state.platform,
-        spi_image_path: state.spi_image_path
-      }
+  def handle_call(:prepare_for_install, _from, state) do
+    reuse? = not install_reset_needed?(state)
+
+    Logger.debug(
+      "embedded emulator prepare_for_install session=#{state.id} platform=#{state.platform} reuse_qemu=#{reuse?}"
     )
 
-    # endregion
+    result =
+      if reuse? do
+        prepare_running_session_for_install(state)
+      else
+        reset_for_install(state)
+      end
+
+    case result do
+      {:ok, state} ->
+        {:reply, :ok, state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, %{state | installing?: false}}
+    end
+  end
+
+  def handle_call(:install_finished, _from, state) do
+    {:reply, :ok, %{state | installing?: false}}
+  end
+
+  def handle_call(:reset_for_install, _from, state) do
+    Logger.debug(
+      "embedded emulator reset_for_install session=#{state.id} platform=#{state.platform}"
+    )
 
     case reset_for_install(state) do
       {:ok, state} ->
-        # region agent log
-        Ide.AgentDebugLog.log(
-          "initial",
-          "H12",
-          "session.ex:reset_for_install:ok",
-          "embedded emulator reset before install",
-          %{
-            id: state.id,
-            platform: state.platform,
-            qemu_alive: alive?(state.qemu_pid),
-            protocol_router_alive: alive?(state.protocol_router_pid)
-          }
-        )
-
-        # endregion
         {:reply, :ok, state}
 
       {:error, reason} ->
@@ -542,6 +595,10 @@ defmodule Ide.Emulator.Session do
 
   def handle_call(:restart_pypkjs, _from, state), do: {:reply, :ok, state}
 
+  def handle_call(:health_check, _from, state) do
+    {:reply, session_health(state), state}
+  end
+
   def handle_call(:ping, _from, state) do
     case session_health(state) do
       :ok ->
@@ -551,6 +608,28 @@ defmodule Ide.Emulator.Session do
       {:error, reason} ->
         {:stop, {:shutdown, reason}, {:error, reason}, state}
     end
+  end
+
+  defp prepare_running_session_for_install(state) do
+    state = %{state | installing?: true, last_ping_ms: now_ms()}
+
+    with {:ok, state} <- ensure_protocol_router(state),
+         {:ok, state} <- maybe_start_pypkjs(state) do
+      settle_ms = config(:install_reuse_settle_ms, 500)
+      if settle_ms > 0, do: Process.sleep(settle_ms)
+      {:ok, state}
+    end
+  end
+
+  defp ensure_protocol_router(%{protocol_router_pid: pid} = state) when is_pid(pid) do
+    if live_pid?(pid), do: {:ok, state}, else: maybe_start_protocol_router(%{state | protocol_router_pid: nil})
+  end
+
+  defp ensure_protocol_router(state), do: maybe_start_protocol_router(state)
+
+  defp qemu_and_router_healthy?(state) do
+    live_pid?(state.qemu_pid) and live_pid?(state.protocol_router_pid) and
+      tcp_port_open?(state.bt_port)
   end
 
   defp reset_for_install(state) do
@@ -568,6 +647,7 @@ defmodule Ide.Emulator.Session do
                installing?: true
            }),
          {:ok, state} <- maybe_start_protocol_router(state) do
+      Process.sleep(config(:post_reset_settle_ms, 2_000))
       {:ok, state}
     end
   end
@@ -631,6 +711,7 @@ defmodule Ide.Emulator.Session do
     cleanup_process(state.qemu_pid)
     cleanup_process(state.pypkjs_pid)
     cleanup_process(state.protocol_router_pid)
+    SlotLimiter.release(state.id)
     :ok
   end
 
@@ -780,6 +861,7 @@ defmodule Ide.Emulator.Session do
          persist_dir: persist_dir,
          installing?: false,
          last_ping_ms: now_ms(),
+         last_boot_ms: 0,
          idle_timeout_ms: config(:idle_timeout_ms, @default_idle_timeout_ms)
        }}
     end
@@ -795,7 +877,13 @@ defmodule Ide.Emulator.Session do
            {:ok, pid} <- start_daemon(qemu_bin, qemu_args(state), "qemu:#{state.id}") do
         case wait_for_qemu_boot(pid, state.console_port, 60_000) do
           :ok ->
-            {:ok, %{state | qemu_pid: pid}}
+            with :ok <- maybe_wait_for_install_ready(state, pid, state.console_port) do
+              {:ok, %{state | qemu_pid: pid, last_boot_ms: now_ms()}}
+            else
+              {:error, reason} ->
+                cleanup_process(pid)
+                {:error, reason}
+            end
 
           {:error, {:qemu_boot_firmware_failure, _tail}} when allow_flash_reset? ->
             cleanup_process(pid)
@@ -927,6 +1015,50 @@ defmodule Ide.Emulator.Session do
     end)
   end
 
+  # Install resets can reach "<Launcher>" before the Bluetooth stack accepts BlobDB traffic.
+  defp maybe_wait_for_install_ready(%{installing?: true}, pid, console_port) do
+    wait_for_console_marker(pid, console_port, "Ready for communication", 20_000)
+  end
+
+  defp maybe_wait_for_install_ready(_state, _pid, _console_port), do: :ok
+
+  defp wait_for_console_marker(pid, console_port, marker, timeout_ms) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+
+    with {:ok, socket} <- wait_for_tcp_socket(pid, console_port, deadline) do
+      wait_for_console_marker_loop(pid, socket, marker, deadline, <<>>)
+    end
+  end
+
+  defp wait_for_console_marker_loop(pid, socket, marker, deadline, received) do
+    cond do
+      :binary.match(received, marker) != :nomatch ->
+        :gen_tcp.close(socket)
+        :ok
+
+      not Process.alive?(pid) ->
+        :gen_tcp.close(socket)
+        {:error, :qemu_exited_before_install_ready}
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        :gen_tcp.close(socket)
+        {:error, {:install_ready_timeout, marker, console_tail(received)}}
+
+      true ->
+        case :gen_tcp.recv(socket, 0, 250) do
+          {:ok, data} ->
+            wait_for_console_marker_loop(pid, socket, marker, deadline, received <> data)
+
+          {:error, :timeout} ->
+            wait_for_console_marker_loop(pid, socket, marker, deadline, received)
+
+          {:error, reason} ->
+            :gen_tcp.close(socket)
+            {:error, {:qemu_console_closed, reason}}
+        end
+    end
+  end
+
   defp qemu_firmware_failure?(data) do
     Enum.any?(["Invalid firmware description", "SAD WATCH"], fn marker ->
       :binary.match(data, marker) != :nomatch
@@ -1003,7 +1135,8 @@ defmodule Ide.Emulator.Session do
       kill_path: "/api/emulator/#{state.id}/kill",
       screen: screen,
       controls: supported_controls(),
-      backend_enabled: enabled?()
+      backend_enabled: enabled?(),
+      installing: Map.get(state, :installing?, false)
     }
   end
 

@@ -175,8 +175,11 @@ defmodule Ide.ProjectBundle do
     end
   end
 
+  @doc """
+  Returns the newest `.pbw` path under `.elm-pebble-publish/` when present.
+  """
   @spec latest_pbw_path(String.t()) :: String.t() | nil
-  defp latest_pbw_path(dir) do
+  def latest_pbw_path(dir) do
     if File.dir?(dir) do
       dir
       |> Path.wildcard("**/*.pbw")

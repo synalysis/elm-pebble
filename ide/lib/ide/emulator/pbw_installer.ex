@@ -18,6 +18,7 @@ defmodule Ide.Emulator.PBWInstaller do
   @default_install_retries 2
   @default_install_retry_delay_ms 1_500
   @default_post_install_probe_timeout_ms 0
+  @default_blob_post_insert_settle_ms 750
 
   @type install_result :: %{
           uuid: String.t(),
@@ -49,6 +50,9 @@ defmodule Ide.Emulator.PBWInstaller do
     install_retry_delay_ms =
       Keyword.get(opts, :install_retry_delay_ms, @default_install_retry_delay_ms)
 
+    blob_post_insert_settle_ms =
+      Keyword.get(opts, :blob_post_insert_settle_ms, @default_blob_post_insert_settle_ms)
+
     with {:ok, pbw} <- PBW.load(pbw_path, platform),
          :ok <- Router.acquire(router, timeout) do
       try do
@@ -65,7 +69,8 @@ defmodule Ide.Emulator.PBWInstaller do
           part_retries,
           install_retries,
           install_retry_delay_ms,
-          post_install_probe_timeout
+          post_install_probe_timeout,
+          blob_post_insert_settle_ms
         )
       after
         Router.release(router)
@@ -86,7 +91,8 @@ defmodule Ide.Emulator.PBWInstaller do
          part_retries,
          retries_left,
          retry_delay_ms,
-         post_install_probe_timeout
+         post_install_probe_timeout,
+         blob_post_insert_settle_ms
        ) do
     result =
       do_install(
@@ -100,7 +106,8 @@ defmodule Ide.Emulator.PBWInstaller do
         chunk_delay_ms,
         install_transition_timeout,
         part_retries,
-        post_install_probe_timeout
+        post_install_probe_timeout,
+        blob_post_insert_settle_ms
       )
 
     case result do
@@ -125,13 +132,49 @@ defmodule Ide.Emulator.PBWInstaller do
           part_retries,
           retries_left - 1,
           retry_delay_ms,
-          post_install_probe_timeout
+          post_install_probe_timeout,
+          blob_post_insert_settle_ms
         )
+
+      {:error, reason} when retries_left > 0 ->
+        if handshake_retryable?(reason) do
+          Logger.debug(
+            "native pbw install handshake failed #{inspect(reason)}; retrying (#{retries_left - 1} left)"
+          )
+
+          if retry_delay_ms > 0, do: Process.sleep(retry_delay_ms)
+
+          do_install_with_retries(
+            router,
+            pbw,
+            chunk_size,
+            timeout,
+            install_timeout,
+            part_delay_ms,
+            putbytes_retries,
+            chunk_delay_ms,
+            install_transition_timeout,
+            part_retries,
+            retries_left - 1,
+            retry_delay_ms,
+            post_install_probe_timeout,
+            blob_post_insert_settle_ms
+          )
+        else
+          result
+        end
 
       _ ->
         result
     end
   end
+
+  defp handshake_retryable?(:timeout), do: true
+  defp handshake_retryable?({:timeout, _observed}), do: true
+  defp handshake_retryable?({:blob_insert_failed, _response}), do: true
+  defp handshake_retryable?({:wrong_blob_token, _expected, _actual}), do: true
+  defp handshake_retryable?({:wrong_app_fetch_uuid, _expected, _actual}), do: true
+  defp handshake_retryable?(_reason), do: false
 
   defp do_install(
          router,
@@ -144,7 +187,8 @@ defmodule Ide.Emulator.PBWInstaller do
          chunk_delay_ms,
          install_transition_timeout,
          part_retries,
-         post_install_probe_timeout
+         post_install_probe_timeout,
+         blob_post_insert_settle_ms
        ) do
     Logger.debug(
       "native pbw install start uuid=#{pbw.uuid} variant=#{pbw.variant} parts=#{inspect(Enum.map(pbw.parts, &{&1.kind, &1.size}))}"
@@ -175,7 +219,7 @@ defmodule Ide.Emulator.PBWInstaller do
 
     # endregion
 
-    with :ok <- insert_app_metadata(router, pbw.app_metadata, timeout),
+    with :ok <- insert_app_metadata(router, pbw.app_metadata, timeout, blob_post_insert_settle_ms),
          {:ok, fetch} <- request_app_fetch(router, pbw.uuid, timeout),
          :ok <- verify_fetch_uuid(fetch.uuid, pbw.uuid),
          {:ok, parts} <-
@@ -216,7 +260,7 @@ defmodule Ide.Emulator.PBWInstaller do
     |> binary_part(0, 12)
   end
 
-  defp insert_app_metadata(router, metadata, timeout) do
+  defp insert_app_metadata(router, metadata, timeout, settle_ms) do
     token = System.unique_integer([:positive]) |> rem(0xFFFE) |> Kernel.+(1)
 
     {endpoint, payload} = Packets.blob_insert_app(token, metadata)
@@ -227,6 +271,7 @@ defmodule Ide.Emulator.PBWInstaller do
 
     case result do
       :ok ->
+        if settle_ms > 0, do: Process.sleep(settle_ms)
         :ok
 
       {:error, {:blob_insert_failed, response}} ->
@@ -235,19 +280,27 @@ defmodule Ide.Emulator.PBWInstaller do
         )
 
         _ = delete_app_metadata(router, metadata.uuid, timeout)
-        retry_insert_app_metadata(router, metadata, timeout)
+        retry_insert_app_metadata(router, metadata, timeout, settle_ms)
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp retry_insert_app_metadata(router, metadata, timeout) do
+  defp retry_insert_app_metadata(router, metadata, timeout, settle_ms) do
     token = System.unique_integer([:positive]) |> rem(0xFFFE) |> Kernel.+(1)
     {endpoint, payload} = Packets.blob_insert_app(token, metadata)
 
     Logger.debug("native pbw install blobdb retry insert token=#{token} uuid=#{metadata.uuid}")
-    send_blob_request(router, endpoint, payload, token, timeout)
+
+    case send_blob_request(router, endpoint, payload, token, timeout) do
+      :ok ->
+        if settle_ms > 0, do: Process.sleep(settle_ms)
+        :ok
+
+      error ->
+        error
+    end
   end
 
   defp delete_app_metadata(router, uuid, timeout) do
