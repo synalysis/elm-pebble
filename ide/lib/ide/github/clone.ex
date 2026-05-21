@@ -1,9 +1,10 @@
 defmodule Ide.GitHub.Clone do
   @moduledoc false
 
-  alias Ide.GitHub.Credentials
+  alias Ide.GitHub.{Credentials, Types}
 
-  @spec clone(String.t(), String.t(), String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  @spec clone(String.t(), String.t(), String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, Types.clone_error()}
   def clone(owner, repo, branch, opts \\ []) do
     owner = String.trim(owner)
     repo = String.trim(repo)
@@ -20,7 +21,7 @@ defmodule Ide.GitHub.Clone do
   end
 
   @doc false
-  @spec parse_repo_ref(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec parse_repo_ref(String.t()) :: {:ok, map()} | {:error, Types.clone_error()}
   def parse_repo_ref(ref) when is_binary(ref) do
     ref = String.trim(ref)
 
@@ -51,7 +52,7 @@ defmodule Ide.GitHub.Clone do
 
   def parse_repo_ref(_), do: {:error, :invalid_repo_ref}
 
-  @spec parse_github_url(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec parse_github_url(String.t()) :: {:ok, map()} | {:error, :invalid_repo_ref}
   defp parse_github_url(url) do
     uri = URI.parse(url)
     segments = uri.path |> to_string() |> String.trim("/") |> String.split("/", trim: true)
@@ -65,7 +66,7 @@ defmodule Ide.GitHub.Clone do
     end
   end
 
-  @spec parse_git_ssh_url(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec parse_git_ssh_url(String.t()) :: {:ok, map()} | {:error, :invalid_repo_ref}
   defp parse_git_ssh_url(url) do
     case String.split(url, ":", parts: 2) do
       ["git@github.com", path] ->
@@ -89,7 +90,7 @@ defmodule Ide.GitHub.Clone do
     |> String.trim_trailing(".git")
   end
 
-  @spec validate_segment(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec validate_segment(String.t(), String.t()) :: :ok | {:error, Types.repo_field_error()}
   defp validate_segment(value, label) do
     if value != "" and Path.basename(value) == value and not String.contains?(value, "/") do
       :ok
@@ -111,7 +112,7 @@ defmodule Ide.GitHub.Clone do
     "https://x-access-token:#{URI.encode_www_form(token)}@github.com/#{owner}/#{repo}.git"
   end
 
-  @spec create_temp_dir(String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec create_temp_dir(String.t()) :: {:ok, String.t()} | {:error, File.posix()}
   defp create_temp_dir(repo) do
     path =
       Path.join(
@@ -125,7 +126,7 @@ defmodule Ide.GitHub.Clone do
     end
   end
 
-  @spec run_clone(String.t(), String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  @spec run_clone(String.t(), String.t(), String.t(), keyword()) :: :ok | {:error, Types.git_error()}
   defp run_clone(dest, url, branch, opts) do
     args =
       if Keyword.get(opts, :full_clone, false) do

@@ -1,7 +1,8 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Tuple do
   @moduledoc false
 
-  @spec eval(String.t(), term(), map()) :: {:ok, term()} | :no_builtin | {:error, term()}
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result()
   def eval("pair", [a, b], _ops), do: {:ok, {a, b}}
   def eval("first", [{a, _b}], _ops), do: {:ok, a}
   def eval("first", [[a, _b]], _ops), do: {:ok, a}

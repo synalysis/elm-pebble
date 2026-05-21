@@ -7,9 +7,41 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   alias Ide.Compiler
   alias Ide.PebbleToolchain
   alias Ide.Projects
+  alias Ide.Projects.Project
   alias IdeWeb.WorkspaceLive.DebuggerBridge
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
+
+  @type socket :: Phoenix.LiveView.Socket.t()
+  @type root_pair :: {String.t(), String.t()}
+  @type wire_input :: String.t() | integer() | boolean() | nil
+
+  @type root_build_result :: %{
+          label: String.t(),
+          root_path: String.t(),
+          status: :ok | :error,
+          check: Compiler.check_result(),
+          compile: Compiler.compile_result(),
+          manifest: Compiler.manifest_result()
+        }
+
+  @type build_pipeline_result :: %{
+          status: :ok | :error,
+          output: String.t(),
+          primary: root_build_result() | nil,
+          package: map(),
+          issues: [map()],
+          roots: [root_build_result()]
+        }
+
+  @type emulator_install_result :: %{
+          status: :ok | :error,
+          command: String.t(),
+          output: String.t(),
+          exit_code: integer(),
+          cwd: String.t(),
+          artifact_path: String.t()
+        }
 
   @spec handle_event(String.t(), map(), Phoenix.LiveView.Socket.t()) ::
           {:noreply, Phoenix.LiveView.Socket.t()}
@@ -273,7 +305,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   defp package_app_root(%{raw: %{app_root: app_root}}) when is_binary(app_root), do: app_root
   defp package_app_root(_package), do: nil
 
-  @spec schedule_compiler_check(term()) :: term()
+  @spec schedule_compiler_check(socket()) :: socket()
   def schedule_compiler_check(socket) do
     case socket.assigns[:project] do
       nil ->
@@ -290,7 +322,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec warm_debugger_compile_context(term(), term()) :: term()
+  @spec warm_debugger_compile_context(socket(), Project.t()) :: socket()
   def warm_debugger_compile_context(socket, project) do
     workspace_root = Projects.project_workspace_path(project)
 
@@ -330,7 +362,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec run_build_pipeline(term(), term(), term()) :: term()
+  @spec run_build_pipeline(Project.t(), String.t(), boolean()) ::
+          {:ok, build_pipeline_result()}
   def run_build_pipeline(project, workspace_root, strict?) do
     roots = build_roots(workspace_root, project.source_roots || [])
 
@@ -526,7 +559,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec run_package_validation(term(), String.t(), boolean()) :: map()
+  @spec run_package_validation(Project.t(), String.t(), boolean()) :: map()
   def run_package_validation(_project, workspace_root, false) do
     %{
       status: :error,
@@ -583,7 +616,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     |> String.trim()
   end
 
-  @spec render_package_failure(term(), [String.t()]) :: String.t()
+  @spec render_package_failure(PebbleToolchain.toolchain_error(), [String.t()]) :: String.t()
   def render_package_failure({:pebble_build_failed, %{output: output} = result}, targets)
       when is_binary(output) do
     [
@@ -612,7 +645,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   end
 
   defp package_failure_hint(output, targets) do
-    normalized = String.downcase(output || "")
+    normalized = String.downcase(output)
 
     cond do
       String.contains?(normalized, "region `app' overflowed") or
@@ -632,7 +665,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec run_build_pipeline_for_root(term(), term(), term(), term()) :: term()
+  @spec run_build_pipeline_for_root(String.t(), String.t(), String.t(), boolean()) ::
+          {:ok, root_build_result()}
   def run_build_pipeline_for_root(project_slug, label, root_path, strict?) do
     scoped_slug = "#{project_slug}:#{label}"
 
@@ -675,7 +709,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec run_emulator_install_flow(term(), term(), term(), term()) :: term()
+  @spec run_emulator_install_flow(Project.t(), String.t(), String.t(), String.t() | nil) ::
+          {:ok, emulator_install_result()} | {:error, PebbleToolchain.toolchain_error()}
   def run_emulator_install_flow(project, workspace_root, emulator_target, _package_path) do
     with {:ok, resolved_package_path} <-
            package_for_emulator_target(project, workspace_root, emulator_target),
@@ -688,14 +723,16 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec package_for_emulator_target(term(), term(), term()) :: term()
+  @spec package_for_emulator_target(Project.t(), String.t(), String.t()) ::
+          {:ok, String.t()} | {:error, PebbleToolchain.toolchain_error()}
   def package_for_emulator_target(project, workspace_root, emulator_target) do
     with {:ok, packaged} <- package_for_emulator_session(project, workspace_root, emulator_target) do
       {:ok, packaged.artifact_path}
     end
   end
 
-  @spec package_for_emulator_session(term(), term(), term()) :: term()
+  @spec package_for_emulator_session(Project.t(), String.t(), String.t()) ::
+          {:ok, PebbleToolchain.package_result()} | {:error, PebbleToolchain.toolchain_error()}
   def package_for_emulator_session(project, workspace_root, emulator_target) do
     with {:ok, packaged} <-
            PebbleToolchain.package(project.slug,
@@ -708,7 +745,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec build_roots(term(), term()) :: term()
+  @spec build_roots(String.t(), [String.t()]) :: [root_pair()]
   def build_roots(workspace_root, source_roots) do
     candidates =
       [{"workspace", workspace_root}] ++
@@ -724,7 +761,11 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     if roots == [], do: [{"workspace", workspace_root}], else: roots
   end
 
-  @spec render_build_pipeline_output(term(), term(), term()) :: term()
+  @spec render_build_pipeline_output(
+          Compiler.check_result(),
+          Compiler.compile_result(),
+          Compiler.manifest_result()
+        ) :: String.t()
   def render_build_pipeline_output(check_result, compile_result, manifest_result) do
     [
       "[check]\n",
@@ -738,7 +779,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     |> String.trim()
   end
 
-  @spec skipped_compile_result(term(), term()) :: term()
+  @spec skipped_compile_result(String.t(), String.t()) :: map()
   def skipped_compile_result(workspace_root, message) do
     %{
       status: :error,
@@ -750,7 +791,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     }
   end
 
-  @spec skipped_manifest_result(term(), term(), term()) :: term()
+  @spec skipped_manifest_result(String.t(), boolean(), String.t()) :: map()
   def skipped_manifest_result(workspace_root, strict?, message) do
     %{
       status: :error,

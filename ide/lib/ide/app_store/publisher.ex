@@ -3,7 +3,12 @@ defmodule Ide.AppStore.Publisher do
   Native App Store publisher using the same dashboard API as `pebble publish`.
   """
 
+  @dialyzer :no_match
+
+  alias Ide.AppStore.PublishFlags
+  alias Ide.AppStore.Types
   alias Ide.Auth
+  alias Ide.Projects.Project
   alias Ide.StoreAssets
   alias Ide.StoreListingUrls
 
@@ -15,8 +20,9 @@ defmodule Ide.AppStore.Publisher do
           cwd: String.t()
         }
 
-  @spec publish(map(), keyword()) :: {:ok, command_result()} | {:error, term()}
-  def publish(project, opts) when is_map(project) do
+  @spec publish(Project.t() | map(), Types.publish_opts()) ::
+          {:ok, command_result()} | {:error, Types.publish_error()}
+  def publish(%Project{} = project, opts) do
     app_root = Keyword.get(opts, :app_root, "")
     api_base = Keyword.get(opts, :api_base, Auth.appstore_api_base()) |> String.trim_trailing("/")
     token = Keyword.get(opts, :firebase_id_token, "") |> to_string() |> String.trim()
@@ -25,10 +31,14 @@ defmodule Ide.AppStore.Publisher do
     screenshots = normalize_paths(Keyword.get(opts, :screenshots, []))
     version_override = Keyword.get(opts, :version, "") |> to_string() |> String.trim()
     description = Keyword.get(opts, :description, "") |> to_string() |> String.trim()
-    is_published = Keyword.get(opts, :is_published, true) == true
+    visibility = PublishFlags.resolve_visibility(project, opts)
+    is_published = PublishFlags.published?(visibility)
 
     run =
       case prepare_upload_artifact(artifact_path) do
+        {:error, reason} ->
+          {:error, reason}
+
         {:ok, upload_artifact_path, temp_artifact_path} ->
           result =
             with :ok <- require_token(token),
@@ -44,6 +54,7 @@ defmodule Ide.AppStore.Publisher do
                      screenshots: screenshots,
                      version: version,
                      description: description,
+                     visibility: visibility,
                      is_published: is_published,
                      metadata: metadata,
                      opts: opts
@@ -51,14 +62,10 @@ defmodule Ide.AppStore.Publisher do
               {:ok, output}
             else
               {:error, reason} -> {:error, reason}
-              other -> {:error, other}
             end
 
           maybe_remove_temp_artifact(temp_artifact_path)
           result
-
-        {:error, reason} ->
-          {:error, reason}
       end
 
     case run do
@@ -72,8 +79,18 @@ defmodule Ide.AppStore.Publisher do
     error -> {:error, error}
   end
 
+  def publish(project, opts) when is_map(project) do
+    publish(%Project{
+      name: Map.get(project, :name) || Map.get(project, "name"),
+      slug: Map.get(project, :slug) || Map.get(project, "slug") || "project",
+      release_defaults: Map.get(project, :release_defaults) || Map.get(project, "release_defaults")
+    }, opts)
+  end
+
   def publish(_project, _opts), do: {:error, :invalid_project}
 
+  @spec publish_with_context(Project.t(), Types.publish_context()) ::
+          {:ok, [String.t()]} | {:error, Types.publish_flow_error()}
   defp publish_with_context(project, ctx) do
     output = [
       "Appstore auth preflight...",
@@ -97,7 +114,7 @@ defmodule Ide.AppStore.Publisher do
            "PBW Version: #{metadata.version}",
            "Publish Version: #{ctx.version}",
            publish_version_warning(metadata.version, ctx.version),
-           visibility_line(ctx.is_published),
+           PublishFlags.visibility_line(ctx.visibility),
            release_notes_line(ctx.release_notes),
            store_icons_line(ctx),
            "Platforms: #{Enum.join(metadata.platforms, ", ")}"
@@ -151,11 +168,13 @@ defmodule Ide.AppStore.Publisher do
              %{},
              ctx.opts
            ),
-         {:ok, me} <- get_me(ctx),
-         true <- linked_developer?(me) do
-      {:ok, me}
+         {:ok, me} <- get_me(ctx) do
+      if linked_developer?(me) do
+        {:ok, me}
+      else
+        {:error, "Developer account is not linked on #{ctx.api_base}."}
+      end
     else
-      false -> {:error, "Developer account is not linked on #{ctx.api_base}."}
       error -> error
     end
   end
@@ -180,7 +199,7 @@ defmodule Ide.AppStore.Publisher do
     fields = %{
       "version" => ctx.version,
       "releaseNotes" => ctx.release_notes,
-      "isPublished" => bool_string(ctx.is_published),
+      "isPublished" => PublishFlags.api_is_published_string(ctx.visibility),
       "replaceScreenshots" => replace_screenshots_string(ctx.screenshots)
     }
 
@@ -209,7 +228,7 @@ defmodule Ide.AppStore.Publisher do
         "source" => source_url(ctx.opts),
         "releaseNotes" => ctx.release_notes,
         "visible" => "true",
-        "isPublished" => bool_string(ctx.is_published)
+        "isPublished" => PublishFlags.api_is_published_string(ctx.visibility)
       }
       |> maybe_put_category(default_category(me, metadata.app_type))
 
@@ -265,9 +284,9 @@ defmodule Ide.AppStore.Publisher do
     end
   end
 
-  @doc false
+  @doc "Builds a multipart/form-data request body for App Store uploads."
   @spec multipart_body(String.t(), map(), [{String.t(), String.t()}]) ::
-          {:ok, iodata()} | {:error, term()}
+          {:ok, iodata()} | {:error, Types.multipart_error()}
   def multipart_body(boundary, fields, files) do
     field_parts =
       Enum.map(fields, fn {name, value} ->
@@ -348,6 +367,7 @@ defmodule Ide.AppStore.Publisher do
     end)
   end
 
+  @spec pbw_metadata(String.t(), String.t()) :: {:ok, Types.pbw_metadata()} | {:ok, map()}
   defp pbw_metadata(pbw_path, app_root) do
     package_metadata = package_metadata(app_root)
 
@@ -368,7 +388,7 @@ defmodule Ide.AppStore.Publisher do
         app_name: pebble["displayName"] || package["name"] || "Untitled App",
         version: to_string(package["version"] || "1.0.0"),
         platforms: pebble["targetPlatforms"] || [],
-        app_type: if(watchapp["watchface"] == true, do: "watchface", else: "watchapp")
+        app_type: app_type_from_watchapp(watchapp)
       }
     else
       _ ->
@@ -399,7 +419,7 @@ defmodule Ide.AppStore.Publisher do
              "Untitled App",
          version: to_string(metadata["versionLabel"] || metadata["version"] || "1.0.0"),
          platforms: metadata["targetPlatforms"] || [],
-         app_type: if(watchapp["watchface"] == true, do: "watchface", else: "watchapp")
+         app_type: app_type_from_watchapp(watchapp)
        }}
     else
       _ -> :error
@@ -431,11 +451,11 @@ defmodule Ide.AppStore.Publisher do
   defp maybe_put_icon_prompt(fields, ctx) do
     icons = Keyword.get(ctx.opts, :store_icons, %{})
     metadata = ctx.metadata
-    generate? = Keyword.get(ctx.opts, :generate_store_graphics, false) == true
+    generate? = store_graphics_generation_enabled?(ctx.opts)
 
     if metadata.app_type == "watchapp" and map_size(icons) == 0 and generate? do
       prompt =
-        "#{metadata.app_name || "Pebble app"}: #{String.trim(ctx.description || "")}"
+        "#{metadata.app_name || "Pebble app"}: #{String.trim(ctx.description)}"
         |> String.trim()
 
       Map.put(fields, "iconPrompt", prompt)
@@ -459,7 +479,7 @@ defmodule Ide.AppStore.Publisher do
 
         "Store icons: uploaded #{parts}"
 
-      ctx.metadata.app_type == "watchapp" and Keyword.get(ctx.opts, :generate_store_graphics, false) ->
+      ctx.metadata.app_type == "watchapp" and store_graphics_generation_enabled?(ctx.opts) ->
         "Store icons: will request Rebble AI icon generation (iconPrompt) on create"
 
       ctx.metadata.app_type == "watchapp" ->
@@ -560,8 +580,6 @@ defmodule Ide.AppStore.Publisher do
     end
   end
 
-  defp package_json_version(_), do: ""
-
   defp publish_version_warning(pbw_version, publish_version)
        when is_binary(pbw_version) and is_binary(publish_version) do
     if String.trim(pbw_version) != "" and String.trim(pbw_version) != String.trim(publish_version) do
@@ -571,11 +589,15 @@ defmodule Ide.AppStore.Publisher do
 
   defp publish_version_warning(_, _), do: nil
 
-  defp visibility_line(true), do: "Release visibility: published (visible on the store listing)"
+  @spec app_type_from_watchapp(map()) :: String.t()
+  defp app_type_from_watchapp(watchapp) when is_map(watchapp) do
+    watchface? = Map.get(watchapp, "watchface") in [true, "true", 1]
 
-  defp visibility_line(false),
-    do:
-      "Release visibility: draft (not public yet — enable “Make release visible immediately” or publish from the developer dashboard)"
+    Enum.find_value(
+      [{"watchface", watchface?}, {"watchapp", not watchface?}],
+      fn {type, selected?} -> if selected?, do: type end
+    ) || "watchapp"
+  end
 
   defp release_notes_line(notes) do
     trimmed = notes |> to_string() |> String.trim()
@@ -594,18 +616,9 @@ defmodule Ide.AppStore.Publisher do
     end
   end
 
-  defp prepare_upload_artifact(artifact_path) do
-    case normalize_pbw_uuid(artifact_path) do
-      {:ok, path, nil} ->
-        {:ok, path, nil}
-
-      {:ok, path, temp_path} ->
-        {:ok, path, temp_path}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
+  @spec prepare_upload_artifact(String.t()) ::
+          {:ok, String.t(), String.t() | nil} | {:error, Types.pbw_prepare_error()}
+  defp prepare_upload_artifact(artifact_path), do: normalize_pbw_uuid(artifact_path)
 
   defp maybe_remove_temp_artifact(nil), do: :ok
 
@@ -614,19 +627,50 @@ defmodule Ide.AppStore.Publisher do
     :ok
   end
 
+  @spec normalize_pbw_uuid(String.t()) ::
+          {:ok, String.t(), String.t() | nil} | {:error, Types.pbw_prepare_error()}
   defp normalize_pbw_uuid(artifact_path) do
-    with {:ok, files} <- :zip.list_dir(artifact_path),
-         metadata_name <- metadata_entry(files),
-         true <- not is_nil(metadata_name),
-         {:ok, metadata} <- read_zip_json(artifact_path, metadata_name),
-         uuid when is_binary(uuid) and uuid != "" <- to_string(metadata["uuid"] || ""),
-         lower = String.downcase(uuid),
-         true <- uuid != lower,
-         {:ok, temp_path} <- rewrite_pbw_uuid(artifact_path, lower) do
-      {:ok, temp_path, temp_path}
-    else
-      false -> {:ok, artifact_path, nil}
-      _ -> {:ok, artifact_path, nil}
+    case Ide.ZipArchive.list_files(artifact_path) do
+      {:error, _} ->
+        {:ok, artifact_path, nil}
+
+      {:ok, files} ->
+        case metadata_entry(files) do
+          nil ->
+            {:ok, artifact_path, nil}
+
+          metadata_name ->
+            case read_zip_json(artifact_path, metadata_name) do
+              {:ok, metadata} ->
+                case pbw_metadata_uuid(metadata) do
+                  nil ->
+                    {:ok, artifact_path, nil}
+
+                  uuid ->
+                    lower = String.downcase(uuid)
+
+                    if uuid == lower do
+                      {:ok, artifact_path, nil}
+                    else
+                      case rewrite_pbw_uuid(artifact_path, lower) do
+                        {:ok, temp_path} -> {:ok, temp_path, temp_path}
+                        {:error, reason} -> {:error, reason}
+                      end
+                    end
+                end
+
+              {:error, reason} ->
+                {:error, reason}
+            end
+        end
+    end
+  end
+
+  @spec pbw_metadata_uuid(map()) :: binary() | nil
+  defp pbw_metadata_uuid(metadata) do
+    case to_string(metadata["uuid"] || "") |> String.trim() do
+      "" -> nil
+      uuid -> uuid
     end
   end
 
@@ -640,12 +684,18 @@ defmodule Ide.AppStore.Publisher do
     end
   end
 
+  @spec read_zip_json(String.t(), String.t()) :: {:ok, map()} | {:error, Types.zip_json_error()}
   defp read_zip_json(artifact_path, entry) do
-    charlist_path = String.to_charlist(artifact_path)
-    charlist_entry = String.to_charlist(entry)
+    case Ide.ZipArchive.read_entry(artifact_path, entry) do
+      {:ok, data} ->
+        case Jason.decode(data) do
+          {:ok, %{} = map} -> {:ok, map}
+          {:ok, _} -> {:error, :invalid_json_object}
+          {:error, reason} -> {:error, reason}
+        end
 
-    with {:ok, [{_, data}]} <- :zip.extract(charlist_path, [{:file, charlist_entry}, :memory]) do
-      Jason.decode(data)
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -656,9 +706,7 @@ defmodule Ide.AppStore.Publisher do
         "ide_publish_#{System.unique_integer([:positive])}.pbw"
       )
 
-    charlist_path = String.to_charlist(artifact_path)
-
-    with {:ok, files} <- :zip.extract(charlist_path, [:memory]),
+    with {:ok, files} <- Ide.ZipArchive.extract_all(artifact_path),
          {:ok, zip_binary} <-
            :zip.create(~c"upload.pbw", rewrite_zip_entries(files, lower_uuid), [:memory]) do
       File.write!(temp_path, :erlang.iolist_to_binary(zip_binary))
@@ -707,12 +755,14 @@ defmodule Ide.AppStore.Publisher do
   defp normalize_paths(paths) when is_list(paths), do: Enum.filter(paths, &is_binary/1)
   defp normalize_paths(_), do: []
 
-  defp bool_string(true), do: "true"
-  defp bool_string(false), do: "false"
+  @spec store_graphics_generation_enabled?(keyword()) :: boolean()
+  defp store_graphics_generation_enabled?(opts) do
+    Keyword.get(opts, :generate_store_graphics) in [true, "true", 1, "1"]
+  end
 
+  @spec replace_screenshots_string([String.t()]) :: String.t()
   defp replace_screenshots_string([]), do: "false"
   defp replace_screenshots_string(paths) when is_list(paths), do: "true"
-  defp replace_screenshots_string(_), do: "false"
 
   defp mime_type(path) do
     case Path.extname(path) |> String.downcase() do
@@ -736,7 +786,7 @@ defmodule Ide.AppStore.Publisher do
       status: status,
       command: "native appstore publish",
       output: output,
-      exit_code: if(status == :ok, do: 0, else: 1),
+      exit_code: (status == :ok && 0) || 1,
       cwd: cwd
     }
   end

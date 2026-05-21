@@ -8,12 +8,12 @@ defmodule Ide.InternalPackages do
   projects work regardless of `projects_root` configuration.
   """
 
-  @spec ide_root() :: term()
+  @spec ide_root() :: String.t()
   defp ide_root do
     Path.expand("../..", __DIR__)
   end
 
-  @spec repo_root() :: term()
+  @spec repo_root() :: String.t()
   defp repo_root do
     Path.expand("..", ide_root())
   end

@@ -5,9 +5,14 @@ defmodule IdeWeb.ProjectsLive do
   alias Ide.ProjectTemplates
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias Ide.Projects.Types, as: ProjectTypes
+
+  @type socket :: Phoenix.LiveView.Socket.t()
+  @type lv_mount :: {:ok, socket()}
+  @type lv_noreply :: {:noreply, socket()}
 
   @impl true
-  @spec mount(term(), term(), term()) :: term()
+  @spec mount(map(), map(), socket()) :: lv_mount()
   def mount(_params, _session, socket) do
     {:ok,
      socket
@@ -23,7 +28,7 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   @impl true
-  @spec handle_event(term(), term(), term()) :: term()
+  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
   def handle_event("validate", %{"project" => params}, socket) do
     params = normalize_create_params(params)
 
@@ -148,7 +153,7 @@ defmodule IdeWeb.ProjectsLive do
     end
   end
 
-  @spec load_projects(term()) :: term()
+  @spec load_projects(socket()) :: socket()
   defp load_projects(socket) do
     assign(socket, :projects, Projects.list_projects(socket.assigns.current_user))
   end
@@ -208,7 +213,7 @@ defmodule IdeWeb.ProjectsLive do
     end
   end
 
-  @spec slug_from_name(term()) :: String.t()
+  @spec slug_from_name(String.t() | nil) :: String.t()
   defp slug_from_name(name) when is_binary(name) do
     name
     |> String.trim()
@@ -219,11 +224,11 @@ defmodule IdeWeb.ProjectsLive do
 
   defp slug_from_name(_), do: ""
 
-  @spec blank?(term()) :: boolean()
+  @spec blank?(String.t() | nil) :: boolean()
   defp blank?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank?(_), do: true
 
-  @spec format_import_error(term()) :: String.t()
+  @spec format_import_error(ProjectTypes.project_error()) :: String.t()
   defp format_import_error(:github_not_connected),
     do: "GitHub is not connected. Open Settings and connect your account."
 
@@ -252,7 +257,7 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   @impl true
-  @spec render(term()) :: term()
+  @spec render(map()) :: Phoenix.LiveView.Rendered.t()
   def render(assigns) do
     ~H"""
     <div class="mx-auto max-w-6xl space-y-8 p-6">

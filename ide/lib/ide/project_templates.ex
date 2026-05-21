@@ -7,6 +7,18 @@ defmodule Ide.ProjectTemplates do
   alias Ide.InternalPackages
   alias Ide.PebbleToolchain
 
+  @type workspace_path :: String.t()
+  @type template_dir_name :: String.t()
+  @type seed_result :: :ok | {:error, template_error()}
+  @type wire_target_platforms :: list() | nil | boolean() | number() | String.t() | map()
+  @type template_error ::
+          {:unknown_template, String.t()}
+          | :invalid_phone_elm_json
+          | :invalid_watch_elm_json
+          | {:missing_union, String.t()}
+          | File.posix()
+          | Jason.EncodeError.t()
+
   @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time game-basic game-tiny-bird game-greeneys-run game-2048)
 
   @template_dirs %{
@@ -93,7 +105,7 @@ defmodule Ide.ProjectTemplates do
   @doc """
   Applies a selected template to a project workspace.
   """
-  @spec apply_template(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec apply_template(String.t(), String.t()) :: :ok | {:error, template_error()}
   def apply_template(template, workspace_path) when template in @template_keys do
     case template do
       "starter" ->
@@ -134,7 +146,7 @@ defmodule Ide.ProjectTemplates do
   Ensures the default companion protocol root exists without overwriting user-authored
   protocol types.
   """
-  @spec ensure_protocol_shared(String.t()) :: :ok | {:error, term()}
+  @spec ensure_protocol_shared(String.t()) :: :ok | {:error, template_error()}
   def ensure_protocol_shared(workspace_path) when is_binary(workspace_path) do
     source_dir = Path.join(repo_root(), "shared/elm")
     target_dir = Path.join(workspace_path, "protocol/src")
@@ -167,7 +179,7 @@ defmodule Ide.ProjectTemplates do
   @doc """
   Adds the default companion app scaffolding to an existing watch project.
   """
-  @spec ensure_companion_app(String.t()) :: :ok | {:error, term()}
+  @spec ensure_companion_app(String.t()) :: :ok | {:error, template_error()}
   def ensure_companion_app(workspace_path) when is_binary(workspace_path) do
     with :ok <- ensure_protocol_shared(workspace_path),
          :ok <- ensure_phone_companion(workspace_path),
@@ -177,7 +189,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec ensure_phone_companion_source_dirs(String.t()) :: :ok | {:error, term()}
+  @spec ensure_phone_companion_source_dirs(String.t()) :: :ok | {:error, template_error()}
   def ensure_phone_companion_source_dirs(workspace_path) when is_binary(workspace_path) do
     elm_json_path = Path.join([workspace_path, "phone", "elm.json"])
     target_dir = Path.join(workspace_path, "phone/src")
@@ -217,7 +229,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec seed_multi_root_workspace(term()) :: term()
+  @spec seed_multi_root_workspace(workspace_path()) :: seed_result()
   defp seed_multi_root_workspace(workspace_path) do
     with :ok <- seed_watch_fixture(workspace_path),
          :ok <- seed_protocol_shared(workspace_path),
@@ -226,7 +238,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec seed_watchface_tutorial_workspace(term()) :: term()
+  @spec seed_watchface_tutorial_workspace(workspace_path()) :: seed_result()
   defp seed_watchface_tutorial_workspace(workspace_path) do
     with :ok <- seed_protocol_shared(workspace_path),
          :ok <- seed_phone_companion(workspace_path),
@@ -236,7 +248,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec seed_yes_watchface_workspace(term()) :: term()
+  @spec seed_yes_watchface_workspace(workspace_path()) :: seed_result()
   defp seed_yes_watchface_workspace(workspace_path) do
     with :ok <- seed_yes_protocol(workspace_path),
          :ok <- seed_phone_companion(workspace_path),
@@ -246,7 +258,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec seed_tangram_time_watchface_workspace(term()) :: term()
+  @spec seed_tangram_time_watchface_workspace(workspace_path()) :: seed_result()
   defp seed_tangram_time_watchface_workspace(workspace_path) do
     with :ok <- seed_tangram_time_protocol(workspace_path),
          :ok <- seed_phone_companion(workspace_path),
@@ -256,7 +268,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec seed_yes_protocol(term()) :: term()
+  @spec seed_yes_protocol(workspace_path()) :: seed_result()
   defp seed_yes_protocol(workspace_path) do
     source_dir = Path.join(ide_root(), "priv/project_templates/watchface_yes/protocol/src")
     target_dir = Path.join(workspace_path, "protocol/src")
@@ -285,12 +297,12 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec seed_tangram_time_protocol(term()) :: term()
+  @spec seed_tangram_time_protocol(workspace_path()) :: seed_result()
   defp seed_tangram_time_protocol(workspace_path) do
     seed_template_protocol(workspace_path, "watchface_tangram_time")
   end
 
-  @spec seed_template_protocol(term(), String.t()) :: term()
+  @spec seed_template_protocol(workspace_path(), template_dir_name()) :: seed_result()
   defp seed_template_protocol(workspace_path, template_dir) do
     source_dir = Path.join(ide_root(), "priv/project_templates/#{template_dir}/protocol/src")
     target_dir = Path.join(workspace_path, "protocol/src")
@@ -319,7 +331,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec seed_yes_phone(term()) :: term()
+  @spec seed_yes_phone(workspace_path()) :: seed_result()
   defp seed_yes_phone(workspace_path) do
     source = Path.join(ide_root(), "priv/project_templates/watchface_yes/phone/src")
     target = Path.join(workspace_path, "phone/src")
@@ -336,7 +348,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec seed_tangram_time_phone(term()) :: term()
+  @spec seed_tangram_time_phone(workspace_path()) :: seed_result()
   defp seed_tangram_time_phone(workspace_path) do
     source = Path.join(ide_root(), "priv/project_templates/watchface_tangram_time/phone/src")
     target = Path.join(workspace_path, "phone/src")
@@ -344,7 +356,7 @@ defmodule Ide.ProjectTemplates do
     copy_file(Path.join(source, "CompanionApp.elm"), Path.join(target, "CompanionApp.elm"))
   end
 
-  @spec seed_watchface_tutorial_phone(term()) :: term()
+  @spec seed_watchface_tutorial_phone(workspace_path()) :: seed_result()
   defp seed_watchface_tutorial_phone(workspace_path) do
     source = Path.join(ide_root(), "priv/project_templates/watchface_tutorial_complete/phone/src")
     target = Path.join(workspace_path, "phone/src")
@@ -361,7 +373,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec seed_watch_only_workspace(term(), term()) :: term()
+  @spec seed_watch_only_workspace(workspace_path(), template_dir_name()) :: seed_result()
   defp seed_watch_only_workspace(workspace_path, watchface_template_dir) do
     watch_root = Path.join(workspace_path, "watch")
 
@@ -394,7 +406,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec maybe_copy_template_resources(term(), term()) :: term()
+  @spec maybe_copy_template_resources(workspace_path(), template_dir_name()) :: seed_result()
   defp maybe_copy_template_resources(workspace_path, template_dir) do
     source = Path.join(ide_root(), "priv/project_templates/#{template_dir}/resources")
 
@@ -420,7 +432,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec watch_source_directories(term()) :: [String.t()]
+  @spec watch_source_directories(template_dir_name()) :: [String.t()]
   defp watch_source_directories(template_dir)
        when template_dir in [
               "watchface_tutorial_complete",
@@ -439,7 +451,7 @@ defmodule Ide.ProjectTemplates do
     ["src"] ++ InternalPackages.watchface_elm_json_extra_source_dirs_abs()
   end
 
-  @spec seed_watch_fixture(term()) :: term()
+  @spec seed_watch_fixture(workspace_path()) :: seed_result()
   defp seed_watch_fixture(workspace_path) do
     template_root = Path.join(ide_root(), "priv/project_templates/starter_watch")
     watch_root = Path.join(workspace_path, "watch")
@@ -480,12 +492,12 @@ defmodule Ide.ProjectTemplates do
     ]
   end
 
-  @spec seed_protocol_shared(term()) :: term()
+  @spec seed_protocol_shared(workspace_path()) :: seed_result()
   defp seed_protocol_shared(workspace_path) do
     ensure_protocol_shared(workspace_path)
   end
 
-  @spec seed_phone_companion(term()) :: term()
+  @spec seed_phone_companion(workspace_path()) :: seed_result()
   defp seed_phone_companion(workspace_path) do
     source_dir = Path.join(ide_root(), "priv/pebble_app_template/src/elm")
     target_dir = Path.join(workspace_path, "phone/src")
@@ -519,7 +531,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec ensure_phone_companion(String.t()) :: :ok | {:error, term()}
+  @spec ensure_phone_companion(String.t()) :: :ok | {:error, template_error()}
   defp ensure_phone_companion(workspace_path) do
     phone_root = Path.join(workspace_path, "phone")
 
@@ -530,7 +542,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec ensure_phone_companion_entrypoint(String.t()) :: :ok | {:error, term()}
+  @spec ensure_phone_companion_entrypoint(String.t()) :: :ok | {:error, template_error()}
   defp ensure_phone_companion_entrypoint(workspace_path) do
     source_dir = Path.join(ide_root(), "priv/pebble_app_template/src/elm")
     target_dir = Path.join(workspace_path, "phone/src")
@@ -562,7 +574,7 @@ defmodule Ide.ProjectTemplates do
     ]
   end
 
-  @spec reject_phone_obsolete_source_dirs([term()]) :: [term()]
+  @spec reject_phone_obsolete_source_dirs([String.t()]) :: [String.t()]
   defp reject_phone_obsolete_source_dirs(source_dirs) when is_list(source_dirs) do
     obsolete = MapSet.new(phone_obsolete_source_dirs())
 
@@ -596,7 +608,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec ensure_watch_protocol_source_dir(String.t()) :: :ok | {:error, term()}
+  @spec ensure_watch_protocol_source_dir(String.t()) :: :ok | {:error, template_error()}
   defp ensure_watch_protocol_source_dir(workspace_path) do
     elm_json_path = Path.join([workspace_path, "watch", "elm.json"])
 
@@ -621,7 +633,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec insert_after_src([term()], String.t()) :: [term()]
+  @spec insert_after_src([String.t()], String.t()) :: [String.t()]
   defp insert_after_src(source_dirs, new_dir) do
     case Enum.split_while(source_dirs, &(&1 != "src")) do
       {prefix, ["src" | rest]} -> prefix ++ ["src", new_dir] ++ rest
@@ -629,7 +641,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec remove_generated_phone_protocol_internal(String.t()) :: :ok | {:error, term()}
+  @spec remove_generated_phone_protocol_internal(String.t()) :: :ok | {:error, template_error()}
   defp remove_generated_phone_protocol_internal(target_dir) when is_binary(target_dir) do
     case File.rm(Path.join(target_dir, "Companion/Internal.elm")) do
       :ok -> :ok
@@ -638,7 +650,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec remove_obsolete_phone_runtime_sources(String.t()) :: :ok | {:error, term()}
+  @spec remove_obsolete_phone_runtime_sources(String.t()) :: :ok | {:error, template_error()}
   defp remove_obsolete_phone_runtime_sources(target_dir) when is_binary(target_dir) do
     case File.rm_rf(Path.join(target_dir, "Pebble/Companion")) do
       {:ok, _removed} ->
@@ -650,7 +662,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec replace_dir(term(), term()) :: term()
+  @spec replace_dir(String.t(), String.t()) :: seed_result()
   defp replace_dir(source, target) do
     _ = File.rm_rf(target)
     File.mkdir_p(Path.dirname(target))
@@ -661,7 +673,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec copy_file(term(), term()) :: term()
+  @spec copy_file(String.t(), String.t()) :: seed_result()
   defp copy_file(source, target) do
     with :ok <- File.mkdir_p(Path.dirname(target)),
          :ok <- File.cp(source, target) do
@@ -669,7 +681,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec copy_file_if_missing(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec copy_file_if_missing(String.t(), String.t()) :: :ok | {:error, template_error()}
   defp copy_file_if_missing(source, target) do
     if File.exists?(target) do
       :ok
@@ -678,7 +690,7 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec write_json_if_missing(String.t(), map()) :: :ok | {:error, term()}
+  @spec write_json_if_missing(String.t(), map()) :: :ok | {:error, template_error()}
   defp write_json_if_missing(path, payload) do
     if File.exists?(path) do
       :ok
@@ -723,7 +735,7 @@ defmodule Ide.ProjectTemplates do
     PebbleToolchain.supported_emulator_targets()
   end
 
-  @spec normalize_target_platforms(term()) :: [String.t()]
+  @spec normalize_target_platforms(wire_target_platforms()) :: [String.t()]
   defp normalize_target_platforms(platforms) when is_list(platforms) do
     allowed = MapSet.new(default_target_platforms())
 
@@ -741,12 +753,12 @@ defmodule Ide.ProjectTemplates do
 
   defp normalize_target_platforms(_), do: default_target_platforms()
 
-  @spec ide_root() :: term()
+  @spec ide_root() :: String.t()
   defp ide_root do
     Path.expand("../..", __DIR__)
   end
 
-  @spec repo_root() :: term()
+  @spec repo_root() :: String.t()
   defp repo_root do
     Path.expand("../../..", __DIR__)
   end

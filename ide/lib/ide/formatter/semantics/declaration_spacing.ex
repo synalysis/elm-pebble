@@ -1,5 +1,16 @@
 defmodule Ide.Formatter.Semantics.DeclarationSpacing do
   @moduledoc false
+  alias Ide.Formatter.Types
+
+  @type declaration_tag ::
+          {:comment_close, nil}
+          | {:comment, nil}
+          | {:doc_comment, nil}
+          | {:fixity, nil}
+          | {:definition, String.t()}
+          | {:annotation, String.t()}
+          | {:starter, String.t()}
+          | nil
 
   @spec normalize(String.t()) :: String.t()
   def normalize(source) when is_binary(source) do
@@ -17,7 +28,8 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     |> Enum.join("\n")
   end
 
-  @spec normalize_declaration_lines(term(), term(), term()) :: term()
+  @spec normalize_declaration_lines(Types.line_list(), map(), Types.line_list()) ::
+          Types.line_list()
   defp normalize_declaration_lines([], state, acc) do
     emit_blanks(acc, state.pending_blanks)
   end
@@ -107,7 +119,7 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     end
   end
 
-  @spec block_comment_state_after(term(), term()) :: term()
+  @spec block_comment_state_after(String.t(), boolean()) :: boolean()
   defp block_comment_state_after(line, in_block_comment) do
     trimmed = String.trim_leading(line)
     opens? = String.contains?(trimmed, "{-")
@@ -121,7 +133,7 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     end
   end
 
-  @spec top_level_declaration(term()) :: term()
+  @spec top_level_declaration(String.t()) :: declaration_tag()
   defp top_level_declaration(line) do
     trimmed = String.trim_leading(line)
 
@@ -152,7 +164,7 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     end
   end
 
-  @spec named_upper_declaration(term(), term()) :: term()
+  @spec named_upper_declaration(String.t(), String.t()) :: declaration_tag()
   defp named_upper_declaration(trimmed, prefix) do
     rest =
       String.slice(trimmed, String.length(prefix), String.length(trimmed))
@@ -162,7 +174,7 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     if name == "", do: nil, else: {:definition, name}
   end
 
-  @spec named_lower_declaration(term(), term()) :: term()
+  @spec named_lower_declaration(String.t(), String.t()) :: declaration_tag()
   defp named_lower_declaration(trimmed, prefix) do
     rest =
       String.slice(trimmed, String.length(prefix), String.length(trimmed))
@@ -172,7 +184,7 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     if name == "", do: nil, else: {:definition, name}
   end
 
-  @spec named_lower_top_level_declaration(term()) :: term()
+  @spec named_lower_top_level_declaration(String.t()) :: declaration_tag()
   defp named_lower_top_level_declaration(trimmed) do
     case take_lower_identifier(trimmed) do
       {"", _rest} ->
@@ -201,7 +213,7 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     end
   end
 
-  @spec declaration_spacing(term(), term()) :: term()
+  @spec declaration_spacing(declaration_tag(), declaration_tag()) :: non_neg_integer()
   defp declaration_spacing(prev, decl) do
     cond do
       annotation_definition_pair?(prev, decl) ->
@@ -234,16 +246,16 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     end
   end
 
-  @spec leading_indent(term()) :: term()
+  @spec leading_indent(String.t()) :: non_neg_integer()
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
   end
 
-  @spec emit_blanks(term(), term()) :: term()
+  @spec emit_blanks(Types.line_list(), non_neg_integer()) :: Types.line_list()
   defp emit_blanks(acc, 0), do: acc
   defp emit_blanks(acc, n) when n > 0, do: emit_blanks(["" | acc], n - 1)
 
-  @spec type_declaration_line?(term()) :: term()
+  @spec type_declaration_line?(String.t()) :: boolean()
   defp type_declaration_line?(line) do
     trimmed = String.trim_leading(line)
 
@@ -260,7 +272,7 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     end
   end
 
-  @spec take_lower_identifier(term()) :: term()
+  @spec take_lower_identifier(String.t()) :: {String.t(), String.t()}
   defp take_lower_identifier(rest) do
     chars = String.graphemes(rest)
     {name_chars, remaining} = Enum.split_while(chars, &lower_identifier_char?/1)
@@ -274,7 +286,7 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     end
   end
 
-  @spec take_upper_identifier(term()) :: term()
+  @spec take_upper_identifier(String.t()) :: {String.t(), String.t()}
   defp take_upper_identifier(rest) do
     chars = String.graphemes(rest)
     {name_chars, remaining} = Enum.split_while(chars, &upper_identifier_char?/1)
@@ -288,7 +300,7 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     end
   end
 
-  @spec lower_identifier_char?(term()) :: term()
+  @spec lower_identifier_char?(String.t()) :: boolean()
   defp lower_identifier_char?(char) when is_binary(char) do
     case String.to_charlist(char) do
       [c] ->
@@ -299,7 +311,7 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     end
   end
 
-  @spec upper_identifier_char?(term()) :: term()
+  @spec upper_identifier_char?(String.t()) :: boolean()
   defp upper_identifier_char?(char) when is_binary(char) do
     case String.to_charlist(char) do
       [c] ->
@@ -310,28 +322,29 @@ defmodule Ide.Formatter.Semantics.DeclarationSpacing do
     end
   end
 
-  @spec annotation_definition_pair?(term(), term()) :: term()
+  @spec annotation_definition_pair?(declaration_tag(), declaration_tag()) :: boolean()
   defp annotation_definition_pair?({:annotation, name}, {:definition, name}), do: true
   defp annotation_definition_pair?(_, _), do: false
 
-  @spec starter_definition_pair?(term(), term()) :: term()
+  @spec starter_definition_pair?(declaration_tag(), declaration_tag()) :: boolean()
   defp starter_definition_pair?({:starter, name}, {:definition, name}) when not is_nil(name),
     do: true
 
   defp starter_definition_pair?(_, _), do: false
 
-  @spec starter_comment_pair?(term(), term()) :: term()
+  @spec starter_comment_pair?(declaration_tag(), declaration_tag()) :: boolean()
   defp starter_comment_pair?({:starter, _}, {:comment, nil}), do: true
   defp starter_comment_pair?(_, _), do: false
 
-  @spec definition_continuation_pair?(term(), term()) :: term()
+  @spec definition_continuation_pair?(declaration_tag(), declaration_tag()) :: boolean()
   defp definition_continuation_pair?({:definition, name}, {:definition, name})
        when not is_nil(name),
        do: true
 
   defp definition_continuation_pair?(_, _), do: false
 
-  @spec declaration_state_after(term(), term(), term()) :: term()
+  @spec declaration_state_after(declaration_tag(), declaration_tag(), non_neg_integer()) ::
+          declaration_tag()
   defp declaration_state_after({:starter, name} = prev, {:comment, nil}, 0) when not is_nil(name),
     do: prev
 

@@ -8,6 +8,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
   """
 
   alias ElmEx.Frontend.GeneratedParser
+  alias ElmEx.Types
 
   @type declaration :: %{
           required(:kind) => :alias | :union | :value,
@@ -24,7 +25,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
           required(:path) => String.t(),
           required(:comment) => String.t(),
           required(:docs) => [String.t()],
-          required(:module_exposing) => term(),
+          required(:module_exposing) => Types.module_exposing(),
           required(:declarations) => %{optional(String.t()) => declaration()}
         }
 
@@ -65,7 +66,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
     }
   end
 
-  @spec parse_module_exposing(String.t()) :: term()
+  @spec parse_module_exposing(String.t()) :: Types.module_exposing()
   defp parse_module_exposing(source) do
     with {:ok, after_open} <- exposing_chars(source),
          {:ok, inner} <- take_balanced_exposing(after_open, 1, []) do
@@ -115,7 +116,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
   defp take_balanced_exposing([char | rest], depth, acc),
     do: take_balanced_exposing(rest, depth, [char | acc])
 
-  @spec parse_exposing_text(String.t()) :: term()
+  @spec parse_exposing_text(String.t()) :: Types.module_exposing()
   defp parse_exposing_text(text) do
     if String.trim(text) == ".." do
       ".."

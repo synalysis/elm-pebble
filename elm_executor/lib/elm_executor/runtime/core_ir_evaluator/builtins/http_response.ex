@@ -1,9 +1,10 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.HttpResponse do
   @moduledoc false
 
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.CoreIREvaluator.Builtins.JsonKernel
 
-  @spec decode(term(), term(), map()) :: {:ok, term()} | {:error, term()}
+  @spec decode(map(), map(), EvalTypes.ops_context()) :: EvalTypes.eval_result()
   def decode(command, response, ops) when is_map(command) and is_map(response) and is_map(ops) do
     expect = field_value(command, "expect") || %{}
 
@@ -20,7 +21,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.HttpResponse do
 
   def decode(_command, _response, _ops), do: {:error, :invalid_http_response}
 
-  @spec decode_successful_expect(term(), term(), map()) :: {:ok, term()} | {:error, term()}
+  @spec decode_successful_expect(map(), map(), EvalTypes.ops_context()) :: EvalTypes.eval_result()
   defp decode_successful_expect(expect, response, ops)
        when is_map(expect) and is_map(response) and is_map(ops) do
     status = field_value(response, "status")
@@ -49,7 +50,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.HttpResponse do
 
   defp decode_successful_expect(_expect, _response, _ops), do: {:error, :invalid_http_expect}
 
-  @spec to_message_value(term(), term(), map()) :: {:ok, term()} | {:error, term()}
+  @spec to_message_value(EvalTypes.runtime_value() | nil, EvalTypes.runtime_value(), EvalTypes.ops_context()) ::
+          EvalTypes.eval_result()
   defp to_message_value(nil, http_result, _ops), do: {:ok, http_result}
 
   defp to_message_value(to_msg, http_result, ops) when is_map(ops) do
@@ -59,7 +61,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.HttpResponse do
     end
   end
 
-  @spec normalize_error(term()) :: map()
+  @spec normalize_error(EvalTypes.runtime_value()) :: map()
   defp normalize_error(%{} = error) do
     ctor = field_value(error, "ctor") || field_value(error, "kind") || "NetworkError"
     args = field_value(error, "args")
@@ -84,7 +86,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.HttpResponse do
   @spec http_error(String.t(), list()) :: map()
   defp http_error(ctor, args), do: %{"ctor" => ctor, "args" => args}
 
-  @spec field_value(term(), term()) :: term()
+  @spec field_value(map(), String.t()) :: EvalTypes.runtime_value() | nil
   defp field_value(map, key) when is_map(map) and is_binary(key) do
     case Map.fetch(map, key) do
       {:ok, value} ->
@@ -98,13 +100,4 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.HttpResponse do
         end
     end
   end
-
-  defp field_value(map, key) when is_map(map) and is_atom(key) do
-    case Map.fetch(map, key) do
-      {:ok, value} -> value
-      :error -> Map.get(map, Atom.to_string(key))
-    end
-  end
-
-  defp field_value(_map, _key), do: nil
 end

@@ -9,6 +9,8 @@ defmodule Ide.ProjectReadme do
   @marker_start "<!-- elm-pebble-ide:readme -->"
   @marker_end "<!-- /elm-pebble-ide:readme -->"
 
+  @type readme_error :: File.posix()
+
   @spec site_url() :: String.t()
   def site_url, do: @site_url
 
@@ -54,7 +56,7 @@ defmodule Ide.ProjectReadme do
 
   Replaces only the marked IDE block when the file already exists; creates the file when missing.
   """
-  @spec write(String.t(), Project.t()) :: :ok | {:error, term()}
+  @spec write(String.t(), Project.t()) :: :ok | {:error, readme_error()}
   def write(workspace_root, %Project{} = project) when is_binary(workspace_root) do
     path = Path.join(workspace_root, "README.md")
     body = content(project)
@@ -78,7 +80,7 @@ defmodule Ide.ProjectReadme do
     end
   end
 
-  @spec merge_marked_block(String.t(), String.t()) :: String.t() | {:error, term()}
+  @spec merge_marked_block(String.t(), String.t()) :: String.t()
   defp merge_marked_block(existing, generated) do
     if String.contains?(existing, @marker_start) and String.contains?(existing, @marker_end) do
       Regex.replace(

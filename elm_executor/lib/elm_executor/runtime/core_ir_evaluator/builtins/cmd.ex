@@ -1,7 +1,8 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd do
   @moduledoc false
 
-  @spec eval(String.t(), term()) :: {:ok, term()} | :no_builtin
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  @spec eval(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
   def eval("none", []), do: {:ok, %{"kind" => "cmd.none", "commands" => []}}
 
   def eval("batch", [commands]) when is_list(commands),

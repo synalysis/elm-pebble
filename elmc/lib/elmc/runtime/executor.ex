@@ -6,6 +6,8 @@ defmodule Elmc.Runtime.Executor do
   keeping a stable API shape for future full `init`/`update`/`view` execution.
   """
 
+  alias Elmc.Runtime.Executor.Types
+
   @type request :: %{
           optional(:source_root) => String.t() | nil,
           optional(:rel_path) => String.t() | nil,
@@ -25,7 +27,7 @@ defmodule Elmc.Runtime.Executor do
         }
 
   @dialyzer :no_match
-  @spec execute(request()) :: {:ok, response()} | {:error, term()}
+  @spec execute(request()) :: {:ok, response()} | {:error, Types.execute_error()}
   def execute(request) when is_map(request) do
     source_root = map_value(request, :source_root) || "watch"
     rel_path = map_value(request, :rel_path)
@@ -108,12 +110,12 @@ defmodule Elmc.Runtime.Executor do
 
   def execute(_), do: {:error, :invalid_execution_request}
 
-  @spec map_value(term(), term()) :: term()
+  @spec map_value(map(), atom()) :: Types.dynamic_value()
   defp map_value(map, atom_key) when is_map(map) and is_atom(atom_key) do
     Map.get(map, atom_key) || Map.get(map, Atom.to_string(atom_key))
   end
 
-  @spec normalize_update_branches(term()) :: term()
+  @spec normalize_update_branches(list() | term()) :: Types.update_branches()
   defp normalize_update_branches(value) when is_list(value) do
     value
     |> Enum.filter(&is_binary/1)
@@ -124,11 +126,11 @@ defmodule Elmc.Runtime.Executor do
 
   defp normalize_update_branches(_), do: []
 
-  @spec list_count(term()) :: term()
+  @spec list_count(list() | term()) :: non_neg_integer()
   defp list_count(value) when is_list(value), do: length(value)
   defp list_count(_), do: 0
 
-  @spec operation_for_message(term(), term()) :: term()
+  @spec operation_for_message(Types.message(), String.t() | nil) :: Types.operation()
   defp operation_for_message(message, matched_branch) when is_binary(message) do
     branch_op =
       if is_binary(matched_branch),
@@ -140,7 +142,7 @@ defmodule Elmc.Runtime.Executor do
       else: operation_from_text(message)
   end
 
-  @spec matching_update_branch(term(), term()) :: term()
+  @spec matching_update_branch(Types.message(), Types.update_branches()) :: String.t() | nil
   defp matching_update_branch(message, update_branches)
        when is_binary(message) and is_list(update_branches) do
     message_ctor = constructor_hint(message)
@@ -155,7 +157,7 @@ defmodule Elmc.Runtime.Executor do
 
   defp matching_update_branch(_message, _update_branches), do: nil
 
-  @spec constructor_hint(term()) :: term()
+  @spec constructor_hint(Types.message()) :: String.t() | nil
   defp constructor_hint(text) when is_binary(text) do
     tokens = message_tokens(text)
 
@@ -196,7 +198,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec operation_from_text(term()) :: term()
+  @spec operation_from_text(String.t() | atom() | number()) :: Types.operation()
   defp operation_from_text(text) do
     text = to_string(text)
     hint = String.downcase(text)
@@ -213,16 +215,16 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec contains_any?(term(), term()) :: term()
+  @spec contains_any?(String.t(), [String.t()]) :: boolean()
   defp contains_any?(text, needles), do: Enum.any?(needles, &String.contains?(text, &1))
 
-  @spec set_keyword?(term(), term()) :: term()
+  @spec set_keyword?(String.t(), String.t()) :: boolean()
   defp set_keyword?(hint, text) when is_binary(hint) and is_binary(text) do
     Regex.match?(~r/\b(set|assign|replace)\b/i, hint) or
       String.starts_with?(String.downcase(to_string(constructor_hint(text) || "")), "set")
   end
 
-  @spec mutate_runtime_model(term(), term(), term(), term(), term()) :: term()
+  @spec mutate_runtime_model(Types.runtime_model(), Types.message(), Types.operation(), Types.runtime_model(), String.t() | nil) :: Types.runtime_model()
   defp mutate_runtime_model(model, message, op, init_model, matched_branch)
        when is_map(model) and is_binary(message) and is_atom(op) and is_map(init_model) do
     {numeric_key, bool_key} = resolve_target_keys(model, message, matched_branch)
@@ -264,7 +266,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec resolve_target_keys(term(), term(), term()) :: term()
+  @spec resolve_target_keys(Types.runtime_model(), Types.message(), String.t() | nil) :: Types.key_pair()
   defp resolve_target_keys(model, message, matched_branch)
        when is_map(model) and is_binary(message) do
     fallback_numeric = primary_numeric_key(model)
@@ -281,7 +283,7 @@ defmodule Elmc.Runtime.Executor do
     }
   end
 
-  @spec model_key_hint_from_branch_or_message(term(), term()) :: term()
+  @spec model_key_hint_from_branch_or_message(String.t() | nil, Types.message()) :: String.t() | nil
   defp model_key_hint_from_branch_or_message(matched_branch, message)
        when is_binary(message) do
     ctor =
@@ -296,7 +298,7 @@ defmodule Elmc.Runtime.Executor do
     extract_key_hint_from_constructor(ctor)
   end
 
-  @spec extract_key_hint_from_constructor(term()) :: term()
+  @spec extract_key_hint_from_constructor(String.t() | nil) :: String.t() | nil
   defp extract_key_hint_from_constructor(ctor) when is_binary(ctor) do
     lower = String.downcase(ctor)
 
@@ -326,7 +328,7 @@ defmodule Elmc.Runtime.Executor do
 
   defp extract_key_hint_from_constructor(_), do: nil
 
-  @spec strip_constructor_prefix(term(), term()) :: term()
+  @spec strip_constructor_prefix(String.t(), non_neg_integer()) :: String.t()
   defp strip_constructor_prefix(ctor, prefix_len)
        when is_binary(ctor) and is_integer(prefix_len) and prefix_len >= 0 do
     total = String.length(ctor)
@@ -334,7 +336,7 @@ defmodule Elmc.Runtime.Executor do
     String.slice(ctor, prefix_len, len)
   end
 
-  @spec hinted_model_key(term(), term(), term()) :: term()
+  @spec hinted_model_key(Types.runtime_model(), String.t() | nil, :integer | :boolean) :: Types.model_key()
   defp hinted_model_key(_model, nil, _type), do: nil
 
   defp hinted_model_key(model, hint, :integer) when is_map(model) and is_binary(hint) do
@@ -345,7 +347,7 @@ defmodule Elmc.Runtime.Executor do
     find_matching_model_key(model, hint, fn value -> is_boolean(value) end)
   end
 
-  @spec find_matching_model_key(term(), term(), term()) :: term()
+  @spec find_matching_model_key(Types.runtime_model(), String.t(), Types.value_predicate()) :: Types.model_key()
   defp find_matching_model_key(model, hint, value_predicate)
        when is_map(model) and is_binary(hint) and is_function(value_predicate, 1) do
     hint_norm = normalize_identifier(hint)
@@ -365,14 +367,14 @@ defmodule Elmc.Runtime.Executor do
     end)
   end
 
-  @spec normalize_identifier(term()) :: term()
+  @spec normalize_identifier(String.t()) :: String.t()
   defp normalize_identifier(text) when is_binary(text) do
     text
     |> String.downcase()
     |> String.replace(~r/[^a-z0-9]/, "")
   end
 
-  @spec apply_set_mutation(term(), term(), term(), term(), term()) :: term()
+  @spec apply_set_mutation(Types.runtime_model(), Types.model_key(), Types.model_key(), Types.message(), Types.set_payload_type()) :: Types.runtime_model()
   defp apply_set_mutation(model, numeric_key, bool_key, message, preferred_set_type)
        when is_map(model) and is_binary(message) do
     case preferred_set_type do
@@ -389,7 +391,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec branch_set_payload_type(term()) :: term()
+  @spec branch_set_payload_type(String.t() | nil) :: Types.set_payload_type()
   defp branch_set_payload_type(branch) when is_binary(branch) do
     hint = String.downcase(branch)
 
@@ -402,7 +404,7 @@ defmodule Elmc.Runtime.Executor do
 
   defp branch_set_payload_type(_), do: nil
 
-  @spec primary_numeric_key(term()) :: term()
+  @spec primary_numeric_key(Types.runtime_model()) :: Types.model_key()
   defp primary_numeric_key(model) when is_map(model) do
     keys =
       Enum.filter(Map.keys(model), fn key ->
@@ -412,7 +414,7 @@ defmodule Elmc.Runtime.Executor do
     preferred_key(keys, ["n", "count", "counter", "value", "index", "total", "q", "p"])
   end
 
-  @spec primary_boolean_key(term()) :: term()
+  @spec primary_boolean_key(Types.runtime_model()) :: Types.model_key()
   defp primary_boolean_key(model) when is_map(model) do
     keys =
       Enum.filter(Map.keys(model), fn key ->
@@ -422,7 +424,7 @@ defmodule Elmc.Runtime.Executor do
     preferred_key(keys, ["enabled", "active", "on", "open", "visible", "toggled", "flag"])
   end
 
-  @spec bookkeeping_model_key?(term()) :: term()
+  @spec bookkeeping_model_key?(Types.model_key()) :: boolean()
   defp bookkeeping_model_key?(key) do
     key_text =
       key
@@ -439,7 +441,7 @@ defmodule Elmc.Runtime.Executor do
       ]
   end
 
-  @spec preferred_key(term(), term()) :: term()
+  @spec preferred_key([Types.model_key()], [String.t()]) :: Types.model_key()
   defp preferred_key([], _preferred), do: nil
 
   defp preferred_key(keys, preferred_names) when is_list(keys) and is_list(preferred_names) do
@@ -459,7 +461,7 @@ defmodule Elmc.Runtime.Executor do
       end
   end
 
-  @spec set_selected_numeric_from_message(term(), term(), term()) :: term()
+  @spec set_selected_numeric_from_message(Types.runtime_model(), Types.model_key(), Types.message()) :: Types.runtime_model()
   defp set_selected_numeric_from_message(model, nil, _message), do: model
 
   defp set_selected_numeric_from_message(model, key, message)
@@ -475,7 +477,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec set_selected_boolean_from_message(term(), term(), term()) :: term()
+  @spec set_selected_boolean_from_message(Types.runtime_model(), Types.model_key(), Types.message()) :: Types.runtime_model()
   defp set_selected_boolean_from_message(model, nil, _message), do: model
 
   defp set_selected_boolean_from_message(model, key, message)
@@ -491,7 +493,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec message_integer_value(term(), term()) :: term()
+  @spec message_integer_value(Types.message(), Types.model_key()) :: integer() | nil
   defp message_integer_value(message, key) when is_binary(message) do
     key_text =
       key
@@ -538,7 +540,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec message_boolean_value(term(), term()) :: term()
+  @spec message_boolean_value(Types.message(), Types.model_key()) :: boolean() | nil
   defp message_boolean_value(message, key) when is_binary(message) do
     key_text =
       key
@@ -591,7 +593,7 @@ defmodule Elmc.Runtime.Executor do
         ])
   end
 
-  @spec message_payload_segments(term()) :: term()
+  @spec message_payload_segments(Types.message()) :: Types.segments()
   defp message_payload_segments(message) when is_binary(message) do
     tokens = message_tokens(message)
     ctor = constructor_hint(message)
@@ -641,14 +643,14 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec constructor_token_matches?(term(), term()) :: term()
+  @spec constructor_token_matches?(String.t(), String.t()) :: boolean()
   defp constructor_token_matches?(token, ctor) when is_binary(token) and is_binary(ctor) do
     escaped = Regex.escape(ctor)
     pattern = ~r/\b(?:[A-Za-z_][A-Za-z0-9_]*\.)*#{escaped}\b/i
     Regex.match?(pattern, token)
   end
 
-  @spec payload_after_constructor_token(term(), term()) :: term()
+  @spec payload_after_constructor_token(String.t(), String.t()) :: String.t()
   defp payload_after_constructor_token(token, ctor) when is_binary(token) and is_binary(ctor) do
     escaped = Regex.escape(ctor)
     pattern = ~r/\b(?:[A-Za-z_][A-Za-z0-9_]*\.)*#{escaped}\b(?<tail>.*)$/i
@@ -659,7 +661,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec message_tokens(term()) :: term()
+  @spec message_tokens(Types.message()) :: Types.segments()
   defp message_tokens(message) when is_binary(message) do
     message
     |> String.split(":")
@@ -667,7 +669,7 @@ defmodule Elmc.Runtime.Executor do
     |> Enum.reject(&(&1 == ""))
   end
 
-  @spec constructor_payload_tail_segments(term(), term()) :: term()
+  @spec constructor_payload_tail_segments(Types.message(), String.t()) :: Types.segments()
   defp constructor_payload_tail_segments(message, ctor)
        when is_binary(message) and is_binary(ctor) do
     escaped = Regex.escape(ctor)
@@ -688,7 +690,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec constructor_tail_for_message(term()) :: term()
+  @spec constructor_tail_for_message(Types.message()) :: String.t()
   defp constructor_tail_for_message(message) when is_binary(message) do
     case constructor_hint(message) do
       ctor when is_binary(ctor) ->
@@ -705,7 +707,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec constructor_full_tail_for_message(term()) :: term()
+  @spec constructor_full_tail_for_message(Types.message()) :: String.t()
   defp constructor_full_tail_for_message(message) when is_binary(message) do
     case constructor_hint(message) do
       ctor when is_binary(ctor) ->
@@ -722,7 +724,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec constructor_tail_argument_window(term(), term()) :: term()
+  @spec constructor_tail_argument_window(String.t(), pos_integer()) :: String.t()
   defp constructor_tail_argument_window(text, max_args)
        when is_binary(text) and is_integer(max_args) and max_args > 0 do
     text
@@ -732,7 +734,7 @@ defmodule Elmc.Runtime.Executor do
     |> String.trim()
   end
 
-  @spec payload_scope_segments(term(), term(), term()) :: term()
+  @spec payload_scope_segments(Types.segments(), String.t(), pos_integer()) :: Types.segments()
   defp payload_scope_segments(payload_segments, constructor_tail, max_args)
        when is_list(payload_segments) and is_binary(constructor_tail) and is_integer(max_args) do
     [constructor_tail | payload_segments]
@@ -741,7 +743,7 @@ defmodule Elmc.Runtime.Executor do
     |> Enum.uniq()
   end
 
-  @spec take_leading_arguments(term(), term(), term()) :: term()
+  @spec take_leading_arguments(String.t(), non_neg_integer(), [String.t()]) :: [String.t()]
   defp take_leading_arguments("", _max_args, acc), do: Enum.reverse(acc)
   defp take_leading_arguments(_text, 0, acc), do: Enum.reverse(acc)
 
@@ -756,7 +758,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec take_single_argument(term()) :: term()
+  @spec take_single_argument(String.t()) :: Types.argument_pair()
   defp take_single_argument(<<first, _::binary>> = text) when first in [?(, ?[, ?{] do
     take_group_argument(text)
   end
@@ -769,13 +771,13 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec take_group_argument(term()) :: term()
+  @spec take_group_argument(String.t()) :: Types.argument_pair()
   defp take_group_argument(<<open, rest::binary>>) when open in [?(, ?[, ?{] do
     closer = matching_closer(open)
     consume_group(rest, [closer], <<open>>, "")
   end
 
-  @spec consume_group(term(), term(), term(), term()) :: term()
+  @spec consume_group(String.t(), Types.closer_stack(), String.t(), String.t()) :: Types.argument_pair()
   defp consume_group(<<>>, _stack, acc, _last_rest), do: {acc, ""}
 
   defp consume_group(rest, [], acc, _last_rest), do: {acc, rest}
@@ -800,13 +802,13 @@ defmodule Elmc.Runtime.Executor do
     consume_group(tail, next_stack, <<acc::binary, char>>, rest)
   end
 
-  @spec matching_closer(term()) :: term()
+  @spec matching_closer(Types.char_code()) :: Types.char_code() | nil
   defp matching_closer(?(), do: ?)
   defp matching_closer(?[), do: ?]
   defp matching_closer(?{), do: ?}
   defp matching_closer(_), do: nil
 
-  @spec constructor_keyword_hint?(term()) :: term()
+  @spec constructor_keyword_hint?(String.t()) :: boolean()
   defp constructor_keyword_hint?(text) when is_binary(text) do
     lowered = String.downcase(text)
 
@@ -823,7 +825,7 @@ defmodule Elmc.Runtime.Executor do
     ])
   end
 
-  @spec extract_integer(term()) :: term()
+  @spec extract_integer(String.t()) :: integer() | nil
   defp extract_integer(text) when is_binary(text) do
     case Regex.run(~r/-?\d+/, text) do
       [digits] ->
@@ -837,7 +839,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec extract_integer_from_tail(term()) :: term()
+  @spec extract_integer_from_tail(String.t()) :: integer() | nil
   defp extract_integer_from_tail(text) when is_binary(text) do
     matches = Regex.scan(~r/-?\d+/, text) |> List.flatten()
 
@@ -853,7 +855,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec extract_integer_from_head(term()) :: term()
+  @spec extract_integer_from_head(String.t()) :: integer() | nil
   defp extract_integer_from_head(text) when is_binary(text) do
     case Regex.run(~r/-?\d+/, text) do
       [digits] ->
@@ -867,7 +869,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec wrapped_integer_value(term()) :: term()
+  @spec wrapped_integer_value(String.t()) :: integer() | nil
   defp wrapped_integer_value(text) when is_binary(text) do
     case Regex.scan(~r/\b(?:just|ok|value)\b[^-0-9]*(?<digits>-?\d+)/i, text, capture: :all_names) do
       [] ->
@@ -889,7 +891,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec boolean_token_value(term()) :: term()
+  @spec boolean_token_value(String.t()) :: boolean() | nil
   defp boolean_token_value(text) when is_binary(text) do
     hint = String.downcase(text)
 
@@ -904,7 +906,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec boolean_token_value_from_tail(term()) :: term()
+  @spec boolean_token_value_from_tail(String.t()) :: boolean() | nil
   defp boolean_token_value_from_tail(text) when is_binary(text) do
     tokens =
       Regex.scan(~r/\b(true|false|on|off|enable|enabled|disable|disabled)\b/i, text,
@@ -918,7 +920,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec boolean_token_value_from_head(term()) :: term()
+  @spec boolean_token_value_from_head(String.t()) :: boolean() | nil
   defp boolean_token_value_from_head(text) when is_binary(text) do
     tokens =
       Regex.scan(~r/\b(true|false|on|off|enable|enabled|disable|disabled)\b/i, text,
@@ -932,12 +934,12 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec first_boolean_value(term()) :: term()
+  @spec first_boolean_value([boolean() | nil]) :: boolean() | nil
   defp first_boolean_value(values) when is_list(values) do
     Enum.find(values, &is_boolean/1)
   end
 
-  @spec first_boolean_from_segments(term(), term()) :: term()
+  @spec first_boolean_from_segments(Types.segments(), Types.segment_extractor()) :: boolean() | nil
   defp first_boolean_from_segments(segments, extractor)
        when is_list(segments) and is_function(extractor, 1) do
     Enum.reduce_while(segments, nil, fn segment, _acc ->
@@ -946,7 +948,7 @@ defmodule Elmc.Runtime.Executor do
     end)
   end
 
-  @spec wrapped_boolean_value(term()) :: term()
+  @spec wrapped_boolean_value(String.t()) :: boolean() | nil
   defp wrapped_boolean_value(text) when is_binary(text) do
     case Regex.scan(
            ~r/\b(?:just|ok|value)\b[^A-Za-z]*(true|false|on|off|enable|enabled|disable|disabled)\b/i,
@@ -967,7 +969,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec mutate_selected_numeric(term(), term(), term()) :: term()
+  @spec mutate_selected_numeric(Types.runtime_model(), Types.model_key(), Types.numeric_mutator()) :: Types.runtime_model()
   defp mutate_selected_numeric(model, nil, _fun), do: model
 
   defp mutate_selected_numeric(model, key, fun) when is_map(model) and is_function(fun, 1) do
@@ -975,7 +977,7 @@ defmodule Elmc.Runtime.Executor do
     if is_integer(value), do: Map.put(model, key, fun.(value)), else: model
   end
 
-  @spec mutate_selected_boolean(term(), term(), term()) :: term()
+  @spec mutate_selected_boolean(Types.runtime_model(), Types.model_key(), Types.boolean_mutator()) :: Types.runtime_model()
   defp mutate_selected_boolean(model, nil, _fun), do: model
 
   defp mutate_selected_boolean(model, key, fun) when is_map(model) and is_function(fun, 1) do
@@ -983,7 +985,7 @@ defmodule Elmc.Runtime.Executor do
     if is_boolean(value), do: Map.put(model, key, fun.(value)), else: model
   end
 
-  @spec reset_selected_numeric(term(), term(), term()) :: term()
+  @spec reset_selected_numeric(Types.runtime_model(), Types.model_key(), Types.runtime_model()) :: Types.runtime_model()
   defp reset_selected_numeric(model, nil, _init_model), do: model
 
   defp reset_selected_numeric(model, key, init_model) when is_map(model) and is_map(init_model) do
@@ -997,7 +999,7 @@ defmodule Elmc.Runtime.Executor do
     if is_integer(value), do: Map.put(model, key, reset_to), else: model
   end
 
-  @spec reset_selected_boolean(term(), term(), term()) :: term()
+  @spec reset_selected_boolean(Types.runtime_model(), Types.model_key(), Types.runtime_model()) :: Types.runtime_model()
   defp reset_selected_boolean(model, nil, _init_model), do: model
 
   defp reset_selected_boolean(model, key, init_model) when is_map(model) and is_map(init_model) do
@@ -1008,7 +1010,7 @@ defmodule Elmc.Runtime.Executor do
     if is_boolean(value), do: Map.put(model, key, reset_to), else: model
   end
 
-  @spec derive_view_tree(term(), term(), term(), term(), term(), term()) :: term()
+  @spec derive_view_tree(Types.view_tree(), Types.introspect(), Types.message() | nil, Types.operation() | nil, String.t(), Types.runtime_model()) :: Types.view_tree()
   defp derive_view_tree(current_view_tree, introspect, message, op, source_root, runtime_model) do
     introspect_view =
       case map_value(introspect, :view_tree) do
@@ -1052,7 +1054,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec view_tree_source(term(), term(), term(), term()) :: term()
+  @spec view_tree_source(Types.view_tree(), Types.introspect(), Types.message() | nil, Types.view_tree()) :: Types.view_tree_source_label()
   defp view_tree_source(current_view_tree, introspect, message, runtime_view_tree)
        when is_map(runtime_view_tree) do
     cond do
@@ -1073,7 +1075,7 @@ defmodule Elmc.Runtime.Executor do
     end
   end
 
-  @spec view_tree_node_count(term()) :: term()
+  @spec view_tree_node_count(Types.view_tree() | map()) :: non_neg_integer()
   defp view_tree_node_count(%{"children" => children}) when is_list(children) do
     1 +
       Enum.reduce(children, 0, fn child, acc ->
@@ -1091,7 +1093,7 @@ defmodule Elmc.Runtime.Executor do
   defp view_tree_node_count(%{}), do: 1
   defp view_tree_node_count(_), do: 0
 
-  @spec stable_term_sha256(term()) :: term()
+  @spec stable_term_sha256(Types.hash_input()) :: String.t()
   defp stable_term_sha256(term) do
     :crypto.hash(:sha256, :erlang.term_to_binary(term))
     |> Base.encode16(case: :lower)

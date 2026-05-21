@@ -41,6 +41,12 @@ defmodule Ide.Compiler do
           optional(:elm_executor_core_ir_b64) => String.t(),
           optional(:elm_executor_metadata) => map()
         }
+  @type manifest_data :: %{
+          optional(String.t()) => term()
+        }
+
+  @type compiler_error :: atom() | String.t() | tuple()
+
   @type manifest_result :: %{
           status: :ok | :error,
           diagnostics: [diagnostic()],
@@ -51,17 +57,17 @@ defmodule Ide.Compiler do
           revision: String.t(),
           cached?: boolean(),
           strict?: boolean(),
-          manifest: map() | nil
+          manifest: manifest_data() | nil
         }
 
-  @callback check(project_slug(), opts()) :: {:ok, [diagnostic()]} | {:error, term()}
-  @callback compile(project_slug(), opts()) :: {:ok, map()} | {:error, term()}
-  @callback manifest(project_slug(), opts()) :: {:ok, manifest_result()} | {:error, term()}
+  @callback check(project_slug(), opts()) :: {:ok, check_result()} | {:error, compiler_error()}
+  @callback compile(project_slug(), opts()) :: {:ok, compile_result()} | {:error, compiler_error()}
+  @callback manifest(project_slug(), opts()) :: {:ok, manifest_result()} | {:error, compiler_error()}
 
   @doc """
   Runs `elmc check` for a workspace and returns parsed diagnostics.
   """
-  @spec check(project_slug(), opts()) :: {:ok, check_result()} | {:error, term()}
+  @spec check(project_slug(), opts()) :: {:ok, check_result()} | {:error, compiler_error()}
   def check(_project_slug, opts) do
     workspace_root = Keyword.fetch!(opts, :workspace_root)
     check_path = detect_check_path(workspace_root)
@@ -104,7 +110,7 @@ defmodule Ide.Compiler do
   The companion phone app is validated with the upstream Elm compiler. Watch-side
   roots are validated with elmc so the editor matches the Pebble runtime compiler.
   """
-  @spec check_source_root(project_slug(), opts()) :: {:ok, check_result()} | {:error, term()}
+  @spec check_source_root(project_slug(), opts()) :: {:ok, check_result()} | {:error, compiler_error()}
   def check_source_root(project_slug, opts) do
     workspace_root = Keyword.fetch!(opts, :workspace_root)
     source_root = opts |> Keyword.get(:source_root, "watch") |> to_string()
@@ -119,7 +125,6 @@ defmodule Ide.Compiler do
       case run_editor_parser_check(project_dir) do
         {:ok, %{status: :ok}} -> check(project_slug, workspace_root: project_dir)
         {:ok, result} -> {:ok, result}
-        {:error, _reason} = error -> error
       end
     end
   end
@@ -127,7 +132,7 @@ defmodule Ide.Compiler do
   @doc """
   Runs `elmc compile` for a workspace and returns parsed diagnostics.
   """
-  @spec compile(project_slug(), opts()) :: {:ok, compile_result()} | {:error, term()}
+  @spec compile(project_slug(), opts()) :: {:ok, compile_result()} | {:error, compiler_error()}
   def compile(project_slug, opts) do
     workspace_root = Keyword.fetch!(opts, :workspace_root)
     compile_path = detect_check_path(workspace_root)
@@ -174,9 +179,6 @@ defmodule Ide.Compiler do
               {:ok, result} ->
                 :ok = Cache.put(project_slug, revision, result)
                 {:ok, result}
-
-              {:error, reason} ->
-                {:error, reason}
             end
         end
     end
@@ -185,7 +187,7 @@ defmodule Ide.Compiler do
   @doc """
   Runs `elmc manifest` for a workspace and returns parsed diagnostics and JSON payload.
   """
-  @spec manifest(project_slug(), opts()) :: {:ok, manifest_result()} | {:error, term()}
+  @spec manifest(project_slug(), opts()) :: {:ok, manifest_result()} | {:error, compiler_error()}
   def manifest(project_slug, opts) do
     workspace_root = Keyword.fetch!(opts, :workspace_root)
     strict? = Keyword.get(opts, :strict, false)
@@ -234,15 +236,12 @@ defmodule Ide.Compiler do
               {:ok, result} ->
                 :ok = ManifestCache.put(project_slug, revision, result)
                 {:ok, result}
-
-              {:error, reason} ->
-                {:error, reason}
             end
         end
     end
   end
 
-  @spec run_elmc_check(String.t()) :: {:ok, check_result()} | {:error, term()}
+  @spec run_elmc_check(String.t()) :: {:ok, check_result()} | {:error, compiler_error()}
   defp run_elmc_check(project_dir) do
     expr = "Elmc.CLI.main([\"check\", #{inspect(project_dir)}])"
 
@@ -271,7 +270,7 @@ defmodule Ide.Compiler do
     error -> {:error, error}
   end
 
-  @spec run_elm_check(String.t()) :: {:ok, check_result()} | {:error, term()}
+  @spec run_elm_check(String.t()) :: {:ok, check_result()} | {:error, compiler_error()}
   defp run_elm_check(project_dir) do
     with {:ok, elm_json} <- read_elm_json(project_dir),
          {:ok, elm_bin} <- PebbleToolchain.elm_bin(),
@@ -338,7 +337,7 @@ defmodule Ide.Compiler do
     error -> {:error, error}
   end
 
-  @spec run_editor_parser_check(String.t()) :: {:ok, check_result()} | {:error, term()}
+  @spec run_editor_parser_check(String.t()) :: {:ok, check_result()}
   defp run_editor_parser_check(project_dir) do
     diagnostics =
       project_dir
@@ -422,7 +421,7 @@ defmodule Ide.Compiler do
     |> Enum.join("\n\n")
   end
 
-  @spec run_elmc_compile(String.t(), String.t()) :: {:ok, compile_result()} | {:error, term()}
+  @spec run_elmc_compile(String.t(), String.t()) :: {:ok, compile_result()} | {:error, compiler_error()}
   defp run_elmc_compile(project_dir, revision) do
     out_dir = Path.join(project_dir, ".elmc-build")
 
@@ -457,7 +456,7 @@ defmodule Ide.Compiler do
     error -> {:error, error}
   end
 
-  @spec maybe_attach_elm_executor_artifacts(term(), term()) :: term()
+  @spec maybe_attach_elm_executor_artifacts(compile_result(), String.t()) :: compile_result()
   defp maybe_attach_elm_executor_artifacts(result, project_dir)
        when is_map(result) and is_binary(project_dir) do
     if Map.get(result, :status) == :ok do
@@ -481,7 +480,8 @@ defmodule Ide.Compiler do
 
   defp maybe_attach_elm_executor_artifacts(result, _project_dir), do: result
 
-  @spec build_elm_executor_artifacts(term()) :: term()
+  @spec build_elm_executor_artifacts(String.t()) ::
+          {:ok, %{core_ir: term(), metadata: map()}} | {:error, atom()}
   defp build_elm_executor_artifacts(project_dir) when is_binary(project_dir) do
     with {:ok, project} <- Bridge.load_project(project_dir),
          {:ok, ir} <- Lowerer.lower_project(project) do
@@ -491,7 +491,8 @@ defmodule Ide.Compiler do
     end
   end
 
-  @spec build_core_ir_artifact(term()) :: term()
+  @spec build_core_ir_artifact(map()) ::
+          {:ok, %{core_ir: map(), metadata: map()}} | {:error, atom()}
   defp build_core_ir_artifact(ir) do
     case CoreIR.from_ir(ir, strict?: true) do
       {:ok, core_ir} ->
@@ -531,7 +532,7 @@ defmodule Ide.Compiler do
     do: diagnostics
 
   @spec run_elmc_manifest(String.t(), String.t(), boolean()) ::
-          {:ok, manifest_result()} | {:error, term()}
+          {:ok, manifest_result()} | {:error, compiler_error()}
   defp run_elmc_manifest(project_dir, revision, strict?) do
     expr = "Elmc.CLI.main([\"manifest\", #{inspect(project_dir)}])"
 
@@ -640,7 +641,7 @@ defmodule Ide.Compiler do
     }
   end
 
-  @spec read_elm_json(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec read_elm_json(String.t()) :: {:ok, map()} | {:error, compiler_error()}
   defp read_elm_json(project_dir) do
     project_dir
     |> Path.join("elm.json")
@@ -651,7 +652,7 @@ defmodule Ide.Compiler do
     end
   end
 
-  @spec elm_make_entries(String.t(), map()) :: {:ok, [String.t()]} | {:error, term()}
+  @spec elm_make_entries(String.t(), map()) :: {:ok, [String.t()]} | {:error, compiler_error()}
   defp elm_make_entries(project_dir, _elm_json) when is_binary(project_dir) do
     preferred_entries =
       [
@@ -735,7 +736,7 @@ defmodule Ide.Compiler do
 
   defp elm_compile_error_diagnostics(_, _project_dir), do: []
 
-  @spec elm_problem_to_diagnostic(map(), term(), String.t()) :: diagnostic()
+  @spec elm_problem_to_diagnostic(map(), String.t() | nil, String.t()) :: diagnostic()
   defp elm_problem_to_diagnostic(problem, path, project_dir) when is_map(problem) do
     region = Map.get(problem, "region", %{})
     start = Map.get(region, "start", %{})
@@ -757,7 +758,7 @@ defmodule Ide.Compiler do
     }
   end
 
-  @spec normalize_elm_report_path(term(), String.t()) :: String.t() | nil
+  @spec normalize_elm_report_path(String.t() | nil, String.t()) :: String.t() | nil
   defp normalize_elm_report_path(path, project_dir) when is_binary(path) do
     if Path.type(path) == :absolute do
       Path.relative_to(path, project_dir)
@@ -768,7 +769,7 @@ defmodule Ide.Compiler do
 
   defp normalize_elm_report_path(_path, _project_dir), do: nil
 
-  @spec elm_message_to_text(term()) :: String.t()
+  @spec elm_message_to_text(list() | map() | String.t()) :: String.t()
   defp elm_message_to_text(message) when is_list(message) do
     message
     |> Enum.map(&elm_message_to_text/1)
@@ -780,7 +781,7 @@ defmodule Ide.Compiler do
   defp elm_message_to_text(message) when is_binary(message), do: message
   defp elm_message_to_text(_), do: ""
 
-  @spec match_index(term()) :: integer() | nil
+  @spec match_index({integer(), integer()} | :nomatch | nil) :: integer() | nil
   defp match_index({index, _length}), do: index
   defp match_index(:nomatch), do: nil
 
@@ -792,11 +793,11 @@ defmodule Ide.Compiler do
     |> match_index()
   end
 
-  @spec normalize_json_integer(term()) :: integer() | nil
+  @spec normalize_json_integer(String.t() | integer() | nil) :: integer() | nil
   defp normalize_json_integer(value) when is_integer(value), do: value
   defp normalize_json_integer(_), do: nil
 
-  @spec extract_embedded_warnings(term()) :: term()
+  @spec extract_embedded_warnings(String.t()) :: [map()]
   defp extract_embedded_warnings(output) when is_binary(output) do
     output
     |> String.split("\n", trim: true)
@@ -813,7 +814,7 @@ defmodule Ide.Compiler do
     end)
   end
 
-  @spec warning_to_diagnostic(term()) :: term()
+  @spec warning_to_diagnostic(map()) :: map()
   defp warning_to_diagnostic(warning) when is_map(warning) do
     line = warning["line"]
 
@@ -843,7 +844,7 @@ defmodule Ide.Compiler do
     }
   end
 
-  @spec normalize_warning_source(term()) :: term()
+  @spec normalize_warning_source(String.t() | nil) :: String.t()
   defp normalize_warning_source(nil), do: "elmc/lowerer"
 
   defp normalize_warning_source(source) when is_binary(source) do
@@ -1012,7 +1013,7 @@ defmodule Ide.Compiler do
       else: nil
   end
 
-  @spec normalize_string_list(term()) :: {[String.t()], [String.t()]}
+  @spec normalize_string_list(list() | map() | nil) :: {[String.t()], [String.t()]}
   defp normalize_string_list(value) when is_list(value) do
     if Enum.all?(value, &is_binary/1) do
       {value, []}
@@ -1030,7 +1031,7 @@ defmodule Ide.Compiler do
     {[], ["Manifest field had unexpected type; using empty list."]}
   end
 
-  @spec normalize_dependency_compatibility(term()) :: {[map()], [String.t()]}
+  @spec normalize_dependency_compatibility(list() | map() | nil) :: {[map()], [String.t()]}
   defp normalize_dependency_compatibility(value) when is_list(value) do
     rows =
       value

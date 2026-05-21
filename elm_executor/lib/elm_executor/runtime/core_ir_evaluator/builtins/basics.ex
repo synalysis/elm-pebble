@@ -1,7 +1,8 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Basics do
   @moduledoc false
 
-  @spec eval(String.t(), term(), map()) :: {:ok, term()} | :no_builtin | {:error, term()}
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result()
   def eval("pi", [], _ops), do: {:ok, :math.pi()}
   def eval("e", [], _ops), do: {:ok, :math.exp(1.0)}
   def eval("lt", [], _ops), do: {:ok, %{"ctor" => "LT", "args" => []}}

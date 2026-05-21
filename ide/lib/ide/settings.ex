@@ -22,6 +22,17 @@ defmodule Ide.Settings do
   @type editor_theme :: :system | :dark | :light
   @type formatter_backend :: :built_in | :elm_format
   @type capability :: :read | :edit | :build
+  @type wire_input :: String.t() | integer() | boolean() | list() | nil
+  @type file_values :: %{optional(String.t()) => boolean() | String.t() | integer() | list()}
+  @type settings_write_result :: :ok | {:error, File.posix() | Jason.EncodeError.t()}
+  @type settings_error ::
+          File.posix()
+          | Jason.EncodeError.t()
+          | {:invalid_port, wire_input()}
+          | {:invalid_editor_mode, wire_input()}
+          | {:invalid_formatter_backend, wire_input()}
+          | {:invalid_editor_theme, wire_input()}
+  @type settings_set_result :: :ok | {:error, settings_error()}
 
   @type values :: %{
           auto_format_on_save: boolean(),
@@ -65,7 +76,7 @@ defmodule Ide.Settings do
     }
   end
 
-  @spec set_auto_format_on_save(boolean()) :: :ok | {:error, term()}
+  @spec set_auto_format_on_save(boolean()) :: settings_set_result()
   def set_auto_format_on_save(value) when is_boolean(value) do
     values =
       read_file_values()
@@ -74,7 +85,7 @@ defmodule Ide.Settings do
     write_file_values(values)
   end
 
-  @spec set_debug_mode(boolean()) :: :ok | {:error, term()}
+  @spec set_debug_mode(boolean()) :: settings_set_result()
   def set_debug_mode(value) when is_boolean(value) do
     values =
       read_file_values()
@@ -83,7 +94,7 @@ defmodule Ide.Settings do
     write_file_values(values)
   end
 
-  @spec set_formatter_backend(formatter_backend() | String.t()) :: :ok | {:error, term()}
+  @spec set_formatter_backend(formatter_backend() | String.t()) :: settings_set_result()
   def set_formatter_backend(value) do
     case normalize_formatter_backend(value) do
       {:ok, backend} ->
@@ -98,7 +109,7 @@ defmodule Ide.Settings do
     end
   end
 
-  @spec set_editor_mode(editor_mode() | String.t()) :: :ok | {:error, term()}
+  @spec set_editor_mode(editor_mode() | String.t()) :: settings_set_result()
   def set_editor_mode(value) do
     case normalize_editor_mode(value) do
       {:ok, mode} ->
@@ -113,7 +124,7 @@ defmodule Ide.Settings do
     end
   end
 
-  @spec set_editor_theme(editor_theme() | String.t()) :: :ok | {:error, term()}
+  @spec set_editor_theme(editor_theme() | String.t()) :: settings_set_result()
   def set_editor_theme(value) do
     case normalize_editor_theme(value) do
       {:ok, theme} ->
@@ -128,7 +139,7 @@ defmodule Ide.Settings do
     end
   end
 
-  @spec set_editor_line_numbers(boolean()) :: :ok | {:error, term()}
+  @spec set_editor_line_numbers(boolean()) :: settings_set_result()
   def set_editor_line_numbers(value) when is_boolean(value) do
     values =
       read_file_values()
@@ -137,7 +148,7 @@ defmodule Ide.Settings do
     write_file_values(values)
   end
 
-  @spec set_editor_active_line_highlight(boolean()) :: :ok | {:error, term()}
+  @spec set_editor_active_line_highlight(boolean()) :: settings_set_result()
   def set_editor_active_line_highlight(value) when is_boolean(value) do
     values =
       read_file_values()
@@ -146,7 +157,7 @@ defmodule Ide.Settings do
     write_file_values(values)
   end
 
-  @spec set_mcp_http_enabled(boolean()) :: :ok | {:error, term()}
+  @spec set_mcp_http_enabled(boolean()) :: settings_set_result()
   def set_mcp_http_enabled(value) when is_boolean(value) do
     values =
       read_file_values()
@@ -155,7 +166,7 @@ defmodule Ide.Settings do
     write_file_values(values)
   end
 
-  @spec set_mcp_http_port(pos_integer() | String.t()) :: :ok | {:error, term()}
+  @spec set_mcp_http_port(pos_integer() | String.t()) :: settings_set_result()
   def set_mcp_http_port(value) do
     case normalize_port(value) do
       {:ok, port} ->
@@ -171,7 +182,7 @@ defmodule Ide.Settings do
   end
 
   @spec set_mcp_http_capabilities([capability() | String.t()] | String.t()) ::
-          :ok | {:error, term()}
+          settings_set_result()
   def set_mcp_http_capabilities(value) do
     values =
       read_file_values()
@@ -180,7 +191,7 @@ defmodule Ide.Settings do
     write_file_values(values)
   end
 
-  @spec set_acp_agent_enabled(boolean()) :: :ok | {:error, term()}
+  @spec set_acp_agent_enabled(boolean()) :: settings_set_result()
   def set_acp_agent_enabled(value) when is_boolean(value) do
     values =
       read_file_values()
@@ -190,7 +201,7 @@ defmodule Ide.Settings do
   end
 
   @spec set_acp_agent_capabilities([capability() | String.t()] | String.t()) ::
-          :ok | {:error, term()}
+          settings_set_result()
   def set_acp_agent_capabilities(value) do
     values =
       read_file_values()
@@ -199,7 +210,7 @@ defmodule Ide.Settings do
     write_file_values(values)
   end
 
-  @spec read_file_values() :: term()
+  @spec read_file_values() :: file_values()
   defp read_file_values do
     path = settings_path()
 
@@ -215,7 +226,7 @@ defmodule Ide.Settings do
     end
   end
 
-  @spec write_file_values(term()) :: term()
+  @spec write_file_values(file_values()) :: settings_write_result()
   defp write_file_values(values) do
     path = settings_path()
     parent = Path.dirname(path)
@@ -227,27 +238,27 @@ defmodule Ide.Settings do
     end
   end
 
-  @spec settings_path() :: term()
+  @spec settings_path() :: String.t()
   defp settings_path do
     Application.get_env(:ide, Ide.Settings, [])
     |> Keyword.fetch!(:settings_path)
   end
 
-  @spec parse_editor_mode(term()) :: term()
+  @spec parse_editor_mode(wire_input()) :: editor_mode()
   defp parse_editor_mode("vim"), do: :vim
   defp parse_editor_mode(_), do: :regular
 
-  @spec parse_formatter_backend(term()) :: formatter_backend()
+  @spec parse_formatter_backend(wire_input()) :: formatter_backend()
   defp parse_formatter_backend("elm_format"), do: :elm_format
   defp parse_formatter_backend("elm-format"), do: :elm_format
   defp parse_formatter_backend(_), do: :built_in
 
-  @spec parse_editor_theme(term()) :: term()
+  @spec parse_editor_theme(wire_input()) :: editor_theme()
   defp parse_editor_theme("dark"), do: :dark
   defp parse_editor_theme("light"), do: :light
   defp parse_editor_theme(_), do: :system
 
-  @spec parse_port(term()) :: pos_integer()
+  @spec parse_port(wire_input()) :: pos_integer()
   defp parse_port(value) when is_integer(value) and value >= 1 and value <= 65_535, do: value
 
   defp parse_port(value) when is_binary(value) do
@@ -259,7 +270,7 @@ defmodule Ide.Settings do
 
   defp parse_port(_), do: 4000
 
-  @spec normalize_port(term()) :: {:ok, pos_integer()} | {:error, term()}
+  @spec normalize_port(wire_input()) :: {:ok, pos_integer()} | {:error, {:invalid_port, wire_input()}}
   defp normalize_port(value) when is_integer(value) and value >= 1 and value <= 65_535,
     do: {:ok, value}
 
@@ -272,7 +283,7 @@ defmodule Ide.Settings do
 
   defp normalize_port(value), do: {:error, {:invalid_port, value}}
 
-  @spec parse_capabilities(term()) :: [capability()]
+  @spec parse_capabilities(wire_input()) :: [capability()]
   defp parse_capabilities(value) do
     value
     |> normalize_capability_input()
@@ -311,15 +322,16 @@ defmodule Ide.Settings do
     end
   end
 
-  @spec normalize_editor_mode(term()) :: term()
+  @spec normalize_editor_mode(wire_input()) ::
+          {:ok, editor_mode()} | {:error, {:invalid_editor_mode, term()}}
   defp normalize_editor_mode(:regular), do: {:ok, :regular}
   defp normalize_editor_mode(:vim), do: {:ok, :vim}
   defp normalize_editor_mode("regular"), do: {:ok, :regular}
   defp normalize_editor_mode("vim"), do: {:ok, :vim}
   defp normalize_editor_mode(other), do: {:error, {:invalid_editor_mode, other}}
 
-  @spec normalize_formatter_backend(term()) ::
-          {:ok, formatter_backend()} | {:error, term()}
+  @spec normalize_formatter_backend(wire_input()) ::
+          {:ok, formatter_backend()} | {:error, {:invalid_formatter_backend, wire_input()}}
   defp normalize_formatter_backend(:built_in), do: {:ok, :built_in}
   defp normalize_formatter_backend(:elm_format), do: {:ok, :elm_format}
   defp normalize_formatter_backend("built_in"), do: {:ok, :built_in}
@@ -331,7 +343,8 @@ defmodule Ide.Settings do
   defp formatter_backend_to_string(:elm_format), do: "elm_format"
   defp formatter_backend_to_string(_), do: "built_in"
 
-  @spec normalize_editor_theme(term()) :: term()
+  @spec normalize_editor_theme(wire_input()) ::
+          {:ok, editor_theme()} | {:error, {:invalid_editor_theme, term()}}
   defp normalize_editor_theme(:system), do: {:ok, :system}
   defp normalize_editor_theme(:dark), do: {:ok, :dark}
   defp normalize_editor_theme(:light), do: {:ok, :light}

@@ -2,6 +2,11 @@ defmodule Ide.EditorDocLinks do
   @moduledoc false
 
   alias Ide.Debugger.ElmIntrospect
+  alias Ide.Debugger.ElmIntrospect.Types, as: ElmIntrospectTypes
+
+  @type import_entry :: ElmIntrospectTypes.import_entry()
+  @type resolve_symbol_result ::
+          {:ok, String.t(), String.t()} | {:error, :bad_qualified_word | :not_in_exposing}
 
   @doc """
   Given editor `content` and a byte `offset`, resolves a documentation URL on package.elm-lang.org
@@ -30,14 +35,15 @@ defmodule Ide.EditorDocLinks do
     end
   end
 
-  @spec import_entries_from_snapshot(term()) :: term()
+  @spec import_entries_from_snapshot(map()) ::
+          {:ok, [import_entry()]} | {:error, :no_import_metadata}
   defp import_entries_from_snapshot(%{"elm_introspect" => %{"import_entries" => imports}})
        when is_list(imports),
        do: {:ok, imports}
 
   defp import_entries_from_snapshot(_), do: {:error, :no_import_metadata}
 
-  @spec word_from_offset(term(), term()) :: term()
+  @spec word_from_offset(String.t(), non_neg_integer()) :: {:ok, String.t()} | :error
   defp word_from_offset(content, offset) do
     case word_at_offset(content, offset) do
       "" -> :error
@@ -53,7 +59,7 @@ defmodule Ide.EditorDocLinks do
     "https://package.elm-lang.org/packages/#{package}/latest/#{path_mod}#{frag}"
   end
 
-  @spec uri_fragment(term()) :: term()
+  @spec uri_fragment(String.t()) :: String.t()
   defp uri_fragment(""), do: ""
 
   defp uri_fragment(sym) do
@@ -62,7 +68,7 @@ defmodule Ide.EditorDocLinks do
       else: "#" <> URI.encode_www_form(sym)
   end
 
-  @spec word_at_offset(term(), term()) :: term()
+  @spec word_at_offset(String.t(), non_neg_integer()) :: String.t()
   defp word_at_offset(content, offset) do
     len = byte_size(content)
     offset = min(max(offset, 0), len)
@@ -83,7 +89,7 @@ defmodule Ide.EditorDocLinks do
     left <> right
   end
 
-  @spec split_at_byte(term(), term()) :: term()
+  @spec split_at_byte(String.t(), non_neg_integer()) :: {String.t(), String.t()}
   defp split_at_byte(content, offset) do
     before = binary_part(content, 0, offset)
     after_len = byte_size(content) - offset
@@ -91,7 +97,7 @@ defmodule Ide.EditorDocLinks do
     {before, after_at}
   end
 
-  @spec resolve_module_for_word(term(), term()) :: term()
+  @spec resolve_module_for_word(String.t(), [import_entry()]) :: resolve_symbol_result()
   defp resolve_module_for_word(word, imports) do
     alias_map = import_alias_map(imports)
 
@@ -121,7 +127,7 @@ defmodule Ide.EditorDocLinks do
     end
   end
 
-  @spec import_alias_map(term()) :: term()
+  @spec import_alias_map([import_entry()]) :: %{optional(String.t()) => String.t()}
   defp import_alias_map(imports) do
     Enum.reduce(imports, %{}, fn entry, acc ->
       mod = Map.get(entry, "module") || Map.get(entry, :module)
@@ -136,7 +142,7 @@ defmodule Ide.EditorDocLinks do
     end)
   end
 
-  @spec find_import_for_unqualified(term(), term()) :: term()
+  @spec find_import_for_unqualified(String.t(), [import_entry()]) :: String.t() | nil
   defp find_import_for_unqualified(word, imports) do
     Enum.find_value(imports, fn entry ->
       mod = Map.get(entry, "module") || Map.get(entry, :module)

@@ -7,7 +7,7 @@ defmodule IdeWeb.EmulatorController do
   alias Ide.WatchModels
   alias IdeWeb.WorkspaceLive.BuildFlow
 
-  @spec launch(term(), term()) :: term()
+  @spec launch(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def launch(conn, %{"slug" => slug} = params) do
     platform = Map.get(params, "platform")
     # region agent log
@@ -181,8 +181,6 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  defp file_size(_path), do: nil
-
   defp qemu_protocol(protocol) when is_integer(protocol) and protocol >= 0 and protocol <= 255,
     do: {:ok, protocol}
 
@@ -205,7 +203,7 @@ defmodule IdeWeb.EmulatorController do
 
   defp qemu_payload(_payload), do: {:error, :invalid_qemu_payload}
 
-  @spec ping(term(), term()) :: term()
+  @spec ping(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def ping(conn, %{"id" => id}) do
     case Emulator.ping(id) do
       {:ok, info} -> json(conn, Map.put(info, :alive, true))
@@ -213,13 +211,13 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec kill(term(), term()) :: term()
+  @spec kill(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def kill(conn, %{"id" => id}) do
     _ = Emulator.kill(id)
     json(conn, %{status: "ok"})
   end
 
-  @spec install(term(), term()) :: term()
+  @spec install(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def install(conn, %{"id" => id}) do
     case Emulator.install(id) do
       {:ok, result} ->
@@ -233,7 +231,7 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec control(term(), term()) :: term()
+  @spec control(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def control(conn, %{"id" => id} = params) do
     with {:ok, protocol} <- qemu_protocol(Map.get(params, "protocol")),
          {:ok, payload} <- qemu_payload(Map.get(params, "payload", [])),
@@ -253,7 +251,7 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec config_return(term(), term()) :: term()
+  @spec config_return(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def config_return(conn, _params) do
     html(conn, """
     <!doctype html>
@@ -265,7 +263,7 @@ defmodule IdeWeb.EmulatorController do
     """)
   end
 
-  @spec companion_preferences(term(), term()) :: term()
+  @spec companion_preferences(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def companion_preferences(conn, %{"slug" => slug}) do
     with project when not is_nil(project) <-
            Projects.get_project_by_slug(slug, conn.assigns[:current_user]),
@@ -292,7 +290,7 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec artifact(term(), term()) :: term()
+  @spec artifact(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def artifact(conn, %{"id" => id}) do
     with {:ok, pid} <- Emulator.lookup(id),
          path when is_binary(path) <- Ide.Emulator.Session.artifact_file_path(pid),
@@ -306,10 +304,10 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec ws_vnc(term(), term()) :: term()
+  @spec ws_vnc(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def ws_vnc(conn, %{"id" => id}), do: proxy(conn, id, :vnc)
 
-  @spec ws_phone(term(), term()) :: term()
+  @spec ws_phone(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def ws_phone(conn, %{"id" => id}), do: proxy(conn, id, :phone)
 
   defp proxy(conn, id, kind) do

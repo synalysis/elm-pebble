@@ -4,6 +4,16 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   alias Ide.Resources.ResourceStore
 
+  alias Phoenix.LiveView.Rendered
+
+  @type pane :: :editor | :build | :debugger | :emulator | :publish | :settings | :resources | :packages | atom()
+  @type assigns :: map()
+  @type rendered :: Rendered.t()
+  @type tab :: map()
+  @type tree_node :: map()
+  @type diagnostic :: Ide.Compiler.diagnostic() | map()
+  @type wire_input :: String.t() | integer() | boolean() | nil
+
   @protected_editor_rel_paths [
     "src/Main.elm",
     "src/Companion/Types.elm",
@@ -11,14 +21,77 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     "src/Pebble/Ui/Resources.elm"
   ]
 
-  @spec render(term()) :: term()
+  @spec render(assigns()) :: rendered()
   def render(assigns) do
     ~H"""
-    <section
-      :if={@pane == :editor}
-      class="relative grid min-h-0 flex-1 gap-4"
-      style={editor_pane_grid_style(@editor_docs_panel_open, @editor_docs_col_px)}
-    >
+    <.editor_workspace {assigns} />
+    """
+  end
+
+  attr(:pane, :atom, required: true)
+  attr(:tree, :list, required: true)
+  attr(:tabs, :list, required: true)
+  attr(:active_tab_id, :any, default: nil)
+  attr(:opening_file_id, :any, default: nil)
+  attr(:expanded_tree_dirs, :any, default: nil)
+  attr(:editor_docs_panel_open, :boolean, required: true)
+  attr(:editor_docs_col_px, :integer, required: true)
+  attr(:companion_app_present, :boolean, required: true)
+  attr(:project, :map, required: true)
+  attr(:rename_file_modal_open, :boolean, required: true)
+  attr(:rename_form, :any, required: true)
+  attr(:create_file_modal_open, :boolean, required: true)
+  attr(:new_file_form, :any, required: true)
+  attr(:create_file_source_roots, :list, default: [])
+  attr(:editor_context_menu, :any, default: nil)
+  attr(:editor_check_status, :atom, default: nil)
+  attr(:editor_check_output, :any, default: nil)
+  attr(:editor_inline_diagnostics, :list, default: [])
+  attr(:active_diagnostic_index, :any, default: nil)
+  attr(:editor_doc_packages, :list, default: [])
+  attr(:editor_doc_package, :any, default: nil)
+  attr(:editor_doc_module, :string, default: "")
+  attr(:editor_doc_html, :string, default: "")
+  attr(:editor_doc_query, :string, default: "")
+  attr(:editor_tokenizer_mode, :atom, default: :fast)
+  attr(:editor_tokens, :list, default: [])
+  attr(:editor_fold_ranges, :list, default: [])
+  attr(:editor_line_count, :integer, default: 1)
+  attr(:editor_token_diag_by_line, :map, default: %{})
+  attr(:editor_parser_panel, :any, default: nil)
+  attr(:editor_parser_payload, :any, default: nil)
+  attr(:editor_check_token, :any, default: nil)
+  attr(:editor_check_source_root, :any, default: nil)
+  attr(:editor_check_rel_path, :any, default: nil)
+  attr(:editor_deps_panel_open, :boolean, default: false)
+  attr(:packages_target_root, :string, default: "watch")
+  attr(:project_elm_direct, :list, default: [])
+  attr(:project_elm_indirect, :list, default: [])
+  attr(:editor_deps_usage_refresh_token, :any, default: nil)
+  attr(:editor_deps_docs_refresh_token, :any, default: nil)
+  attr(:format_status, :any, default: nil)
+  attr(:debug_mode, :boolean, default: false)
+  attr(:auto_format_on_save, :boolean, default: false)
+  attr(:editor_mode, :atom, default: :default)
+  attr(:editor_theme, :atom, default: :light)
+  attr(:editor_line_numbers, :boolean, default: true)
+  attr(:editor_active_line_highlight, :boolean, default: true)
+  attr(:editor_check_diagnostics, :list, default: [])
+  attr(:format_output, :any, default: nil)
+  attr(:diagnostics, :list, default: [])
+  attr(:token_summary, :any, default: nil)
+  attr(:tokenizer_mode, :atom, default: :fast)
+  attr(:token_diagnostics, :list, default: [])
+  attr(:myself, :any, default: nil)
+
+  @spec editor_workspace(assigns()) :: rendered()
+  defp editor_workspace(assigns) do
+    ~H"""
+    <%= if @pane == :editor do %>
+      <section
+        class="relative grid min-h-0 flex-1 gap-4"
+        style={editor_pane_style(@editor_docs_panel_open, @editor_docs_col_px)}
+      >
       <aside class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div class="min-h-0 flex-1 overflow-auto p-3">
           <h2 class="text-sm font-semibold">Files</h2>
@@ -252,9 +325,9 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
               <li
                 :for={{diag, index} <- Enum.with_index(@editor_check_diagnostics)}
                 phx-click={if diagnostic_editor_jumpable?(diag, active), do: "jump-to-diagnostic"}
-                phx-value-line={diagnostic_line(diag)}
-                phx-value-column={diagnostic_column(diag) || 1}
-                phx-value-index={index + 1}
+                phx-value-line={phx_value_int(diagnostic_line(diag))}
+                phx-value-column={phx_value_int(diagnostic_column(diag) || 1)}
+                phx-value-index={phx_value_int(index + 1)}
                 class={[
                   "rounded border border-rose-200 bg-white/70 px-3 py-2",
                   diagnostic_editor_jumpable?(diag, active) &&
@@ -325,9 +398,9 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
                   :if={diag.line}
                   type="button"
                   phx-click="jump-to-diagnostic"
-                  phx-value-line={diag.line}
-                  phx-value-column={diag[:column] || 1}
-                  phx-value-index={index + 1}
+                  phx-value-line={phx_value_int(diag.line)}
+                  phx-value-column={phx_value_int(diag[:column] || 1)}
+                  phx-value-index={phx_value_int(index + 1)}
                   class="mt-2 rounded bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-900 hover:bg-amber-200"
                 >
                   Jump to location
@@ -616,16 +689,17 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
         </div>
       </div>
     </section>
+    <% end %>
     """
   end
 
   attr(:nodes, :list, required: true)
   attr(:source_root, :string, required: true)
-  attr(:active_tab_id, :string, default: nil)
-  attr(:opening_file_id, :string, default: nil)
+  attr(:active_tab_id, :any, default: nil)
+  attr(:opening_file_id, :any, default: nil)
   attr(:expanded_tree_dirs, :any, default: nil)
 
-  @spec tree_nodes(term()) :: term()
+  @spec tree_nodes(assigns()) :: rendered()
   defp tree_nodes(assigns) do
     ~H"""
     <ul class="space-y-1 text-sm">
@@ -683,7 +757,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     """
   end
 
-  @spec tree_contains_tab?(term(), term(), term(), term(), term()) :: term()
+  @spec tree_contains_tab?(tree_node(), String.t(), String.t() | nil, String.t() | nil, MapSet.t() | nil) :: boolean()
   defp tree_contains_tab?(
          %{type: :file, rel_path: rel_path},
          source_root,
@@ -715,10 +789,10 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   defp tree_contains_tab?(_, _, _, _, _), do: false
 
-  @spec tree_dir_key(term(), term()) :: String.t()
+  @spec tree_dir_key(String.t(), String.t()) :: String.t()
   defp tree_dir_key(source_root, rel_path), do: "#{source_root}:#{rel_path}"
 
-  @spec editor_doc_modules_for_package(term(), term(), term()) :: term()
+  @spec editor_doc_modules_for_package([map()], String.t(), String.t()) :: [String.t()]
   def editor_doc_modules_for_package(rows, pkg, query \\ "")
 
   def editor_doc_modules_for_package(rows, pkg, query) when is_list(rows) and is_binary(pkg) do
@@ -733,7 +807,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   def editor_doc_modules_for_package(_, _, _), do: []
 
-  @spec filter_editor_doc_modules([String.t()], term()) :: [String.t()]
+  @spec filter_editor_doc_modules([String.t()], String.t()) :: [String.t()]
   defp filter_editor_doc_modules(modules, query) when is_list(modules) do
     needle = query |> to_string() |> String.trim() |> String.downcase()
 
@@ -749,15 +823,13 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     end
   end
 
-  @spec active_tab(term(), term()) :: term()
+  @spec active_tab([tab()], String.t() | nil) :: tab() | nil
   defp active_tab(tabs, active_tab_id), do: Enum.find(tabs, &(&1.id == active_tab_id))
 
-  @spec tab_id(term(), term()) :: term()
+  @spec tab_id(String.t(), String.t()) :: String.t()
   defp tab_id(source_root, rel_path), do: "#{source_root}:#{rel_path}"
 
-  @spec read_only_tab?(term()) :: term()
-  defp read_only_tab?(%{read_only: true}), do: true
-
+  @spec read_only_tab?(tab() | nil) :: boolean()
   defp read_only_tab?(%{source_root: source_root, rel_path: rel_path})
        when is_binary(source_root) and is_binary(rel_path),
        do: ResourceStore.read_only_generated_module?(source_root, rel_path)
@@ -770,7 +842,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   defp editor_state_value(_state, _key), do: 0
 
-  @spec protected_editor_source_file?(term()) :: term()
+  @spec protected_editor_source_file?(String.t()) :: boolean()
   defp protected_editor_source_file?(rel_path) when is_binary(rel_path),
     do: rel_path in @protected_editor_rel_paths
 
@@ -784,16 +856,21 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   defp editor_read_only?(_), do: false
 
-  @spec editor_pane_grid_style(term(), term()) :: term()
-  defp editor_pane_grid_style(true, px) when is_integer(px) do
-    "grid-template-columns: 16rem minmax(0, 1fr) 6px #{px}px; min-height: 0;"
+  @spec editor_pane_style(boolean(), integer()) :: String.t()
+  defp editor_pane_style(docs_open?, px) when is_integer(px) do
+    editor_pane_grid_style(docs_open?, px)
   end
 
-  defp editor_pane_grid_style(false, _px) do
-    "grid-template-columns: 16rem minmax(0, 1fr); min-height: 0;"
+  @spec editor_pane_grid_style(boolean(), integer()) :: String.t()
+  defp editor_pane_grid_style(docs_open?, px) when is_integer(px) do
+    if docs_open? do
+      "grid-template-columns: 16rem minmax(0, 1fr) 6px #{px}px; min-height: 0;"
+    else
+      "grid-template-columns: 16rem minmax(0, 1fr); min-height: 0;"
+    end
   end
 
-  @spec editor_files_tree(term()) :: term()
+  @spec editor_files_tree([map()]) :: [map()]
   defp editor_files_tree(tree) when is_list(tree) do
     Enum.map(tree, fn %{source_root: source_root, nodes: nodes} ->
       src_children =
@@ -814,7 +891,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
   end
 
   # Protocol modules live under src/Companion/…; show them at the Files root without a Companion folder.
-  @spec flatten_protocol_companion_dir(term()) :: term()
+  @spec flatten_protocol_companion_dir([tree_node()]) :: [tree_node()]
   defp flatten_protocol_companion_dir(nodes) when is_list(nodes) do
     Enum.flat_map(nodes, fn
       %{type: :dir, name: "Companion", children: kids} when is_list(kids) -> kids
@@ -822,22 +899,22 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     end)
   end
 
-  @spec editor_source_display_path(term()) :: term()
+  @spec editor_source_display_path(String.t()) :: String.t()
   defp editor_source_display_path("src/" <> rest), do: rest
   defp editor_source_display_path(rel) when is_binary(rel), do: rel
 
-  @spec settings_path_with_return_to(term()) :: term()
+  @spec settings_path_with_return_to(String.t()) :: String.t()
   defp settings_path_with_return_to(return_to) when is_binary(return_to) do
     "/settings?return_to=#{URI.encode_www_form(return_to)}"
   end
 
-  @spec tokenizer_mode_label(term()) :: term()
+  @spec tokenizer_mode_label(atom()) :: String.t()
   defp tokenizer_mode_label(:compiler), do: "elmc"
   defp tokenizer_mode_label(:fast), do: "fast"
   defp tokenizer_mode_label(:plain), do: "plain"
   defp tokenizer_mode_label(_), do: "fast"
 
-  @spec diagnostic_structured_lines(term()) :: term()
+  @spec diagnostic_structured_lines(diagnostic()) :: [String.t()]
   defp diagnostic_structured_lines(diag) when is_map(diag) do
     []
     |> maybe_diag_detail(
@@ -863,7 +940,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   defp diagnostic_structured_lines(_), do: []
 
-  @spec visible_diagnostics(term(), term()) :: term()
+  @spec visible_diagnostics([diagnostic()], boolean()) :: [diagnostic()]
   defp visible_diagnostics(diagnostics, true) when is_list(diagnostics), do: diagnostics
 
   defp visible_diagnostics(diagnostics, false) when is_list(diagnostics) do
@@ -879,7 +956,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   defp visible_diagnostics(_diagnostics, _debug_mode), do: []
 
-  @spec maybe_diag_detail(term(), term(), term()) :: term()
+  @spec maybe_diag_detail([String.t()], String.t(), wire_input()) :: [String.t()]
   defp maybe_diag_detail(lines, _label, nil), do: lines
 
   defp maybe_diag_detail(lines, label, value) do
@@ -892,7 +969,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     lines ++ ["#{label}=#{rendered}"]
   end
 
-  @spec diagnostic_position_label(term()) :: term()
+  @spec diagnostic_position_label(diagnostic()) :: String.t() | nil
   defp diagnostic_position_label(diag) do
     line = diagnostic_line(diag)
     column = diagnostic_column(diag)
@@ -915,7 +992,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     end
   end
 
-  @spec diagnostic_file_position_label(term()) :: term()
+  @spec diagnostic_file_position_label(diagnostic()) :: String.t()
   defp diagnostic_file_position_label(diag) when is_map(diag) do
     file = diag[:file] || diag["file"]
 
@@ -927,9 +1004,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     end
   end
 
-  defp diagnostic_file_position_label(_diag), do: nil
-
-  @spec editor_check_visible?(term(), term(), term(), term(), term()) :: boolean()
+  @spec editor_check_visible?(atom(), String.t() | nil, String.t() | nil, [diagnostic()] | nil, tab() | nil) :: boolean()
   defp editor_check_visible?(:error, source_root, rel_path, diagnostics, active)
        when is_map(active) do
     active_source_root = active[:source_root] || active["source_root"]
@@ -942,7 +1017,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   defp editor_check_visible?(_status, _source_root, _rel_path, _diagnostics, _active), do: false
 
-  @spec editor_check_running_for_active?(term(), term(), term(), term()) :: boolean()
+  @spec editor_check_running_for_active?(atom(), tab() | nil, String.t() | nil, String.t() | nil) :: boolean()
   defp editor_check_running_for_active?(:running, source_root, rel_path, active)
        when is_map(active) do
     active_source_root = active[:source_root] || active["source_root"]
@@ -953,12 +1028,12 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   defp editor_check_running_for_active?(_status, _source_root, _rel_path, _active), do: false
 
-  @spec diagnostic_editor_jumpable?(term(), term()) :: boolean()
+  @spec diagnostic_editor_jumpable?(diagnostic(), tab() | nil) :: boolean()
   defp diagnostic_editor_jumpable?(diag, active) do
     is_integer(diagnostic_line(diag)) and diagnostic_file_matches_active?(diag, active)
   end
 
-  @spec diagnostic_file_matches_active?(term(), term()) :: boolean()
+  @spec diagnostic_file_matches_active?(diagnostic(), tab() | nil) :: boolean()
   defp diagnostic_file_matches_active?(diag, active) when is_map(diag) and is_map(active) do
     file = diag[:file] || diag["file"]
     rel_path = active[:rel_path] || active["rel_path"]
@@ -981,13 +1056,17 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   defp diagnostic_file_matches_active?(_diag, _active), do: false
 
-  @spec diagnostic_line(term()) :: integer() | nil
+  @spec diagnostic_line(diagnostic()) :: integer() | nil
   defp diagnostic_line(diag), do: diagnostic_int(diag, :line)
 
-  @spec diagnostic_column(term()) :: integer() | nil
+  @spec diagnostic_column(diagnostic()) :: integer() | nil
   defp diagnostic_column(diag), do: diagnostic_int(diag, :column)
 
-  @spec diagnostic_int(term(), atom()) :: integer() | nil
+  @spec phx_value_int(integer() | nil) :: String.t()
+  defp phx_value_int(value) when is_integer(value), do: Integer.to_string(value)
+  defp phx_value_int(_value), do: "0"
+
+  @spec diagnostic_int(diagnostic(), atom()) :: integer() | nil
   defp diagnostic_int(diag, key) when is_map(diag) do
     case diag[key] || diag[Atom.to_string(key)] do
       value when is_integer(value) and value > 0 -> value
@@ -998,7 +1077,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
 
   defp diagnostic_int(_diag, _key), do: nil
 
-  @spec parse_positive_int(term()) :: integer() | nil
+  @spec parse_positive_int(String.t()) :: integer() | nil
   defp parse_positive_int(value) when is_binary(value) do
     case Integer.parse(value) do
       {int, ""} when int > 0 -> int
@@ -1006,10 +1085,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     end
   end
 
-  defp parse_positive_int(value) when is_integer(value) and value > 0, do: value
-  defp parse_positive_int(_value), do: nil
-
-  @spec editor_check_engine_label(term()) :: String.t()
+  @spec editor_check_engine_label(String.t()) :: String.t()
   defp editor_check_engine_label("phone"), do: "Elm compiler"
   defp editor_check_engine_label(_source_root), do: "elmc check"
 end

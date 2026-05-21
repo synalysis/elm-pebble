@@ -1,10 +1,12 @@
 defmodule Ide.Emulator.SdkImages do
   @moduledoc false
 
+  alias Ide.Emulator.Types
+
   @default_sdk_version "4.9.169"
   @download_server "https://sdk.repebble.com"
 
-  @spec ensure_platform_images(String.t(), keyword()) :: :ok | {:error, term()}
+  @spec ensure_platform_images(String.t(), keyword()) :: :ok | {:error, Types.sdk_error()}
   def ensure_platform_images(platform, opts \\ []) when is_binary(platform) do
     image_root = Keyword.fetch!(opts, :image_root)
 
@@ -20,7 +22,7 @@ defmodule Ide.Emulator.SdkImages do
     end
   end
 
-  @spec ensure_sdk_core(String.t(), keyword()) :: :ok | {:error, term()}
+  @spec ensure_sdk_core(String.t(), keyword()) :: :ok | {:error, Types.sdk_error()}
   def ensure_sdk_core(sdk_root, opts \\ []) when is_binary(sdk_root) do
     if sdk_core_present?(sdk_root) do
       ensure_sdk_runtime_env(sdk_root, opts)
@@ -57,7 +59,7 @@ defmodule Ide.Emulator.SdkImages do
     not File.exists?(package_json) or File.dir?(node_modules)
   end
 
-  @spec ensure_toolchain(String.t(), keyword()) :: :ok | {:error, term()}
+  @spec ensure_toolchain(String.t(), keyword()) :: :ok | {:error, Types.sdk_error()}
   def ensure_toolchain(sdk_root, opts \\ []) when is_binary(sdk_root) do
     if toolchain_present?(sdk_root) do
       :ok

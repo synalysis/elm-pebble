@@ -9,12 +9,12 @@ defmodule IdeWeb.WasmEmulatorController do
   alias Ide.WasmEmulator
   alias IdeWeb.WorkspaceLive.BuildFlow
 
-  @spec status(term(), term()) :: term()
+  @spec status(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def status(conn, _params) do
     json(conn, WasmEmulator.status())
   end
 
-  @spec page(term(), term()) :: term()
+  @spec page(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def page(conn, _params) do
     conn
     |> put_resp_header("cache-control", "no-store")
@@ -22,7 +22,7 @@ defmodule IdeWeb.WasmEmulatorController do
     |> send_resp(200, page_html())
   end
 
-  @spec asset(term(), term()) :: term()
+  @spec asset(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def asset(conn, %{"path" => parts}) when is_list(parts) do
     rel_path = Path.join(parts)
 
@@ -41,7 +41,7 @@ defmodule IdeWeb.WasmEmulatorController do
     end
   end
 
-  @spec package(term(), term()) :: term()
+  @spec package(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def package(conn, %{"slug" => slug} = params) do
     platform = Map.get(params, "platform", "emery")
 
@@ -67,7 +67,7 @@ defmodule IdeWeb.WasmEmulatorController do
     end
   end
 
-  @spec install_plan(term(), term()) :: term()
+  @spec install_plan(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def install_plan(conn, %{"slug" => slug} = params) do
     platform = Map.get(params, "platform", "emery")
     firmware = Map.get(params, "firmware", "sdk")
@@ -88,7 +88,7 @@ defmodule IdeWeb.WasmEmulatorController do
     end
   end
 
-  @spec screenshot(term(), term()) :: term()
+  @spec screenshot(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def screenshot(conn, %{"slug" => slug, "image" => image} = params) do
     emulator_target = Map.get(params, "platform", "wasm")
 

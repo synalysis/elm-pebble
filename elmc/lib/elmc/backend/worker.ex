@@ -5,7 +5,9 @@ defmodule Elmc.Backend.Worker do
 
   alias ElmEx.IR
 
-  @spec write_worker_adapter(IR.t(), String.t(), String.t()) :: :ok | {:error, term()}
+  alias Elmc.Types
+
+  @spec write_worker_adapter(IR.t(), String.t(), String.t()) :: :ok | {:error, Types.file_error()}
   def write_worker_adapter(%IR{} = ir, out_dir, entry_module) do
     c_dir = Path.join(out_dir, "c")
 

@@ -1,6 +1,7 @@
 defmodule Ide.Formatter.Printer.Expression.Case do
   @moduledoc false
   alias Ide.Formatter.Semantics.Rules
+  alias Ide.Formatter.Types
 
   @spec normalize_arrow_indentation(String.t()) :: String.t()
   def normalize_arrow_indentation(source) when is_binary(source) do
@@ -11,7 +12,8 @@ defmodule Ide.Formatter.Printer.Expression.Case do
     |> normalize_branch_head_spacing()
   end
 
-  @spec do_normalize_case_arrow_indentation(term(), term(), term()) :: term()
+  @spec do_normalize_case_arrow_indentation(Types.line_list(), non_neg_integer() | nil, Types.line_list()) ::
+          Types.line_list()
   defp do_normalize_case_arrow_indentation([], _prev_indent, acc), do: Enum.reverse(acc)
 
   defp do_normalize_case_arrow_indentation([line | rest], prev_indent, acc) do
@@ -48,7 +50,8 @@ defmodule Ide.Formatter.Printer.Expression.Case do
     end
   end
 
-  @spec shift_case_branch_followers(term(), term(), term(), term()) :: term()
+  @spec shift_case_branch_followers(Types.line_list(), non_neg_integer(), non_neg_integer(), Types.line_list()) ::
+          {Types.line_list(), Types.line_list()}
   defp shift_case_branch_followers([], _threshold_indent, _delta, acc),
     do: {Enum.reverse(acc), []}
 
@@ -71,7 +74,7 @@ defmodule Ide.Formatter.Printer.Expression.Case do
     end
   end
 
-  @spec parse_arrow_only_line(term()) :: term()
+  @spec parse_arrow_only_line(String.t()) :: {:ok, non_neg_integer(), String.t()} | :error
   defp parse_arrow_only_line(line) do
     indent = leading_indent(line)
     trimmed = String.trim_leading(line)
@@ -89,12 +92,12 @@ defmodule Ide.Formatter.Printer.Expression.Case do
     end
   end
 
-  @spec leading_indent(term()) :: term()
+  @spec leading_indent(String.t()) :: non_neg_integer()
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
   end
 
-  @spec normalize_branch_head_spacing(term()) :: term()
+  @spec normalize_branch_head_spacing(String.t()) :: String.t()
   defp normalize_branch_head_spacing(source) do
     {lines_rev, _state} =
       source
@@ -144,13 +147,13 @@ defmodule Ide.Formatter.Printer.Expression.Case do
     |> Enum.join("\n")
   end
 
-  @spec case_start_line?(term()) :: term()
+  @spec case_start_line?(String.t()) :: boolean()
   defp case_start_line?(line) do
     trimmed = String.trim_leading(line)
     String.starts_with?(trimmed, "case ") and String.ends_with?(trimmed, " of")
   end
 
-  @spec exits_case_block?(term(), term()) :: term()
+  @spec exits_case_block?(String.t(), non_neg_integer()) :: boolean()
   defp exits_case_block?(line, case_indent) when is_integer(case_indent) do
     trimmed = String.trim(line)
     leading_indent(line) <= case_indent and trimmed != "" and not comment_line?(line)
@@ -158,7 +161,7 @@ defmodule Ide.Formatter.Printer.Expression.Case do
 
   defp exits_case_block?(_line, _case_indent), do: false
 
-  @spec case_branch_line_candidate?(term(), term()) :: term()
+  @spec case_branch_line_candidate?(String.t(), non_neg_integer()) :: boolean()
   defp case_branch_line_candidate?(line, case_indent) when is_integer(case_indent) do
     indent = leading_indent(line)
     trimmed = String.trim_leading(line)
@@ -170,7 +173,7 @@ defmodule Ide.Formatter.Printer.Expression.Case do
 
   defp case_branch_line_candidate?(_line, _case_indent), do: false
 
-  @spec normalize_case_branch_line(term(), term()) :: term()
+  @spec normalize_case_branch_line(String.t(), non_neg_integer()) :: String.t()
   defp normalize_case_branch_line(line, case_indent) do
     trimmed = String.trim_leading(line)
     branch_indent = case_indent + Rules.indent_width()
@@ -191,7 +194,7 @@ defmodule Ide.Formatter.Printer.Expression.Case do
     end
   end
 
-  @spec collapse_spaces(term()) :: term()
+  @spec collapse_spaces(String.t()) :: String.t()
   defp collapse_spaces(value) do
     value
     |> String.graphemes()
@@ -212,7 +215,7 @@ defmodule Ide.Formatter.Printer.Expression.Case do
     |> String.trim()
   end
 
-  @spec split_once(term(), term()) :: term()
+  @spec split_once(String.t(), String.t()) :: Types.split_result()
   defp split_once(value, delimiter) do
     case :binary.match(value, delimiter) do
       {idx, len} ->
@@ -226,7 +229,7 @@ defmodule Ide.Formatter.Printer.Expression.Case do
     end
   end
 
-  @spec comment_line?(term()) :: term()
+  @spec comment_line?(String.t()) :: boolean()
   defp comment_line?(line) do
     trimmed = String.trim_leading(line)
     String.starts_with?(trimmed, "--") or String.starts_with?(trimmed, "{-")

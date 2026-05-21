@@ -1,7 +1,8 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Bitwise do
   @moduledoc false
 
-  @spec eval(String.t(), term()) :: {:ok, term()} | :no_builtin
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  @spec eval(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
   def eval("and", [a, b]) when is_integer(a) and is_integer(b), do: {:ok, Bitwise.band(a, b)}
   def eval("or", [a, b]) when is_integer(a) and is_integer(b), do: {:ok, Bitwise.bor(a, b)}
   def eval("xor", [a, b]) when is_integer(a) and is_integer(b), do: {:ok, Bitwise.bxor(a, b)}

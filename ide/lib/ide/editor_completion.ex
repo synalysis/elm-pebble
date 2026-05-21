@@ -11,12 +11,15 @@ defmodule Ide.EditorCompletion do
 
   @token_symbol_classes ~w(identifier type_identifier field_identifier)
 
-  @type suggestion :: %{
+  @type candidate_row :: %{
           label: String.t(),
           insert_text: String.t(),
           kind: String.t(),
           source: String.t()
         }
+
+  @type suggestion :: candidate_row()
+  @type candidate_list :: [candidate_row()]
 
   @type context :: %{
           optional(:prefix) => String.t() | nil,
@@ -60,14 +63,14 @@ defmodule Ide.EditorCompletion do
     end)
   end
 
-  @spec keyword_candidates() :: term()
+  @spec keyword_candidates() :: candidate_list()
   defp keyword_candidates do
     Enum.map(@keywords, fn kw ->
       %{label: kw, insert_text: kw, kind: "keyword", source: "language/keyword"}
     end)
   end
 
-  @spec parser_candidates(term()) :: term()
+  @spec parser_candidates(map() | nil) :: candidate_list()
   defp parser_candidates(%{metadata: metadata}) when is_map(metadata) do
     imports = List.wrap(metadata[:imports])
     ports = List.wrap(metadata[:ports])
@@ -106,7 +109,7 @@ defmodule Ide.EditorCompletion do
 
   defp parser_candidates(_), do: []
 
-  @spec token_candidates(term()) :: term()
+  @spec token_candidates([map()] | nil) :: candidate_list()
   defp token_candidates(tokens) when is_list(tokens) do
     tokens
     |> Enum.flat_map(fn token ->
@@ -123,7 +126,7 @@ defmodule Ide.EditorCompletion do
 
   defp token_candidates(_), do: []
 
-  @spec package_module_candidates(term()) :: term()
+  @spec package_module_candidates(map() | nil) :: candidate_list()
   defp package_module_candidates(index) when is_map(index) do
     Enum.map(index, fn {module_name, _package} ->
       %{
@@ -137,7 +140,7 @@ defmodule Ide.EditorCompletion do
 
   defp package_module_candidates(_), do: []
 
-  @spec editor_doc_module_candidates(term()) :: term()
+  @spec editor_doc_module_candidates([map()] | nil) :: candidate_list()
   defp editor_doc_module_candidates(rows) when is_list(rows) do
     rows
     |> Enum.flat_map(fn row ->
@@ -156,7 +159,7 @@ defmodule Ide.EditorCompletion do
 
   defp editor_doc_module_candidates(_), do: []
 
-  @spec dependency_candidates(term(), term()) :: term()
+  @spec dependency_candidates([map()] | nil, String.t()) :: candidate_list()
   defp dependency_candidates(rows, source) when is_list(rows) and is_binary(source) do
     Enum.map(rows, fn row ->
       name = row[:name] || row["name"] || ""
@@ -166,11 +169,11 @@ defmodule Ide.EditorCompletion do
 
   defp dependency_candidates(_, _), do: []
 
-  @spec valid_candidate?(term()) :: term()
+  @spec valid_candidate?(candidate_row()) :: boolean()
   defp valid_candidate?(%{label: label}) when is_binary(label), do: String.trim(label) != ""
   defp valid_candidate?(_), do: false
 
-  @spec matches_prefix?(term(), term()) :: term()
+  @spec matches_prefix?(String.t(), String.t()) :: boolean()
   defp matches_prefix?(_value, ""), do: true
 
   defp matches_prefix?(value, lowered_prefix)
@@ -178,7 +181,8 @@ defmodule Ide.EditorCompletion do
     String.starts_with?(String.downcase(value), lowered_prefix)
   end
 
-  @spec candidate_sort_key(term(), term()) :: term()
+  @spec candidate_sort_key(candidate_row(), String.t()) ::
+          {non_neg_integer(), non_neg_integer(), String.t()}
   defp candidate_sort_key(candidate, lowered_prefix) do
     value = String.downcase(candidate.label)
 

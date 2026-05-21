@@ -3,6 +3,8 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
   Generated declaration parser adapter for single-line declarations.
   """
 
+  alias ElmEx.Types
+
   @type scanned_line :: %{
           line_no: pos_integer(),
           raw_line: String.t(),
@@ -13,7 +15,7 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
             {:ok, %{name: String.t(), args: [String.t()], body: String.t()}} | :none
         }
 
-  @spec parse_line(String.t()) :: {:ok, tuple()} | {:error, term()}
+  @spec parse_line(String.t()) :: {:ok, tuple()} | {:error, Types.parse_error_reason()}
   def parse_line(source) when is_binary(source) do
     with {:ok, tokens, _line} <- :elm_ex_decl_lexer.string(String.to_charlist(source)),
          {:ok, decl} <- :elm_ex_decl_parser.parse(tokens) do
@@ -25,7 +27,8 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
   end
 
   @spec parse_function_header_line(String.t()) ::
-          {:ok, %{name: String.t(), args: [String.t()], body: String.t()}} | {:error, term()}
+          {:ok, %{name: String.t(), args: [String.t()], body: String.t()}}
+          | {:error, Types.parse_error_reason() | atom()}
   def parse_function_header_line(source) when is_binary(source) do
     case String.split(source, "=", parts: 2) do
       [left, right] ->
@@ -43,7 +46,8 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
   end
 
   @spec parse_complex_function_header(String.t(), String.t()) ::
-          {:ok, %{name: String.t(), args: [String.t()], body: String.t()}} | {:error, term()}
+          {:ok, %{name: String.t(), args: [String.t()], body: String.t()}}
+          | {:error, Types.parse_error_reason() | atom()}
   defp parse_complex_function_header(left, right)
        when is_binary(left) and is_binary(right) do
     case Regex.run(~r/^([a-z][A-Za-z0-9_']*)\s+(.+)$/u, left, capture: :all_but_first) do

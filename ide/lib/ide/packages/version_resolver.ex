@@ -43,7 +43,7 @@ defmodule Ide.Packages.VersionResolver do
     end)
   end
 
-  @spec comparator_constraint_match?(term(), term()) :: term()
+  @spec comparator_constraint_match?(String.t(), String.t()) :: boolean()
   defp comparator_constraint_match?(version, constraint_part) do
     rewritten =
       constraint_part
@@ -57,7 +57,7 @@ defmodule Ide.Packages.VersionResolver do
     comparators != [] and Enum.all?(comparators, &match_comparator?(version, &1))
   end
 
-  @spec rewrite_left_comparison(term()) :: term()
+  @spec rewrite_left_comparison(String.t()) :: String.t()
   defp rewrite_left_comparison(constraint) do
     constraint
     |> then(&Regex.replace(~r/([0-9]+\.[0-9]+\.[0-9]+)\s*<=\s*v/, &1, "v >= \\1"))
@@ -66,7 +66,7 @@ defmodule Ide.Packages.VersionResolver do
     |> then(&Regex.replace(~r/([0-9]+\.[0-9]+\.[0-9]+)\s*>\s*v/, &1, "v < \\1"))
   end
 
-  @spec match_comparator?(term(), term()) :: term()
+  @spec match_comparator?(String.t(), {String.t(), String.t()}) :: boolean()
   defp match_comparator?(version, {op, cmp_version}) do
     compare = Version.compare(normalize(version), normalize(cmp_version))
 
@@ -80,16 +80,16 @@ defmodule Ide.Packages.VersionResolver do
     end
   end
 
-  @spec blank_constraint?(term()) :: term()
+  @spec blank_constraint?(String.t() | nil) :: boolean()
   defp blank_constraint?(constraint),
     do: is_nil(constraint) or String.trim(to_string(constraint)) == ""
 
-  @spec exact_semver?(term()) :: term()
+  @spec exact_semver?(String.t()) :: boolean()
   defp exact_semver?(value), do: semver?(value)
-  @spec semver?(term()) :: term()
+  @spec semver?(String.t()) :: boolean()
   defp semver?(value), do: String.match?(value, ~r/^\d+\.\d+\.\d+$/)
 
-  @spec normalize(term()) :: term()
+  @spec normalize(String.t()) :: String.t()
   defp normalize(value) do
     case String.split(value, ".") do
       [major, minor] -> "#{major}.#{minor}.0"

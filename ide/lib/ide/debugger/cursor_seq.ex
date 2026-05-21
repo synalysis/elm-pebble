@@ -43,7 +43,7 @@ defmodule Ide.Debugger.CursorSeq do
 
   def resolve_before(_events, _current_seq, _requested_seq), do: nil
 
-  @spec event_seqs(term()) :: term()
+  @spec event_seqs([map()]) :: [integer()]
   defp event_seqs(events) when is_list(events) do
     events
     |> Enum.map(&Map.get(&1, :seq))

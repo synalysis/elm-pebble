@@ -1,9 +1,10 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.DebugString do
   @moduledoc false
 
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.String, as: StringValue
 
-  @spec elm_debug_to_string(term()) :: String.t()
+  @spec elm_debug_to_string(EvalTypes.runtime_value()) :: String.t()
   def elm_debug_to_string(value) when is_integer(value), do: Integer.to_string(value)
   def elm_debug_to_string(value) when is_float(value), do: StringValue.float_to_elm_string(value)
   def elm_debug_to_string(value) when is_boolean(value), do: if(value, do: "True", else: "False")
@@ -34,13 +35,13 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.DebugString do
 
   def elm_debug_to_string(value), do: inspect(value)
 
-  @spec format_ctor_args(term()) :: String.t()
+  @spec format_ctor_args(list()) :: String.t()
   defp format_ctor_args([]), do: ""
 
   defp format_ctor_args(args),
     do: " " <> (args |> Enum.map(&elm_debug_to_string/1) |> Enum.join(" "))
 
-  @spec short_ctor_name(term()) :: String.t()
+  @spec short_ctor_name(EvalTypes.ctor_name()) :: String.t()
   defp short_ctor_name(target) when is_binary(target) do
     target
     |> String.split(".")

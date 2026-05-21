@@ -2,7 +2,7 @@ defmodule IdeWeb.Telemetry do
   use Supervisor
   import Telemetry.Metrics
 
-  @spec start_link(term()) :: term()
+  @spec start_link(term()) :: Supervisor.on_start()
   def start_link(arg) do
     Supervisor.start_link(__MODULE__, arg, name: __MODULE__)
   end
@@ -21,7 +21,7 @@ defmodule IdeWeb.Telemetry do
     Supervisor.init(children, strategy: :one_for_one)
   end
 
-  @spec metrics() :: term()
+  @spec metrics() :: [Telemetry.Metrics.t()]
   def metrics do
     [
       # Phoenix Metrics
@@ -86,7 +86,7 @@ defmodule IdeWeb.Telemetry do
     ]
   end
 
-  @spec periodic_measurements() :: term()
+  @spec periodic_measurements() :: IdeWeb.Types.periodic_measurements()
   defp periodic_measurements do
     [
       # A module, function and arguments to be invoked periodically.

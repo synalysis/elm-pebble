@@ -22,6 +22,11 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
           optional(:elm_span_semantics) => atom()
         }
 
+  @type catalog_id :: atom()
+  @type diagnostic_extra :: keyword()
+  @type diagnostic_field_value :: String.t() | integer() | atom() | nil
+  @type wire_reason :: String.t() | list() | atom() | number() | term()
+
   @spec unterminated_block_comment(integer(), integer(), integer(), integer()) :: diagnostic()
   def unterminated_block_comment(line, column, end_line, end_column) do
     base(:endless_comment, "warning", "tokenizer", line, column,
@@ -107,7 +112,7 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
     from_title(title, "warning", "tokenizer/#{source_name}", line, column, detail: detail)
   end
 
-  @spec compiler_lexer_fallback(integer() | nil, term()) :: diagnostic()
+  @spec compiler_lexer_fallback(integer() | nil, wire_reason()) :: diagnostic()
   def compiler_lexer_fallback(line, reason) do
     base(:unexpected_character, "warning", "tokenizer/elmc", line, nil,
       detail: normalize_value(reason)
@@ -170,7 +175,14 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
     base(id, severity, source, line, column, extra)
   end
 
-  @spec base(term(), term(), term(), term(), term(), term()) :: term()
+  @spec base(
+          catalog_id() | String.t(),
+          String.t(),
+          String.t(),
+          integer() | nil,
+          integer() | nil,
+          diagnostic_extra()
+        ) :: diagnostic()
   defp base(id, severity, source, line, column, extra \\ []) do
     entry = ElmSyntaxCatalog.entry(id) || %{}
     detail = Keyword.get(extra, :detail, "")
@@ -193,23 +205,23 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
     |> maybe_put(:end_column, Keyword.get(extra, :end_column))
   end
 
-  @spec maybe_put(term(), term(), term()) :: term()
+  @spec maybe_put(diagnostic(), atom(), integer() | nil) :: diagnostic()
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  @spec get(term(), term(), term()) :: term()
+  @spec get(map(), atom() | String.t(), diagnostic_field_value()) :: diagnostic_field_value()
   defp get(map, key, default \\ nil) when is_map(map) do
     Map.get(map, key) || Map.get(map, Atom.to_string(key), default)
   end
 
-  @spec normalize_value(term()) :: term()
+  @spec normalize_value(wire_reason()) :: String.t()
   defp normalize_value(value) when is_binary(value), do: value
   defp normalize_value(value) when is_list(value), do: List.to_string(value)
   defp normalize_value(value) when is_atom(value), do: Atom.to_string(value)
   defp normalize_value(value) when is_number(value), do: to_string(value)
   defp normalize_value(value), do: inspect(value)
 
-  @spec infer_elm_title(term()) :: term()
+  @spec infer_elm_title(String.t()) :: catalog_id()
   defp infer_elm_title(reason) when is_binary(reason) do
     cond do
       String.contains?(reason, "expecting module name") ->

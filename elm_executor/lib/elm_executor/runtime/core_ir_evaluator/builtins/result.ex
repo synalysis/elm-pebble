@@ -1,9 +1,10 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Result do
   @moduledoc false
 
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.MaybeResult
 
-  @spec eval(String.t(), term(), map()) :: {:ok, term()} | :no_builtin | {:error, term()}
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result()
   def eval("map", [fun, result], ops), do: ops.map.(fun, result)
   def eval("andthen", [fun, result], ops), do: ops.and_then.(fun, result)
   def eval("map2", [a, b, c], ops), do: ops.map2_dispatch.(a, b, c)

@@ -8,7 +8,7 @@ defmodule Ide.Formatter.Printer.Literal do
     |> normalize_nbsp_escape_sequences()
   end
 
-  @spec normalize_hex_escape_sequences(term()) :: term()
+  @spec normalize_hex_escape_sequences(String.t()) :: String.t()
   defp normalize_hex_escape_sequences(source) do
     Regex.replace(~r/\\x([0-9A-Fa-f]{2,6})/, source, fn _m, hex ->
       normalized =
@@ -26,7 +26,7 @@ defmodule Ide.Formatter.Printer.Literal do
     end)
   end
 
-  @spec normalize_nbsp_escape_sequences(term()) :: term()
+  @spec normalize_nbsp_escape_sequences(String.t()) :: String.t()
   defp normalize_nbsp_escape_sequences(source) do
     String.replace(source, <<0xC2, 0xA0>>, "\\u{00A0}")
   end

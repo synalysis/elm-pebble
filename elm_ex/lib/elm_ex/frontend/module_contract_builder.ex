@@ -411,11 +411,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     end
   end
 
-  @spec parse_expression(String.t() | nil, term()) :: map()
-  defp parse_expression(_name, body) when not is_binary(body) do
-    %{op: :unsupported, source: "non_binary"}
-  end
-
+  @spec parse_expression(String.t() | nil, String.t()) :: map()
   defp parse_expression(_name, body) do
     body = String.trim(body)
     generated_expr = maybe_generated_expr(body)

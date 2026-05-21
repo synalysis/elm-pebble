@@ -3,10 +3,10 @@ defmodule IdeWeb.Plugs.CrossOriginIsolation do
 
   import Plug.Conn
 
-  @spec init(term()) :: term()
+  @spec init(keyword()) :: keyword()
   def init(opts), do: opts
 
-  @spec call(Plug.Conn.t(), term()) :: Plug.Conn.t()
+  @spec call(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
   def call(%Plug.Conn{request_path: path} = conn, _opts) do
     if isolated_path?(path) do
       conn

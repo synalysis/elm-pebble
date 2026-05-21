@@ -7,6 +7,7 @@ defmodule Ide.GitHub.Push do
   """
 
   alias Ide.GitHub.Credentials
+  alias Ide.GitHub.Types
   alias Ide.ProjectReadme
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -35,7 +36,8 @@ defmodule Ide.GitHub.Push do
   deps/
   """
 
-  @spec push_project_snapshot(Project.t(), map(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec push_project_snapshot(Project.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, Types.push_error()}
   def push_project_snapshot(%Project{} = project, repo_config, opts \\ []) do
     with {:ok, project} <- Projects.ensure_app_uuid(project),
          {:ok, token} <- fetch_access_token(),
@@ -81,7 +83,8 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec fetch_repo_value(map(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec fetch_repo_value(map(), String.t()) ::
+          {:ok, String.t()} | {:error, Types.repo_field_error()}
   defp fetch_repo_value(map, key) when is_map(map) do
     value = Map.get(map, key) || Map.get(map, String.to_atom(key))
 
@@ -104,7 +107,7 @@ defmodule Ide.GitHub.Push do
     if trimmed == "", do: "main", else: trimmed
   end
 
-  @spec ensure_mirror_repo(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec ensure_mirror_repo(String.t(), String.t()) :: :ok | {:error, Types.push_error()}
   defp ensure_mirror_repo(mirror_root, branch) do
     git_dir = Path.join(mirror_root, ".git")
 
@@ -118,7 +121,7 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec sync_workspace_to_mirror(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec sync_workspace_to_mirror(String.t(), String.t()) :: :ok | {:error, Types.push_error()}
   defp sync_workspace_to_mirror(workspace_root, mirror_root) do
     with :ok <- clean_mirror_worktree(mirror_root),
          :ok <- copy_workspace_entries(workspace_root, mirror_root) do
@@ -126,7 +129,7 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec clean_mirror_worktree(String.t()) :: :ok | {:error, term()}
+  @spec clean_mirror_worktree(String.t()) :: :ok | {:error, Types.push_error()}
   defp clean_mirror_worktree(mirror_root) do
     case File.ls(mirror_root) do
       {:ok, entries} ->
@@ -148,7 +151,7 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec copy_workspace_entries(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec copy_workspace_entries(String.t(), String.t()) :: :ok | {:error, Types.push_error()}
   defp copy_workspace_entries(workspace_root, mirror_root) do
     case File.ls(workspace_root) do
       {:ok, entries} ->
@@ -185,12 +188,12 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec write_push_gitignore(String.t()) :: :ok | {:error, term()}
+  @spec write_push_gitignore(String.t()) :: :ok | {:error, Types.push_error()}
   defp write_push_gitignore(target_root) do
     File.write(Path.join(target_root, ".gitignore"), @push_gitignore)
   end
 
-  @spec commit_if_changed(String.t(), keyword()) :: {:ok, boolean()} | {:error, term()}
+  @spec commit_if_changed(String.t(), keyword()) :: {:ok, boolean()} | {:error, Types.push_error()}
   defp commit_if_changed(path, opts) do
     message = Keyword.get(opts, :commit_message, "Update from Elm Pebble IDE")
 
@@ -207,7 +210,7 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec staged_changes?(String.t()) :: {:ok, boolean()} | {:error, term()}
+  @spec staged_changes?(String.t()) :: {:ok, boolean()} | {:error, Types.git_error()}
   defp staged_changes?(path) do
     case System.cmd("git", ["diff", "--cached", "--quiet"], cd: path, stderr_to_stdout: true) do
       {_, 0} -> {:ok, false}
@@ -216,7 +219,7 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec ensure_remote(String.t(), String.t(), String.t(), String.t()) :: :ok | {:error, term()}
+  @spec ensure_remote(String.t(), String.t(), String.t(), String.t()) :: :ok | {:error, Types.push_error()}
   defp ensure_remote(path, token, owner, repo) do
     remote_url =
       "https://x-access-token:#{URI.encode_www_form(token)}@github.com/#{owner}/#{repo}.git"
@@ -230,7 +233,7 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec integrate_remote(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec integrate_remote(String.t(), String.t()) :: :ok | {:error, Types.push_error()}
   defp integrate_remote(path, branch) do
     case run_git(path, ["fetch", "origin", branch]) do
       :ok -> merge_fetched_remote(path, branch)
@@ -238,7 +241,7 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec merge_fetched_remote(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec merge_fetched_remote(String.t(), String.t()) :: :ok | {:error, Types.push_error()}
   defp merge_fetched_remote(path, branch) do
     remote_ref = "origin/#{branch}"
 
@@ -264,7 +267,7 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec push_branch(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec push_branch(String.t(), String.t()) :: :ok | {:error, Types.push_error()}
   defp push_branch(path, branch) do
     case run_git(path, ["push", "-u", "origin", branch]) do
       :ok ->
@@ -275,7 +278,7 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec read_commit_sha(String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec read_commit_sha(String.t()) :: {:ok, String.t()} | {:error, Types.git_error()}
   defp read_commit_sha(path) do
     case System.cmd("git", ["rev-parse", "HEAD"], cd: path, stderr_to_stdout: true) do
       {sha, 0} -> {:ok, String.trim(sha)}
@@ -294,7 +297,7 @@ defmodule Ide.GitHub.Push do
 
   @doc false
   @spec mirror_write_readme_and_commit(String.t(), Project.t(), keyword()) ::
-          {:ok, boolean()} | {:error, term()}
+          {:ok, boolean()} | {:error, Types.push_error()}
   def mirror_write_readme_and_commit(mirror_root, %Project{} = project, opts \\ []) do
     with :ok <- ProjectReadme.write(mirror_root, project),
          {:ok, committed} <- commit_if_changed(mirror_root, opts) do
@@ -304,7 +307,7 @@ defmodule Ide.GitHub.Push do
 
   @doc false
   @spec mirror_sync_and_commit(String.t(), keyword()) ::
-          {:ok, String.t(), boolean()} | {:error, term()}
+          {:ok, String.t(), boolean()} | {:error, Types.push_error()}
   def mirror_sync_and_commit(workspace_root, opts \\ []) when is_binary(workspace_root) do
     branch = Keyword.get(opts, :branch, "main")
 
@@ -318,7 +321,7 @@ defmodule Ide.GitHub.Push do
     end
   end
 
-  @spec run_git(String.t(), [String.t()], keyword()) :: :ok | {:error, term()}
+  @spec run_git(String.t(), [String.t()], keyword()) :: :ok | {:error, Types.git_error()}
   defp run_git(path, args, opts \\ []) do
     cmd_opts =
       [cd: path, stderr_to_stdout: true]

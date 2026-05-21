@@ -1,7 +1,8 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Task do
   @moduledoc false
 
-  @spec eval(String.t(), term(), map()) :: {:ok, term()} | :no_builtin | {:error, term()}
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result()
   def eval("succeed", [value], _ops), do: {:ok, {:task, :ok, value}}
   def eval("fail", [error], _ops), do: {:ok, {:task, :err, error}}
   def eval("map", [fun, task], ops), do: ops.map.(fun, task)

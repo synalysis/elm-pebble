@@ -10,7 +10,10 @@ defmodule Ide.Compiler.Diagnostics do
           info_count: non_neg_integer()
         }
 
-  @spec normalize_list(term()) :: [diagnostic_map()]
+  @type diagnostic_field :: String.t() | integer() | boolean() | nil
+  @type wire_diagnostics :: list() | map() | nil
+
+  @spec normalize_list(wire_diagnostics()) :: [diagnostic_map()]
   def normalize_list(value) when is_list(value) do
     value
     |> Enum.filter(&is_map/1)
@@ -19,7 +22,7 @@ defmodule Ide.Compiler.Diagnostics do
 
   def normalize_list(_), do: []
 
-  @spec summary(term()) :: summary()
+  @spec summary(wire_diagnostics()) :: summary()
   def summary(diagnostics) do
     diagnostics
     |> normalize_list()
@@ -55,7 +58,7 @@ defmodule Ide.Compiler.Diagnostics do
     }
   end
 
-  @spec value(term(), term(), term()) :: term()
+  @spec value(map(), atom() | String.t(), diagnostic_field()) :: diagnostic_field()
   defp value(map, key, default \\ nil) do
     cond do
       Map.has_key?(map, key) -> Map.get(map, key)
@@ -64,7 +67,7 @@ defmodule Ide.Compiler.Diagnostics do
     end
   end
 
-  @spec normalize_integer(term()) :: term()
+  @spec normalize_integer(integer() | String.t() | nil) :: integer() | nil
   defp normalize_integer(value) when is_integer(value), do: value
 
   defp normalize_integer(value) when is_binary(value) do

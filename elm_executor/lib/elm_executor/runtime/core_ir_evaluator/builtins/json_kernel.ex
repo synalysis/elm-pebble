@@ -1,7 +1,8 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.JsonKernel do
   @moduledoc false
 
-  @spec eval(String.t(), list(), map()) :: term()
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result() | EvalTypes.runtime_value()
   def eval(json_name, values, ops)
       when is_binary(json_name) and is_list(values) and is_map(ops) do
     case {json_name, values} do
@@ -106,7 +107,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.JsonKernel do
     end
   end
 
-  @spec run_decoder_on_string(term(), term(), map()) :: term()
+  @spec run_decoder_on_string(EvalTypes.json_decoder() | EvalTypes.runtime_value(), String.t(), EvalTypes.ops_context()) :: EvalTypes.eval_result()
   def run_decoder_on_string(decoder, text, ops) when is_binary(text) and is_map(ops) do
     case Jason.decode(text) do
       {:ok, value} -> run_decoder(decoder, value, ops)
@@ -114,7 +115,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.JsonKernel do
     end
   end
 
-  @spec run_decoder(term(), term(), map()) :: term()
+  @spec run_decoder(EvalTypes.json_decoder() | EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.ops_context()) :: EvalTypes.eval_result()
   def run_decoder(decoder, value, ops) when is_map(ops) do
     case decode(decoder, value, ops) do
       {:ok, decoded} -> {:ok, ops.result_ctor.({:ok, decoded})}
@@ -122,7 +123,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.JsonKernel do
     end
   end
 
-  @spec decode(term(), term(), map()) :: term()
+  @spec decode(EvalTypes.json_decoder() | EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.ops_context()) :: EvalTypes.eval_result()
   def decode({:json_decoder, :bool}, value, _ops) when is_boolean(value), do: {:ok, value}
   def decode({:json_decoder, :int}, value, _ops) when is_integer(value), do: {:ok, value}
   def decode({:json_decoder, :float}, value, _ops) when is_number(value), do: {:ok, value}
@@ -202,7 +203,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.JsonKernel do
   def decode({:json_decoder, _spec}, _value, _ops), do: {:error, "decoder mismatch"}
   def decode(_decoder, _value, _ops), do: {:error, "not a decoder"}
 
-  @spec decode_all([term()], term(), map()) :: term()
+  @spec decode_all(EvalTypes.runtime_values(), EvalTypes.runtime_value(), EvalTypes.ops_context()) :: EvalTypes.eval_result()
   defp decode_all(decoders, value, ops) when is_list(decoders) do
     decoders
     |> Enum.map(&decode(&1, value, ops))

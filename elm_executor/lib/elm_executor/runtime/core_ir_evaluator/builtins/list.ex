@@ -1,7 +1,8 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.List do
   @moduledoc false
 
-  @spec eval(String.t(), term(), map()) :: {:ok, term()} | :no_builtin | {:error, term()}
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result()
   def eval("map", [fun, subject], ops), do: ops.map_dispatch.(fun, subject)
 
   def eval("map2", [fun, xs, ys], ops) when is_list(xs) and is_list(ys),

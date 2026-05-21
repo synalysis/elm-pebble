@@ -3,7 +3,7 @@ defmodule IdeWeb.TokenizerController do
 
   alias Ide.Tokenizer
 
-  @spec create(term(), term()) :: term()
+  @spec create(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def create(conn, %{"source" => source}) when is_binary(source) do
     result = Tokenizer.tokenize(source)
     json(conn, result)

@@ -1,7 +1,8 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.JsonDecode do
   @moduledoc false
 
-  @spec eval(String.t(), term(), map()) :: {:ok, term()} | :no_builtin | {:error, term()}
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result()
   def eval("bool", [], ops), do: ops.kernel.("decodebool", [])
   def eval("int", [], ops), do: ops.kernel.("decodeint", [])
   def eval("float", [], ops), do: ops.kernel.("decodefloat", [])
@@ -33,7 +34,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.JsonDecode do
   def eval("decodevalue", [decoder, value], ops), do: ops.kernel.("run", [decoder, value])
   def eval(_function_name, _values, _ops), do: :no_builtin
 
-  @spec at_decoder([term()], term()) :: term()
+  @spec at_decoder(EvalTypes.runtime_values(), EvalTypes.runtime_value()) :: EvalTypes.json_decoder() | EvalTypes.runtime_value()
   defp at_decoder(path, decoder) do
     path
     |> Enum.reverse()

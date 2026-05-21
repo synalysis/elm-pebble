@@ -1,5 +1,6 @@
 defmodule Ide.Formatter.Semantics.Finalize do
   @moduledoc false
+  alias Ide.Formatter.Types
 
   @spec finalize(String.t()) :: String.t()
   def finalize(source) when is_binary(source) do
@@ -13,13 +14,13 @@ defmodule Ide.Formatter.Semantics.Finalize do
     |> ensure_terminal_newline()
   end
 
-  @spec ensure_terminal_newline(term()) :: term()
+  @spec ensure_terminal_newline(String.t()) :: String.t()
   defp ensure_terminal_newline(""), do: "\n"
 
   defp ensure_terminal_newline(value),
     do: if(String.ends_with?(value, "\n"), do: value, else: value <> "\n")
 
-  @spec ensure_import_doc_gap(term()) :: term()
+  @spec ensure_import_doc_gap(Types.line_list()) :: Types.line_list()
   defp ensure_import_doc_gap(lines) when is_list(lines) do
     Enum.reduce(lines, [], fn line, acc ->
       trimmed = String.trim_leading(line)
@@ -45,19 +46,19 @@ defmodule Ide.Formatter.Semantics.Finalize do
     end)
   end
 
-  @spec last_non_empty(term()) :: term()
+  @spec last_non_empty(Types.line_list()) :: String.t() | nil
   defp last_non_empty(lines) when is_list(lines) do
     lines
     |> Enum.reverse()
     |> Enum.find(&(String.trim(&1) != ""))
   end
 
-  @spec leading_indent(term()) :: term()
+  @spec leading_indent(String.t()) :: non_neg_integer()
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
   end
 
-  @spec count_trailing_blank_lines(term()) :: term()
+  @spec count_trailing_blank_lines(Types.line_list()) :: non_neg_integer()
   defp count_trailing_blank_lines(lines) when is_list(lines) do
     lines
     |> Enum.reverse()

@@ -1,14 +1,18 @@
 defmodule Ide.Formatter.Semantics.HeaderMetadata do
   @moduledoc false
 
+  @type header_lines :: %{module: integer() | nil, imports: [integer()]}
+  @type lexer_token :: tuple()
+  @type token_line :: [lexer_token()]
+  @type exposing_clause :: String.t() | [String.t()]
   @type metadata :: %{
           module: String.t() | nil,
           imports: [String.t()],
-          module_exposing: nil | String.t() | [String.t()],
+          module_exposing: nil | exposing_clause(),
           import_entries: [map()],
           port_module: boolean(),
           ports: [String.t()],
-          header_lines: %{module: integer() | nil, imports: [integer()]}
+          header_lines: header_lines()
         }
 
   @spec from_values_and_tokens(String.t(), [tuple()], [tuple()]) :: metadata()
@@ -88,7 +92,7 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
     }
   end
 
-  @spec locate_header_lines(term(), term(), term()) :: term()
+  @spec locate_header_lines(String.t(), String.t() | nil, non_neg_integer()) :: header_lines()
   defp locate_header_lines(source, module_name, import_count) do
     lines = String.split(source, "\n", trim: false)
 
@@ -119,7 +123,7 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
     %{module: module_line, imports: import_lines}
   end
 
-  @spec split_token_lines(term()) :: term()
+  @spec split_token_lines([lexer_token()]) :: [token_line()]
   defp split_token_lines(tokens) do
     tokens
     |> Enum.reduce([[]], fn
@@ -133,7 +137,8 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
     |> Enum.map(&Enum.reverse/1)
   end
 
-  @spec parse_import_entry(term(), term(), term(), term()) :: term()
+  @spec parse_import_entry(token_line(), [token_line()], non_neg_integer(), pos_integer()) ::
+          map() | nil
   defp parse_import_entry(
          [{:import_kw, _}, {:upper_id, _, module_name} | line],
          lines,
@@ -158,7 +163,7 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
 
   defp parse_import_entry(_, _, _, _), do: nil
 
-  @spec parse_exposing_from_lines(term(), term()) :: term()
+  @spec parse_exposing_from_lines([token_line()], non_neg_integer()) :: exposing_clause() | nil
   defp parse_exposing_from_lines(lines, start_idx) when is_list(lines) do
     line = Enum.at(lines, start_idx, [])
     rest_lines = lines |> Enum.drop(start_idx + 1) |> Enum.take(120)
@@ -172,7 +177,8 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
     end
   end
 
-  @spec parse_exposing_from_open(term(), term(), term()) :: term()
+  @spec parse_exposing_from_open([lexer_token()], [token_line()], non_neg_integer()) ::
+          exposing_clause() | nil
   defp parse_exposing_from_open(tokens_after_open, rest_lines, used_lines) do
     case take_balanced_tokens(tokens_after_open, 1, []) do
       {:ok, inner} ->
@@ -189,7 +195,7 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
     end
   end
 
-  @spec find_exposing_open(term()) :: term()
+  @spec find_exposing_open(token_line()) :: [lexer_token()] | nil
   defp find_exposing_open(tokens) do
     tokens
     |> Enum.drop_while(fn
@@ -208,7 +214,8 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
     end
   end
 
-  @spec take_balanced_tokens(term(), term(), term()) :: term()
+  @spec take_balanced_tokens([lexer_token()], pos_integer(), [lexer_token()]) ::
+          {:ok, [lexer_token()]} | :error
   defp take_balanced_tokens([], _depth, _acc), do: :error
 
   defp take_balanced_tokens([tok | rest], depth, acc) do
@@ -227,7 +234,7 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
     end
   end
 
-  @spec parse_exposing_tokens(term()) :: term()
+  @spec parse_exposing_tokens([lexer_token()]) :: exposing_clause() | nil
   defp parse_exposing_tokens([{:dotdot, _}]), do: ".."
 
   defp parse_exposing_tokens(tokens) when is_list(tokens) do
@@ -242,7 +249,7 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
     end
   end
 
-  @spec split_top_level_comma_tokens(term(), term()) :: term()
+  @spec split_top_level_comma_tokens([lexer_token()], non_neg_integer()) :: [token_line()]
   defp split_top_level_comma_tokens(tokens, depth) do
     {parts, current, _depth} =
       Enum.reduce(tokens, {[], [], depth}, fn tok, {parts, current, d} ->
@@ -264,7 +271,7 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
     Enum.reverse(parts) ++ [Enum.reverse(current)]
   end
 
-  @spec tokens_to_text(term()) :: term()
+  @spec tokens_to_text([lexer_token()]) :: String.t()
   defp tokens_to_text(tokens) do
     tokens
     |> Enum.map(fn
@@ -279,7 +286,7 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
     |> Enum.join()
   end
 
-  @spec token_kind(term()) :: term()
+  @spec token_kind(lexer_token()) :: atom()
   defp token_kind({kind, _line}) when is_atom(kind), do: kind
   defp token_kind({kind, _line, _value}) when is_atom(kind), do: kind
 end

@@ -2,16 +2,44 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   @moduledoc false
 
   alias Ide.PebbleToolchain
+  alias Ide.Projects
   alias Ide.PublishManifest
   alias Ide.PublishReadiness
   alias Ide.Screenshots
   alias Ide.StoreAssets
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
 
+  @type wire_input :: String.t() | integer() | boolean() | nil
+  @type project_type :: :watchface | :watchapp
+  @type prepare_release_error :: PebbleToolchain.toolchain_error() | atom() | tuple()
+
+  @type prepare_release_result :: %{
+          project: map(),
+          release_summary: map(),
+          validation_status: :ok | :error,
+          checks: [map()],
+          readiness: map(),
+          artifact_path: String.t(),
+          app_root: String.t(),
+          manifest_status: :ok | :error,
+          manifest_path: String.t(),
+          manifest_output: String.t(),
+          release_notes_status: :ok | :error,
+          release_notes_path: String.t(),
+          release_notes_output: String.t(),
+          output: String.t(),
+          duration_ms: non_neg_integer(),
+          finished_at: String.t(),
+          in_ide_completed?: boolean()
+        }
+
   @generate_store_graphics_key "generate_store_graphics"
 
+  @spec default_release_summary() :: map()
+  def default_release_summary(), do: default_release_summary(nil)
+
   @spec default_release_summary(map() | nil) :: map()
-  def default_release_summary(project \\ nil) do
+  def default_release_summary(project) do
     defaults = release_defaults(project)
 
     %{
@@ -49,11 +77,13 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     end
   end
 
-  @spec run_prepare_release(map(), String.t(), map()) :: {:ok, map()} | {:error, term()}
+  @spec run_prepare_release(map(), String.t(), map()) ::
+          {:ok, prepare_release_result()} | {:error, prepare_release_error()}
   def run_prepare_release(project, workspace_root, release_summary) do
     started_at_ms = System.monotonic_time(:millisecond)
 
-    with {:ok, package_result} <-
+    with {:ok, project} <- Projects.sync_detected_capabilities(project),
+         {:ok, package_result} <-
            PebbleToolchain.package(project.slug,
              workspace_root: workspace_root,
              target_type: project.target_type,
@@ -484,7 +514,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     ToolchainPresenter.publish_readiness(shots, target_platforms(project))
   end
 
-  @spec load_screenshots(term()) :: term()
+  @spec load_screenshots(Screenshots.project_ref()) :: [Screenshots.screenshot()]
   defp load_screenshots(project) do
     case Screenshots.list(project, []) do
       {:ok, shots} -> shots
@@ -492,19 +522,19 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     end
   end
 
-  @spec group_screenshots(term()) :: term()
+  @spec group_screenshots([Screenshots.screenshot()]) :: [{String.t(), [Screenshots.screenshot()]}]
   defp group_screenshots(shots) do
     shots
     |> Enum.group_by(& &1.emulator_target)
     |> Enum.sort_by(fn {emulator_target, _} -> emulator_target end)
   end
 
-  @spec project_type(term()) :: term()
+  @spec project_type(map()) :: project_type()
   defp project_type(%{target_type: "watchface"}), do: :watchface
   defp project_type(%{target_type: "watchapp"}), do: :watchapp
   defp project_type(_), do: :watchapp
 
-  @spec type_label(term()) :: term()
+  @spec type_label(project_type()) :: String.t()
   defp type_label(:watchface), do: "watchface"
   defp type_label(:watchapp), do: "watchapp"
 
@@ -542,24 +572,37 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
     end
   end
 
-  @spec publish_submit_options(map()) :: map()
+  @type publish_submit_option_map :: %{String.t() => boolean()}
+
+  @spec publish_submit_options(map()) :: publish_submit_option_map()
   def publish_submit_options(project) when is_map(project) do
     %{
-      "is_published" => true,
-      "all_platforms" => false,
+      "is_published" => default_is_published(project),
+      "all_platforms" => default_all_platforms(),
       @generate_store_graphics_key => generate_store_graphics?(project)
     }
   end
 
-  @spec release_defaults(term()) :: term()
+  @spec default_is_published(map()) :: boolean()
+  def default_is_published(project) when is_map(project) do
+    project
+    |> release_defaults()
+    |> Ide.AppStore.PublishFlags.release_defaults_visibility()
+    |> Ide.AppStore.PublishFlags.published?()
+  end
+
+  @spec default_all_platforms() :: boolean()
+  def default_all_platforms, do: :erlang.xor(false, false)
+
+  @spec release_defaults(map() | nil) :: map()
   defp release_defaults(%{release_defaults: defaults}) when is_map(defaults), do: defaults
   defp release_defaults(_), do: %{}
 
-  @spec truthy?(term()) :: boolean()
+  @spec truthy?(wire_input()) :: boolean()
   defp truthy?(value) when value in [true, "true", "on", "1", 1], do: true
   defp truthy?(_), do: false
 
-  @spec blank_to_nil(term()) :: term()
+  @spec blank_to_nil(wire_input()) :: String.t() | nil
   defp blank_to_nil(value) when is_binary(value) do
     case String.trim(value) do
       "" -> nil

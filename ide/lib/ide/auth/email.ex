@@ -11,18 +11,32 @@ defmodule Ide.Auth.Email do
   alias Ide.Auth.User
   alias Ide.Repo
 
-  @spec send_login_link(String.t()) :: :ok | {:error, :invalid_email | :delivery_failed}
+  @spec send_login_link(String.t()) ::
+          :ok | {:error, :invalid_email | :mailer_not_configured | :delivery_failed}
   def send_login_link(email) when is_binary(email) do
     email = User.normalize_email(email)
 
     if valid_email?(email) do
-      with {:ok, user} <- ensure_user(email),
+      with :ok <- ensure_mailer_ready(),
+           {:ok, user} <- ensure_user(email),
            {:ok, raw_token} <- issue_token(user),
            {:ok, _} <- LoginLinkEmail.deliver(user, raw_token) do
         :ok
       else
-        {:error, %Ecto.Changeset{}} -> {:error, :invalid_email}
-        {:error, _} -> {:error, :delivery_failed}
+        {:error, %Ecto.Changeset{}} ->
+          {:error, :invalid_email}
+
+        {:error, :mailer_not_configured} = error ->
+          error
+
+        {:error, reason} ->
+          require Logger
+
+          Logger.error(
+            "login email delivery failed email=#{email} reason=#{inspect(reason)} mailer=#{mailer_adapter_label()}"
+          )
+
+          {:error, :delivery_failed}
       end
     else
       {:error, :invalid_email}
@@ -30,6 +44,45 @@ defmodule Ide.Auth.Email do
   end
 
   def send_login_link(_), do: {:error, :invalid_email}
+
+  @doc """
+  True when production mail can be sent (SMTP adapter configured).
+  """
+  @spec mail_delivery_configured?() :: boolean()
+  def mail_delivery_configured? do
+    case mailer_adapter() do
+      Swoosh.Adapters.SMTP -> true
+      Swoosh.Adapters.Test -> true
+      Swoosh.Adapters.Local -> Application.get_env(:swoosh, :local) != false
+      _ -> false
+    end
+  end
+
+  @spec ensure_mailer_ready() :: :ok | {:error, :mailer_not_configured}
+  defp ensure_mailer_ready do
+    if mail_delivery_configured?() do
+      :ok
+    else
+      require Logger
+
+      Logger.error(
+        "login email requested but mail delivery is not configured adapter=#{mailer_adapter_label()}"
+      )
+
+      {:error, :mailer_not_configured}
+    end
+  end
+
+  @spec mailer_adapter() :: module()
+  defp mailer_adapter do
+    Application.get_env(:ide, Ide.Mailer, [])
+    |> Keyword.get(:adapter, Swoosh.Adapters.Local)
+  end
+
+  @spec mailer_adapter_label() :: String.t()
+  defp mailer_adapter_label do
+    mailer_adapter() |> Module.split() |> List.last()
+  end
 
   @spec verify_login_token(String.t()) ::
           {:ok, User.t()} | {:error, :invalid_token | :expired_token | :used_token}

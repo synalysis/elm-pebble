@@ -4,7 +4,15 @@ defmodule Elmc.CLI do
   """
 
   alias ElmEx.DiagnosticFormatter
+
   @blocked_package_families ~w(elm/core elm/browser elm/bytes elm/file elm/html elm/http)
+
+  @type cli_diagnostic :: map()
+  @type warning_dedupe_key ::
+          {String.t(), String.t() | nil, String.t(), String.t() | nil, String.t() | nil,
+           integer() | nil, String.t() | nil, String.t() | nil, boolean() | nil,
+           String.t() | nil}
+          | {:unknown, String.t()}
 
   @spec main([String.t()]) :: no_return() | :ok
   def main(argv) do
@@ -177,7 +185,7 @@ defmodule Elmc.CLI do
     Enum.any?(diagnostics, &(diagnostic_severity(&1) == "error"))
   end
 
-  @spec diagnostic_severity(term()) :: String.t()
+  @spec diagnostic_severity(cli_diagnostic()) :: String.t()
   defp diagnostic_severity(diagnostic) when is_map(diagnostic) do
     diagnostic
     |> Map.get("severity", Map.get(diagnostic, :severity, "warning"))
@@ -203,7 +211,7 @@ defmodule Elmc.CLI do
     |> Enum.reverse()
   end
 
-  @spec warning_dedupe_key(term()) :: term()
+  @spec warning_dedupe_key(cli_diagnostic() | term()) :: warning_dedupe_key()
   defp warning_dedupe_key(warning) when is_map(warning) do
     {
       Map.get(warning, "type", Map.get(warning, :type, "warning")),
@@ -245,7 +253,7 @@ defmodule Elmc.CLI do
     end
   end
 
-  @spec dependency_keys(term()) :: term()
+  @spec dependency_keys(map()) :: [String.t()]
   defp dependency_keys(map) when is_map(map), do: Map.keys(map)
   defp dependency_keys(_), do: []
 

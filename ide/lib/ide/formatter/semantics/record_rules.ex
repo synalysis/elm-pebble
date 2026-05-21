@@ -1,6 +1,11 @@
 defmodule Ide.Formatter.Semantics.RecordRules do
   @moduledoc false
   alias Ide.Formatter.Semantics.TextOps
+  alias Ide.Formatter.Types
+
+  @type record_entry :: %{close_indent: non_neg_integer(), comma_indent: non_neg_integer()}
+  @type stack_effect :: :keep | :pop
+  @type brace_split :: :no_split | {:split, String.t(), String.t()}
 
   @spec enter_indent(String.t(), non_neg_integer(), non_neg_integer(), String.t(), String.t()) ::
           String.t()
@@ -106,7 +111,7 @@ defmodule Ide.Formatter.Semantics.RecordRules do
     end
   end
 
-  @spec opening_record_entry(term()) :: term()
+  @spec opening_record_entry(String.t()) :: record_entry() | nil
   defp opening_record_entry(line) do
     case opening_record_indent(line) do
       nil ->
@@ -126,7 +131,8 @@ defmodule Ide.Formatter.Semantics.RecordRules do
     end
   end
 
-  @spec normalize_record_comma_line(term(), term()) :: term()
+  @spec normalize_record_comma_line(String.t(), non_neg_integer()) ::
+          {Types.line_list(), stack_effect()}
   defp normalize_record_comma_line(line, record_indent) do
     indent = String.duplicate(" ", record_indent)
     trimmed = String.trim_leading(line)
@@ -152,12 +158,12 @@ defmodule Ide.Formatter.Semantics.RecordRules do
     end
   end
 
-  @spec apply_stack_effect(term(), term()) :: term()
+  @spec apply_stack_effect([record_entry()], stack_effect()) :: [record_entry()]
   defp apply_stack_effect(indent_stack, :keep), do: indent_stack
   defp apply_stack_effect([], :pop), do: []
   defp apply_stack_effect([_ | rest], :pop), do: rest
 
-  @spec starts_with_lower_identifier?(term()) :: term()
+  @spec starts_with_lower_identifier?(String.t()) :: boolean()
   defp starts_with_lower_identifier?(value) when is_binary(value) do
     trimmed = String.trim_leading(value)
 
@@ -167,7 +173,7 @@ defmodule Ide.Formatter.Semantics.RecordRules do
     end
   end
 
-  @spec extensible_record_opening?(term()) :: term()
+  @spec extensible_record_opening?(String.t()) :: boolean()
   defp extensible_record_opening?(line) when is_binary(line) do
     case :binary.match(line, "{") do
       {idx, _} ->
@@ -181,7 +187,7 @@ defmodule Ide.Formatter.Semantics.RecordRules do
     end
   end
 
-  @spec block_comment_state_after(term(), term()) :: term()
+  @spec block_comment_state_after(String.t(), boolean()) :: boolean()
   defp block_comment_state_after(line, in_block_comment) do
     trimmed = String.trim_leading(line)
     opens? = String.contains?(trimmed, "{-")
@@ -195,7 +201,7 @@ defmodule Ide.Formatter.Semantics.RecordRules do
     end
   end
 
-  @spec split_top_level_close_brace(term()) :: term()
+  @spec split_top_level_close_brace(String.t()) :: brace_split()
   defp split_top_level_close_brace(value) when is_binary(value) do
     case top_level_close_brace_index(value, [], false, false, 0) do
       nil ->
@@ -208,7 +214,8 @@ defmodule Ide.Formatter.Semantics.RecordRules do
     end
   end
 
-  @spec top_level_close_brace_index(term(), term(), term(), term(), term()) :: term()
+  @spec top_level_close_brace_index(String.t(), list(), boolean(), boolean(), non_neg_integer()) ::
+          non_neg_integer() | nil
   defp top_level_close_brace_index("", _stack, _in_string, _escape_next, _idx), do: nil
 
   defp top_level_close_brace_index(
@@ -245,27 +252,27 @@ defmodule Ide.Formatter.Semantics.RecordRules do
     end
   end
 
-  @spec pop_stack(term(), term()) :: term()
+  @spec pop_stack(list(), non_neg_integer()) :: list()
   defp pop_stack([], _closing), do: []
 
   defp pop_stack([open | rest], closing) do
     if delimiter_char_match?(open, closing), do: rest, else: [open | rest]
   end
 
-  @spec delimiter_char_match?(term(), term()) :: term()
+  @spec delimiter_char_match?(non_neg_integer(), non_neg_integer()) :: boolean()
   defp delimiter_char_match?(?(, ?)), do: true
   defp delimiter_char_match?(?[, ?]), do: true
   defp delimiter_char_match?(?{, ?}), do: true
   defp delimiter_char_match?(_, _), do: false
 
-  @spec normalize_record_comma_segment(term()) :: term()
+  @spec normalize_record_comma_segment(String.t()) :: String.t()
   defp normalize_record_comma_segment(segment) do
     segment
     |> TextOps.normalize_comma_spacing()
     |> normalize_record_field_spacing()
   end
 
-  @spec normalize_record_opening_indentation(term()) :: term()
+  @spec normalize_record_opening_indentation(String.t()) :: String.t()
   defp normalize_record_opening_indentation(source) do
     {normalized_rev, _prev_non_empty} =
       source
@@ -297,7 +304,7 @@ defmodule Ide.Formatter.Semantics.RecordRules do
     |> Enum.join("\n")
   end
 
-  @spec opening_record_candidate?(term(), term()) :: term()
+  @spec opening_record_candidate?(String.t(), map() | nil) :: boolean()
   defp opening_record_candidate?(line, prev_non_empty) when is_map(prev_non_empty) do
     trimmed = String.trim_leading(line)
 
@@ -307,7 +314,7 @@ defmodule Ide.Formatter.Semantics.RecordRules do
 
   defp opening_record_candidate?(_line, _prev_non_empty), do: false
 
-  @spec normalize_record_field_spacing(term()) :: term()
+  @spec normalize_record_field_spacing(String.t()) :: String.t()
   defp normalize_record_field_spacing(value) do
     value
     |> TextOps.normalize_colon_spacing()
@@ -315,11 +322,11 @@ defmodule Ide.Formatter.Semantics.RecordRules do
     |> String.trim_trailing()
   end
 
-  @spec starts_with_trimmed?(term(), term()) :: term()
+  @spec starts_with_trimmed?(String.t(), String.t()) :: boolean()
   defp starts_with_trimmed?(line, marker),
     do: String.starts_with?(String.trim_leading(line), marker)
 
-  @spec leading_indent(term()) :: term()
+  @spec leading_indent(String.t()) :: non_neg_integer()
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
   end

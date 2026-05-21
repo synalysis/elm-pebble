@@ -5,6 +5,7 @@ defmodule Ide.Emulator.FirmwareScreenshot do
 
   alias Ide.Emulator.PebbleProtocol.Router
   alias Ide.Emulator.SdkScreenshotStyle
+  alias Ide.Emulator.Types
   alias Ide.ScreenshotDimensions
   alias Ide.WatchModels
 
@@ -46,7 +47,7 @@ defmodule Ide.Emulator.FirmwareScreenshot do
     end
   end
 
-  @spec capture(pid(), String.t(), keyword()) :: {:ok, binary()} | {:error, term()}
+  @spec capture(pid(), String.t(), keyword()) :: {:ok, binary()} | {:error, Types.session_error() | Types.screenshot_error()}
   def capture(session_pid, platform, opts \\ []) when is_pid(session_pid) and is_binary(platform) do
     timeout = Keyword.get(opts, :timeout, capture_timeout_ms(platform))
 
@@ -118,7 +119,8 @@ defmodule Ide.Emulator.FirmwareScreenshot do
 
   # libpebble2 `Uint32` fields use network (big-endian) byte order.
   @doc false
-  @spec parse_header_payload(binary()) :: {:ok, map(), binary()} | {:error, term()}
+  @spec parse_header_payload(binary()) ::
+          {:ok, map(), binary()} | {:error, Types.screenshot_error()}
   def parse_header_payload(payload), do: parse_header(payload)
 
   defp parse_header(

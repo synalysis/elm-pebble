@@ -4,16 +4,22 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.Resources.ResourceStore
+  alias Ide.Resources.Types, as: ResourceTypes
   alias Ide.Screenshots
 
-  @spec bitmap_upload_output(term()) :: term()
+  @type upload_result_row :: map()
+  @type bitmap_resource_row :: ResourceTypes.bitmap_entry() | map()
+  @type font_resource_row :: ResourceTypes.font_entry() | map()
+  @type font_source_row :: ResourceTypes.font_source() | map()
+
+  @spec bitmap_upload_output([upload_result_row()]) :: String.t()
   def bitmap_upload_output([]), do: "No file uploaded."
 
   def bitmap_upload_output(results) when is_list(results) do
     upload_summary(results, "bitmap", "bitmaps")
   end
 
-  @spec font_upload_output(term()) :: term()
+  @spec font_upload_output([upload_result_row()]) :: String.t()
   def font_upload_output([]), do: "No file uploaded."
 
   def font_upload_output(results) when is_list(results) do
@@ -40,7 +46,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     |> Enum.join(" ")
   end
 
-  @spec load_font_sources(term()) :: term()
+  @spec load_font_sources(Project.t()) :: [font_source_row()]
   def load_font_sources(%Project{} = project) do
     case Projects.list_font_sources(project) do
       {:ok, entries} -> entries
@@ -48,7 +54,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
-  @spec load_bitmap_resources(term()) :: term()
+  @spec load_bitmap_resources(Project.t()) :: [bitmap_resource_row()]
   def load_bitmap_resources(%Project{} = project) do
     case Projects.list_bitmap_resources(project) do
       {:ok, entries} ->
@@ -70,7 +76,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
-  @spec load_font_resources(term()) :: term()
+  @spec load_font_resources(Project.t()) :: [font_resource_row()]
   def load_font_resources(%Project{} = project) do
     case Projects.list_font_resources(project) do
       {:ok, entries} ->
@@ -85,7 +91,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
-  @spec bitmap_preview_data_url(term(), term()) :: term()
+  @spec bitmap_preview_data_url(String.t(), String.t()) :: String.t() | nil
   def bitmap_preview_data_url(path, mime) when is_binary(path) and is_binary(mime) do
     with {:ok, bytes} <- File.read(path) do
       "data:#{mime};base64," <> Base.encode64(bytes)
@@ -94,7 +100,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
-  @spec load_screenshots(term()) :: term()
+  @spec load_screenshots(Screenshots.project_ref()) :: [Screenshots.screenshot()]
   def load_screenshots(project) do
     case Screenshots.list(project, []) do
       {:ok, shots} -> shots
@@ -102,7 +108,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
-  @spec group_screenshots(term()) :: term()
+  @spec group_screenshots([Screenshots.screenshot()]) :: [{String.t(), [Screenshots.screenshot()]}]
   def group_screenshots(shots) do
     shots
     |> Enum.group_by(& &1.emulator_target)

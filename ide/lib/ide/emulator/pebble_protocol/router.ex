@@ -17,13 +17,14 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
   @spec send_and_await(pid(), non_neg_integer(), binary(), (frame() -> boolean()), timeout()) ::
-          {:ok, frame()} | {:error, term()}
+          {:ok, frame()} | {:error, Ide.Emulator.Types.router_error()}
   def send_and_await(pid, endpoint, payload, matcher, timeout \\ 20_000)
       when is_pid(pid) and is_function(matcher, 1) do
     GenServer.call(pid, {:send_and_await, endpoint, payload, matcher, timeout}, timeout + 1_000)
   end
 
-  @spec await_frame(pid(), (frame() -> boolean()), timeout()) :: {:ok, frame()} | {:error, term()}
+  @spec await_frame(pid(), (frame() -> boolean()), timeout()) ::
+          {:ok, frame()} | {:error, Ide.Emulator.Types.router_error()}
   def await_frame(pid, matcher, timeout \\ 5_000) when is_pid(pid) and is_function(matcher, 1) do
     GenServer.call(pid, {:await_frame, matcher, timeout}, timeout + 1_000)
   end
@@ -36,7 +37,7 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   def send_qemu_packet(pid, protocol, payload),
     do: GenServer.call(pid, {:send_qemu_packet, protocol, payload})
 
-  @spec acquire(pid(), timeout()) :: :ok | {:error, term()}
+  @spec acquire(pid(), timeout()) :: :ok | {:error, Ide.Emulator.Types.router_error()}
   def acquire(pid, timeout \\ 5_000), do: GenServer.call(pid, :acquire, timeout)
 
   @spec release(pid()) :: :ok

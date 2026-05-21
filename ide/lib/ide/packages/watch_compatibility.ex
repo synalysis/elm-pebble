@@ -2,6 +2,7 @@ defmodule Ide.Packages.WatchCompatibility do
   @moduledoc false
 
   alias Ide.Packages.DependencyResolver
+  alias Ide.Packages.Types
 
   @cache_table :ide_packages_watch_compat_cache
 
@@ -9,7 +10,7 @@ defmodule Ide.Packages.WatchCompatibility do
   Drops catalog entries whose latest-version dependency tree includes any
   `watch_forbidden_packages` (browser / DOM stack unsuitable for Pebble watch).
   """
-  @spec filter_entries([map()], map()) :: [map()]
+  @spec filter_entries([map()], Types.provider_spec()) :: [map()]
   def filter_entries(entries, provider) when is_list(entries) do
     # Own the ETS table in this process so short-lived Task workers cannot delete it.
     _ = cache_table()
@@ -38,7 +39,7 @@ defmodule Ide.Packages.WatchCompatibility do
   end
 
   @doc false
-  @spec clear_cache!() :: term()
+  @spec clear_cache!() :: :ok
   def clear_cache! do
     case :ets.whereis(@cache_table) do
       :undefined -> :ok
@@ -48,7 +49,7 @@ defmodule Ide.Packages.WatchCompatibility do
     :ok
   end
 
-  @spec entry_compatible?(term(), term(), term()) :: term()
+  @spec entry_compatible?(map(), Types.watch_compat_callbacks(), [String.t()]) :: boolean()
   defp entry_compatible?(%{name: name}, callbacks, forbidden) when is_binary(name) do
     compatible_cached?(name, callbacks, forbidden)
   end
@@ -59,7 +60,7 @@ defmodule Ide.Packages.WatchCompatibility do
 
   defp entry_compatible?(_, _, _), do: true
 
-  @spec compatible_cached?(term(), term(), term()) :: term()
+  @spec compatible_cached?(String.t(), Types.watch_compat_callbacks(), [String.t()]) :: boolean()
   defp compatible_cached?(package, callbacks, forbidden) do
     table = cache_table()
     key = cache_key(forbidden, package)
@@ -76,12 +77,13 @@ defmodule Ide.Packages.WatchCompatibility do
   end
 
   # Version + forbidden-list hash so we never reuse entries from older logic or config.
-  @spec cache_key(term(), term()) :: term()
+  @spec cache_key([String.t()], String.t()) :: Types.watch_compat_cache_key()
   defp cache_key(forbidden, package) do
     {:pebble_watch_compat, 3, :erlang.phash2(forbidden), package}
   end
 
-  @spec compute_compatible?(term(), term(), term()) :: term()
+  @spec compute_compatible?(String.t(), Types.watch_compat_callbacks(), [String.t()]) ::
+          boolean()
   defp compute_compatible?(package, callbacks, forbidden) do
     if package in forbidden do
       false
@@ -103,7 +105,8 @@ defmodule Ide.Packages.WatchCompatibility do
     end
   end
 
-  @spec latest_release_dependency_names(term(), term()) :: term()
+  @spec latest_release_dependency_names(String.t(), Types.watch_compat_callbacks()) ::
+          {:ok, [String.t()]} | :error
   defp latest_release_dependency_names(package, callbacks) do
     with {:ok, versions} <- callbacks.versions.(package),
          ver when is_binary(ver) <- List.first(versions),
@@ -114,7 +117,7 @@ defmodule Ide.Packages.WatchCompatibility do
     end
   end
 
-  @spec release_dependency_names(term()) :: term()
+  @spec release_dependency_names(map()) :: [String.t()]
   defp release_dependency_names(elm_json) when is_map(elm_json) do
     deps = Map.get(elm_json, "dependencies", %{})
 
@@ -135,7 +138,7 @@ defmodule Ide.Packages.WatchCompatibility do
     names |> Enum.filter(&is_binary/1)
   end
 
-  @spec build_callbacks(term()) :: term()
+  @spec build_callbacks(Types.provider_spec()) :: Types.watch_compat_callbacks()
   defp build_callbacks(%{module: module, opts: opts}) do
     %{
       versions: fn pkg -> apply(module, :versions, [pkg, opts]) end,
@@ -143,7 +146,7 @@ defmodule Ide.Packages.WatchCompatibility do
     }
   end
 
-  @spec forbidden_packages() :: term()
+  @spec forbidden_packages() :: [String.t()]
   defp forbidden_packages do
     Application.get_env(:ide, Ide.Packages, [])
     |> Keyword.get(:watch_forbidden_packages, ~w(elm/html elm/browser elm/virtual-dom))
@@ -151,7 +154,7 @@ defmodule Ide.Packages.WatchCompatibility do
     |> Enum.map(&to_string/1)
   end
 
-  @spec cache_table() :: term()
+  @spec cache_table() :: :ets.tid()
   defp cache_table do
     name = @cache_table
 

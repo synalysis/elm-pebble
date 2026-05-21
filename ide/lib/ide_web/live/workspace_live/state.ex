@@ -6,12 +6,29 @@ defmodule IdeWeb.WorkspaceLive.State do
 
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias Ide.Settings
   alias IdeWeb.WorkspaceLive.DebuggerSupport
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
 
-  @spec mount_defaults(Phoenix.LiveView.Socket.t(), term(), String.t()) ::
-          Phoenix.LiveView.Socket.t()
+  @type socket :: Phoenix.LiveView.Socket.t()
+  @type settings :: Settings.values()
+  @type project_assign_data :: %{
+          required(:tree) => list(),
+          required(:bitmap_resources) => list(),
+          required(:font_sources) => list(),
+          required(:font_resources) => list(),
+          required(:screenshots) => list(),
+          required(:screenshot_groups) => list(),
+          required(:publish_readiness) => list(),
+          required(:selected_emulator_target) => String.t(),
+          required(:emulator_mode) => String.t(),
+          required(:packages_target_root) => String.t(),
+          required(:debugger_timeline_mode) => atom() | String.t(),
+          required(:companion_app_present) => boolean()
+        }
+
+  @spec mount_defaults(socket(), settings(), String.t()) :: socket()
   def mount_defaults(socket, settings, default_emulator_target) do
     socket
     |> assign(:project, nil)
@@ -203,7 +220,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> DebuggerSupport.assign_defaults()
   end
 
-  @spec assign_project(Phoenix.LiveView.Socket.t(), Project.t(), term(), map()) ::
+  @spec assign_project(Phoenix.LiveView.Socket.t(), Project.t(), settings(), project_assign_data()) ::
           Phoenix.LiveView.Socket.t()
   def assign_project(socket, %Project{} = project, settings, data) when is_map(data) do
     publish_readiness = Map.fetch!(data, :publish_readiness)
@@ -295,7 +312,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> Map.new()
   end
 
-  @spec project_settings_form_data(term()) :: map()
+  @spec project_settings_form_data(Project.t() | nil) :: map()
   def project_settings_form_data(%Project{} = project) do
     defaults = project.release_defaults || %{}
     github = Projects.github_config(project)
@@ -337,7 +354,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     ["aplite", "basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
   end
 
-  @spec target_platforms_form_value(term()) :: [String.t()]
+  @spec target_platforms_form_value([String.t()] | String.t() | nil) :: [String.t()]
   def target_platforms_form_value(value) when is_list(value) do
     allowed = MapSet.new(supported_target_platforms())
 
@@ -360,7 +377,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     ["location", "configurable", "health"]
   end
 
-  @spec capabilities_form_value(term()) :: [String.t()]
+  @spec capabilities_form_value([String.t()] | String.t() | nil) :: [String.t()]
   def capabilities_form_value(value) when is_list(value) do
     allowed = MapSet.new(supported_capabilities())
 

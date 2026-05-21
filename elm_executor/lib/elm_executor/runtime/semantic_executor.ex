@@ -12,6 +12,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   alias ElmEx.Frontend.Project
   alias ElmEx.IR.Lowerer
   alias ElmExecutor.Runtime.CoreIREvaluator
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
 
   @doc """
   Evaluates a parser-derived rendered view node against the current runtime model.
@@ -19,7 +21,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   This is used by debugger UI code to annotate the source-shaped rendered hierarchy
   with the same values the semantic executor can derive for visual preview output.
   """
-  @spec evaluate_view_tree_value(term(), map(), map()) :: term()
+  @spec evaluate_view_tree_value(map(), map(), map()) :: EvalTypes.runtime_value() | nil
   def evaluate_view_tree_value(node, runtime_model, eval_context \\ %{})
 
   def evaluate_view_tree_value(node, runtime_model, eval_context)
@@ -29,7 +31,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   def evaluate_view_tree_value(_node, _runtime_model, _eval_context), do: nil
 
-  @spec execute(term()) :: {:ok, map()} | {:error, term()}
+  @spec execute(map()) :: {:ok, map()} | {:error, SemTypes.exec_error()}
   def execute(request) when is_map(request) do
     source_root = map_value(request, :source_root) || "watch"
     rel_path = map_value(request, :rel_path)
@@ -180,12 +182,12 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   def execute(_), do: {:error, :invalid_execution_request}
 
-  @spec map_value(term(), term()) :: term()
+  @spec map_value(map(), atom() | String.t()) :: EvalTypes.runtime_value() | nil
   defp map_value(map, atom_key) when is_map(map) and is_atom(atom_key) do
     Map.get(map, atom_key) || Map.get(map, Atom.to_string(atom_key))
   end
 
-  @spec generic_map_value(term(), String.t()) :: term()
+  @spec generic_map_value(map(), String.t()) :: EvalTypes.runtime_value() | nil
   defp generic_map_value(map, key) when is_map(map) and is_binary(key) do
     map = if Map.has_key?(map, :__struct__), do: Map.from_struct(map), else: map
 
@@ -214,7 +216,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp list_count(value) when is_list(value), do: length(value)
   defp list_count(_), do: 0
 
-  @spec meaningful_init_cmd_count(term()) :: non_neg_integer()
+  @spec meaningful_init_cmd_count(map()) :: non_neg_integer()
   defp meaningful_init_cmd_count(introspect) do
     introspect
     |> map_value(:init_cmd_calls)
@@ -225,7 +227,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     |> Enum.count(&meaningful_init_cmd_call?/1)
   end
 
-  @spec meaningful_init_cmd_call?(term()) :: boolean()
+  @spec meaningful_init_cmd_call?(SemTypes.command_map()) :: boolean()
   defp meaningful_init_cmd_call?(call) when is_map(call) do
     target = map_value(call, :target)
     name = map_value(call, :name)
@@ -234,7 +236,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp meaningful_init_cmd_call?(_call), do: false
 
-  @spec evaluate_update_from_core_ir(term(), term(), term(), term(), term()) ::
+  @spec evaluate_update_from_core_ir(map(), map(), String.t(), SemTypes.message_value(), map()) ::
           {:ok, map(), [map()], atom() | nil, String.t(), map()} | :error
   defp evaluate_update_from_core_ir(core_ir, eval_context, message, message_value, runtime_model)
        when is_map(eval_context) and is_binary(message) and is_map(runtime_model) do
@@ -261,7 +263,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
        ),
        do: :error
 
-  @spec evaluated_init_model_if_static_unresolved(term(), term(), term(), term()) :: map() | nil
+  @spec evaluated_init_model_if_static_unresolved(map(), map(), map(), map() | nil) :: map() | nil
   defp evaluated_init_model_if_static_unresolved(
          core_ir,
          eval_context,
@@ -295,7 +297,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp unresolved_runtime_value?(_value), do: false
 
-  @spec update_function_expr_from_core_ir(term()) :: map() | nil
+  @spec update_function_expr_from_core_ir(map()) :: map() | nil
   defp update_function_expr_from_core_ir(%{modules: modules}) when is_list(modules),
     do: update_function_expr_from_core_ir(%{"modules" => modules})
 
@@ -321,7 +323,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp update_function_expr_from_core_ir(_), do: nil
 
-  @spec evaluated_init_model(term(), term(), term()) :: map() | nil
+  @spec evaluated_init_model(map(), map(), map()) :: map() | nil
   defp evaluated_init_model(_core_ir, eval_context, current_model)
        when is_map(eval_context) and is_map(current_model) do
     launch_context = current_model |> map_value(:launch_context) |> normalize_launch_context()
@@ -346,7 +348,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp evaluated_init_model(_core_ir, _eval_context, _current_model), do: nil
 
-  @spec evaluated_init_model_from_projected_expr(term(), term()) :: map() | nil
+  @spec evaluated_init_model_from_projected_expr(map(), SemTypes.launch_context()) :: map() | nil
   defp evaluated_init_model_from_projected_expr(eval_context, launch_context)
        when is_map(eval_context) and is_map(launch_context) do
     eval_context
@@ -367,7 +369,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp evaluated_init_model_from_projected_expr(_eval_context, _launch_context), do: nil
 
-  @spec init_runtime_commands(term(), map()) :: [map()]
+  @spec init_runtime_commands(map(), map()) :: [SemTypes.command_map()]
   defp init_runtime_commands(eval_context, current_model)
        when is_map(eval_context) and is_map(current_model) do
     launch_context = current_model |> map_value(:launch_context) |> normalize_launch_context()
@@ -391,7 +393,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp init_runtime_commands(_eval_context, _current_model), do: []
 
-  @spec init_runtime_commands_from_projected_expr(term(), term()) :: [map()]
+  @spec init_runtime_commands_from_projected_expr(map(), SemTypes.launch_context()) :: [SemTypes.command_map()]
   defp init_runtime_commands_from_projected_expr(eval_context, launch_context)
        when is_map(eval_context) and is_map(launch_context) do
     eval_context
@@ -421,7 +423,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp init_runtime_commands_from_projected_expr(_eval_context, _launch_context), do: []
 
-  @spec project_cmd_result_expr(term()) :: map() | nil
+  @spec project_cmd_result_expr(map()) :: map() | nil
   defp project_cmd_result_expr(%{"op" => "tuple2", "right" => right}) when is_map(right),
     do: right
 
@@ -437,7 +439,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp project_cmd_result_expr(_expr), do: nil
 
-  @spec evaluate_model_command_result(term(), term(), term()) :: {:ok, term()} | {:error, term()}
+  @spec evaluate_model_command_result(map(), map(), map()) :: EvalTypes.eval_result()
   defp evaluate_model_command_result(expr, env, eval_context)
        when is_map(expr) and is_map(env) and is_map(eval_context) do
     case CoreIREvaluator.evaluate(expr, env, eval_context) do
@@ -452,7 +454,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec function_defs_named(term(), String.t()) :: [map()]
+  @spec function_defs_named(map(), String.t()) :: [map()]
   defp function_defs_named(eval_context, name) when is_map(eval_context) and is_binary(name) do
     eval_context
     |> Map.get(:functions, %{})
@@ -461,7 +463,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     |> Enum.sort_by(&(length(Map.get(&1, :params, [])) != 1))
   end
 
-  @spec project_model_result_expr(term()) :: map() | nil
+  @spec project_model_result_expr(map()) :: map() | nil
   defp project_model_result_expr(%{"op" => :tuple2, "left" => left}) when is_map(left), do: left
   defp project_model_result_expr(%{op: :tuple2, left: left}) when is_map(left), do: left
 
@@ -540,14 +542,14 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec parse_message_value(term(), term()) :: {:ok, term()} | :error
+  @spec parse_message_value(String.t(), SemTypes.message_value()) :: {:ok, SemTypes.message_value()} | :error
   defp parse_message_value(_message, %{} = message_value), do: {:ok, message_value}
   defp parse_message_value(_message, {tag, _payload} = message_value) when is_integer(tag),
     do: {:ok, message_value}
 
   defp parse_message_value(message, _message_value), do: parse_message_value(message)
 
-  @spec parse_message_value(term()) :: {:ok, map()} | :error
+  @spec parse_message_value(String.t()) :: {:ok, map()} | :error
   defp parse_message_value(message) when is_binary(message) do
     constructor =
       message |> branch_constructor_token() |> unqualified_identifier() |> String.trim()
@@ -571,7 +573,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     String.trim_leading(String.replace_prefix(String.trim(message), constructor, ""))
   end
 
-  @spec parse_message_arguments(term(), [String.t()]) :: [String.t()]
+  @spec parse_message_arguments(String.t(), [String.t()]) :: [String.t()]
   defp parse_message_arguments("", acc), do: Enum.reverse(acc)
 
   defp parse_message_arguments(text, acc) when is_binary(text) do
@@ -590,7 +592,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec parse_message_argument_value(String.t()) :: term()
+  @spec parse_message_argument_value(String.t()) :: SemTypes.message_value()
   defp parse_message_argument_value(token) when is_binary(token) do
     trimmed = String.trim(token)
 
@@ -624,7 +626,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec parse_constructor_message_argument(String.t()) :: term()
+  @spec parse_constructor_message_argument(String.t()) :: SemTypes.message_value()
   defp parse_constructor_message_argument(value) when is_binary(value) do
     constructor = branch_constructor_token(value) |> unqualified_identifier() |> String.trim()
 
@@ -641,7 +643,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec parse_numeric_message_argument(String.t()) :: term()
+  @spec parse_numeric_message_argument(String.t()) :: EvalTypes.runtime_value()
   defp parse_numeric_message_argument(trimmed) when is_binary(trimmed) do
     case Integer.parse(trimmed) do
       {value, ""} ->
@@ -655,16 +657,16 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec update_result_model(term()) :: {:ok, map()} | :error
+  @spec update_result_model(EvalTypes.runtime_value() | map() | tuple()) :: {:ok, map()} | :error
   defp update_result_model({left, _right}) when is_map(left), do: {:ok, left}
   defp update_result_model(model) when is_map(model), do: {:ok, model}
   defp update_result_model(_), do: :error
 
-  @spec update_result_commands(term()) :: [map()]
+  @spec update_result_commands(EvalTypes.runtime_value() | tuple()) :: [SemTypes.command_map()]
   defp update_result_commands({_model, command}), do: flatten_runtime_commands(command)
   defp update_result_commands(_), do: []
 
-  @spec flatten_runtime_commands(term()) :: [map()]
+  @spec flatten_runtime_commands(EvalTypes.runtime_value()) :: [SemTypes.command_map()]
   defp flatten_runtime_commands(%{"kind" => "cmd.none"}), do: []
   defp flatten_runtime_commands(%{kind: "cmd.none"}), do: []
 
@@ -768,7 +770,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     |> Kernel.||("")
   end
 
-  @spec take_single_argument(term()) :: {String.t(), String.t()}
+  @spec take_single_argument(String.t()) :: {String.t(), String.t()}
   defp take_single_argument(<<first, _::binary>> = text) when first in [?(, ?[, ?{] do
     take_group_argument(text)
   end
@@ -811,13 +813,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec take_group_argument(term()) :: term()
+  @spec take_group_argument(String.t()) :: {String.t(), String.t()}
   defp take_group_argument(<<open, rest::binary>>) when open in [?(, ?[, ?{] do
     closer = matching_closer(open)
     consume_group(rest, [closer], <<open>>)
   end
 
-  @spec consume_group(term(), term(), term()) :: term()
+  @spec consume_group(String.t(), [integer()], String.t()) :: {String.t(), String.t()}
   defp consume_group(<<>>, _stack, acc), do: {acc, ""}
   defp consume_group(rest, [], acc), do: {acc, rest}
 
@@ -841,7 +843,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     consume_group(tail, next_stack, <<acc::binary, char>>)
   end
 
-  @spec matching_closer(term()) :: integer() | nil
+  @spec matching_closer(integer()) :: integer() | nil
   defp matching_closer(?(), do: ?)
   defp matching_closer(?[), do: ?]
   defp matching_closer(?{), do: ?}
@@ -855,7 +857,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     |> Kernel.||(value)
   end
 
-  @spec derive_view_tree(term(), term(), term(), term(), term(), term(), term()) :: term()
+  @spec derive_view_tree(map(), map(), map(), String.t(), String.t() | nil, atom() | nil, map()) :: map()
   defp derive_view_tree(
          current_view_tree,
          introspect,
@@ -910,7 +912,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec evaluate_runtime_view_tree(term(), term()) :: term()
+  @spec evaluate_runtime_view_tree(map(), map()) :: map()
   defp evaluate_runtime_view_tree(eval_context, runtime_model)
        when is_map(eval_context) and is_map(runtime_model) do
     expr = %{"op" => :qualified_call, "target" => "Main.view", "args" => [runtime_model]}
@@ -926,7 +928,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp evaluate_runtime_view_tree(_eval_context, _runtime_model), do: %{}
 
-  @spec normalize_runtime_view_tree(term()) :: term()
+  @spec normalize_runtime_view_tree(EvalTypes.runtime_value()) :: map()
   defp normalize_runtime_view_tree(value) do
     case normalize_pebble_ui_value(value) do
       {:ok, node} -> node
@@ -934,7 +936,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec normalize_runtime_view_tree_fallback(term()) :: term()
+  @spec normalize_runtime_view_tree_fallback(EvalTypes.runtime_value()) :: map()
   defp normalize_runtime_view_tree_fallback(%{} = value) do
     type = value["type"] || value[:type]
     children = value["children"] || value[:children]
@@ -1024,7 +1026,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp normalize_runtime_view_tree_fallback(_),
     do: %{"type" => "unknown", "label" => "", "children" => []}
 
-  @spec normalize_runtime_text_fields(term()) :: term()
+  @spec normalize_runtime_text_fields(map() | list() | term()) :: map() | list() | term()
   defp normalize_runtime_text_fields(%{} = node) do
     node
     |> normalize_runtime_text_field("text")
@@ -1037,7 +1039,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp normalize_runtime_text_fields(value), do: value
 
-  @spec normalize_runtime_text_field(map(), term()) :: map()
+  @spec normalize_runtime_text_field(map(), String.t() | atom()) :: map()
   defp normalize_runtime_text_field(node, key) when is_map(node) do
     if Map.has_key?(node, key) do
       case normalize_text_value(Map.get(node, key)) do
@@ -1118,7 +1120,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp promote_runtime_node_args(node), do: node
 
-  @spec put_runtime_node_arg(map(), String.t(), term()) :: map()
+  @spec put_runtime_node_arg(map(), String.t(), EvalTypes.runtime_value()) :: map()
   defp put_runtime_node_arg(node, "text", value) when is_map(node) do
     Map.put(node, "text", normalize_text_value(value) || "")
   end
@@ -1135,7 +1137,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     Map.put(node, field, value)
   end
 
-  @spec runtime_expr_scalar(term()) :: term()
+  @spec runtime_expr_scalar(EvalTypes.runtime_value()) :: EvalTypes.runtime_value()
   defp runtime_expr_scalar(%{"type" => "expr"} = node) do
     cond do
       Map.has_key?(node, "value") -> Map.get(node, "value")
@@ -1154,7 +1156,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp runtime_expr_scalar(_node), do: nil
 
-  @spec runtime_node_arg_fields(term()) :: [String.t()]
+  @spec runtime_node_arg_fields(String.t() | atom()) :: [String.t()]
   defp runtime_node_arg_fields(type) do
     case to_string(type || "") do
       "clear" -> ["color"]
@@ -1176,7 +1178,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec normalize_pebble_ui_value(term()) :: {:ok, map()} | :error
+  @spec normalize_pebble_ui_value(EvalTypes.runtime_value()) :: {:ok, map()} | :error
   defp normalize_pebble_ui_value(%{"type" => type, "children" => children} = value)
        when is_binary(type) and is_list(children) and type not in ["tuple2", "List"] do
     {:ok, normalize_runtime_view_tree_fallback(value)}
@@ -1197,7 +1199,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec normalize_pebble_window_node(term()) :: {:ok, map()} | :error
+  @spec normalize_pebble_window_node(EvalTypes.runtime_value()) :: {:ok, map()} | :error
   defp normalize_pebble_window_node(value) do
     with {:ok, 1001, payload} <- tagged_constructor_value(value),
          {:ok, [id, layers]} <- constructor_payload_args(payload, 2),
@@ -1215,7 +1217,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec normalize_pebble_layer_node(term()) :: {:ok, map()} | :error
+  @spec normalize_pebble_layer_node(EvalTypes.runtime_value()) :: {:ok, map()} | :error
   defp normalize_pebble_layer_node(value) do
     with {:ok, 1002, payload} <- tagged_constructor_value(value),
          {:ok, [id, ops]} <- constructor_payload_args(payload, 2),
@@ -1233,7 +1235,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec normalize_pebble_render_op(term()) :: {:ok, map()} | :error
+  @spec normalize_pebble_render_op(EvalTypes.runtime_value()) :: {:ok, map()} | :error
   defp normalize_pebble_render_op(value) do
     case normalize_pebble_context_group(value) do
       {:ok, node} -> {:ok, node}
@@ -1241,7 +1243,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec normalize_pebble_context_group(term()) :: {:ok, map()} | :error
+  @spec normalize_pebble_context_group(EvalTypes.runtime_value()) :: {:ok, map()} | :error
   defp normalize_pebble_context_group(value) do
     with {:ok, 19, payload} <- tagged_constructor_value(value),
          {:ok, [settings, ops]} <- constructor_payload_args(payload, 2),
@@ -1255,7 +1257,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec normalize_pebble_context_style([term()]) :: map()
+  @spec normalize_pebble_context_style([EvalTypes.runtime_value()]) :: map()
   defp normalize_pebble_context_style(settings) when is_list(settings) do
     Enum.reduce(settings, %{}, fn setting, acc ->
       case normalize_pebble_context_setting(setting) do
@@ -1265,7 +1267,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end)
   end
 
-  @spec normalize_pebble_context_setting(term()) :: {String.t(), term()} | nil
+  @spec normalize_pebble_context_setting(EvalTypes.runtime_value()) :: {String.t(), EvalTypes.runtime_value()} | nil
   defp normalize_pebble_context_setting(setting) do
     with {:ok, tag, value} <- tagged_constructor_value(setting),
          key when is_binary(key) <- context_setting_key(tag) do
@@ -1275,7 +1277,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec context_setting_key(term()) :: String.t() | nil
+  @spec context_setting_key(EvalTypes.runtime_value()) :: String.t() | nil
   defp context_setting_key(1), do: "stroke_width"
   defp context_setting_key(2), do: "antialiased"
   defp context_setting_key(3), do: "stroke_color"
@@ -1284,14 +1286,14 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp context_setting_key(6), do: "compositing_mode"
   defp context_setting_key(_), do: nil
 
-  @spec normalized_context_setting_value(term()) :: term()
+  @spec normalized_context_setting_value(EvalTypes.runtime_value()) :: EvalTypes.runtime_value()
   defp normalized_context_setting_value(value) when is_integer(value) or is_boolean(value),
     do: value
 
   defp normalized_context_setting_value(value),
     do: normalized_expr_value(normalize_runtime_view_tree_fallback(value))
 
-  @spec normalize_pebble_ui_list([term()], (term() -> {:ok, map()} | :error)) ::
+  @spec normalize_pebble_ui_list([EvalTypes.runtime_value()], SemTypes.pebble_ui_normalizer()) ::
           {:ok, [map()]} | :error
   defp normalize_pebble_ui_list(values, fun) when is_list(values) and is_function(fun, 1) do
     values
@@ -1307,11 +1309,11 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec tagged_tuple(term()) :: {:ok, integer(), term()} | :error
+  @spec tagged_tuple(EvalTypes.runtime_value()) :: SemTypes.tagged_value()
   defp tagged_tuple({tag, payload}) when is_integer(tag), do: {:ok, tag, payload}
   defp tagged_tuple(_value), do: :error
 
-  @spec tagged_constructor_value(term()) :: {:ok, integer(), term()} | :error
+  @spec tagged_constructor_value(EvalTypes.runtime_value()) :: SemTypes.tagged_value()
   defp tagged_constructor_value(value) do
     case tagged_tuple(value) do
       {:ok, tag, payload} ->
@@ -1322,7 +1324,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec normalized_tagged_tuple(term()) :: {:ok, integer(), term()} | :error
+  @spec normalized_tagged_tuple(EvalTypes.runtime_value()) :: SemTypes.tagged_value()
   defp normalized_tagged_tuple(%{"type" => "tuple2", "children" => [tag_node, payload]}) do
     case normalized_expr_value(tag_node) do
       tag when is_integer(tag) -> {:ok, tag, payload}
@@ -1339,12 +1341,12 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp normalized_tagged_tuple(_value), do: :error
 
-  @spec normalized_expr_value(term()) :: term()
+  @spec normalized_expr_value(EvalTypes.runtime_value()) :: EvalTypes.runtime_value()
   defp normalized_expr_value(%{"type" => "expr"} = node), do: Map.get(node, "value")
   defp normalized_expr_value(%{type: "expr"} = node), do: Map.get(node, :value)
   defp normalized_expr_value(_node), do: nil
 
-  @spec constructor_list_values(term()) :: {:ok, [term()]} | :error
+  @spec constructor_list_values(EvalTypes.runtime_value()) :: SemTypes.tagged_values()
   defp constructor_list_values(values) when is_list(values), do: {:ok, values}
 
   defp constructor_list_values(%{"type" => "List", "children" => children})
@@ -1356,7 +1358,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp constructor_list_values(_values), do: :error
 
-  @spec constructor_payload_args(term(), non_neg_integer()) :: {:ok, [term()]} | :error
+  @spec constructor_payload_args(EvalTypes.runtime_value(), non_neg_integer()) :: SemTypes.tagged_values()
   defp constructor_payload_args(payload, 1), do: {:ok, [payload]}
 
   defp constructor_payload_args(payload, arity) when is_integer(arity) and arity > 1 do
@@ -1366,8 +1368,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec flatten_constructor_payload(term(), non_neg_integer(), [term()]) ::
-          {:ok, [term()]} | :error
+  @spec flatten_constructor_payload(EvalTypes.runtime_value(), non_neg_integer(), [EvalTypes.runtime_value()]) ::
+          {:ok, [EvalTypes.runtime_value()]} | :error
   defp flatten_constructor_payload(value, 1, acc), do: {:ok, Enum.reverse([value | acc])}
 
   defp flatten_constructor_payload({left, right}, remaining, acc) when remaining > 1 do
@@ -1390,7 +1392,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp flatten_constructor_payload(_value, _remaining, _acc), do: :error
 
-  @spec evaluator_context(term(), term()) :: term()
+  @spec evaluator_context(map(), String.t() | nil) :: map()
   defp evaluator_context(core_ir, module_override) do
     module_name =
       case module_override do
@@ -1408,7 +1410,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     }
   end
 
-  @spec evaluator_entry_module(term()) :: String.t()
+  @spec evaluator_entry_module(map()) :: String.t()
   defp evaluator_entry_module(core_ir) when is_map(core_ir) do
     modules = generic_map_value(core_ir, "modules")
 
@@ -1432,7 +1434,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp evaluator_entry_module(_core_ir), do: "Main"
 
-  @spec module_name_with_decl(term(), String.t()) :: String.t() | nil
+  @spec module_name_with_decl(map(), String.t()) :: String.t() | nil
   defp module_name_with_decl(module, declaration_name) when is_map(module) do
     declarations = generic_map_value(module, "declarations") || []
 
@@ -1443,7 +1445,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp module_name_with_decl(_module, _declaration_name), do: nil
 
-  @spec module_name(term()) :: String.t() | nil
+  @spec module_name(map()) :: String.t() | nil
   defp module_name(module) when is_map(module) do
     case generic_map_value(module, "name") do
       name when is_binary(name) and name != "" -> name
@@ -1453,7 +1455,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp module_name(_module), do: nil
 
-  @spec normalize_runtime_model_by_declared_type(term(), term()) :: term()
+  @spec normalize_runtime_model_by_declared_type(map(), map()) :: map()
   defp normalize_runtime_model_by_declared_type(runtime_model, eval_context)
        when is_map(runtime_model) and is_map(eval_context) do
     CoreIREvaluator.normalize_value_by_type(runtime_model, "Model", eval_context)
@@ -1461,7 +1463,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp normalize_runtime_model_by_declared_type(runtime_model, _eval_context), do: runtime_model
 
-  @spec enrich_runtime_model_for_view(term(), term()) :: term()
+  @spec enrich_runtime_model_for_view(map(), map()) :: map()
   defp enrich_runtime_model_for_view(runtime_model, current_model)
        when is_map(runtime_model) and is_map(current_model) do
     _current_model = current_model
@@ -1473,7 +1475,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp enrich_runtime_model_for_view(_runtime_model, _current_model), do: %{}
 
-  @spec source_core_ir_fallback(term(), term(), term()) :: term()
+  @spec source_core_ir_fallback(map() | nil, String.t(), String.t() | nil) :: map() | nil
   defp source_core_ir_fallback(core_ir, _source, _rel_path) when is_map(core_ir), do: core_ir
 
   defp source_core_ir_fallback(_core_ir, source, rel_path)
@@ -1503,7 +1505,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp source_core_ir_fallback(_core_ir, _source, _rel_path), do: nil
 
-  @spec normalize_launch_context(term()) :: map()
+  @spec normalize_launch_context(SemTypes.launch_context()) :: SemTypes.launch_context()
   defp normalize_launch_context(context) when is_map(context) do
     reason =
       case map_value(context, :reason) do
@@ -1549,13 +1551,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     normalize_launch_context(%{})
   end
 
-  @spec launch_reason_value(term()) :: map()
+  @spec launch_reason_value(String.t()) :: map()
   defp launch_reason_value(value) when is_binary(value) and value != "",
     do: %{"ctor" => value, "args" => []}
 
   defp launch_reason_value(_value), do: %{"ctor" => "LaunchUser", "args" => []}
 
-  @spec derive_view_output(term(), term(), term()) :: term()
+  @spec derive_view_output(map(), map(), map()) :: SemTypes.view_output()
   defp derive_view_output(view_tree, runtime_model, eval_context)
        when is_map(view_tree) and is_map(runtime_model) and is_map(eval_context) do
     view_output_from_tree(view_tree, runtime_model, eval_context)
@@ -1563,7 +1565,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp derive_view_output(_view_tree, _runtime_model, _eval_context), do: []
 
-  @spec view_output_from_tree(term(), term(), term()) :: term()
+  @spec view_output_from_tree(map(), map(), map()) :: SemTypes.view_output()
   defp view_output_from_tree(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     type =
@@ -1601,7 +1603,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp view_output_from_tree(_node, _runtime_model, _eval_context), do: []
 
-  @spec view_output_style_rows(term()) :: [map()]
+  @spec view_output_style_rows(map()) :: [SemTypes.view_output_row()]
   defp view_output_style_rows(node) when is_map(node) do
     style = Map.get(node, "style") || Map.get(node, :style) || %{}
 
@@ -1631,7 +1633,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec style_value(map(), String.t()) :: term()
+  @spec style_value(map(), String.t()) :: EvalTypes.runtime_value() | nil
   defp style_value(style, key) when is_map(style) and is_binary(key) do
     case Map.fetch(style, key) do
       {:ok, value} ->
@@ -1648,7 +1650,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec view_output_from_node(term(), term(), term()) :: term()
+  @spec view_output_from_node(map(), map(), map()) :: SemTypes.view_output()
   defp view_output_from_node(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     type =
@@ -1943,7 +1945,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp view_output_from_node(_node, _runtime_model, _eval_context), do: []
 
-  @spec put_view_output_source(term(), term()) :: term()
+  @spec put_view_output_source(SemTypes.view_output_row(), map()) :: SemTypes.view_output_row()
   defp put_view_output_source(row, node) when is_map(row) and is_map(node) do
     case Map.get(node, "source") || Map.get(node, :source) do
       %{} = source -> Map.put(row, "source", source)
@@ -1953,7 +1955,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp put_view_output_source(row, _node), do: row
 
-  @spec annotate_view_output_sources([term()], map()) :: [term()]
+  @spec annotate_view_output_sources(SemTypes.view_output(), map()) :: SemTypes.view_output()
   defp annotate_view_output_sources(rows, introspect) when is_list(rows) and is_map(introspect) do
     source_locations =
       map_value(introspect, :view_source_locations)
@@ -2007,14 +2009,14 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp increment_view_output_counter(counters, _kind), do: counters
 
-  @spec source_location_at(term(), non_neg_integer()) :: map() | nil
+  @spec source_location_at([map()], non_neg_integer()) :: map() | nil
   defp source_location_at(locations, index) when is_list(locations) and locations != [] do
     Enum.at(locations, index) || List.last(locations)
   end
 
   defp source_location_at(_locations, _index), do: nil
 
-  @spec node_int_args(term(), term(), term()) :: term()
+  @spec node_int_args(map(), map(), map()) :: [integer()]
   defp node_int_args(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     label = (node["label"] || node[:label] || "") |> to_string()
@@ -2054,7 +2056,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     |> Enum.filter(&is_integer/1)
   end
 
-  @spec min_int_arity_for_node(term()) :: non_neg_integer()
+  @spec min_int_arity_for_node(map()) :: non_neg_integer()
   defp min_int_arity_for_node(node) when is_map(node) do
     type = to_string(node["type"] || node[:type] || "")
 
@@ -2080,7 +2082,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec require_ints(term(), term()) :: {:ok, [integer()]} | :error
+  @spec require_ints([integer()], non_neg_integer()) :: {:ok, [integer()]} | :error
   defp require_ints(values, required)
        when is_list(values) and is_integer(required) and required > 0 do
     if length(values) >= required do
@@ -2093,7 +2095,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp require_ints(_values, _required), do: :error
 
-  @spec unresolved_view_output_row(term(), term(), term(), term()) :: term()
+  @spec unresolved_view_output_row(map(), String.t(), [integer()], non_neg_integer()) :: SemTypes.view_output_row()
   defp unresolved_view_output_row(node, node_type, ints, required_arity)
        when is_map(node) and is_binary(node_type) and is_list(ints) and is_integer(required_arity) do
     %{
@@ -2105,7 +2107,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     }
   end
 
-  @spec clear_args_from_node(term(), term(), term(), term()) :: term()
+  @spec clear_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args()
   defp clear_args_from_node(node, ints, runtime_model, eval_context)
        when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
     case require_ints(ints, 1) do
@@ -2128,7 +2130,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp clear_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
 
-  @spec line_args_from_node(term(), term(), term(), term()) :: term()
+  @spec line_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args()
   defp line_args_from_node(node, ints, runtime_model, eval_context)
        when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
     case require_ints(ints, 5) do
@@ -2155,7 +2157,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp line_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
 
-  @spec circle_args_from_node(term(), term(), term(), term()) :: term()
+  @spec circle_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args()
   defp circle_args_from_node(node, ints, runtime_model, eval_context)
        when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
     case require_ints(ints, 4) do
@@ -2184,7 +2186,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp circle_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
 
-  @spec rect_color_args_from_node(term(), term(), term(), term()) :: term()
+  @spec rect_color_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args()
   defp rect_color_args_from_node(node, ints, runtime_model, eval_context)
        when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
     case require_ints(ints, 5) do
@@ -2211,7 +2213,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp rect_color_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
 
-  @spec round_rect_args_from_node(term(), term(), term(), term()) :: term()
+  @spec round_rect_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args()
   defp round_rect_args_from_node(node, ints, runtime_model, eval_context)
        when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
     case require_ints(ints, 6) do
@@ -2240,7 +2242,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp round_rect_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
 
-  @spec rect_angle_args_from_node(term(), term(), term(), term()) :: term()
+  @spec rect_angle_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args()
   defp rect_angle_args_from_node(node, ints, runtime_model, eval_context)
        when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
     case require_ints(ints, 6) do
@@ -2269,7 +2271,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp rect_angle_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
 
-  @spec text_int_args_from_node(term(), term(), term(), term()) :: term()
+  @spec text_int_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args()
   defp text_int_args_from_node(node, ints, runtime_model, eval_context)
        when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
     case require_ints(ints, 4) do
@@ -2297,7 +2299,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp text_int_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
 
-  @spec text_label_args_from_node(term(), term(), term(), term()) :: term()
+  @spec text_label_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args_mixed()
   defp text_label_args_from_node(node, ints, runtime_model, eval_context)
        when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
     case require_ints(ints, 3) do
@@ -2333,7 +2335,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp text_label_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
 
-  @spec eval_view_font_id(term(), term(), term()) :: integer() | nil
+  @spec eval_view_font_id(map(), map(), map()) :: integer() | nil
   defp eval_view_font_id(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     case eval_view_int(node, runtime_model, eval_context) do
@@ -2365,7 +2367,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp eval_view_font_id(_node, _runtime_model, _eval_context), do: nil
 
-  @spec rect_quad_from_node(term(), term(), term()) :: {:ok, [integer()]} | :error
+  @spec rect_quad_from_node(map(), map(), map()) :: SemTypes.draw_args()
   defp rect_quad_from_node(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     type = to_string(node["type"] || node[:type] || "")
@@ -2406,7 +2408,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp rect_quad_from_node(_node, _runtime_model, _eval_context), do: :error
 
-  @spec path_args_from_node(term(), term(), term()) :: term()
+  @spec path_args_from_node(map(), map(), map()) :: SemTypes.path_args()
   defp path_args_from_node(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     children =
@@ -2436,7 +2438,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp path_args_from_node(_node, _runtime_model, _eval_context), do: :error
 
-  @spec path_points_from_node(term(), term(), term()) :: term()
+  @spec path_points_from_node(map(), map(), map()) :: SemTypes.point_list()
   defp path_points_from_node(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     type = to_string(node["type"] || node[:type] || "")
@@ -2466,7 +2468,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp path_points_from_node(_node, _runtime_model, _eval_context), do: :error
 
-  @spec point_pair_from_node(term(), term(), term()) :: term()
+  @spec point_pair_from_node(map(), map(), map()) :: SemTypes.point_pair()
   defp point_pair_from_node(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     type = to_string(node["type"] || node[:type] || "")
@@ -2537,7 +2539,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp point_pair_from_node(_node, _runtime_model, _eval_context), do: :error
 
-  @spec field_value_int(term(), term(), term()) :: integer() | nil
+  @spec field_value_int(map() | nil, map(), map()) :: integer() | nil
   defp field_value_int(field_node, runtime_model, eval_context)
        when is_map(field_node) and is_map(runtime_model) and is_map(eval_context) do
     case node_children(field_node) do
@@ -2548,7 +2550,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp field_value_int(_field_node, _runtime_model, _eval_context), do: nil
 
-  @spec eval_view_color(term(), term(), term()) :: integer() | nil
+  @spec eval_view_color(map(), map(), map()) :: integer() | nil
   defp eval_view_color(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     case eval_view_int(node, runtime_model, eval_context) do
@@ -2574,7 +2576,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp eval_view_color(_node, _runtime_model, _eval_context), do: nil
 
-  @spec node_children(term()) :: [map()]
+  @spec node_children(map()) :: [map()]
   defp node_children(node) when is_map(node) do
     case node["children"] || node[:children] do
       list when is_list(list) ->
@@ -2609,7 +2611,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec eval_view_int(term(), term(), term()) :: integer() | nil
+  @spec eval_view_int(map(), map(), map()) :: integer() | nil
   defp eval_view_int(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     val = node["value"] || node[:value]
@@ -2634,7 +2636,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp eval_view_int(_node, _runtime_model, _eval_context), do: nil
 
-  @spec eval_view_int_fallback(term(), term(), term()) :: term()
+  @spec eval_view_int_fallback(map(), map(), map()) :: integer() | nil
   defp eval_view_int_fallback(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     type = to_string(node["type"] || node[:type] || "")
@@ -2686,7 +2688,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp eval_view_int_fallback(_node, _runtime_model, _eval_context), do: nil
 
-  @spec eval_view_text(term(), term(), term()) :: String.t() | nil
+  @spec eval_view_text(map(), map(), map()) :: String.t() | nil
   defp eval_view_text(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     value = node["value"] || node[:value]
@@ -2714,7 +2716,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp eval_view_text(_node, _runtime_model, _eval_context), do: nil
 
-  @spec eval_tree_expr_value(term(), term(), term()) :: term()
+  @spec eval_tree_expr_value(map(), map(), map()) :: EvalTypes.runtime_value() | nil
   defp eval_tree_expr_value(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     case tree_node_to_expr(node) do
@@ -2733,7 +2735,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp eval_tree_expr_value(_node, _runtime_model, _eval_context), do: nil
 
-  @spec normalize_text_value(term()) :: String.t() | nil
+  @spec normalize_text_value(EvalTypes.runtime_value()) :: String.t() | nil
   defp normalize_text_value(value) when is_binary(value) do
     trimmed = String.trim(value)
     if trimmed != "", do: value, else: nil
@@ -2756,7 +2758,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp normalize_text_value(_value), do: nil
 
-  @spec model_value_by_key(map(), String.t()) :: term()
+  @spec model_value_by_key(map(), String.t()) :: EvalTypes.runtime_value() | nil
   defp model_value_by_key(model, key) when is_map(model) and is_binary(key) do
     Map.get(model, key) ||
       Enum.find_value(model, fn
@@ -2768,7 +2770,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       end)
   end
 
-  @spec eval_tree_expr_int(term(), term(), term()) :: term()
+  @spec eval_tree_expr_int(map(), map(), map()) :: integer() | nil
   defp eval_tree_expr_int(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     case tree_node_to_expr(node) do
@@ -2788,7 +2790,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp eval_tree_expr_int(_node, _runtime_model, _eval_context), do: nil
 
-  @spec tree_node_to_expr(term()) :: term()
+  @spec tree_node_to_expr(map()) :: SemTypes.expr()
   defp tree_node_to_expr(node) when is_map(node) do
     type = to_string(node["type"] || node[:type] || "")
     label = to_string(node["label"] || node[:label] || "")
@@ -2857,7 +2859,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp tree_node_to_expr(_), do: nil
 
-  @spec eval_int_call(term(), term()) :: term()
+  @spec eval_int_call(String.t(), [integer() | nil]) :: integer() | nil
   defp eval_int_call("__add__", [a, b]), do: a + b
   defp eval_int_call("__sub__", [a, b]), do: a - b
   defp eval_int_call("__mul__", [a, b]), do: a * b
@@ -2894,13 +2896,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp eval_int_call("min", [a, b]), do: min(a, b)
   defp eval_int_call(_name, _args), do: nil
 
-  @spec extract_ints(term()) :: term()
+  @spec extract_ints(String.t()) :: [integer()]
   defp extract_ints(text) when is_binary(text) do
     Regex.scan(~r/-?\d+/, text)
     |> Enum.map(fn [raw] -> String.to_integer(raw) end)
   end
 
-  @spec text_label_from_node(term(), term(), term()) :: term()
+  @spec text_label_from_node(map(), map(), map()) :: String.t()
   defp text_label_from_node(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
     field_text = Map.get(node, "text") || Map.get(node, :text)
@@ -2937,7 +2939,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp text_label_from_node(_node, _runtime_model, _eval_context), do: "Label"
 
-  @spec text_args_from_node(term(), term(), term(), term()) :: term()
+  @spec text_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args_mixed()
   defp text_args_from_node(node, ints, runtime_model, eval_context)
        when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
     case text_box_int_args_from_node(node, ints, runtime_model, eval_context) do
@@ -3092,13 +3094,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp text_overflow_name(2), do: "fill"
   defp text_overflow_name(_), do: "word_wrap"
 
-  @spec view_tree_source(term()) :: term()
+  @spec view_tree_source(String.t() | nil) :: String.t()
   defp view_tree_source(message) when is_binary(message) and message != "",
     do: "step_derived_view_tree"
 
   defp view_tree_source(_), do: "parser_view_tree"
 
-  @spec protocol_events(term(), term()) :: term()
+  @spec protocol_events(String.t(), [SemTypes.command_map()]) :: [map()]
   defp protocol_events(_source_root, commands) when is_list(commands) do
     commands
     |> Enum.filter(&protocol_command?/1)
@@ -3107,7 +3109,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp protocol_events(_source_root, _commands), do: []
 
-  @spec protocol_command?(term()) :: boolean()
+  @spec protocol_command?(SemTypes.command_map()) :: boolean()
   defp protocol_command?(%{"kind" => "protocol"}), do: true
   defp protocol_command?(%{kind: "protocol"}), do: true
   defp protocol_command?(_), do: false
@@ -3138,7 +3140,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec package_followup_messages(term(), term()) :: [map()]
+  @spec package_followup_messages([SemTypes.command_map()], String.t()) :: [map()]
   defp package_followup_messages(commands, source_root)
        when is_list(commands) and is_binary(source_root) do
     commands
@@ -3233,47 +3235,47 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp package_followup_messages(_commands, _source_root), do: []
 
-  @spec http_command?(term()) :: boolean()
+  @spec http_command?(SemTypes.command_map()) :: boolean()
   defp http_command?(%{"kind" => "http"}), do: true
   defp http_command?(%{kind: "http"}), do: true
   defp http_command?(_), do: false
 
-  @spec random_command?(term()) :: boolean()
+  @spec random_command?(SemTypes.command_map()) :: boolean()
   defp random_command?(%{"kind" => "cmd.random.generate"}), do: true
   defp random_command?(%{kind: "cmd.random.generate"}), do: true
   defp random_command?(_), do: false
 
-  @spec storage_read_command?(term()) :: boolean()
+  @spec storage_read_command?(SemTypes.command_map()) :: boolean()
   defp storage_read_command?(%{"kind" => "cmd.storage.read_" <> _rest}), do: true
   defp storage_read_command?(%{kind: "cmd.storage.read_" <> _rest}), do: true
   defp storage_read_command?(_), do: false
 
-  @spec storage_write_command?(term()) :: boolean()
+  @spec storage_write_command?(SemTypes.command_map()) :: boolean()
   defp storage_write_command?(%{"kind" => "cmd.storage.write_" <> _rest}), do: true
   defp storage_write_command?(%{kind: "cmd.storage.write_" <> _rest}), do: true
   defp storage_write_command?(_), do: false
 
-  @spec storage_delete_command?(term()) :: boolean()
+  @spec storage_delete_command?(SemTypes.command_map()) :: boolean()
   defp storage_delete_command?(%{"kind" => "cmd.storage.delete"}), do: true
   defp storage_delete_command?(%{kind: "cmd.storage.delete"}), do: true
   defp storage_delete_command?(_), do: false
 
-  @spec device_command?(term()) :: boolean()
+  @spec device_command?(SemTypes.command_map()) :: boolean()
   defp device_command?(%{"kind" => "cmd.device." <> _rest}), do: true
   defp device_command?(%{kind: "cmd.device." <> _rest}), do: true
   defp device_command?(_), do: false
 
-  @spec task_command?(term()) :: boolean()
+  @spec task_command?(SemTypes.command_map()) :: boolean()
   defp task_command?(%{"kind" => "cmd.task." <> _rest}), do: true
   defp task_command?(%{kind: "cmd.task." <> _rest}), do: true
   defp task_command?(_), do: false
 
-  @spec unsupported_command?(term()) :: boolean()
+  @spec unsupported_command?(SemTypes.command_map()) :: boolean()
   defp unsupported_command?(%{"kind" => "cmd.unsupported"}), do: true
   defp unsupported_command?(%{kind: "cmd.unsupported"}), do: true
   defp unsupported_command?(_), do: false
 
-  @spec http_command_display(term()) :: String.t()
+  @spec http_command_display(SemTypes.command_map()) :: String.t()
   defp http_command_display(command) when is_map(command) do
     expect = map_value(command, :expect)
     to_msg = if is_map(expect), do: map_value(expect, :to_msg), else: nil
@@ -3290,14 +3292,14 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp http_command_display(_), do: "elm/http"
 
-  @spec callable_display_name(term()) :: String.t()
+  @spec callable_display_name(EvalTypes.runtime_value()) :: String.t()
   defp callable_display_name({:function_ref, name}) when is_binary(name),
     do: unqualified_identifier(name)
 
   defp callable_display_name(name) when is_binary(name), do: unqualified_identifier(name)
   defp callable_display_name(_), do: ""
 
-  @spec view_tree_node_count(term()) :: term()
+  @spec view_tree_node_count(map()) :: non_neg_integer()
   defp view_tree_node_count(%{"children" => children}) when is_list(children) do
     1 +
       Enum.reduce(children, 0, fn child, acc ->
@@ -3315,7 +3317,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp view_tree_node_count(%{}), do: 1
   defp view_tree_node_count(_), do: 0
 
-  @spec stable_term_sha256(term()) :: term()
+  @spec stable_term_sha256(EvalTypes.runtime_value()) :: String.t()
   defp stable_term_sha256(term) do
     :crypto.hash(:sha256, :erlang.term_to_binary(term))
     |> Base.encode16(case: :lower)

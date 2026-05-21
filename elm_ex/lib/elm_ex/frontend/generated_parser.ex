@@ -29,6 +29,7 @@ defmodule ElmEx.Frontend.GeneratedParser do
 
   alias ElmEx.Frontend.GeneratedContractBuilder
   alias ElmEx.Frontend.AstContract
+  alias ElmEx.Types
 
   @typep token() :: tuple()
   @typep tokens() :: [token()]
@@ -279,7 +280,7 @@ defmodule ElmEx.Frontend.GeneratedParser do
   defp token_line(_), do: 1
 
   @spec extract_header_metadata(tokens()) :: %{
-          module_exposing: term(),
+          module_exposing: Types.module_exposing(),
           import_entries: [map()],
           port_module: boolean(),
           ports: [String.t()]
@@ -367,7 +368,6 @@ defmodule ElmEx.Frontend.GeneratedParser do
     take_module_path(rest, acc ++ [segment])
   end
 
-  defp take_module_path(rest, []), do: {[], rest}
   defp take_module_path(rest, acc), do: {acc, rest}
 
   @spec normalize_metadata_exposing_tail(tokens()) :: tokens()
@@ -461,7 +461,8 @@ defmodule ElmEx.Frontend.GeneratedParser do
     end)
   end
 
-  @spec parse_exposing_from_lines(term(), term()) :: term()
+  @spec parse_exposing_from_lines([String.t() | [token()]], non_neg_integer()) ::
+          Types.module_exposing()
   defp parse_exposing_from_lines(lines, start_idx) when is_list(lines) do
     line = Enum.at(lines, start_idx, [])
     rest_lines = lines |> Enum.drop(start_idx + 1) |> Enum.take(120)
@@ -475,7 +476,8 @@ defmodule ElmEx.Frontend.GeneratedParser do
     end
   end
 
-  @spec parse_exposing_from_open(term(), term(), term()) :: term()
+  @spec parse_exposing_from_open(tokens(), [tokens()], non_neg_integer()) ::
+          Types.module_exposing()
   defp parse_exposing_from_open(tokens_after_open, rest_lines, used_lines) do
     case take_balanced_tokens(tokens_after_open, 1, []) do
       {:ok, inner} ->
@@ -550,7 +552,7 @@ defmodule ElmEx.Frontend.GeneratedParser do
     end
   end
 
-  @spec parse_exposing_tokens(term()) :: term()
+  @spec parse_exposing_tokens(tokens()) :: Types.module_exposing()
   defp parse_exposing_tokens([{:dotdot, _}]), do: ".."
 
   defp parse_exposing_tokens(tokens) when is_list(tokens) do

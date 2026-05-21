@@ -12,8 +12,10 @@ defmodule Mix.Tasks.Ide.AcpAgent do
   alias Ide.Mcp.Protocol
   alias Ide.Settings
 
+  @type mix_task_args :: [String.t()]
+
   @impl Mix.Task
-  @spec run(term()) :: term()
+  @spec run(mix_task_args()) :: :ok
   def run(args) do
     Mix.Task.run("app.start")
 

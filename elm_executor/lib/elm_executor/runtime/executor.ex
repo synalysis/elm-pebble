@@ -7,7 +7,11 @@ defmodule ElmExecutor.Runtime.Executor do
   preserving backend metadata/versioning.
   """
 
-  @spec execute(map(), map(), map()) :: {:ok, map()} | {:error, term()}
+  alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
+
+  @type exec_error :: SemTypes.exec_error() | :invalid_execution_request
+
+  @spec execute(map(), map(), map()) :: {:ok, map()} | {:error, exec_error()}
   def execute(request, core_ir, metadata)
       when is_map(request) and is_map(core_ir) and is_map(metadata) do
     request =
@@ -24,7 +28,7 @@ defmodule ElmExecutor.Runtime.Executor do
     end
   end
 
-  @spec execute(map()) :: {:ok, map()} | {:error, term()}
+  @spec execute(map()) :: {:ok, map()} | {:error, exec_error()}
   def execute(request) when is_map(request) do
     metadata =
       case Map.get(request, :elm_executor_metadata) || Map.get(request, "elm_executor_metadata") do
@@ -40,7 +44,7 @@ defmodule ElmExecutor.Runtime.Executor do
 
   def execute(_), do: {:error, :invalid_execution_request}
 
-  @spec annotate_result(term(), term()) :: term()
+  @spec annotate_result(map(), map()) :: map()
   defp annotate_result(result, metadata) do
     runtime =
       map_field(result, :runtime)
@@ -61,13 +65,13 @@ defmodule ElmExecutor.Runtime.Executor do
     |> Map.put("model_patch", model_patch)
   end
 
-  @spec map_field(term(), term()) :: term()
+  @spec map_field(map(), atom()) :: map()
   defp map_field(map, key) when is_map(map) and is_atom(key) do
     value = Map.get(map, key) || Map.get(map, Atom.to_string(key))
     if is_map(value), do: value, else: %{}
   end
 
-  @spec stringify_keys(term()) :: term()
+  @spec stringify_keys(map()) :: map()
   defp stringify_keys(map) when is_map(map) do
     Map.new(map, fn {k, v} -> {to_string(k), v} end)
   end

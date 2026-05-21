@@ -8,7 +8,9 @@ defmodule ElmExecutor.Backend.ElixirCodegen do
 
   alias ElmEx.CoreIR
 
-  @spec write_project(CoreIR.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  @type codegen_error :: atom() | tuple() | String.t()
+
+  @spec write_project(CoreIR.t(), String.t(), keyword()) :: :ok | {:error, codegen_error()}
   def write_project(%CoreIR{} = core_ir, out_dir, opts) when is_binary(out_dir) and is_list(opts) do
     entry_module = Keyword.get(opts, :entry_module, "Main")
     mode = Keyword.get(opts, :mode, :library)
@@ -21,13 +23,13 @@ defmodule ElmExecutor.Backend.ElixirCodegen do
     write_manifest(out_dir, module_name, entry_module, mode, core_ir)
   end
 
-  @spec generated_module_name(term(), term()) :: term()
+  @spec generated_module_name(String.t(), CoreIR.t()) :: String.t()
   defp generated_module_name(entry_module, %CoreIR{} = core_ir) when is_binary(entry_module) do
     suffix = String.slice(core_ir.deterministic_sha256, 0, 8)
     "ElmExecutor.Generated." <> String.replace(entry_module, ".", "_") <> "_" <> suffix
   end
 
-  @spec render_module(term(), term(), term(), term()) :: term()
+  @spec render_module(String.t(), CoreIR.t(), String.t(), atom()) :: String.t()
   defp render_module(module_name, %CoreIR{} = core_ir, entry_module, mode) do
     encoded_core_ir = Base.encode64(:erlang.term_to_binary(core_ir))
 
@@ -39,7 +41,7 @@ defmodule ElmExecutor.Backend.ElixirCodegen do
       @entry_module "#{entry_module}"
       @mode #{inspect(mode)}
 
-      @spec compiler_metadata() :: term()
+      @spec compiler_metadata() :: map()
       def compiler_metadata do
         %{
           engine: "elm_executor_runtime_v1",
@@ -50,14 +52,14 @@ defmodule ElmExecutor.Backend.ElixirCodegen do
         }
       end
 
-      @spec core_ir() :: term()
+      @spec core_ir() :: ElmEx.CoreIR.t()
       def core_ir do
         @encoded_core_ir
         |> Base.decode64!()
         |> :erlang.binary_to_term()
       end
 
-      @spec debugger_execute(term()) :: term()
+      @spec debugger_execute(map()) :: {:ok, map()} | {:error, term()}
       def debugger_execute(request) when is_map(request) do
         ElmExecutor.Runtime.Executor.execute(request, core_ir(), compiler_metadata())
       end
@@ -65,7 +67,7 @@ defmodule ElmExecutor.Backend.ElixirCodegen do
     """
   end
 
-  @spec write_runtime_support(term()) :: term()
+  @spec write_runtime_support(String.t()) :: :ok
   defp write_runtime_support(out_dir) do
     runtime_dir = Path.join([out_dir, "elixir"])
     File.mkdir_p!(runtime_dir)
@@ -78,7 +80,7 @@ defmodule ElmExecutor.Backend.ElixirCodegen do
       defmodule ElmExecutor.Generated.RuntimeBootstrap do
         @moduledoc false
 
-        @spec contract() :: term()
+        @spec contract() :: String.t()
         def contract, do: "elm_executor.runtime_executor.v1"
       end
       """
@@ -87,7 +89,7 @@ defmodule ElmExecutor.Backend.ElixirCodegen do
     :ok
   end
 
-  @spec write_manifest(term(), term(), term(), term(), term()) :: term()
+  @spec write_manifest(String.t(), String.t(), String.t(), atom(), CoreIR.t()) :: :ok
   defp write_manifest(out_dir, module_name, entry_module, mode, %CoreIR{} = core_ir) do
     manifest = %{
       "compiler" => "elm_executor",

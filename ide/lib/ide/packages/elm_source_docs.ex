@@ -2,8 +2,30 @@ defmodule Ide.Packages.ElmSourceDocs do
   @moduledoc false
 
   alias Ide.Packages.ModuleDoc
+  alias Ide.Packages.Types
 
-  @spec list_modules(String.t()) :: {:ok, [String.t()]} | {:error, term()}
+  @type source_doc_entry :: Types.docs_json_module()
+
+  @type parser_state :: %{
+          required(:i) => non_neg_integer(),
+          required(:pending_doc) => String.t() | nil,
+          required(:module_comment) => String.t() | nil,
+          required(:seen_declaration) => boolean(),
+          required(:unions) => [source_doc_entry()],
+          required(:aliases) => [source_doc_entry()],
+          required(:values) => [source_doc_entry()]
+        }
+
+  @type union_ctor :: [String.t() | [String.t()]]
+  @type doc_lines :: [String.t()]
+  @type line_index :: non_neg_integer()
+  @type doc_block_result :: {String.t(), line_index()}
+  @type read_text_result :: {String.t(), line_index()}
+  @type read_cases_result :: {[union_ctor()], line_index()}
+
+  @type source_error :: :source_root_not_found | :module_source_not_found | File.posix()
+
+  @spec list_modules(String.t()) :: {:ok, [String.t()]} | {:error, source_error()}
   def list_modules(source_root) when is_binary(source_root) do
     if File.dir?(source_root) do
       modules =
@@ -22,7 +44,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
-  @spec module_doc_markdown(String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec module_doc_markdown(String.t(), String.t()) :: {:ok, String.t()} | {:error, source_error()}
   def module_doc_markdown(source_root, module_name)
       when is_binary(source_root) and is_binary(module_name) do
     with {:ok, path} <- source_module_path(source_root, module_name),
@@ -32,7 +54,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
-  @spec source_to_module_doc(String.t(), String.t()) :: map()
+  @spec source_to_module_doc(String.t(), String.t()) :: source_doc_entry()
   def source_to_module_doc(source, module_name)
       when is_binary(source) and is_binary(module_name) do
     lines = String.split(source, "\n", trim: false)
@@ -59,7 +81,8 @@ defmodule Ide.Packages.ElmSourceDocs do
     }
   end
 
-  @spec source_module_path(term(), term()) :: term()
+  @spec source_module_path(String.t(), String.t()) ::
+          {:ok, String.t()} | {:error, :module_source_not_found}
   defp source_module_path(source_root, module_name) do
     rel =
       module_name
@@ -72,7 +95,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     if File.exists?(path), do: {:ok, path}, else: {:error, :module_source_not_found}
   end
 
-  @spec module_name_from_path(term(), term()) :: term()
+  @spec module_name_from_path(String.t(), String.t()) :: String.t() | nil
   defp module_name_from_path(path, source_root) do
     if String.starts_with?(path, source_root) do
       path
@@ -86,11 +109,11 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
-  @spec kernel_module?(term()) :: term()
+  @spec kernel_module?(String.t() | nil) :: boolean()
   defp kernel_module?(nil), do: false
   defp kernel_module?(name), do: String.starts_with?(name, "Elm.Kernel.")
 
-  @spec parse_lines(term(), term()) :: term()
+  @spec parse_lines(doc_lines(), parser_state()) :: parser_state()
   defp parse_lines(lines, state) do
     if state.i >= length(lines) do
       state
@@ -135,13 +158,13 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
-  @spec maybe_assign_module_doc?(term(), term()) :: term()
+  @spec maybe_assign_module_doc?(String.t(), parser_state()) :: boolean()
   defp maybe_assign_module_doc?(trimmed, state) do
     not state.seen_declaration and is_binary(state.pending_doc) and
       is_nil(state.module_comment) and String.starts_with?(trimmed, "import ")
   end
 
-  @spec maybe_promote_pending_to_module_doc(term()) :: term()
+  @spec maybe_promote_pending_to_module_doc(parser_state()) :: parser_state()
   defp maybe_promote_pending_to_module_doc(state) do
     if is_nil(state.module_comment) and is_binary(state.pending_doc) and
          String.contains?(state.pending_doc, "@docs") do
@@ -151,12 +174,12 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
-  @spec read_doc_block(term(), term()) :: term()
+  @spec read_doc_block(doc_lines(), line_index()) :: doc_block_result()
   defp read_doc_block(lines, start_i) do
     do_read_doc_block(lines, start_i, [])
   end
 
-  @spec do_read_doc_block(term(), term(), term()) :: term()
+  @spec do_read_doc_block(doc_lines(), line_index(), [String.t()]) :: doc_block_result()
   defp do_read_doc_block(lines, i, acc) do
     line = Enum.at(lines, i) || ""
     acc = [line | acc]
@@ -174,7 +197,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
-  @spec clean_doc_block(term()) :: term()
+  @spec clean_doc_block(String.t()) :: String.t()
   defp clean_doc_block(text) do
     text
     |> String.replace(~r/\A\s*\{\-\|\s?/, "")
@@ -183,7 +206,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     |> String.trim()
   end
 
-  @spec dedent(term()) :: term()
+  @spec dedent(String.t()) :: String.t()
   defp dedent(text) do
     lines = String.split(text, "\n", trim: false)
 
@@ -212,22 +235,22 @@ defmodule Ide.Packages.ElmSourceDocs do
     |> Enum.join("\n")
   end
 
-  @spec value_signature_line?(term()) :: term()
+  @spec value_signature_line?(String.t()) :: boolean()
   defp value_signature_line?(trimmed) do
     Regex.match?(~r/^[a-z][A-Za-z0-9_']*\s*:/, trimmed)
   end
 
-  @spec type_alias_line?(term()) :: term()
+  @spec type_alias_line?(String.t()) :: boolean()
   defp type_alias_line?(trimmed) do
     String.starts_with?(trimmed, "type alias ")
   end
 
-  @spec union_type_line?(term()) :: term()
+  @spec union_type_line?(String.t()) :: boolean()
   defp union_type_line?(trimmed) do
     String.starts_with?(trimmed, "type ") and not type_alias_line?(trimmed)
   end
 
-  @spec add_value(term(), term()) :: term()
+  @spec add_value(parser_state(), doc_lines()) :: parser_state()
   defp add_value(state, lines) do
     line = Enum.at(lines, state.i) || ""
     trimmed = String.trim(line)
@@ -244,7 +267,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     %{state | values: [value | state.values], i: next_i, seen_declaration: true}
   end
 
-  @spec read_value_type(term(), term(), term(), term()) :: term()
+  @spec read_value_type(doc_lines(), line_index(), String.t(), [String.t()]) :: read_text_result()
   defp read_value_type(lines, i, name, acc) do
     if i >= length(lines) do
       {Enum.join(acc, "\n"), i}
@@ -268,7 +291,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
-  @spec add_type_alias(term(), term()) :: term()
+  @spec add_type_alias(parser_state(), doc_lines()) :: parser_state()
   defp add_type_alias(state, lines) do
     line = Enum.at(lines, state.i) || ""
     trimmed = String.trim(line)
@@ -290,13 +313,14 @@ defmodule Ide.Packages.ElmSourceDocs do
     %{state | aliases: [alias_doc | state.aliases], i: next_i, seen_declaration: true}
   end
 
-  @spec read_alias_body(term(), term(), term(), term()) :: term()
+  @spec read_alias_body(doc_lines(), line_index(), String.t(), String.t()) :: read_text_result()
   defp read_alias_body(lines, i, first_body, name) do
     acc = if first_body == "", do: [], else: [first_body]
     do_read_alias_body(lines, i, name, acc)
   end
 
-  @spec do_read_alias_body(term(), term(), term(), term()) :: term()
+  @spec do_read_alias_body(doc_lines(), line_index(), String.t(), [String.t()]) ::
+          read_text_result()
   defp do_read_alias_body(lines, i, name, acc) do
     if i >= length(lines) do
       {Enum.join(acc, "\n"), i}
@@ -323,7 +347,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
-  @spec add_union(term(), term()) :: term()
+  @spec add_union(parser_state(), doc_lines()) :: parser_state()
   defp add_union(state, lines) do
     line = Enum.at(lines, state.i) || ""
     trimmed = String.trim(line)
@@ -354,7 +378,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     %{state | unions: [union | state.unions], i: next_i, seen_declaration: true}
   end
 
-  @spec read_union_cases(term(), term(), term()) :: term()
+  @spec read_union_cases(doc_lines(), line_index(), String.t() | nil) :: read_cases_result()
   defp read_union_cases(lines, i, first_ctor) do
     acc =
       case normalize_ctor(first_ctor) do
@@ -365,7 +389,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     do_read_union_cases(lines, i, acc)
   end
 
-  @spec do_read_union_cases(term(), term(), term()) :: term()
+  @spec do_read_union_cases(doc_lines(), line_index(), [union_ctor()]) :: read_cases_result()
   defp do_read_union_cases(lines, i, acc) do
     if i >= length(lines) do
       {Enum.reverse(acc), i}
@@ -393,7 +417,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
-  @spec normalize_ctor(term()) :: term()
+  @spec normalize_ctor(String.t() | nil) :: union_ctor() | nil
   defp normalize_ctor(nil), do: nil
 
   defp normalize_ctor(text) do
@@ -408,7 +432,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     end
   end
 
-  @spec parse_args(term()) :: term()
+  @spec parse_args(String.t()) :: [String.t()]
   defp parse_args(text) do
     text
     |> String.trim()
@@ -416,7 +440,7 @@ defmodule Ide.Packages.ElmSourceDocs do
     |> Enum.reject(&(&1 == ""))
   end
 
-  @spec pop_pending_doc(term()) :: term()
+  @spec pop_pending_doc(parser_state()) :: {String.t(), parser_state()}
   defp pop_pending_doc(state) do
     case state.pending_doc do
       doc when is_binary(doc) -> {doc, %{state | pending_doc: nil}}

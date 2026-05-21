@@ -79,6 +79,35 @@ config :ide, Ide.Emulator.Session,
     System.get_env("ELM_PEBBLE_EMULATOR_IDLE_TIMEOUT_MS", "300000")
     |> String.to_integer()
 
+# Optional SMTP for any environment (dev/prod). When SMTP_RELAY is set, magic-link
+# emails are sent through SMTP instead of the Swoosh Local adapter / dev mailbox.
+if smtp_relay = System.get_env("SMTP_RELAY") do
+  smtp_port = String.to_integer(System.get_env("SMTP_PORT") || "587")
+
+  smtp_ssl =
+    System.get_env("SMTP_SSL") in ~w(1 true yes) or
+      (is_nil(System.get_env("SMTP_SSL")) and smtp_port == 465)
+
+  smtp_tls =
+    case System.get_env("SMTP_TLS") do
+      "never" -> :never
+      _ when smtp_ssl -> :never
+      _ -> :always
+    end
+
+  config :ide, Ide.Mailer,
+    adapter: Swoosh.Adapters.SMTP,
+    relay: smtp_relay,
+    username: System.get_env("SMTP_USERNAME"),
+    password: System.get_env("SMTP_PASSWORD"),
+    port: smtp_port,
+    tls: smtp_tls,
+    auth: if(System.get_env("SMTP_USERNAME"), do: :always, else: :never),
+    ssl: smtp_ssl,
+    retries: 1,
+    no_mx_lookups: true
+end
+
 if config_env() == :prod do
   data_root = System.get_env("IDE_DATA_ROOT") || "/var/lib/ide"
   projects_root = System.get_env("PROJECTS_ROOT") || Path.join(data_root, "workspace_projects")
@@ -210,6 +239,8 @@ if config_env() == :prod do
   #
   # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
 
+  auth_mode = String.downcase(System.get_env("IDE_AUTH_MODE", "local") || "local")
+
   mail_from =
     System.get_env("IDE_MAIL_FROM") ||
       "noreply@#{host}"
@@ -220,16 +251,21 @@ if config_env() == :prod do
       |> String.to_integer(),
     mail_from: mail_from
 
-  # Requires {:gen_smtp, "~> 1.0"} in mix.exs (provides :gen_smtp_client and :mimemail for Swoosh).
-  if smtp_relay = System.get_env("SMTP_RELAY") do
-    config :ide, Ide.Mailer,
-      adapter: Swoosh.Adapters.SMTP,
-      relay: smtp_relay,
-      username: System.get_env("SMTP_USERNAME"),
-      password: System.get_env("SMTP_PASSWORD"),
-      port: String.to_integer(System.get_env("SMTP_PORT") || "587"),
-      tls: if(System.get_env("SMTP_TLS", "always") == "never", do: :never, else: :always),
-      auth: if(System.get_env("SMTP_USERNAME"), do: :always, else: :never),
-      ssl: System.get_env("SMTP_SSL", "false") in ~w(1 true yes)
+  if is_nil(System.get_env("SMTP_RELAY")) and auth_mode == "public_custom" do
+    raise """
+    SMTP_RELAY is required when IDE_AUTH_MODE=public_custom in production.
+
+    Production disables Swoosh local mail storage, so magic-link login cannot send email
+    without SMTP. Configure at least:
+
+        SMTP_RELAY=smtp.example.com
+        SMTP_PORT=587
+        SMTP_USERNAME=...
+        SMTP_PASSWORD=...
+        IDE_MAIL_FROM=noreply@your-domain
+        PHX_HOST=your-domain
+
+    For port 465, set SMTP_PORT=465 (implicit TLS is selected automatically).
+    """
   end
 end

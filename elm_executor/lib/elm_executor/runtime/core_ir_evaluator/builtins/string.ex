@@ -1,9 +1,10 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.String do
   @moduledoc false
 
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.String, as: StringValue
 
-  @spec eval(String.t(), term(), map()) :: {:ok, term()} | :no_builtin | {:error, term()}
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result()
   def eval("append", [a, b], _ops) when is_binary(a) and is_binary(b), do: {:ok, a <> b}
   def eval("isEmpty", [text], _ops) when is_binary(text), do: {:ok, text == ""}
   def eval("isempty", [text], _ops) when is_binary(text), do: {:ok, text == ""}

@@ -3,7 +3,14 @@ defmodule ElmExecutor.Runtime.Loader do
   Dynamic loader for compiled elm_executor modules with deterministic module naming.
   """
 
-  @spec load_from_dir(String.t(), String.t()) :: {:ok, module()} | {:error, term()}
+  @type load_error ::
+          {:missing_manifest, String.t()}
+          | {:entry_module_mismatch, String.t() | nil, String.t()}
+          | {:missing_compiled_module, String.t()}
+          | {:module_load_failed, term()}
+          | Jason.DecodeError.t()
+
+  @spec load_from_dir(String.t(), String.t()) :: {:ok, module()} | {:error, load_error()}
   def load_from_dir(out_dir, entry_module) when is_binary(out_dir) and is_binary(entry_module) do
     with {:ok, manifest} <- load_manifest(out_dir),
          :ok <- validate_manifest_entry(manifest, entry_module) do
@@ -11,7 +18,7 @@ defmodule ElmExecutor.Runtime.Loader do
     end
   end
 
-  @spec load_manifest(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec load_manifest(String.t()) :: {:ok, map()} | {:error, load_error()}
   def load_manifest(out_dir) when is_binary(out_dir) do
     manifest_path = Path.join([out_dir, "elixir", "elm_executor_manifest.json"])
 
@@ -25,7 +32,7 @@ defmodule ElmExecutor.Runtime.Loader do
     end
   end
 
-  @spec validate_manifest_entry(term(), term()) :: term()
+  @spec validate_manifest_entry(map(), String.t()) :: :ok | {:error, load_error()}
   defp validate_manifest_entry(manifest, entry_module)
        when is_map(manifest) and is_binary(entry_module) do
     if manifest["entry_module"] == entry_module do
@@ -35,7 +42,7 @@ defmodule ElmExecutor.Runtime.Loader do
     end
   end
 
-  @spec do_load_module(term(), term()) :: term()
+  @spec do_load_module(String.t(), String.t()) :: {:ok, module()} | {:error, load_error()}
   defp do_load_module(out_dir, module_name) when is_binary(module_name) do
     module_file = Path.join([out_dir, "elixir", Macro.underscore(module_name) <> ".ex"])
     module_atom =

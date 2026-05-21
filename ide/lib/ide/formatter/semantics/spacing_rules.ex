@@ -57,7 +57,7 @@ defmodule Ide.Formatter.Semantics.SpacingRules do
     |> Enum.join("\n")
   end
 
-  @spec normalize_comma_spacing_line(term(), term()) :: term()
+  @spec normalize_comma_spacing_line(String.t(), boolean()) :: String.t()
   defp normalize_comma_spacing_line(line, in_block_comment) do
     trimmed = String.trim_leading(line)
 
@@ -70,7 +70,7 @@ defmodule Ide.Formatter.Semantics.SpacingRules do
     end
   end
 
-  @spec block_comment_state_after(term(), term()) :: term()
+  @spec block_comment_state_after(String.t(), boolean()) :: boolean()
   defp block_comment_state_after(line, in_block_comment) do
     trimmed = String.trim_leading(line)
     opens? = String.contains?(trimmed, "{-")
@@ -84,7 +84,7 @@ defmodule Ide.Formatter.Semantics.SpacingRules do
     end
   end
 
-  @spec normalize_comma_at_column(term(), term()) :: term()
+  @spec normalize_comma_at_column(String.t(), pos_integer()) :: String.t()
   defp normalize_comma_at_column(line, column) when is_binary(line) and is_integer(column) do
     comma_idx = max(column - 1, 0)
     safe_idx = min(comma_idx, String.length(line))
@@ -109,7 +109,7 @@ defmodule Ide.Formatter.Semantics.SpacingRules do
     end
   end
 
-  @spec locate_comma_index(term(), term()) :: term()
+  @spec locate_comma_index(String.t(), non_neg_integer()) :: {:ok, non_neg_integer()} | :nomatch
   defp locate_comma_index(line, idx) do
     if String.at(line, idx) == "," do
       {:ok, idx}

@@ -3,7 +3,7 @@ defmodule IdeWeb.EmulatorProxyClient do
 
   use WebSockex
 
-  @spec start_link(String.t(), pid()) :: {:ok, pid()} | {:error, term()}
+  @spec start_link(String.t(), pid()) :: GenServer.on_start()
   def start_link(url, owner) when is_binary(url) and is_pid(owner) do
     WebSockex.start_link(url, __MODULE__, %{owner: owner})
   end

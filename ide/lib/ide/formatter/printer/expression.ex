@@ -1,5 +1,14 @@
 defmodule Ide.Formatter.Printer.Expression do
   @moduledoc false
+  alias Ide.Formatter.Types
+
+  @type expand_result :: :no_change | {:expanded, Types.line_list()}
+  @type nested_call_parse_result ::
+          {:ok, String.t(), String.t(), [String.t()], [String.t()]} | :no_change
+  @type nested_call_collect_result ::
+          {:ok, Types.line_list(), [String.t()], [String.t()]} | :error
+  @type nested_block_collect_result ::
+          {:ok, Types.line_list(), String.t(), Types.line_list()} | :error
 
   @spec normalize_nested_call_list_arguments(String.t()) :: String.t()
   def normalize_nested_call_list_arguments(source) when is_binary(source) do
@@ -197,12 +206,12 @@ defmodule Ide.Formatter.Printer.Expression do
     rewrite_range_expressions(source)
   end
 
-  @spec rewrite_range_expressions(term()) :: term()
+  @spec rewrite_range_expressions(String.t()) :: String.t()
   defp rewrite_range_expressions(source) do
     do_rewrite_range_expressions(source, "")
   end
 
-  @spec do_rewrite_range_expressions(term(), term()) :: term()
+  @spec do_rewrite_range_expressions(String.t(), String.t()) :: String.t()
   defp do_rewrite_range_expressions(<<"[", rest::binary>>, acc) do
     case take_until(rest, "]") do
       {:ok, inside, tail} ->
@@ -229,7 +238,7 @@ defmodule Ide.Formatter.Printer.Expression do
 
   defp do_rewrite_range_expressions("", acc), do: acc
 
-  @spec split_once(term(), term()) :: term()
+  @spec split_once(String.t(), String.t()) :: Types.split_result()
   defp split_once(value, delimiter) do
     case :binary.match(value, delimiter) do
       {idx, len} ->
@@ -243,7 +252,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec take_until(term(), term()) :: term()
+  @spec take_until(String.t(), String.t()) :: Types.take_until_result()
   defp take_until(value, delimiter) do
     case :binary.match(value, delimiter) do
       {idx, len} ->
@@ -258,7 +267,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec expand_inline_if_line(term()) :: term()
+  @spec expand_inline_if_line(String.t()) :: Types.line_list()
   defp expand_inline_if_line(line) do
     trimmed = String.trim_leading(line)
     indent = leading_indent(line)
@@ -276,7 +285,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec leading_comma_if_expression(term()) :: term()
+  @spec leading_comma_if_expression(String.t()) :: {:ok, String.t()} | :error
   defp leading_comma_if_expression(trimmed) when is_binary(trimmed) do
     if String.starts_with?(trimmed, ",") do
       after_comma = String.trim_leading(String.trim_leading(trimmed, ","))
@@ -291,7 +300,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec expand_inline_if_expression(term(), term(), term(), term(), term()) :: term()
+  @spec expand_inline_if_expression(String.t(), non_neg_integer(), String.t(), non_neg_integer(), String.t()) :: Types.line_list()
   defp expand_inline_if_expression(if_expression, indent, prefix, else_indent, fallback_line) do
     case split_if_then_else(if_expression) do
       {:ok, condition, then_expr, else_expr} ->
@@ -311,7 +320,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec normalize_multiline_if_line(term(), term()) :: term()
+  @spec normalize_multiline_if_line(String.t(), map() | nil) :: {String.t(), map() | nil}
   defp normalize_multiline_if_line(line, state) do
     trimmed = String.trim(line)
 
@@ -343,7 +352,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec multiline_if_layout(term()) :: term()
+  @spec multiline_if_layout(String.t()) :: {:ok, map()} | :error
   defp multiline_if_layout(line) do
     trimmed = String.trim_leading(line)
     indent = leading_indent(line)
@@ -363,12 +372,12 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec normalize_if_branch_line(term(), term()) :: term()
+  @spec normalize_if_branch_line(String.t(), non_neg_integer()) :: String.t()
   defp normalize_if_branch_line(line, branch_indent) do
     String.duplicate(" ", branch_indent) <> String.trim_leading(line)
   end
 
-  @spec expand_nested_call_list_line(term()) :: term()
+  @spec expand_nested_call_list_line(String.t()) :: Types.line_list()
   defp expand_nested_call_list_line(line) do
     indent = leading_indent(line)
     trimmed = String.trim_leading(line)
@@ -401,7 +410,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec parse_nested_call_list_line(term()) :: term()
+  @spec parse_nested_call_list_line(String.t()) :: nested_call_parse_result()
   defp parse_nested_call_list_line(trimmed) when is_binary(trimmed) do
     cond do
       not String.starts_with?(trimmed, ",") ->
@@ -430,7 +439,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec split_outer_inner(term()) :: term()
+  @spec split_outer_inner(String.t()) :: {:ok, String.t(), String.t()} | :error
   defp split_outer_inner(trimmed) do
     case :binary.match(trimmed, " (") do
       :nomatch ->
@@ -448,7 +457,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec split_inner_list_call(term()) :: term()
+  @spec split_inner_list_call(String.t()) :: {:ok, String.t(), String.t(), String.t()} | :error
   defp split_inner_list_call(inner) do
     if String.contains?(inner, "\"") do
       :error
@@ -481,14 +490,14 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec split_top_level_space_args(term()) :: term()
+  @spec split_top_level_space_args(String.t()) :: [String.t()]
   defp split_top_level_space_args(value) do
     value
     |> String.split(" ", trim: true)
     |> Enum.reject(&(&1 == ""))
   end
 
-  @spec rewrite_multiline_nested_call_lines(term()) :: term()
+  @spec rewrite_multiline_nested_call_lines(Types.line_list()) :: Types.line_list()
   defp rewrite_multiline_nested_call_lines([]), do: []
 
   defp rewrite_multiline_nested_call_lines([line | rest]) do
@@ -508,7 +517,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec rewrite_nested_call_block_indentation(term()) :: term()
+  @spec rewrite_nested_call_block_indentation(Types.line_list()) :: Types.line_list()
   defp rewrite_nested_call_block_indentation([]), do: []
 
   defp rewrite_nested_call_block_indentation([outer_line, call_line | rest]) do
@@ -564,7 +573,7 @@ defmodule Ide.Formatter.Printer.Expression do
 
   defp rewrite_nested_call_block_indentation([line]), do: [line]
 
-  @spec collect_nested_call_block_lines(term(), term()) :: term()
+  @spec collect_nested_call_block_lines(Types.line_list(), Types.line_list()) :: nested_block_collect_result()
   defp collect_nested_call_block_lines([], _acc), do: :error
 
   defp collect_nested_call_block_lines([line | rest], acc) do
@@ -577,7 +586,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec nested_call_block_candidate?(term()) :: term()
+  @spec nested_call_block_candidate?(Types.line_list()) :: boolean()
   defp nested_call_block_candidate?(body_lines) when is_list(body_lines) do
     has_list_open? =
       Enum.any?(body_lines, fn line ->
@@ -619,7 +628,7 @@ defmodule Ide.Formatter.Printer.Expression do
     has_list_open? and comma_lines_are_tuple_items? and has_scalar_tail?
   end
 
-  @spec parse_multiline_nested_call_start(term()) :: term()
+  @spec parse_multiline_nested_call_start(String.t()) :: {:ok, non_neg_integer(), String.t(), String.t(), String.t()} | :error
   defp parse_multiline_nested_call_start(line) do
     indent = leading_indent(line)
     trimmed = String.trim_leading(line)
@@ -654,7 +663,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec collect_multiline_nested_call(term(), term()) :: term()
+  @spec collect_multiline_nested_call(Types.line_list(), [String.t()]) :: nested_call_collect_result()
   defp collect_multiline_nested_call([], _items), do: :error
 
   defp collect_multiline_nested_call([line | rest], items) do
@@ -705,7 +714,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec emit_multiline_nested_call(term(), term(), term(), term(), term()) :: term()
+  @spec emit_multiline_nested_call(non_neg_integer(), String.t(), String.t(), [String.t()], [String.t()]) :: Types.line_list()
   defp emit_multiline_nested_call(indent, outer, inner_head, items, trailing_args) do
     base = String.duplicate(" ", indent)
     inner_base = String.duplicate(" ", indent + 4)
@@ -724,7 +733,7 @@ defmodule Ide.Formatter.Printer.Expression do
       list_lines ++ arg_lines ++ [inner_base <> ")"]
   end
 
-  @spec split_top_level_csv(term()) :: term()
+  @spec split_top_level_csv(String.t()) :: [String.t()]
   defp split_top_level_csv(value) do
     {parts, current, _stack, _in_string, _escape_next} =
       do_split_top_level_csv(value, [], "", [], false, false)
@@ -733,7 +742,7 @@ defmodule Ide.Formatter.Printer.Expression do
     Enum.reject(parts, &(&1 == ""))
   end
 
-  @spec do_split_top_level_csv(term(), term(), term(), term(), term(), term()) :: term()
+  @spec do_split_top_level_csv(String.t(), [String.t()], String.t(), list(), boolean(), boolean()) :: {[String.t()], String.t(), list(), boolean(), boolean()}
   defp do_split_top_level_csv("", parts, current, stack, in_string, escape_next),
     do: {parts, current, stack, in_string, escape_next}
 
@@ -793,7 +802,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec split_if_then_else(term()) :: term()
+  @spec split_if_then_else(String.t()) :: {:ok, String.t(), String.t(), String.t()} | :error
   defp split_if_then_else(value) do
     condition_part = String.slice(value, 3, String.length(value) - 3)
 
@@ -805,7 +814,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec split_top_level_keyword(term(), term()) :: term()
+  @spec split_top_level_keyword(String.t(), String.t()) :: {:ok, String.t(), String.t()} | :error
   defp split_top_level_keyword(value, keyword) when is_binary(value) and is_binary(keyword) do
     case top_level_keyword_index(value, keyword) do
       nil ->
@@ -824,7 +833,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec expand_binding_line_after_let(term(), term()) :: term()
+  @spec expand_binding_line_after_let(String.t(), non_neg_integer()) :: expand_result()
   defp expand_binding_line_after_let(trimmed, let_indent)
        when is_binary(trimmed) and is_integer(let_indent) do
     case split_top_level_in(trimmed) do
@@ -849,7 +858,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec expand_inline_let_expression(term(), term()) :: term()
+  @spec expand_inline_let_expression(String.t(), non_neg_integer()) :: expand_result()
   defp expand_inline_let_expression(trimmed, indent)
        when is_binary(trimmed) and is_integer(indent) do
     rest = String.slice(trimmed, 4, String.length(trimmed) - 4) |> String.trim_leading()
@@ -882,7 +891,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec expand_expression_tail(term(), term()) :: term()
+  @spec expand_expression_tail(String.t(), non_neg_integer()) :: Types.line_list()
   defp expand_expression_tail(expression, indent) do
     case expand_inline_let_expression(expression, indent) do
       {:expanded, lines} -> lines
@@ -890,7 +899,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec render_binding_lines(term(), term()) :: term()
+  @spec render_binding_lines(String.t(), non_neg_integer()) :: Types.line_list()
   defp render_binding_lines(binding, indent) do
     case split_top_level_equals(binding) do
       {lhs, rhs} ->
@@ -911,7 +920,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec split_top_level_equals(term()) :: term()
+  @spec split_top_level_equals(String.t()) :: {String.t(), String.t()} | :error
   defp split_top_level_equals(binding) do
     case top_level_keyword_index(binding, "=") do
       nil ->
@@ -925,7 +934,7 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec split_top_level_in(term()) :: term()
+  @spec split_top_level_in(String.t()) :: {String.t(), String.t()} | :error
   defp split_top_level_in(value) when is_binary(value) do
     case top_level_keyword_index(value, " in ") do
       nil ->
@@ -949,12 +958,12 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec top_level_keyword_index(term(), term()) :: term()
+  @spec top_level_keyword_index(String.t(), String.t()) :: non_neg_integer() | nil
   defp top_level_keyword_index(value, keyword) do
     do_top_level_keyword_index(value, keyword, [], false, false, 0)
   end
 
-  @spec do_top_level_keyword_index(term(), term(), term(), term(), term(), term()) :: term()
+  @spec do_top_level_keyword_index(String.t(), String.t(), list(), boolean(), boolean(), non_neg_integer()) :: non_neg_integer() | nil
   defp do_top_level_keyword_index("", _keyword, _stack, _in_string, _escape_next, _idx), do: nil
 
   defp do_top_level_keyword_index(
@@ -992,20 +1001,20 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec pop_stack(term(), term()) :: term()
+  @spec pop_stack(list(), non_neg_integer()) :: list()
   defp pop_stack([], _closing), do: []
 
   defp pop_stack([open | rest], closing) do
     if delimiter_char_match?(open, closing), do: rest, else: [open | rest]
   end
 
-  @spec delimiter_char_match?(term(), term()) :: term()
+  @spec delimiter_char_match?(non_neg_integer(), non_neg_integer()) :: boolean()
   defp delimiter_char_match?(?(, ?)), do: true
   defp delimiter_char_match?(?[, ?]), do: true
   defp delimiter_char_match?(?{, ?}), do: true
   defp delimiter_char_match?(_, _), do: false
 
-  @spec top_level_keyword_match?(term(), term(), term()) :: term()
+  @spec top_level_keyword_match?(String.t(), String.t(), non_neg_integer()) :: boolean()
   defp top_level_keyword_match?(full, keyword, char)
        when is_binary(keyword) and byte_size(keyword) == 1 do
     <<single::utf8>> = keyword
@@ -1016,7 +1025,7 @@ defmodule Ide.Formatter.Printer.Expression do
     String.starts_with?(full, keyword)
   end
 
-  @spec collapse_spaces(term()) :: term()
+  @spec collapse_spaces(String.t()) :: String.t()
   defp collapse_spaces(value) do
     value
     |> String.graphemes()
@@ -1037,7 +1046,7 @@ defmodule Ide.Formatter.Printer.Expression do
     |> String.trim()
   end
 
-  @spec tuple_open_indent(term()) :: term()
+  @spec tuple_open_indent(String.t()) :: non_neg_integer() | nil
   defp tuple_open_indent(line) do
     if not starts_with_trimmed?(line, "(") do
       nil
@@ -1053,18 +1062,18 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec starts_with_trimmed?(term(), term()) :: term()
+  @spec starts_with_trimmed?(String.t(), String.t()) :: boolean()
   defp starts_with_trimmed?(line, marker),
     do: String.starts_with?(String.trim_leading(line), marker)
 
-  @spec top_level_char_columns(term(), term()) :: term()
+  @spec top_level_char_columns(String.t(), non_neg_integer()) :: [pos_integer()]
   defp top_level_char_columns(line, char_code) do
     line
     |> scan_top_level_for_char([], false, false, 1, char_code, [])
     |> Enum.reverse()
   end
 
-  @spec scan_top_level_for_char(term(), term(), term(), term(), term(), term(), term()) :: term()
+  @spec scan_top_level_for_char(String.t(), list(), boolean(), boolean(), pos_integer(), non_neg_integer(), [pos_integer()]) :: [pos_integer()]
   defp scan_top_level_for_char("", _stack, _in_string, _escape_next, _col, _char_code, acc),
     do: acc
 
@@ -1116,12 +1125,12 @@ defmodule Ide.Formatter.Printer.Expression do
     end
   end
 
-  @spec leading_indent(term()) :: term()
+  @spec leading_indent(String.t()) :: non_neg_integer()
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
   end
 
-  @spec opens_record_tuple_pair?(term()) :: term()
+  @spec opens_record_tuple_pair?(String.t()) :: boolean()
   defp opens_record_tuple_pair?(line) do
     trimmed = String.trim_leading(line)
 

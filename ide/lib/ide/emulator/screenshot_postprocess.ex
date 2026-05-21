@@ -3,6 +3,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
 
   import Bitwise
 
+  alias Ide.Emulator.Types
   alias Ide.ScreenshotDimensions
   alias Ide.WatchModels
 
@@ -78,7 +79,8 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
   end
 
   @doc false
-  @spec bgrx_to_rgb(binary(), pos_integer(), pos_integer()) :: {:ok, binary()} | {:error, term()}
+  @spec bgrx_to_rgb(binary(), pos_integer(), pos_integer()) ::
+          {:ok, binary()} | {:error, Types.screenshot_error()}
   def bgrx_to_rgb(pixels, width, height) do
     expected = width * height * 4
 
@@ -143,7 +145,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
 
   def apply_shape_mask(pixels, _width, _height, _profile), do: {:ok, pixels}
 
-  @spec parse_pixel_format(binary()) :: {:ok, pixel_format()} | {:error, term()}
+  @spec parse_pixel_format(binary()) :: {:ok, pixel_format()} | {:error, Types.screenshot_error()}
   def parse_pixel_format(
         <<bpp, depth, big_endian, true_color, red_max::unsigned-big-16,
           green_max::unsigned-big-16, blue_max::unsigned-big-16, red_shift, green_shift,

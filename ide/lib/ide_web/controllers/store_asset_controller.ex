@@ -6,7 +6,7 @@ defmodule IdeWeb.StoreAssetController do
 
   @allowed_assets MapSet.new([StoreAssets.public_path(:icon_small), StoreAssets.public_path(:icon_large)])
 
-  @spec show(term(), term()) :: term()
+  @spec show(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def show(conn, %{"slug" => slug, "name" => name}) do
     with true <- MapSet.member?(@allowed_assets, name),
          %{} = project <- Projects.get_project_by_slug(slug, conn.assigns.current_user),

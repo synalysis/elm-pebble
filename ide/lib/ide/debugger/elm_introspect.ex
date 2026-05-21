@@ -7,6 +7,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   alias ElmEx.Frontend.GeneratedParser
   alias ElmEx.Frontend.Module
+  alias Ide.Debugger.ElmIntrospect.Types
 
   # Keep in sync with ElmEx.Frontend.GeneratedParser @default_core_imports
   @implicit_core_imports ~w(Basics List Maybe Result String Char Tuple Debug)
@@ -15,7 +16,7 @@ defmodule Ide.Debugger.ElmIntrospect do
   Parses an on-disk Elm module and returns debugger-friendly snapshots derived from the
   elmc frontend AST (static — does not execute Elm).
   """
-  @spec analyze_file(Path.t()) :: {:ok, map()} | {:error, term()}
+  @spec analyze_file(Path.t()) :: {:ok, Types.introspect_snapshot()} | {:error, Types.parse_error()}
   def analyze_file(path) when is_binary(path) do
     case GeneratedParser.parse_file(path) do
       {:ok, %Module{} = mod} -> {:ok, build_snapshot(mod)}
@@ -26,7 +27,7 @@ defmodule Ide.Debugger.ElmIntrospect do
   @doc """
   Writes `source` to a temp file, parses it, then deletes the file.
   """
-  @spec analyze_source(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  @spec analyze_source(String.t(), String.t()) :: {:ok, Types.introspect_snapshot()} | {:error, Types.parse_error()}
   def analyze_source(source, virtual_path \\ "Main.elm")
       when is_binary(source) and is_binary(virtual_path) do
     dir = System.tmp_dir!()
@@ -74,12 +75,12 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   def import_entry_summary(_), do: "?"
 
-  @spec first_non_nil([term()]) :: term()
+  @spec first_non_nil([Types.wire_pick()]) :: Types.wire_pick()
   defp first_non_nil(values) when is_list(values) do
     Enum.find(values, &(!is_nil(&1)))
   end
 
-  @spec build_snapshot(Module.t(), String.t() | nil) :: map()
+  @spec build_snapshot(Module.t(), String.t() | nil) :: Types.introspect_snapshot()
   defp build_snapshot(%Module{} = mod, source_path_override \\ nil) do
     init_params = function_param_names(find_function_definition(mod, "init"))
     init_e = find_init_expr(mod)
@@ -185,11 +186,11 @@ defmodule Ide.Debugger.ElmIntrospect do
     }
   end
 
-  @spec map_expr(map() | nil, (map() -> term()), term()) :: term()
+  @spec map_expr(Types.ast_expr() | nil, (Types.ast_expr() -> term()), term()) :: term()
   defp map_expr(nil, _fun, fallback), do: fallback
   defp map_expr(%{} = expr, fun, _fallback) when is_function(fun, 1), do: fun.(expr)
 
-  @spec declaration_names(term()) :: term()
+  @spec declaration_names(Types.module_ref()) :: Types.declaration_names()
   defp declaration_names(%Module{declarations: decls}) when is_list(decls) do
     type_aliases =
       decls
@@ -212,7 +213,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     {type_aliases, unions, functions}
   end
 
-  @spec function_cmd_calls(term()) :: map()
+  @spec function_cmd_calls(Types.module_ref()) :: Types.function_cmd_calls_map()
   defp function_cmd_calls(%Module{declarations: decls}) when is_list(decls) do
     decls
     |> Enum.filter(&match?(%{kind: :function_definition}, &1))
@@ -232,12 +233,12 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp function_cmd_calls(_), do: %{}
 
-  @spec explicit_imports(term()) :: term()
+  @spec explicit_imports(Types.module_ref()) :: [String.t()]
   defp explicit_imports(%Module{imports: im}) when is_list(im) do
     im |> Enum.reject(&(&1 in @implicit_core_imports))
   end
 
-  @spec module_source_scan(term()) :: term()
+  @spec module_source_scan(Types.module_ref()) :: Types.module_scan()
   defp module_source_scan(%Module{} = mod) do
     source_stats =
       case File.read(mod.path) do
@@ -292,7 +293,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp source_display_path(_mod), do: nil
 
-  @spec source_line_count(term()) :: term()
+  @spec source_line_count(String.t()) :: non_neg_integer()
   defp source_line_count(source) when is_binary(source) do
     case String.split(source, "\n") do
       [] -> 0
@@ -300,7 +301,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec normalize_ports(term()) :: term()
+  @spec normalize_ports([map()] | nil) :: [map()]
   defp normalize_ports(ports) when is_list(ports) do
     ports
     |> Enum.filter(&is_binary/1)
@@ -309,7 +310,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp normalize_ports(_), do: []
 
-  @spec normalize_exposing(term()) :: term()
+  @spec normalize_exposing(Types.exposing_value() | list() | nil) :: Types.exposing_value()
   defp normalize_exposing(".."), do: ".."
 
   defp normalize_exposing(items) when is_list(items) do
@@ -323,7 +324,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp normalize_exposing(_), do: nil
 
-  @spec normalize_import_entries(term()) :: term()
+  @spec normalize_import_entries([Types.import_entry()] | nil) :: [Types.import_entry()]
   defp normalize_import_entries(entries) when is_list(entries) do
     entries
     |> Enum.map(&normalize_import_entry/1)
@@ -332,7 +333,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp normalize_import_entries(_), do: []
 
-  @spec normalize_import_entry(term()) :: term()
+  @spec normalize_import_entry(Types.import_entry()) :: Types.import_entry() | nil
   defp normalize_import_entry(%{} = entry) do
     mod = first_non_nil([Map.get(entry, "module"), Map.get(entry, :module)])
     as_name = first_non_nil([Map.get(entry, "as"), Map.get(entry, :as)])
@@ -349,18 +350,18 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp normalize_import_entry(_), do: nil
 
-  @spec find_function_definition(term(), term()) :: term()
+  @spec find_function_definition(Types.module_ref(), String.t()) :: Types.ast_declaration() | nil
   defp find_function_definition(%Module{declarations: decls}, name) when is_binary(name) do
     Enum.find(decls, fn decl ->
       Map.get(decl, :kind) == :function_definition and Map.get(decl, :name) == name
     end)
   end
 
-  @spec function_param_names(term()) :: term()
+  @spec function_param_names(Types.ast_declaration() | map()) :: [String.t()]
   defp function_param_names(%{args: args}) when is_list(args), do: args
   defp function_param_names(_), do: []
 
-  @spec find_init_expr(term()) :: term()
+  @spec find_init_expr(Types.module_ref()) :: Types.ast_expr() | nil
   defp find_init_expr(%Module{} = mod) do
     case find_function_definition(mod, "init") do
       %{expr: expr} -> expr
@@ -368,7 +369,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec find_view_expr(term()) :: term()
+  @spec find_view_expr(Types.module_ref()) :: Types.ast_expr() | nil
   defp find_view_expr(%Module{} = mod) do
     case find_function_definition(mod, "view") do
       %{expr: expr} -> expr
@@ -376,7 +377,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec find_update_expr(term()) :: term()
+  @spec find_update_expr(Types.module_ref()) :: Types.ast_expr() | nil
   defp find_update_expr(%Module{} = mod) do
     case find_function_definition(mod, "update") do
       %{expr: expr} -> expr
@@ -384,7 +385,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec find_subscriptions_expr(term()) :: term()
+  @spec find_subscriptions_expr(Types.module_ref()) :: Types.ast_expr() | nil
   defp find_subscriptions_expr(%Module{} = mod) do
     case find_function_definition(mod, "subscriptions") do
       %{expr: expr} -> expr
@@ -392,7 +393,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec find_main_expr(term()) :: term()
+  @spec find_main_expr(Types.module_ref()) :: Types.ast_expr() | nil
   defp find_main_expr(%Module{} = mod) do
     case find_function_definition(mod, "main") do
       %{expr: expr} -> expr
@@ -400,7 +401,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec main_program_outline(term()) :: term()
+  @spec main_program_outline(Types.ast_expr() | nil) :: Types.program_outline()
   defp main_program_outline(nil), do: nil
 
   defp main_program_outline(expr) do
@@ -430,7 +431,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec main_kind_from_target(term()) :: term()
+  @spec main_kind_from_target(String.t()) :: String.t()
   defp main_kind_from_target(t) when is_binary(t) do
     case view_type_name(t) do
       "worker" -> "worker"
@@ -441,7 +442,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec init_cmd_ops_outline(term(), term()) :: term()
+  @spec init_cmd_ops_outline(Types.ast_expr() | nil, Types.param_list()) :: Types.string_list()
   defp init_cmd_ops_outline(nil, _), do: []
 
   defp init_cmd_ops_outline(expr, init_params) when is_list(init_params) do
@@ -473,7 +474,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp init_cmd_ops_outline(_, _), do: []
 
-  @spec init_cmd_calls_outline(term(), term()) :: term()
+  @spec init_cmd_calls_outline(Types.ast_expr() | nil, Types.param_list()) :: Types.cmd_call_list()
   defp init_cmd_calls_outline(nil, _), do: []
 
   defp init_cmd_calls_outline(expr, init_params) when is_list(init_params) do
@@ -508,7 +509,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp init_cmd_calls_outline(_, _), do: []
 
-  @spec update_cmd_ops_outline(term(), term()) :: term()
+  @spec update_cmd_ops_outline(Types.ast_expr() | nil, Types.param_list()) :: Types.string_list()
   defp update_cmd_ops_outline(nil, _), do: []
 
   defp update_cmd_ops_outline(expr, update_params) when is_list(update_params) do
@@ -538,7 +539,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp update_cmd_ops_outline(_, _), do: []
 
-  @spec update_cmd_calls_outline(term(), term()) :: term()
+  @spec update_cmd_calls_outline(Types.ast_expr() | nil, Types.param_list()) :: Types.cmd_call_list()
   defp update_cmd_calls_outline(nil, _), do: []
 
   defp update_cmd_calls_outline(expr, update_params) when is_list(update_params) do
@@ -589,7 +590,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp update_cmd_calls_outline(_, _), do: []
 
-  @spec cmd_ops_from_case_branch_expr(term()) :: term()
+  @spec cmd_ops_from_case_branch_expr(Types.ast_expr()) :: Types.string_list()
   defp cmd_ops_from_case_branch_expr(expr) do
     expr
     |> peel_lets()
@@ -602,12 +603,12 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec cmd_calls_from_case_branch_expr(term()) :: term()
+  @spec cmd_calls_from_case_branch_expr(Types.ast_expr()) :: Types.cmd_call_list()
   defp cmd_calls_from_case_branch_expr(expr) do
     extract_cmd_calls(expr)
   end
 
-  @spec maybe_put_branch_constructor(map(), term()) :: map()
+  @spec maybe_put_branch_constructor(map(), String.t()) :: map()
   defp maybe_put_branch_constructor(row, constructor)
        when is_map(row) and is_binary(constructor) and constructor != "" do
     Map.put(row, "branch_constructor", constructor)
@@ -615,7 +616,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp maybe_put_branch_constructor(row, _constructor), do: row
 
-  @spec subscriptions_outline(term(), term()) :: term()
+  @spec subscriptions_outline(Types.ast_expr() | nil, Types.param_list()) :: Types.string_list()
   defp subscriptions_outline(nil, _), do: []
 
   defp subscriptions_outline(expr, subscriptions_params) when is_list(subscriptions_params) do
@@ -643,7 +644,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp subscriptions_outline(_, _), do: []
 
-  @spec extract_subscription_items(term()) :: term()
+  @spec extract_subscription_items(Types.ast_expr()) :: Types.string_list()
   defp extract_subscription_items(%{
          op: :qualified_call,
          args: [%{op: :list_literal, items: items}]
@@ -682,7 +683,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec extract_subscription_calls(term()) :: term()
+  @spec extract_subscription_calls(Types.ast_expr()) :: Types.cmd_call_list()
   defp extract_subscription_calls(expr), do: extract_subscription_calls(expr, %{})
 
   defp extract_subscription_calls(
@@ -738,7 +739,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp extract_subscription_calls(_, _), do: []
 
-  @spec subscription_call_rows(term(), term(), term()) :: term()
+  @spec subscription_call_rows(String.t(), list(), Types.binding_map()) :: Types.cmd_call_list()
   defp subscription_call_rows(target, args, bindings)
        when is_binary(target) and is_list(args) and is_map(bindings) do
     [
@@ -759,7 +760,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     target in ["Sub.batch", "Platform.Sub.batch"] or view_type_name(target) == "batch"
   end
 
-  @spec extract_cmd_calls(term()) :: term()
+  @spec extract_cmd_calls(Types.ast_expr()) :: Types.cmd_call_list()
   defp extract_cmd_calls(expr), do: extract_cmd_calls(expr, %{})
 
   defp extract_cmd_calls(
@@ -856,7 +857,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp extract_cmd_calls(_, _), do: []
 
-  @spec callback_constructor_from_args(term(), term()) :: term()
+  @spec callback_constructor_from_args(list(), Types.binding_map()) :: String.t() | nil
   defp callback_constructor_from_args(args, bindings)
        when is_list(args) and is_map(bindings) do
     args
@@ -866,7 +867,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp callback_constructor_from_args(_, _), do: nil
 
-  @spec callback_arg_count_from_args(term(), term()) :: non_neg_integer()
+  @spec callback_arg_count_from_args(list(), Types.binding_map()) :: non_neg_integer()
   defp callback_arg_count_from_args(args, bindings)
        when is_list(args) and is_map(bindings) do
     args
@@ -880,7 +881,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp callback_arg_count_from_args(_, _), do: 0
 
-  @spec callback_arg_count_from_expr(term(), term(), term(), term()) :: non_neg_integer() | nil
+  @spec callback_arg_count_from_expr(Types.ast_expr(), Types.binding_map(), map(), non_neg_integer()) :: non_neg_integer() | nil
   defp callback_arg_count_from_expr(_expr, _bindings, _seen, depth) when depth > 10, do: nil
 
   defp callback_arg_count_from_expr(
@@ -908,7 +909,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp callback_arg_count_from_expr(_, _, _, _), do: nil
 
-  @spec task_sources_from_args(term()) :: [String.t()]
+  @spec task_sources_from_args(list()) :: [String.t()]
   defp task_sources_from_args(args) when is_list(args) do
     args
     |> Enum.flat_map(&qualified_call_targets/1)
@@ -917,7 +918,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp task_sources_from_args(_), do: []
 
-  @spec qualified_call_targets(term()) :: [String.t()]
+  @spec qualified_call_targets(Types.ast_expr()) :: [String.t()]
   defp qualified_call_targets(%{op: :qualified_call, target: target, args: args})
        when is_binary(target) and is_list(args) do
     [target | Enum.flat_map(args, &qualified_call_targets/1)]
@@ -941,7 +942,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp qualified_call_targets(_), do: []
 
-  @spec callback_constructor_from_expr(term(), term(), term(), term()) :: term()
+  @spec callback_constructor_from_expr(Types.ast_expr(), Types.binding_map(), map(), non_neg_integer()) :: String.t() | nil
   defp callback_constructor_from_expr(_expr, _bindings, _seen, depth) when depth > 10, do: nil
 
   defp callback_constructor_from_expr(
@@ -1030,16 +1031,16 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp callback_constructor_from_expr(_, _bindings, _seen, _depth), do: nil
 
-  @spec constructor_like_name?(term()) :: term()
+  @spec constructor_like_name?(String.t()) :: boolean()
   defp constructor_like_name?(name) when is_binary(name) do
     String.match?(name, ~r/^[A-Z][A-Za-z0-9_]*$/)
   end
 
-  @spec expr_arg_kind(term()) :: term()
+  @spec expr_arg_kind(Types.ast_expr()) :: String.t()
   defp expr_arg_kind(%{op: op}) when is_atom(op), do: Atom.to_string(op)
   defp expr_arg_kind(_), do: "unknown"
 
-  @spec subscription_item_label(term()) :: term()
+  @spec subscription_item_label(Types.ast_expr()) :: String.t()
   defp subscription_item_label(%{op: :qualified_call, target: "Cmd.none", args: []}),
     do: "Cmd.none"
 
@@ -1078,7 +1079,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     |> String.trim("_")
   end
 
-  @spec subscription_arg_snippet(term()) :: term()
+  @spec subscription_arg_snippet(Types.ast_expr()) :: String.t()
   defp subscription_arg_snippet(%{op: :constructor_call, target: t, args: []}) when is_binary(t),
     do: view_type_name(t)
 
@@ -1095,14 +1096,14 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp subscription_arg_snippet(_), do: ""
 
-  @spec init_case_subjects(term()) :: term()
+  @spec init_case_subjects(Types.param_list()) :: Types.param_list()
   defp init_case_subjects(init_params) when is_list(init_params) do
     init_params
     |> Enum.filter(&(is_binary(&1) and &1 != "" and &1 != "_"))
     |> Enum.uniq()
   end
 
-  @spec init_case_subject_allowed?(term(), term(), term()) :: term()
+  @spec init_case_subject_allowed?(String.t(), Types.param_list(), Types.param_list()) :: boolean()
   defp init_case_subject_allowed?(subj, allowed, init_params)
        when is_binary(subj) and is_list(allowed) and is_list(init_params) do
     subj in allowed or
@@ -1111,7 +1112,7 @@ defmodule Ide.Debugger.ElmIntrospect do
       end)
   end
 
-  @spec scrutinee_case_analysis(term(), term()) :: term()
+  @spec scrutinee_case_analysis(Types.ast_expr() | nil, Types.param_list()) :: Types.case_branch_labels()
   defp scrutinee_case_analysis(nil, _), do: {[], nil}
 
   defp scrutinee_case_analysis(expr, params) when is_list(params) do
@@ -1143,7 +1144,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp scrutinee_case_analysis(_, _), do: {[], nil}
 
-  @spec update_case_analysis(term(), term()) :: term()
+  @spec update_case_analysis(Types.ast_expr() | nil, Types.param_list()) :: Types.case_branch_labels()
   defp update_case_analysis(nil, _), do: {[], nil}
 
   defp update_case_analysis(expr, update_params) when is_list(update_params) do
@@ -1175,7 +1176,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp update_case_analysis(_, _), do: {[], nil}
 
-  @spec update_case_subject_allowed?(term(), term(), term()) :: term()
+  @spec update_case_subject_allowed?(String.t(), Types.param_list(), Types.param_list()) :: boolean()
   defp update_case_subject_allowed?(subj, allowed, update_params)
        when is_binary(subj) and is_list(allowed) and is_list(update_params) do
     subj in allowed or
@@ -1184,7 +1185,7 @@ defmodule Ide.Debugger.ElmIntrospect do
       end)
   end
 
-  @spec update_case_subjects(term()) :: term()
+  @spec update_case_subjects(Types.param_list()) :: Types.param_list()
   defp update_case_subjects(update_params) when is_list(update_params) do
     base = ["msg", "message"]
 
@@ -1197,7 +1198,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec view_case_analysis(term(), term()) :: term()
+  @spec view_case_analysis(Types.ast_expr() | nil, Types.param_list()) :: Types.case_branch_labels()
   defp view_case_analysis(nil, _), do: {[], nil}
 
   defp view_case_analysis(expr, view_params) when is_list(view_params) do
@@ -1229,7 +1230,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp view_case_analysis(_, _), do: {[], nil}
 
-  @spec view_case_subjects(term()) :: term()
+  @spec view_case_subjects(Types.param_list()) :: Types.param_list()
   defp view_case_subjects(view_params) when is_list(view_params) do
     base = ["model"]
 
@@ -1242,24 +1243,24 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec view_case_subject_allowed?(term(), term(), term()) :: term()
+  @spec view_case_subject_allowed?(String.t(), Types.param_list(), Types.param_list()) :: boolean()
   defp view_case_subject_allowed?(subj, allowed, view_params)
        when is_binary(subj) and is_list(allowed) and is_list(view_params) do
     Enum.member?(allowed, subj) or view_case_param_prefix?(subj, List.first(view_params))
   end
 
-  @spec view_case_param_prefix?(String.t(), term()) :: boolean()
+  @spec view_case_param_prefix?(String.t(), Types.ast_expr()) :: boolean()
   defp view_case_param_prefix?(subj, param) when is_binary(param) and param not in ["", "_"] do
     String.starts_with?(subj, param <> ".")
   end
 
   defp view_case_param_prefix?(_subj, _param), do: false
 
-  @spec peel_update_outer(term()) :: term()
+  @spec peel_update_outer(Types.ast_expr()) :: Types.ast_expr()
   defp peel_update_outer(%{op: :let_in, in_expr: inner}), do: peel_update_outer(inner)
   defp peel_update_outer(other), do: other
 
-  @spec peel_lets_with_bindings(term()) :: term()
+  @spec peel_lets_with_bindings(Types.ast_expr()) :: {Types.ast_expr(), Types.binding_map()}
   defp peel_lets_with_bindings(expr), do: peel_lets_with_bindings(expr, %{})
 
   defp peel_lets_with_bindings(
@@ -1276,14 +1277,14 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp peel_lets_with_bindings(other, bindings), do: {other, bindings}
 
-  @spec resolve_case_subject(term(), term()) :: term()
+  @spec resolve_case_subject(String.t(), Types.binding_map()) :: String.t()
   defp resolve_case_subject(subj, bindings) when is_binary(subj) and is_map(bindings) do
     Map.get(bindings, subj, subj)
   end
 
   defp resolve_case_subject(subj, _), do: subj
 
-  @spec resolve_case_subject_expr(term(), term()) :: term()
+  @spec resolve_case_subject_expr(Types.ast_expr(), Types.binding_map()) :: String.t()
   defp resolve_case_subject_expr(%{op: :field_access, arg: arg, field: field}, bindings)
        when is_binary(field) do
     resolved_arg = resolve_case_subject_expr(arg, bindings)
@@ -1302,7 +1303,7 @@ defmodule Ide.Debugger.ElmIntrospect do
   defp resolve_case_subject_expr(arg, _bindings) when is_binary(arg), do: arg
   defp resolve_case_subject_expr(_, _), do: ""
 
-  @spec pattern_branch_label(term()) :: term()
+  @spec pattern_branch_label(Types.ast_expr()) :: String.t()
   defp pattern_branch_label(%{kind: :wildcard}), do: "_"
 
   defp pattern_branch_label(%{kind: :var, name: n}) when is_binary(n), do: n
@@ -1333,11 +1334,11 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp pattern_branch_label(_), do: "?"
 
-  @spec pattern_constructor_name(term()) :: String.t() | nil
+  @spec pattern_constructor_name(Types.ast_expr()) :: String.t() | nil
   defp pattern_constructor_name(%{kind: :constructor, name: n}) when is_binary(n), do: n
   defp pattern_constructor_name(_), do: nil
 
-  @spec init_model_expr(term()) :: term()
+  @spec init_model_expr(Types.ast_expr() | nil) :: Types.ast_expr() | nil
   defp init_model_expr(expr) do
     expr
     |> peel_lets()
@@ -1356,7 +1357,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec first_case_branch_init_model(term()) :: term()
+  @spec first_case_branch_init_model([Types.ast_expr()]) :: Types.ast_expr() | nil
   defp first_case_branch_init_model(branches) when is_list(branches) do
     Enum.find_value(branches, fn
       %{expr: e} ->
@@ -1370,16 +1371,16 @@ defmodule Ide.Debugger.ElmIntrospect do
     end)
   end
 
-  @spec peel_lets(term()) :: term()
+  @spec peel_lets(Types.ast_expr()) :: Types.ast_expr()
   defp peel_lets(%{op: :let_in, in_expr: inner}), do: peel_lets(inner)
   defp peel_lets(other), do: other
 
   # For view introspection we inline let-bound expressions into var nodes so
   # preview renderers can keep variable names and still derive numeric values.
-  @spec normalize_view_expr(term()) :: term()
+  @spec normalize_view_expr(Types.ast_expr()) :: Types.ast_expr()
   defp normalize_view_expr(expr), do: inline_view_lets(expr, %{}, MapSet.new())
 
-  @spec inline_view_lets(term(), term(), term()) :: term()
+  @spec inline_view_lets(Types.ast_expr(), Types.binding_map(), MapSet.t()) :: Types.ast_expr()
   defp inline_view_lets(
          %{op: :let_in, name: name, value_expr: value_expr, in_expr: inner},
          bindings,
@@ -1419,7 +1420,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp inline_view_lets(other, _bindings, _seen), do: other
 
-  @spec msg_constructors(term()) :: term()
+  @spec msg_constructors(Types.ast_expr() | nil) :: Types.string_list()
   defp msg_constructors(%Module{declarations: decls}) do
     decls
     |> msg_union()
@@ -1432,7 +1433,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec msg_constructor_arities(term()) :: term()
+  @spec msg_constructor_arities(Types.ast_expr() | nil) :: %{optional(String.t()) => non_neg_integer()}
   defp msg_constructor_arities(%Module{declarations: decls}) do
     decls
     |> msg_union()
@@ -1449,7 +1450,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec msg_union(term()) :: term()
+  @spec msg_union([map()]) :: map() | nil
   defp msg_union(decls) when is_list(decls) do
     msg_unions = Enum.filter(decls, &match?(%{kind: :union, name: "Msg"}, &1))
 
@@ -1466,7 +1467,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp msg_union(_), do: nil
 
-  @spec expr_to_json_value(term(), term(), term()) :: term()
+  @spec expr_to_json_value(Types.ast_expr(), non_neg_integer(), non_neg_integer()) :: Types.json_value()
   defp expr_to_json_value(%{op: :record_literal, fields: fields}, depth, max) when depth < max do
     Enum.into(fields, %{}, fn %{name: n, expr: e} ->
       {n, expr_to_json_value(e, depth + 1, max)}
@@ -1512,7 +1513,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp expr_to_json_value(_, _, _), do: %{"$opaque" => true}
 
-  @spec expr_to_view_tree(term(), term(), term(), map()) :: term()
+  @spec expr_to_view_tree(Types.ast_expr() | nil, non_neg_integer(), non_neg_integer(), map()) :: Types.view_tree()
   defp expr_to_view_tree(nil, _, _, _api_metadata), do: view_tree_unknown()
 
   defp expr_to_view_tree(%{op: :expr, expr: inner}, d, max, api_metadata) when d < max do
@@ -1777,10 +1778,10 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp expr_to_view_tree(_, _, _, _api_metadata), do: view_tree_unknown()
 
-  @spec view_tree_unknown() :: term()
+  @spec view_tree_unknown() :: Types.view_tree()
   defp view_tree_unknown, do: %{"type" => "unknown", "label" => "", "children" => []}
 
-  @spec annotate_view_tree_sources(term(), map()) :: term()
+  @spec annotate_view_tree_sources(Types.view_tree(), map()) :: Types.view_tree()
   defp annotate_view_tree_sources(tree, api_metadata)
        when is_map(tree) and is_map(api_metadata) do
     {annotated, _counters} = annotate_view_tree_sources(tree, api_metadata, %{})
@@ -1789,7 +1790,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp annotate_view_tree_sources(tree, _api_metadata), do: tree
 
-  @spec annotate_view_tree_sources(term(), map(), map()) :: {term(), map()}
+  @spec annotate_view_tree_sources(Types.view_tree(), map(), map()) :: {Types.view_tree(), map()}
   defp annotate_view_tree_sources(node, api_metadata, counters)
        when is_map(node) and is_map(api_metadata) and is_map(counters) do
     {children, counters} =
@@ -1953,7 +1954,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp view_output_source_locations(_api_metadata), do: %{}
 
-  @spec view_type_name(term()) :: term()
+  @spec view_type_name(Types.ast_expr() | String.t()) :: String.t()
   defp view_type_name(target) when is_binary(target) do
     case String.split(target, ".") |> List.last() do
       nil -> target
@@ -2091,7 +2092,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end)
   end
 
-  @spec put_module_alias(map(), term(), term()) :: map()
+  @spec put_module_alias(map(), String.t(), String.t()) :: map()
   defp put_module_alias(acc, alias_name, module_name)
        when is_map(acc) and is_binary(alias_name) and is_binary(module_name) and alias_name != "" do
     Map.put(acc, alias_name, module_name)
@@ -2099,14 +2100,14 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp put_module_alias(acc, _alias_name, _module_name) when is_map(acc), do: acc
 
-  @spec module_short_name(term()) :: String.t() | nil
+  @spec module_short_name(Types.ast_expr() | String.t() | nil) :: String.t() | nil
   defp module_short_name(module_name) when is_binary(module_name) do
     module_name |> String.split(".") |> List.last()
   end
 
   defp module_short_name(_), do: nil
 
-  @spec source_call_arg_names(term(), non_neg_integer(), map()) :: [String.t()]
+  @spec source_call_arg_names(Types.ast_expr() | String.t(), non_neg_integer(), map()) :: [String.t()]
   defp source_call_arg_names(target, arity, api_metadata)
        when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
     case resolve_source_call(target, api_metadata) do
@@ -2156,7 +2157,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end)
   end
 
-  @spec view_arg_label(term()) :: term()
+  @spec view_arg_label(list()) :: String.t()
   defp view_arg_label(args) when is_list(args) do
     prefix =
       args
@@ -2172,7 +2173,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec view_arg_snippet(term()) :: term()
+  @spec view_arg_snippet(Types.ast_expr()) :: String.t()
   defp view_arg_snippet(%{op: :int_literal, value: v}), do: Integer.to_string(v)
   defp view_arg_snippet(%{op: :float_literal, value: v}) when is_number(v), do: to_string(v)
   defp view_arg_snippet(%{op: :char_literal, value: v}) when is_binary(v), do: inspect(v)
@@ -2182,7 +2183,7 @@ defmodule Ide.Debugger.ElmIntrospect do
   defp view_arg_snippet(%{op: :list_literal, items: is}), do: "[#{length(is)}]"
   defp view_arg_snippet(_), do: "…"
 
-  @spec field_access_label(term()) :: term()
+  @spec field_access_label(Types.ast_expr()) :: String.t()
   defp field_access_label(%{op: :field_access, arg: arg, field: field}) when is_binary(field) do
     case resolve_case_subject_expr(%{op: :field_access, arg: arg, field: field}, %{}) do
       value when is_binary(value) and value != "" -> value

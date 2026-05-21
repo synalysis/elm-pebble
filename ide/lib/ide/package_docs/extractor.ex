@@ -2,8 +2,9 @@ defmodule Ide.PackageDocs.Extractor do
   @moduledoc false
 
   alias ElmEx.Frontend.DocsMetadata
+  alias Ide.PackageDocs.Types
 
-  @spec build_package_docs(String.t()) :: {:ok, [map()]} | {:error, term()}
+  @spec build_package_docs(String.t()) :: {:ok, [map()]} | {:error, Types.export_error()}
   def build_package_docs(package_root) when is_binary(package_root) do
     with {:ok, elm_json} <- read_elm_json(package_root),
          {:ok, modules} <- exposed_modules(elm_json) do
@@ -23,7 +24,7 @@ defmodule Ide.PackageDocs.Extractor do
     end
   end
 
-  @spec read_elm_json(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec read_elm_json(String.t()) :: {:ok, map()} | {:error, Types.export_error()}
   def read_elm_json(package_root) when is_binary(package_root) do
     path = Path.join(package_root, "elm.json")
 
@@ -37,7 +38,7 @@ defmodule Ide.PackageDocs.Extractor do
     end
   end
 
-  @spec build_module_doc(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec build_module_doc(String.t()) :: {:ok, map()} | {:error, Types.export_error()}
   def build_module_doc(path) when is_binary(path) do
     with {:ok, metadata} <- apply(DocsMetadata, :parse_file, [path]),
          :ok <- validate_module_docs(metadata) do
@@ -45,7 +46,7 @@ defmodule Ide.PackageDocs.Extractor do
     end
   end
 
-  @spec exposed_modules(map()) :: {:ok, [String.t()]} | {:error, term()}
+  @spec exposed_modules(map()) :: {:ok, [String.t()]} | {:error, Types.export_error()}
   defp exposed_modules(%{"exposed-modules" => modules}) when is_list(modules) do
     {:ok, Enum.map(modules, &to_string/1)}
   end
@@ -75,7 +76,7 @@ defmodule Ide.PackageDocs.Extractor do
     Path.join([package_root, "src", rel])
   end
 
-  @spec validate_module_docs(map()) :: :ok | {:error, term()}
+  @spec validate_module_docs(map()) :: :ok | {:error, Types.export_error()}
   defp validate_module_docs(metadata) do
     docs = metadata.docs
     declarations = metadata.declarations
@@ -96,7 +97,7 @@ defmodule Ide.PackageDocs.Extractor do
     end
   end
 
-  @spec validate_docs_references(map(), [String.t()], map(), map()) :: :ok | {:error, term()}
+  @spec validate_docs_references(map(), [String.t()], map(), map()) :: :ok | {:error, Types.export_error()}
   defp validate_docs_references(metadata, docs, declarations, exposed) do
     Enum.reduce_while(docs, :ok, fn doc_name, :ok ->
       name = exposed_name(doc_name)
@@ -119,7 +120,7 @@ defmodule Ide.PackageDocs.Extractor do
   end
 
   @spec validate_all_exposed_documented(map(), [String.t()], map(), map()) ::
-          :ok | {:error, term()}
+          :ok | {:error, Types.export_error()}
   defp validate_all_exposed_documented(metadata, docs, declarations, exposed) do
     documented = docs |> Enum.map(&exposed_name/1) |> MapSet.new()
 
@@ -210,7 +211,8 @@ defmodule Ide.PackageDocs.Extractor do
     }
   end
 
-  @spec exposed_declarations(term(), map()) :: %{optional(String.t()) => :open | :opaque}
+  @spec exposed_declarations(String.t() | [String.t()], map()) ::
+          %{optional(String.t()) => :open | :opaque}
   defp exposed_declarations("..", declarations) do
     declarations
     |> Map.keys()

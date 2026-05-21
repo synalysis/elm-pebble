@@ -1,6 +1,8 @@
 defmodule Ide.Debugger.RuntimeFingerprintDrift do
   @moduledoc false
 
+  alias Ide.Debugger.Types
+
   @spec backend_drift_detail(map() | nil, keyword()) :: String.t() | nil
   def backend_drift_detail(compare, opts \\ [])
 
@@ -126,7 +128,7 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   def merge_drift_detail(_backend_detail, _key_target_detail), do: nil
 
-  @spec surface_rows(term()) :: term()
+  @spec surface_rows(map()) :: [{Types.surface_target() | atom() | String.t(), map()}]
   defp surface_rows(compare) when is_map(compare) do
     case map_value(compare, :surfaces) do
       surfaces when is_map(surfaces) ->
@@ -138,7 +140,9 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
     end
   end
 
-  @spec row_current_value(term(), term()) :: term()
+  @type row_value :: String.t() | integer() | float() | boolean() | nil | map()
+
+  @spec row_current_value(map(), atom() | String.t()) :: row_value()
   defp row_current_value(row, key) when is_map(row) do
     case fetch_value(row, key) do
       {:ok, value} ->
@@ -156,7 +160,7 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   defp row_current_value(_row, _key), do: nil
 
-  @spec row_compare_value(term(), term()) :: term()
+  @spec row_compare_value(map(), [atom() | String.t()]) :: row_value()
   defp row_compare_value(row, keys) when is_map(row) and is_list(keys) do
     compare = map_value(row, :compare)
     baseline = map_value(row, :baseline)
@@ -176,7 +180,7 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   defp row_compare_value(_row, _keys), do: nil
 
-  @spec map_value(term(), term()) :: term()
+  @spec map_value(map(), atom() | String.t()) :: row_value()
   defp map_value(map, key) when is_map(map) do
     case fetch_value(map, key) do
       {:ok, value} -> value
@@ -186,7 +190,7 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   defp map_value(_map, _key), do: nil
 
-  @spec fetch_value(term(), term()) :: term()
+  @spec fetch_value(map(), atom() | String.t()) :: {:ok, row_value()} | :error
   defp fetch_value(map, key) when is_map(map) do
     variants =
       cond do
@@ -215,7 +219,7 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   defp fetch_value(_map, _key), do: :error
 
-  @spec first_fetch(term()) :: term()
+  @spec first_fetch([{:ok, row_value()} | :error]) :: {:ok, row_value()} | :error
   defp first_fetch(results) when is_list(results) do
     Enum.reduce_while(results, :error, fn
       {:ok, value}, _acc -> {:halt, {:ok, value}}
@@ -223,7 +227,7 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
     end)
   end
 
-  @spec safe_existing_atom(term()) :: term()
+  @spec safe_existing_atom(String.t()) :: atom() | nil
   defp safe_existing_atom(key) when is_binary(key) do
     try do
       String.to_existing_atom(key)
@@ -234,7 +238,7 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   defp safe_existing_atom(_), do: nil
 
-  @spec strip_prefix_key(term(), term()) :: term()
+  @spec strip_prefix_key(atom() | String.t(), String.t()) :: atom() | String.t()
   defp strip_prefix_key(key, prefix) when is_atom(key) and is_binary(prefix) do
     key
     |> Atom.to_string()
@@ -254,10 +258,10 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   defp strip_prefix_key(key, _prefix), do: key
 
-  @spec truthy?(term()) :: term()
+  @spec truthy?(boolean() | String.t() | integer() | nil) :: boolean()
   defp truthy?(value), do: value in [true, "true", 1]
 
-  @spec truncate_reason(term(), term()) :: term()
+  @spec truncate_reason(row_value() | atom(), pos_integer()) :: String.t() | nil
   defp truncate_reason(reason, max_len) when is_integer(max_len) and max_len > 3 do
     text =
       cond do

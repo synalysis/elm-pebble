@@ -3,7 +3,7 @@ defmodule Ide.Emulator do
   Runtime boundary for embedded Pebble emulator sessions.
   """
 
-  alias Ide.Emulator.{Session, SlotLimiter}
+  alias Ide.Emulator.{Session, SlotLimiter, Types}
 
   @type launch_opts :: [
           project_slug: String.t(),
@@ -12,7 +12,7 @@ defmodule Ide.Emulator do
           has_phone_companion: boolean()
         ]
 
-  @spec launch(launch_opts()) :: {:ok, map()} | {:error, term()}
+  @spec launch(launch_opts()) :: {:ok, map()} | {:error, Types.emulator_error()}
   def launch(opts) do
     id = Keyword.get(opts, :id) || Session.generate_id()
     platform = Keyword.get(opts, :platform)
@@ -57,10 +57,10 @@ defmodule Ide.Emulator do
   @spec slot_status() :: Ide.Emulator.SlotLimiter.status()
   def slot_status, do: SlotLimiter.status()
 
-  @spec runtime_status(term()) :: map()
+  @spec runtime_status(String.t() | nil) :: map()
   def runtime_status(platform \\ nil), do: Session.runtime_status(platform)
 
-  @spec install_runtime_dependencies(term()) :: {:ok, map()} | {:error, term()}
+  @spec install_runtime_dependencies(String.t() | nil) :: {:ok, map()}
   def install_runtime_dependencies(platform \\ nil),
     do: Session.install_runtime_dependencies(platform)
 
@@ -72,35 +72,36 @@ defmodule Ide.Emulator do
     end
   end
 
-  @spec info(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec info(String.t()) :: {:ok, map()} | {:error, Types.session_atom_error()}
   def info(id) when is_binary(id) do
     with {:ok, pid} <- lookup(id) do
       {:ok, Session.info(pid)}
     end
   end
 
-  @spec ping(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec ping(String.t()) :: {:ok, map()} | {:error, Types.session_error()}
   def ping(id) when is_binary(id) do
     with {:ok, pid} <- lookup(id) do
       Session.ping(pid)
     end
   end
 
-  @spec health_check(String.t()) :: {:ok, :ok | {:error, term()}} | {:error, term()}
+  @spec health_check(String.t()) ::
+          {:ok, :ok | {:error, Types.session_error()}} | {:error, :not_found}
   def health_check(id) when is_binary(id) do
     with {:ok, pid} <- lookup(id) do
       {:ok, Session.health_check(pid)}
     end
   end
 
-  @spec install(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec install(String.t()) :: {:ok, map()} | {:error, Types.session_error()}
   def install(id) when is_binary(id) do
     with {:ok, pid} <- lookup(id) do
       Session.install(pid)
     end
   end
 
-  @spec control(String.t(), non_neg_integer(), binary()) :: :ok | {:error, term()}
+  @spec control(String.t(), non_neg_integer(), binary()) :: :ok | {:error, Types.session_error()}
   def control(id, protocol, payload)
       when is_binary(id) and is_integer(protocol) and is_binary(payload) do
     with {:ok, pid} <- lookup(id) do
@@ -108,7 +109,7 @@ defmodule Ide.Emulator do
     end
   end
 
-  @spec screenshot(String.t(), keyword()) :: {:ok, binary()} | {:error, term()}
+  @spec screenshot(String.t(), keyword()) :: {:ok, binary()} | {:error, Types.emulator_error()}
   def screenshot(id, opts \\ []) when is_binary(id) do
     with {:ok, pid} <- lookup(id),
          {:ok, %{platform: platform}} <- info(id) do
@@ -143,11 +144,7 @@ defmodule Ide.Emulator do
            ) do
       {:ok, png}
     else
-      {:error, :not_found} -> {:error, :emulator_not_found}
-      :ok -> {:error, :vnc_capture_failed}
-      nil -> {:error, :emulator_vnc_not_ready}
       {:error, reason} -> {:error, reason}
-      other -> {:error, other}
     end
   end
 

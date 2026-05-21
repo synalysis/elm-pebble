@@ -68,7 +68,7 @@ defmodule Ide.EmulatorSupport do
 
   def supported?(_target, _mode), do: false
 
-  @spec normalize_target(term()) :: String.t()
+  @spec normalize_target(String.t() | nil) :: String.t()
   def normalize_target(target) when is_binary(target) do
     target = String.trim(target)
     targets = supported_targets()
@@ -84,7 +84,7 @@ defmodule Ide.EmulatorSupport do
 
   def normalize_target(_), do: normalize_target(default_target())
 
-  @spec normalize_mode(String.t() | nil, term()) :: String.t()
+  @spec normalize_mode(String.t() | nil, String.t() | nil) :: String.t()
   def normalize_mode(target, mode) when is_binary(mode) do
     normalized = String.trim(mode)
 

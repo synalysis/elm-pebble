@@ -29,7 +29,7 @@ defmodule Ide.Formatter.EditPatch do
     }
   end
 
-  @spec common_prefix_len(term(), term()) :: term()
+  @spec common_prefix_len(String.t(), String.t()) :: non_neg_integer()
   defp common_prefix_len(a, b),
     do: common_prefix_len(a, b, 0, min(String.length(a), String.length(b)))
 
@@ -43,7 +43,7 @@ defmodule Ide.Formatter.EditPatch do
     end
   end
 
-  @spec common_suffix_len(term(), term(), term()) :: term()
+  @spec common_suffix_len(String.t(), String.t(), non_neg_integer()) :: non_neg_integer()
   defp common_suffix_len(a, b, prefix_len) do
     max_suffix = min(String.length(a), String.length(b)) - prefix_len
     common_suffix_len(a, b, 0, max_suffix)
@@ -62,7 +62,7 @@ defmodule Ide.Formatter.EditPatch do
     end
   end
 
-  @spec clamp(term(), term()) :: term()
+  @spec clamp(non_neg_integer(), non_neg_integer()) :: non_neg_integer()
   defp clamp(value, max_len) when is_integer(value) do
     value |> max(0) |> min(max_len)
   end

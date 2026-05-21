@@ -1,7 +1,8 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Time do
   @moduledoc false
 
-  @spec eval(String.t(), term()) :: {:ok, term()} | :no_builtin
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  @spec eval(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
   def eval("millistoposix", [value]) when is_integer(value),
     do: {:ok, %{"ctor" => "Posix", "args" => [value]}}
 
@@ -28,13 +29,13 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Time do
   def eval("pointone", []), do: {:ok, 100}
   def eval(_function_name, _values), do: :no_builtin
 
-  @spec eval_kernel(String.t(), term()) :: {:ok, term()} | :no_builtin
+  @spec eval_kernel(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
   def eval_kernel("nowmillis", [_unit]), do: {:ok, System.system_time(:millisecond)}
   def eval_kernel("zoneoffsetminutes", [_unit]), do: {:ok, kernel_zone_offset_minutes()}
   def eval_kernel("every", [_interval, _tagger]), do: {:ok, 1}
   def eval_kernel(_function_name, _values), do: :no_builtin
 
-  @spec posix_millis(term()) :: {:ok, integer()} | :error
+  @spec posix_millis(EvalTypes.runtime_value()) :: {:ok, integer()} | :error
   defp posix_millis(value) when is_integer(value), do: {:ok, value}
   defp posix_millis(value) when is_float(value), do: {:ok, trunc(value)}
 
@@ -52,7 +53,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Time do
 
   defp posix_millis(_), do: :error
 
-  @spec zone_parts(term()) :: {:ok, {integer(), list()}} | :error
+  @spec zone_parts(EvalTypes.runtime_value()) :: {:ok, {integer(), list()}} | :error
   defp zone_parts(%{"ctor" => "Zone", "args" => [default_offset, eras]})
        when is_integer(default_offset) and is_list(eras),
        do: {:ok, {default_offset, eras}}
@@ -80,7 +81,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Time do
     end
   end
 
-  @spec era_parts(term()) :: {:ok, integer(), integer()} | :error
+  @spec era_parts(EvalTypes.runtime_value()) :: {:ok, integer(), integer()} | :error
   defp era_parts(%{"start" => start, "offset" => offset})
        when is_integer(start) and is_integer(offset),
        do: {:ok, start, offset}

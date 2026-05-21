@@ -18,6 +18,7 @@ defmodule Ide.PebbleToolchain do
 
   @type project_slug :: String.t()
   @type opts :: keyword()
+  @type wire_input :: String.t() | integer() | boolean() | list() | nil
 
   @type command_result :: %{
           status: :ok | :error,
@@ -27,20 +28,48 @@ defmodule Ide.PebbleToolchain do
           cwd: String.t()
         }
 
-  @callback build(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
-  @callback package(project_slug(), opts()) :: {:ok, map()} | {:error, term()}
-  @callback publish(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
-  @callback run_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
-  @callback stop_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
+  @type package_result :: %{
+          status: :ok | :error,
+          artifact_path: String.t(),
+          build_result: command_result(),
+          app_root: String.t(),
+          has_phone_companion: boolean()
+        }
+
+  @type pebble_opts :: [
+          {:app_root, String.t()}
+          | {:workspace_root, String.t()}
+          | {:target_type, String.t()}
+          | {:project_name, String.t()}
+          | {:target_platforms, [String.t()]}
+          | {:emulator_target, String.t()}
+          | {:package_path, String.t()}
+          | {:is_published, boolean()}
+          | {:release_notes, String.t()}
+          | {:description, String.t()}
+          | {:version, String.t()}
+          | {:screenshots, [String.t()]}
+          | {:force, boolean()}
+          | {:timeout_seconds, pos_integer()}
+          | keyword()
+        ]
+
+  @type toolchain_error :: atom() | String.t() | tuple()
+
+  @callback build(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
+  @callback package(project_slug(), opts()) :: {:ok, package_result()} | {:error, toolchain_error()}
+  @callback publish(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
+  @callback run_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
+  @callback stop_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
   @callback run_emulator_control(project_slug(), String.t(), map()) ::
-              {:ok, command_result()} | {:error, term()}
+              {:ok, command_result()} | {:error, toolchain_error()}
   @callback run_screenshot(project_slug(), String.t(), String.t()) ::
-              {:ok, command_result()} | {:error, term()}
+              {:ok, command_result()} | {:error, toolchain_error()}
 
   @doc """
   Runs `pebble build` for a prepared Pebble app directory.
   """
-  @spec build(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
+  @spec build(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
   def build(_project_slug, opts) do
     case Keyword.get(opts, :app_root) do
       app_root when is_binary(app_root) and app_root != "" ->
@@ -54,7 +83,7 @@ defmodule Ide.PebbleToolchain do
   @doc """
   Builds a project-specific PBW artifact and returns the package path.
   """
-  @spec package(project_slug(), opts()) :: {:ok, map()} | {:error, term()}
+  @spec package(project_slug(), opts()) :: {:ok, package_result()} | {:error, toolchain_error()}
   def package(project_slug, opts) do
     workspace_root = Keyword.get(opts, :workspace_root)
     target_type = Keyword.get(opts, :target_type, "app")
@@ -89,7 +118,7 @@ defmodule Ide.PebbleToolchain do
   @doc """
   Runs `pebble publish` for a prepared Pebble app directory.
   """
-  @spec publish(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
+  @spec publish(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
   def publish(_project_slug, opts) do
     with {:ok, app_root} <- normalize_publish_app_root(Keyword.get(opts, :app_root)) do
       release_notes = Keyword.get(opts, :release_notes, "")
@@ -123,11 +152,11 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec ensure_successful_build(term()) :: term()
+  @spec ensure_successful_build(command_result()) :: :ok | {:error, toolchain_error()}
   defp ensure_successful_build(%{status: :ok}), do: :ok
   defp ensure_successful_build(result), do: {:error, {:pebble_build_failed, result}}
 
-  @spec ensure_no_forbidden_build_warnings(term()) :: term()
+  @spec ensure_no_forbidden_build_warnings(command_result()) :: :ok | {:error, toolchain_error()}
   defp ensure_no_forbidden_build_warnings(%{output: output} = result) when is_binary(output) do
     present =
       Enum.filter(@forbidden_build_warning_snippets, fn snippet ->
@@ -143,7 +172,7 @@ defmodule Ide.PebbleToolchain do
   @doc """
   Runs `pebble wipe` and then `pebble install --emulator` for a specific `.pbw` artifact.
   """
-  @spec run_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
+  @spec run_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
   def run_emulator(_project_slug, opts) do
     with :ok <- ensure_external_emulator_allowed() do
       do_run_emulator(opts)
@@ -163,7 +192,7 @@ defmodule Ide.PebbleToolchain do
              timeout: emulator_slot_acquire_timeout(opts)
            ),
          {:ok, package_path} <- normalize_package_path(package_path),
-         cwd <- {:ok, Path.dirname(package_path)},
+         {:ok, cwd} <- {:ok, Path.dirname(package_path)},
          {:ok, install_result} <-
            install_on_emulator(cwd, emulator_target, package_path, install_timeout_seconds) do
       {:ok, attach_emulator_logs(install_result, emulator_target, cwd, opts)}
@@ -180,7 +209,7 @@ defmodule Ide.PebbleToolchain do
   @doc """
   Stops running Pebble emulator processes via `pebble kill`.
   """
-  @spec stop_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, term()}
+  @spec stop_emulator(project_slug(), opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
   def stop_emulator(_project_slug, opts \\ []) do
     with :ok <- ensure_external_emulator_allowed() do
       do_stop_emulator(opts)
@@ -223,7 +252,7 @@ defmodule Ide.PebbleToolchain do
   end
 
   @spec install_on_emulator(String.t(), String.t(), String.t(), pos_integer()) ::
-          {:ok, command_result()} | {:error, term()}
+          {:ok, command_result()} | {:error, toolchain_error()}
   defp install_on_emulator(cwd, emulator_target, package_path, timeout_seconds)
        when is_binary(cwd) and is_binary(emulator_target) and is_binary(package_path) and
               is_integer(timeout_seconds) and timeout_seconds > 0 do
@@ -237,7 +266,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec ensure_successful_wipe(term()) :: :ok | {:error, term()}
+  @spec ensure_successful_wipe(command_result()) :: :ok | {:error, toolchain_error()}
   defp ensure_successful_wipe(%{status: :ok}), do: :ok
   defp ensure_successful_wipe(result), do: {:error, {:pebble_wipe_failed, result}}
 
@@ -261,9 +290,6 @@ defmodule Ide.PebbleToolchain do
     Application.get_env(:ide, Ide.PebbleToolchain, [])
     |> Keyword.get(:emulator_install_throttle_seconds, 0.004)
     |> case do
-      false ->
-        nil
-
       nil ->
         nil
 
@@ -282,7 +308,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec attach_emulator_logs(term(), term(), term(), term()) :: term()
+  @spec attach_emulator_logs(command_result(), String.t(), String.t(), opts()) ::
+          command_result()
   defp attach_emulator_logs(result, emulator_target, cwd, opts) do
     logs_seconds = Keyword.get(opts, :logs_snapshot_seconds, 4)
 
@@ -310,7 +337,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec capture_emulator_logs_snapshot(term(), term(), term()) :: term()
+  @spec capture_emulator_logs_snapshot(String.t(), String.t(), pos_integer()) ::
+          {:ok, command_result()} | {:error, toolchain_error()}
   defp capture_emulator_logs_snapshot(emulator_target, cwd, seconds)
        when is_binary(emulator_target) and is_integer(seconds) and seconds > 0 do
     with {:ok, pebble_bin} <- pebble_bin() do
@@ -360,7 +388,7 @@ defmodule Ide.PebbleToolchain do
   Runs `pebble screenshot` to capture emulator output into a file.
   """
   @spec run_screenshot(project_slug(), String.t(), String.t()) ::
-          {:ok, command_result()} | {:error, term()}
+          {:ok, command_result()} | {:error, toolchain_error()}
   def run_screenshot(_project_slug, output_path, emulator_target) do
     with :ok <- ensure_external_emulator_allowed() do
       do_run_screenshot(output_path, emulator_target)
@@ -379,7 +407,7 @@ defmodule Ide.PebbleToolchain do
   Runs a Pebble SDK emulator control command for an already running external emulator.
   """
   @spec run_emulator_control(project_slug(), String.t(), map()) ::
-          {:ok, command_result()} | {:error, term()}
+          {:ok, command_result()} | {:error, toolchain_error()}
   def run_emulator_control(_project_slug, emulator_target, %{} = params) do
     with :ok <- ensure_external_emulator_allowed() do
       do_run_emulator_control(emulator_target, params)
@@ -402,7 +430,7 @@ defmodule Ide.PebbleToolchain do
     |> Keyword.get(:emulator_targets, WatchModels.ordered_ids())
   end
 
-  @spec emulator_control_args(String.t(), map()) :: {:ok, [String.t()]} | {:error, term()}
+  @spec emulator_control_args(String.t(), map()) :: {:ok, [String.t()]} | {:error, toolchain_error()}
   defp emulator_control_args(emulator_target, %{"control" => "button"} = params) do
     action = params |> Map.get("action", "click") |> normalize_button_action()
     button = params |> Map.get("button") |> normalize_emulator_button()
@@ -502,12 +530,12 @@ defmodule Ide.PebbleToolchain do
   @doc """
   Returns configured Pebble app template root directory.
   """
-  @spec template_app_root_path() :: {:ok, String.t()} | {:error, term()}
+  @spec template_app_root_path() :: {:ok, String.t()} | {:error, toolchain_error()}
   def template_app_root_path do
     template_app_root()
   end
 
-  @spec run_pebble(term(), term()) :: term()
+  @spec run_pebble([String.t()], pebble_opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
   defp run_pebble(args, opts \\ []) do
     with {:ok, pebble_bin} <- pebble_bin(),
          {:ok, cwd} <- command_cwd(opts) do
@@ -529,7 +557,8 @@ defmodule Ide.PebbleToolchain do
     error -> {:error, error}
   end
 
-  @spec run_pebble_with_timeout(term(), term(), term()) :: term()
+  @spec run_pebble_with_timeout([String.t()], pos_integer(), pebble_opts()) ::
+          {:ok, command_result()} | {:error, toolchain_error()}
   defp run_pebble_with_timeout(args, timeout_seconds, opts)
        when is_list(args) and is_integer(timeout_seconds) and timeout_seconds > 0 do
     with {:ok, pebble_bin} <- pebble_bin(),
@@ -584,7 +613,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec ensure_linux_bzip2_compat_dir() :: {:ok, String.t()} | {:error, term()} | :ignore
+  @spec ensure_linux_bzip2_compat_dir() :: {:ok, String.t()} | {:error, toolchain_error()} | :ignore
   defp ensure_linux_bzip2_compat_dir do
     cond do
       :os.type() != {:unix, :linux} ->
@@ -603,7 +632,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec ensure_symlink(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec ensure_symlink(String.t(), String.t()) :: :ok | {:error, toolchain_error()}
   defp ensure_symlink(link_path, target_path) do
     case File.ln_s(target_path, link_path) do
       :ok ->
@@ -649,7 +678,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec pebble_toolchain_compat_dir() :: {:ok, String.t()} | {:error, term()}
+  @spec pebble_toolchain_compat_dir() :: {:ok, String.t()} | {:error, toolchain_error()}
   defp pebble_toolchain_compat_dir do
     configured =
       Application.get_env(:ide, Ide.PebbleToolchain, [])
@@ -705,7 +734,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec prepare_project_build_app(term(), term(), term(), term(), term()) :: term()
+  @spec prepare_project_build_app(project_slug(), String.t(), String.t(), String.t(), opts()) ::
+          {:ok, String.t()} | {:error, toolchain_error()}
   defp prepare_project_build_app(project_slug, workspace_root, target_type, project_name, opts) do
     with {:ok, template_root} <- template_app_root(),
          {:ok, compile_project_root} <- compile_project_root(workspace_root),
@@ -741,8 +771,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @doc false
-  @spec infer_package_target_type(term(), term()) :: String.t()
+  @spec infer_package_target_type(String.t(), String.t()) :: String.t()
   def infer_package_target_type(project_root, fallback) when is_binary(project_root) do
     case main_program_target(project_root) do
       {:ok, target} -> package_target_type_from_main_target(target, fallback)
@@ -766,7 +795,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec expr_target(term()) :: String.t() | nil
+  @spec expr_target(map()) :: String.t() | nil
   defp expr_target(%{op: :qualified_call, target: target}) when is_binary(target), do: target
 
   defp expr_target(%{"op" => :qualified_call, "target" => target}) when is_binary(target),
@@ -777,7 +806,7 @@ defmodule Ide.PebbleToolchain do
 
   defp expr_target(_), do: nil
 
-  @spec package_target_type_from_main_target(String.t(), term()) :: String.t()
+  @spec package_target_type_from_main_target(String.t(), String.t()) :: String.t()
   defp package_target_type_from_main_target(target, fallback) when is_binary(target) do
     case target do
       "Pebble.Platform.watchface" -> "watchface"
@@ -788,13 +817,13 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec normalize_package_target_type(term()) :: String.t()
+  @spec normalize_package_target_type(String.t()) :: String.t()
   defp normalize_package_target_type(value) when value in ["watchface", "watchapp", "app"],
     do: value
 
   defp normalize_package_target_type(_), do: "app"
 
-  @spec normalize_workspace_root(term()) :: term()
+  @spec normalize_workspace_root(String.t() | nil) :: {:ok, String.t()} | {:error, toolchain_error()}
   defp normalize_workspace_root(path) when is_binary(path) and path != "" do
     abs = Path.expand(path)
     if File.dir?(abs), do: {:ok, abs}, else: {:error, {:workspace_root_not_found, abs}}
@@ -802,7 +831,7 @@ defmodule Ide.PebbleToolchain do
 
   defp normalize_workspace_root(_), do: {:error, :workspace_root_required}
 
-  @spec compile_project_root(term()) :: term()
+  @spec compile_project_root(String.t()) :: {:ok, String.t()} | {:error, :compile_project_root_not_found}
   defp compile_project_root(workspace_root) do
     candidates = [
       Path.join(workspace_root, "watch"),
@@ -817,7 +846,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec ensure_build_app_root(term()) :: term()
+  @spec ensure_build_app_root(String.t()) :: {:ok, String.t()} | {:error, toolchain_error()}
   defp ensure_build_app_root(workspace_root) do
     app_root = Path.join(workspace_root, ".pebble-sdk/app")
     _ = File.rm_rf(app_root)
@@ -828,7 +857,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec copy_pebble_template(term(), term(), boolean()) :: term()
+  @spec copy_pebble_template(String.t(), String.t(), boolean()) :: :ok | {:error, toolchain_error()}
   defp copy_pebble_template(template_root, app_root, has_phone_companion) do
     mappings =
       [
@@ -857,17 +886,17 @@ defmodule Ide.PebbleToolchain do
   end
 
   @spec write_package_json(
-          term(),
-          term(),
-          term(),
-          term(),
-          term(),
-          term(),
-          term(),
-          term(),
+          String.t(),
+          project_slug(),
+          String.t(),
+          String.t(),
+          opts(),
+          [map()],
+          map(),
+          map() | nil,
           boolean()
         ) ::
-          term()
+          :ok | {:error, toolchain_error()}
   defp write_package_json(
          app_root,
          project_slug,
@@ -931,10 +960,12 @@ defmodule Ide.PebbleToolchain do
   end
 
   @spec maybe_enable_multijs(map(), boolean()) :: map()
-  defp maybe_enable_multijs(package, false), do: package
-
-  defp maybe_enable_multijs(package, true) do
-    put_in(package, ["pebble", "enableMultiJS"], true)
+  defp maybe_enable_multijs(package, enabled?) do
+    if enabled? do
+      put_in(package, ["pebble", "enableMultiJS"], true)
+    else
+      package
+    end
   end
 
   @spec maybe_put_message_keys(map(), map()) :: map()
@@ -944,7 +975,7 @@ defmodule Ide.PebbleToolchain do
     put_in(package, ["pebble", "messageKeys"], app_message_keys)
   end
 
-  @spec maybe_put_capabilities(map(), term()) :: map()
+  @spec maybe_put_capabilities(map(), map()) :: map()
   defp maybe_put_capabilities(package, capabilities) do
     capabilities = normalize_capabilities(capabilities)
 
@@ -955,7 +986,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec maybe_put_configurable_capability(map(), term()) :: map()
+  @spec maybe_put_configurable_capability(map(), map()) :: map()
   defp maybe_put_configurable_capability(package, nil), do: package
 
   defp maybe_put_configurable_capability(package, _preferences_schema) do
@@ -970,7 +1001,7 @@ defmodule Ide.PebbleToolchain do
     end)
   end
 
-  @spec normalize_capabilities(term()) :: [String.t()]
+  @spec normalize_capabilities(map() | nil) :: [String.t()]
   defp normalize_capabilities(value) when is_list(value) do
     allowed = MapSet.new(["location", "configurable", "health"])
 
@@ -984,7 +1015,8 @@ defmodule Ide.PebbleToolchain do
 
   defp normalize_capabilities(_), do: []
 
-  @spec stage_project_resources(term(), term()) :: term()
+  @spec stage_project_resources(String.t(), String.t()) ::
+          {:ok, [map()]} | {:error, toolchain_error()}
   defp stage_project_resources(workspace_root, app_root) do
     with {:ok, bitmap_entries} <- stage_bitmap_resources(workspace_root, app_root),
          {:ok, font_entries} <- stage_font_resources(workspace_root, app_root),
@@ -993,7 +1025,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec write_resource_id_header(term(), term(), term()) :: term()
+  @spec write_resource_id_header(String.t(), [map()], [map()]) :: :ok | {:error, toolchain_error()}
   defp write_resource_id_header(app_root, bitmap_entries, font_entries) do
     header_path = Path.join(app_root, "src/c/generated/resource_ids.h")
 
@@ -1055,7 +1087,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec stage_bitmap_resources(term(), term()) :: term()
+  @spec stage_bitmap_resources(String.t(), String.t()) :: {:ok, [map()]} | {:error, toolchain_error()}
   defp stage_bitmap_resources(workspace_root, app_root) do
     manifest_path = Path.join(workspace_root, "watch/resources/bitmaps.json")
     assets_root = Path.join(workspace_root, "watch/resources/bitmaps")
@@ -1102,7 +1134,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec stage_font_resources(term(), term()) :: term()
+  @spec stage_font_resources(String.t(), String.t()) :: {:ok, [map()]} | {:error, toolchain_error()}
   defp stage_font_resources(workspace_root, app_root) do
     manifest_path = Path.join(workspace_root, "watch/resources/fonts.json")
     assets_root = Path.join(workspace_root, "watch/resources/fonts")
@@ -1168,7 +1200,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec macro_name(term()) :: term()
+  @spec macro_name(String.t() | atom()) :: String.t()
   defp macro_name(name) do
     name
     |> to_string()
@@ -1176,7 +1208,7 @@ defmodule Ide.PebbleToolchain do
     |> String.upcase()
   end
 
-  @spec normalize_font_height(term()) :: pos_integer()
+  @spec normalize_font_height(wire_input()) :: pos_integer()
   defp normalize_font_height(value) when is_integer(value) and value > 0, do: value
 
   defp normalize_font_height(value) when is_binary(value) do
@@ -1188,7 +1220,7 @@ defmodule Ide.PebbleToolchain do
 
   defp normalize_font_height(_value), do: 24
 
-  @spec normalize_integer(term(), integer()) :: integer()
+  @spec normalize_integer(wire_input(), integer()) :: integer()
   defp normalize_integer(value, _default) when is_integer(value), do: value
 
   defp normalize_integer(value, default) when is_binary(value) do
@@ -1200,7 +1232,7 @@ defmodule Ide.PebbleToolchain do
 
   defp normalize_integer(_value, default), do: default
 
-  @spec normalize_string_list(term()) :: [String.t()]
+  @spec normalize_string_list(wire_input()) :: [String.t()]
   defp normalize_string_list(values) when is_list(values) do
     values
     |> Enum.filter(&is_binary/1)
@@ -1234,7 +1266,7 @@ defmodule Ide.PebbleToolchain do
   defp maybe_put_nonempty_list(map, _key, []), do: map
   defp maybe_put_nonempty_list(map, key, value), do: Map.put(map, key, value)
 
-  @spec target_platforms_for_target_type(term(), term()) :: term()
+  @spec target_platforms_for_target_type(String.t(), opts()) :: [String.t()]
   defp target_platforms_for_target_type(_target_type, opts) do
     requested = Keyword.get(opts, :target_platforms)
 
@@ -1257,7 +1289,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec generate_elmc_sources(term(), term(), term()) :: term()
+  @spec generate_elmc_sources(String.t(), String.t(), String.t()) :: :ok | {:error, toolchain_error()}
   defp generate_elmc_sources(project_root, app_root, _workspace_root) do
     compile_out_dir = Path.join(project_root, ".elmc-build")
     stage_out_dir = Path.join(app_root, "src/c/elmc")
@@ -1282,7 +1314,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec compile_elmc_project(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  @spec compile_elmc_project(String.t(), map()) :: {:ok, map()} | {:error, toolchain_error()}
   defp compile_elmc_project(project_root, opts) do
     Elmc.compile(project_root, opts)
   rescue
@@ -1301,7 +1333,7 @@ defmodule Ide.PebbleToolchain do
   end
 
   @spec compile_elmc_project_with_generic_renderer(String.t(), map()) ::
-          {:ok, map()} | {:error, term()}
+          {:ok, map()} | {:error, toolchain_error()}
   defp compile_elmc_project_with_generic_renderer(project_root, opts) do
     fallback_opts = Map.put(opts, :direct_render_only, false)
 
@@ -1332,26 +1364,26 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec companion_protocol_types_path(term(), boolean()) :: String.t() | nil
-  defp companion_protocol_types_path(_workspace_root, false), do: nil
+  @spec companion_protocol_types_path(String.t(), boolean()) :: String.t() | nil
+  defp companion_protocol_types_path(workspace_root, has_phone_companion) do
+    if has_phone_companion do
+      protocol_root_types = Path.join(workspace_root, "protocol/src/Companion/Types.elm")
+      watch_root_types = Path.join(workspace_root, "watch/src/Companion/Types.elm")
 
-  defp companion_protocol_types_path(workspace_root, true) do
-    protocol_root_types = Path.join(workspace_root, "protocol/src/Companion/Types.elm")
-    watch_root_types = Path.join(workspace_root, "watch/src/Companion/Types.elm")
+      cond do
+        File.exists?(protocol_root_types) ->
+          protocol_root_types
 
-    cond do
-      File.exists?(protocol_root_types) ->
-        protocol_root_types
+        File.exists?(watch_root_types) ->
+          watch_root_types
 
-      File.exists?(watch_root_types) ->
-        watch_root_types
-
-      true ->
-        nil
+        true ->
+          nil
+      end
     end
   end
 
-  @spec companion_protocol_message_keys(term()) :: term()
+  @spec companion_protocol_message_keys(String.t() | nil) :: {:ok, map()} | {:error, toolchain_error()}
   defp companion_protocol_message_keys(nil), do: {:ok, %{}}
 
   defp companion_protocol_message_keys(protocol_elm) do
@@ -1361,7 +1393,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec generate_companion_protocol(term(), term(), term()) :: term()
+  @spec generate_companion_protocol(String.t() | nil, String.t(), String.t()) ::
+          :ok | {:error, toolchain_error()}
   defp generate_companion_protocol(nil, _app_root, _compile_project_root), do: :ok
 
   defp generate_companion_protocol(protocol_elm, app_root, compile_project_root) do
@@ -1428,7 +1461,7 @@ defmodule Ide.PebbleToolchain do
     |> Map.new()
   end
 
-  @spec generate_companion_protocol_elm_internal(term()) :: term()
+  @spec generate_companion_protocol_elm_internal(String.t() | nil) :: :ok | {:error, toolchain_error()}
   defp generate_companion_protocol_elm_internal(nil), do: :ok
 
   defp generate_companion_protocol_elm_internal(protocol_elm) do
@@ -1440,7 +1473,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec compile_phone_companion(term(), term()) :: term()
+  @spec compile_phone_companion(String.t(), String.t()) :: :ok | {:error, toolchain_error()}
   defp compile_phone_companion(workspace_root, app_root) do
     case phone_companion_app_path(workspace_root) do
       nil ->
@@ -1478,7 +1511,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec extract_phone_preferences(term()) :: term()
+  @spec extract_phone_preferences(String.t()) :: {:ok, map() | nil} | {:error, toolchain_error()}
   defp extract_phone_preferences(workspace_root) do
     case phone_companion_project_root(workspace_root) do
       nil -> {:ok, nil}
@@ -1486,35 +1519,40 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec write_preferences_config(term(), term()) :: term()
-  defp write_preferences_config(_app_root, nil), do: :ok
-
+  @spec write_preferences_config(String.t(), map() | nil) :: :ok | {:error, toolchain_error()}
   defp write_preferences_config(app_root, preferences_schema) do
-    config_path = Path.join(app_root, "src/pkjs/generated/preferences.html")
+    if is_map(preferences_schema) do
+      config_path = Path.join(app_root, "src/pkjs/generated/preferences.html")
 
-    with :ok <- File.mkdir_p(Path.dirname(config_path)) do
-      File.write(config_path, PebblePreferences.render_html(preferences_schema))
-    end
-  end
-
-  @spec write_generated_preferences_bridge(term(), term()) :: term()
-  defp write_generated_preferences_bridge(_workspace_root, nil), do: :ok
-
-  defp write_generated_preferences_bridge(workspace_root, preferences_schema) do
-    with phone_root when is_binary(phone_root) <- phone_companion_project_root(workspace_root),
-         source when is_binary(source) <-
-           PebblePreferences.generated_bridge_source(preferences_schema) do
-      path = Path.join(phone_root, PebblePreferences.generated_bridge_rel_path())
-
-      with :ok <- File.mkdir_p(Path.dirname(path)) do
-        File.write(path, source)
+      with :ok <- File.mkdir_p(Path.dirname(config_path)) do
+        File.write(config_path, PebblePreferences.render_html(preferences_schema))
       end
     else
-      nil -> :ok
+      :ok
     end
   end
 
-  @spec phone_companion_app_path(term()) :: String.t() | nil
+  @spec write_generated_preferences_bridge(String.t(), map() | nil) ::
+          :ok | {:error, toolchain_error()}
+  defp write_generated_preferences_bridge(workspace_root, preferences_schema) do
+    if is_map(preferences_schema) do
+      with phone_root when is_binary(phone_root) <- phone_companion_project_root(workspace_root),
+           source when is_binary(source) <-
+             PebblePreferences.generated_bridge_source(preferences_schema) do
+        path = Path.join(phone_root, PebblePreferences.generated_bridge_rel_path())
+
+        with :ok <- File.mkdir_p(Path.dirname(path)) do
+          File.write(path, source)
+        end
+      else
+        nil -> :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  @spec phone_companion_app_path(String.t()) :: String.t() | nil
   defp phone_companion_app_path(workspace_root) do
     path = Path.join([workspace_root, "phone", "src", "CompanionApp.elm"])
 
@@ -1523,7 +1561,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec phone_companion_project_root(term()) :: String.t() | nil
+  @spec phone_companion_project_root(String.t()) :: String.t() | nil
   defp phone_companion_project_root(workspace_root) do
     root = Path.join(workspace_root, "phone")
 
@@ -1532,7 +1570,8 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec write_companion_index(term(), term(), term()) :: term()
+  @spec write_companion_index(String.t(), String.t(), map() | nil) ::
+          :ok | {:error, toolchain_error()}
   defp write_companion_index(workspace_root, app_root, preferences_schema) do
     case phone_companion_app_path(workspace_root) do
       nil ->
@@ -1547,10 +1586,10 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec elm_companion_index_js(term()) :: String.t()
+  @spec elm_companion_index_js(map() | nil) :: String.t()
   defp elm_companion_index_js(preferences_schema) do
     preferences_url =
-      if preferences_schema do
+      if is_map(preferences_schema) do
         PebblePreferences.data_url(preferences_schema)
       end
 
@@ -1834,7 +1873,7 @@ defmodule Ide.PebbleToolchain do
     """
   end
 
-  @spec copy_file(term(), term()) :: term()
+  @spec copy_file(String.t(), String.t()) :: :ok | {:error, toolchain_error()}
   defp copy_file(source, target) do
     with :ok <- File.mkdir_p(Path.dirname(target)),
          :ok <- File.cp(source, target) do
@@ -1842,7 +1881,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec truncate_display_name(term()) :: term()
+  @spec truncate_display_name(String.t()) :: String.t()
   defp truncate_display_name(name) when is_binary(name) do
     name
     |> String.trim()
@@ -1860,7 +1899,7 @@ defmodule Ide.PebbleToolchain do
     deterministic_uuid(slug)
   end
 
-  @spec deterministic_uuid(term()) :: term()
+  @spec deterministic_uuid(project_slug()) :: String.t()
   defp deterministic_uuid(seed) do
     bytes =
       :crypto.hash(:sha256, seed)
@@ -1880,7 +1919,7 @@ defmodule Ide.PebbleToolchain do
     "#{String.slice(hex, 0, 8)}-#{String.slice(hex, 8, 4)}-#{String.slice(hex, 12, 4)}-#{String.slice(hex, 16, 4)}-#{String.slice(hex, 20, 12)}"
   end
 
-  @spec command_cwd(term()) :: term()
+  @spec command_cwd(pebble_opts()) :: {:ok, String.t()} | {:error, toolchain_error()}
   defp command_cwd(opts) do
     case Keyword.get(opts, :cwd) do
       cwd when is_binary(cwd) and cwd != "" ->
@@ -1891,7 +1930,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec normalize_publish_app_root(term()) :: term()
+  @spec normalize_publish_app_root(String.t() | nil) :: {:ok, String.t()} | {:error, toolchain_error()}
   defp normalize_publish_app_root(path) when is_binary(path) and path != "" do
     abs = Path.expand(path)
     if File.dir?(abs), do: {:ok, abs}, else: {:error, {:publish_app_root_not_found, abs}}
@@ -1899,7 +1938,7 @@ defmodule Ide.PebbleToolchain do
 
   defp normalize_publish_app_root(_), do: {:error, :publish_app_root_required}
 
-  @spec maybe_append_release_notes(term(), term()) :: term()
+  @spec maybe_append_release_notes([String.t()], String.t()) :: [String.t()]
   defp maybe_append_release_notes(args, notes) when is_binary(notes) do
     trimmed = String.trim(notes)
     if trimmed == "", do: args, else: args ++ ["--release-notes", trimmed]
@@ -1907,7 +1946,7 @@ defmodule Ide.PebbleToolchain do
 
   defp maybe_append_release_notes(args, _), do: args
 
-  @spec maybe_append_version(term(), term()) :: term()
+  @spec maybe_append_version([String.t()], String.t()) :: [String.t()]
   defp maybe_append_version(args, version) when is_binary(version) do
     trimmed = String.trim(version)
     if trimmed == "", do: args, else: args ++ ["--version", trimmed]
@@ -1915,7 +1954,7 @@ defmodule Ide.PebbleToolchain do
 
   defp maybe_append_version(args, _), do: args
 
-  @spec maybe_append_description(term(), term()) :: term()
+  @spec maybe_append_description([String.t()], String.t()) :: [String.t()]
   defp maybe_append_description(args, description) when is_binary(description) do
     trimmed = String.trim(description)
     if trimmed == "", do: args, else: args ++ ["--description", trimmed]
@@ -1923,7 +1962,7 @@ defmodule Ide.PebbleToolchain do
 
   defp maybe_append_description(args, _), do: args
 
-  @spec maybe_append_screenshots(term(), term()) :: term()
+  @spec maybe_append_screenshots([String.t()], [String.t()]) :: [String.t()]
   defp maybe_append_screenshots(args, screenshots) when is_list(screenshots) do
     paths =
       screenshots
@@ -1936,9 +1975,10 @@ defmodule Ide.PebbleToolchain do
 
   defp maybe_append_screenshots(args, _), do: args
 
-  @spec maybe_append_flag(term(), term(), term()) :: term()
-  defp maybe_append_flag(args, true, flag), do: args ++ [flag]
-  defp maybe_append_flag(args, _enabled, _flag), do: args
+  @spec maybe_append_flag([String.t()], boolean(), String.t()) :: [String.t()]
+  defp maybe_append_flag(args, enabled?, flag) do
+    if enabled?, do: args ++ [flag], else: args
+  end
 
   defp package_version(version) when is_binary(version) do
     case String.trim(version) do
@@ -1949,7 +1989,7 @@ defmodule Ide.PebbleToolchain do
 
   defp package_version(_), do: "1.0.0"
 
-  @spec pebble_bin() :: term()
+  @spec pebble_bin() :: {:ok, String.t()} | {:error, :pebble_cli_not_found}
   defp pebble_bin do
     cond do
       configured = Application.get_env(:ide, Ide.PebbleToolchain, []) |> Keyword.get(:pebble_bin) ->
@@ -1963,7 +2003,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec elm_bin() :: term()
+  @spec elm_bin() :: {:ok, String.t()} | {:error, :elm_compiler_not_found}
   def elm_bin do
     configured =
       Application.get_env(:ide, Ide.PebbleToolchain, [])
@@ -1987,7 +2027,7 @@ defmodule Ide.PebbleToolchain do
     end) || {:error, :elm_compiler_not_found}
   end
 
-  @spec template_app_root() :: term()
+  @spec template_app_root() :: {:ok, String.t()} | {:error, :template_app_root_not_found}
   defp template_app_root do
     path =
       Application.get_env(:ide, Ide.PebbleToolchain, [])
@@ -2000,13 +2040,13 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec configured_emulator_target() :: term()
+  @spec configured_emulator_target() :: String.t()
   defp configured_emulator_target do
     Application.get_env(:ide, Ide.PebbleToolchain, [])
     |> Keyword.get(:emulator_target, "basalt")
   end
 
-  @spec latest_pbw(term()) :: term()
+  @spec latest_pbw(String.t()) :: {:ok, String.t()} | {:error, toolchain_error()}
   defp latest_pbw(smoke_root) do
     build_root = Path.join(smoke_root, "build")
 
@@ -2028,7 +2068,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec mtime_sort(term()) :: term()
+  @spec mtime_sort(String.t()) :: {{integer(), integer(), integer()}, {integer(), integer(), integer()}}
   defp mtime_sort(path) do
     case File.stat(path) do
       {:ok, stat} -> stat.mtime
@@ -2036,7 +2076,7 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
-  @spec normalize_package_path(term()) :: term()
+  @spec normalize_package_path(String.t() | nil) :: {:ok, String.t()} | {:error, toolchain_error()}
   defp normalize_package_path(path) when is_binary(path) do
     abs = Path.expand(path)
 

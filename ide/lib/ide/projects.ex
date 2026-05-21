@@ -6,7 +6,9 @@ defmodule Ide.Projects do
   import Ecto.Query, warn: false
 
   alias Ide.Projects.FileStore
+  alias Ide.Projects.FileTypes
   alias Ide.Projects.Project
+  alias Ide.Projects.Types
   alias Ide.AppStore
   alias Ide.Debugger
   alias Ide.Resources.ResourceStore
@@ -23,7 +25,7 @@ defmodule Ide.Projects do
   @doc """
   Lists all projects.
   """
-  @spec list_projects(term()) :: term()
+  @spec list_projects(Types.scope_user()) :: [Project.t()]
   def list_projects(user \\ :current_scope) do
     user = current_scope_user(user)
 
@@ -36,7 +38,7 @@ defmodule Ide.Projects do
   @doc """
   Fetches a project by slug.
   """
-  @spec get_project_by_slug(term(), term()) :: term()
+  @spec get_project_by_slug(String.t(), Types.scope_user()) :: Project.t() | nil
   def get_project_by_slug(slug, user \\ :current_scope) do
     user = current_scope_user(user)
 
@@ -48,7 +50,7 @@ defmodule Ide.Projects do
   @doc """
   Returns a project by id.
   """
-  @spec get_project!(term(), term()) :: term()
+  @spec get_project!(integer() | String.t(), Types.scope_user() | :any) :: Project.t()
   def get_project!(id, user \\ :any)
 
   def get_project!(id, :any), do: Repo.get!(Project, id)
@@ -62,7 +64,7 @@ defmodule Ide.Projects do
   @doc """
   Creates a project and bootstraps its source root directories.
   """
-  @spec create_project(term(), term()) :: term()
+  @spec create_project(Types.project_attrs(), Types.scope_user()) :: Types.create_result()
   def create_project(attrs, user \\ nil) do
     attrs =
       attrs
@@ -99,7 +101,8 @@ defmodule Ide.Projects do
   @doc """
   Imports an existing project directory into IDE workspace roots.
   """
-  @spec import_project(term(), term(), term()) :: term()
+  @spec import_project(Types.project_attrs(), String.t(), Types.scope_user()) ::
+          Types.create_result()
   def import_project(attrs, import_path, user \\ nil) do
     import_root = Path.expand(import_path)
 
@@ -135,7 +138,8 @@ defmodule Ide.Projects do
   @doc """
   Clones a GitHub repository and imports it as an IDE project workspace.
   """
-  @spec import_from_github(map(), map(), term(), keyword()) :: {:ok, Project.t()} | {:error, term()}
+  @spec import_from_github(map(), map(), Types.scope_user(), keyword()) ::
+          {:ok, Project.t()} | {:error, Types.project_error()}
   def import_from_github(attrs, github_params, user \\ nil, opts \\ []) do
     with {:ok, repo_ref} <- resolve_github_repo_ref(github_params),
          {:ok, clone_path} <- clone_path_for_import(repo_ref, opts) do
@@ -149,7 +153,7 @@ defmodule Ide.Projects do
     end
   end
 
-  @spec clone_path_for_import(map(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  @spec clone_path_for_import(map(), keyword()) :: {:ok, String.t()} | {:error, Types.project_error()}
   defp clone_path_for_import(repo_ref, opts) do
     case Keyword.get(opts, :clone_path) do
       path when is_binary(path) -> {:ok, path}
@@ -157,7 +161,7 @@ defmodule Ide.Projects do
     end
   end
 
-  @spec resolve_github_repo_ref(map()) :: {:ok, map()} | {:error, term()}
+  @spec resolve_github_repo_ref(map()) :: {:ok, map()} | {:error, Types.project_error()}
   defp resolve_github_repo_ref(params) when is_map(params) do
     owner = params |> Map.get("owner", Map.get(params, :owner, "")) |> to_string() |> String.trim()
     repo = params |> Map.get("repo", Map.get(params, :repo, "")) |> to_string() |> String.trim()
@@ -251,7 +255,7 @@ defmodule Ide.Projects do
   @doc """
   Exports a project workspace as a ZIP archive.
   """
-  @spec export_project(term()) :: term()
+  @spec export_project(Project.t()) :: {:ok, String.t()} | {:error, Types.project_error()}
   def export_project(%Project{} = project) do
     workspace_root = project_workspace_path(project)
     timestamp = DateTime.utc_now() |> DateTime.to_unix()
@@ -272,7 +276,7 @@ defmodule Ide.Projects do
   @doc """
   Persists a Pebble app UUID on the project and in `elm-pebble.project.json`.
   """
-  @spec persist_app_uuid(Project.t(), String.t()) :: {:ok, Project.t()} | {:error, term()}
+  @spec persist_app_uuid(Project.t(), String.t()) :: {:ok, Project.t()} | {:error, Types.project_error()}
   def persist_app_uuid(%Project{} = project, uuid) when is_binary(uuid) do
     case normalize_app_uuid(uuid) do
       nil -> {:ok, project}
@@ -283,7 +287,7 @@ defmodule Ide.Projects do
   @doc """
   Ensures the project and manifest have a Pebble app UUID when one can be resolved.
   """
-  @spec ensure_app_uuid(Project.t()) :: {:ok, Project.t()} | {:error, term()}
+  @spec ensure_app_uuid(Project.t()) :: {:ok, Project.t()} | {:error, Types.project_error()}
   def ensure_app_uuid(%Project{} = project) do
     workspace = project_workspace_path(project)
     current = normalize_app_uuid(project.app_uuid)
@@ -302,7 +306,7 @@ defmodule Ide.Projects do
   @doc """
   Updates a project's metadata.
   """
-  @spec update_project(term(), term()) :: term()
+  @spec update_project(Project.t(), Types.project_attrs()) :: Types.update_result()
   def update_project(%Project{} = project, attrs) do
     with {:ok, updated} <-
            project
@@ -316,7 +320,7 @@ defmodule Ide.Projects do
   @doc """
   Returns normalized GitHub repository config for a project.
   """
-  @spec github_config(term()) :: map()
+  @spec github_config(Project.t()) :: Types.github_config()
   def github_config(%Project{} = project) do
     config = project.github || %{}
 
@@ -328,7 +332,7 @@ defmodule Ide.Projects do
     }
   end
 
-  @spec github_visibility(term()) :: String.t()
+  @spec github_visibility(String.t() | atom() | nil) :: String.t()
   def github_visibility(value) when value in ["private", "public"], do: value
 
   def github_visibility(value) when is_atom(value) do
@@ -340,7 +344,7 @@ defmodule Ide.Projects do
   @doc """
   Updates project GitHub repository config.
   """
-  @spec update_github_config(term(), map()) :: term()
+  @spec update_github_config(Project.t(), Types.github_config()) :: Types.update_result()
   def update_github_config(%Project{} = project, attrs) when is_map(attrs) do
     update_project(project, %{"github" => Map.new(attrs)})
   end
@@ -349,7 +353,7 @@ defmodule Ide.Projects do
   Syncs app-level publish metadata from the public app store API.
   Requires `project.store_app_id`.
   """
-  @spec sync_store_metadata(term(), term()) :: term()
+  @spec sync_store_metadata(Project.t(), keyword()) :: Types.update_result() | {:error, atom()}
   def sync_store_metadata(%Project{} = project, opts \\ []) do
     store_app_id =
       project.store_app_id
@@ -376,7 +380,7 @@ defmodule Ide.Projects do
   @doc """
   Deletes a project and its local workspace.
   """
-  @spec delete_project(term()) :: term()
+  @spec delete_project(Project.t()) :: {:ok, Project.t()} | {:error, Ecto.Changeset.t()}
   def delete_project(%Project{} = project) do
     workspace_path = FileStore.project_root(project, projects_root())
 
@@ -394,7 +398,7 @@ defmodule Ide.Projects do
   @doc """
   Marks one project as active.
   """
-  @spec activate_project(term()) :: term()
+  @spec activate_project(Project.t()) :: {:ok, Project.t()} | {:error, Types.project_error()}
   def activate_project(%Project{} = project) do
     Repo.transaction(fn ->
       active_scope_for(project)
@@ -413,7 +417,7 @@ defmodule Ide.Projects do
   @doc """
   Returns the active project when one is selected.
   """
-  @spec active_project(term()) :: term()
+  @spec active_project(Types.scope_user()) :: Project.t() | nil
   def active_project(user \\ nil) do
     Project
     |> scope_to_user(user)
@@ -422,7 +426,7 @@ defmodule Ide.Projects do
     |> Repo.one()
   end
 
-  @spec scope_to_user(Ecto.Queryable.t(), term()) :: Ecto.Query.t()
+  @spec scope_to_user(Ecto.Queryable.t(), Types.scope_user()) :: Ecto.Query.t()
   def scope_to_user(queryable, nil), do: from(p in queryable, where: is_nil(p.owner_id))
   def scope_to_user(queryable, %{id: nil}), do: scope_to_user(queryable, nil)
   def scope_to_user(queryable, %{id: id}), do: from(p in queryable, where: p.owner_id == ^id)
@@ -436,7 +440,7 @@ defmodule Ide.Projects do
   @doc """
   Lists nested file tree nodes for each project source root.
   """
-  @spec list_source_tree(term()) :: term()
+  @spec list_source_tree(Project.t()) :: Types.source_tree()
   def list_source_tree(%Project{} = project) do
     FileStore.ensure_roots(project, projects_root())
     ensure_generated_phone_preferences(project)
@@ -447,7 +451,7 @@ defmodule Ide.Projects do
   @doc """
   Reads file content from a source root.
   """
-  @spec read_source_file(term(), term(), term()) :: term()
+  @spec read_source_file(Project.t(), String.t(), String.t()) :: Types.read_result()
   def read_source_file(%Project{} = project, source_root, rel_path) do
     FileStore.read_file(project, projects_root(), source_root, rel_path)
   end
@@ -455,15 +459,61 @@ defmodule Ide.Projects do
   @doc """
   Writes file content to a source root.
   """
-  @spec write_source_file(term(), term(), term(), term()) :: term()
+  @spec write_source_file(Project.t(), String.t(), String.t(), iodata()) :: Types.write_result()
   def write_source_file(%Project{} = project, source_root, rel_path, contents) do
-    FileStore.write_file(project, projects_root(), source_root, rel_path, contents)
+    case FileStore.write_file(project, projects_root(), source_root, rel_path, contents) do
+      :ok = ok ->
+        if capability_sync_source?(source_root, rel_path) do
+          _ = sync_detected_capabilities(project)
+        end
+
+        ok
+
+      other ->
+        other
+    end
   end
+
+  @doc """
+  Merges Pebble capabilities inferred from Elm source usage into project settings.
+
+  Existing capabilities are preserved; newly detected ones are added automatically.
+  """
+  @spec sync_detected_capabilities(Project.t()) :: {:ok, Project.t()} | {:error, Types.project_error()}
+  def sync_detected_capabilities(%Project{} = project) do
+    workspace_root = project_workspace_path(project)
+    detected = Ide.ProjectCapabilities.infer_workspace(workspace_root)
+
+    current =
+      project
+      |> Map.get(:release_defaults, %{})
+      |> Map.get("capabilities", [])
+      |> IdeWeb.WorkspaceLive.State.capabilities_form_value()
+      |> MapSet.new()
+
+    merged = MapSet.union(current, detected)
+
+    if MapSet.equal?(merged, current) do
+      {:ok, project}
+    else
+      defaults = Map.put(project.release_defaults || %{}, "capabilities", MapSet.to_list(merged))
+
+      update_project(project, %{"release_defaults" => defaults})
+    end
+  end
+
+  @spec capability_sync_source?(String.t(), String.t()) :: boolean()
+  defp capability_sync_source?(source_root, rel_path)
+       when is_binary(source_root) and is_binary(rel_path) do
+    source_root in ["watch", "phone"] and String.ends_with?(rel_path, ".elm")
+  end
+
+  defp capability_sync_source?(_, _), do: false
 
   @doc """
   Adds the default companion app and protocol scaffolding to a watch-only project.
   """
-  @spec add_companion_app(Project.t()) :: :ok | {:error, term()}
+  @spec add_companion_app(Project.t()) :: :ok | {:error, Types.project_error()}
   def add_companion_app(%Project{} = project) do
     ProjectTemplates.ensure_companion_app(project_workspace_path(project))
   end
@@ -481,7 +531,8 @@ defmodule Ide.Projects do
   @doc """
   Renames a file inside a source root.
   """
-  @spec rename_source_path(term(), term(), term(), term()) :: term()
+  @spec rename_source_path(Project.t(), String.t(), String.t(), String.t()) ::
+          FileTypes.rename_result()
   def rename_source_path(%Project{} = project, source_root, old_rel_path, new_rel_path) do
     FileStore.rename_file(project, projects_root(), source_root, old_rel_path, new_rel_path)
   end
@@ -489,7 +540,7 @@ defmodule Ide.Projects do
   @doc """
   Deletes a file or directory from a source root.
   """
-  @spec delete_source_path(term(), term(), term()) :: term()
+  @spec delete_source_path(Project.t(), String.t(), String.t()) :: FileTypes.delete_result()
   def delete_source_path(%Project{} = project, source_root, rel_path) do
     FileStore.delete_path(project, projects_root(), source_root, rel_path)
   end
@@ -497,7 +548,7 @@ defmodule Ide.Projects do
   @doc """
   Returns configured local workspace root for project files.
   """
-  @spec projects_root() :: term()
+  @spec projects_root() :: FileTypes.projects_root()
   def projects_root do
     Application.get_env(:ide, Ide.Projects, [])
     |> Keyword.get(:projects_root, Path.expand("workspace_projects"))
@@ -506,7 +557,7 @@ defmodule Ide.Projects do
   @doc """
   Returns absolute workspace directory for a project slug.
   """
-  @spec project_workspace_path(term()) :: term()
+  @spec project_workspace_path(Project.t() | String.t()) :: String.t()
   def project_workspace_path(%Project{} = project) do
     FileStore.project_root(project, projects_root())
   end
@@ -594,7 +645,8 @@ defmodule Ide.Projects do
   @doc """
   Lists bitmap resources for a project.
   """
-  @spec list_bitmap_resources(term()) :: term()
+  @spec list_bitmap_resources(Project.t()) ::
+          {:ok, [ResourceStore.bitmap_entry()]} | {:error, Types.project_error()}
   def list_bitmap_resources(%Project{} = project) do
     ResourceStore.list(project)
   end
@@ -602,7 +654,8 @@ defmodule Ide.Projects do
   @doc """
   Imports a bitmap resource and regenerates the generated resources Elm module.
   """
-  @spec import_bitmap_resource(term(), term(), term()) :: term()
+  @spec import_bitmap_resource(Project.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.project_error()}
   def import_bitmap_resource(%Project{} = project, upload_path, original_name) do
     ResourceStore.import_bitmap(project, upload_path, original_name)
   end
@@ -610,7 +663,7 @@ defmodule Ide.Projects do
   @doc """
   Deletes one bitmap resource and regenerates the generated resources Elm module.
   """
-  @spec delete_bitmap_resource(term(), term()) :: term()
+  @spec delete_bitmap_resource(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.project_error()}
   def delete_bitmap_resource(%Project{} = project, ctor) do
     ResourceStore.delete_bitmap(project, ctor)
   end
@@ -618,7 +671,7 @@ defmodule Ide.Projects do
   @doc """
   Ensures the generated resources module exists and is up to date.
   """
-  @spec ensure_bitmap_generated(term()) :: term()
+  @spec ensure_bitmap_generated(Project.t()) :: :ok | {:error, Types.project_error()}
   def ensure_bitmap_generated(%Project{} = project) do
     ResourceStore.ensure_generated(project)
   end
@@ -626,7 +679,7 @@ defmodule Ide.Projects do
   @doc """
   Ensures the generated phone preferences bridge exists when a phone app declares preferences.
   """
-  @spec ensure_generated_phone_preferences(term()) :: :ok
+  @spec ensure_generated_phone_preferences(Project.t()) :: :ok
   def ensure_generated_phone_preferences(%Project{} = project) do
     phone_root = Path.join(project_workspace_path(project), "phone")
 
@@ -656,7 +709,8 @@ defmodule Ide.Projects do
   @doc """
   Lists font resources for a project.
   """
-  @spec list_font_resources(term()) :: term()
+  @spec list_font_resources(Project.t()) ::
+          {:ok, [ResourceStore.font_entry()]} | {:error, Types.project_error()}
   def list_font_resources(%Project{} = project) do
     ResourceStore.list_fonts(project)
   end
@@ -664,7 +718,8 @@ defmodule Ide.Projects do
   @doc """
   Lists uploaded source font files for a project.
   """
-  @spec list_font_sources(term()) :: term()
+  @spec list_font_sources(Project.t()) ::
+          {:ok, [ResourceStore.font_source()]} | {:error, Types.project_error()}
   def list_font_sources(%Project{} = project) do
     ResourceStore.list_font_sources(project)
   end
@@ -672,7 +727,8 @@ defmodule Ide.Projects do
   @doc """
   Imports a font resource and regenerates the generated resources Elm module.
   """
-  @spec import_font_resource(term(), term(), term()) :: term()
+  @spec import_font_resource(Project.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.project_error()}
   def import_font_resource(%Project{} = project, upload_path, original_name) do
     ResourceStore.import_font(project, upload_path, original_name)
   end
@@ -680,7 +736,7 @@ defmodule Ide.Projects do
   @doc """
   Adds a generated font variant for an uploaded source font.
   """
-  @spec add_font_variant(term(), map()) :: term()
+  @spec add_font_variant(Project.t(), map()) :: {:ok, map()} | {:error, Types.project_error()}
   def add_font_variant(%Project{} = project, params) when is_map(params) do
     ResourceStore.add_font_variant(project, params)
   end
@@ -688,7 +744,8 @@ defmodule Ide.Projects do
   @doc """
   Updates a generated font variant.
   """
-  @spec update_font_variant(term(), String.t(), map()) :: term()
+  @spec update_font_variant(Project.t(), String.t(), map()) ::
+          {:ok, map()} | {:error, Types.project_error()}
   def update_font_variant(%Project{} = project, ctor, params)
       when is_binary(ctor) and is_map(params) do
     ResourceStore.update_font_variant(project, ctor, params)
@@ -697,7 +754,7 @@ defmodule Ide.Projects do
   @doc """
   Deletes one font resource and regenerates the generated resources Elm module.
   """
-  @spec delete_font_resource(term(), term()) :: term()
+  @spec delete_font_resource(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.project_error()}
   def delete_font_resource(%Project{} = project, ctor) do
     ResourceStore.delete_font(project, ctor)
   end
@@ -705,12 +762,12 @@ defmodule Ide.Projects do
   @doc """
   Deletes an uploaded source font and its generated variants.
   """
-  @spec delete_font_source(term(), String.t()) :: term()
+  @spec delete_font_source(Project.t(), String.t()) :: {:ok, map()} | {:error, Types.project_error()}
   def delete_font_source(%Project{} = project, source_id) when is_binary(source_id) do
     ResourceStore.delete_font_source(project, source_id)
   end
 
-  @spec maybe_activate_first(term()) :: term()
+  @spec maybe_activate_first(Project.t()) :: :ok | {:ok, Project.t()} | {:error, Types.project_error()}
   defp maybe_activate_first(project) do
     if is_nil(active_project(%{id: project.owner_id})) do
       activate_project(project)
@@ -727,10 +784,10 @@ defmodule Ide.Projects do
     from(p in Project, where: p.active == true and p.owner_id == ^owner_id)
   end
 
-  @spec template_key(term()) :: term()
+  @spec template_key(map()) :: String.t()
   defp template_key(attrs), do: Map.get(attrs, "template", "starter")
 
-  @spec infer_target_type_from_template(term()) :: term()
+  @spec infer_target_type_from_template(map()) :: map()
   defp infer_target_type_from_template(attrs) do
     template = Map.get(attrs, "template", "starter")
     Map.put(attrs, "target_type", Ide.ProjectTemplates.target_type_for_template(template))
@@ -752,7 +809,7 @@ defmodule Ide.Projects do
     Map.put(attrs, "release_defaults", Map.merge(template_defaults, release_defaults))
   end
 
-  @spec zip_entries(term()) :: term()
+  @spec zip_entries(String.t()) :: {:ok, [charlist()]} | {:error, Types.project_error()}
   defp zip_entries(workspace_root) do
     entries =
       workspace_root
@@ -785,7 +842,7 @@ defmodule Ide.Projects do
     end
   end
 
-  @spec normalize_app_uuid(term()) :: String.t() | nil
+  @spec normalize_app_uuid(String.t() | nil) :: String.t() | nil
   defp normalize_app_uuid(uuid) do
     uuid = uuid |> to_string() |> String.trim()
 
@@ -796,7 +853,7 @@ defmodule Ide.Projects do
     end
   end
 
-  @spec inside_hidden_directory?(term()) :: term()
+  @spec inside_hidden_directory?(String.t()) :: boolean()
   defp inside_hidden_directory?(relative_path) do
     relative_path
     |> Path.dirname()

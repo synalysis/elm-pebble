@@ -8,7 +8,7 @@ defmodule ElmEx.Frontend.GeneratedParserBackend do
   alias ElmEx.Frontend.GeneratedParser
 
   @impl true
-  @spec parse_file(term()) :: term()
+  @spec parse_file(String.t()) :: ElmEx.Frontend.ParserBackend.parse_result()
   def parse_file(path) do
     GeneratedParser.parse_file(path)
   end

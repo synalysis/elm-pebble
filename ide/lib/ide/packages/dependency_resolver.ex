@@ -2,11 +2,9 @@ defmodule Ide.Packages.DependencyResolver do
   @moduledoc false
 
   alias Ide.Packages.VersionResolver
+  alias Ide.Packages.Types
 
-  @type callbacks :: %{
-          required(:versions) => (String.t() -> {:ok, [String.t()]} | {:error, term()}),
-          required(:release) => (String.t(), String.t() -> {:ok, map()} | {:error, term()})
-        }
+  @type callbacks :: Types.watch_compat_callbacks()
 
   @doc """
   Re-solves `dependencies` after removing a **direct** package.
@@ -128,7 +126,15 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec solve(term(), term(), term(), term(), term()) :: term()
+  @spec solve(
+          Types.dependency_requirements_map(),
+          Types.dependency_assignments_map(),
+          [String.t()],
+          callbacks(),
+          Types.resolver_state()
+        ) ::
+          {:ok, Types.dependency_assignments_map(), Types.resolver_state()}
+          | {:error, Types.resolver_error()}
   defp solve(requirements, assigned, roots, callbacks, state) do
     unresolved =
       requirements
@@ -152,7 +158,17 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec try_candidates(term(), term(), term(), term(), term(), term(), term()) :: term()
+  @spec try_candidates(
+          String.t(),
+          [String.t()],
+          Types.dependency_requirements_map(),
+          Types.dependency_assignments_map(),
+          [String.t()],
+          callbacks(),
+          Types.resolver_state()
+        ) ::
+          {:ok, Types.dependency_assignments_map(), Types.resolver_state()}
+          | {:error, Types.resolver_error(), Types.resolver_state()}
   defp try_candidates(package, [], _requirements, _assigned, _roots, _callbacks, state) do
     {:error, %{kind: :no_compatible_version, package: package}, state}
   end
@@ -184,7 +200,14 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec choose_next(term(), term(), term(), term()) :: term()
+  @spec choose_next(
+          [String.t()],
+          Types.dependency_requirements_map(),
+          callbacks(),
+          Types.resolver_state()
+        ) ::
+          {:ok, String.t() | nil, [String.t()] | nil, Types.resolver_state()}
+          | {:error, Types.resolver_error(), Types.resolver_state()}
   defp choose_next(unresolved, requirements, callbacks, state) do
     Enum.reduce_while(unresolved, {:ok, nil, nil, state}, fn package,
                                                              {:ok, best_pkg, best_cands, st} ->
@@ -213,7 +236,14 @@ defmodule Ide.Packages.DependencyResolver do
     end)
   end
 
-  @spec candidates_for(term(), term(), term(), term()) :: term()
+  @spec candidates_for(
+          String.t(),
+          [String.t()],
+          callbacks(),
+          Types.resolver_state()
+        ) ::
+          {:ok, [String.t()], Types.resolver_state()}
+          | {:error, term(), Types.resolver_state()}
   defp candidates_for(package, constraints, callbacks, state) do
     with {:ok, versions, state2} <- fetch_versions(package, callbacks, state) do
       candidates =
@@ -228,7 +258,8 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec compatible_assignments?(term(), term()) :: term()
+  @spec compatible_assignments?(Types.dependency_assignments_map(), Types.dependency_requirements_map()) ::
+          boolean()
   defp compatible_assignments?(assigned, requirements) do
     Enum.all?(assigned, fn {package, version} ->
       constraints = Map.get(requirements, package, [])
@@ -236,7 +267,8 @@ defmodule Ide.Packages.DependencyResolver do
     end)
   end
 
-  @spec fetch_versions(term(), term(), term()) :: term()
+  @spec fetch_versions(String.t(), callbacks(), Types.resolver_state()) ::
+          {:ok, [String.t()], Types.resolver_state()} | {:error, term(), Types.resolver_state()}
   defp fetch_versions(package, callbacks, state) do
     case state.versions_cache do
       %{^package => versions} ->
@@ -261,7 +293,9 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec fetch_release_deps(term(), term(), term(), term()) :: term()
+  @spec fetch_release_deps(String.t(), String.t(), callbacks(), Types.resolver_state()) ::
+          {:ok, Types.dependency_constraints_map(), Types.resolver_state()}
+          | {:error, term(), Types.resolver_state()}
   defp fetch_release_deps(package, version, callbacks, state) do
     key = {package, version}
 
@@ -281,7 +315,7 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec extract_dependency_constraints(term()) :: term()
+  @spec extract_dependency_constraints(map()) :: Types.dependency_constraints_map()
   defp extract_dependency_constraints(elm_json) do
     deps = Map.get(elm_json, "dependencies", %{})
 
@@ -297,14 +331,14 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec merge_constraint_maps(term()) :: term()
+  @spec merge_constraint_maps([map() | nil]) :: Types.dependency_constraints_map()
   defp merge_constraint_maps(maps) do
     maps
     |> Enum.map(&normalize_dependency_map/1)
     |> Enum.reduce(%{}, fn map, acc -> Map.merge(acc, map) end)
   end
 
-  @spec normalize_dependency_map(term()) :: term()
+  @spec normalize_dependency_map(map() | list() | nil) :: Types.dependency_constraints_map()
   defp normalize_dependency_map(value) when is_map(value) do
     value
     |> Enum.reduce(%{}, fn {pkg, constraint}, acc ->
@@ -318,7 +352,8 @@ defmodule Ide.Packages.DependencyResolver do
 
   defp normalize_dependency_map(_), do: %{}
 
-  @spec add_requirement(term(), term(), term()) :: term()
+  @spec add_requirement(Types.dependency_requirements_map(), String.t(), String.t() | nil) ::
+          Types.dependency_requirements_map()
   defp add_requirement(requirements, package, constraint) when is_binary(package) do
     existing = Map.get(requirements, package, [])
     normalized = normalize_constraint(constraint)
@@ -326,11 +361,12 @@ defmodule Ide.Packages.DependencyResolver do
     Map.put(requirements, package, updated)
   end
 
-  @spec normalize_constraint(term()) :: term()
+  @spec normalize_constraint(String.t() | integer() | nil) :: String.t()
   defp normalize_constraint(nil), do: ""
   defp normalize_constraint(value), do: to_string(value)
 
-  @spec annotate_conflict(term(), term()) :: term()
+  @spec annotate_conflict(Types.resolver_error(), Types.dependency_requirements_map()) ::
+          Types.resolver_error()
   defp annotate_conflict(reason, requirements) do
     case reason do
       %{package: package} = map ->
@@ -341,12 +377,23 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec reachable_packages(term(), term(), term(), term()) :: term()
+  @spec reachable_packages(
+          [String.t()],
+          Types.dependency_assignments_map(),
+          callbacks(),
+          Types.resolver_state()
+        ) :: MapSet.t(String.t())
   defp reachable_packages(roots, assigned, callbacks, state) do
     traverse(roots, MapSet.new(), assigned, callbacks, state)
   end
 
-  @spec traverse(term(), term(), term(), term(), term()) :: term()
+  @spec traverse(
+          [String.t()],
+          MapSet.t(String.t()),
+          Types.dependency_assignments_map(),
+          callbacks(),
+          Types.resolver_state()
+        ) :: MapSet.t(String.t())
   defp traverse([], seen, _assigned, _callbacks, _state), do: seen
 
   defp traverse([package | rest], seen, assigned, callbacks, state) do
@@ -369,10 +416,10 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec ensure_includes(term(), term()) :: term()
+  @spec ensure_includes([String.t()], String.t()) :: [String.t()]
   defp ensure_includes(list, value), do: if(value in list, do: list, else: list ++ [value])
 
-  @spec normalize_version(term()) :: term()
+  @spec normalize_version(String.t()) :: String.t()
   defp normalize_version(version) do
     case String.split(version, ".") do
       [major, minor] -> "#{major}.#{minor}.0"
@@ -380,7 +427,7 @@ defmodule Ide.Packages.DependencyResolver do
     end
   end
 
-  @spec sort_map(term()) :: term()
+  @spec sort_map(map()) :: Types.dependency_versions_map()
   defp sort_map(map) do
     map
     |> Enum.sort_by(fn {key, _value} -> key end)

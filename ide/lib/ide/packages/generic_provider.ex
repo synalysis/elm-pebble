@@ -5,9 +5,10 @@ defmodule Ide.Packages.GenericProvider do
   alias Ide.Packages.Http
   alias Ide.Packages.IndexDiskCache
   alias Ide.Packages.ModuleDoc
+  alias Ide.Packages.Types
 
   @impl true
-  @spec search(term(), term()) :: term()
+  @spec search(String.t(), keyword()) :: {:ok, [Types.search_entry()]} | {:error, Types.catalog_error()}
   def search(query, opts) do
     with {:ok, entries} <- load_search_index(opts) do
       filtered =
@@ -28,7 +29,7 @@ defmodule Ide.Packages.GenericProvider do
   end
 
   @impl true
-  @spec package_details(term(), term()) :: term()
+  @spec package_details(String.t(), keyword()) :: {:ok, Types.package_details()} | {:error, Types.catalog_error()}
   def package_details(package, opts) do
     with {:ok, summaries} <- load_search_index(opts),
          {:ok, versions} <- versions(package, opts),
@@ -52,7 +53,7 @@ defmodule Ide.Packages.GenericProvider do
   end
 
   @impl true
-  @spec versions(term(), term()) :: term()
+  @spec versions(String.t(), keyword()) :: {:ok, [String.t()]} | {:error, Types.catalog_error()}
   def versions(package, opts) do
     with {:ok, package_map} <- load_all_packages_map(opts) do
       versions =
@@ -72,7 +73,7 @@ defmodule Ide.Packages.GenericProvider do
   end
 
   @impl true
-  @spec readme(term(), term(), term()) :: term()
+  @spec readme(String.t(), String.t(), keyword()) :: {:ok, String.t()} | {:error, Types.catalog_error()}
   def readme(package, version, opts) do
     encoded = encode_package(package)
     path = "/packages/#{encoded}/#{version}/README.md"
@@ -81,7 +82,7 @@ defmodule Ide.Packages.GenericProvider do
 
   @doc false
   @spec module_doc_markdown(String.t(), String.t(), String.t(), keyword()) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, String.t()} | {:error, Types.catalog_error()}
   def module_doc_markdown(package, version, module_name, opts)
       when is_binary(package) and is_binary(version) and is_binary(module_name) do
     module_name = String.trim(module_name)
@@ -98,19 +99,21 @@ defmodule Ide.Packages.GenericProvider do
   end
 
   @impl true
-  @spec package_release(term(), term(), term()) :: term()
+  @spec package_release(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.catalog_error()}
   def package_release(package, version, opts) do
     package_elm_json(package, version, opts)
   end
 
-  @spec load_search_index(term()) :: term()
+  @spec load_search_index(Types.catalog_opts()) ::
+          {:ok, [Types.search_entry()]} | {:error, Types.catalog_error()}
   defp load_search_index(opts) do
     with {:ok, payload} <- load_search_payload(opts) do
       {:ok, normalize_search_entries(payload)}
     end
   end
 
-  @spec load_search_payload(term()) :: term()
+  @spec load_search_payload(Types.catalog_opts()) ::
+          {:ok, Types.search_payload()} | {:error, Types.catalog_error()}
   defp load_search_payload(opts) do
     key = index_cache_key(:search_json, opts[:base_url])
     conditional = index_cache_validators(key)
@@ -135,7 +138,8 @@ defmodule Ide.Packages.GenericProvider do
     end
   end
 
-  @spec search_payload_fallback_all_packages(term()) :: term()
+  @spec search_payload_fallback_all_packages(Types.catalog_opts()) ::
+          {:ok, Types.all_packages_map()} | {:error, Types.catalog_error()}
   defp search_payload_fallback_all_packages(opts) do
     maybe_progress(opts, {:phase, :fallback_all_packages_index})
 
@@ -144,7 +148,8 @@ defmodule Ide.Packages.GenericProvider do
     end
   end
 
-  @spec load_all_packages_map(term()) :: term()
+  @spec load_all_packages_map(Types.catalog_opts()) ::
+          {:ok, Types.all_packages_map()} | {:error, Types.catalog_error()}
   defp load_all_packages_map(opts) do
     key = index_cache_key(:all_packages, opts[:base_url])
     conditional = index_cache_validators(key)
@@ -172,12 +177,12 @@ defmodule Ide.Packages.GenericProvider do
     end
   end
 
-  @spec index_cache_key(term(), term()) :: term()
+  @spec index_cache_key(atom(), String.t()) :: Types.index_cache_key()
   defp index_cache_key(which, base_url) when is_atom(which) and is_binary(base_url) do
     {which, base_url}
   end
 
-  @spec index_request_opts(term()) :: term()
+  @spec index_request_opts(Types.catalog_opts()) :: Types.catalog_http_opts()
   defp index_request_opts(opts) do
     http_opts =
       opts
@@ -191,7 +196,7 @@ defmodule Ide.Packages.GenericProvider do
     end
   end
 
-  @spec maybe_progress(term(), term()) :: term()
+  @spec maybe_progress(Types.catalog_opts(), {:phase, atom()}) :: :ok
   defp maybe_progress(opts, msg) do
     case Keyword.get(opts, :progress) do
       fun when is_function(fun, 1) -> fun.(msg)
@@ -199,7 +204,7 @@ defmodule Ide.Packages.GenericProvider do
     end
   end
 
-  @spec index_cache_table() :: term()
+  @spec index_cache_table() :: :ets.tid()
   defp index_cache_table do
     ensure_named_ets_table(:ide_packages_index_cache, [
       :set,
@@ -209,7 +214,7 @@ defmodule Ide.Packages.GenericProvider do
     ])
   end
 
-  @spec index_cache_validators(term()) :: term()
+  @spec index_cache_validators(Types.index_cache_key()) :: Types.index_validators()
   defp index_cache_validators(key) do
     table = index_cache_table()
 
@@ -218,7 +223,7 @@ defmodule Ide.Packages.GenericProvider do
         index_validators_from(etag, last_modified)
 
       _ ->
-        IndexDiskCache.hydrate_to_ets!(table, key)
+        IndexDiskCache.hydrate_to_ets!(:ide_packages_index_cache, key)
 
         case :ets.lookup(table, key) do
           [{^key, etag, last_modified, _payload}] ->
@@ -230,21 +235,22 @@ defmodule Ide.Packages.GenericProvider do
     end
   end
 
-  @spec index_validators_from(term(), term()) :: term()
+  @spec index_validators_from(String.t() | nil, String.t() | nil) :: Types.index_validators()
   defp index_validators_from(etag, last_modified) do
     %{}
     |> index_put_validator(:etag, etag)
     |> index_put_validator(:last_modified, last_modified)
   end
 
-  @spec index_put_validator(term(), term(), term()) :: term()
+  @spec index_put_validator(Types.index_validators(), atom(), String.t() | nil) ::
+          Types.index_validators()
   defp index_put_validator(acc, _k, v) when v in [nil, ""], do: acc
 
   defp index_put_validator(acc, k, v) when is_binary(v) do
     Map.put(acc, k, v)
   end
 
-  @spec index_cache_put(term(), term(), term()) :: term()
+  @spec index_cache_put(Types.index_cache_key(), map(), Types.search_payload()) :: :ok
   defp index_cache_put(key, meta, payload) do
     etag = Map.get(meta, :etag)
     last_modified = Map.get(meta, :last_modified)
@@ -252,7 +258,7 @@ defmodule Ide.Packages.GenericProvider do
     IndexDiskCache.schedule_persist(key, meta, payload)
   end
 
-  @spec index_cache_get_payload(term()) :: term()
+  @spec index_cache_get_payload(Types.index_cache_key()) :: Types.search_payload() | nil
   defp index_cache_get_payload(key) do
     case :ets.lookup(index_cache_table(), key) do
       [{^key, _, _, payload}] -> payload
@@ -260,13 +266,15 @@ defmodule Ide.Packages.GenericProvider do
     end
   end
 
-  @spec package_elm_json(term(), term(), term()) :: term()
+  @spec package_elm_json(String.t(), String.t(), Types.catalog_opts()) ::
+          {:ok, map()} | {:error, Types.catalog_error()}
   defp package_elm_json(package, version, opts) do
     encoded = encode_package(package)
     Http.get_json("/packages/#{encoded}/#{version}/elm.json", opts)
   end
 
-  @spec load_docs_json(term(), term(), term()) :: term()
+  @spec load_docs_json(String.t(), String.t(), Types.catalog_opts()) ::
+          {:ok, [Types.docs_json_module()]} | {:error, Types.catalog_error()}
   defp load_docs_json(package, version, opts) do
     encoded = encode_package(package)
     cache_key = {:docs_json, opts[:base_url], package, version}
@@ -282,7 +290,8 @@ defmodule Ide.Packages.GenericProvider do
     end)
   end
 
-  @spec find_module_doc(term(), term()) :: term()
+  @spec find_module_doc([Types.docs_json_module()], String.t()) ::
+          {:ok, Types.docs_json_module()} | {:error, :module_not_in_docs}
   defp find_module_doc(modules, name) when is_list(modules) do
     case Enum.find(modules, fn m -> (m["name"] || "") == name end) do
       nil -> {:error, :module_not_in_docs}
@@ -290,7 +299,7 @@ defmodule Ide.Packages.GenericProvider do
     end
   end
 
-  @spec normalize_search_entries(term()) :: term()
+  @spec normalize_search_entries(Types.search_payload()) :: [Types.search_entry()]
   defp normalize_search_entries(payload) when is_list(payload) do
     payload
     |> Enum.map(&normalize_search_entry/1)
@@ -312,9 +321,7 @@ defmodule Ide.Packages.GenericProvider do
     |> Enum.sort_by(& &1.name)
   end
 
-  defp normalize_search_entries(_), do: []
-
-  @spec normalize_search_entry(term()) :: term()
+  @spec normalize_search_entry(map()) :: Types.search_entry() | nil
   defp normalize_search_entry(%{"name" => name} = entry) do
     %{
       name: to_string(name),
@@ -335,7 +342,7 @@ defmodule Ide.Packages.GenericProvider do
 
   defp normalize_search_entry(_), do: nil
 
-  @spec normalize_exposed_modules(term()) :: term()
+  @spec normalize_exposed_modules(list() | map() | nil) :: [String.t()]
   defp normalize_exposed_modules(nil), do: []
   defp normalize_exposed_modules(list) when is_list(list), do: list
 
@@ -350,7 +357,7 @@ defmodule Ide.Packages.GenericProvider do
 
   defp normalize_exposed_modules(_), do: []
 
-  @spec normalize_version(term()) :: term()
+  @spec normalize_version(String.t()) :: String.t()
   defp normalize_version(version) do
     case String.split(version, ".") do
       [major, minor] -> "#{major}.#{minor}.0"
@@ -358,7 +365,7 @@ defmodule Ide.Packages.GenericProvider do
     end
   end
 
-  @spec encode_package(term()) :: term()
+  @spec encode_package(String.t()) :: String.t()
   defp encode_package(package) do
     package
     |> String.split("/")
@@ -366,17 +373,21 @@ defmodule Ide.Packages.GenericProvider do
     |> Enum.join("/")
   end
 
-  @spec pick_first(term()) :: term()
+  @spec pick_first([String.t() | nil]) :: String.t() | nil
   defp pick_first(values) do
     Enum.find(values, fn value -> is_binary(value) and value != "" end)
   end
 
-  @spec normalize_string(term()) :: term()
+  @spec normalize_string(String.t() | nil | boolean() | number()) :: String.t() | nil
   defp normalize_string(nil), do: nil
   defp normalize_string(value) when is_binary(value), do: value
   defp normalize_string(value), do: to_string(value)
 
-  @spec cached_fetch(term(), term(), term()) :: term()
+  @spec cached_fetch(
+          Types.docs_cache_key(),
+          Types.catalog_opts(),
+          (-> {:ok, [Types.docs_json_module()]} | {:error, Types.catalog_error()})
+        ) :: {:ok, [Types.docs_json_module()]} | {:error, Types.catalog_error()}
   defp cached_fetch(cache_key, opts, fun) do
     ttl_ms = opts[:cache_ttl_ms] || 120_000
     table = cache_table()
@@ -398,7 +409,7 @@ defmodule Ide.Packages.GenericProvider do
     end
   end
 
-  @spec cache_table() :: term()
+  @spec cache_table() :: :ets.tid()
   defp cache_table do
     ensure_named_ets_table(:ide_packages_catalog_cache, [
       :set,
@@ -409,7 +420,7 @@ defmodule Ide.Packages.GenericProvider do
   end
 
   # Avoid TOCTOU when many Task workers hit package APIs at once (e.g. watch catalog filter).
-  @spec ensure_named_ets_table(term(), term()) :: term()
+  @spec ensure_named_ets_table(atom(), list()) :: :ets.tid()
   defp ensure_named_ets_table(name, opts) when is_atom(name) and is_list(opts) do
     case :ets.whereis(name) do
       :undefined ->

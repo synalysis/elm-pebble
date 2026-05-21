@@ -7,6 +7,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   alias Ide.Resources.ResourceStore
   alias IdeWeb.WorkspaceLive.DebuggerPreview
   alias IdeWeb.WorkspaceLive.DebuggerSupport
+  alias Phoenix.LiveView.Rendered
+
+  @type assigns :: map()
+  @type rendered :: Rendered.t()
+  @type model_node :: map()
+  @type config_field :: map()
+  @type trigger_row :: map()
+  @type svg_op :: map()
+  @type wire_input :: String.t() | integer() | float() | boolean() | list() | nil
+  @type model_value :: map() | list() | String.t() | number() | boolean() | nil
 
   @debugger_model_metadata_keys ~w(
     last_message
@@ -24,7 +34,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     configuration
   )
 
-  @spec render(term()) :: term()
+  @spec render(assigns()) :: rendered()
   def render(assigns) do
     ~H"""
     <section
@@ -1245,7 +1255,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   attr(:rows, :list, required: true)
 
-  @spec debugger_elmc_diagnostic_preview(term()) :: term()
+  @spec debugger_elmc_diagnostic_preview(assigns()) :: rendered()
   defp debugger_elmc_diagnostic_preview(assigns) do
     ~H"""
     <div class="max-h-40 overflow-auto rounded border border-zinc-100">
@@ -1285,7 +1295,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:title, :string, default: "Copy to clipboard")
   attr(:copy_selector, :string, default: nil)
 
-  @spec debugger_copy_button(term()) :: term()
+  @spec debugger_copy_button(assigns()) :: rendered()
   defp debugger_copy_button(assigns) do
     ~H"""
     <button
@@ -1306,7 +1316,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:selected_row, :any, default: nil)
   attr(:empty_label, :string, default: "No update messages.")
 
-  @spec debugger_debugger_timeline_rows(term()) :: term()
+  @spec debugger_debugger_timeline_rows(assigns()) :: rendered()
   defp debugger_debugger_timeline_rows(assigns) do
     ~H"""
     <button
@@ -1330,7 +1340,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     """
   end
 
-  @spec debugger_debugger_timeline_row_class(term(), term()) :: [String.t() | boolean()]
+  @spec debugger_debugger_timeline_row_class(map(), map()) :: [String.t() | boolean()]
   defp debugger_debugger_timeline_row_class(row, selected_row) do
     selected? =
       is_map(row) and is_map(selected_row) and
@@ -1354,7 +1364,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   attr(:runtime, :any, required: true)
 
-  @spec debugger_model_tree(term()) :: term()
+  @spec debugger_model_tree(assigns()) :: rendered()
   defp debugger_model_tree(assigns) do
     model = debugger_debugger_model(assigns.runtime)
     assigns = assign(assigns, :model, model)
@@ -1376,7 +1386,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:debugger_state, :any, default: nil)
   attr(:draft_values, :map, default: %{})
 
-  @spec debugger_companion_configuration(term()) :: term()
+  @spec debugger_companion_configuration(assigns()) :: rendered()
   defp debugger_companion_configuration(assigns) do
     configuration =
       debugger_companion_configuration_model(
@@ -1448,7 +1458,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   attr(:field, :map, required: true)
 
-  @spec debugger_companion_configuration_field(term()) :: term()
+  @spec debugger_companion_configuration_field(config_field()) :: rendered()
   defp debugger_companion_configuration_field(assigns) do
     control = Map.get(assigns.field, "control", %{})
 
@@ -1518,7 +1528,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:value, :any, required: true)
   attr(:depth, :integer, default: 0)
 
-  @spec debugger_model_node(term()) :: term()
+  @spec debugger_model_node(model_node()) :: rendered()
   defp debugger_model_node(assigns) do
     children = debugger_model_children(assigns.value)
     scalar = debugger_model_scalar(assigns.value)
@@ -1555,7 +1565,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     """
   end
 
-  @spec debugger_model_children(term()) :: [%{label: String.t(), value: term()}]
+  @spec debugger_model_children(model_node()) :: [%{label: String.t(), value: model_value()}]
   defp debugger_model_children(value) when is_map(value) do
     if debugger_model_elm_constructor?(value) do
       []
@@ -1574,7 +1584,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_model_children(_value), do: []
 
-  @spec debugger_model_tooltip(String.t(), term(), [map()], String.t()) :: String.t()
+  @spec debugger_model_tooltip(String.t(), model_node(), [map()], String.t()) :: String.t()
   defp debugger_model_tooltip(label, _value, [], scalar)
        when is_binary(label) and is_binary(scalar),
        do: "#{label} = #{scalar}"
@@ -1583,7 +1593,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     "#{label} #{debugger_model_container_label(value)}"
   end
 
-  @spec debugger_model_scalar(term()) :: String.t()
+  @spec debugger_model_scalar(model_node()) :: String.t()
   defp debugger_model_scalar(value) when is_map(value) do
     if debugger_model_elm_constructor?(value),
       do: debugger_model_elm_value(value),
@@ -1606,7 +1616,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_model_container_label(value) when is_list(value), do: "[#{length(value)}]"
 
-  @spec debugger_model_elm_constructor?(term()) :: boolean()
+  @spec debugger_model_elm_constructor?(map()) :: boolean()
   defp debugger_model_elm_constructor?(value) when is_map(value) do
     ctor = Map.get(value, "ctor") || Map.get(value, "$ctor") || Map.get(value, :ctor)
     args = Map.get(value, "args") || Map.get(value, "$args") || Map.get(value, :args) || []
@@ -1639,7 +1649,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  @spec debugger_model_elm_arg_value(term()) :: String.t()
+  @spec debugger_model_elm_arg_value(map()) :: String.t()
   defp debugger_model_elm_arg_value(%{} = value) do
     if debugger_model_elm_constructor?(value) do
       rendered = debugger_model_elm_value(value)
@@ -1687,7 +1697,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     if is_list(args), do: length(args), else: 0
   end
 
-  @spec debugger_debugger_model(term()) :: map()
+  @spec debugger_debugger_model(assigns()) :: map()
   defp debugger_debugger_model(runtime) do
     runtime
     |> debugger_runtime_model()
@@ -1716,6 +1726,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     state = Map.get(assigns, :debugger_state)
 
     DebuggerSupport.debugger_agent_state_markdown(%{
+      format_version: "elm-pebble.debugger_state.v1",
       project_name: project_name_for_clipboard(project),
       project_slug: project_slug_for_clipboard(project),
       timeline_mode: Map.get(assigns, :debugger_timeline_mode, "mixed"),
@@ -1753,7 +1764,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  @spec debugger_companion_configuration_model(term()) :: map() | nil
+  @spec debugger_companion_configuration_model(assigns()) :: map() | nil
   defp debugger_companion_configuration_model(runtime) do
     model = debugger_runtime_model(runtime)
 
@@ -1804,20 +1815,20 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_put_configuration_field_value(field, _values), do: field
 
-  @spec debugger_configuration_input_type(term()) :: String.t()
+  @spec debugger_configuration_input_type(config_field()) :: String.t()
   defp debugger_configuration_input_type("number"), do: "number"
   defp debugger_configuration_input_type("color"), do: "color"
   defp debugger_configuration_input_type("slider"), do: "range"
   defp debugger_configuration_input_type(_), do: "text"
 
-  @spec debugger_configuration_input_value(term()) :: String.t()
+  @spec debugger_configuration_input_value(config_field()) :: String.t()
   defp debugger_configuration_input_value(nil), do: ""
   defp debugger_configuration_input_value(value) when is_binary(value), do: value
   defp debugger_configuration_input_value(value) when is_boolean(value), do: to_string(value)
   defp debugger_configuration_input_value(value) when is_number(value), do: to_string(value)
   defp debugger_configuration_input_value(value), do: inspect(value)
 
-  @spec debugger_configuration_truthy?(term()) :: boolean()
+  @spec debugger_configuration_truthy?(config_field()) :: boolean()
   defp debugger_configuration_truthy?(values) when is_list(values),
     do: Enum.any?(values, &debugger_configuration_truthy?/1)
 
@@ -1837,13 +1848,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_configuration_input_step(_control_type, _control), do: nil
 
-  @spec hide_debugger_model_metadata(term()) :: map()
+  @spec hide_debugger_model_metadata(map()) :: map()
   defp hide_debugger_model_metadata(model) when is_map(model) do
     atom_keys = Enum.map(@debugger_model_metadata_keys, &String.to_atom/1)
     Map.drop(model, @debugger_model_metadata_keys ++ atom_keys)
   end
-
-  defp hide_debugger_model_metadata(_model), do: %{}
 
   attr(:open, :boolean, required: true)
   attr(:form, :any, required: true)
@@ -1941,7 +1950,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:auto_fire_subscriptions, :list, default: [])
   attr(:disabled_subscriptions, :list, default: [])
 
-  @spec debugger_subscription_buttons(term()) :: term()
+  @spec debugger_subscription_buttons(assigns()) :: rendered()
   defp debugger_subscription_buttons(assigns) do
     ~H"""
     <div class="mt-2 shrink-0 rounded border border-zinc-200 bg-white p-2">
@@ -2038,9 +2047,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  defp subscription_trigger_button_title(_row),
-    do: "This subscribed event needs a payload shape the debugger form cannot represent."
-
   defp subscription_auto_fire_enabled?(auto_fire_subscriptions, target, trigger)
        when is_list(auto_fire_subscriptions) and is_binary(target) and is_binary(trigger) do
     Enum.any?(auto_fire_subscriptions, fn row ->
@@ -2082,8 +2088,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       String.contains?(trigger, "onhourchange")
   end
 
-  defp recurring_auto_fire_trigger?(_trigger), do: false
-
   attr(:runtime, :any, required: true)
   attr(:project, :any, default: nil)
   attr(:title, :string, default: "Visual preview")
@@ -2095,7 +2099,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:hovered_rendered_scope, :any, default: nil)
   attr(:hovered_rendered_path, :any, default: nil)
 
-  @spec debugger_view_preview(term()) :: term()
+  @spec debugger_view_preview(assigns()) :: rendered()
   defp debugger_view_preview(assigns) do
     tree = debugger_preview_tree(assigns.runtime)
     rendered_tree = debugger_rendered_tree(assigns.runtime)
@@ -2113,15 +2117,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     unresolved_ops = Enum.filter(svg_ops, &(&1.kind == :unresolved))
 
     hover_box =
-      if assigns.hover_scope != nil and assigns.hover_scope == assigns.hovered_rendered_scope do
-        DebuggerSupport.rendered_node_bounds(
-          rendered_tree,
-          assigns.hovered_rendered_path,
-          screen_w,
-          screen_h
-        )
-      else
-        nil
+      case {assigns.hover_scope, assigns.hovered_rendered_path} do
+        {scope, path} when scope != nil and scope == assigns.hovered_rendered_scope and is_binary(path) ->
+          DebuggerSupport.rendered_node_bounds(rendered_tree, path, screen_w, screen_h)
+
+        _ ->
+          nil
       end
 
     assigns =
@@ -2407,7 +2408,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   attr(:control, :map, required: true)
 
-  @spec debugger_accel_control(term()) :: term()
+  @spec debugger_accel_control(assigns()) :: rendered()
   defp debugger_accel_control(assigns) do
     ~H"""
     <div class="min-h-0 flex-1 rounded border border-zinc-200 bg-white p-2">
@@ -2452,7 +2453,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   attr(:button, :map, required: true)
 
-  @spec debugger_watch_button(term()) :: term()
+  @spec debugger_watch_button(assigns()) :: rendered()
   defp debugger_watch_button(assigns) do
     ~H"""
     <button
@@ -2477,7 +2478,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     """
   end
 
-  @spec debugger_watch_button_controls(term(), term()) :: map()
+  @spec debugger_watch_button_controls([trigger_row()], list()) :: map()
   defp debugger_watch_button_controls(rows, disabled_subscriptions) when is_list(rows) do
     [:back, :up, :select, :down]
     |> Map.new(fn button ->
@@ -2489,7 +2490,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_watch_button_controls(_rows, disabled_subscriptions),
     do: debugger_watch_button_controls([], disabled_subscriptions)
 
-  @spec debugger_accel_control(term(), term()) :: map() | nil
+  @spec debugger_accel_control([trigger_row()], list()) :: map() | nil
   defp debugger_accel_control(rows, disabled_subscriptions) when is_list(rows) do
     rows
     |> Enum.find(&accel_trigger_row?/1)
@@ -2515,7 +2516,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_accel_control(_rows, _disabled_subscriptions), do: nil
 
-  @spec accel_trigger_row?(term()) :: boolean()
+  @spec accel_trigger_row?(trigger_row()) :: boolean()
   defp accel_trigger_row?(row) when is_map(row) do
     trigger = Map.get(row, :trigger) || Map.get(row, "trigger")
     trigger in ["on_accel", "on_accel_data"]
@@ -2523,7 +2524,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp accel_trigger_row?(_row), do: false
 
-  @spec debugger_watch_button_control(atom(), term(), term()) :: map()
+  @spec debugger_watch_button_control(atom(), assigns(), trigger_row()) :: map()
   defp debugger_watch_button_control(button, row, disabled_subscriptions) when is_map(row) do
     enabled? =
       subscription_trigger_enabled?(
@@ -2566,7 +2567,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       Enum.find(rows, &watch_button_trigger_match?(&1, button_name))
   end
 
-  @spec watch_button_metadata_match?(term(), String.t(), String.t() | nil) :: boolean()
+  @spec watch_button_metadata_match?(trigger_row(), String.t(), String.t() | nil) :: boolean()
   defp watch_button_metadata_match?(row, button_name, event_name) when is_map(row) do
     row_button = Map.get(row, :button) || Map.get(row, "button")
     row_event = Map.get(row, :button_event) || Map.get(row, "button_event")
@@ -2576,7 +2577,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp watch_button_metadata_match?(_row, _button_name, _event_name), do: false
 
-  @spec watch_button_trigger_match?(term(), String.t()) :: boolean()
+  @spec watch_button_trigger_match?(trigger_row(), String.t()) :: boolean()
   defp watch_button_trigger_match?(row, button_name) when is_map(row) do
     trigger = Map.get(row, :trigger) || Map.get(row, "trigger")
     trigger in watch_button_trigger_names(button_name)
@@ -2601,7 +2602,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:scope, :string, required: true)
   attr(:runtime, :any, required: true)
 
-  @spec debugger_rendered_view_tree(term()) :: term()
+  @spec debugger_rendered_view_tree(assigns()) :: rendered()
   defp debugger_rendered_view_tree(assigns) do
     tree = debugger_rendered_tree(assigns.runtime)
     model = debugger_runtime_model(assigns.runtime)
@@ -2634,7 +2635,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   attr(:path, :string, default: "0")
   attr(:scope, :string, required: true)
 
-  @spec debugger_rendered_node(term()) :: term()
+  @spec debugger_rendered_node(assigns()) :: rendered()
   defp debugger_rendered_node(assigns) do
     node = assigns.node
     type = to_string(Map.get(node, "type") || Map.get(node, :type) || "node")
@@ -2715,7 +2716,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     """
   end
 
-  @spec debugger_hidden_rendered_node_type?(term()) :: term()
+  @spec debugger_hidden_rendered_node_type?(String.t()) :: boolean()
   defp debugger_hidden_rendered_node_type?(type) when is_binary(type) do
     type in ["debuggerRenderStep", "elmcRuntimeStep"]
   end
@@ -2739,8 +2740,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       _ -> nil
     end
   end
-
-  defp debugger_rendered_node_source_tooltip(_node), do: nil
 
   defp rendered_node_tooltip_call(node) when is_map(node) do
     type = Map.get(node, "type") || Map.get(node, :type)
@@ -2773,7 +2772,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  @spec debugger_diag_field(term(), term()) :: term()
+  @spec debugger_diag_field(map(), atom() | String.t()) :: String.t()
   defp debugger_diag_field(row, key) when is_map(row) and is_binary(key) do
     v =
       Map.get(row, key) ||
@@ -2794,7 +2793,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  @spec debugger_diag_where(term()) :: term()
+  @spec debugger_diag_where(map()) :: String.t()
   defp debugger_diag_where(row) when is_map(row) do
     file = Map.get(row, "file") || Map.get(row, :file)
     line = Map.get(row, "line") || Map.get(row, :line)
@@ -2815,10 +2814,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  @spec debugger_watch_svg_ops(term(), term()) :: term()
+  @spec debugger_watch_svg_ops(map() | nil, map() | nil) :: [svg_op()]
   defp debugger_watch_svg_ops(tree, runtime), do: DebuggerPreview.svg_ops(tree, runtime)
 
-  @spec hydrate_bitmap_svg_ops(term(), term()) :: term()
+  @spec hydrate_bitmap_svg_ops([svg_op()], map()) :: [svg_op()]
   defp hydrate_bitmap_svg_ops(rows, %Project{} = project) when is_list(rows) do
     Enum.map(rows, fn
       %{kind: :bitmap_in_rect, bitmap_id: bitmap_id} = row ->
@@ -2834,7 +2833,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp hydrate_bitmap_svg_ops(rows, _project), do: rows
 
-  @spec bitmap_href_for(term(), term()) :: term()
+  @spec bitmap_href_for(map(), assigns()) :: String.t() | nil
   defp bitmap_href_for(%Project{} = project, bitmap_id) when is_integer(bitmap_id) do
     with {:ok, path} <- ResourceStore.bitmap_file_path_by_id(project, bitmap_id),
          {:ok, bytes} <- File.read(path) do
@@ -2846,7 +2845,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp bitmap_href_for(_project, _bitmap_id), do: nil
 
-  @spec bitmap_mime_for_path(term()) :: term()
+  @spec bitmap_mime_for_path(String.t()) :: String.t()
   defp bitmap_mime_for_path(path) when is_binary(path) do
     case path |> Path.extname() |> String.downcase() do
       ".png" -> "image/png"
@@ -2859,17 +2858,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  @spec debugger_pebble_angle_deg(term()) :: term()
+  @spec debugger_pebble_angle_deg(map()) :: float()
   defp debugger_pebble_angle_deg(angle) when is_integer(angle) do
     angle * 360.0 / 65_536.0
   end
 
   defp debugger_pebble_angle_deg(_), do: 0.0
 
-  @spec debugger_unresolved_svg_summary(term()) :: term()
+  @spec debugger_unresolved_svg_summary([map()]) :: String.t()
   defp debugger_unresolved_svg_summary(rows), do: DebuggerPreview.unresolved_summary(rows)
 
-  @spec debugger_svg_op_tooltip(term()) :: String.t() | nil
+  @spec debugger_svg_op_tooltip(svg_op()) :: String.t() | nil
   defp debugger_svg_op_tooltip(op) when is_map(op) do
     source = Map.get(op, :source) || Map.get(op, "source")
 
@@ -2887,10 +2886,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_svg_op_tooltip(_op), do: nil
 
-  @spec debugger_rendered_tree(term()) :: term()
+  @spec debugger_rendered_tree(map() | nil) :: map() | nil
   defp debugger_rendered_tree(runtime), do: DebuggerSupport.rendered_tree(runtime)
 
-  @spec debugger_preview_tree(term()) :: term()
+  @spec debugger_preview_tree(map() | nil) :: map() | nil
   defp debugger_preview_tree(%{} = runtime) do
     view_tree = Map.get(runtime, :view_tree) || Map.get(runtime, "view_tree")
 
@@ -2906,11 +2905,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_preview_tree(_runtime), do: nil
 
-  @spec debugger_preview_dimensions(term(), term()) :: term()
+  @spec debugger_preview_dimensions(map() | nil, map() | nil) :: {integer(), integer()}
   defp debugger_preview_dimensions(runtime, tree),
     do: DebuggerPreview.screen_dimensions(runtime, tree)
 
-  @spec debugger_preview_clip_id(term(), pos_integer(), pos_integer(), boolean()) :: String.t()
+  @spec debugger_preview_clip_id(assigns(), pos_integer(), pos_integer(), boolean()) :: String.t()
   defp debugger_preview_clip_id(assigns, screen_w, screen_h, screen_round?) do
     key = {
       Map.get(assigns, :title),
@@ -2948,16 +2947,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     ]
   end
 
-  @spec debugger_preview_svg_id(term()) :: String.t()
+  @spec debugger_preview_svg_id(assigns()) :: String.t()
   defp debugger_preview_svg_id(assigns) do
     key = {Map.get(assigns, :title), Map.get(assigns, :hover_scope)}
     "debugger-preview-svg-#{:erlang.phash2(key)}"
   end
 
-  @spec debugger_arc_path(term()) :: term()
+  @spec debugger_arc_path(svg_op()) :: String.t()
   defp debugger_arc_path(op), do: DebuggerPreview.arc_path(op)
 
-  @spec debugger_arc_sector_path(term()) :: term()
+  @spec debugger_arc_sector_path(svg_op()) :: String.t()
   defp debugger_arc_sector_path(op) when is_map(op) do
     arc = DebuggerPreview.arc_path(op)
 
@@ -2970,9 +2969,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  defp debugger_arc_sector_path(_), do: ""
-
-  @spec debugger_path_d(term(), term()) :: term()
+  @spec debugger_path_d(svg_op(), boolean()) :: String.t()
   defp debugger_path_d(op, close_shape?) when is_map(op) and is_boolean(close_shape?) do
     points = Map.get(op, :points, []) || []
     offset_x = Map.get(op, :offset_x, 0) || 0
@@ -3017,7 +3014,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_path_d(_op, _close_shape?), do: ""
 
-  @spec debugger_text_svg_x(term()) :: number()
+  @spec debugger_text_svg_x(svg_op()) :: number()
   defp debugger_text_svg_x(%{text_align: "left", x: x}) when is_number(x), do: x
 
   defp debugger_text_svg_x(%{text_align: "right", x: x, w: w}) when is_number(x) and is_number(w),
@@ -3027,12 +3024,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_text_svg_x(%{x: x}) when is_number(x), do: x
   defp debugger_text_svg_x(_op), do: 0
 
-  @spec debugger_text_svg_y(term()) :: number()
+  @spec debugger_text_svg_y(svg_op()) :: number()
   defp debugger_text_svg_y(%{y: y, h: h}) when is_number(y) and is_number(h), do: y + h / 2
   defp debugger_text_svg_y(%{y: y}) when is_number(y), do: y
   defp debugger_text_svg_y(_op), do: 0
 
-  @spec debugger_text_svg_font_size(term()) :: pos_integer()
+  @spec debugger_text_svg_font_size(svg_op()) :: pos_integer()
   defp debugger_text_svg_font_size(%{font_size: size}) when is_integer(size) and size > 0,
     do: debugger_system_font_size(size)
 
@@ -3047,17 +3044,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_system_font_size(requested_height) when requested_height <= 36, do: 28
   defp debugger_system_font_size(_requested_height), do: 42
 
-  @spec debugger_text_svg_anchor(term()) :: String.t() | nil
+  @spec debugger_text_svg_anchor(svg_op()) :: String.t() | nil
   defp debugger_text_svg_anchor(%{text_align: "left", w: w}) when is_number(w), do: "start"
   defp debugger_text_svg_anchor(%{text_align: "center", w: w}) when is_number(w), do: "middle"
   defp debugger_text_svg_anchor(%{text_align: "right", w: w}) when is_number(w), do: "end"
   defp debugger_text_svg_anchor(_op), do: nil
 
-  @spec debugger_text_svg_baseline(term()) :: String.t() | nil
+  @spec debugger_text_svg_baseline(svg_op()) :: String.t() | nil
   defp debugger_text_svg_baseline(%{h: h}) when is_number(h), do: "middle"
   defp debugger_text_svg_baseline(_op), do: nil
 
-  @spec debugger_svg_color(term(), term()) :: term()
+  @spec debugger_svg_color(integer() | nil, String.t()) :: String.t()
   defp debugger_svg_color(value, _fallback) when is_integer(value) do
     case value do
       1 ->
@@ -3078,7 +3075,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_svg_color(_value, fallback), do: fallback
 
-  @spec rgba_float(term(), term(), term(), term()) :: term()
+  @spec rgba_float(number(), number(), number(), number()) :: String.t()
   defp rgba_float(r2, g2, b2, a2) do
     r = color_2bit_to_8bit(r2)
     g = color_2bit_to_8bit(g2)
@@ -3087,21 +3084,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     "rgba(#{r}, #{g}, #{b}, #{a})"
   end
 
-  @spec color_2bit_to_8bit(term()) :: term()
+  @spec color_2bit_to_8bit(integer()) :: integer()
   defp color_2bit_to_8bit(value) when is_integer(value), do: max(0, min(3, value)) * 85
 
-  @spec debugger_runtime_model(term()) :: term()
+  @spec debugger_runtime_model(assigns()) :: map()
   defp debugger_runtime_model(runtime), do: DebuggerPreview.runtime_model(runtime)
 
-  @spec debugger_state_running?(term()) :: boolean()
+  @spec debugger_state_running?(map() | nil) :: boolean()
   defp debugger_state_running?(%{running: true}), do: true
   defp debugger_state_running?(_), do: false
 
   @spec debugger_visible_timeline_mode(String.t(), boolean()) :: String.t()
-  defp debugger_visible_timeline_mode(_mode, false), do: "watch"
-  defp debugger_visible_timeline_mode(mode, true), do: mode
+  def debugger_visible_timeline_mode(_mode, false), do: "watch"
+  def debugger_visible_timeline_mode(mode, true), do: mode
 
-  @spec selected_debugger_watch_profile_id(term(), term()) :: String.t()
+  @spec selected_debugger_watch_profile_id(assigns(), map() | nil) :: String.t()
   defp selected_debugger_watch_profile_id(%{watch_profile_id: watch_profile_id}, _project)
        when is_binary(watch_profile_id) do
     normalize_debugger_watch_profile_id(watch_profile_id)
@@ -3253,7 +3250,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     """
   end
 
-  @spec debugger_simulator_settings_value(term(), term()) :: map()
+  @spec debugger_simulator_settings_value(assigns(), atom() | String.t()) :: map()
   defp debugger_simulator_settings_value(%{simulator_settings: settings}, _project)
        when is_map(settings) do
     normalize_debugger_simulator_settings(settings)
@@ -3278,7 +3275,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  @spec normalize_debugger_simulator_settings(term()) :: map()
+  @spec normalize_debugger_simulator_settings(map()) :: map()
   defp normalize_debugger_simulator_settings(settings) when is_map(settings) do
     defaults = Debugger.default_simulator_settings()
 
@@ -3311,9 +3308,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     }
   end
 
-  defp normalize_debugger_simulator_settings(_settings), do: Debugger.default_simulator_settings()
-
-  @spec normalize_debugger_integer(term(), integer(), integer(), integer()) :: integer()
+  @spec normalize_debugger_integer(wire_input(), integer(), integer(), integer()) :: integer()
   defp normalize_debugger_integer(value, _default, min_value, max_value) when is_integer(value),
     do: value |> min(max_value) |> max(min_value)
 
@@ -3326,7 +3321,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp normalize_debugger_integer(_value, default, _min_value, _max_value), do: default
 
-  @spec normalize_debugger_float(term(), float(), float(), float()) :: float()
+  @spec normalize_debugger_float(wire_input(), float(), float(), float()) :: float()
   defp normalize_debugger_float(value, _default, min_value, max_value) when is_float(value),
     do: value |> min(max_value) |> max(min_value)
 
@@ -3342,7 +3337,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp normalize_debugger_float(_value, default, _min_value, _max_value), do: default
 
-  @spec normalize_debugger_optional_string(term(), String.t() | nil) :: String.t() | nil
+  @spec normalize_debugger_optional_string(wire_input(), String.t() | nil) :: String.t() | nil
   defp normalize_debugger_optional_string(value, _default) when is_binary(value) do
     case String.trim(value) do
       "" -> nil
@@ -3352,7 +3347,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp normalize_debugger_optional_string(_value, default), do: default
 
-  @spec normalize_debugger_boolean(term(), boolean()) :: boolean()
+  @spec normalize_debugger_boolean(wire_input(), boolean()) :: boolean()
   defp normalize_debugger_boolean(values, default) when is_list(values),
     do: Enum.any?(values, &normalize_debugger_boolean(&1, default))
 
@@ -3366,7 +3361,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp normalize_debugger_boolean(_value, default), do: default
 
-  @spec project_debugger_watch_profile_id(Project.t() | term()) :: String.t()
+  @spec project_debugger_watch_profile_id(Project.t() | nil) :: String.t()
   defp project_debugger_watch_profile_id(%Project{} = project) do
     settings = project.debugger_settings || %{}
     normalize_debugger_watch_profile_id(Map.get(settings, "watch_profile_id"))
@@ -3374,7 +3369,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp project_debugger_watch_profile_id(_), do: default_debugger_watch_profile_id()
 
-  @spec normalize_debugger_watch_profile_id(term()) :: String.t()
+  @spec normalize_debugger_watch_profile_id(wire_input()) :: String.t()
   defp normalize_debugger_watch_profile_id(value) when is_binary(value) do
     normalized = value |> String.trim() |> String.downcase()
 
@@ -3402,7 +3397,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  @spec debugger_auto_fire_target(term()) :: String.t()
+  @spec debugger_auto_fire_target(wire_input()) :: String.t()
   defp debugger_auto_fire_target("protocol"), do: "protocol"
   defp debugger_auto_fire_target("companion"), do: "phone"
   defp debugger_auto_fire_target(_target), do: "watch"

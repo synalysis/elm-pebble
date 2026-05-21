@@ -3,11 +3,23 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
 
   import Phoenix.Component, only: [assign: 3]
 
+  alias Ide.Screenshots
   alias IdeWeb.WorkspaceLive.ResourcesFlow
+
+  @type socket :: Phoenix.LiveView.Socket.t()
+  @type capture_progress ::
+          Screenshots.progress_payload()
+          | {:target, String.t(), :captured, Screenshots.screenshot()}
+          | {:close, {:ok, term()} | {:error, term()}}
+  @type target_statuses :: %{String.t() => String.t()}
+  @type screenshot_row :: Screenshots.screenshot() | map()
+  @type screenshot_identity :: {:path, String.t()} | {:filename, String.t()} | {:fallback, String.t()}
+  @type screenshot_sort_key :: integer() | String.t()
+  @type install_error :: atom() | tuple() | term()
 
   def group_screenshots(shots), do: ResourcesFlow.group_screenshots(shots)
 
-  @spec render_capture_all_progress(term()) :: term()
+  @spec render_capture_all_progress(capture_progress()) :: String.t()
   def render_capture_all_progress({:phase, message}) when is_binary(message), do: message
 
   def render_capture_all_progress({:target, target, :cleanup_before}),
@@ -46,7 +58,8 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
 
   def render_capture_all_progress(_), do: "Working..."
 
-  @spec update_capture_target_statuses(term(), term()) :: term()
+  @spec update_capture_target_statuses(target_statuses(), capture_progress()) ::
+          target_statuses()
   def update_capture_target_statuses(statuses, {:target, target, :cleanup_before}),
     do: Map.put(statuses, target, "cleaning previous emulator")
 
@@ -92,7 +105,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
 
   def update_capture_target_statuses(statuses, _msg), do: statuses
 
-  @spec maybe_merge_capture_progress_screenshot(term(), term()) :: term()
+  @spec maybe_merge_capture_progress_screenshot(socket(), capture_progress()) :: socket()
   def maybe_merge_capture_progress_screenshot(socket, {:target, _target, :captured, screenshot})
       when is_map(screenshot) do
     shots = upsert_screenshot(socket.assigns.screenshots || [], screenshot)
@@ -104,7 +117,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
 
   def maybe_merge_capture_progress_screenshot(socket, _msg), do: socket
 
-  @spec upsert_screenshot(term(), term()) :: term()
+  @spec upsert_screenshot([screenshot_row()], screenshot_row()) :: [screenshot_row()]
   def upsert_screenshot(existing, screenshot) do
     key = screenshot_identity(screenshot)
 
@@ -114,7 +127,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     |> Enum.sort_by(&screenshot_sort_key/1, :desc)
   end
 
-  @spec screenshot_identity(term()) :: term()
+  @spec screenshot_identity(screenshot_row()) :: screenshot_identity()
   def screenshot_identity(item) when is_map(item) do
     cond do
       is_binary(item[:absolute_path]) and item[:absolute_path] != "" ->
@@ -128,7 +141,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     end
   end
 
-  @spec screenshot_sort_key(term()) :: term()
+  @spec screenshot_sort_key(screenshot_row()) :: screenshot_sort_key()
   def screenshot_sort_key(item) when is_map(item) do
     case item[:captured_at] do
       %DateTime{} = dt -> DateTime.to_unix(dt, :microsecond)
@@ -138,7 +151,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     end
   end
 
-  @spec keep_capture_terminal_status(term(), term(), term()) :: term()
+  @spec keep_capture_terminal_status(target_statuses(), String.t(), String.t()) :: target_statuses()
   def keep_capture_terminal_status(statuses, target, next_status) do
     case Map.get(statuses, target) do
       "done" -> statuses
@@ -147,7 +160,8 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     end
   end
 
-  @spec merge_capture_all_result_statuses(term(), term()) :: term()
+  @spec merge_capture_all_result_statuses(target_statuses(), Screenshots.capture_all_result() | map()) ::
+          target_statuses()
   def merge_capture_all_result_statuses(statuses, result) when is_map(result) do
     results = Map.get(result, :results, [])
 
@@ -165,7 +179,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
 
   def merge_capture_all_result_statuses(statuses, _result), do: statuses
 
-  @spec emulator_install_error_message(term()) :: term()
+  @spec emulator_install_error_message(install_error()) :: String.t()
   def emulator_install_error_message(:package_path_required) do
     "No installable artifact selected. Generate a `.pbw` artifact first, then install it to the emulator."
   end

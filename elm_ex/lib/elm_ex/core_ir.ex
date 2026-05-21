@@ -5,6 +5,7 @@ defmodule ElmEx.CoreIR do
 
   alias ElmEx.IR
   alias ElmEx.IR.Validation
+  alias ElmEx.CoreIR.Types
 
   @type t :: %__MODULE__{
           version: String.t(),
@@ -48,7 +49,7 @@ defmodule ElmEx.CoreIR do
     end
   end
 
-  @spec normalize_module(term()) :: term()
+  @spec normalize_module(ElmEx.IR.Module.t()) :: Types.normalized_module()
   defp normalize_module(module) do
     %{
       "name" => module.name,
@@ -58,7 +59,7 @@ defmodule ElmEx.CoreIR do
     }
   end
 
-  @spec normalize_unions(term()) :: term()
+  @spec normalize_unions(map() | term()) :: map()
   defp normalize_unions(unions) when is_map(unions) do
     unions
     |> Enum.map(fn {name, constructors} ->
@@ -70,7 +71,7 @@ defmodule ElmEx.CoreIR do
 
   defp normalize_unions(_), do: %{}
 
-  @spec normalize_constructors(term()) :: term()
+  @spec normalize_constructors(map() | term()) :: Types.normalized_value()
   defp normalize_constructors(constructors) when is_map(constructors) do
     constructors
     |> Enum.map(fn {ctor, payload} ->
@@ -82,7 +83,7 @@ defmodule ElmEx.CoreIR do
 
   defp normalize_constructors(other), do: normalize_value(other)
 
-  @spec normalize_declaration(term()) :: term()
+  @spec normalize_declaration(ElmEx.IR.Declaration.t()) :: map()
   defp normalize_declaration(decl) do
     %{
       "kind" => to_string(decl.kind),
@@ -94,7 +95,7 @@ defmodule ElmEx.CoreIR do
     }
   end
 
-  @spec normalize_expr(term()) :: term()
+  @spec normalize_expr(map() | nil) :: Types.normalized_value()
   defp normalize_expr(nil), do: nil
 
   defp normalize_expr(expr) when is_map(expr) do
@@ -104,12 +105,12 @@ defmodule ElmEx.CoreIR do
     |> Map.new()
   end
 
-  @spec normalize_value(term()) :: term()
+  @spec normalize_value(Types.normalized_value()) :: Types.normalized_value()
   defp normalize_value(value) when is_map(value), do: normalize_expr(value)
   defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
   defp normalize_value(value), do: value
 
-  @spec normalize_diagnostic(term()) :: term()
+  @spec normalize_diagnostic(map()) :: Types.normalized_diagnostic()
   defp normalize_diagnostic(diagnostic) when is_map(diagnostic) do
     %{
       "severity" => to_string(Map.get(diagnostic, :severity, :warning)),
@@ -120,14 +121,14 @@ defmodule ElmEx.CoreIR do
     }
   end
 
-  @spec has_blocking_diagnostics?(term()) :: term()
+  @spec has_blocking_diagnostics?([Types.normalized_diagnostic()]) :: boolean()
   defp has_blocking_diagnostics?(diagnostics) do
     Enum.any?(diagnostics, fn d ->
       d["severity"] == "error" or d["code"] in ["unsupported_op", "residual_unsupported"]
     end)
   end
 
-  @spec stable_term_sha256(term()) :: term()
+  @spec stable_term_sha256(Types.normalized_value() | [Types.normalized_module()]) :: String.t()
   defp stable_term_sha256(term) do
     :crypto.hash(:sha256, :erlang.term_to_binary(term))
     |> Base.encode16(case: :lower)

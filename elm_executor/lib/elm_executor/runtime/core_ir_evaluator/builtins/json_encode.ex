@@ -1,7 +1,8 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.JsonEncode do
   @moduledoc false
 
-  @spec eval(String.t(), term(), map()) :: {:ok, term()} | :no_builtin | {:error, term()}
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result()
   def eval("string", [value], _ops) when is_binary(value), do: {:ok, value}
   def eval("int", [value], _ops) when is_integer(value), do: {:ok, value}
   def eval("float", [value], _ops) when is_number(value), do: {:ok, value * 1.0}

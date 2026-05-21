@@ -1,6 +1,9 @@
 defmodule Ide.Formatter.Printer.ModuleHeader do
   @moduledoc false
   alias Ide.Formatter.Doc
+  alias Ide.Formatter.Types
+
+  @type exposing :: nil | String.t() | [String.t()]
 
   @spec normalize(String.t(), map()) :: String.t()
   def normalize(source, metadata) when is_binary(source) and is_map(metadata) do
@@ -29,7 +32,8 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     |> canonicalize_constructor_exposing_clauses()
   end
 
-  @spec normalize_module_line(term(), term(), term(), term(), term()) :: term()
+  @spec normalize_module_line(String.t(), String.t(), integer() | nil, exposing(), pos_integer()) ::
+          String.t()
   defp normalize_module_line(line, module_name, module_line, exposing, line_no)
        when is_binary(module_name) do
     indent = leading_spaces(line)
@@ -62,7 +66,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
 
   defp normalize_module_line(line, _module_name, _module_line, _exposing, _line_no), do: line
 
-  @spec normalize_import_line(term(), term(), term()) :: term()
+  @spec normalize_import_line(String.t(), map(), pos_integer()) :: String.t()
   defp normalize_import_line(line, import_entries_by_line, line_no) do
     if leading_indent(line) != 0 do
       line
@@ -83,13 +87,13 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec normalize_suffix_spacing(term()) :: term()
+  @spec normalize_suffix_spacing(String.t()) :: String.t()
   defp normalize_suffix_spacing(rest) do
     trimmed = String.trim_leading(rest)
     if trimmed == "", do: "", else: " " <> trimmed
   end
 
-  @spec render_import_suffix(term()) :: term()
+  @spec render_import_suffix(map()) :: String.t()
   defp render_import_suffix(entry) when is_map(entry) do
     as_clause =
       case entry["as"] do
@@ -100,7 +104,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     as_clause <> render_exposing_clause(entry["exposing"])
   end
 
-  @spec render_exposing_clause(term()) :: term()
+  @spec render_exposing_clause(exposing()) :: String.t()
   defp render_exposing_clause(nil), do: ""
   defp render_exposing_clause(".."), do: " exposing (..)"
 
@@ -117,7 +121,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
 
   defp render_exposing_clause(_), do: ""
 
-  @spec usable_exposing?(term()) :: term()
+  @spec usable_exposing?(exposing() | list() | map() | atom()) :: boolean()
   defp usable_exposing?(nil), do: true
   defp usable_exposing?(".."), do: true
 
@@ -134,7 +138,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
 
   defp usable_exposing?(_), do: false
 
-  @spec canonicalize_exposing_item(term()) :: term()
+  @spec canonicalize_exposing_item(String.t()) :: String.t()
   defp canonicalize_exposing_item(item) when is_binary(item) do
     case constructor_exposing_name(item) do
       {:ok, type_name} -> type_name <> "(..)"
@@ -142,7 +146,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec constructor_exposing_name(term()) :: term()
+  @spec constructor_exposing_name(String.t()) :: {:ok, String.t()} | :error
   defp constructor_exposing_name(item) do
     trimmed = String.trim(item)
 
@@ -165,7 +169,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec constructors_list?(term()) :: term()
+  @spec constructors_list?(String.t()) :: boolean()
   defp constructors_list?(inside) when is_binary(inside) do
     inside
     |> String.split(",", trim: true)
@@ -176,7 +180,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec uppercase_identifier?(term()) :: term()
+  @spec uppercase_identifier?(String.t()) :: boolean()
   defp uppercase_identifier?(value) when is_binary(value) and value != "" do
     case String.to_charlist(value) do
       [first | rest] ->
@@ -189,27 +193,27 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
 
   defp uppercase_identifier?(_), do: false
 
-  @spec identifier_char?(term()) :: term()
+  @spec identifier_char?(non_neg_integer()) :: boolean()
   defp identifier_char?(c), do: c in ?A..?Z or c in ?a..?z or c in ?0..?9 or c in [?_, ?.]
 
-  @spec leading_spaces(term()) :: term()
+  @spec leading_spaces(String.t()) :: String.t()
   defp leading_spaces(line) do
     String.slice(line, 0, leading_indent(line))
   end
 
-  @spec leading_indent(term()) :: term()
+  @spec leading_indent(String.t()) :: non_neg_integer()
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
   end
 
-  @spec take_import_name(term()) :: term()
+  @spec take_import_name(String.t()) :: {String.t(), String.t()}
   defp take_import_name(rest) do
     chars = String.graphemes(rest)
     {name_chars, remaining} = Enum.split_while(chars, &import_name_char?/1)
     {Enum.join(name_chars), Enum.join(remaining)}
   end
 
-  @spec import_name_char?(term()) :: term()
+  @spec import_name_char?(String.t()) :: boolean()
   defp import_name_char?(char) when is_binary(char) do
     case String.to_charlist(char) do
       [c] -> c in ?A..?Z or c in ?a..?z or c in ?0..?9 or c == ?. or c == ?_
@@ -217,7 +221,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec normalize_header_separator(term(), term()) :: term()
+  @spec normalize_header_separator(Types.line_list(), map()) :: Types.line_list()
   defp normalize_header_separator(lines, metadata) when is_list(lines) and is_map(metadata) do
     module_line = get_in(metadata, [:header_lines, :module])
     import_lines = get_in(metadata, [:header_lines, :imports]) || []
@@ -251,14 +255,14 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec canonicalize_constructor_exposing_clauses(term()) :: term()
+  @spec canonicalize_constructor_exposing_clauses(String.t()) :: String.t()
   defp canonicalize_constructor_exposing_clauses(source) when is_binary(source) do
     rewrite_exposing_clauses(source, [])
     |> Enum.reverse()
     |> Enum.join()
   end
 
-  @spec rewrite_exposing_clauses(term(), term()) :: term()
+  @spec rewrite_exposing_clauses(String.t(), [String.t()]) :: [String.t()]
   defp rewrite_exposing_clauses("", acc), do: acc
 
   defp rewrite_exposing_clauses(<<"--", rest::binary>>, acc) do
@@ -293,14 +297,14 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     rewrite_exposing_clauses(rest, [<<char::utf8>> | acc])
   end
 
-  @spec rewrite_constructor_lists_in_exposing(term()) :: term()
+  @spec rewrite_constructor_lists_in_exposing(String.t()) :: String.t()
   defp rewrite_constructor_lists_in_exposing(content) do
     do_rewrite_constructor_lists(content, [])
     |> Enum.reverse()
     |> Enum.join()
   end
 
-  @spec do_rewrite_constructor_lists(term(), term()) :: term()
+  @spec do_rewrite_constructor_lists(String.t(), [String.t()]) :: [String.t()]
   defp do_rewrite_constructor_lists("", acc), do: acc
 
   defp do_rewrite_constructor_lists(<<"--", rest::binary>>, acc) do
@@ -341,19 +345,19 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     do_rewrite_constructor_lists(rest, [<<char::utf8>> | acc])
   end
 
-  @spec take_identifier(term()) :: term()
+  @spec take_identifier(String.t()) :: {String.t(), String.t()}
   defp take_identifier(value) when is_binary(value) do
     chars = String.graphemes(value)
     {ident_chars, remaining} = Enum.split_while(chars, &identifier_or_dot?/1)
     {Enum.join(ident_chars), Enum.join(remaining)}
   end
 
-  @spec take_bridge_to_open_paren(term()) :: term()
+  @spec take_bridge_to_open_paren(String.t()) :: {String.t(), String.t(), boolean()}
   defp take_bridge_to_open_paren(value) when is_binary(value) do
     do_take_bridge_to_open_paren(value, [])
   end
 
-  @spec do_take_bridge_to_open_paren(term(), term()) :: term()
+  @spec do_take_bridge_to_open_paren(String.t(), [String.t()]) :: {String.t(), String.t(), boolean()}
   defp do_take_bridge_to_open_paren("", acc),
     do: {acc |> Enum.reverse() |> Enum.join(), "", false}
 
@@ -378,8 +382,8 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
   defp do_take_bridge_to_open_paren(value, acc),
     do: {acc |> Enum.reverse() |> Enum.join(), value, false}
 
-  @spec take_balanced_paren_content(term(), term(), term(), term(), term(), term(), term()) ::
-          term()
+  @spec take_balanced_paren_content(String.t(), list(), list(), boolean(), boolean(), boolean(), boolean()) ::
+          {:ok, String.t(), String.t()} | :error
   defp take_balanced_paren_content(
          "",
          _stack,
@@ -541,7 +545,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec constructors_list_content?(term()) :: term()
+  @spec constructors_list_content?(String.t()) :: boolean()
   defp constructors_list_content?(inside) when is_binary(inside) do
     cleaned =
       inside
@@ -561,7 +565,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec strip_comments(term()) :: term()
+  @spec strip_comments(String.t()) :: String.t()
   defp strip_comments(value) do
     value
     |> String.split("\n", trim: false)
@@ -577,7 +581,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     |> Enum.join()
   end
 
-  @spec remove_block_comments(term(), term()) :: term()
+  @spec remove_block_comments(String.t(), [String.t()]) :: [String.t()]
   defp remove_block_comments("", acc), do: acc
 
   defp remove_block_comments(<<"{-", rest::binary>>, acc) do
@@ -594,14 +598,14 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
   defp remove_block_comments(<<char::utf8, rest::binary>>, acc),
     do: remove_block_comments(rest, [<<char::utf8>> | acc])
 
-  @spec split_csv_simple(term()) :: term()
+  @spec split_csv_simple(String.t()) :: [String.t()]
   defp split_csv_simple(value) do
     value
     |> String.split(",", trim: true)
     |> Enum.map(&String.trim/1)
   end
 
-  @spec take_line_comment(term(), term()) :: term()
+  @spec take_line_comment(String.t(), String.t()) :: {String.t(), String.t()}
   defp take_line_comment(value, prefix) do
     case :binary.match(value, "\n") do
       {idx, _} ->
@@ -614,7 +618,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec take_block_comment(term(), term()) :: term()
+  @spec take_block_comment(String.t(), String.t()) :: {String.t(), String.t()}
   defp take_block_comment(value, prefix) do
     case :binary.match(value, "-}") do
       {idx, _} ->
@@ -627,7 +631,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec identifier_or_dot?(term()) :: term()
+  @spec identifier_or_dot?(String.t()) :: boolean()
   defp identifier_or_dot?(char) when is_binary(char) do
     case String.to_charlist(char) do
       [c] -> c in ?A..?Z or c in ?a..?z or c in ?0..?9 or c in [?_, ?., ?']
@@ -635,7 +639,7 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     end
   end
 
-  @spec trim_trailing_horizontal(term()) :: term()
+  @spec trim_trailing_horizontal(String.t()) :: String.t()
   defp trim_trailing_horizontal(value) when is_binary(value) do
     value
     |> String.graphemes()
@@ -645,14 +649,14 @@ defmodule Ide.Formatter.Printer.ModuleHeader do
     |> Enum.join()
   end
 
-  @spec pop_stack(term(), term()) :: term()
+  @spec pop_stack(list(), non_neg_integer()) :: list()
   defp pop_stack([], _closing), do: []
 
   defp pop_stack([open | rest], closing) do
     if delimiter_char_match?(open, closing), do: rest, else: [open | rest]
   end
 
-  @spec delimiter_char_match?(term(), term()) :: term()
+  @spec delimiter_char_match?(non_neg_integer(), non_neg_integer()) :: boolean()
   defp delimiter_char_match?(?(, ?)), do: true
   defp delimiter_char_match?(?[, ?]), do: true
   defp delimiter_char_match?(?{, ?}), do: true

@@ -2,7 +2,20 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
   @moduledoc false
   use IdeWeb, :html
 
-  @spec render(term()) :: term()
+  alias Phoenix.LiveView.Rendered
+
+  @type assigns :: map()
+  @type rendered :: Rendered.t()
+  @type flow_status :: :idle | :running | :ok | :error
+  @type publish_summary :: %{
+          required(:status) => :idle | :ready | :blocked,
+          required(:blockers) => non_neg_integer(),
+          required(:warnings) => non_neg_integer(),
+          required(:passed) => non_neg_integer()
+        }
+  @type publish_check :: %{required(:status) => :ok | :error | atom(), optional(atom()) => term()}
+
+  @spec render(assigns()) :: rendered()
   def render(assigns) do
     ~H"""
     <section
@@ -312,10 +325,10 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
     """
   end
 
-  @spec failed_checks(term()) :: term()
+  @spec failed_checks([publish_check()]) :: [publish_check()]
   defp failed_checks(checks), do: Enum.filter(checks, &(&1.status != :ok))
 
-  @spec quick_fix_label(term()) :: term()
+  @spec quick_fix_label(String.t()) :: String.t()
   defp quick_fix_label("appinfo_fields"), do: "Open metadata editor"
   defp quick_fix_label("appinfo_exists"), do: "Open metadata editor"
   defp quick_fix_label("screenshot_coverage"), do: "Capture missing screenshots"
@@ -323,7 +336,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
   defp quick_fix_label("artifact_exists"), do: "Generate PBW"
   defp quick_fix_label(_), do: "View details"
 
-  @spec readiness_text(term()) :: term()
+  @spec readiness_text(publish_summary()) :: String.t()
   defp readiness_text(%{status: :ready} = summary),
     do: "Ready to ship. #{summary.passed} checks passed."
 
@@ -332,12 +345,12 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
 
   defp readiness_text(_), do: "Run Prepare Release to compute readiness."
 
-  @spec readiness_class(term()) :: term()
+  @spec readiness_class(:ready | :blocked | atom()) :: String.t()
   defp readiness_class(:ready), do: "mt-2 text-sm font-medium text-emerald-700"
   defp readiness_class(:blocked), do: "mt-2 text-sm font-medium text-rose-700"
   defp readiness_class(_), do: "mt-2 text-sm font-medium text-zinc-700"
 
-  @spec status_label(term()) :: term()
+  @spec status_label(flow_status() | atom()) :: String.t()
   defp status_label(:idle), do: "idle"
   defp status_label(:running), do: "running"
   defp status_label(:ok), do: "ok"

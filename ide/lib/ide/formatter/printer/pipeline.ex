@@ -11,6 +11,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
   alias Ide.Formatter.Printer.TopLevel
   alias Ide.Formatter.Printer.TypeDecl
   alias Ide.Formatter.Semantics.Rules
+  alias Ide.Formatter.Types
 
   @spec apply(String.t(), map(), keyword()) :: String.t()
   def apply(source, metadata, opts \\ []) when is_binary(source) and is_map(metadata) do
@@ -49,7 +50,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
     |> Expression.normalize_multiline_nested_call_block_indentation()
   end
 
-  @spec normalize_legacy_module_syntax(term()) :: term()
+  @spec normalize_legacy_module_syntax(String.t()) :: String.t()
   defp normalize_legacy_module_syntax(source) do
     source
     |> String.split("\n", trim: false)
@@ -57,12 +58,12 @@ defmodule Ide.Formatter.Printer.Pipeline do
     |> Enum.join("\n")
   end
 
-  @spec normalize_module_and_import_lines(term(), term()) :: term()
+  @spec normalize_module_and_import_lines(String.t(), map()) :: String.t()
   defp normalize_module_and_import_lines(source, metadata) do
     ModuleHeader.normalize(source, metadata)
   end
 
-  @spec normalize_legacy_module_line(term()) :: term()
+  @spec normalize_legacy_module_line(String.t()) :: String.t()
   defp normalize_legacy_module_line(line) do
     trimmed = String.trim(line)
 
@@ -95,7 +96,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
     end
   end
 
-  @spec split_once(term(), term()) :: term()
+  @spec split_once(String.t(), String.t()) :: Types.split_result()
   defp split_once(value, delimiter) do
     case :binary.match(value, delimiter) do
       {idx, len} ->
@@ -109,7 +110,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
     end
   end
 
-  @spec normalize_definition_rhs_indentation(term(), term()) :: term()
+  @spec normalize_definition_rhs_indentation(String.t(), [map()] | nil) :: String.t()
   defp normalize_definition_rhs_indentation(source, _tokens) when is_binary(source) do
     {normalized_rev, _pending, _in_block_comment} =
       source
@@ -153,7 +154,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
     |> Enum.join("\n")
   end
 
-  @spec block_comment_state_after(term(), term()) :: term()
+  @spec block_comment_state_after(String.t(), boolean()) :: boolean()
   defp block_comment_state_after(line, in_block_comment) do
     trimmed = String.trim_leading(line)
     opens? = String.contains?(trimmed, "{-")
@@ -167,7 +168,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
     end
   end
 
-  @spec rhs_anchor_line?(term()) :: term()
+  @spec rhs_anchor_line?(String.t()) :: boolean()
   defp rhs_anchor_line?(line) do
     trimmed = String.trim_leading(line)
     indent = leading_indent(line)
@@ -203,7 +204,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
     end
   end
 
-  @spec split_top_level_once(term(), term()) :: term()
+  @spec split_top_level_once(String.t(), String.t()) :: Types.split_result()
   defp split_top_level_once(value, delimiter) when is_binary(value) and delimiter == "=" do
     case top_level_delimiter_index(value, ?=) do
       nil ->
@@ -217,12 +218,19 @@ defmodule Ide.Formatter.Printer.Pipeline do
     end
   end
 
-  @spec top_level_delimiter_index(term(), term()) :: term()
+  @spec top_level_delimiter_index(String.t(), non_neg_integer()) :: non_neg_integer() | nil
   defp top_level_delimiter_index(value, delimiter_char) do
     do_top_level_delimiter_index(value, delimiter_char, [], false, false, 0)
   end
 
-  @spec do_top_level_delimiter_index(term(), term(), term(), term(), term(), term()) :: term()
+  @spec do_top_level_delimiter_index(
+          String.t(),
+          non_neg_integer(),
+          list(),
+          boolean(),
+          boolean(),
+          non_neg_integer()
+        ) :: non_neg_integer() | nil
   defp do_top_level_delimiter_index("", _delimiter_char, _stack, _in_string, _escape_next, _idx),
     do: nil
 
@@ -268,20 +276,20 @@ defmodule Ide.Formatter.Printer.Pipeline do
     end
   end
 
-  @spec pop_stack(term(), term()) :: term()
+  @spec pop_stack(list(), non_neg_integer()) :: list()
   defp pop_stack([], _closing), do: []
 
   defp pop_stack([open | rest], closing) do
     if delimiter_char_match?(open, closing), do: rest, else: [open | rest]
   end
 
-  @spec delimiter_char_match?(term(), term()) :: term()
+  @spec delimiter_char_match?(non_neg_integer(), non_neg_integer()) :: boolean()
   defp delimiter_char_match?(?(, ?)), do: true
   defp delimiter_char_match?(?[, ?]), do: true
   defp delimiter_char_match?(?{, ?}), do: true
   defp delimiter_char_match?(_, _), do: false
 
-  @spec definition_lhs_candidate?(term()) :: term()
+  @spec definition_lhs_candidate?(String.t()) :: boolean()
   defp definition_lhs_candidate?(lhs) when is_binary(lhs) do
     chars = String.to_charlist(lhs)
 
@@ -294,27 +302,27 @@ defmodule Ide.Formatter.Printer.Pipeline do
     end
   end
 
-  @spec leading_indent(term()) :: term()
+  @spec leading_indent(String.t()) :: non_neg_integer()
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
   end
 
-  @spec leading_spaces(term()) :: term()
+  @spec leading_spaces(String.t()) :: String.t()
   defp leading_spaces(line) do
     String.slice(line, 0, leading_indent(line))
   end
 
-  @spec starts_with_trimmed?(term(), term()) :: term()
+  @spec starts_with_trimmed?(String.t(), String.t()) :: boolean()
   defp starts_with_trimmed?(line, marker) when is_binary(marker) do
     String.trim_leading(line) |> String.starts_with?(marker)
   end
 
-  @spec normalize_top_level_declaration_spacing(term()) :: term()
+  @spec normalize_top_level_declaration_spacing(String.t()) :: String.t()
   defp normalize_top_level_declaration_spacing(source) do
     TopLevel.normalize(source)
   end
 
-  @spec normalize_single_line_doc_comments(term()) :: term()
+  @spec normalize_single_line_doc_comments(String.t()) :: String.t()
   defp normalize_single_line_doc_comments(source) do
     source
     |> String.split("\n", trim: false)
@@ -323,7 +331,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
     |> Enum.join("\n")
   end
 
-  @spec expand_single_line_doc_comment(term()) :: term()
+  @spec expand_single_line_doc_comment(String.t()) :: Types.line_list()
   defp expand_single_line_doc_comment(line) do
     trimmed = String.trim_leading(line)
     indent = leading_spaces(line)
@@ -346,7 +354,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
     end
   end
 
-  @spec normalize_import_doc_comment_separator(term()) :: term()
+  @spec normalize_import_doc_comment_separator(String.t()) :: String.t()
   defp normalize_import_doc_comment_separator(source) do
     source
     |> String.split("\n", trim: false)
@@ -377,7 +385,7 @@ defmodule Ide.Formatter.Printer.Pipeline do
     |> Enum.join("\n")
   end
 
-  @spec last_non_empty_line(term()) :: term()
+  @spec last_non_empty_line(Types.line_list()) :: String.t() | nil
   defp last_non_empty_line(lines) when is_list(lines) do
     lines
     |> Enum.reverse()

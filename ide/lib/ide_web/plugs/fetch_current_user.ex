@@ -5,10 +5,10 @@ defmodule IdeWeb.Plugs.FetchCurrentUser do
 
   alias Ide.Auth
 
-  @spec init(term()) :: term()
+  @spec init(keyword()) :: keyword()
   def init(opts), do: opts
 
-  @spec call(Plug.Conn.t(), term()) :: Plug.Conn.t()
+  @spec call(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
   def call(conn, _opts) do
     user = Auth.get_user(get_session(conn, :user_id))
     token = get_session(conn, :firebase_id_token)

@@ -17,15 +17,13 @@ defmodule Ide.Packages do
   alias Ide.Packages.ElmJsonEditor
   alias Ide.Packages.ElmSourceDocs
   alias Ide.Packages.GenericProvider
+  alias Ide.Packages.Types
   alias Ide.Packages.WatchCompatibility
   alias Ide.Projects
 
   @blocked_package_families ~w(elm/browser elm/bytes elm/file elm/html elm/http)
 
-  @type provider_key :: atom()
-  @type provider_spec :: %{key: provider_key(), module: module(), opts: keyword()}
-
-  @spec search(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec search(String.t(), keyword()) :: {:ok, Types.search_result()} | {:error, Types.package_error()}
   def search(query, opts \\ []) do
     page = parse_positive(opts[:page], 1)
     per_page = parse_positive(opts[:per_page], 25)
@@ -57,7 +55,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec package_details(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec package_details(String.t(), keyword()) :: {:ok, Types.package_details()} | {:error, Types.package_error()}
   def package_details(package, opts \\ []) do
     with {:ok, provider, details} <-
            with_provider(opts, &call_provider(&1, :package_details, [package])) do
@@ -71,7 +69,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec compatibility_for_package(String.t(), keyword()) :: map()
+  @spec compatibility_for_package(String.t(), keyword()) :: Types.compatibility()
   def compatibility_for_package(package, opts \\ []) when is_binary(package) do
     platform_target = Keyword.get(opts, :platform_target, :watch)
 
@@ -99,7 +97,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec attach_compatibility(term(), atom()) :: term()
+  @spec attach_compatibility(map(), atom()) :: map()
   defp attach_compatibility(entry, platform_target) when is_map(entry) do
     name = Map.get(entry, :name) || Map.get(entry, "name")
 
@@ -114,7 +112,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec versions(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec versions(String.t(), keyword()) :: {:ok, Types.versions_result()} | {:error, Types.package_error()}
   def versions(package, opts \\ []) do
     with {:ok, provider, versions} <-
            with_provider(opts, &call_provider(&1, :versions, [package])) do
@@ -122,7 +120,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec readme(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec readme(String.t(), String.t(), keyword()) :: {:ok, Types.readme_result()} | {:error, Types.package_error()}
   def readme(package, version \\ "latest", opts \\ []) do
     with {:ok, provider, readme} <-
            with_provider(opts, &call_provider(&1, :readme, [package, version])) do
@@ -140,7 +138,7 @@ defmodule Ide.Packages do
   Loads API documentation for a single exposed module from the package registry (`docs.json`).
   """
   @spec module_doc_markdown(String.t(), String.t(), String.t(), keyword()) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, String.t()} | {:error, Types.package_error()}
   def module_doc_markdown(package, version, module_name, opts \\ []) do
     case builtin_module_doc_markdown(package, module_name) do
       {:ok, markdown} ->
@@ -160,7 +158,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec builtin_module_doc_markdown(term(), term()) :: term()
+  @spec builtin_module_doc_markdown(String.t(), String.t()) ::
+          {:ok, String.t()} | {:error, atom()}
   defp builtin_module_doc_markdown(package, module_name) do
     with {:ok, source_root} <- builtin_docs_source_root(package),
          {:ok, markdown} <- ElmSourceDocs.module_doc_markdown(source_root, module_name),
@@ -171,7 +170,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec builtin_docs_source_root(term()) :: term()
+  @spec builtin_docs_source_root(String.t()) ::
+          {:ok, String.t()} | {:error, :not_builtin_source_backed | :builtin_module_docs_not_available}
   defp builtin_docs_source_root("elm-pebble/elm-watch"),
     do: {:ok, Ide.InternalPackages.pebble_elm_src_abs()}
 
@@ -195,11 +195,11 @@ defmodule Ide.Packages do
 
   defp builtin_docs_source_root(_), do: {:error, :not_builtin_source_backed}
 
-  @spec doc_registry_version(term()) :: term()
+  @spec doc_registry_version(String.t() | nil) :: String.t()
   defp doc_registry_version(v) when v in [nil, ""], do: "latest"
   defp doc_registry_version(v), do: to_string(v)
 
-  @spec merge_catalog_http_opts(term()) :: term()
+  @spec merge_catalog_http_opts(Types.provider_spec()) :: Types.catalog_http_opts()
   defp merge_catalog_http_opts(provider) do
     defaults =
       case provider.key do
@@ -210,7 +210,7 @@ defmodule Ide.Packages do
     Keyword.merge(defaults, provider.opts)
   end
 
-  @spec preview_add_to_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec preview_add_to_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.package_error()}
   def preview_add_to_project(project, package, opts \\ []) when is_map(project) do
     with :ok <- validate_add_package_target(package, opts),
          {:ok, provider, _details} <-
@@ -221,7 +221,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec add_to_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec add_to_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.package_error()}
   def add_to_project(project, package, opts \\ []) when is_map(project) do
     with :ok <- validate_add_package_target(package, opts),
          {:ok, provider, details} <-
@@ -234,7 +234,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec validate_add_package_target(String.t(), keyword()) :: :ok | {:error, term()}
+  @spec validate_add_package_target(String.t(), keyword()) :: :ok | {:error, Types.package_error()}
   defp validate_add_package_target(package, opts) when is_binary(package) and is_list(opts) do
     if Keyword.get(opts, :source_root) == "phone" and phone_forbidden_package?(package) do
       {:error, {:package_not_supported_for_phone, package}}
@@ -285,7 +285,7 @@ defmodule Ide.Packages do
 
   def pebble_builtin_packages(_source_root), do: pebble_builtin_packages()
 
-  @spec remove_from_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec remove_from_project(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.package_error()}
   def remove_from_project(project, package, opts \\ []) when is_map(project) do
     source_root = Keyword.get(opts, :source_root)
 
@@ -344,7 +344,13 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec module_index_for_packages(map(), [String.t()], keyword(), atom(), map()) :: map()
+  @spec module_index_for_packages(
+          map(),
+          [String.t()],
+          keyword(),
+          atom(),
+          Types.dependency_versions_map()
+        ) :: Types.module_index()
   defp module_index_for_packages(project, packages, pkg_opts, platform_target, versions)
        when is_map(project) and is_list(packages) do
     package_names =
@@ -388,8 +394,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec cache_package_metadata(map(), String.t(), term(), map()) ::
-          {:ok, map()} | {:error, term()}
+  @spec cache_package_metadata(map(), String.t(), String.t() | nil, Types.package_details()) ::
+          {:ok, map()} | {:error, Types.package_error()}
   defp cache_package_metadata(project, package, version, details)
        when is_map(project) and is_binary(package) and is_map(details) do
     modules = exposed_modules_for_package(package, [], details)
@@ -432,7 +438,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec normalize_package_metadata_cache(term()) :: map()
+  @spec normalize_package_metadata_cache(map() | list() | nil) :: Types.package_metadata_cache()
   defp normalize_package_metadata_cache(cache) when is_map(cache) do
     packages =
       cache
@@ -450,7 +456,7 @@ defmodule Ide.Packages do
   @doc """
   Maps exposed module names (e.g. `\"Json.Encode\"`) to package names for documentation links.
   """
-  @spec build_doc_module_index(map(), keyword()) :: {:ok, %{optional(String.t()) => String.t()}}
+  @spec build_doc_module_index(map(), keyword()) :: {:ok, Types.module_index()}
   def build_doc_module_index(project, opts \\ []) when is_map(project) do
     source_root =
       Keyword.get(opts, :source_root) || ElmJsonEditor.candidate_roots(project) |> List.first()
@@ -489,7 +495,7 @@ defmodule Ide.Packages do
   @doc """
   Packages and versions to populate editor documentation dropdowns (platform packages + elm.json deps).
   """
-  @spec list_doc_package_rows(map(), keyword()) :: {:ok, [map()]}
+  @spec list_doc_package_rows(map(), keyword()) :: {:ok, [Types.doc_catalog_entry()]}
   def list_doc_package_rows(project, opts \\ []) when is_map(project) do
     source_root =
       Keyword.get(opts, :source_root) || ElmJsonEditor.candidate_roots(project) |> List.first()
@@ -564,7 +570,7 @@ defmodule Ide.Packages do
     {:ok, builtin_rows ++ project_rows}
   end
 
-  @spec doc_catalog_builtin_label(term()) :: term()
+  @spec doc_catalog_builtin_label(String.t()) :: String.t()
   defp doc_catalog_builtin_label("elm/core"), do: "elm/core (required runtime)"
   defp doc_catalog_builtin_label("elm/json"), do: "elm/json (required program flags runtime)"
   defp doc_catalog_builtin_label("elm/random"), do: "elm/random (required random runtime)"
@@ -587,7 +593,7 @@ defmodule Ide.Packages do
 
   defp doc_catalog_builtin_label(pkg) when is_binary(pkg), do: "#{pkg} (platform)"
 
-  @spec builtin_doc_packages(term()) :: term()
+  @spec builtin_doc_packages(keyword()) :: [String.t()]
   defp builtin_doc_packages(opts) do
     case opts[:platform_target] do
       :watch ->
@@ -618,7 +624,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec merge_builtin_module_mappings(term(), term(), term()) :: term()
+  @spec merge_builtin_module_mappings(Types.module_index(), keyword(), keyword()) ::
+          Types.module_index()
   defp merge_builtin_module_mappings(index, pkg_opts, opts) when is_map(index) do
     builtin_pkgs = builtin_doc_packages(opts)
 
@@ -633,7 +640,7 @@ defmodule Ide.Packages do
     end)
   end
 
-  @spec exposed_modules_for_builtin_package(term(), term()) :: term()
+  @spec exposed_modules_for_builtin_package(String.t(), keyword()) :: [String.t()]
   defp exposed_modules_for_builtin_package(pkg, pkg_opts) do
     case fallback_builtin_source_modules(pkg) do
       [_ | _] = modules ->
@@ -650,7 +657,8 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec exposed_modules_for_package(term(), term(), term()) :: term()
+  @spec exposed_modules_for_package(String.t(), keyword(), Types.package_details() | nil) ::
+          [String.t()]
   defp exposed_modules_for_package(pkg, _pkg_opts, details) do
     fallback = fallback_builtin_source_modules(pkg)
 
@@ -668,7 +676,7 @@ defmodule Ide.Packages do
     |> Enum.sort()
   end
 
-  @spec fallback_builtin_source_modules(term()) :: term()
+  @spec fallback_builtin_source_modules(String.t()) :: [String.t()]
   defp fallback_builtin_source_modules("elm/core") do
     [
       "Array",
@@ -748,7 +756,7 @@ defmodule Ide.Packages do
 
   defp fallback_builtin_source_modules(_), do: []
 
-  @spec dependency_versions(map(), String.t()) :: map()
+  @spec dependency_versions(map(), String.t()) :: Types.dependency_versions_map()
   defp dependency_versions(project, source_root)
        when is_map(project) and is_binary(source_root) do
     with {:ok, content} <- Projects.read_source_file(project, source_root, "elm.json"),
@@ -764,7 +772,7 @@ defmodule Ide.Packages do
 
   defp dependency_versions(_project, _source_root), do: %{}
 
-  @spec ensure_string_map(term()) :: map()
+  @spec ensure_string_map(map() | list() | nil) :: Types.dependency_versions_map()
   defp ensure_string_map(value) when is_map(value) do
     Map.new(value, fn {key, version} -> {to_string(key), to_string(version)} end)
   end
@@ -823,7 +831,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec exposed_modules_from_source_root(String.t()) :: {:ok, [String.t()]} | {:error, term()}
+  @spec exposed_modules_from_source_root(String.t()) :: {:ok, [String.t()]} | {:error, Types.package_error()}
   defp exposed_modules_from_source_root(source_root) when is_binary(source_root) do
     elm_json_path =
       source_root
@@ -838,7 +846,7 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec normalize_exposed_modules(term()) ::
+  @spec normalize_exposed_modules(list() | map()) ::
           {:ok, [String.t()]} | {:error, :invalid_exposed_modules}
   defp normalize_exposed_modules(modules) when is_list(modules) do
     {:ok, modules |> Enum.filter(&is_binary/1) |> Enum.sort()}
@@ -864,7 +872,12 @@ defmodule Ide.Packages do
   @spec package_elm_json_roots(map()) :: [String.t()]
   def package_elm_json_roots(project), do: ElmJsonEditor.roots_for_package_management(project)
 
-  @spec with_provider(term(), term()) :: term()
+  @spec with_provider(
+          keyword(),
+          (Types.provider_spec() ->
+             {:ok, Types.provider_payload()} | {:error, Types.package_error()})
+        ) ::
+          {:ok, Types.provider_spec(), Types.provider_payload()} | {:error, Types.package_error()}
   defp with_provider(opts, fun) do
     providers = resolve_providers(opts)
 
@@ -876,14 +889,15 @@ defmodule Ide.Packages do
     end)
   end
 
-  @spec call_provider(term(), term(), term(), term()) :: term()
+  @spec call_provider(Types.provider_spec(), atom(), list(), keyword()) ::
+          {:ok, Types.provider_payload()} | {:error, Types.catalog_error()}
   defp call_provider(provider, function_name, args, runtime_opts \\ []) do
     merged_opts = Keyword.merge(provider.opts, runtime_opts)
     full_args = args ++ [merged_opts]
     apply(provider.module, function_name, full_args)
   end
 
-  @spec resolver_editor_opts(term(), term()) :: term()
+  @spec resolver_editor_opts(Types.provider_spec(), keyword()) :: keyword()
   defp resolver_editor_opts(provider, opts) do
     source_root = opts[:source_root]
     section = opts[:section]
@@ -902,7 +916,7 @@ defmodule Ide.Packages do
     ]
   end
 
-  @spec resolve_providers(term()) :: term()
+  @spec resolve_providers(keyword()) :: [Types.provider_spec()]
   defp resolve_providers(opts) do
     config = Application.get_env(:ide, __MODULE__, [])
     provider_configs = Keyword.get(config, :providers, default_provider_configs())
@@ -942,7 +956,7 @@ defmodule Ide.Packages do
     |> Enum.reject(&is_nil/1)
   end
 
-  @spec default_provider_configs() :: term()
+  @spec default_provider_configs() :: keyword()
   defp default_provider_configs do
     [
       official: [module: Ide.Packages.OfficialProvider],
@@ -950,7 +964,7 @@ defmodule Ide.Packages do
     ]
   end
 
-  @spec normalize_source(term()) :: term()
+  @spec normalize_source(atom() | String.t() | nil) :: atom() | String.t() | nil
   defp normalize_source(nil), do: nil
   defp normalize_source(source) when is_atom(source), do: source
 
@@ -963,13 +977,13 @@ defmodule Ide.Packages do
     end
   end
 
-  @spec paginate(term(), term(), term()) :: term()
+  @spec paginate(list(), pos_integer(), pos_integer()) :: list()
   defp paginate(items, page, per_page) do
     offset = (page - 1) * per_page
     items |> Enum.drop(offset) |> Enum.take(per_page)
   end
 
-  @spec parse_positive(term(), term()) :: term()
+  @spec parse_positive(integer() | String.t() | nil, pos_integer()) :: pos_integer()
   defp parse_positive(value, _default) when is_integer(value) and value > 0, do: value
 
   defp parse_positive(value, default) when is_binary(value) do

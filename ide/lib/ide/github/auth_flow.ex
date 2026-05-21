@@ -1,10 +1,9 @@
 defmodule Ide.GitHub.AuthFlow do
   @moduledoc false
 
-  alias Ide.GitHub.Client
-  alias Ide.GitHub.Credentials
+  alias Ide.GitHub.{Client, Credentials, Types}
 
-  @spec start_device_flow() :: {:ok, map()} | {:error, term()}
+  @spec start_device_flow() :: {:ok, map()} | {:error, Types.api_error()}
   def start_device_flow do
     with {:ok, result} <- Client.start_device_flow("repo"),
          true <- is_binary(result["device_code"]),
@@ -25,7 +24,8 @@ defmodule Ide.GitHub.AuthFlow do
     end
   end
 
-  @spec poll_and_connect(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec poll_and_connect(String.t()) ::
+          {:ok, Credentials.t()} | {:error, Types.auth_error() | Types.credentials_error()}
   def poll_and_connect(device_code) when is_binary(device_code) do
     with {:ok, token_payload} <- Client.poll_device_token(device_code),
          token when is_binary(token) <- token_payload["access_token"],
@@ -51,7 +51,7 @@ defmodule Ide.GitHub.AuthFlow do
 
   def poll_and_connect(_), do: {:error, :invalid_device_code}
 
-  @spec disconnect() :: :ok | {:error, term()}
+  @spec disconnect() :: :ok | {:error, Types.credentials_error()}
   def disconnect do
     Credentials.clear()
   end
@@ -66,7 +66,7 @@ defmodule Ide.GitHub.AuthFlow do
     match?({:ok, _}, Client.oauth_client_id())
   end
 
-  @spec to_int(term(), integer()) :: integer()
+  @spec to_int(integer() | String.t() | nil, integer()) :: integer()
   defp to_int(value, _fallback) when is_integer(value), do: value
 
   defp to_int(value, fallback) when is_binary(value) do

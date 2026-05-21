@@ -25,6 +25,8 @@ defmodule Ide.WasmEmulator do
     "firmware/full/manifest.json"
   ]
 
+  @type asset_path_error :: :invalid_asset_path | :not_found
+
   @spec asset_root() :: String.t()
   def asset_root do
     case System.get_env("ELM_PEBBLE_WASM_EMULATOR_ROOT") do
@@ -191,7 +193,7 @@ defmodule Ide.WasmEmulator do
     end
   end
 
-  @spec asset_path(String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec asset_path(String.t()) :: {:ok, String.t()} | {:error, asset_path_error()}
   def asset_path(path) when is_binary(path) do
     root = Path.expand(asset_root())
     requested = Path.expand(Path.join(root, path))

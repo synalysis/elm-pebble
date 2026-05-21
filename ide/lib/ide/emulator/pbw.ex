@@ -1,6 +1,8 @@
 defmodule Ide.Emulator.PBW do
   @moduledoc false
 
+  alias Ide.Emulator.Types
+
   @platform_fallbacks %{
     "unknown" => [""],
     "aplite" => ["aplite", ""],
@@ -41,7 +43,7 @@ defmodule Ide.Emulator.PBW do
           parts: [part()]
         }
 
-  @spec load(String.t(), String.t()) :: {:ok, t()} | {:error, term()}
+  @spec load(String.t(), String.t()) :: {:ok, t()} | {:error, Types.pbw_error()}
   def load(path, platform) when is_binary(path) and is_binary(platform) do
     with {:ok, entries} <- read_entries(path),
          {:ok, appinfo} <- read_json(entries, "appinfo.json"),
@@ -63,10 +65,10 @@ defmodule Ide.Emulator.PBW do
     end
   end
 
-  @spec prune_empty_media_resources(String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec prune_empty_media_resources(String.t()) :: {:ok, String.t()} | {:error, Types.pbw_error()}
   def prune_empty_media_resources(path) when is_binary(path), do: {:ok, path}
 
-  @spec prune_development_artifacts(String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec prune_development_artifacts(String.t()) :: {:ok, String.t()} | {:error, Types.pbw_error()}
   def prune_development_artifacts(path) when is_binary(path) do
     with {:ok, entries} <- read_entry_list(path),
          pruned <- prune_entry_list(entries) do

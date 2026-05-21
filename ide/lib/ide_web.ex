@@ -17,12 +17,14 @@ defmodule IdeWeb do
   those modules here.
   """
 
-  @spec static_paths() :: term()
+  alias IdeWeb.Types
+
+  @spec static_paths() :: Types.static_path_list()
   def static_paths,
     do:
       ~w(assets fonts images screenshots favicon.ico favicon.svg favicon-96x96.png apple-touch-icon.png site.webmanifest web-app-manifest-192x192.png web-app-manifest-512x512.png robots.txt)
 
-  @spec router() :: term()
+  @spec router() :: Types.quoted()
   def router do
     quote do
       use Phoenix.Router, helpers: false
@@ -34,14 +36,14 @@ defmodule IdeWeb do
     end
   end
 
-  @spec channel() :: term()
+  @spec channel() :: Types.quoted()
   def channel do
     quote do
       use Phoenix.Channel
     end
   end
 
-  @spec controller() :: term()
+  @spec controller() :: Types.quoted()
   def controller do
     quote do
       use Phoenix.Controller,
@@ -56,7 +58,7 @@ defmodule IdeWeb do
     end
   end
 
-  @spec live_view() :: term()
+  @spec live_view() :: Types.quoted()
   def live_view do
     quote do
       use Phoenix.LiveView,
@@ -66,7 +68,7 @@ defmodule IdeWeb do
     end
   end
 
-  @spec live_component() :: term()
+  @spec live_component() :: Types.quoted()
   def live_component do
     quote do
       use Phoenix.LiveComponent
@@ -75,7 +77,7 @@ defmodule IdeWeb do
     end
   end
 
-  @spec html() :: term()
+  @spec html() :: Types.quoted()
   def html do
     quote do
       use Phoenix.Component
@@ -89,7 +91,7 @@ defmodule IdeWeb do
     end
   end
 
-  @spec html_helpers() :: term()
+  @spec html_helpers() :: Types.quoted()
   defp html_helpers do
     quote do
       # Translation
@@ -108,7 +110,7 @@ defmodule IdeWeb do
     end
   end
 
-  @spec verified_routes() :: term()
+  @spec verified_routes() :: Types.quoted()
   def verified_routes do
     quote do
       use Phoenix.VerifiedRoutes,

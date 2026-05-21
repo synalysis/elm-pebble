@@ -6,6 +6,7 @@ defmodule Ide.Resources.ResourceStore do
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.PebbleToolchain
+  alias Ide.Resources.Types
 
   @manifest_rel_path "watch/resources/bitmaps.json"
   @assets_rel_dir "watch/resources/bitmaps"
@@ -36,6 +37,8 @@ defmodule Ide.Resources.ResourceStore do
           target_platforms: [String.t()]
         }
 
+  @type font_lookup_error :: Types.font_lookup_error()
+  @type form_params :: map()
   @type font_source :: %{
           id: String.t(),
           filename: String.t(),
@@ -87,7 +90,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec list(Project.t()) :: {:ok, [bitmap_entry()]} | {:error, term()}
+  @spec list(Project.t()) :: {:ok, [bitmap_entry()]} | {:error, Types.resource_error()}
   def list(%Project{} = project) do
     workspace = Projects.project_workspace_path(project)
 
@@ -108,7 +111,7 @@ defmodule Ide.Resources.ResourceStore do
   end
 
   @spec import_bitmap(Project.t(), String.t(), String.t()) ::
-          {:ok, map()} | {:error, term()}
+          {:ok, map()} | {:error, Types.resource_error()}
   def import_bitmap(%Project{} = project, upload_path, original_name)
       when is_binary(upload_path) and is_binary(original_name) do
     workspace = Projects.project_workspace_path(project)
@@ -162,7 +165,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec delete_bitmap(Project.t(), String.t()) :: {:ok, [map()]} | {:error, term()}
+  @spec delete_bitmap(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.resource_error()}
   def delete_bitmap(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @manifest_rel_path)
@@ -187,18 +190,18 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec ensure_generated(Project.t()) :: :ok | {:error, term()}
+  @spec ensure_generated(Project.t()) :: :ok | {:error, Types.resource_error()}
   def ensure_generated(%Project{} = project) do
     workspace = Projects.project_workspace_path(project)
     write_generated_module(workspace)
   end
 
-  @spec ensure_generated_workspace(String.t()) :: :ok | {:error, term()}
+  @spec ensure_generated_workspace(String.t()) :: :ok | {:error, Types.resource_error()}
   def ensure_generated_workspace(workspace) when is_binary(workspace) do
     write_generated_module(workspace)
   end
 
-  @spec bitmap_file_path(Project.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec bitmap_file_path(Project.t(), String.t()) :: {:ok, String.t()} | {:error, Types.resource_error()}
   def bitmap_file_path(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @assets_rel_dir)
@@ -212,7 +215,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec list_fonts(Project.t()) :: {:ok, [font_entry()]} | {:error, term()}
+  @spec list_fonts(Project.t()) :: {:ok, [font_entry()]} | {:error, Types.resource_error()}
   def list_fonts(%Project{} = project) do
     workspace = Projects.project_workspace_path(project)
 
@@ -238,7 +241,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec list_font_sources(Project.t()) :: {:ok, [font_source()]} | {:error, term()}
+  @spec list_font_sources(Project.t()) :: {:ok, [font_source()]} | {:error, Types.resource_error()}
   def list_font_sources(%Project{} = project) do
     workspace = Projects.project_workspace_path(project)
 
@@ -257,7 +260,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec import_font(Project.t(), String.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  @spec import_font(Project.t(), String.t(), String.t()) :: {:ok, map()} | {:error, Types.resource_error()}
   def import_font(%Project{} = project, upload_path, original_name)
       when is_binary(upload_path) and is_binary(original_name) do
     workspace = Projects.project_workspace_path(project)
@@ -305,7 +308,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec add_font_variant(Project.t(), map()) :: {:ok, map()} | {:error, term()}
+  @spec add_font_variant(Project.t(), map()) :: {:ok, map()} | {:error, Types.resource_error()}
   def add_font_variant(%Project{} = project, params) when is_map(params) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @font_manifest_rel_path)
@@ -329,7 +332,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec update_font_variant(Project.t(), String.t(), map()) :: {:ok, map()} | {:error, term()}
+  @spec update_font_variant(Project.t(), String.t(), map()) :: {:ok, map()} | {:error, Types.resource_error()}
   def update_font_variant(%Project{} = project, ctor, params)
       when is_binary(ctor) and is_map(params) do
     workspace = Projects.project_workspace_path(project)
@@ -359,7 +362,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec delete_font(Project.t(), String.t()) :: {:ok, [map()]} | {:error, term()}
+  @spec delete_font(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.resource_error()}
   def delete_font(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @font_manifest_rel_path)
@@ -376,7 +379,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec delete_font_source(Project.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  @spec delete_font_source(Project.t(), String.t()) :: {:ok, map()} | {:error, Types.resource_error()}
   def delete_font_source(%Project{} = project, source_id) when is_binary(source_id) do
     workspace = Projects.project_workspace_path(project)
     manifest_path = Path.join(workspace, @font_manifest_rel_path)
@@ -403,7 +406,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec font_file_path(Project.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  @spec font_file_path(Project.t(), String.t()) :: {:ok, String.t()} | {:error, Types.resource_error()}
   def font_file_path(%Project{} = project, ctor) when is_binary(ctor) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @font_assets_rel_dir)
@@ -418,7 +421,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec bitmap_file_path_by_id(Project.t(), integer()) :: {:ok, String.t()} | {:error, term()}
+  @spec bitmap_file_path_by_id(Project.t(), integer()) :: {:ok, String.t()} | {:error, Types.resource_error()}
   def bitmap_file_path_by_id(%Project{} = project, id) when is_integer(id) and id >= 1 do
     with {:ok, entries} <- list(project),
          %{} = row <- Enum.at(entries, id - 1) do
@@ -430,13 +433,13 @@ defmodule Ide.Resources.ResourceStore do
 
   def bitmap_file_path_by_id(_project, _), do: {:error, :bitmap_not_found}
 
-  @spec read_bitmap_manifest(term()) :: term()
+  @spec read_bitmap_manifest(Types.workspace_path()) :: {:ok, Types.manifest()} | {:error, Types.resource_error()}
   defp read_bitmap_manifest(workspace) do
     path = Path.join(workspace, @manifest_rel_path)
     read_manifest(path)
   end
 
-  @spec read_font_manifest(term()) :: term()
+  @spec read_font_manifest(Types.workspace_path()) :: {:ok, Types.manifest()} | {:error, Types.resource_error()}
   defp read_font_manifest(workspace) do
     path = Path.join(workspace, @font_manifest_rel_path)
 
@@ -446,7 +449,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec read_manifest(term()) :: term()
+  @spec read_manifest(Path.t()) :: {:ok, Types.manifest()} | {:error, Types.manifest_io_error()}
   defp read_manifest(path) do
     path = Path.expand(path)
 
@@ -468,7 +471,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec write_manifest(term(), term()) :: term()
+  @spec write_manifest(Path.t(), Types.manifest()) :: :ok | {:error, Types.manifest_io_error()}
   defp write_manifest(path, payload) do
     with :ok <- File.mkdir_p(Path.dirname(path)),
          {:ok, json} <- Jason.encode(payload, pretty: true),
@@ -477,7 +480,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec write_generated_module(term()) :: term()
+  @spec write_generated_module(Types.workspace_path()) :: :ok | {:error, Types.resource_error()}
   defp write_generated_module(workspace) do
     bitmap_entries =
       case read_bitmap_manifest(workspace) do
@@ -501,7 +504,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec generated_module_source(term(), term()) :: term()
+  @spec generated_module_source([Types.manifest_entry()], [Types.manifest_entry()]) :: String.t()
   defp generated_module_source(bitmap_entries, font_entries) do
     bitmap_rows =
       bitmap_entries
@@ -737,7 +740,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec normalize_font_source_row(term()) :: map()
+  @spec normalize_font_source_row(map() | list() | nil) :: map()
   defp normalize_font_source_row(row) when is_map(row) do
     %{
       "id" => safe_resource_id(Map.get(row, "id", Map.get(row, "filename", "font"))),
@@ -749,7 +752,7 @@ defmodule Ide.Resources.ResourceStore do
 
   defp normalize_font_source_row(_), do: normalize_font_source_row(%{})
 
-  @spec normalize_font_variant_row(term()) :: map()
+  @spec normalize_font_variant_row(map() | list() | nil) :: map()
   defp normalize_font_variant_row(row) when is_map(row) do
     ctor = row |> Map.get("ctor", "Font") |> to_string() |> valid_constructor_name()
     height = positive_integer_or_default(Map.get(row, "height", 0), 24)
@@ -788,7 +791,8 @@ defmodule Ide.Resources.ResourceStore do
     |> String.replace("\"", "\\\"")
   end
 
-  @spec normalized_filename_and_mime(term()) :: term()
+  @spec normalized_filename_and_mime(String.t()) ::
+          {:ok, String.t(), String.t()} | {:error, Types.asset_type_error()}
   defp normalized_filename_and_mime(original_name) do
     ext =
       original_name
@@ -824,7 +828,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec normalized_font_filename_and_mime(term()) :: term()
+  @spec normalized_font_filename_and_mime(String.t()) ::
+          {:ok, String.t(), String.t()} | {:error, Types.asset_type_error()}
   defp normalized_font_filename_and_mime(original_name) do
     ext =
       original_name
@@ -857,7 +862,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec constructor_from_name(term()) :: term()
+  @spec constructor_from_name(String.t()) :: String.t()
   defp constructor_from_name(filename) do
     filename
     |> Path.rootname()
@@ -870,7 +875,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec unique_ctor(term(), term()) :: term()
+  @spec unique_ctor(String.t(), [map()]) :: String.t()
   defp unique_ctor(ctor, entries) do
     used =
       entries
@@ -888,7 +893,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec unique_source_id(term(), [map()]) :: String.t()
+  @spec unique_source_id(Types.wire_input(), [map()]) :: String.t()
   defp unique_source_id(value, sources) do
     base = safe_resource_id(value)
 
@@ -908,7 +913,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec safe_resource_id(term()) :: String.t()
+  @spec safe_resource_id(Types.wire_input()) :: String.t()
   defp safe_resource_id(value) do
     value
     |> to_string()
@@ -922,7 +927,7 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec valid_constructor_name(term()) :: String.t()
+  @spec valid_constructor_name(Types.wire_input()) :: String.t()
   defp valid_constructor_name(value) do
     value
     |> to_string()
@@ -941,7 +946,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec font_source_by_id(map(), String.t()) :: {:ok, map()} | {:error, term()}
+  @spec font_source_by_id(Types.manifest(), String.t()) ::
+          {:ok, map()} | {:error, font_lookup_error()}
   defp font_source_by_id(manifest, source_id) do
     case Enum.find(manifest["sources"] || [], &(Map.get(&1, "id") == source_id)) do
       %{} = source -> {:ok, source}
@@ -949,7 +955,8 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec font_source_from_params(map(), map()) :: {:ok, map()} | {:error, term()}
+  @spec font_source_from_params(Types.manifest(), form_params()) ::
+          {:ok, map()} | {:error, font_lookup_error()}
   defp font_source_from_params(manifest, params) do
     source_id =
       params
@@ -989,7 +996,7 @@ defmodule Ide.Resources.ResourceStore do
   end
 
   @spec font_variant_from_params(map(), map(), [map()], String.t() | nil) ::
-          {:ok, map()} | {:error, term()}
+          {:ok, map()} | {:error, Types.asset_type_error()}
   defp font_variant_from_params(source, params, entries, existing_ctor \\ nil) do
     raw_ctor =
       params
@@ -1081,7 +1088,7 @@ defmodule Ide.Resources.ResourceStore do
 
   defp bitmap_dimensions(_bytes, _mime), do: {0, 0}
 
-  @spec positive_integer_or_default(term(), integer()) :: integer()
+  @spec positive_integer_or_default(Types.wire_input(), integer()) :: integer()
   defp positive_integer_or_default(value, _default) when is_integer(value) and value > 0,
     do: value
 
@@ -1094,11 +1101,11 @@ defmodule Ide.Resources.ResourceStore do
 
   defp positive_integer_or_default(_value, default), do: default
 
-  @spec integer_or_zero(term()) :: term()
+  @spec integer_or_zero(Types.wire_input()) :: non_neg_integer()
   defp integer_or_zero(value) when is_integer(value) and value >= 0, do: value
   defp integer_or_zero(_), do: 0
 
-  @spec integer_or_default(term(), integer()) :: integer()
+  @spec integer_or_default(Types.wire_input(), integer()) :: integer()
   defp integer_or_default(value, _default) when is_integer(value), do: value
 
   defp integer_or_default(value, default) when is_binary(value) do
@@ -1110,7 +1117,7 @@ defmodule Ide.Resources.ResourceStore do
 
   defp integer_or_default(_value, default), do: default
 
-  @spec string_list(term()) :: [String.t()]
+  @spec string_list(list() | String.t() | nil) :: [String.t()]
   defp string_list(value) when is_list(value) do
     value
     |> Enum.filter(&is_binary/1)

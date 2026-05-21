@@ -1,13 +1,33 @@
 defmodule Ide.Packages.Http do
   @moduledoc false
 
+  alias Ide.Packages.Types
+
   @type conditional :: %{optional(:etag) => String.t(), optional(:last_modified) => String.t()}
   @type response_cache :: %{
           optional(:etag) => String.t() | nil,
           optional(:last_modified) => String.t() | nil
         }
+  @type header_list :: [{String.t() | atom(), String.t()}]
+  @type download_progress :: ({:phase, atom() | {atom(), non_neg_integer()}} | {:bytes, non_neg_integer(), non_neg_integer() | nil} -> :ok)
 
-  @spec get_json(String.t(), keyword()) :: {:ok, term()} | {:error, term()}
+  @type stream_acc :: %{
+          status: nil | integer(),
+          header_blocks: [header_list()],
+          chunks: [binary()],
+          content_length: nil | non_neg_integer(),
+          last_progress_bytes: non_neg_integer(),
+          last_progress_at: non_neg_integer(),
+          announced_download: boolean()
+        }
+
+  @type stream_event ::
+          {:status, integer()}
+          | {:headers, header_list()}
+          | {:data, binary()}
+          | {:trailers, term()}
+
+  @spec get_json(String.t(), keyword()) :: {:ok, map() | list()} | {:error, Types.catalog_error()}
   def get_json(path, opts) when is_binary(path) and is_list(opts) do
     with {:ok, body} <- get_text(path, opts),
          {:ok, decoded} <- Jason.decode(body) do
@@ -24,7 +44,7 @@ defmodule Ide.Packages.Http do
   Returns `{:ok, decoded, cache_meta}` on 200, `:not_modified` on 304, or `{:error, reason}`.
   """
   @spec get_json_conditional(String.t(), keyword(), conditional()) ::
-          {:ok, term(), response_cache()} | :not_modified | {:error, term()}
+          {:ok, map() | list(), response_cache()} | :not_modified | {:error, Types.catalog_error()}
   def get_json_conditional(path, opts, conditional \\ %{})
       when is_binary(path) and is_list(opts) do
     case Keyword.get(opts, :download_progress) do
@@ -62,7 +82,7 @@ defmodule Ide.Packages.Http do
     end
   end
 
-  @spec get_text(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  @spec get_text(String.t(), keyword()) :: {:ok, String.t()} | {:error, Types.catalog_error()}
   def get_text(path, opts) when is_binary(path) and is_list(opts) do
     base_url = opts[:base_url] || ""
     timeout = opts[:timeout_ms] || 8_000
@@ -91,7 +111,7 @@ defmodule Ide.Packages.Http do
 
   @doc false
   @spec get_text_conditional(String.t(), keyword(), conditional()) ::
-          {:ok, String.t(), response_cache()} | :not_modified | {:error, term()}
+          {:ok, String.t(), response_cache()} | :not_modified | {:error, Types.catalog_error()}
   def get_text_conditional(path, opts, conditional)
       when is_binary(path) and is_list(opts) and is_map(conditional) do
     timeout = opts[:timeout_ms] || 8_000
@@ -114,7 +134,8 @@ defmodule Ide.Packages.Http do
     end
   end
 
-  @spec build_conditional_request(term(), term(), term()) :: term()
+  @spec build_conditional_request(String.t(), Types.catalog_http_opts(), conditional()) ::
+          Finch.Request.t()
   defp build_conditional_request(path, opts, conditional) do
     base_url = opts[:base_url] || ""
     accept = opts[:accept] || "application/json"
@@ -132,7 +153,8 @@ defmodule Ide.Packages.Http do
     Finch.build(:get, url, headers)
   end
 
-  @spec stream_text_conditional(term(), term(), term(), term()) :: term()
+  @spec stream_text_conditional(String.t(), Types.catalog_http_opts(), conditional(), download_progress()) ::
+          {:ok, String.t(), response_cache()} | :not_modified | {:error, Types.catalog_error()}
   defp stream_text_conditional(path, opts, conditional, progress)
        when is_binary(path) and is_list(opts) and is_map(conditional) and is_function(progress, 1) do
     receive_timeout = Keyword.get(opts, :receive_timeout_ms, 120_000)
@@ -180,7 +202,8 @@ defmodule Ide.Packages.Http do
     end
   end
 
-  @spec stream_conditional_chunk(term(), term(), term()) :: term()
+  @spec stream_conditional_chunk(download_progress(), stream_event(), stream_acc()) ::
+          {:cont, stream_acc()} | {:halt, stream_acc()}
   defp stream_conditional_chunk(_progress, {:status, status}, acc) do
     {:cont, %{acc | status: status}}
   end
@@ -218,7 +241,8 @@ defmodule Ide.Packages.Http do
 
   defp stream_conditional_chunk(_progress, {:trailers, _}, acc), do: {:cont, acc}
 
-  @spec throttle_download_progress(term(), term(), term()) :: term()
+  @spec throttle_download_progress(download_progress(), stream_acc(), non_neg_integer()) ::
+          stream_acc()
   defp throttle_download_progress(progress, acc, received) do
     now = System.monotonic_time(:millisecond)
     total = acc.content_length
@@ -237,7 +261,7 @@ defmodule Ide.Packages.Http do
     end
   end
 
-  @spec content_length_from_header_list(term()) :: term()
+  @spec content_length_from_header_list(header_list()) :: non_neg_integer() | nil
   defp content_length_from_header_list(headers) when is_list(headers) do
     case Enum.find_value(headers, fn {k, v} ->
            if String.downcase(to_string(k)) == "content-length" do
@@ -249,14 +273,15 @@ defmodule Ide.Packages.Http do
     end
   end
 
-  @spec prepend_conditional_headers(term(), term()) :: term()
+  @spec prepend_conditional_headers(header_list(), conditional()) :: header_list()
   defp prepend_conditional_headers(headers, conditional) do
     headers
     |> prepend_if(conditional[:etag], fn e -> {"if-none-match", e} end)
     |> prepend_if(conditional[:last_modified], fn lm -> {"if-modified-since", lm} end)
   end
 
-  @spec prepend_if(term(), term(), term()) :: term()
+  @spec prepend_if(header_list(), String.t() | nil, (String.t() -> {String.t(), String.t()})) ::
+          header_list()
   defp prepend_if(headers, value, pair_fun) do
     if is_binary(value) and String.trim(value) != "" do
       [pair_fun.(value) | headers]
@@ -265,7 +290,7 @@ defmodule Ide.Packages.Http do
     end
   end
 
-  @spec response_cache_meta(term()) :: term()
+  @spec response_cache_meta(header_list()) :: response_cache()
   defp response_cache_meta(headers) when is_list(headers) do
     norm =
       Enum.reduce(headers, %{}, fn {k, v}, acc ->
@@ -275,7 +300,7 @@ defmodule Ide.Packages.Http do
     %{etag: Map.get(norm, "etag"), last_modified: Map.get(norm, "last-modified")}
   end
 
-  @spec maybe_gunzip(term()) :: term()
+  @spec maybe_gunzip(binary()) :: binary()
   defp maybe_gunzip(body) when is_binary(body) do
     if byte_size(body) >= 2 and match?(<<0x1F, 0x8B, _::binary>>, body) do
       try do

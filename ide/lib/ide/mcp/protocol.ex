@@ -5,13 +5,22 @@ defmodule Ide.Mcp.Protocol do
 
   alias Ide.Mcp.Audit
   alias Ide.Mcp.Tools
+  alias Ide.Mcp.WireTypes
 
   @server_name "elm-pebble-ide-mcp"
   @server_version "0.1.0"
   @protocol_version "2024-11-05"
 
   @type capabilities :: [Tools.capability()]
-  @type request_result :: {:ok, map() | nil} | {:error, integer(), String.t()}
+  @type json_rpc_id :: integer() | String.t() | nil
+  @type json_rpc_request :: %{required(String.t()) => term(), optional(String.t()) => term()}
+  @type json_rpc_error :: %{
+          required(String.t()) => integer() | String.t()
+        }
+  @type json_rpc_response :: %{
+          required(String.t()) => String.t() | json_rpc_id() | WireTypes.json_value() | json_rpc_error()
+        }
+  @type request_result :: {:ok, WireTypes.json_value()} | {:error, integer(), String.t()}
 
   @doc """
   Handles an MCP JSON-RPC request body.
@@ -19,7 +28,7 @@ defmodule Ide.Mcp.Protocol do
   Notifications return `nil`, because JSON-RPC notifications must not receive a
   response.
   """
-  @spec response(map(), capabilities()) :: map() | nil
+  @spec response(json_rpc_request(), capabilities()) :: json_rpc_response() | nil
   def response(%{"id" => id} = request, capabilities) do
     case handle_request(request, capabilities) do
       {:ok, result} ->
@@ -35,14 +44,14 @@ defmodule Ide.Mcp.Protocol do
   @doc """
   Handles a JSON-RPC batch and drops notification-only responses.
   """
-  @spec batch_response([map()], capabilities()) :: [map()]
+  @spec batch_response([json_rpc_request()], capabilities()) :: [json_rpc_response()]
   def batch_response(messages, capabilities) when is_list(messages) do
     messages
     |> Enum.map(&response(&1, capabilities))
     |> Enum.reject(&is_nil/1)
   end
 
-  @spec handle_request(map(), capabilities()) :: request_result()
+  @spec handle_request(json_rpc_request(), capabilities()) :: request_result()
   def handle_request(%{"method" => "initialize"}, capabilities) do
     {:ok,
      %{
@@ -99,8 +108,10 @@ defmodule Ide.Mcp.Protocol do
     {:error, -32600, "invalid request"}
   end
 
+  @type capability_input :: String.t() | atom()
+
   @doc false
-  @spec json_safe(term()) :: term()
+  @spec json_safe(term()) :: WireTypes.json_value()
   def json_safe(value)
       when is_nil(value) or is_boolean(value) or is_number(value) or is_binary(value),
       do: value
@@ -132,12 +143,12 @@ defmodule Ide.Mcp.Protocol do
 
   def json_safe(value), do: inspect(value)
 
-  @spec json_safe_key(term()) :: String.t()
+  @spec json_safe_key(String.t() | atom()) :: String.t()
   defp json_safe_key(key) when is_binary(key), do: key
   defp json_safe_key(key) when is_atom(key), do: Atom.to_string(key)
   defp json_safe_key(key), do: inspect(key)
 
-  @spec normalize_capabilities(term()) :: capabilities()
+  @spec normalize_capabilities(String.t() | [capability_input()]) :: capabilities()
   def normalize_capabilities(capabilities) when is_binary(capabilities) do
     capabilities
     |> String.split(",", trim: true)
@@ -170,7 +181,7 @@ defmodule Ide.Mcp.Protocol do
     end
   end
 
-  @spec audit(term(), term(), term(), term(), term()) :: term()
+  @spec audit(String.t(), String.t(), String.t(), map(), String.t() | nil) :: :ok
   defp audit(action, status, trace_id, params, error_message \\ nil) do
     entry = %{
       at: DateTime.utc_now() |> DateTime.to_iso8601(),

@@ -1,5 +1,6 @@
 defmodule Ide.Formatter.Semantics.Layout do
   @moduledoc false
+  alias Ide.Formatter.Types
 
   @spec normalize_layout(String.t()) :: String.t()
   def normalize_layout(source) when is_binary(source) do
@@ -11,14 +12,15 @@ defmodule Ide.Formatter.Semantics.Layout do
     |> ensure_terminal_newline()
   end
 
-  @spec ensure_terminal_newline(term()) :: term()
+  @spec ensure_terminal_newline(String.t()) :: String.t()
   defp ensure_terminal_newline(""), do: "\n"
 
   defp ensure_terminal_newline(value) do
     if String.ends_with?(value, "\n"), do: value, else: value <> "\n"
   end
 
-  @spec normalize_line_whitespace(term(), term(), term()) :: term()
+  @spec normalize_line_whitespace(Types.line_list(), boolean(), Types.line_list()) ::
+          Types.line_list()
   defp normalize_line_whitespace([], _in_multiline, acc), do: acc
 
   defp normalize_line_whitespace([line | rest], in_multiline, acc) do
@@ -36,7 +38,7 @@ defmodule Ide.Formatter.Semantics.Layout do
     normalize_line_whitespace(rest, next_in_multiline, [normalized_line | acc])
   end
 
-  @spec multiline_delimiter_count(term()) :: term()
+  @spec multiline_delimiter_count(String.t()) :: non_neg_integer()
   defp multiline_delimiter_count(line) do
     Regex.scan(~r/"""/, line) |> length()
   end

@@ -1,7 +1,8 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Http do
   @moduledoc false
 
-  @spec eval(String.t(), term()) :: {:ok, term()} | :no_builtin
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  @spec eval(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
   def eval("get", [request]) when is_map(request) do
     {:ok,
      request_descriptor(
@@ -74,7 +75,15 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Http do
 
   def eval(_function_name, _values), do: :no_builtin
 
-  @spec request_descriptor(term(), term(), term(), term(), term(), term(), term()) :: map()
+  @spec request_descriptor(
+          String.t(),
+          EvalTypes.runtime_value(),
+          list(),
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value() | nil,
+          EvalTypes.runtime_value() | nil
+        ) :: EvalTypes.command_map()
   defp request_descriptor(method, url, headers, request_body, expect, timeout, tracker) do
     %{
       "kind" => "http",
@@ -89,15 +98,16 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Http do
     }
   end
 
-  @spec expect(String.t(), term(), term()) :: map()
+  @spec expect(String.t(), EvalTypes.runtime_value(), EvalTypes.runtime_value()) ::
+          EvalTypes.command_map()
   defp expect(kind, to_msg, decoder),
     do: %{"kind" => kind, "to_msg" => to_msg, "decoder" => decoder}
 
-  @spec body(String.t(), map()) :: map()
+  @spec body(String.t(), map()) :: EvalTypes.command_map()
   defp body(kind, fields \\ %{}) when is_binary(kind) and is_map(fields),
     do: Map.put(fields, "kind", kind)
 
-  @spec normalize_headers(term()) :: [map()]
+  @spec normalize_headers(list()) :: [EvalTypes.command_map()]
   defp normalize_headers(headers) when is_list(headers) do
     headers
     |> Enum.filter(&is_map/1)
@@ -112,7 +122,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Http do
 
   defp normalize_headers(_), do: []
 
-  @spec normalize_body(term()) :: map()
+  @spec normalize_body(map() | EvalTypes.runtime_value()) :: EvalTypes.command_map()
   defp normalize_body(%{} = request_body) do
     %{
       "kind" => to_string(field_value(request_body, "kind") || "empty"),
@@ -124,7 +134,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Http do
 
   defp normalize_body(_), do: body("empty")
 
-  @spec normalize_expect(term()) :: map() | nil
+  @spec normalize_expect(map() | EvalTypes.runtime_value()) :: EvalTypes.command_map() | nil
   defp normalize_expect(%{} = expect) do
     %{
       "kind" => to_string(field_value(expect, "kind") || "whatever"),
@@ -135,7 +145,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Http do
 
   defp normalize_expect(_), do: nil
 
-  @spec put_expect_to_msg(map(), term()) :: map()
+  @spec put_expect_to_msg(EvalTypes.command_map(), EvalTypes.runtime_value()) ::
+          EvalTypes.command_map()
   defp put_expect_to_msg(request, to_msg) when is_map(request) do
     expect =
       request
@@ -148,7 +159,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Http do
     Map.put(request, "expect", normalize_expect(expect))
   end
 
-  @spec field_value(term(), term()) :: term()
+  @spec field_value(map(), String.t()) :: EvalTypes.runtime_value() | nil
   defp field_value(map, key) when is_map(map) and is_binary(key) do
     case Map.fetch(map, key) do
       {:ok, value} ->
@@ -163,16 +174,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Http do
     end
   end
 
-  defp field_value(map, key) when is_map(map) and is_atom(key) do
-    case Map.fetch(map, key) do
-      {:ok, value} -> value
-      :error -> Map.get(map, Atom.to_string(key))
-    end
-  end
-
-  defp field_value(_map, _key), do: nil
-
-  @spec maybe_option_value(term()) :: term()
+  @spec maybe_option_value(EvalTypes.runtime_value() | nil) :: EvalTypes.runtime_value() | nil
   defp maybe_option_value(nil), do: nil
   defp maybe_option_value(%{"ctor" => "Just", "args" => [value]}), do: value
   defp maybe_option_value(%{ctor: "Just", args: [value]}), do: value

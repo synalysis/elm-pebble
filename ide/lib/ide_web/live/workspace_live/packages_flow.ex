@@ -6,7 +6,11 @@ defmodule IdeWeb.WorkspaceLive.PackagesFlow do
 
   alias Ide.Packages
 
-  @spec search_progress_label(term()) :: String.t()
+  @type search_progress ::
+          {:phase, atom() | {atom(), non_neg_integer()}}
+          | {:bytes, non_neg_integer(), non_neg_integer() | nil}
+
+  @spec search_progress_label(search_progress()) :: String.t()
   def search_progress_label({:phase, :starting}), do: "Preparing search…"
   def search_progress_label({:phase, :connecting}), do: "Connecting to package registry…"
   def search_progress_label({:phase, :download_started}), do: "Downloading package index…"
@@ -101,7 +105,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesFlow do
   @spec fetch_package_inspection(String.t()) ::
           {:ok,
            %{package: String.t(), details: map(), versions: [String.t()], readme: String.t()}}
-          | {:error, String.t(), term()}
+          | {:error, String.t(), atom() | tuple() | String.t()}
   def fetch_package_inspection(package) when is_binary(package) do
     with {:ok, details} <- Packages.package_details(package, []),
          {:ok, versions_payload} <- Packages.versions(package, []),
@@ -111,14 +115,14 @@ defmodule IdeWeb.WorkspaceLive.PackagesFlow do
          package: package,
          details: details,
          versions: versions_payload.versions,
-         readme: readme_payload.readme || ""
+         readme: readme_payload.readme
        }}
     else
       {:error, reason} -> {:error, package, reason}
     end
   end
 
-  @spec format_index_bytes(term()) :: term()
+  @spec format_index_bytes(non_neg_integer()) :: String.t()
   defp format_index_bytes(n) when is_integer(n) and n >= 1_000_000,
     do: "#{Float.round(n / 1_000_000, 1)} MB"
 
@@ -127,7 +131,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesFlow do
 
   defp format_index_bytes(n) when is_integer(n) and n >= 0, do: "#{n} B"
 
-  @spec maybe_put_kw(term(), term(), term()) :: term()
+  @spec maybe_put_kw(keyword(), atom(), String.t() | nil) :: keyword()
   defp maybe_put_kw(opts, _key, nil), do: opts
   defp maybe_put_kw(opts, _key, ""), do: opts
   defp maybe_put_kw(opts, key, value), do: Keyword.put(opts, key, value)

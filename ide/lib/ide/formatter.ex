@@ -11,22 +11,11 @@ defmodule Ide.Formatter do
   alias Ide.Formatter.Semantics.Layout
   alias Ide.Formatter.Semantics.Normalize
   alias Ide.Formatter.Semantics.Parse
+  alias Ide.Formatter.Types
 
-  @type diagnostic :: %{
-          severity: String.t(),
-          source: String.t(),
-          message: String.t(),
-          line: integer() | nil,
-          column: integer() | nil
-        }
+  @type diagnostic :: Types.diagnostic()
 
-  @type format_result :: %{
-          formatted_source: String.t(),
-          changed?: boolean(),
-          diagnostics: [diagnostic()],
-          formatter: String.t(),
-          details: map()
-        }
+  @type format_result :: Types.format_result()
 
   @type edit_patch_result :: %{
           replace_from: non_neg_integer(),
@@ -45,7 +34,8 @@ defmodule Ide.Formatter do
     end
   end
 
-  @spec format_with_semantics_pipeline(term(), term()) :: term()
+  @spec format_with_semantics_pipeline(String.t(), Types.format_opts()) ::
+          {:ok, format_result()} | {:error, map()}
   defp format_with_semantics_pipeline(source, opts) do
     with {:ok, parser_payload} <- parse_stage(source, opts),
          {:ok, laid_out} <- layout_stage(source),
@@ -65,7 +55,8 @@ defmodule Ide.Formatter do
     end
   end
 
-  @spec format_with_legacy_pipeline(term(), term()) :: term()
+  @spec format_with_legacy_pipeline(String.t(), Types.format_opts()) ::
+          {:ok, format_result()} | {:error, map()}
   defp format_with_legacy_pipeline(source, opts) do
     with {:ok, parser_payload} <- parse_stage(source, opts),
          {:ok, laid_out} <- layout_stage(source),
@@ -115,13 +106,15 @@ defmodule Ide.Formatter do
     )
   end
 
-  @spec parse_stage(term(), term()) :: term()
+  @spec parse_stage(String.t(), Types.format_opts()) ::
+          {:ok, Types.parse_payload()} | {:error, Types.parse_error()}
   defp parse_stage(source, opts), do: Parse.validate_with_parser(source, opts)
 
-  @spec layout_stage(term()) :: term()
+  @spec layout_stage(String.t()) :: {:ok, String.t()} | {:error, map()}
   defp layout_stage(source), do: {:ok, Layout.normalize_layout(source)}
 
-  @spec normalize_stage(term(), term(), term()) :: term()
+  @spec normalize_stage(String.t(), Types.parse_payload(), Types.format_opts()) ::
+          {:ok, String.t()} | {:error, map()}
   defp normalize_stage(source, parser_payload, opts) when is_map(parser_payload) do
     metadata = parser_payload.metadata
 
@@ -132,10 +125,10 @@ defmodule Ide.Formatter do
     end
   end
 
-  @spec finalize_stage(term()) :: term()
+  @spec finalize_stage(String.t()) :: {:ok, String.t()} | {:error, map()}
   defp finalize_stage(source), do: {:ok, Finalize.finalize(source)}
 
-  @spec semantics_pipeline_enabled?(term()) :: term()
+  @spec semantics_pipeline_enabled?(Types.format_opts()) :: boolean()
   defp semantics_pipeline_enabled?(opts) do
     default =
       Application.get_env(:ide, Ide.Formatter, [])
@@ -144,7 +137,7 @@ defmodule Ide.Formatter do
     Keyword.get(opts, :semantics_pipeline, default)
   end
 
-  @spec add_fallback_diagnostic_tag(term()) :: term()
+  @spec add_fallback_diagnostic_tag([diagnostic()]) :: [diagnostic()]
   defp add_fallback_diagnostic_tag(diagnostics) when is_list(diagnostics) do
     [
       %{

@@ -2,7 +2,13 @@ defmodule IdeWeb.WorkspaceLive.BuildPage do
   @moduledoc false
   use IdeWeb, :html
 
-  @spec render(term()) :: term()
+  alias Phoenix.LiveView.Rendered
+
+  @type assigns :: map()
+  @type rendered :: Rendered.t()
+  @type flow_status :: :idle | :running | :ok | :error
+
+  @spec render(assigns()) :: rendered()
   def render(assigns) do
     ~H"""
     <section
@@ -57,7 +63,7 @@ defmodule IdeWeb.WorkspaceLive.BuildPage do
     """
   end
 
-  @spec check_status_label(term()) :: term()
+  @spec check_status_label(flow_status() | atom()) :: String.t()
   defp check_status_label(:idle), do: "idle"
   defp check_status_label(:running), do: "running"
   defp check_status_label(:ok), do: "ok"

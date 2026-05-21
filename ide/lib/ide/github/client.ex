@@ -1,12 +1,17 @@
 defmodule Ide.GitHub.Client do
   @moduledoc false
 
+  alias Ide.GitHub.Types
+
   @device_code_path "/login/device/code"
   @token_path "/login/oauth/access_token"
   @user_path "/user"
   @device_grant_type "urn:ietf:params:oauth:grant-type:device_code"
 
-  @spec start_device_flow(String.t() | nil) :: {:ok, map()} | {:error, term()}
+  @type http_method :: :get | :post
+  @type mock_response :: {:ok, %{status: integer(), body: map() | term()}} | {:error, Types.api_error()}
+
+  @spec start_device_flow(String.t() | nil) :: {:ok, map()} | {:error, Types.api_error()}
   def start_device_flow(scope \\ "repo") do
     with {:ok, client_id} <- oauth_client_id(),
          {:ok, response} <-
@@ -23,7 +28,7 @@ defmodule Ide.GitHub.Client do
     end
   end
 
-  @spec poll_device_token(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec poll_device_token(String.t()) :: {:ok, map()} | {:error, Types.auth_error()}
   def poll_device_token(device_code) when is_binary(device_code) do
     with {:ok, client_id} <- oauth_client_id(),
          {:ok, response} <-
@@ -47,7 +52,7 @@ defmodule Ide.GitHub.Client do
 
   def poll_device_token(_), do: {:error, :invalid_device_code}
 
-  @spec fetch_user(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec fetch_user(String.t()) :: {:ok, map()} | {:error, Types.auth_error()}
   def fetch_user(access_token) when is_binary(access_token) do
     with {:ok, response} <-
            req_api(access_token)
@@ -63,7 +68,7 @@ defmodule Ide.GitHub.Client do
   def fetch_user(_), do: {:error, :invalid_access_token}
 
   @spec fetch_repo(String.t(), String.t(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, term()}
+          {:ok, map()} | {:error, Types.api_error()}
   def fetch_repo(access_token, owner, repo, opts \\ [])
       when is_binary(access_token) and is_binary(owner) and is_binary(repo) do
     owner = URI.encode(owner)
@@ -73,13 +78,13 @@ defmodule Ide.GitHub.Client do
   end
 
   @spec create_user_repository(String.t(), map(), keyword()) ::
-          {:ok, map()} | {:error, term()}
+          {:ok, map()} | {:error, Types.api_error()}
   def create_user_repository(access_token, params, opts \\ []) when is_binary(access_token) do
     api_request(access_token, opts, :post, "/user/repos", params)
   end
 
   @spec create_org_repository(String.t(), String.t(), map(), keyword()) ::
-          {:ok, map()} | {:error, term()}
+          {:ok, map()} | {:error, Types.api_error()}
   def create_org_repository(access_token, org, params, opts \\ [])
       when is_binary(access_token) and is_binary(org) do
     org = URI.encode(org)
@@ -121,8 +126,8 @@ defmodule Ide.GitHub.Client do
     )
   end
 
-  @spec api_request(String.t(), keyword(), term(), String.t(), term()) ::
-          {:ok, map()} | {:error, term()}
+  @spec api_request(String.t(), keyword(), http_method(), String.t(), map() | nil) ::
+          {:ok, map()} | {:error, Types.api_error()}
   defp api_request(access_token, opts, method, path, body) do
   headers = [
       {"accept", "application/vnd.github+json"},
@@ -152,7 +157,8 @@ defmodule Ide.GitHub.Client do
     end
   end
 
-  @spec normalize_fun_response(term()) :: {:ok, map()} | {:error, term()}
+  @spec normalize_fun_response(mock_response() | Types.req_transport_error()) ::
+          {:ok, map()} | {:error, Types.api_error()} | mock_response() | Types.req_transport_error()
   defp normalize_fun_response({:ok, %{status: status, body: body}}) when status in 200..299 and is_map(body),
     do: {:ok, body}
 
@@ -160,18 +166,16 @@ defmodule Ide.GitHub.Client do
     do: {:error, {:http_error, status, body}}
 
   defp normalize_fun_response({:error, reason}), do: {:error, reason}
+
   defp normalize_fun_response(other), do: other
 
-  @spec normalize_response(term()) :: {:ok, map()} | {:error, term()}
-  defp normalize_response(%Req.Response{} = response), do: normalize_body(response)
-
+  @spec normalize_response({:ok, Req.Response.t()} | {:error, Types.req_transport_error()}) ::
+          {:ok, map()} | {:error, Types.api_error()}
   defp normalize_response({:ok, %Req.Response{} = response}), do: normalize_body(response)
 
   defp normalize_response({:error, reason}), do: {:error, reason}
 
-  defp normalize_response(other), do: other
-
-  @spec normalize_body(term()) :: {:ok, map()} | {:error, term()}
+  @spec normalize_body(Req.Response.t()) :: {:ok, map()} | {:error, Types.http_error()}
   defp normalize_body(%Req.Response{status: status, body: body})
        when status in 200..299 and is_map(body),
        do: {:ok, body}

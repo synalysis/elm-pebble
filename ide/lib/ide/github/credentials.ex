@@ -3,6 +3,10 @@ defmodule Ide.GitHub.Credentials do
   Lightweight persisted storage for GitHub OAuth credentials.
   """
 
+  alias Ide.GitHub.Types
+
+  @type wire_value :: String.t() | integer() | atom() | nil
+
   @type t :: %{
           connected?: boolean(),
           access_token: String.t() | nil,
@@ -30,7 +34,7 @@ defmodule Ide.GitHub.Credentials do
     }
   end
 
-  @spec put(map()) :: :ok | {:error, term()}
+  @spec put(map()) :: :ok | {:error, Types.credentials_error()}
   def put(attrs) when is_map(attrs) do
     cleaned =
       attrs
@@ -50,7 +54,7 @@ defmodule Ide.GitHub.Credentials do
     write_file_values(merged)
   end
 
-  @spec clear() :: :ok | {:error, term()}
+  @spec clear() :: :ok | {:error, Types.credentials_error()}
   def clear do
     write_file_values(%{})
   end
@@ -81,7 +85,7 @@ defmodule Ide.GitHub.Credentials do
     end
   end
 
-  @spec write_file_values(map()) :: :ok | {:error, term()}
+  @spec write_file_values(map()) :: :ok | {:error, Types.credentials_error()}
   defp write_file_values(values) do
     path = credentials_path()
     parent = Path.dirname(path)
@@ -115,7 +119,7 @@ defmodule Ide.GitHub.Credentials do
     end
   end
 
-  @spec put_clean_string(map(), String.t(), term()) :: map()
+  @spec put_clean_string(map(), String.t(), wire_value()) :: map()
   defp put_clean_string(map, _key, nil), do: map
 
   defp put_clean_string(map, key, value) when is_binary(value) do
@@ -125,7 +129,7 @@ defmodule Ide.GitHub.Credentials do
 
   defp put_clean_string(map, _key, _value), do: map
 
-  @spec parse_int(term()) :: integer() | nil
+  @spec parse_int(String.t() | integer() | nil) :: integer() | nil
   defp parse_int(value) when is_integer(value), do: value
 
   defp parse_int(value) when is_binary(value) do

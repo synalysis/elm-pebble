@@ -10,6 +10,11 @@ defmodule Ide.ProjectBundle do
   @default_source_roots ["watch", "protocol", "phone"]
   @default_import_path "."
 
+  @type manifest_json :: map()
+  @type manifest_field_error :: {:invalid_manifest_field, String.t()}
+  @type wire_uuid :: String.t() | atom() | nil
+  @type attrs_value :: String.t() | [String.t()] | map() | nil
+
   @type metadata :: %{
           name: String.t(),
           slug: String.t(),
@@ -25,6 +30,17 @@ defmodule Ide.ProjectBundle do
           debugger_settings: map()
         }
 
+  @type manifest_parse_error :: :invalid_manifest | manifest_field_error()
+
+  @type import_source_error ::
+          :import_path_must_be_relative
+          | :import_source_not_found
+          | :invalid_import_path
+
+  @type bundle_io_error :: File.posix() | Jason.DecodeError.t() | Jason.EncodeError.t()
+
+  @type bundle_error :: manifest_parse_error() | import_source_error() | bundle_io_error()
+
   @doc """
   Returns the manifest filename stored at the project root.
   """
@@ -34,7 +50,7 @@ defmodule Ide.ProjectBundle do
   @doc """
   Writes bundle metadata for a project workspace.
   """
-  @spec write_manifest(String.t(), Project.t(), keyword()) :: :ok | {:error, term()}
+  @spec write_manifest(String.t(), Project.t(), keyword()) :: :ok | {:error, bundle_error()}
   def write_manifest(workspace_root, %Project{} = project, opts \\ []) do
     import_path = opts[:import_path] || @default_import_path
 
@@ -63,7 +79,7 @@ defmodule Ide.ProjectBundle do
   @doc """
   Reads and validates bundle metadata from an import root.
   """
-  @spec read_manifest(String.t()) :: {:ok, metadata()} | {:error, term()}
+  @spec read_manifest(String.t()) :: {:ok, metadata()} | {:error, bundle_error()}
   def read_manifest(import_root) do
     manifest_path = Path.join(import_root, @manifest_filename)
 
@@ -164,7 +180,7 @@ defmodule Ide.ProjectBundle do
 
   defp slug_app_uuid(_), do: nil
 
-  @spec normalize_app_uuid(term()) :: String.t() | nil
+  @spec normalize_app_uuid(wire_uuid()) :: String.t() | nil
   defp normalize_app_uuid(uuid) do
     uuid = uuid |> to_string() |> String.trim()
 
@@ -219,11 +235,9 @@ defmodule Ide.ProjectBundle do
 
   @spec uuid_from_pbw(String.t()) :: String.t() | nil
   defp uuid_from_pbw(path) do
-    charlist_path = String.to_charlist(path)
-
-    with {:ok, files} <- :zip.list_dir(charlist_path),
+    with {:ok, files} <- Ide.ZipArchive.list_files(path),
          entry when is_binary(entry) <- pbw_metadata_entry(files),
-         {:ok, data} <- read_pbw_zip_entry(charlist_path, entry),
+         {:ok, data} <- Ide.ZipArchive.read_entry(path, entry),
          {:ok, %{"uuid" => uuid}} <- Jason.decode(data) do
       normalize_app_uuid(uuid)
     else
@@ -242,19 +256,10 @@ defmodule Ide.ProjectBundle do
     end
   end
 
-  @spec read_pbw_zip_entry(charlist(), String.t()) :: {:ok, binary()} | {:error, term()}
-  defp read_pbw_zip_entry(charlist_path, entry) do
-    charlist_entry = String.to_charlist(entry)
-
-    with {:ok, [{_, data}]} <- :zip.extract(charlist_path, [{:file, charlist_entry}, :memory]) do
-      {:ok, data}
-    end
-  end
-
   @doc """
   Resolves the source directory to copy based on import root and manifest import path.
   """
-  @spec resolve_import_source(String.t(), map()) :: {:ok, String.t()} | {:error, term()}
+  @spec resolve_import_source(String.t(), map()) :: {:ok, String.t()} | {:error, import_source_error()}
   def resolve_import_source(import_root, attrs) do
     import_path =
       attrs
@@ -285,7 +290,8 @@ defmodule Ide.ProjectBundle do
     end
   end
 
-  @spec parse_metadata(term()) :: term()
+  @spec parse_metadata(manifest_json()) ::
+          {:ok, metadata()} | {:error, :invalid_manifest | manifest_field_error()}
   defp parse_metadata(decoded) when is_map(decoded) do
     with {:ok, name} <- fetch_nonempty_string(decoded, "name"),
          {:ok, slug} <- fetch_nonempty_string(decoded, "slug"),
@@ -320,7 +326,8 @@ defmodule Ide.ProjectBundle do
 
   defp parse_metadata(_), do: {:error, :invalid_manifest}
 
-  @spec fetch_nonempty_string(term(), term()) :: term()
+  @spec fetch_nonempty_string(manifest_json(), String.t()) ::
+          {:ok, String.t()} | {:error, manifest_field_error()}
   defp fetch_nonempty_string(map, key) do
     case Map.get(map, key) do
       value when is_binary(value) ->
@@ -332,7 +339,8 @@ defmodule Ide.ProjectBundle do
     end
   end
 
-  @spec fetch_source_roots(term()) :: term()
+  @spec fetch_source_roots(manifest_json()) ::
+          {:ok, [String.t()]} | {:error, manifest_field_error()}
   defp fetch_source_roots(map) do
     case Map.get(map, "source_roots", @default_source_roots) do
       roots when is_list(roots) ->
@@ -352,7 +360,8 @@ defmodule Ide.ProjectBundle do
     end
   end
 
-  @spec fetch_import_path(term()) :: term()
+  @spec fetch_import_path(manifest_json()) ::
+          {:ok, String.t()} | {:error, manifest_field_error()}
   defp fetch_import_path(map) do
     map
     |> Map.get("import_path", @default_import_path)
@@ -366,7 +375,8 @@ defmodule Ide.ProjectBundle do
     end
   end
 
-  @spec fetch_optional_string(term(), term()) :: term()
+  @spec fetch_optional_string(manifest_json(), String.t()) ::
+          {:ok, String.t() | nil} | {:error, manifest_field_error()}
   defp fetch_optional_string(map, key) do
     case Map.get(map, key) do
       nil ->
@@ -381,7 +391,8 @@ defmodule Ide.ProjectBundle do
     end
   end
 
-  @spec fetch_optional_map(term(), term()) :: term()
+  @spec fetch_optional_map(manifest_json(), String.t()) ::
+          {:ok, map()} | {:error, manifest_field_error()}
   defp fetch_optional_map(map, key) do
     case Map.get(map, key) do
       nil -> {:ok, %{}}
@@ -390,7 +401,7 @@ defmodule Ide.ProjectBundle do
     end
   end
 
-  @spec put_if_blank(term(), term(), term()) :: term()
+  @spec put_if_blank(map(), String.t(), attrs_value()) :: map()
   defp put_if_blank(attrs, key, value) do
     case Map.get(attrs, key) do
       nil ->

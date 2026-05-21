@@ -7,11 +7,37 @@ defmodule Ide.Formatter.Parity do
 
   @default_reference_executable "elm-format"
 
+  @type case_status :: :match | :mismatch | :formatter_error | :reference_error
+  @type mismatch_category ::
+          :record_layout
+          | :case_alignment
+          | :imports
+          | :comments
+          | :unicode_escapes
+          | :other
+          | :known_limitation
+          | nil
+
+  @type diff_map :: %{
+          line: pos_integer(),
+          column: pos_integer(),
+          actual: String.t(),
+          expected: String.t(),
+          actual_context: String.t(),
+          expected_context: String.t()
+        }
+
+  @type discover_error ::
+          File.posix() | :missing_fixture_root | {:missing_fixture_root, String.t()}
+
+  @type reference_result ::
+          {:ok, String.t()} | {:error, {:reference_failed, String.t()}}
+
   @type case_result :: %{
           fixture: String.t(),
-          status: :match | :mismatch | :formatter_error | :reference_error,
-          category: atom() | nil,
-          diff: map() | nil,
+          status: case_status(),
+          category: mismatch_category(),
+          diff: diff_map() | nil,
           message: String.t() | nil,
           known_limitation?: boolean(),
           limitation_reason: String.t() | nil
@@ -37,7 +63,7 @@ defmodule Ide.Formatter.Parity do
           results: [case_result()]
         }
 
-  @spec run(keyword()) :: {:ok, run_result()} | {:error, term()}
+  @spec run(keyword()) :: {:ok, run_result()} | {:error, discover_error()}
   def run(opts \\ []) do
     fixture_root = Keyword.get(opts, :fixture_root, default_fixture_root())
     limit = Keyword.get(opts, :limit, nil)
@@ -61,12 +87,12 @@ defmodule Ide.Formatter.Parity do
     end
   end
 
-  @spec discover_fixtures(String.t()) :: {:ok, [String.t()]} | {:error, term()}
+  @spec discover_fixtures(String.t()) :: {:ok, [String.t()]} | {:error, discover_error()}
   def discover_fixtures(fixture_root) do
     do_discover_fixtures(fixture_root)
   end
 
-  @spec do_discover_fixtures(term()) :: term()
+  @spec do_discover_fixtures(String.t()) :: {:ok, [String.t()]} | {:error, File.posix()}
   defp do_discover_fixtures(root) do
     case File.ls(root) do
       {:ok, entries} ->
@@ -96,7 +122,7 @@ defmodule Ide.Formatter.Parity do
     end
   end
 
-  @spec compare_fixture(term(), term(), term()) :: term()
+  @spec compare_fixture(String.t(), String.t(), String.t()) :: case_result()
   defp compare_fixture(path, fixture_root, reference_executable) do
     rel = Path.relative_to(path, fixture_root)
 
@@ -141,7 +167,7 @@ defmodule Ide.Formatter.Parity do
     end
   end
 
-  @spec build_error_result(term(), term(), term()) :: term()
+  @spec build_error_result(String.t(), case_status(), String.t()) :: case_result()
   defp build_error_result(rel, status, message) do
     {known?, reason} = known_limitation(rel, status)
 
@@ -156,7 +182,7 @@ defmodule Ide.Formatter.Parity do
     }
   end
 
-  @spec run_reference_formatter(term(), term()) :: term()
+  @spec run_reference_formatter(String.t(), String.t()) :: reference_result()
   defp run_reference_formatter(source, executable) do
     temp_dir = System.tmp_dir!()
 
@@ -187,14 +213,15 @@ defmodule Ide.Formatter.Parity do
     result
   end
 
-  @spec ensure_fixture_root(term()) :: term()
+  @spec ensure_fixture_root(String.t() | nil) ::
+          :ok | {:error, :missing_fixture_root | {:missing_fixture_root, String.t()}}
   defp ensure_fixture_root(nil), do: {:error, :missing_fixture_root}
 
   defp ensure_fixture_root(path) do
     if File.dir?(path), do: :ok, else: {:error, {:missing_fixture_root, path}}
   end
 
-  @spec maybe_take(term(), term()) :: term()
+  @spec maybe_take([String.t()], pos_integer() | nil) :: [String.t()]
   defp maybe_take(values, nil), do: values
 
   defp maybe_take(values, limit) when is_integer(limit) and limit > 0 do
@@ -203,7 +230,8 @@ defmodule Ide.Formatter.Parity do
 
   defp maybe_take(values, _), do: values
 
-  @spec maybe_apply_shard(term(), term(), term()) :: term()
+  @spec maybe_apply_shard([String.t()], pos_integer() | nil, non_neg_integer() | nil) ::
+          [String.t()]
   defp maybe_apply_shard(values, nil, _), do: values
   defp maybe_apply_shard(values, _, nil), do: values
 
@@ -218,7 +246,7 @@ defmodule Ide.Formatter.Parity do
 
   defp maybe_apply_shard(values, _shard_total, _shard_index), do: values
 
-  @spec normalize_output(term()) :: term()
+  @spec normalize_output(String.t()) :: String.t()
   defp normalize_output(output) do
     output
     |> String.replace(~r/^Processing file .*\n?/m, "")
@@ -227,7 +255,7 @@ defmodule Ide.Formatter.Parity do
     |> Kernel.<>("\n")
   end
 
-  @spec summarize(term(), term()) :: term()
+  @spec summarize(String.t(), [case_result()]) :: run_result()
   defp summarize(fixture_root, results) do
     counts = Enum.frequencies_by(results, & &1.status)
 
@@ -285,7 +313,7 @@ defmodule Ide.Formatter.Parity do
     }
   end
 
-  @spec diff_message(term()) :: term()
+  @spec diff_message(diff_map()) :: String.t()
   defp diff_message(%{
          line: line,
          column: column,
@@ -306,7 +334,7 @@ defmodule Ide.Formatter.Parity do
     |> String.trim()
   end
 
-  @spec diff_details(term(), term()) :: term()
+  @spec diff_details(String.t(), String.t()) :: diff_map()
   defp diff_details(actual, expected) do
     actual_lines = String.split(actual, "\n", trim: false)
     expected_lines = String.split(expected, "\n", trim: false)
@@ -335,7 +363,7 @@ defmodule Ide.Formatter.Parity do
     }
   end
 
-  @spec context_snippet(term(), term()) :: term()
+  @spec context_snippet([String.t()], non_neg_integer()) :: String.t()
   defp context_snippet(lines, mismatch_idx) do
     start_idx = max(mismatch_idx - 1, 0)
     end_idx = min(mismatch_idx + 1, length(lines) - 1)
@@ -348,7 +376,7 @@ defmodule Ide.Formatter.Parity do
     |> Enum.join("\n")
   end
 
-  @spec first_diff_column(term(), term()) :: term()
+  @spec first_diff_column(String.t(), String.t()) :: pos_integer()
   defp first_diff_column(actual_line, expected_line) do
     max_len = max(String.length(actual_line), String.length(expected_line))
 
@@ -360,7 +388,7 @@ defmodule Ide.Formatter.Parity do
     idx + 1
   end
 
-  @spec categorize_mismatch(term(), term()) :: term()
+  @spec categorize_mismatch(String.t(), String.t()) :: mismatch_category()
   defp categorize_mismatch(actual, expected) do
     joined = actual <> "\n" <> expected
 
@@ -386,7 +414,7 @@ defmodule Ide.Formatter.Parity do
     end
   end
 
-  @spec default_fixture_root() :: term()
+  @spec default_fixture_root() :: String.t() | nil
   defp default_fixture_root do
     configured =
       Application.get_env(:ide, __MODULE__, [])
@@ -402,7 +430,7 @@ defmodule Ide.Formatter.Parity do
     Enum.find(candidates, &File.dir?/1) || List.first(candidates)
   end
 
-  @spec known_limitation(term(), term()) :: term()
+  @spec known_limitation(String.t(), case_status()) :: {boolean(), String.t() | nil}
   defp known_limitation("Elm-0.17/AllSyntax/LineComments/Module.elm", :formatter_error),
     do: {true, "elm_ex parser limitation on Elm 0.17 line-comment header fixture"}
 

@@ -13,6 +13,7 @@ defmodule Ide.Auth do
 
   alias Ide.Auth.Email
   alias Ide.Auth.User
+  alias Ide.Auth.Types, as: AuthTypes
   alias Ide.Repo
 
   @cloudpebble_firebase_api_key "AIzaSyBZ9Cdvwwv9At2lPmc8TxyyEqSXGXejGvc"
@@ -70,8 +71,13 @@ defmodule Ide.Auth do
   def get_user(nil), do: nil
   def get_user(id), do: Repo.get(User, id)
 
-  @spec send_login_link(String.t()) :: :ok | {:error, :invalid_email | :delivery_failed}
+  @spec send_login_link(String.t()) ::
+          :ok
+          | {:error, :invalid_email | :mailer_not_configured | :delivery_failed}
   def send_login_link(email), do: Email.send_login_link(email)
+
+  @spec mail_delivery_configured?() :: boolean()
+  def mail_delivery_configured?, do: Email.mail_delivery_configured?()
 
   @spec verify_login_token(String.t()) ::
           {:ok, User.t()} | {:error, :invalid_token | :expired_token | :used_token}
@@ -96,7 +102,7 @@ defmodule Ide.Auth do
   defp normalize_mail_from(address) when is_binary(address), do: {"elm-pebble IDE", address}
   defp normalize_mail_from(_), do: {"elm-pebble IDE", "noreply@elm-pebble.dev"}
 
-  @spec upsert_firebase_user(map()) :: {:ok, User.t()} | {:error, term()}
+  @spec upsert_firebase_user(map()) :: {:ok, User.t()} | {:error, AuthTypes.firebase_user_error()}
   def upsert_firebase_user(%{"localId" => uid} = payload) when is_binary(uid) and uid != "" do
     attrs = %{
       firebase_uid: uid,
@@ -114,7 +120,7 @@ defmodule Ide.Auth do
 
   def upsert_firebase_user(_payload), do: {:error, :missing_firebase_uid}
 
-  @spec verify_firebase_id_token(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec verify_firebase_id_token(String.t()) :: {:ok, AuthTypes.firebase_user()} | {:error, AuthTypes.firebase_token_error()}
   def verify_firebase_id_token(token) when is_binary(token) do
     token = String.trim(token)
 
@@ -157,7 +163,8 @@ defmodule Ide.Auth do
   def token_expired?(nil), do: false
   def token_expired?(exp), do: System.system_time(:second) >= exp
 
-  @spec developer_status(String.t() | nil) :: {:ok, map()} | {:error, term()}
+  @spec developer_status(String.t() | nil) ::
+          {:ok, AuthTypes.developer_profile()} | {:error, AuthTypes.developer_status_error()}
   def developer_status(token) when is_binary(token) and token != "" do
     base = appstore_api_base()
 

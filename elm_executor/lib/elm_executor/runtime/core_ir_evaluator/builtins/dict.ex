@@ -1,10 +1,11 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Dict do
   @moduledoc false
 
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.Dict, as: DictValue
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.MaybeResult
 
-  @spec eval(String.t(), term(), map()) :: {:ok, term()} | :no_builtin | {:error, term()}
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result()
   def eval("empty", [], _ops), do: {:ok, %{}}
   def eval("singleton", [key, value], _ops), do: {:ok, %{key => value}}
 

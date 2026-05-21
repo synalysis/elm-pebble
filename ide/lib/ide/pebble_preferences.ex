@@ -29,12 +29,16 @@ defmodule Ide.PebblePreferences do
           required(:control) => map()
         }
 
+  @type preferences_error ::
+          {:preferences_project_load_failed, atom() | String.t() | map()}
+          | File.posix()
+
   @doc """
   Extracts a preferences schema from an Elm application root.
 
   Returns `{:ok, nil}` when the project has no preferences declaration.
   """
-  @spec extract(String.t()) :: {:ok, schema() | nil} | {:error, term()}
+  @spec extract(String.t()) :: {:ok, schema() | nil} | {:error, preferences_error()}
   def extract(project_root) when is_binary(project_root) do
     with :ok <- validate_elm_project(project_root),
          {:ok, files} <- preference_source_files(project_root) do
@@ -50,7 +54,7 @@ defmodule Ide.PebblePreferences do
   end
 
   @doc false
-  @spec extract_file(String.t()) :: {:ok, schema() | nil} | {:error, term()}
+  @spec extract_file(String.t()) :: {:ok, schema() | nil} | {:error, preferences_error()}
   def extract_file(path) when is_binary(path) do
     with {:ok, source} <- File.read(path) do
       if preference_source?(source) do
@@ -198,7 +202,7 @@ defmodule Ide.PebblePreferences do
   def generated_bridge_rel_path, do: @generated_bridge_rel_path
 
   @doc false
-  @spec ensure_generated_bridge(String.t()) :: :ok | {:error, term()}
+  @spec ensure_generated_bridge(String.t()) :: :ok | {:error, preferences_error()}
   def ensure_generated_bridge(phone_root) when is_binary(phone_root) do
     with {:ok, schema} <- extract(phone_root),
          source when is_binary(source) <- generated_bridge_source(schema) do
@@ -355,7 +359,7 @@ defmodule Ide.PebblePreferences do
 
   def generated_bridge_source(_schema), do: nil
 
-  @spec validate_elm_project(String.t()) :: :ok | {:error, term()}
+  @spec validate_elm_project(String.t()) :: :ok | {:error, preferences_error()}
   defp validate_elm_project(project_root) do
     case Bridge.load_project(project_root) do
       {:ok, project} ->
@@ -368,7 +372,7 @@ defmodule Ide.PebblePreferences do
     end
   end
 
-  @spec preference_source_files(String.t()) :: {:ok, [String.t()]} | {:error, term()}
+  @spec preference_source_files(String.t()) :: {:ok, [String.t()]} | {:error, preferences_error()}
   defp preference_source_files(project_root) do
     src = Path.join(project_root, "src")
 

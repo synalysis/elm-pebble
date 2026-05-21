@@ -6,6 +6,8 @@ defmodule Ide.Diagnostics.ElmSyntaxCatalog do
   @catalog_version "elm-compiler-0.19.1-syntax-full-v1"
   @source_reference "https://github.com/elm/compiler/blob/master/compiler/src/Reporting/Error/Syntax.hs"
 
+  @type detail_wire_value :: String.t() | atom() | list() | number() | boolean() | tuple() | map()
+
   @syntax_titles [
     "BAD INFIX",
     "BAD MODULE DECLARATION",
@@ -269,7 +271,7 @@ defmodule Ide.Diagnostics.ElmSyntaxCatalog do
     end
   end
 
-  @spec normalize_detail(term()) :: term()
+  @spec normalize_detail(detail_wire_value()) :: String.t()
   defp normalize_detail(value) when is_binary(value), do: String.trim(value)
   defp normalize_detail(value) when is_atom(value), do: value |> Atom.to_string() |> String.trim()
   defp normalize_detail(value) when is_list(value), do: value |> List.to_string() |> String.trim()

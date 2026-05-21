@@ -39,7 +39,8 @@ defmodule IdeWeb.AuthController do
       firebase_token_exp: token_exp,
       firebase_token_expired: Auth.token_expired?(token_exp),
       has_firebase_token: is_binary(token) and token != "",
-      app_store_publish_enabled: Auth.app_store_publish_enabled?()
+      app_store_publish_enabled: Auth.app_store_publish_enabled?(),
+      mail_delivery_configured: Auth.mail_delivery_configured?()
     })
   end
 
@@ -89,6 +90,14 @@ defmodule IdeWeb.AuthController do
         {:error, :invalid_email} ->
           conn
           |> put_flash(:error, "Enter a valid email address.")
+          |> redirect(to: ~p"/login")
+
+        {:error, :mailer_not_configured} ->
+          conn
+          |> put_flash(
+            :error,
+            "Email login is not configured on this server. Contact the site administrator."
+          )
           |> redirect(to: ~p"/login")
 
         {:error, :delivery_failed} ->

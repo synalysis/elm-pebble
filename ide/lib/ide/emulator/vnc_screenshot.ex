@@ -4,6 +4,7 @@ defmodule Ide.Emulator.VncScreenshot do
   alias Ide.Emulator.PebblePalette
   alias Ide.Emulator.SdkScreenshotStyle
   alias Ide.Emulator.ScreenshotPostprocess
+  alias Ide.Emulator.Types
   alias Ide.WatchModels
 
   @client_version "RFB 003.008\n"
@@ -11,7 +12,7 @@ defmodule Ide.Emulator.VncScreenshot do
   @default_timeout 15_000
   @max_raw_rectangle_bytes 50_000_000
 
-  @spec capture(pos_integer(), keyword()) :: {:ok, binary()} | {:error, term()}
+  @spec capture(pos_integer(), keyword()) :: {:ok, binary()} | {:error, Types.screenshot_error() | :timeout}
   def capture(port, opts \\ []) when is_integer(port) and port > 0 do
     platform = Keyword.fetch!(opts, :platform)
     timeout = Keyword.get(opts, :timeout, @default_timeout)

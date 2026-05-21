@@ -1,11 +1,12 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Random do
   @moduledoc false
 
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   @min_int -2_147_483_648
   @max_int 2_147_483_647
   @debugger_seed 1_722_529
 
-  @spec eval(String.t(), term(), map()) :: {:ok, term()} | :no_builtin | {:error, term()}
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result()
   def eval("minint", [], _ops), do: {:ok, @min_int}
   def eval("maxint", [], _ops), do: {:ok, @max_int}
   def eval("initialseed", [seed], _ops) when is_integer(seed), do: {:ok, random_seed(seed)}

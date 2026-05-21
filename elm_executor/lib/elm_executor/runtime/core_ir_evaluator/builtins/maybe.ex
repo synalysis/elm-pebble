@@ -1,9 +1,10 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Maybe do
   @moduledoc false
 
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.MaybeResult
 
-  @spec eval(String.t(), term(), map()) :: {:ok, term()} | :no_builtin | {:error, term()}
+  @spec eval(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result()
   def eval("withdefault", [default, maybe_or_result], _ops),
     do: {:ok, MaybeResult.with_default(default, maybe_or_result)}
 

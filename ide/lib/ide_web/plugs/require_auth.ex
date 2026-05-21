@@ -6,10 +6,10 @@ defmodule IdeWeb.Plugs.RequireAuth do
 
   alias Ide.Auth
 
-  @spec init(term()) :: term()
+  @spec init(keyword()) :: keyword()
   def init(opts), do: opts
 
-  @spec call(Plug.Conn.t(), term()) :: Plug.Conn.t()
+  @spec call(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
   def call(conn, _opts) do
     if Auth.public_mode?() and is_nil(conn.assigns[:current_user]) do
       conn

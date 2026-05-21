@@ -133,7 +133,10 @@ defmodule Elmc.Backend.Pebble do
   @spec ui_node_kind_id!(atom()) :: non_neg_integer()
   def ui_node_kind_id!(kind), do: Map.fetch!(@ui_node_kind_ids, kind)
 
-  @spec write_pebble_shim(IR.t(), String.t(), String.t()) :: :ok | {:error, term()}
+  alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
+  alias Elmc.Types
+
+  @spec write_pebble_shim(IR.t(), String.t(), String.t()) :: :ok | {:error, Types.file_error()}
   def write_pebble_shim(%IR{} = ir, out_dir, entry_module) do
     c_dir = Path.join(out_dir, "c")
     msg_constructors = msg_constructors(ir, entry_module)
@@ -2925,7 +2928,8 @@ defmodule Elmc.Backend.Pebble do
     reachable_targets(function_map, seen, rest ++ Enum.reverse(calls), targets)
   end
 
-  @spec collect_targets(term()) :: [String.t()]
+  @spec collect_targets(CCodegenTypes.ir_expr() | list() | nil | String.t() | number() | atom()) ::
+          [String.t()]
   defp collect_targets(nil), do: []
   defp collect_targets(value) when is_binary(value), do: []
   defp collect_targets(value) when is_number(value), do: []

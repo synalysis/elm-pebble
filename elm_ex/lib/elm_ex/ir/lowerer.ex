@@ -9,10 +9,16 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.IR.Declaration
   alias ElmEx.IR.Module
 
-  @typep expr() :: term()
+  @typep expr() :: map()
   @typep lookup() :: map()
   @typep payload_kind() :: :none | :single | :multi | :function_like
   @typep diagnostic() :: map()
+  @typep constructor_lookup() :: %{
+          required(:local) => map(),
+          required(:unqualified) => map(),
+          required(:qualified) => map(),
+          optional(:alias_map) => map()
+        }
 
   @pebble_ui_window_stack_tag 1000
   @pebble_ui_window_node_tag 1001
@@ -379,8 +385,6 @@ defmodule ElmEx.IR.Lowerer do
   defp normalize_record_alias_field_types(field_types) when is_map(field_types) do
     Map.new(field_types, fn {field, type} -> {to_string(field), to_string(type)} end)
   end
-
-  defp normalize_record_alias_field_types(_field_types), do: %{}
 
   @spec ownership_for_type(String.t() | nil) :: [atom()]
   defp ownership_for_type(type) do
@@ -847,8 +851,6 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  defp collect_module_exports(_), do: %{names: [], types: [], union_constructors: %{}}
-
   defp module_type_names(frontend_module) when is_map(frontend_module) do
     frontend_module
     |> Map.get(:declarations, [])
@@ -859,8 +861,6 @@ defmodule ElmEx.IR.Lowerer do
       end
     end)
   end
-
-  defp module_type_names(_), do: []
 
   defp exposed_type_names(exposing, type_names) when is_list(exposing) and is_list(type_names) do
     exposing
@@ -894,8 +894,6 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  defp module_union_constructors(_), do: %{}
-
   @spec expand_exposing_names([String.t()], map()) :: [String.t()]
   defp expand_exposing_names(names, union_constructors) do
     names
@@ -915,8 +913,6 @@ defmodule ElmEx.IR.Lowerer do
     union_constructors
     |> Enum.flat_map(fn {type_name, constructors} -> [type_name | constructors] end)
   end
-
-  defp union_export_names(_), do: []
 
   @spec type_wildcard_name(String.t()) :: String.t() | nil
   defp type_wildcard_name(name) when is_binary(name) do
@@ -985,7 +981,7 @@ defmodule ElmEx.IR.Lowerer do
     import_entries ++ default_entries
   end
 
-  @spec maybe_put_alias(term(), term(), term()) :: term()
+  @spec maybe_put_alias(map(), String.t(), String.t()) :: map()
   defp maybe_put_alias(map, alias_name, module_name)
        when is_map(map) and is_binary(alias_name) and alias_name != "" and is_binary(module_name) do
     Map.put_new(map, alias_name, module_name)
@@ -993,7 +989,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp maybe_put_alias(map, _alias_name, _module_name), do: map
 
-  @spec add_unique_string(term(), term()) :: term()
+  @spec add_unique_string([String.t()], String.t()) :: [String.t()]
   defp add_unique_string(values, value) when is_list(values) and is_binary(value) do
     if value in values, do: values, else: values ++ [value]
   end
@@ -1542,15 +1538,13 @@ defmodule ElmEx.IR.Lowerer do
   defp preferences_section_fields(%{op: :var}), do: {:ok, []}
   defp preferences_section_fields(_expr), do: :error
 
-  @spec preferences_call?(term(), String.t()) :: boolean()
+  @spec preferences_call?(String.t(), String.t()) :: boolean()
   defp preferences_call?(target, function_name) when is_binary(target) do
     target in [
       "Preferences.#{function_name}",
       "Pebble.Companion.Preferences.#{function_name}"
     ]
   end
-
-  defp preferences_call?(_target, _function_name), do: false
 
   @spec expr_constructor_call_arity_diagnostics(
           expr(),
@@ -1663,7 +1657,7 @@ defmodule ElmEx.IR.Lowerer do
        ),
        do: []
 
-  @spec resolve_constructor_arity(term(), term()) :: term()
+  @spec resolve_constructor_arity(String.t(), constructor_lookup()) :: non_neg_integer() | nil
   defp resolve_constructor_arity(target, lookup) when is_binary(target) do
     segments = String.split(target, ".")
     unqualified_name = List.last(segments)
@@ -1681,7 +1675,8 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec resolve_constructor_payload_kind(term(), term()) :: term()
+  @spec resolve_constructor_payload_kind(String.t(), constructor_lookup()) ::
+          payload_kind() | nil
   defp resolve_constructor_payload_kind(target, lookup) when is_binary(target) do
     segments = String.split(target, ".")
     unqualified_name = List.last(segments)

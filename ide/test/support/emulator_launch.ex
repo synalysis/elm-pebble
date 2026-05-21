@@ -2,11 +2,14 @@ defmodule Ide.TestSupport.EmulatorLaunch do
   @moduledoc false
 
   alias Ide.Emulator
+  alias Ide.Emulator.Types
 
   @max_attempts 8
   @initial_delay_ms 25
 
-  @spec launch(Ide.Emulator.launch_opts()) :: {:ok, map()} | {:error, term()}
+  @type launch_error :: Types.emulator_error() | {:exit, term()}
+
+  @spec launch(Ide.Emulator.launch_opts()) :: {:ok, map()} | {:error, launch_error()}
   def launch(opts) when is_list(opts) do
     do_launch(opts, @max_attempts, @initial_delay_ms)
   end

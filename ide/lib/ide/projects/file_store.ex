@@ -3,6 +3,7 @@ defmodule Ide.Projects.FileStore do
   Filesystem operations scoped to an IDE project workspace.
   """
 
+  alias Ide.Projects.FileTypes
   alias Ide.Projects.Project
   @hidden_directories MapSet.new([
                       "elm-stuff",
@@ -29,18 +30,13 @@ defmodule Ide.Projects.FileStore do
       ])
   }
 
-  @type tree_node ::
-          %{
-            type: :file | :dir,
-            name: String.t(),
-            rel_path: String.t(),
-            children: [tree_node()]
-          }
+  @type tree_node :: FileTypes.tree_node()
+  @type source_tree :: FileTypes.source_tree()
 
   @doc """
   Ensures root folders exist for a project.
   """
-  @spec ensure_roots(term(), term()) :: term()
+  @spec ensure_roots(Project.t(), FileTypes.projects_root()) :: FileTypes.ensure_roots_result()
   def ensure_roots(project, projects_root) do
     root = project_root(project, projects_root)
 
@@ -59,7 +55,7 @@ defmodule Ide.Projects.FileStore do
   @doc """
   Returns tree nodes grouped by source root.
   """
-  @spec list_tree(term(), term(), term()) :: term()
+  @spec list_tree(Project.t(), FileTypes.projects_root(), keyword()) :: source_tree()
   def list_tree(project, projects_root, opts \\ []) do
     hidden_by_root =
       Keyword.get(opts, :hidden_rel_paths_by_root, @editor_hidden_rel_paths)
@@ -78,7 +74,8 @@ defmodule Ide.Projects.FileStore do
   @doc """
   Reads a file by root and relative path.
   """
-  @spec read_file(term(), term(), term(), term()) :: term()
+  @spec read_file(Project.t(), FileTypes.projects_root(), String.t(), String.t()) ::
+          FileTypes.read_result()
   def read_file(project, projects_root, source_root, rel_path) do
     with {:ok, absolute_path} <- safe_path(project, projects_root, source_root, rel_path) do
       File.read(absolute_path)
@@ -88,7 +85,8 @@ defmodule Ide.Projects.FileStore do
   @doc """
   Writes file contents, creating missing parent directories.
   """
-  @spec write_file(term(), term(), term(), term(), term()) :: term()
+  @spec write_file(Project.t(), FileTypes.projects_root(), String.t(), String.t(), iodata()) ::
+          FileTypes.write_result()
   def write_file(project, projects_root, source_root, rel_path, contents) do
     with {:ok, absolute_path} <- safe_path(project, projects_root, source_root, rel_path),
          :ok <- File.mkdir_p(Path.dirname(absolute_path)) do
@@ -99,7 +97,8 @@ defmodule Ide.Projects.FileStore do
   @doc """
   Renames a file inside a source root.
   """
-  @spec rename_file(term(), term(), term(), term(), term()) :: term()
+  @spec rename_file(Project.t(), FileTypes.projects_root(), String.t(), String.t(), String.t()) ::
+          FileTypes.rename_result()
   def rename_file(project, projects_root, source_root, old_rel_path, new_rel_path) do
     with {:ok, old_abs} <- safe_path(project, projects_root, source_root, old_rel_path),
          {:ok, new_abs} <- safe_path(project, projects_root, source_root, new_rel_path),
@@ -111,7 +110,8 @@ defmodule Ide.Projects.FileStore do
   @doc """
   Deletes a file or directory by relative path.
   """
-  @spec delete_path(term(), term(), term(), term()) :: term()
+  @spec delete_path(Project.t(), FileTypes.projects_root(), String.t(), String.t()) ::
+          FileTypes.delete_result()
   def delete_path(project, projects_root, source_root, rel_path) do
     with {:ok, absolute_path} <- safe_path(project, projects_root, source_root, rel_path) do
       cond do
@@ -124,7 +124,7 @@ defmodule Ide.Projects.FileStore do
   @doc """
   Returns an absolute path to the project workspace root.
   """
-  @spec project_root(term(), term()) :: term()
+  @spec project_root(Project.t(), FileTypes.projects_root()) :: FileTypes.workspace_path()
   def project_root(%Project{owner_id: owner_id, slug: slug}, projects_root)
       when is_integer(owner_id) do
     Path.join([projects_root, "users", Integer.to_string(owner_id), slug])
@@ -132,7 +132,8 @@ defmodule Ide.Projects.FileStore do
 
   def project_root(%Project{slug: slug}, projects_root), do: Path.join(projects_root, slug)
 
-  @spec safe_path(term(), term(), term(), term()) :: term()
+  @spec safe_path(Project.t(), FileTypes.projects_root(), String.t(), String.t()) ::
+          {:ok, String.t()} | {:error, FileTypes.path_error()}
   defp safe_path(project, projects_root, source_root, rel_path) do
     if source_root in project.source_roots do
       source_base = Path.join(project_root(project, projects_root), source_root)
@@ -149,7 +150,7 @@ defmodule Ide.Projects.FileStore do
     end
   end
 
-  @spec tree_nodes(term(), term(), term()) :: term()
+  @spec tree_nodes(String.t(), String.t(), MapSet.t(String.t())) :: [tree_node()]
   defp tree_nodes(abs_dir, parent_rel, hidden) do
     case File.ls(abs_dir) do
       {:ok, entries} ->
@@ -183,7 +184,7 @@ defmodule Ide.Projects.FileStore do
     end
   end
 
-  @spec prune_empty_dirs(term()) :: term()
+  @spec prune_empty_dirs([tree_node()]) :: [tree_node()]
   defp prune_empty_dirs(nodes) when is_list(nodes) do
     nodes
     |> Enum.map(fn
@@ -200,15 +201,16 @@ defmodule Ide.Projects.FileStore do
     end)
   end
 
-  @spec rel_join(term(), term()) :: term()
+  @spec rel_join(String.t(), String.t()) :: String.t()
   defp rel_join("", segment), do: segment
   defp rel_join(parent, segment), do: Path.join(parent, segment)
 
-  @spec normalize_rm_rf(term()) :: term()
+  @spec normalize_rm_rf({:ok, [String.t()]} | {:error, File.posix(), String.t()}) ::
+          :ok | {:error, File.posix()}
   defp normalize_rm_rf({:ok, _paths}), do: :ok
   defp normalize_rm_rf({:error, reason, _path}), do: {:error, reason}
 
-  @spec hidden_entry?(term(), term()) :: term()
+  @spec hidden_entry?(String.t(), String.t()) :: boolean()
   defp hidden_entry?(abs_dir, entry) do
     full_path = Path.join(abs_dir, entry)
     File.dir?(full_path) and MapSet.member?(@hidden_directories, entry)

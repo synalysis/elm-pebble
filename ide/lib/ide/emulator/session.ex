@@ -5,7 +5,7 @@ defmodule Ide.Emulator.Session do
 
   require Logger
 
-  alias Ide.Emulator.{PBW, PBWInstaller, SdkImages, SlotLimiter}
+  alias Ide.Emulator.{PBW, PBWInstaller, SdkImages, SlotLimiter, Types}
   alias Ide.Emulator.PebbleProtocol.Router
   alias Ide.WatchModels
 
@@ -60,7 +60,7 @@ defmodule Ide.Emulator.Session do
   @spec artifact_file_path(pid()) :: String.t() | nil
   def artifact_file_path(pid), do: GenServer.call(pid, :artifact_file_path)
 
-  @spec install(pid()) :: {:ok, map()} | {:error, term()}
+  @spec install(pid()) :: {:ok, map()} | {:error, Types.session_error()}
   def install(pid) do
     try do
       with :ok <- GenServer.call(pid, :prepare_for_install, 90_000) do
@@ -94,7 +94,7 @@ defmodule Ide.Emulator.Session do
   @spec local_port(pid(), :vnc | :phone) :: pos_integer()
   def local_port(pid, kind), do: GenServer.call(pid, {:local_port, kind})
 
-  @spec control(pid(), non_neg_integer(), binary()) :: :ok | {:error, term()}
+  @spec control(pid(), non_neg_integer(), binary()) :: :ok | {:error, Types.session_error()}
   def control(pid, protocol, payload)
       when is_integer(protocol) and protocol >= 0 and protocol <= 255 and is_binary(payload) do
     GenServer.call(pid, {:control, protocol, payload}, 5_000)
@@ -102,7 +102,7 @@ defmodule Ide.Emulator.Session do
     :exit, reason -> {:error, reason}
   end
 
-  @spec ping(pid()) :: {:ok, map()} | {:error, term()}
+  @spec ping(pid()) :: {:ok, map()} | {:error, Types.session_atom_error()}
   def ping(pid) do
     GenServer.call(pid, :ping, 1_000)
   catch
@@ -110,7 +110,7 @@ defmodule Ide.Emulator.Session do
     :exit, _ -> {:error, :emulator_session_unavailable}
   end
 
-  @spec health_check(pid()) :: :ok | {:error, term()}
+  @spec health_check(pid()) :: :ok | {:error, Types.session_atom_error()}
   def health_check(pid) do
     GenServer.call(pid, :health_check, 1_000)
   catch
@@ -277,7 +277,7 @@ defmodule Ide.Emulator.Session do
 
   defp retryable_install_error?(_reason), do: false
 
-  @spec runtime_status(term()) :: map()
+  @spec runtime_status(String.t() | nil) :: map()
   def runtime_status(platform \\ nil) do
     platform = normalize_platform(platform)
     sdk_root = preferred_sdk_root()
@@ -344,7 +344,7 @@ defmodule Ide.Emulator.Session do
     }
   end
 
-  @spec install_runtime_dependencies(term()) :: {:ok, map()} | {:error, term()}
+  @spec install_runtime_dependencies(String.t() | nil) :: {:ok, map()}
   def install_runtime_dependencies(platform \\ nil) do
     platform = normalize_platform(platform)
     before_status = runtime_status(platform)
@@ -1462,7 +1462,8 @@ defmodule Ide.Emulator.Session do
     ]
   end
 
-  @spec pypkjs_command(String.t()) :: {:ok, String.t(), [String.t()]} | {:error, term()}
+  @spec pypkjs_command(String.t()) ::
+          {:ok, String.t(), [String.t()]} | {:error, Types.session_atom_error()}
   def pypkjs_command(pypkjs_bin) do
     wrapper_path = Path.expand("../../../priv/python/embedded_pypkjs.py", __DIR__)
 

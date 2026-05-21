@@ -3,6 +3,8 @@ defmodule ElmEx.DiagnosticFormatter do
   Produces human-readable compiler diagnostics inspired by Elm's style.
   """
 
+  alias ElmEx.Types
+
   @spec format_error(map()) :: String.t()
   def format_error(%{kind: :config_error, reason: :missing_elm_json, path: path}) do
     [
@@ -141,7 +143,7 @@ defmodule ElmEx.DiagnosticFormatter do
     end
   end
 
-  @spec maybe_detail_line([String.t()], String.t(), term()) :: [String.t()]
+  @spec maybe_detail_line([String.t()], String.t(), Types.detail_value()) :: [String.t()]
   defp maybe_detail_line(lines, _label, nil), do: lines
 
   defp maybe_detail_line(lines, label, value) do
@@ -154,7 +156,7 @@ defmodule ElmEx.DiagnosticFormatter do
     lines ++ ["    #{label}: #{rendered}\n"]
   end
 
-  @spec format_parse_reason(atom() | term()) :: String.t()
+  @spec format_parse_reason(Types.parse_reason()) :: String.t()
   defp format_parse_reason({:illegal, charlist}) when is_list(charlist) do
     "illegal token: #{List.to_string(charlist)}"
   end
@@ -162,7 +164,7 @@ defmodule ElmEx.DiagnosticFormatter do
   defp format_parse_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
   defp format_parse_reason(reason), do: inspect(reason)
 
-  @spec format_elm_report(map() | list() | term()) :: String.t()
+  @spec format_elm_report(Types.elm_report()) :: String.t()
   defp format_elm_report(%{"type" => "compile-errors", "errors" => errors})
        when is_list(errors) do
     errors
@@ -202,7 +204,7 @@ defmodule ElmEx.DiagnosticFormatter do
       message
   end
 
-  @spec flatten_message(term()) :: String.t()
+  @spec flatten_message(Types.elm_message_part()) :: String.t()
   defp flatten_message(parts) when is_list(parts) do
     parts
     |> Enum.map(&flatten_message/1)

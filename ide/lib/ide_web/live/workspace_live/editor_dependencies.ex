@@ -4,6 +4,17 @@ defmodule IdeWeb.WorkspaceLive.EditorDependencies do
   alias Ide.Packages
   alias Ide.Projects
 
+  @type dependency_payload :: %{
+          direct: [map()],
+          indirect: [map()],
+          dependencies_available?: boolean()
+        }
+
+  @type docs_payload :: %{
+          package_doc_index: map(),
+          editor_doc_packages: [map()]
+        }
+
   @spec build_payload(map(), String.t(), String.t()) :: %{
           direct: [map()],
           indirect: [map()],
@@ -19,20 +30,13 @@ defmodule IdeWeb.WorkspaceLive.EditorDependencies do
     Map.merge(deps, docs)
   end
 
-  @spec build_dependency_payload(map(), String.t()) :: %{
-          direct: [map()],
-          indirect: [map()],
-          dependencies_available?: boolean()
-        }
+  @spec build_dependency_payload(map(), String.t()) :: dependency_payload()
   def build_dependency_payload(project, packages_root)
       when is_map(project) and is_binary(packages_root) do
     read_dependency_lists(project, packages_root, usage: true)
   end
 
-  @spec build_docs_payload(map(), String.t()) :: %{
-          package_doc_index: map(),
-          editor_doc_packages: [map()]
-        }
+  @spec build_docs_payload(map(), String.t()) :: docs_payload()
   def build_docs_payload(project, doc_root)
       when is_map(project) and is_binary(doc_root) do
     platform_target =
@@ -110,7 +114,7 @@ defmodule IdeWeb.WorkspaceLive.EditorDependencies do
     }
   end
 
-  @spec normalize_dep_list(map(), term(), String.t(), boolean()) :: term()
+  @spec normalize_dep_list(Projects.Project.t(), map(), String.t(), boolean()) :: [map()]
   defp normalize_dep_list(project, map, packages_root, include_usage?) when is_map(map) do
     packages = Map.keys(map)
 

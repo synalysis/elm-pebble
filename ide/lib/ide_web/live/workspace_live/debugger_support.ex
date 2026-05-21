@@ -69,6 +69,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
           mismatch_applied: replay_preview_row() | nil
         }
 
+  @type wire_input :: String.t() | integer() | nil
+  @type rendered_node :: map()
+  @type view_tree :: map()
+  @type events :: [map()]
+  @type runtime_value :: map() | list() | String.t() | number() | boolean() | atom() | nil
+  @type debugger_state_map :: map()
+
   @spec assign_defaults(socket()) :: socket()
   def assign_defaults(socket) do
     socket
@@ -252,7 +259,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec set_cursor_seq(socket(), term()) :: socket()
+  @spec set_cursor_seq(socket(), wire_input()) :: socket()
   def set_cursor_seq(socket, value) do
     case parse_since_seq(value) do
       nil -> socket
@@ -260,7 +267,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec set_debugger_cursor_seq(socket(), term()) :: socket()
+  @spec set_debugger_cursor_seq(socket(), wire_input()) :: socket()
   def set_debugger_cursor_seq(socket, value) do
     case parse_since_seq(value) do
       nil ->
@@ -273,7 +280,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec set_timeline_kind(socket(), term()) :: socket()
+  @spec set_timeline_kind(socket(), String.t()) :: socket()
   def set_timeline_kind(socket, value) do
     kind =
       case value do
@@ -288,7 +295,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     Component.assign(socket, :debugger_timeline_kind, kind)
   end
 
-  @spec set_timeline_limit(socket(), term()) :: socket()
+  @spec set_timeline_limit(socket(), wire_input()) :: socket()
   def set_timeline_limit(socket, value) do
     limit =
       case Integer.parse(to_string(value || "")) do
@@ -299,7 +306,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     Component.assign(socket, :debugger_timeline_limit, limit)
   end
 
-  @spec set_timeline_query(socket(), term()) :: socket()
+  @spec set_timeline_query(socket(), wire_input()) :: socket()
   def set_timeline_query(socket, value) do
     query =
       value
@@ -309,7 +316,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     Component.assign(socket, :debugger_timeline_query, query)
   end
 
-  @spec set_debugger_timeline_mode(socket(), term()) :: socket()
+  @spec set_debugger_timeline_mode(socket(), wire_input()) :: socket()
   def set_debugger_timeline_mode(socket, value) do
     Component.assign(socket, :debugger_timeline_mode, normalize_debugger_timeline_mode(value))
   end
@@ -653,11 +660,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   def replay_live_drift_severity(drift) when is_integer(drift) and drift <= 10, do: :medium
   def replay_live_drift_severity(drift) when is_integer(drift), do: :high
 
-  @spec runtime_json(map() | term()) :: String.t()
+  @spec runtime_json(Ide.Debugger.Types.runtime_model()) :: String.t()
   def runtime_json(runtime) when is_map(runtime), do: Jason.encode!(runtime, pretty: true)
   def runtime_json(_runtime), do: "{}"
 
-  @spec rendered_tree(map() | term()) :: map() | nil
+  @spec rendered_tree(Ide.Debugger.Types.runtime_model()) :: Ide.Debugger.Types.rendered_tree() | nil
   def rendered_tree(%{} = runtime) do
     model = runtime_model(runtime)
 
@@ -694,7 +701,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp runtime_rendered_tree(_runtime, _model), do: nil
 
-  @spec concrete_rendered_view_tree?(term()) :: boolean()
+  @spec concrete_rendered_view_tree?(view_tree()) :: boolean()
   defp concrete_rendered_view_tree?(%{"type" => "tuple2"} = tree),
     do: match?({:ok, _node}, normalize_rendered_ui_value(tree))
 
@@ -703,14 +710,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp concrete_rendered_view_tree?(_tree), do: false
 
-  @spec discard_parser_expression_view_tree(term()) :: map() | nil
+  @spec discard_parser_expression_view_tree(view_tree()) :: map() | nil
   defp discard_parser_expression_view_tree(tree) when is_map(tree) do
     if parser_expression_view_tree?(tree), do: nil, else: tree
   end
 
   defp discard_parser_expression_view_tree(_tree), do: nil
 
-  @spec parser_expression_view_tree?(term()) :: boolean()
+  @spec parser_expression_view_tree?(view_tree()) :: boolean()
   defp parser_expression_view_tree?(%{"type" => "tuple2"} = tree),
     do: not match?({:ok, _node}, normalize_rendered_ui_value(tree))
 
@@ -771,8 +778,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  defp runtime_view_output_tree(_model), do: nil
-
   @spec runtime_view_output_screen(map()) :: {pos_integer(), pos_integer()}
   defp runtime_view_output_screen(model) when is_map(model) do
     runtime_model =
@@ -793,7 +798,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     }
   end
 
-  @spec positive_integer_value(term(), pos_integer()) :: pos_integer()
+  @spec positive_integer_value(wire_input(), pos_integer()) :: pos_integer()
   defp positive_integer_value(value, _fallback) when is_integer(value) and value > 0, do: value
 
   defp positive_integer_value(value, _fallback) when is_float(value) and value > 0,
@@ -808,13 +813,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp positive_integer_value(_value, fallback), do: fallback
 
-  @spec runtime_view_output_nodes([term()]) :: [map()]
+  @spec runtime_view_output_nodes([map()]) :: [map()]
   defp runtime_view_output_nodes(ops) when is_list(ops) do
     {nodes, _rest} = runtime_view_output_nodes_until(ops, false)
     nodes
   end
 
-  @spec runtime_view_output_nodes_until([term()], boolean()) :: {[map()], [term()]}
+  @spec runtime_view_output_nodes_until([map()], boolean()) :: {[map()], [map()]}
   defp runtime_view_output_nodes_until(rows, stop_on_pop?) when is_list(rows) do
     runtime_view_output_nodes_until(rows, stop_on_pop?, [])
   end
@@ -1091,7 +1096,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec rendered_node_bounds(term(), term(), term(), term()) :: map() | nil
+  @spec rendered_node_bounds(rendered_node() | map(), String.t(), integer(), integer()) :: map() | nil
   def rendered_node_bounds(tree, path, screen_w, screen_h)
       when is_map(tree) and is_binary(path) do
     tree
@@ -1115,7 +1120,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec rendered_node_at_indexes(term(), [{integer(), String.t()}]) :: map() | nil
+  @spec rendered_node_at_indexes(rendered_node(), [{integer(), String.t()}]) :: map() | nil
   defp rendered_node_at_indexes(node, []) when is_map(node), do: node
 
   defp rendered_node_at_indexes(node, [{index, ""} | rest]) when is_map(node) and index >= 0 do
@@ -1129,7 +1134,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp rendered_node_at_indexes(_node, _indexes), do: nil
 
-  @spec rendered_bounds_for_node(term(), term(), term()) :: map() | nil
+  @spec rendered_bounds_for_node(rendered_node(), integer(), integer()) :: map() | nil
   defp rendered_bounds_for_node(node, screen_w, screen_h) when is_map(node) do
     type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
 
@@ -1365,7 +1370,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec path_payload_from_node(term()) :: map()
+  @spec path_payload_from_node(rendered_node()) :: map()
   defp path_payload_from_node(payload) do
     with {:ok, [points_node, offset_node, rotation_node]} <- normalized_payload_args(payload, 3),
          points when points != [] <- normalize_path_points_from_node(points_node),
@@ -1377,7 +1382,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec normalize_path_points_from_node(term()) :: [{integer(), integer()}]
+  @spec normalize_path_points_from_node(rendered_node()) :: [{integer(), integer()}]
   defp normalize_path_points_from_node(%{"type" => "List", "children" => points})
        when is_list(points) do
     normalize_path_points(points)
@@ -1389,7 +1394,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp normalize_path_points_from_node(points), do: normalize_path_points(points)
 
-  @spec normalize_path_points(term()) :: [{integer(), integer()}]
+  @spec normalize_path_points(list()) :: [{integer(), integer()}]
   defp normalize_path_points(points) when is_list(points) do
     points
     |> Enum.map(&normalize_path_point/1)
@@ -1398,7 +1403,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp normalize_path_points(_points), do: []
 
-  @spec normalize_path_point(term()) :: {integer(), integer()} | nil
+  @spec normalize_path_point(map() | list()) :: {integer(), integer()} | nil
   defp normalize_path_point([x, y]) when is_integer(x) and is_integer(y), do: {x, y}
 
   defp normalize_path_point(%{"x" => x, "y" => y}) when is_integer(x) and is_integer(y),
@@ -1420,7 +1425,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp normalize_path_point(_point), do: nil
 
-  @spec aggregate_child_bounds(map(), term(), term()) :: map() | nil
+  @spec aggregate_child_bounds(map(), [rendered_node()], integer()) :: map() | nil
   defp aggregate_child_bounds(node, screen_w, screen_h) when is_map(node) do
     node
     |> Map.get("children", Map.get(node, :children, []))
@@ -1451,7 +1456,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec normalize_rendered_ui_value(term()) :: {:ok, map()} | :error
+  @spec normalize_rendered_ui_value(runtime_value()) :: {:ok, map()} | :error
   defp normalize_rendered_ui_value(%{"type" => type, "children" => children} = value)
        when is_binary(type) and is_list(children) and type not in ["tuple2", "List"] do
     value =
@@ -1474,7 +1479,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec normalize_rendered_window_node(term()) :: {:ok, map()} | :error
+  @spec normalize_rendered_window_node(runtime_value()) :: {:ok, map()} | :error
   defp normalize_rendered_window_node(value) do
     with {:ok, tag, payload} when tag in [1, 1001] <- normalized_tagged_tuple(value),
          {:ok, [id, layers]} <- normalized_payload_args(payload, 2),
@@ -1492,7 +1497,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec normalize_rendered_layer_node(term()) :: {:ok, map()} | :error
+  @spec normalize_rendered_layer_node(runtime_value()) :: {:ok, map()} | :error
   defp normalize_rendered_layer_node(value) do
     with {:ok, tag, payload} when tag in [1, 1002] <- normalized_tagged_tuple(value),
          {:ok, [id, ops]} <- normalized_payload_args(payload, 2),
@@ -1510,11 +1515,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec normalize_rendered_op_node(term()) :: {:ok, map()} | :error
+  @spec normalize_rendered_op_node(runtime_value()) :: {:ok, map()} | :error
   defp normalize_rendered_op_node(%{} = value), do: normalize_rendered_ui_value(value)
   defp normalize_rendered_op_node(_value), do: :error
 
-  @spec normalize_rendered_child(term()) :: term()
+  @spec normalize_rendered_child(runtime_value()) :: runtime_value()
   defp normalize_rendered_child(%{"type" => _type} = value), do: normalize_rendered_tree(value)
   defp normalize_rendered_child(value), do: value
 
@@ -1572,7 +1577,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp promote_rendered_node_args(node), do: node
 
-  @spec put_rendered_node_arg(map(), String.t(), term()) :: map()
+  @spec put_rendered_node_arg(map(), String.t(), runtime_value()) :: map()
   defp put_rendered_node_arg(node, "text", value) when is_map(node) do
     Map.put(node, "text", normalize_rendered_text(value) || "")
   end
@@ -1609,7 +1614,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp normalize_rendered_text_field(node), do: node
 
-  @spec normalize_rendered_text(term()) :: String.t() | nil
+  @spec normalize_rendered_text(runtime_value()) :: String.t() | nil
   defp normalize_rendered_text(value) when is_binary(value) do
     if String.trim(value) != "", do: value, else: nil
   end
@@ -1631,7 +1636,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp normalize_rendered_text(_value), do: nil
 
-  @spec rendered_expr_scalar(term()) :: term()
+  @spec rendered_expr_scalar(runtime_value()) :: runtime_value()
   defp rendered_expr_scalar(%{"type" => "expr"} = node) do
     cond do
       Map.has_key?(node, "value") -> Map.get(node, "value")
@@ -1642,7 +1647,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp rendered_expr_scalar(_node), do: nil
 
-  @spec rendered_node_arg_fields(term()) :: [String.t()]
+  @spec rendered_node_arg_fields(String.t() | atom()) :: [String.t()]
   defp rendered_node_arg_fields(type) do
     case to_string(type || "") do
       "clear" -> ["color"]
@@ -1664,7 +1669,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec normalize_rendered_list([term()], (term() -> {:ok, map()} | :error)) ::
+  @spec normalize_rendered_list([runtime_value()], (runtime_value() -> {:ok, map()} | :error)) ::
           {:ok, [map()]} | :error
   defp normalize_rendered_list(values, fun) when is_list(values) and is_function(fun, 1) do
     values
@@ -1680,7 +1685,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec normalized_tagged_tuple(term()) :: {:ok, integer(), term()} | :error
+  @spec normalized_tagged_tuple(runtime_value()) :: {:ok, integer(), runtime_value()} | :error
   defp normalized_tagged_tuple(%{"type" => "tuple2", "children" => [tag_node, payload]}) do
     case normalized_expr_value(tag_node) do
       tag when is_integer(tag) -> {:ok, tag, payload}
@@ -1690,24 +1695,24 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp normalized_tagged_tuple(_value), do: :error
 
-  @spec normalized_expr_value(term()) :: term()
+  @spec normalized_expr_value(runtime_value()) :: runtime_value()
   defp normalized_expr_value(%{"type" => "expr"} = node), do: Map.get(node, "value")
   defp normalized_expr_value(_node), do: nil
 
-  @spec normalized_list_values(term()) :: {:ok, [term()]} | :error
+  @spec normalized_list_values(runtime_value()) :: {:ok, [runtime_value()]} | :error
   defp normalized_list_values(%{"type" => "List", "children" => children}) when is_list(children),
     do: {:ok, children}
 
   defp normalized_list_values(values) when is_list(values), do: {:ok, values}
   defp normalized_list_values(_values), do: :error
 
-  @spec normalized_payload_args(term(), pos_integer()) :: {:ok, [term()]} | :error
+  @spec normalized_payload_args(runtime_value(), pos_integer()) :: {:ok, [runtime_value()]} | :error
   defp normalized_payload_args(payload, arity) when is_integer(arity) and arity > 1 do
     flatten_normalized_payload(payload, arity, [])
   end
 
-  @spec flatten_normalized_payload(term(), non_neg_integer(), [term()]) ::
-          {:ok, [term()]} | :error
+  @spec flatten_normalized_payload(runtime_value(), non_neg_integer(), [runtime_value()]) ::
+          {:ok, [runtime_value()]} | :error
   defp flatten_normalized_payload(value, 1, acc), do: {:ok, Enum.reverse([value | acc])}
 
   defp flatten_normalized_payload(
@@ -1721,7 +1726,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp flatten_normalized_payload(_value, _remaining, _acc), do: :error
 
-  @spec copy_json(term()) :: String.t()
+  @spec copy_json(runtime_value()) :: String.t()
   def copy_json(term) do
     case Jason.encode(term, pretty: true) do
       {:ok, json} -> json
@@ -1733,7 +1738,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   Single markdown document for assistants: meta, timeline text, and JSON blocks for models and rendered tree.
   """
   @spec debugger_agent_state_markdown(%{
-          required(:format_version) => String.t(),
+          optional(:format_version) => String.t(),
           required(:project_name) => String.t(),
           required(:project_slug) => String.t(),
           required(:timeline_mode) => String.t(),
@@ -1850,7 +1855,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def format_elm_introspect_brief(_), do: "(no snapshot)"
 
-  @spec format_elm_introspect_inner(term()) :: term()
+  @spec format_elm_introspect_inner(map() | nil) :: String.t()
   defp format_elm_introspect_inner(nil),
     do: "No parser snapshot merged for this surface at this seq."
 
@@ -2197,7 +2202,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     |> String.trim()
   end
 
-  @spec format_module_exposing_line(term()) :: term()
+  @spec format_module_exposing_line(map()) :: String.t()
   defp format_module_exposing_line(".."), do: "(..)"
 
   defp format_module_exposing_line(names) when is_list(names) and names != [] do
@@ -2209,7 +2214,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp format_module_exposing_line(_), do: "—"
 
-  @spec format_source_stats_line(term()) :: term()
+  @spec format_source_stats_line(map()) :: String.t()
   defp format_source_stats_line(ei) when is_map(ei) do
     bs = Map.get(ei, "source_byte_size") || Map.get(ei, :source_byte_size)
     ls = Map.get(ei, "source_line_count") || Map.get(ei, :source_line_count)
@@ -2229,7 +2234,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec brief_term_line(term(), term()) :: term()
+  @spec brief_term_line(String.t(), runtime_value()) :: String.t()
   defp brief_term_line(nil, _), do: "—"
 
   defp brief_term_line(term, max_chars) when is_integer(max_chars) and max_chars > 0 do
@@ -2260,7 +2265,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def view_tree_outline(_), do: "(no snapshot)"
 
-  @spec runtime_model(map() | term()) :: map()
+  @spec runtime_model(map()) :: map()
   defp runtime_model(%{} = runtime) do
     case Map.get(runtime, :model) || Map.get(runtime, "model") do
       model when is_map(model) -> model
@@ -2575,7 +2580,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   def merge_drift_detail(backend_detail, key_target_detail),
     do: RuntimeFingerprintDrift.merge_drift_detail(backend_detail, key_target_detail)
 
-  @spec runtime_elm_introspect(term()) :: term()
+  @spec runtime_elm_introspect(map()) :: map()
   defp runtime_elm_introspect(nil), do: nil
 
   defp runtime_elm_introspect(%{} = rt) do
@@ -2585,7 +2590,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp runtime_elm_introspect(_), do: nil
 
-  @spec runtime_fingerprint(term()) :: term()
+  @spec runtime_fingerprint(map()) :: map()
   defp runtime_fingerprint(nil), do: nil
 
   defp runtime_fingerprint(%{} = rt) do
@@ -2629,7 +2634,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp runtime_fingerprint(_), do: nil
 
-  @spec format_view_tree_node(term(), term()) :: term()
+  @spec format_view_tree_node(view_tree(), non_neg_integer()) :: String.t()
   defp format_view_tree_node(node, depth) when is_map(node) do
     indent = String.duplicate("  ", depth)
     type = Map.get(node, :type) || Map.get(node, "type") || "node"
@@ -2656,7 +2661,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     "#{indent}- #{inspect(other)}\n"
   end
 
-  @spec event_json([map()] | term()) :: String.t()
+  @spec event_json(events()) :: String.t()
   def event_json(events) when is_list(events) do
     events
     |> Enum.reverse()
@@ -2706,7 +2711,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def payload_diff_json(_base_event, _compare_event), do: "{}"
 
-  @spec event_type_counts([map()] | term()) :: event_type_counts()
+  @spec event_type_counts(events()) :: event_type_counts()
   def event_type_counts(events) when is_list(events) do
     events
     |> Enum.group_by(& &1.type)
@@ -2716,7 +2721,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def event_type_counts(_events), do: []
 
-  @spec event_summaries([map()] | term()) :: [event_summary()]
+  @spec event_summaries(events()) :: [event_summary()]
   def event_summaries(events) when is_list(events) do
     Enum.map(events, fn event ->
       payload = Map.get(event, :payload, %{})
@@ -2732,7 +2737,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def event_summaries(_events), do: []
 
-  @spec protocol_exchange_at_cursor([map()] | term(), maybe_non_neg_integer(), pos_integer()) :: [
+  @spec protocol_exchange_at_cursor(events(), maybe_non_neg_integer(), pos_integer()) :: [
           protocol_row()
         ]
   def protocol_exchange_at_cursor(events, cursor_seq, limit \\ 40)
@@ -2763,7 +2768,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def protocol_exchange_at_cursor(_events, _cursor_seq, _limit), do: []
 
-  @spec update_messages_at_cursor([map()] | term(), maybe_non_neg_integer(), pos_integer()) :: [
+  @spec update_messages_at_cursor(events(), maybe_non_neg_integer(), pos_integer()) :: [
           update_message_row()
         ]
   def update_messages_at_cursor(events, cursor_seq, limit \\ 40)
@@ -2789,7 +2794,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def update_messages_at_cursor(_events, _cursor_seq, _limit), do: []
 
-  @spec debugger_rows(map() | [map()] | term(), pos_integer()) :: [debugger_row()]
+  @spec debugger_rows(events() | map() | nil, pos_integer()) :: [debugger_row()]
   def debugger_rows(source, limit \\ 80)
 
   def debugger_rows(%{} = debugger_state, limit) when is_integer(limit) and limit > 0 do
@@ -2845,7 +2850,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def debugger_rows(_source, _limit), do: []
 
-  @spec debugger_rows_for_target([debugger_row()] | term(), String.t()) :: [debugger_row()]
+  @spec debugger_rows_for_target([debugger_row()], String.t()) :: [debugger_row()]
   def debugger_rows_for_target(rows, target)
       when is_list(rows) and target in ["watch", "companion"] do
     rows
@@ -2855,7 +2860,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def debugger_rows_for_target(_rows, _target), do: []
 
-  @spec debugger_rows_for_mode([debugger_row()] | term(), String.t()) :: [debugger_row()]
+  @spec debugger_rows_for_mode([debugger_row()], String.t()) :: [debugger_row()]
   def debugger_rows_for_mode(rows, "watch"), do: debugger_rows_for_target(rows, "watch")
   def debugger_rows_for_mode(rows, "companion"), do: debugger_rows_for_target(rows, "companion")
 
@@ -2867,7 +2872,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def debugger_rows_for_mode(_rows, _mode), do: []
 
-  @spec debugger_timeline_text([debugger_row()] | term()) :: String.t()
+  @spec debugger_timeline_text([debugger_row()]) :: String.t()
   def debugger_timeline_text(rows) when is_list(rows) do
     rows
     |> newest_first()
@@ -2918,7 +2923,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     }
   end
 
-  @spec debugger_row_seq(term()) :: non_neg_integer()
+  @spec debugger_row_seq(map()) :: non_neg_integer()
   defp debugger_row_seq(row) when is_map(row) do
     case Map.get(row, :seq) || Map.get(row, "seq") || Map.get(row, :debugger_seq) ||
            Map.get(row, "debugger_seq") do
@@ -2934,7 +2939,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defp debugger_type_from_event(%{type: "debugger.update_in"}), do: "update"
   defp debugger_type_from_event(_event), do: "update"
 
-  @spec debugger_message_label(term()) :: String.t()
+  @spec debugger_message_label(map()) :: String.t()
   def debugger_message_label(message) when is_binary(message) do
     case Regex.run(~r/^([A-Z][A-Za-z0-9_]*)(?:\s+)([\{\[].*)$/, String.trim(message)) do
       [_, constructor, json] ->
@@ -2951,7 +2956,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   def debugger_message_label(nil), do: ""
   def debugger_message_label(message), do: to_string(message)
 
-  @spec selected_debugger_row(map() | [map()] | term(), maybe_non_neg_integer()) ::
+  @spec selected_debugger_row(events() | map() | nil, maybe_non_neg_integer()) ::
           debugger_row() | nil
   def selected_debugger_row(source, cursor_seq) do
     rows = debugger_rows(source, 500)
@@ -2971,7 +2976,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec render_events_at_cursor([map()] | term(), maybe_non_neg_integer(), pos_integer()) :: [
+  @spec render_events_at_cursor(events(), maybe_non_neg_integer(), pos_integer()) :: [
           render_event_row()
         ]
   def render_events_at_cursor(events, cursor_seq, limit \\ 24)
@@ -2997,7 +3002,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def render_events_at_cursor(_events, _cursor_seq, _limit), do: []
 
-  @spec lifecycle_events_at_cursor([map()] | term(), maybe_non_neg_integer(), pos_integer()) :: [
+  @spec lifecycle_events_at_cursor(events(), maybe_non_neg_integer(), pos_integer()) :: [
           lifecycle_row()
         ]
   def lifecycle_events_at_cursor(events, cursor_seq, limit \\ 12)
@@ -3197,7 +3202,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defp lifecycle_summary(%{type: type}) when is_binary(type), do: type
   defp lifecycle_summary(_), do: "—"
 
-  @spec elmc_payload_display(term(), term()) :: term()
+  @spec elmc_payload_display(map(), atom() | String.t()) :: String.t()
   defp elmc_payload_display(payload, key) when is_map(payload) do
     str = Atom.to_string(key)
     v = Map.get(payload, key) || Map.get(payload, str)
@@ -3234,7 +3239,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp protocol_payload_field(_payload, _key), do: nil
 
-  @spec elm_value(term()) :: String.t()
+  @spec elm_value(runtime_value()) :: String.t()
   defp elm_value(%{} = value) do
     ctor = Map.get(value, "ctor") || Map.get(value, "$ctor")
     args = Map.get(value, "args") || Map.get(value, "$args") || []
@@ -3270,17 +3275,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defp elm_value(nil), do: "null"
   defp elm_value(value), do: to_string(value)
 
-  @spec elm_field_name(term()) :: String.t()
+  @spec elm_field_name(map()) :: String.t()
   defp elm_field_name(key) when is_binary(key), do: key
   defp elm_field_name(key), do: to_string(key)
 
-  @spec normalize_debugger_timeline_mode(term()) :: String.t()
+  @spec normalize_debugger_timeline_mode(wire_input()) :: String.t()
   defp normalize_debugger_timeline_mode("watch"), do: "watch"
   defp normalize_debugger_timeline_mode("companion"), do: "companion"
   defp normalize_debugger_timeline_mode("separate"), do: "separate"
   defp normalize_debugger_timeline_mode(_), do: "mixed"
 
-  @spec debugger_target(term()) :: String.t()
+  @spec debugger_target(wire_input()) :: String.t()
   defp debugger_target("companion"), do: "companion"
   defp debugger_target("protocol"), do: "companion"
   defp debugger_target("phone"), do: "companion"
@@ -3309,7 +3314,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec app_runtime?(term()) :: boolean()
+  @spec app_runtime?(map() | nil) :: boolean()
   defp app_runtime?(%{} = runtime) do
     model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
     runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model) || %{}
@@ -3328,7 +3333,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp app_runtime?(_runtime), do: false
 
-  @spec filtered_event_summaries([map()] | term(), timeline_kind(), pos_integer()) :: [
+  @spec filtered_event_summaries(events(), timeline_kind(), pos_integer()) :: [
           event_summary()
         ]
   def filtered_event_summaries(events, kind, limit)
@@ -3341,7 +3346,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def filtered_event_summaries(_events, _kind, _limit), do: []
 
-  @spec filtered_event_summaries([map()] | term(), timeline_kind(), pos_integer(), String.t()) ::
+  @spec filtered_event_summaries(events(), timeline_kind(), pos_integer(), String.t()) ::
           [event_summary()]
   def filtered_event_summaries(events, kind, limit, query)
       when is_binary(query) do
@@ -3375,7 +3380,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec seq_bounds([map()] | term()) :: {non_neg_integer(), non_neg_integer()} | nil
+  @spec seq_bounds(events()) :: {non_neg_integer(), non_neg_integer()} | nil
   def seq_bounds(events) when is_list(events) and events != [] do
     seqs = Enum.map(events, & &1.seq)
     {Enum.min(seqs), Enum.max(seqs)}
@@ -3383,7 +3388,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def seq_bounds(_events), do: nil
 
-  @spec min_seq([map()] | term()) :: non_neg_integer()
+  @spec min_seq(events()) :: non_neg_integer()
   def min_seq(events) do
     case seq_bounds(events) do
       {min_seq, _max_seq} -> min_seq
@@ -3391,7 +3396,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec max_seq([map()] | term()) :: non_neg_integer()
+  @spec max_seq(events()) :: non_neg_integer()
   def max_seq(events) do
     case seq_bounds(events) do
       {_min_seq, max_seq} -> max_seq
@@ -3399,7 +3404,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec parse_types(term()) :: [String.t()]
+  @spec parse_types(wire_input()) :: [String.t()]
   defp parse_types(value) when is_binary(value) do
     value
     |> String.split(",", trim: true)
@@ -3410,7 +3415,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp parse_types(_value), do: []
 
-  @spec parse_since_seq(term()) :: maybe_non_neg_integer()
+  @spec parse_since_seq(wire_input()) :: maybe_non_neg_integer()
   defp parse_since_seq(value) when is_integer(value) and value >= 0, do: value
 
   defp parse_since_seq(value) when is_binary(value) do
@@ -3422,7 +3427,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp parse_since_seq(_value), do: nil
 
-  @spec parse_replay_count(term()) :: pos_integer()
+  @spec parse_replay_count(wire_input()) :: pos_integer()
   defp parse_replay_count(value) when is_integer(value) and value >= 1, do: min(value, 50)
 
   defp parse_replay_count(value) when is_binary(value) do
@@ -3434,17 +3439,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp parse_replay_count(_value), do: 1
 
-  @spec parse_replay_target(term()) :: String.t() | nil
+  @spec parse_replay_target(wire_input()) :: String.t() | nil
   defp parse_replay_target(value) when value in ["watch", "companion", "protocol", "phone"],
     do: value
 
   defp parse_replay_target(_value), do: nil
 
-  @spec parse_replay_cursor_bound(term()) :: boolean()
+  @spec parse_replay_cursor_bound(wire_input()) :: boolean()
   defp parse_replay_cursor_bound(value) when value in [true, "true", "on", 1, "1"], do: true
   defp parse_replay_cursor_bound(_value), do: false
 
-  @spec parse_replay_mode(term()) :: String.t()
+  @spec parse_replay_mode(wire_input()) :: String.t()
   defp parse_replay_mode("live"), do: "live"
   defp parse_replay_mode(_), do: "frozen"
 
@@ -3543,19 +3548,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     |> Component.assign(:debugger_runtime_fingerprint_compare, runtime_compare)
   end
 
-  @spec form_value(term(), term()) :: term()
+  @spec form_value(map() | nil, atom() | String.t()) :: String.t() | boolean() | integer() | nil
   defp form_value(nil, _field), do: nil
 
   defp form_value(form, field) do
     form[field].value
   end
 
-  @spec maybe_put_export_cursor_opt(term(), term(), term()) :: term()
+  @spec maybe_put_export_cursor_opt(keyword(), atom(), maybe_non_neg_integer()) :: keyword()
   defp maybe_put_export_cursor_opt(opts, _key, value) when not is_integer(value), do: opts
   defp maybe_put_export_cursor_opt(opts, _key, value) when value < 0, do: opts
   defp maybe_put_export_cursor_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
-  @spec parse_optional_non_neg_int(term()) :: term()
+  @spec parse_optional_non_neg_int(wire_input()) :: maybe_non_neg_integer()
   defp parse_optional_non_neg_int(value) when is_integer(value) and value >= 0, do: value
 
   defp parse_optional_non_neg_int(value) when is_binary(value) do
@@ -3595,7 +3600,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp normalize_replay_row(_), do: %{seq: 0, target: "watch", message: "Tick"}
 
-  @spec maybe_filter_preview_events_at_or_before_seq(term(), term()) :: term()
+  @spec maybe_filter_preview_events_at_or_before_seq(events(), maybe_non_neg_integer()) :: events()
   defp maybe_filter_preview_events_at_or_before_seq(events, nil) when is_list(events), do: events
 
   defp maybe_filter_preview_events_at_or_before_seq(events, cursor_seq)
@@ -3603,14 +3608,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     Enum.filter(events, &(&1.seq <= cursor_seq))
   end
 
-  @spec normalize_preview_target(term()) :: term()
+  @spec normalize_preview_target(String.t() | atom()) :: String.t()
   defp normalize_preview_target("watch"), do: "watch"
   defp normalize_preview_target("protocol"), do: "protocol"
   defp normalize_preview_target("companion"), do: "phone"
   defp normalize_preview_target("phone"), do: "phone"
   defp normalize_preview_target(_), do: "watch"
 
-  @spec preview_target_label(term()) :: term()
+  @spec preview_target_label(String.t()) :: String.t()
   defp preview_target_label("watch"), do: "watch"
   defp preview_target_label("protocol"), do: "protocol"
   defp preview_target_label("companion"), do: "phone"
@@ -3880,10 +3885,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     }
   end
 
-  @spec latest_debugger_runtime(map() | nil, :watch | :companion | :phone) :: map() | nil
+  @spec latest_debugger_runtime(map() | nil, atom()) :: map() | nil
   defp latest_debugger_runtime(debugger_state, target) when is_map(debugger_state) do
     case Map.get(debugger_state, target) do
-      %{} = runtime -> runtime
+      runtime when is_map(runtime) -> runtime
       _ -> nil
     end
   end
@@ -4111,7 +4116,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def rendered_view_preview(_), do: "(no snapshot)"
 
-  @spec format_rendered_node(term(), term(), term(), term()) :: term()
+  @spec format_rendered_node(rendered_node(), non_neg_integer(), map(), String.t() | nil) :: String.t()
   defp format_rendered_node(node, depth, model, arg_name)
        when is_map(node) and is_integer(depth) and is_map(model) do
     indent = String.duplicate("  ", max(depth, 0))
@@ -4143,12 +4148,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     type in ["debuggerRenderStep", "elmcRuntimeStep"]
   end
 
-  @spec render_suffix(term()) :: term()
+  @spec render_suffix(term()) :: String.t()
   defp render_suffix(""), do: ""
   defp render_suffix(nil), do: ""
   defp render_suffix(value), do: "[#{value}]"
 
-  @spec rendered_node_summary(map(), map(), term()) :: String.t()
+  @spec rendered_node_summary(map(), map(), String.t() | nil) :: String.t()
   def rendered_node_summary(node, model, arg_name \\ nil)
 
   def rendered_node_summary(node, model, arg_name) when is_map(node) and is_map(model) do
@@ -4241,7 +4246,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec rendered_color_label(term()) :: String.t()
+  @spec rendered_color_label(integer()) :: String.t()
   defp rendered_color_label(value) when is_integer(value) and value >= 0 and value <= 255 do
     name = pebble_color_name(value)
     hex = pebble_color_hex(value)
@@ -4368,7 +4373,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     |> rendered_scalar_value()
   end
 
-  @spec scalar_map_value(map(), String.t()) :: term()
+  @spec scalar_map_value(map(), String.t()) :: runtime_value()
   defp scalar_map_value(node, field) when is_map(node) and is_binary(field) do
     cond do
       Map.has_key?(node, field) ->
@@ -4433,7 +4438,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end)
   end
 
-  @spec rendered_arg_name(term()) :: String.t() | nil
+  @spec rendered_arg_name(map()) :: String.t() | nil
   defp rendered_arg_name(name) when is_binary(name) do
     trimmed = String.trim(name)
     if trimmed == "", do: nil, else: trimmed
@@ -4453,7 +4458,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec rendered_node_value(map(), term()) :: String.t()
+  @spec rendered_node_value(map(), String.t()) :: String.t()
   defp rendered_node_value(node, value_hint) when is_map(node) do
     cond do
       value_hint not in [nil, ""] ->
@@ -4482,7 +4487,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec rendered_scalar_value(term()) :: String.t()
+  @spec rendered_scalar_value(runtime_value()) :: String.t()
   defp rendered_scalar_value(value) when is_integer(value), do: Integer.to_string(value)
 
   defp rendered_scalar_value(value) when is_float(value),
@@ -4492,14 +4497,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defp rendered_scalar_value(value) when is_boolean(value), do: to_string(value)
   defp rendered_scalar_value(_value), do: ""
 
-  @spec preview_runtime_model(term()) :: term()
+  @spec preview_runtime_model(map()) :: map()
   defp preview_runtime_model(runtime) when is_map(runtime) do
     model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
     runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model)
     if is_map(runtime_model), do: runtime_model, else: model
   end
 
-  @spec rendered_value_hint(term(), term()) :: term()
+  @spec rendered_value_hint(runtime_value(), map()) :: String.t() | nil
   defp rendered_value_hint(node, model) when is_map(node) and is_map(model) do
     type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
     label = to_string(Map.get(node, "label") || Map.get(node, :label) || "")
@@ -4543,7 +4548,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec evaluated_rendered_scalar_hint(term(), map()) :: String.t() | nil
+  @spec evaluated_rendered_scalar_hint(runtime_value(), map()) :: String.t() | nil
   defp evaluated_rendered_scalar_hint(node, model) when is_map(node) and is_map(model) do
     ElmExecutor.Runtime.SemanticExecutor
     |> apply(:evaluate_view_tree_value, [node, model, %{}])
@@ -4552,7 +4557,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp evaluated_rendered_scalar_hint(_node, _model), do: nil
 
-  @spec rendered_scalar_hint(term()) :: String.t() | nil
+  @spec rendered_scalar_hint(runtime_value()) :: String.t() | nil
   defp rendered_scalar_hint(value) when is_integer(value), do: Integer.to_string(value)
 
   defp rendered_scalar_hint(value) when is_float(value),
@@ -4562,12 +4567,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defp rendered_scalar_hint(value) when is_boolean(value), do: to_string(value)
   defp rendered_scalar_hint(_value), do: nil
 
-  @spec rendered_int_hint(term()) :: term()
+  @spec rendered_int_hint(runtime_value()) :: String.t() | nil
   defp rendered_int_hint(value) when is_integer(value), do: Integer.to_string(value)
   defp rendered_int_hint(value) when is_float(value), do: Integer.to_string(trunc(value))
   defp rendered_int_hint(_), do: nil
 
-  @spec runtime_view_output_lines(term()) :: term()
+  @spec runtime_view_output_lines(map()) :: String.t()
   defp runtime_view_output_lines(runtime) when is_map(runtime) do
     model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
     ops = Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output) || []
@@ -4583,7 +4588,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec runtime_op_line(term()) :: term()
+  @spec runtime_op_line(map()) :: String.t()
   defp runtime_op_line(op) when is_map(op) do
     kind = to_string(Map.get(op, "kind") || Map.get(op, :kind) || "")
 
@@ -4627,7 +4632,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp runtime_op_line(_op), do: ""
 
-  @spec map_integer_value(term(), term(), term()) :: term()
+  @spec map_integer_value(map(), String.t() | atom(), integer()) :: integer()
   defp map_integer_value(map, key, default)
        when is_map(map) and is_binary(key) and is_integer(default) do
     atom_key =
@@ -4678,7 +4683,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec join_preview_sections(term(), term()) :: term()
+  @spec join_preview_sections(String.t(), String.t()) :: String.t()
   defp join_preview_sections("", tree_text), do: tree_text
   defp join_preview_sections(runtime_text, ""), do: runtime_text
 
@@ -4717,7 +4722,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp map_integer(_map, _key), do: nil
 
-  @spec map_lookup(map(), atom()) :: {:ok, term()} | :error
+  @spec map_lookup(map(), atom()) :: {:ok, runtime_value()} | :error
   defp map_lookup(map, key) when is_map(map) and is_atom(key) do
     string_key = Atom.to_string(key)
 

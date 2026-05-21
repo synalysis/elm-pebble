@@ -2,7 +2,15 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   @moduledoc false
   use IdeWeb, :html
 
-  @spec render(term()) :: term()
+  alias Ide.Projects.Project
+  alias Phoenix.LiveView.Rendered
+
+  @type assigns :: map()
+  @type rendered :: Rendered.t()
+  @type flow_status :: :idle | :running | :ok | :error
+  @type installation_status :: map()
+
+  @spec render(assigns()) :: rendered()
   def render(assigns) do
     ~H"""
     <section
@@ -717,7 +725,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
     """
   end
 
-  @spec check_status_label(term()) :: term()
+  @spec check_status_label(flow_status() | atom()) :: String.t()
   defp check_status_label(:idle), do: "idle"
   defp check_status_label(:running), do: "running"
   defp check_status_label(:ok), do: "ok"
@@ -737,7 +745,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   defp external_emulator_toggle_label(_running?, _install_status, _stop_status),
     do: "Launch / Install PBW"
 
-  @spec emulator_installation_summary(term()) :: String.t()
+  @spec emulator_installation_summary(installation_status()) :: String.t()
   defp emulator_installation_summary(%{status: :checking, platform: platform}),
     do: "Checking embedded emulator dependencies for #{platform}..."
 
@@ -752,7 +760,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   defp emulator_installation_summary(%{error: error}) when is_binary(error), do: error
   defp emulator_installation_summary(_), do: "Embedded emulator setup needs attention."
 
-  @spec emulator_setup_needs_attention?(term()) :: boolean()
+  @spec emulator_setup_needs_attention?(installation_status()) :: boolean()
   defp emulator_setup_needs_attention?(%{status: status}) when status in [:warning, :error],
     do: true
 
@@ -769,7 +777,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   defp wasm_emulator_mode?("wasm"), do: true
   defp wasm_emulator_mode?(_), do: false
 
-  @spec emulator_settings_path(term()) :: String.t()
+  @spec emulator_settings_path(Project.t() | map() | nil) :: String.t()
   defp emulator_settings_path(%{slug: slug}) when is_binary(slug) do
     "/settings?return_to=" <> URI.encode_www_form("/projects/#{slug}/emulator")
   end

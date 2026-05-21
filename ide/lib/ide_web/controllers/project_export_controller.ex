@@ -3,7 +3,7 @@ defmodule IdeWeb.ProjectExportController do
 
   alias Ide.Projects
 
-  @spec show(term(), term()) :: term()
+  @spec show(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def show(conn, %{"id" => id}) do
     project = Projects.get_project!(id, conn.assigns.current_user)
 
@@ -25,7 +25,7 @@ defmodule IdeWeb.ProjectExportController do
   end
 
   # Delay deletion so the web server can finish streaming the file.
-  @spec schedule_cleanup(term()) :: term()
+  @spec schedule_cleanup(String.t()) :: {:ok, pid()}
   defp schedule_cleanup(zip_path) do
     Task.start(fn ->
       Process.sleep(60_000)

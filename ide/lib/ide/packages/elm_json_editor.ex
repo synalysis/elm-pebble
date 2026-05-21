@@ -2,9 +2,13 @@ defmodule Ide.Packages.ElmJsonEditor do
   @moduledoc false
 
   alias Ide.Packages.DependencyResolver
+  alias Ide.Packages.Types
   alias Ide.Projects
 
-  @spec preview_add(map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  @type elm_json_map :: map()
+  @type preview_map :: map()
+
+  @spec preview_add(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.project_package_error()}
   def preview_add(project, package, opts) do
     with {:ok, root, decoded} <- load_elm_json(project, opts[:source_root]),
          section <- normalize_section(opts[:section]),
@@ -30,7 +34,7 @@ defmodule Ide.Packages.ElmJsonEditor do
     end
   end
 
-  @spec preview_remove(map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec preview_remove(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.project_package_error()}
   def preview_remove(project, package, opts) do
     with {:ok, root, decoded} <- load_elm_json(project, opts[:source_root]),
          section <- normalize_section(opts[:section] || "dependencies"),
@@ -51,7 +55,7 @@ defmodule Ide.Packages.ElmJsonEditor do
     end
   end
 
-  @spec remove_package(map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec remove_package(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.project_package_error()}
   def remove_package(project, package, opts) do
     with {:ok, root, decoded, original_json} <-
            load_elm_json(project, opts[:source_root], include_text: true),
@@ -73,7 +77,7 @@ defmodule Ide.Packages.ElmJsonEditor do
     end
   end
 
-  @spec add_package(map(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec add_package(map(), String.t(), keyword()) :: {:ok, map()} | {:error, Types.project_package_error()}
   def add_package(project, package, opts) do
     with {:ok, root, decoded, original_json} <-
            load_elm_json(project, opts[:source_root], include_text: true),
@@ -113,14 +117,14 @@ defmodule Ide.Packages.ElmJsonEditor do
     project |> candidate_roots() |> Enum.reject(&(&1 == "protocol"))
   end
 
-  @spec maybe_write(term(), term(), term(), term()) :: term()
+  @spec maybe_write(map(), String.t(), String.t(), String.t()) :: :ok | {:error, Types.project_package_error()}
   defp maybe_write(_project, _root, encoded, original) when encoded == original, do: :ok
 
   defp maybe_write(project, root, encoded, _original) do
     Projects.write_source_file(project, root, "elm.json", encoded)
   end
 
-  @spec apply_dependency(term(), term()) :: term()
+  @spec apply_dependency(elm_json_map(), preview_map()) :: {elm_json_map(), String.t() | nil}
   defp apply_dependency(decoded, preview) do
     section = preview.section
     package = preview.package
@@ -138,7 +142,7 @@ defmodule Ide.Packages.ElmJsonEditor do
     {updated, previous}
   end
 
-  @spec apply_removal(term(), term()) :: term()
+  @spec apply_removal(elm_json_map(), preview_map()) :: {elm_json_map(), String.t() | nil}
   defp apply_removal(decoded, preview) do
     section = preview.section
     package = preview.package
@@ -156,7 +160,10 @@ defmodule Ide.Packages.ElmJsonEditor do
     {updated, previous}
   end
 
-  @spec load_elm_json(term(), term(), term()) :: term()
+  @spec load_elm_json(map(), String.t() | nil, keyword()) ::
+          {:ok, String.t(), elm_json_map()}
+          | {:ok, String.t(), elm_json_map(), String.t()}
+          | {:error, Types.project_package_error()}
   defp load_elm_json(project, preferred_root, opts \\ []) do
     include_text? = opts[:include_text] || false
 
@@ -185,7 +192,7 @@ defmodule Ide.Packages.ElmJsonEditor do
     end)
   end
 
-  @spec existing_constraint(term(), term()) :: term()
+  @spec existing_constraint(elm_json_map(), String.t()) :: {String.t(), String.t()} | {nil, nil}
   defp existing_constraint(decoded, package) do
     sections = ["dependencies", "test-dependencies"]
     scopes = ["direct", "indirect"]
@@ -204,7 +211,7 @@ defmodule Ide.Packages.ElmJsonEditor do
     end)
   end
 
-  @spec build_callbacks(term()) :: term()
+  @spec build_callbacks(keyword()) :: DependencyResolver.callbacks()
   defp build_callbacks(opts) do
     %{
       versions: Keyword.fetch!(opts, :versions_fetcher),
@@ -212,31 +219,31 @@ defmodule Ide.Packages.ElmJsonEditor do
     }
   end
 
-  @spec previous_version(term(), term()) :: term()
+  @spec previous_version(map(), String.t()) :: String.t() | nil
   defp previous_version(section_map, package) do
     direct = section_map |> Map.get("direct", %{}) |> ensure_map()
     indirect = section_map |> Map.get("indirect", %{}) |> ensure_map()
     Map.get(direct, package) || Map.get(indirect, package)
   end
 
-  @spec normalize_section(term()) :: term()
+  @spec normalize_section(String.t() | nil) :: String.t()
   defp normalize_section(nil), do: "dependencies"
   defp normalize_section("test"), do: "test-dependencies"
   defp normalize_section("test-dependencies"), do: "test-dependencies"
   defp normalize_section("dependencies"), do: "dependencies"
   defp normalize_section(_), do: "dependencies"
 
-  @spec normalize_scope(term()) :: term()
+  @spec normalize_scope(String.t() | nil) :: String.t()
   defp normalize_scope(nil), do: "direct"
   defp normalize_scope("direct"), do: "direct"
   defp normalize_scope("indirect"), do: "indirect"
   defp normalize_scope(_), do: "direct"
 
-  @spec ensure_map(term()) :: term()
+  @spec ensure_map(map() | term()) :: map()
   defp ensure_map(value) when is_map(value), do: value
   defp ensure_map(_), do: %{}
 
-  @spec ensure_ordered_map(term()) :: term()
+  @spec ensure_ordered_map(map()) :: map()
   defp ensure_ordered_map(map) do
     map
     |> Enum.sort_by(fn {key, _value} -> to_string(key) end)

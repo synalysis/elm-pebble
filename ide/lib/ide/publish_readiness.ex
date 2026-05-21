@@ -5,10 +5,34 @@ defmodule Ide.PublishReadiness do
 
   @required_appinfo_fields ~w(uuid shortName longName versionLabel companyName)
 
+  @type readiness_check :: %{
+          required(:id) => String.t(),
+          required(:label) => String.t(),
+          required(:status) => :ok | :error,
+          required(:message) => String.t()
+        }
+
+  @type appinfo_parse :: {:ok, map()} | {:error, atom() | String.t()}
+
+  @type screenshot_readiness :: %{
+          required(:target) => String.t(),
+          required(:count) => non_neg_integer(),
+          required(:status) => :ok | :error | atom()
+        }
+
+  @type validate_result :: %{
+          required(:status) => :ok | :error,
+          required(:checks) => [readiness_check()],
+          required(:appinfo_path) => String.t(),
+          required(:release_notes_md) => String.t()
+        }
+
+  @type validate_error :: Exception.t()
+
   @doc """
   Validates publish readiness from artifact, screenshots, and app metadata.
   """
-  @spec validate(keyword()) :: {:ok, map()} | {:error, term()}
+  @spec validate(keyword()) :: {:ok, validate_result()} | {:error, validate_error()}
   def validate(opts) do
     artifact_path = Keyword.get(opts, :artifact_path)
     required_targets = Keyword.get(opts, :required_targets, [])
@@ -45,7 +69,7 @@ defmodule Ide.PublishReadiness do
     error -> {:error, error}
   end
 
-  @spec check_artifact(term()) :: term()
+  @spec check_artifact(String.t() | nil) :: readiness_check()
   defp check_artifact(path) do
     exists = is_binary(path) and File.exists?(path)
     status = if exists, do: :ok, else: :error
@@ -58,7 +82,7 @@ defmodule Ide.PublishReadiness do
     }
   end
 
-  @spec check_appinfo_exists(term(), term()) :: term()
+  @spec check_appinfo_exists(String.t(), appinfo_parse()) :: readiness_check()
   defp check_appinfo_exists(path, {:ok, _appinfo}) do
     %{id: "appinfo_exists", label: "App metadata exists", status: :ok, message: path}
   end
@@ -72,7 +96,7 @@ defmodule Ide.PublishReadiness do
     }
   end
 
-  @spec check_appinfo_fields(term()) :: term()
+  @spec check_appinfo_fields(appinfo_parse()) :: readiness_check()
   defp check_appinfo_fields({:error, _reason}) do
     %{
       id: "appinfo_fields",
@@ -98,7 +122,7 @@ defmodule Ide.PublishReadiness do
     }
   end
 
-  @spec check_target_platforms(term(), term()) :: term()
+  @spec check_target_platforms(appinfo_parse(), [String.t()]) :: readiness_check()
   defp check_target_platforms({:error, _reason}, _required_targets) do
     %{
       id: "target_platforms",
@@ -125,7 +149,7 @@ defmodule Ide.PublishReadiness do
     }
   end
 
-  @spec check_watchapp_mode(term()) :: term()
+  @spec check_watchapp_mode(appinfo_parse()) :: readiness_check()
   defp check_watchapp_mode({:error, _reason}) do
     %{
       id: "watchapp_mode",
@@ -149,7 +173,7 @@ defmodule Ide.PublishReadiness do
     }
   end
 
-  @spec check_screenshot_coverage(term()) :: term()
+  @spec check_screenshot_coverage([screenshot_readiness()]) :: readiness_check()
   defp check_screenshot_coverage(readiness) do
     missing = Enum.filter(readiness, &(&1.status != :ok))
     status = if missing == [], do: :ok, else: :error
@@ -166,14 +190,14 @@ defmodule Ide.PublishReadiness do
     }
   end
 
-  @spec appinfo_path(term()) :: term()
+  @spec appinfo_path(String.t() | nil) :: String.t()
   defp appinfo_path(app_root) when is_binary(app_root) do
     Path.join([app_root, "build", "appinfo.json"])
   end
 
   defp appinfo_path(_), do: "build/appinfo.json"
 
-  @spec read_appinfo(term()) :: term()
+  @spec read_appinfo(String.t()) :: appinfo_parse()
   defp read_appinfo(path) do
     with {:ok, json} <- File.read(path),
          {:ok, decoded} <- Jason.decode(json) do
@@ -181,10 +205,15 @@ defmodule Ide.PublishReadiness do
     end
   end
 
-  @spec blank?(term()) :: term()
+  @spec blank?(String.t() | nil) :: boolean()
   defp blank?(value), do: value in [nil, ""]
 
-  @spec release_notes_md(term(), term(), term(), term()) :: term()
+  @spec release_notes_md(
+          String.t() | nil,
+          [screenshot_readiness()],
+          [readiness_check()],
+          String.t()
+        ) :: String.t()
   defp release_notes_md(artifact_path, readiness, checks, project_slug) do
     check_lines =
       Enum.map(checks, fn c ->

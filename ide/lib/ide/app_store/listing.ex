@@ -18,7 +18,7 @@ defmodule Ide.AppStore.Listing do
           project_attrs: map()
         }
 
-  @spec update_metadata(map(), keyword()) :: {:ok, result()} | {:error, term()}
+  @spec update_metadata(map(), keyword()) :: {:ok, result()}
   def update_metadata(project, opts \\ []) when is_map(project) do
     api_base = Keyword.get(opts, :api_base, Auth.appstore_api_base()) |> String.trim_trailing("/")
     token = Keyword.get(opts, :firebase_id_token, "") |> to_string() |> String.trim()

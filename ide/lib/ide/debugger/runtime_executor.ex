@@ -6,13 +6,15 @@ defmodule Ide.Debugger.RuntimeExecutor do
   and provides a single place to swap in a fuller interpreter-backed engine.
   """
 
+  alias Ide.Debugger.Types
+
   @type execution_input :: %{
           source_root: String.t(),
           rel_path: String.t() | nil,
           source: String.t(),
-          introspect: map(),
-          current_model: map(),
-          current_view_tree: map(),
+          introspect: Types.elm_introspect(),
+          current_model: Types.runtime_model(),
+          current_view_tree: Types.view_output_tree(),
           message: String.t() | nil,
           update_branches: [String.t()] | nil,
           elm_executor_core_ir: map() | nil,
@@ -21,16 +23,18 @@ defmodule Ide.Debugger.RuntimeExecutor do
 
   @type execution_result :: %{
           model_patch: map(),
-          view_tree: map() | nil,
-          view_output: [map()],
+          view_tree: Types.view_output_tree() | nil,
+          view_output: Types.runtime_view_nodes(),
           runtime: map(),
-          protocol_events: [map()],
+          protocol_events: [Types.protocol_event()],
           followup_messages: [map()]
         }
 
-  @callback execute(execution_input()) :: {:ok, execution_result()} | {:error, term()}
+  @type fallback_reason :: Types.execution_fallback_reason()
 
-  @spec execute(execution_input()) :: {:ok, execution_result()} | {:error, term()}
+  @callback execute(execution_input()) :: {:ok, execution_result()} | {:error, Types.execution_error()}
+
+  @spec execute(execution_input()) :: {:ok, execution_result()} | {:error, Types.execution_error()}
   def execute(input) when is_map(input) do
     case runtime_mode() do
       :legacy ->
@@ -66,7 +70,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
          followup_messages: []
        }}
 
-  @spec execute_default_with_backend(execution_input(), String.t(), term() | nil) ::
+  @spec execute_default_with_backend(execution_input(), String.t(), fallback_reason() | nil) ::
           {:ok, execution_result()}
   defp execute_default_with_backend(input, backend, reason \\ nil) do
     case execute_default(input) do
@@ -205,7 +209,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
        }}
 
   @spec maybe_execute_external(execution_input()) ::
-          {:ok, execution_result()} | {:error, term()} | {:fallback, term()} | :no_external
+          {:ok, execution_result()} | {:error, Types.execution_error()} | {:fallback, fallback_reason()} | :no_external
   defp maybe_execute_external(input) when is_map(input) do
     module = external_executor_module()
 
@@ -253,7 +257,8 @@ defmodule Ide.Debugger.RuntimeExecutor do
     }
   end
 
-  @spec maybe_external_error_or_fallback(term()) :: {:error, term()} | {:fallback, term()}
+  @spec maybe_external_error_or_fallback(fallback_reason()) ::
+          {:error, fallback_reason()} | {:fallback, fallback_reason()}
   defp maybe_external_error_or_fallback(reason) do
     if external_executor_strict?() do
       {:error, reason}
@@ -262,7 +267,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
     end
   end
 
-  @spec annotate_execution_backend(execution_result(), String.t(), term() | nil) ::
+  @spec annotate_execution_backend(execution_result(), String.t(), fallback_reason() | nil) ::
           execution_result()
   defp annotate_execution_backend(payload, backend, reason \\ nil)
        when is_map(payload) and is_binary(backend) do
@@ -290,7 +295,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
     }
   end
 
-  @spec maybe_put_external_fallback_reason(map(), term() | nil) :: map()
+  @spec maybe_put_external_fallback_reason(map(), fallback_reason() | nil) :: map()
   defp maybe_put_external_fallback_reason(map, nil) when is_map(map), do: map
 
   defp maybe_put_external_fallback_reason(map, reason) when is_map(map) do
@@ -354,11 +359,11 @@ defmodule Ide.Debugger.RuntimeExecutor do
     end
   end
 
-  @spec list_count(term()) :: term()
+  @spec list_count(list() | nil) :: non_neg_integer()
   defp list_count(value) when is_list(value), do: length(value)
   defp list_count(_), do: 0
 
-  @spec normalize_update_branches(term()) :: term()
+  @spec normalize_update_branches([String.t()] | nil) :: [String.t()]
   defp normalize_update_branches(value) when is_list(value) do
     value
     |> Enum.filter(&is_binary/1)
@@ -369,12 +374,13 @@ defmodule Ide.Debugger.RuntimeExecutor do
 
   defp normalize_update_branches(_), do: []
 
-  @spec contains_any?(term(), term()) :: term()
+  @spec contains_any?(String.t(), [String.t()]) :: boolean()
   defp contains_any?(text, needles) when is_binary(text) and is_list(needles) do
     Enum.any?(needles, fn needle -> String.contains?(text, needle) end)
   end
 
-  @spec operation_from_text(term()) :: term()
+  @spec operation_from_text(String.t()) ::
+          :inc | :dec | :toggle | :enable | :disable | :reset | :tick
   defp operation_from_text(text) when is_binary(text) do
     hint = String.downcase(text)
 
@@ -389,7 +395,8 @@ defmodule Ide.Debugger.RuntimeExecutor do
     end
   end
 
-  @spec step_operation_for_message(term(), term()) :: term()
+  @spec step_operation_for_message(String.t(), [String.t()]) ::
+          :inc | :dec | :toggle | :enable | :disable | :reset | :tick
   defp step_operation_for_message(message, update_branches)
        when is_binary(message) and is_list(update_branches) do
     case operation_from_text(message) do
@@ -403,7 +410,8 @@ defmodule Ide.Debugger.RuntimeExecutor do
     end
   end
 
-  @spec mutate_runtime_model(term(), term(), term()) :: term()
+  @spec mutate_runtime_model(Types.runtime_model(), String.t(), [String.t()]) ::
+          Types.runtime_model()
   defp mutate_runtime_model(model, message, update_branches)
        when is_map(model) and is_binary(message) and is_list(update_branches) do
     op = step_operation_for_message(message, update_branches)
@@ -449,7 +457,13 @@ defmodule Ide.Debugger.RuntimeExecutor do
     |> Map.put("last_operation", Atom.to_string(op))
   end
 
-  @spec derive_step_view_tree(term(), term(), term(), term(), term()) :: term()
+  @spec derive_step_view_tree(
+          Types.view_output_tree(),
+          Types.runtime_model(),
+          String.t(),
+          :inc | :dec | :toggle | :enable | :disable | :reset | :tick,
+          String.t()
+        ) :: Types.view_output_tree()
   defp derive_step_view_tree(current_view_tree, runtime_model, message, op, source_root)
        when is_map(runtime_model) and is_binary(message) and is_atom(op) and
               is_binary(source_root) do
@@ -480,7 +494,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
     |> Map.put("last_runtime_step_op", Atom.to_string(op))
   end
 
-  @spec view_tree_node_count(term()) :: term()
+  @spec view_tree_node_count(Types.view_output_tree() | map()) :: non_neg_integer()
   defp view_tree_node_count(%{"children" => children}) when is_list(children) do
     1 +
       Enum.reduce(children, 0, fn child, acc ->
@@ -498,7 +512,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
   defp view_tree_node_count(%{}), do: 1
   defp view_tree_node_count(_), do: 0
 
-  @spec stable_term_sha256(term()) :: term()
+  @spec stable_term_sha256(map() | list()) :: String.t()
   defp stable_term_sha256(term) do
     :crypto.hash(:sha256, :erlang.term_to_binary(term))
     |> Base.encode16(case: :lower)

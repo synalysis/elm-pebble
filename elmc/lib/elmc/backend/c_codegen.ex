@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen do
   """
 
   alias ElmEx.IR
+  alias Elmc.Backend.CCodegen.Types
 
   @pebble_color_constants %{
     "clearColor" => 0x00,
@@ -73,7 +74,7 @@ defmodule Elmc.Backend.CCodegen do
     "white" => 0xFF
   }
 
-  @spec write_project(IR.t(), String.t(), map()) :: :ok | {:error, term()}
+  @spec write_project(IR.t(), String.t(), Types.codegen_opts()) :: :ok | {:error, Types.file_error()}
   def write_project(%IR{} = ir, out_dir, opts \\ %{}) do
     c_dir = Path.join(out_dir, "c")
 
@@ -87,7 +88,8 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
-  @spec write_project_multi(IR.t(), String.t(), map()) :: :ok | {:error, term()}
+  @spec write_project_multi(IR.t(), String.t(), Types.codegen_opts()) ::
+          :ok | {:error, Types.file_error()}
   def write_project_multi(%IR{} = ir, out_dir, opts \\ %{}) do
     c_dir = Path.join(out_dir, "c")
 
@@ -2267,8 +2269,8 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
-  @spec compile_expr(map() | nil, map(), non_neg_integer()) ::
-          {String.t(), String.t(), non_neg_integer()}
+  @spec compile_expr(Types.ir_expr() | nil, Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
   defp compile_expr(%{op: :int_literal, value: 0}, _env, counter) do
     next = counter + 1
     var = "tmp_#{next}"
@@ -9051,12 +9053,12 @@ defmodule Elmc.Backend.CCodegen do
     |> min(32_767)
   end
 
-  @spec normalize_special_target(term()) :: term()
+  @spec normalize_special_target(String.t()) :: String.t()
   defp normalize_special_target(target) when is_binary(target) do
     normalize_bare_special_target(target)
   end
 
-  @spec normalize_bare_special_target(term()) :: term()
+  @spec normalize_bare_special_target(String.t()) :: String.t()
   defp normalize_bare_special_target(target) when is_binary(target) do
     case target do
       "Clear" -> "Pebble.Ui.clear"
@@ -9088,7 +9090,8 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
-  @spec http_request_constructor_expr(term(), term(), term()) :: term()
+  @spec http_request_constructor_expr(String.t(), Types.ir_expr(), Types.ir_expr()) ::
+          Types.ir_expr()
   defp http_request_constructor_expr(method_ctor, url, to_msg) do
     method = %{op: :constructor_call, target: "Pebble.Http.#{method_ctor}", args: []}
 
@@ -9378,16 +9381,9 @@ defmodule Elmc.Backend.CCodegen do
     %{op: :tuple2, left: head, right: tuple_chain(rest)}
   end
 
-  @spec tagged_value_expr(non_neg_integer() | map(), map()) :: map()
-  defp tagged_value_expr(tag, value_expr) do
-    left =
-      if is_map(tag) do
-        tag
-      else
-        %{op: :int_literal, value: tag}
-      end
-
-    %{op: :tuple2, left: left, right: value_expr}
+  @spec tagged_value_expr(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  defp tagged_value_expr(tag, value_expr) when is_map(tag) and is_map(value_expr) do
+    %{op: :tuple2, left: tag, right: value_expr}
   end
 
   @spec path_expr(map(), map(), map(), map()) :: map()
@@ -9517,7 +9513,8 @@ defmodule Elmc.Backend.CCodegen do
 
   defp pattern_condition(_subject_ref, _pattern), do: "0"
 
-  @spec bind_pattern(map(), map(), term()) :: map()
+  @spec bind_pattern(Types.compile_env(), Types.pattern(), Types.subject_ref()) ::
+          Types.compile_env()
   defp bind_pattern(env, %{kind: :wildcard}, _subject_ref), do: env
 
   defp bind_pattern(env, %{kind: :var, name: bind}, subject_ref) do
@@ -9829,7 +9826,7 @@ defmodule Elmc.Backend.CCodegen do
 
   defp function_let_classification(_env, _name), do: :boxed
 
-  @spec pattern_subject_ref(term()) :: String.t()
+  @spec pattern_subject_ref(Types.subject_ref()) :: String.t()
   defp pattern_subject_ref(subject_ref) when is_binary(subject_ref), do: subject_ref
   defp pattern_subject_ref(%{op: :var, name: name}) when is_binary(name), do: name
   defp pattern_subject_ref(%{"op" => :var, "name" => name}) when is_binary(name), do: name
@@ -10064,7 +10061,8 @@ defmodule Elmc.Backend.CCodegen do
     }
   end
 
-  @spec compile_builtin_operator_call(term(), term(), term(), term()) :: term()
+  @spec compile_builtin_operator_call(String.t(), [Types.ir_expr()], Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result_or_nil()
   defp compile_builtin_operator_call("e", [], env, counter),
     do: compile_expr(%{op: :float_literal, value: 2.718281828459045}, env, counter)
 
@@ -10308,7 +10306,8 @@ defmodule Elmc.Backend.CCodegen do
 
   defp compile_builtin_operator_call(_name, _args, _env, _counter), do: nil
 
-  @spec compile_curried_binary_builtin(String.t(), [term()], term(), term()) :: term()
+  @spec compile_curried_binary_builtin(String.t(), [Types.ir_expr()], Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
   defp compile_curried_binary_builtin(name, [], env, counter) do
     compile_expr(
       %{
@@ -10337,7 +10336,8 @@ defmodule Elmc.Backend.CCodegen do
     )
   end
 
-  @spec compile_int_binop(term(), term(), term(), term(), term()) :: term()
+  @spec compile_int_binop(Types.ir_expr(), Types.ir_expr(), String.t(), Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
   defp compile_int_binop(
          %{op: :int_literal, value: left},
          %{op: :int_literal, value: right},
@@ -10400,7 +10400,8 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
-  @spec compile_int_idiv(term(), term(), term(), term()) :: term()
+  @spec compile_int_idiv(Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
   defp compile_int_idiv(left, right, env, counter) do
     {left_code, left_var, counter} = compile_native_int_expr(left, env, counter)
 
@@ -11619,7 +11620,8 @@ defmodule Elmc.Backend.CCodegen do
     if typed_bool_expr?(expr, env), do: "elmc_as_bool(#{var})", else: "elmc_as_int(#{var}) != 0"
   end
 
-  @spec compile_float_div(term(), term(), term(), term()) :: term()
+  @spec compile_float_div(Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
   defp compile_float_div(left, right, env, counter) do
     if native_float_expr?(left, env) and native_float_expr?(right, env) do
       compile_native_float_boxed(
@@ -11647,7 +11649,13 @@ defmodule Elmc.Backend.CCodegen do
     end
   end
 
-  @spec compile_compare_operator(term(), term(), String.t(), term(), term()) :: term()
+  @spec compile_compare_operator(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
   defp compile_compare_operator(left, right, operator, env, counter) do
     if native_int_compare_safe?(operator, left, right, env) do
       compile_int_compare_operator(left, right, operator, env, counter)
@@ -12182,7 +12190,7 @@ defmodule Elmc.Backend.CCodegen do
 
   defp used_vars(_), do: MapSet.new()
 
-  @spec write_per_module_headers(ElmEx.IR.t(), String.t()) :: :ok | {:error, term()}
+  @spec write_per_module_headers(ElmEx.IR.t(), String.t()) :: :ok | {:error, Types.file_error()}
   defp write_per_module_headers(ir, c_dir) do
     Enum.reduce_while(ir.modules, :ok, fn mod, :ok ->
       safe_name = mod.name |> String.replace(".", "_")
@@ -12196,7 +12204,7 @@ defmodule Elmc.Backend.CCodegen do
     end)
   end
 
-  @spec write_per_module_sources(ElmEx.IR.t(), String.t()) :: :ok | {:error, term()}
+  @spec write_per_module_sources(ElmEx.IR.t(), String.t()) :: :ok | {:error, Types.file_error()}
   defp write_per_module_sources(ir, c_dir) do
     Enum.reduce_while(ir.modules, :ok, fn mod, :ok ->
       safe_name = mod.name |> String.replace(".", "_")

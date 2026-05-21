@@ -22,7 +22,8 @@ defmodule Ide.Formatter.Semantics.Parse do
   @spec source_hash(String.t()) :: integer()
   def source_hash(source) when is_binary(source), do: :erlang.phash2(source)
 
-  @spec maybe_use_precomputed_payload(term(), term()) :: term()
+  @spec maybe_use_precomputed_payload(String.t(), keyword()) ::
+          {:ok, parse_payload()} | :continue
   defp maybe_use_precomputed_payload(source, opts) do
     with payload when is_map(payload) <- Keyword.get(opts, :parser_payload),
          true <- valid_payload_shape?(payload),
@@ -33,7 +34,7 @@ defmodule Ide.Formatter.Semantics.Parse do
     end
   end
 
-  @spec parse_source(term()) :: term()
+  @spec parse_source(String.t()) :: {:ok, parse_payload()} | {:error, map()}
   defp parse_source(source) do
     with :ok <- ensure_elm_ex_modules_loaded(),
          {:ok, values, tokens} <- parse_metadata_values(source) do
@@ -98,7 +99,7 @@ defmodule Ide.Formatter.Semantics.Parse do
        }}
   end
 
-  @spec parse_metadata_values(term()) :: term()
+  @spec parse_metadata_values(String.t()) :: {:ok, list(), list()} | {:error, map()}
   defp parse_metadata_values(source) do
     metadata_source = ElmEx.Frontend.GeneratedParser.normalize_source_for_metadata(source)
 
@@ -124,7 +125,7 @@ defmodule Ide.Formatter.Semantics.Parse do
     end
   end
 
-  @spec valid_payload_shape?(term()) :: term()
+  @spec valid_payload_shape?(map()) :: boolean()
   defp valid_payload_shape?(%{
          diagnostics: diagnostics,
          metadata: metadata,
@@ -135,7 +136,12 @@ defmodule Ide.Formatter.Semantics.Parse do
 
   defp valid_payload_shape?(_), do: false
 
-  @spec parser_error_line(term()) :: term()
+  @type parser_error_reason ::
+          {pos_integer(), term()}
+          | {pos_integer(), module(), term()}
+          | term()
+
+  @spec parser_error_line(parser_error_reason()) :: pos_integer()
   defp parser_error_line(reason) do
     case reason do
       {line, _module, _term} when is_integer(line) -> line
@@ -144,12 +150,12 @@ defmodule Ide.Formatter.Semantics.Parse do
     end
   end
 
-  @spec unsupported_parse_reason?(term()) :: term()
+  @spec unsupported_parse_reason?(String.t()) :: boolean()
   defp unsupported_parse_reason?(message) when is_binary(message) do
     String.contains?(message, "as_kw") or String.contains?(message, "newline")
   end
 
-  @spec infer_metadata_without_parser(term()) :: term()
+  @spec infer_metadata_without_parser(String.t()) :: HeaderMetadata.metadata()
   defp infer_metadata_without_parser(source) do
     lines = String.split(source, "\n", trim: false)
 
@@ -180,7 +186,7 @@ defmodule Ide.Formatter.Semantics.Parse do
     }
   end
 
-  @spec parse_module_name_from_line(term()) :: term()
+  @spec parse_module_name_from_line(String.t()) :: String.t() | nil
   defp parse_module_name_from_line(line) when is_binary(line) do
     trimmed = String.trim_leading(line)
 
@@ -208,7 +214,7 @@ defmodule Ide.Formatter.Semantics.Parse do
     end
   end
 
-  @spec parse_import_name_from_line(term()) :: term()
+  @spec parse_import_name_from_line(String.t()) :: String.t() | nil
   defp parse_import_name_from_line(line) when is_binary(line) do
     trimmed = String.trim_leading(line)
 
@@ -220,7 +226,7 @@ defmodule Ide.Formatter.Semantics.Parse do
     end
   end
 
-  @spec take_upper_path(term()) :: term()
+  @spec take_upper_path(String.t()) :: String.t() | nil
   defp take_upper_path(rest) when is_binary(rest) do
     chars = String.graphemes(rest)
     {name_chars, _remaining} = Enum.split_while(chars, &upper_path_char?/1)
@@ -228,7 +234,7 @@ defmodule Ide.Formatter.Semantics.Parse do
     if name == "", do: nil, else: name
   end
 
-  @spec upper_path_char?(term()) :: term()
+  @spec upper_path_char?(String.t()) :: boolean()
   defp upper_path_char?(char) when is_binary(char) do
     case String.to_charlist(char) do
       [c] -> c in ?A..?Z or c in ?a..?z or c in ?0..?9 or c in [?_, ?.]
@@ -236,7 +242,7 @@ defmodule Ide.Formatter.Semantics.Parse do
     end
   end
 
-  @spec ensure_elm_ex_modules_loaded() :: term()
+  @spec ensure_elm_ex_modules_loaded() :: :ok | {:error, String.t()}
   defp ensure_elm_ex_modules_loaded do
     ebin_path = Path.join([elm_ex_root(), "_build", "dev", "lib", "elm_ex", "ebin"])
 
@@ -265,7 +271,7 @@ defmodule Ide.Formatter.Semantics.Parse do
     end
   end
 
-  @spec elm_ex_root() :: term()
+  @spec elm_ex_root() :: String.t()
   defp elm_ex_root do
     Application.get_env(:ide, Ide.Compiler, [])
     |> Keyword.fetch!(:elm_ex_root)

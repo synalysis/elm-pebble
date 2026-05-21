@@ -1,11 +1,16 @@
 defmodule Ide.Debugger.PackageCommandHandler do
   @moduledoc false
 
+  alias Ide.Debugger
+  alias Ide.Debugger.Types
+
+  @type runtime_state :: Debugger.runtime_state()
+
   @type handle_result ::
-          {:handled, map(), map(), map() | nil}
+          {:handled, runtime_state(), map(), map() | nil}
           | :unhandled
 
-  @spec handle(map(), String.t(), term(), term()) :: handle_result()
+  @spec handle(runtime_state(), String.t(), String.t(), map()) :: handle_result()
   def handle(state, target_name, package, row) when is_map(state) and is_binary(target_name) do
     command = Map.get(row, "command") || Map.get(row, :command)
 
@@ -18,13 +23,14 @@ defmodule Ide.Debugger.PackageCommandHandler do
 
   def handle(_state, _target_name, _package, _row), do: :unhandled
 
-  @spec storage_command?(term()) :: boolean()
+  @spec storage_command?(Types.cmd_call() | map() | nil) :: boolean()
   defp storage_command?(%{} = command),
     do: String.starts_with?(command_kind(command), "cmd.storage.")
 
   defp storage_command?(_command), do: false
 
-  @spec handle_storage_command(map(), String.t(), term(), map(), map()) :: handle_result()
+  @spec handle_storage_command(runtime_state(), String.t(), String.t(), map(), Types.cmd_call()) ::
+          handle_result()
   defp handle_storage_command(state, target_name, package, row, command) do
     kind = command_kind(command)
 
@@ -80,7 +86,7 @@ defmodule Ide.Debugger.PackageCommandHandler do
     end
   end
 
-  @spec command_kind(term()) :: String.t()
+  @spec command_kind(Types.cmd_call()) :: String.t()
   defp command_kind(command) when is_map(command) do
     case Map.get(command, "kind") || Map.get(command, :kind) do
       kind when is_binary(kind) -> kind
@@ -89,9 +95,12 @@ defmodule Ide.Debugger.PackageCommandHandler do
     end
   end
 
-  defp command_kind(_command), do: ""
-
-  @spec storage_read_value(map(), String.t(), map(), term()) :: term()
+  @spec storage_read_value(
+          runtime_state(),
+          String.t(),
+          Types.cmd_call(),
+          Types.protocol_wire_arg()
+        ) :: Types.protocol_wire_arg()
   defp storage_read_value(state, target_name, command, default_value) do
     entry =
       state
@@ -108,7 +117,12 @@ defmodule Ide.Debugger.PackageCommandHandler do
     end
   end
 
-  @spec storage_put(map(), String.t(), map(), term()) :: map()
+  @spec storage_put(
+          runtime_state(),
+          String.t(),
+          Types.cmd_call(),
+          Types.protocol_wire_arg()
+        ) :: runtime_state()
   defp storage_put(state, target_name, command, value) do
     key = storage_key(command)
     type = storage_type(command)
@@ -122,7 +136,7 @@ defmodule Ide.Debugger.PackageCommandHandler do
     )
   end
 
-  @spec storage_delete(map(), String.t(), map()) :: map()
+  @spec storage_delete(runtime_state(), String.t(), Types.cmd_call()) :: runtime_state()
   defp storage_delete(state, target_name, command) do
     key = storage_key(command)
 
@@ -135,14 +149,14 @@ defmodule Ide.Debugger.PackageCommandHandler do
     )
   end
 
-  @spec storage_key(map()) :: String.t()
+  @spec storage_key(Types.cmd_call()) :: String.t()
   defp storage_key(command) when is_map(command) do
     command
     |> then(&(Map.get(&1, "key") || Map.get(&1, :key)))
     |> to_string()
   end
 
-  @spec storage_type(map()) :: String.t()
+  @spec storage_type(Types.cmd_call()) :: String.t()
   defp storage_type(command) when is_map(command) do
     command
     |> command_kind()
@@ -154,7 +168,8 @@ defmodule Ide.Debugger.PackageCommandHandler do
     end
   end
 
-  @spec storage_message_value(map(), map(), term()) :: term()
+  @spec storage_message_value(Types.cmd_call(), map(), Types.protocol_wire_arg()) ::
+          Types.protocol_wire_arg()
   defp storage_message_value(command, row, value) do
     command_value =
       Map.get(command, "message_value") || Map.get(command, :message_value) ||
@@ -163,7 +178,10 @@ defmodule Ide.Debugger.PackageCommandHandler do
     replace_first_constructor_arg(command_value, value)
   end
 
-  @spec replace_first_constructor_arg(term(), term()) :: term()
+  @spec replace_first_constructor_arg(
+          Types.protocol_ctor_value() | {integer(), Types.protocol_wire_arg()} | term(),
+          Types.protocol_wire_arg()
+        ) :: Types.protocol_ctor_value() | {integer(), Types.protocol_wire_arg()} | term()
   defp replace_first_constructor_arg(%{"ctor" => ctor, "args" => args} = value, next)
        when is_binary(ctor) and is_list(args) do
     Map.put(value, "args", replace_first_list_value(args, next))
@@ -177,11 +195,11 @@ defmodule Ide.Debugger.PackageCommandHandler do
   defp replace_first_constructor_arg({tag, _payload}, next) when is_integer(tag), do: {tag, next}
   defp replace_first_constructor_arg(value, _next), do: value
 
-  @spec replace_first_list_value(list(), term()) :: list()
+  @spec replace_first_list_value(list(), Types.protocol_wire_arg()) :: list()
   defp replace_first_list_value([], next), do: [next]
   defp replace_first_list_value([_head | tail], next), do: [next | tail]
 
-  @spec storage_command_event(map()) :: map()
+  @spec storage_command_event(Types.cmd_call()) :: map()
   defp storage_command_event(command) when is_map(command) do
     %{
       kind: command_kind(command),

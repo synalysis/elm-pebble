@@ -6,6 +6,7 @@ defmodule ElmEx.Frontend.Bridge do
 
   alias ElmEx.Frontend.Project
   alias ElmEx.IR.Lowerer
+  alias ElmEx.Types
 
   @spec load_project(String.t()) :: {:ok, Project.t()} | {:error, map()}
   def load_project(project_dir) do
@@ -155,9 +156,7 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  defp builtin_source_dirs(_), do: []
-
-  @spec dependency_names(term()) :: [String.t()]
+  @spec dependency_names(Types.dependency_sections() | map() | term()) :: [String.t()]
   defp dependency_names(%{"direct" => direct, "indirect" => indirect}) do
     dependency_names(direct) ++ dependency_names(indirect)
   end

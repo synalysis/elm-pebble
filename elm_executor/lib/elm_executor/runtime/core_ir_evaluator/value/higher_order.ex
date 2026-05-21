@@ -1,10 +1,17 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
   @moduledoc false
 
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.MaybeResult
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.String, as: StringValue
 
-  @spec maybe_map_with_callable(term(), term(), function()) :: term()
+  @type callable :: (EvalTypes.runtime_value(), EvalTypes.runtime_values() -> EvalTypes.eval_result())
+
+  @spec maybe_map_with_callable(
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          callable()
+        ) :: EvalTypes.builtin_eval_result()
   def maybe_map_with_callable(fun, maybe, call) when is_function(call, 2) do
     case MaybeResult.maybe_value(maybe) do
       {:just, value} ->
@@ -21,7 +28,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
     end
   end
 
-  @spec maybe_map2_with_callable(term(), term(), term(), function()) :: term()
+  @spec maybe_map2_with_callable(
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          callable()
+        ) :: EvalTypes.builtin_eval_result()
   def maybe_map2_with_callable(fun, a, b, call) when is_function(call, 2) do
     case {MaybeResult.maybe_value(a), MaybeResult.maybe_value(b)} do
       {{:just, av}, {:just, bv}} ->
@@ -41,7 +53,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
     end
   end
 
-  @spec result_map_with_callable(term(), term(), function()) :: term()
+  @spec result_map_with_callable(
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          callable()
+        ) :: EvalTypes.builtin_eval_result()
   def result_map_with_callable(fun, result, call) when is_function(call, 2) do
     case MaybeResult.result_value(result) do
       {:ok, value} ->
@@ -58,7 +74,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
     end
   end
 
-  @spec result_map2_with_callable(term(), term(), term(), function()) :: term()
+  @spec result_map2_with_callable(
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          callable()
+        ) :: EvalTypes.builtin_eval_result()
   def result_map2_with_callable(fun, a, b, call) when is_function(call, 2) do
     case {MaybeResult.result_value(a), MaybeResult.result_value(b)} do
       {{:ok, av}, {:ok, bv}} ->
@@ -78,7 +99,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
     end
   end
 
-  @spec result_and_then_with_callable(term(), term(), function()) :: term()
+  @spec result_and_then_with_callable(
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          callable()
+        ) :: EvalTypes.builtin_eval_result()
   def result_and_then_with_callable(fun, result, call) when is_function(call, 2) do
     case MaybeResult.result_value(result) do
       {:ok, value} ->
@@ -92,7 +117,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
     end
   end
 
-  @spec string_map_with_callable(term(), term(), function()) :: term()
+  @spec string_map_with_callable(
+          EvalTypes.runtime_value(),
+          String.t(),
+          callable()
+        ) :: EvalTypes.builtin_eval_result()
   def string_map_with_callable(fun, text, call) when is_function(call, 2) do
     text
     |> String.graphemes()
@@ -107,7 +136,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
     end
   end
 
-  @spec string_filter_with_callable(term(), term(), function()) :: term()
+  @spec string_filter_with_callable(
+          EvalTypes.runtime_value(),
+          String.t(),
+          callable()
+        ) :: EvalTypes.builtin_eval_result()
   def string_filter_with_callable(fun, text, call) when is_function(call, 2) do
     text
     |> String.graphemes()
@@ -124,23 +157,36 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
     end
   end
 
-  @spec string_all_with_callable(term(), term(), function()) :: term()
+  @spec string_all_with_callable(EvalTypes.runtime_value(), String.t(), callable()) ::
+          EvalTypes.builtin_eval_result()
   def string_all_with_callable(fun, text, call),
     do: all_with_callable(fun, String.graphemes(text), call)
 
-  @spec string_any_with_callable(term(), term(), function()) :: term()
+  @spec string_any_with_callable(EvalTypes.runtime_value(), String.t(), callable()) ::
+          EvalTypes.builtin_eval_result()
   def string_any_with_callable(fun, text, call),
     do: any_with_callable(fun, String.graphemes(text), call)
 
-  @spec string_foldl_with_callable(term(), term(), term(), function()) :: term()
+  @spec string_foldl_with_callable(
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          String.t(),
+          callable()
+        ) :: EvalTypes.builtin_eval_result()
   def string_foldl_with_callable(fun, init, text, call),
     do: foldl_with_callable(fun, init, String.graphemes(text), call)
 
-  @spec string_foldr_with_callable(term(), term(), term(), function()) :: term()
+  @spec string_foldr_with_callable(
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          String.t(),
+          callable()
+        ) :: EvalTypes.builtin_eval_result()
   def string_foldr_with_callable(fun, init, text, call),
     do: foldr_with_callable(fun, init, String.graphemes(text), call)
 
-  @spec all_with_callable(term(), list(), function()) :: term()
+  @spec all_with_callable(EvalTypes.runtime_value(), list(), callable()) ::
+          EvalTypes.builtin_eval_result()
   defp all_with_callable(fun, xs, call) do
     Enum.reduce_while(xs, {:ok, true}, fn x, _acc ->
       case call.(fun, [x]) do
@@ -151,7 +197,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
     end)
   end
 
-  @spec any_with_callable(term(), list(), function()) :: term()
+  @spec any_with_callable(EvalTypes.runtime_value(), list(), callable()) ::
+          EvalTypes.builtin_eval_result()
   defp any_with_callable(fun, xs, call) do
     Enum.reduce_while(xs, {:ok, false}, fn x, _acc ->
       case call.(fun, [x]) do
@@ -162,7 +209,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
     end)
   end
 
-  @spec foldl_with_callable(term(), term(), list(), function()) :: term()
+  @spec foldl_with_callable(
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          list(),
+          callable()
+        ) :: EvalTypes.builtin_eval_result()
   defp foldl_with_callable(fun, init, xs, call) do
     Enum.reduce_while(xs, {:ok, init}, fn x, {:ok, acc} ->
       case call.(fun, [x, acc]) do
@@ -172,7 +224,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
     end)
   end
 
-  @spec foldr_with_callable(term(), term(), list(), function()) :: term()
+  @spec foldr_with_callable(
+          EvalTypes.runtime_value(),
+          EvalTypes.runtime_value(),
+          list(),
+          callable()
+        ) :: EvalTypes.builtin_eval_result()
   defp foldr_with_callable(fun, init, xs, call) do
     xs
     |> Enum.reverse()
@@ -184,7 +241,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder do
     end)
   end
 
-  @spec collect_ok(list()) :: {:ok, list()} | {:error, term()}
+  @spec collect_ok([EvalTypes.eval_result()]) :: EvalTypes.eval_result()
   defp collect_ok(results) do
     Enum.reduce_while(results, {:ok, []}, fn
       {:ok, value}, {:ok, acc} -> {:cont, {:ok, [value | acc]}}

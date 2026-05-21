@@ -58,6 +58,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     ]
 
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
 
   @max_function_recursion_depth 128
 
@@ -76,13 +77,13 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           optional(:source_module) => String.t()
         }
 
-  @spec evaluate(map(), map(), context()) :: {:ok, term()} | {:error, term()}
+  @spec evaluate(EvalTypes.expr(), EvalTypes.env(), map()) :: EvalTypes.eval_result()
   def evaluate(expr, env \\ %{}, context \\ %{})
       when is_map(expr) and is_map(env) and is_map(context) do
     do_evaluate(expr, env, context, [])
   end
 
-  @spec decode_http_response(term(), term(), term()) :: {:ok, term()} | {:error, term()}
+  @spec decode_http_response(map(), map(), context()) :: EvalTypes.eval_result()
   def decode_http_response(command, response, context \\ %{}) when is_map(context) do
     ElmExecutor.Runtime.CoreIREvaluator.Builtins.HttpResponse.decode(
       command,
@@ -228,16 +229,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  defp module_has_update?(_), do: false
-
-  @spec record_alias_expr?(term()) :: boolean()
+  @spec record_alias_expr?(EvalTypes.expr()) :: boolean()
   defp record_alias_expr?(expr) when is_map(expr) do
     (expr["op"] || expr[:op]) in [:record_alias, "record_alias"]
   end
 
-  defp record_alias_expr?(_), do: false
-
-  @spec generic_map_value(term(), term()) :: term()
+  @spec generic_map_value(map(), String.t() | atom()) :: EvalTypes.runtime_value() | nil
   defp generic_map_value(map, key) when is_map(map) and is_binary(key) do
     map = if Map.has_key?(map, :__struct__), do: Map.from_struct(map), else: map
 
@@ -267,14 +264,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  defp generic_map_value(_map, _key), do: nil
-
   @spec stringify_map_values(map()) :: map()
   defp stringify_map_values(map) when is_map(map) do
     Map.new(map, fn {key, value} -> {to_string(key), to_string(value)} end)
   end
 
-  @spec normalize_params(term()) :: term()
+  @spec normalize_params(list() | term()) :: [String.t()]
   defp normalize_params(params) when is_list(params) do
     params
     |> Enum.map(fn p ->
@@ -297,7 +292,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_params(_), do: []
 
-  @spec do_evaluate(term(), term(), term(), term()) :: term()
+  @spec do_evaluate(EvalTypes.expr(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.eval_result()
   defp do_evaluate(expr, env, context, stack)
        when is_map(expr) and is_map(env) and is_map(context) do
     op = expr |> generic_map_value("op") |> normalize_op()
@@ -604,7 +599,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp do_evaluate(_expr, _env, _context, _stack), do: {:error, :invalid_expr}
 
-  @spec normalize_op(term()) :: term()
+  @spec normalize_op(String.t() | atom()) :: atom() | String.t()
   defp normalize_op(op) when is_binary(op) do
     String.to_existing_atom(op)
   rescue
@@ -613,7 +608,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_op(op), do: op
 
-  @spec maybe_evaluate(term(), term(), term(), term()) :: term()
+  @spec maybe_evaluate(EvalTypes.expr() | EvalTypes.runtime_value(), EvalTypes.env(), context(), list()) ::
+          EvalTypes.eval_result()
   defp maybe_evaluate(expr, env, context, stack) when is_map(expr) do
     if Map.has_key?(expr, "op") or Map.has_key?(expr, :op) do
       do_evaluate(expr, env, context, stack)
@@ -624,7 +620,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp maybe_evaluate(value, _env, _context, _stack), do: {:ok, value}
 
-  @spec maybe_evaluate_with_env_lookup(term(), map(), term(), term()) :: term()
+  @spec maybe_evaluate_with_env_lookup(EvalTypes.runtime_value() | String.t(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.eval_result()
   defp maybe_evaluate_with_env_lookup(expr, env, context, stack)
        when is_binary(expr) and is_map(env) do
     case Map.fetch(env, expr) do
@@ -636,7 +632,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp maybe_evaluate_with_env_lookup(expr, env, context, stack),
     do: maybe_evaluate(expr, env, context, stack)
 
-  @spec collect_ok(term()) :: term()
+  @spec collect_ok([EvalTypes.eval_result()]) :: EvalTypes.eval_result()
   defp collect_ok(rows) when is_list(rows) do
     Enum.reduce_while(rows, {:ok, []}, fn
       {:ok, v}, {:ok, acc} -> {:cont, {:ok, [v | acc]}}
@@ -649,7 +645,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec call_function(term(), term(), term(), term(), term()) :: term()
+  @spec call_function(String.t(), list(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.eval_result()
   defp call_function(name, args, env, context, stack) when is_binary(name) and is_list(args) do
     with {:ok, values} <-
            args |> Enum.map(&maybe_evaluate(&1, env, context, stack)) |> collect_ok() do
@@ -687,7 +683,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec apply_closure(term(), term(), term(), term(), term(), term(), term()) :: term()
+  @spec apply_closure(String.t(), [String.t()], EvalTypes.expr(), EvalTypes.env(), EvalTypes.runtime_values(), map(), EvalTypes.eval_stack()) :: EvalTypes.eval_result()
   defp apply_closure(name, params, body, closure_env, values, context, stack)
        when is_binary(name) and is_list(params) and is_map(closure_env) and is_list(values) do
     param_count = length(params)
@@ -727,7 +723,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec eval_ui_builtin(term(), term()) :: term()
+  @spec eval_ui_builtin(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
   defp eval_ui_builtin(name, values) when is_binary(name) and is_list(values) do
     normalized = normalize_builtin_name(name)
 
@@ -1129,7 +1125,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec eval_ui_color_builtin(String.t(), term()) :: term()
+  @spec eval_ui_color_builtin(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
   defp eval_ui_color_builtin(function_name, values)
        when is_binary(function_name) and is_list(values) do
     case {function_name, values} do
@@ -1156,7 +1152,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec eval_builtin(term(), term(), term(), term(), term()) :: term()
+  @spec eval_builtin(String.t(), EvalTypes.runtime_values(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp eval_builtin(name, values, env, context, stack)
        when is_binary(name) and is_list(values) and is_map(env) and is_map(context) and
               is_list(stack) do
@@ -1196,7 +1192,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp eval_builtin(_name, _values, _env, _context, _stack), do: :no_builtin
 
-  @spec eval_builtin_by_module(String.t(), term(), term(), term(), term()) :: term()
+  @spec eval_builtin_by_module(String.t(), EvalTypes.runtime_values(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result() | :skip_legacy_fallback
   defp eval_builtin_by_module(normalized_full, values, env, context, stack)
        when is_binary(normalized_full) and is_list(values) and is_map(env) and is_map(context) and
               is_list(stack) do
@@ -1437,7 +1433,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec eval_generated_preferences_builtin(String.t(), [term()]) :: term()
+  @spec eval_generated_preferences_builtin(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
   defp eval_generated_preferences_builtin("decodeconfigurationflags", [flags]) do
     response =
       case flags do
@@ -1685,7 +1681,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     ]
   end
 
-  @spec eval_builtin_legacy(term(), term(), term(), term(), term()) :: term()
+  @spec eval_builtin_legacy(String.t(), EvalTypes.runtime_values(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp eval_builtin_legacy(name, values, env, context, stack)
        when is_binary(name) and is_list(values) and is_map(env) and is_map(context) and
               is_list(stack) do
@@ -2208,7 +2204,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     :math.pow(base * 1.0, exponent)
   end
 
-  @spec normalize_builtin_name(term()) :: String.t()
+  @spec normalize_builtin_name(String.t() | EvalTypes.runtime_value()) :: String.t()
   defp normalize_builtin_name(name) when is_binary(name) do
     name
     |> String.trim()
@@ -2222,7 +2218,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp normalize_module_alias_name("uicolor." <> rest), do: "pebble.ui.color." <> rest
   defp normalize_module_alias_name(name), do: name
 
-  @spec normalize_builtin_short_name(term()) :: String.t()
+  @spec normalize_builtin_short_name(String.t() | EvalTypes.runtime_value()) :: String.t()
   defp normalize_builtin_short_name(name) when is_binary(name) do
     name
     |> String.trim()
@@ -2232,23 +2228,23 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     |> String.downcase()
   end
 
-  @spec infinite_float?(term()) :: boolean()
+  @spec infinite_float?(number()) :: boolean()
   defp infinite_float?(x) when is_float(x) do
     rendered = :erlang.float_to_binary(x, [:compact]) |> String.downcase()
     String.contains?(rendered, "inf")
   end
 
-  @spec nan_value?(term()) :: boolean()
+  @spec nan_value?(EvalTypes.runtime_value()) :: boolean()
   defp nan_value?(:nan), do: true
   defp nan_value?(x) when is_float(x), do: x != x
   defp nan_value?(_), do: false
 
-  @spec infinite_value?(term()) :: boolean()
+  @spec infinite_value?(EvalTypes.runtime_value()) :: boolean()
   defp infinite_value?(:nan), do: false
   defp infinite_value?(x) when is_float(x), do: infinite_float?(x)
   defp infinite_value?(_), do: false
 
-  @spec safe_math_unary(term(), term()) :: term()
+  @spec safe_math_unary((number() -> number()), number()) :: {:ok, number() | :nan}
   defp safe_math_unary(fun, value) when is_function(fun, 1) do
     try do
       {:ok, fun.(value)}
@@ -2257,7 +2253,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec safe_math_binary(term(), term(), term()) :: term()
+  @spec safe_math_binary((number(), number() -> number()), number(), number()) :: {:ok, number() | :nan}
   defp safe_math_binary(fun, left, right) when is_function(fun, 2) do
     try do
       {:ok, fun.(left, right)}
@@ -2266,7 +2262,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec safe_log_base(term(), term()) :: term()
+  @spec safe_log_base(number(), number()) :: {:ok, number() | :nan}
   defp safe_log_base(base, n) do
     try do
       {:ok, :math.log(n) / :math.log(base)}
@@ -2275,7 +2271,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec short_ctor_name(term()) :: String.t()
+  @spec short_ctor_name(EvalTypes.ctor_name() | atom()) :: String.t()
   defp short_ctor_name(target) when is_binary(target) do
     target
     |> String.split(".")
@@ -2283,7 +2279,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     |> to_string()
   end
 
-  @spec compare_ctor(term(), term()) :: term()
+  @spec compare_ctor(EvalTypes.runtime_value(), EvalTypes.runtime_value()) :: EvalTypes.command_map()
   defp compare_ctor(left, right) do
     cond do
       left < right -> %{"ctor" => "LT", "args" => []}
@@ -2292,7 +2288,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec maybe_get_ctor(term(), term()) :: term()
+  @spec maybe_get_ctor(list(), integer()) :: EvalTypes.command_map()
   defp maybe_get_ctor(xs, idx) when is_list(xs) and is_integer(idx) do
     if idx < 0 or idx >= length(xs) do
       %{"ctor" => "Nothing", "args" => []}
@@ -2301,7 +2297,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec list_set(term(), term(), term()) :: term()
+  @spec list_set(list(), integer(), EvalTypes.runtime_value()) :: list()
   defp list_set(xs, idx, value) when is_list(xs) and is_integer(idx) do
     if idx < 0 or idx >= length(xs) do
       xs
@@ -2310,7 +2306,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec list_slice(term(), term(), term()) :: term()
+  @spec list_slice(list(), integer(), integer()) :: list()
   defp list_slice(xs, start, stop) when is_list(xs) and is_integer(start) and is_integer(stop) do
     len = length(xs)
     from = normalize_slice_index(start, len)
@@ -2319,7 +2315,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     xs |> Enum.drop(from) |> Enum.take(count)
   end
 
-  @spec normalize_slice_index(term(), term()) :: non_neg_integer()
+  @spec normalize_slice_index(integer(), non_neg_integer()) :: non_neg_integer()
   defp normalize_slice_index(index, len) when is_integer(index) and is_integer(len) do
     normalized = if index < 0, do: len + index, else: index
     normalized |> max(0) |> min(len)
@@ -2330,12 +2326,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     fn fun, args -> call_callable(fun, args, env, context, stack) end
   end
 
-  @spec list_intersperse(term(), term()) :: term()
+  @spec list_intersperse(list(), EvalTypes.runtime_value()) :: list()
   defp list_intersperse([], _sep), do: []
   defp list_intersperse([x], _sep), do: [x]
   defp list_intersperse([x | rest], sep), do: [x, sep | list_intersperse(rest, sep)]
 
-  @spec list_unzip(term()) :: {list(), list()}
+  @spec list_unzip(list()) :: {list(), list()}
   defp list_unzip(pairs) do
     pairs
     |> Enum.reduce({[], []}, fn pair, {left, right} ->
@@ -2348,7 +2344,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     |> then(fn {left, right} -> {Enum.reverse(left), Enum.reverse(right)} end)
   end
 
-  @spec map_dispatch(term(), term(), term(), term(), term()) :: term()
+  @spec map_dispatch(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp map_dispatch(fun, subject, env, context, stack) do
     call = callable_runner(env, context, stack)
 
@@ -2382,7 +2378,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec map2_dispatch(term(), term(), term(), term(), term(), term()) :: term()
+  @spec map2_dispatch(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp map2_dispatch(a, b, c, env, context, stack) do
     candidates = [{a, b, c}, {c, a, b}, {b, c, a}, {c, b, a}]
     call = callable_runner(env, context, stack)
@@ -2398,14 +2394,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end)
   end
 
-  @spec is_callable_like(term()) :: boolean()
+  @spec is_callable_like(EvalTypes.runtime_value()) :: boolean()
   defp is_callable_like({:closure, _params, _body, _env}), do: true
   defp is_callable_like({:builtin_partial, _name, _bound}), do: true
   defp is_callable_like({:function_ref, _name}), do: true
   defp is_callable_like(name) when is_binary(name), do: true
   defp is_callable_like(_), do: false
 
-  @spec task_map_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec task_map_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp task_map_with_callable(fun, {:task, :ok, value}, env, context, stack) do
     case call_callable(fun, [value], env, context, stack) do
       {:ok, mapped} -> {:ok, {:task, :ok, mapped}}
@@ -2426,7 +2422,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec task_sequence(term()) :: term()
+  @spec task_sequence(list()) :: EvalTypes.builtin_eval_result()
   defp task_sequence(tasks) when is_list(tasks) do
     Enum.reduce_while(tasks, {:ok, []}, fn task, {:ok, acc} ->
       case task do
@@ -2442,7 +2438,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec concat_map_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec concat_map_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp concat_map_with_callable(fun, xs, env, context, stack) do
     xs
     |> Enum.map(fn x -> call_callable(fun, [x], env, context, stack) end)
@@ -2453,7 +2449,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec filter_map_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec filter_map_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp filter_map_with_callable(fun, xs, env, context, stack) do
     Enum.reduce_while(xs, {:ok, []}, fn x, {:ok, acc} ->
       case call_callable(fun, [x], env, context, stack) do
@@ -2474,7 +2470,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec list_map2_with_callable(term(), list(), list(), term(), term(), term()) :: term()
+  @spec list_map2_with_callable(EvalTypes.runtime_value(), list(), list(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp list_map2_with_callable(fun, xs, ys, env, context, stack) do
     xs
     |> Enum.zip(ys)
@@ -2482,7 +2478,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     |> collect_ok()
   end
 
-  @spec all_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec all_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp all_with_callable(fun, xs, env, context, stack) do
     Enum.reduce_while(xs, {:ok, true}, fn x, _ ->
       case call_callable(fun, [x], env, context, stack) do
@@ -2493,7 +2489,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end)
   end
 
-  @spec any_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec any_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp any_with_callable(fun, xs, env, context, stack) do
     Enum.reduce_while(xs, {:ok, false}, fn x, _ ->
       case call_callable(fun, [x], env, context, stack) do
@@ -2504,7 +2500,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end)
   end
 
-  @spec partition_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec partition_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp partition_with_callable(fun, xs, env, context, stack) do
     Enum.reduce_while(xs, {:ok, {[], []}}, fn x, {:ok, {yes, no}} ->
       case call_callable(fun, [x], env, context, stack) do
@@ -2519,7 +2515,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec sort_by_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec sort_by_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp sort_by_with_callable(fun, xs, env, context, stack) do
     xs
     |> Enum.map(fn x ->
@@ -2538,7 +2534,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec sort_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec sort_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp sort_with_callable(fun, xs, env, context, stack) do
     try do
       {:ok,
@@ -2556,7 +2552,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec compare_order_value(term()) :: term()
+  @spec compare_order_value(EvalTypes.runtime_value()) :: :lt | :eq | :gt
   defp compare_order_value(%{"ctor" => ctor}) when is_binary(ctor),
     do: compare_order_value(%{ctor: short_ctor_name(ctor)})
 
@@ -2571,12 +2567,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp compare_order_value(_), do: :eq
 
-  @spec tuple_to_pair(term()) :: {:ok, {term(), term()}} | :error
+  @spec tuple_to_pair(EvalTypes.runtime_value()) :: {:ok, tuple() | EvalTypes.runtime_value()} | :error
   defp tuple_to_pair({a, b}), do: {:ok, {a, b}}
   defp tuple_to_pair([a, b]), do: {:ok, {a, b}}
   defp tuple_to_pair(_), do: :error
 
-  @spec tuple_map_first_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec tuple_map_first_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp tuple_map_first_with_callable(fun, pair, env, context, stack) do
     with {:ok, {a, b}} <- tuple_to_pair(pair),
          {:ok, mapped} <- call_callable(fun, [a], env, context, stack) do
@@ -2587,7 +2583,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec tuple_map_second_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec tuple_map_second_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp tuple_map_second_with_callable(fun, pair, env, context, stack) do
     with {:ok, {a, b}} <- tuple_to_pair(pair),
          {:ok, mapped} <- call_callable(fun, [b], env, context, stack) do
@@ -2598,7 +2594,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec tuple_map_both_with_callable(term(), term(), term(), term(), term(), term()) :: term()
+  @spec tuple_map_both_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp tuple_map_both_with_callable(f1, f2, pair, env, context, stack) do
     with {:ok, {a, b}} <- tuple_to_pair(pair),
          {:ok, left} <- call_callable(f1, [a], env, context, stack),
@@ -2610,14 +2606,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec map_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec map_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp map_with_callable(fun, xs, env, context, stack) do
     xs
     |> Enum.map(fn x -> call_callable(fun, [x], env, context, stack) end)
     |> collect_ok()
   end
 
-  @spec filter_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec filter_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp filter_with_callable(fun, xs, env, context, stack) do
     Enum.reduce_while(xs, {:ok, []}, fn x, {:ok, acc} ->
       case call_callable(fun, [x], env, context, stack) do
@@ -2632,7 +2628,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec foldl_with_callable(term(), term(), term(), term(), term(), term()) :: term()
+  @spec foldl_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp foldl_with_callable(fun, init, xs, env, context, stack) do
     Enum.reduce_while(xs, {:ok, init}, fn x, {:ok, acc} ->
       case call_callable(fun, [x, acc], env, context, stack) do
@@ -2642,7 +2638,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end)
   end
 
-  @spec foldr_with_callable(term(), term(), term(), term(), term(), term()) :: term()
+  @spec foldr_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp foldr_with_callable(fun, init, xs, env, context, stack) do
     xs
     |> Enum.reverse()
@@ -2654,7 +2650,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end)
   end
 
-  @spec indexed_map_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec indexed_map_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp indexed_map_with_callable(fun, xs, env, context, stack) do
     xs
     |> Enum.with_index()
@@ -2662,7 +2658,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     |> collect_ok()
   end
 
-  @spec initialize_with_callable(term(), term(), term(), term(), term()) :: term()
+  @spec initialize_with_callable(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.builtin_eval_result()
   defp initialize_with_callable(n, fun, env, context, stack) do
     if n <= 0 do
       {:ok, []}
@@ -2674,7 +2670,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec call_callable(term(), term(), term(), term(), term()) :: {:ok, term()} | {:error, term()}
+  @spec call_callable(EvalTypes.runtime_value(), EvalTypes.runtime_values(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.eval_result()
   defp call_callable(fun, args, env, context, stack) when is_list(args) do
     case fun do
       {:closure, params, body, closure_env} when is_list(params) and is_map(closure_env) ->
@@ -2715,16 +2711,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec constructor_name?(term()) :: boolean()
+  @spec constructor_name?(String.t()) :: boolean()
   defp constructor_name?(name) when is_binary(name) do
     name
     |> short_ctor_name()
     |> String.match?(~r/^[A-Z]/)
   end
 
-  defp constructor_name?(_), do: false
-
-  @spec constructor_value(term(), list()) :: map()
+  @spec constructor_value(String.t(), list()) :: map()
   defp constructor_value(name, args) when is_list(args) do
     ctor_label =
       cond do
@@ -2741,7 +2735,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     %{"ctor" => ctor_label, "args" => args}
   end
 
-  @spec tagged_constructor_value(term(), list(), map()) :: term()
+  @spec tagged_constructor_value(integer(), EvalTypes.runtime_values(), map()) :: EvalTypes.runtime_value()
   defp tagged_constructor_value(tag, args, context)
        when is_integer(tag) and is_list(args) and is_map(context) do
     case constructor_name_for_tag(tag, context) do
@@ -2764,7 +2758,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp tagged_constructor_value(name, args, _context) when is_list(args),
     do: constructor_value(name, args)
 
-  @spec constructor_payload(list()) :: term()
+  @spec constructor_payload(EvalTypes.runtime_values()) :: EvalTypes.runtime_value() | EvalTypes.runtime_values()
   defp constructor_payload([]), do: nil
   defp constructor_payload([one]), do: one
 
@@ -2791,7 +2785,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec normalize_union_value(term(), String.t(), map()) :: term()
+  @spec normalize_union_value(EvalTypes.runtime_value(), String.t(), map()) :: EvalTypes.runtime_value()
   defp normalize_union_value(%{"ctor" => _ctor} = value, _union, _context), do: value
   defp normalize_union_value(%{ctor: _ctor} = value, _union, _context), do: value
 
@@ -2822,7 +2816,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_union_value(value, _union, _context), do: value
 
-  @spec normalize_constructor_payload(term(), term(), map()) :: term()
+  @spec normalize_constructor_payload(EvalTypes.runtime_value(), String.t() | nil, map()) :: EvalTypes.runtime_value()
   defp normalize_constructor_payload(nil, _payload_spec, _context), do: nil
 
   defp normalize_constructor_payload(payload, payload_spec, context)
@@ -2838,7 +2832,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_constructor_payload(payload, _payload_spec, _context), do: payload
 
-  @spec normalize_value_by_type(term(), String.t() | nil, map()) :: term()
+  @spec normalize_value_by_type(EvalTypes.runtime_value(), String.t() | nil, map()) :: EvalTypes.runtime_value()
   def normalize_value_by_type(value, type, context)
       when is_binary(type) and is_map(context) do
     normalized_type = normalize_type_name(type)
@@ -2915,7 +2909,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end)
   end
 
-  @spec normalize_record_alias_runtime_value(term(), String.t(), map()) :: term()
+  @spec normalize_record_alias_runtime_value(EvalTypes.runtime_value(), String.t(), map()) :: EvalTypes.runtime_value()
   defp normalize_record_alias_runtime_value(value, type, context)
        when is_binary(type) and is_map(context) do
     fields = record_alias_fields(context, type)
@@ -2941,7 +2935,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec normalize_maybe_value(term(), String.t() | nil, map()) :: term()
+  @spec normalize_maybe_value(EvalTypes.runtime_value(), String.t() | nil, map()) :: EvalTypes.runtime_value()
   defp normalize_maybe_value(0, _inner_type, _context), do: %{"ctor" => "Nothing", "args" => []}
   defp normalize_maybe_value(nil, _inner_type, _context), do: %{"ctor" => "Nothing", "args" => []}
 
@@ -2962,7 +2956,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_maybe_value(value, _inner_type, _context), do: value
 
-  @spec flatten_tuple_chain(term(), non_neg_integer()) :: [term()]
+  @spec flatten_tuple_chain(EvalTypes.runtime_value(), non_neg_integer()) :: [EvalTypes.runtime_value()]
   defp flatten_tuple_chain(value, count) when is_integer(count) and count > 0 do
     do_flatten_tuple_chain(value, count, [])
   end
@@ -2976,14 +2970,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp do_flatten_tuple_chain(value, _remaining, acc), do: Enum.reverse([value | acc])
 
-  @spec legacy_tuple_constructor_map?(term()) :: boolean()
+  @spec legacy_tuple_constructor_map?(EvalTypes.runtime_value()) :: boolean()
   defp legacy_tuple_constructor_map?(%{"ctor" => ctor, "args" => args})
        when is_binary(ctor) and is_list(args),
        do: legacy_tuple_integer_token(ctor) != nil
 
   defp legacy_tuple_constructor_map?(_value), do: false
 
-  @spec flatten_legacy_tuple_constructor_map(term(), non_neg_integer()) :: [term()]
+  @spec flatten_legacy_tuple_constructor_map(EvalTypes.runtime_value(), non_neg_integer()) :: [EvalTypes.runtime_value()]
   defp flatten_legacy_tuple_constructor_map(value, count) when is_integer(count) and count > 0 do
     do_flatten_legacy_tuple_constructor_map(value, count, [])
   end
@@ -3009,7 +3003,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp do_flatten_legacy_tuple_constructor_map(value, _remaining, acc),
     do: Enum.reverse([legacy_tuple_scalar_value(value) | acc])
 
-  @spec legacy_tuple_scalar_value(term()) :: term()
+  @spec legacy_tuple_scalar_value(EvalTypes.runtime_value()) :: EvalTypes.runtime_value()
   defp legacy_tuple_scalar_value(%{"ctor" => ctor, "args" => []}) when is_binary(ctor) do
     legacy_tuple_integer_token(ctor) || %{"ctor" => ctor, "args" => []}
   end
@@ -3065,32 +3059,32 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec literal_or_expr(term()) :: term()
+  @spec literal_or_expr(EvalTypes.runtime_value()) :: EvalTypes.expr() | EvalTypes.runtime_value()
   defp literal_or_expr(value) when is_map(value), do: value
   defp literal_or_expr(value), do: value
 
-  @spec tuple_first(term()) :: term() | nil
+  @spec tuple_first(EvalTypes.runtime_value()) :: EvalTypes.runtime_value() | nil
   defp tuple_first({left, _right}), do: left
   defp tuple_first([left, _right]), do: left
   defp tuple_first(_), do: nil
 
-  @spec tuple_second(term()) :: term() | nil
+  @spec tuple_second(EvalTypes.runtime_value()) :: EvalTypes.runtime_value() | nil
   defp tuple_second({_left, right}), do: right
   defp tuple_second([_left, right]), do: right
   defp tuple_second(_), do: nil
 
-  @spec normalize_indexed_color(term()) :: {:ok, integer()} | :no_builtin
+  @spec normalize_indexed_color(EvalTypes.runtime_value()) :: EvalTypes.color_result()
   defp normalize_indexed_color(code) when is_integer(code), do: {:ok, clamp_int(code, 0, 255)}
   defp normalize_indexed_color(_code), do: :no_builtin
 
-  @spec normalize_rgba_color(term(), term(), term(), term()) :: {:ok, integer()} | :no_builtin
+  @spec normalize_rgba_color(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.runtime_value()) :: EvalTypes.color_result()
   defp normalize_rgba_color(r, g, b, a)
        when is_integer(r) and is_integer(g) and is_integer(b) and is_integer(a),
        do: {:ok, color_rgba_to_int(r, g, b, a)}
 
   defp normalize_rgba_color(_r, _g, _b, _a), do: :no_builtin
 
-  @spec normalize_color_result(term()) :: {:ok, integer()} | :no_builtin
+  @spec normalize_color_result(EvalTypes.runtime_value()) :: EvalTypes.color_result()
   defp normalize_color_result(color) do
     case normalize_color(color) do
       {:ok, value} -> {:ok, value}
@@ -3170,7 +3164,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec normalize_color(term()) :: {:ok, integer()} | :error
+  @spec normalize_color(EvalTypes.runtime_value()) :: {:ok, non_neg_integer()} | :error
   defp normalize_color(value) when is_integer(value), do: {:ok, clamp_int(value, 0, 255)}
 
   defp normalize_color(%{"ctor" => ctor, "args" => args}) when is_binary(ctor) and is_list(args),
@@ -3181,7 +3175,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_color(_), do: :error
 
-  @spec normalize_point(term()) :: {:ok, {integer(), integer()}} | :error
+  @spec normalize_point(EvalTypes.runtime_value()) :: {:ok, {integer(), integer()}} | :error
   defp normalize_point(value) when is_map(value) do
     x = Map.get(value, "x") || Map.get(value, :x)
     y = Map.get(value, "y") || Map.get(value, :y)
@@ -3191,7 +3185,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_point(_), do: :error
 
-  @spec normalize_rect(term()) :: {:ok, {integer(), integer(), integer(), integer()}} | :error
+  @spec normalize_rect(EvalTypes.runtime_value()) :: {:ok, {integer(), integer(), integer(), integer()}} | :error
   defp normalize_rect(value) when is_map(value) do
     x = Map.get(value, "x") || Map.get(value, :x)
     y = Map.get(value, "y") || Map.get(value, :y)
@@ -3205,7 +3199,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_rect(_), do: :error
 
-  @spec normalize_rect_or_default(term()) :: {integer(), integer(), integer(), integer()}
+  @spec normalize_rect_or_default(EvalTypes.runtime_value()) :: {integer(), integer(), integer(), integer()}
   defp normalize_rect_or_default(value) do
     case normalize_rect(value) do
       {:ok, rect} -> rect
@@ -3213,7 +3207,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec normalize_text_options(term()) :: {:ok, {integer(), integer()}} | :error
+  @spec normalize_text_options(EvalTypes.runtime_value()) :: {:ok, {integer(), integer()}} | :error
   defp normalize_text_options({:function_ref, "Pebble.Ui.defaultTextOptions"}), do: {:ok, {1, 0}}
   defp normalize_text_options({:function_ref, "Ui.defaultTextOptions"}), do: {:ok, {1, 0}}
 
@@ -3229,7 +3223,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_text_options(_), do: :error
 
-  @spec normalize_text_options_or_default(term()) :: {integer(), integer()}
+  @spec normalize_text_options_or_default(EvalTypes.runtime_value()) :: {integer(), integer()}
   defp normalize_text_options_or_default(value) do
     case normalize_text_options(value) do
       {:ok, options} -> options
@@ -3276,7 +3270,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp normalize_text_overflow(%{ctor: "Fill"}), do: {:ok, 2}
   defp normalize_text_overflow(_), do: :error
 
-  @spec normalize_path(term()) ::
+  @spec normalize_path(EvalTypes.runtime_value()) ::
           {:ok, {[{integer(), integer()}], integer(), integer(), integer()}} | :error
   defp normalize_path({points, {offset_x, offset_y}, rotation})
        when is_list(points) and is_integer(offset_x) and is_integer(offset_y) and
@@ -3302,7 +3296,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_path(_), do: :error
 
-  @spec normalize_points(term()) :: {:ok, [{integer(), integer()}]} | :error
+  @spec normalize_points(EvalTypes.runtime_value()) :: {:ok, [{integer(), integer()}]} | :error
   defp normalize_points(points) when is_list(points) do
     normalized =
       points
@@ -3317,7 +3311,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_points(_), do: :error
 
-  @spec normalize_point_tuple(term()) :: {:ok, {integer(), integer()}} | :error
+  @spec normalize_point_tuple(EvalTypes.runtime_value()) :: {:ok, {integer(), integer()}} | :error
   defp normalize_point_tuple({x, y}) when is_integer(x) and is_integer(y), do: {:ok, {x, y}}
   defp normalize_point_tuple([x, y]) when is_integer(x) and is_integer(y), do: {:ok, {x, y}}
 
@@ -3329,7 +3323,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_point_tuple(_), do: :error
 
-  @spec normalize_color_ctor(term(), term()) :: {:ok, integer()} | :error
+  @spec normalize_color_ctor(EvalTypes.runtime_value(), EvalTypes.runtime_value()) :: {:ok, non_neg_integer()} | :error
   defp normalize_color_ctor(ctor, args) when is_binary(ctor) and is_list(args) do
     short =
       ctor
@@ -3350,7 +3344,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec normalize_bitmap_id(term()) :: {:ok, integer()} | :error
+  @spec normalize_bitmap_id(EvalTypes.runtime_value()) :: {:ok, non_neg_integer()} | :error
   defp normalize_bitmap_id(value) when is_integer(value), do: {:ok, value}
 
   defp normalize_bitmap_id(%{"tag" => tag}) when is_integer(tag), do: {:ok, tag}
@@ -3375,7 +3369,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_bitmap_id(_), do: :error
 
-  @spec normalize_font_id(term()) :: {:ok, integer()} | :error
+  @spec normalize_font_id(EvalTypes.runtime_value()) :: {:ok, non_neg_integer()} | :error
   defp normalize_font_id(value) when is_integer(value), do: {:ok, value}
 
   defp normalize_font_id({:function_ref, "Pebble.Ui.Resources.DefaultFont"}), do: {:ok, 1}
@@ -3404,7 +3398,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_font_id(_), do: :error
 
-  @spec normalize_font_id_or_default(term()) :: integer()
+  @spec normalize_font_id_or_default(EvalTypes.runtime_value()) :: non_neg_integer()
   defp normalize_font_id_or_default(value) do
     case normalize_font_id(value) do
       {:ok, font_id} -> font_id
@@ -3412,7 +3406,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec normalize_text_value(term()) :: {:ok, String.t()} | :error
+  @spec normalize_text_value(EvalTypes.runtime_value()) :: {:ok, String.t()} | :error
   defp normalize_text_value(value) when is_binary(value), do: {:ok, value}
 
   defp normalize_text_value(value) do
@@ -3422,7 +3416,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec normalize_text_value_or_default(term()) :: String.t()
+  @spec normalize_text_value_or_default(EvalTypes.runtime_value()) :: String.t()
   defp normalize_text_value_or_default(value) do
     case normalize_text_value(value) do
       {:ok, text} -> text
@@ -3430,7 +3424,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec binary_leaves(term()) :: [String.t()]
+  @spec binary_leaves(EvalTypes.runtime_value()) :: [String.t()]
   defp binary_leaves(value) when is_binary(value), do: [value]
 
   defp binary_leaves(value) when is_tuple(value) do
@@ -3442,7 +3436,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp binary_leaves(value) when is_list(value), do: Enum.flat_map(value, &binary_leaves/1)
   defp binary_leaves(_value), do: []
 
-  @spec normalize_rotation_angle(term()) :: {:ok, integer()} | :error
+  @spec normalize_rotation_angle(EvalTypes.runtime_value()) :: {:ok, integer()} | :error
   defp normalize_rotation_angle(value) when is_integer(value), do: {:ok, value}
 
   defp normalize_rotation_angle(%{"ctor" => ctor, "args" => [angle]})
@@ -3457,7 +3451,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_rotation_angle(_), do: :error
 
-  @spec color_rgba_to_int(term(), term(), term(), term()) :: integer()
+  @spec color_rgba_to_int(EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.runtime_value(), EvalTypes.runtime_value()) :: non_neg_integer()
   defp color_rgba_to_int(r, g, b, a) do
     rr = color_channel_to_2bit(r)
     gg = color_channel_to_2bit(g)
@@ -3470,7 +3464,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     )
   end
 
-  @spec color_channel_to_2bit(term()) :: non_neg_integer()
+  @spec color_channel_to_2bit(integer()) :: non_neg_integer()
   defp color_channel_to_2bit(value) when is_integer(value) do
     div(clamp_int(value, 0, 255) * 3 + 127, 255)
   end
@@ -3478,12 +3472,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   @spec clamp_int(integer(), integer(), integer()) :: integer()
   defp clamp_int(value, low, high) when is_integer(value), do: max(low, min(high, value))
 
-  @spec ui_node(term(), term()) :: map()
+  @spec ui_node(String.t(), [EvalTypes.ui_node_map()]) :: EvalTypes.ui_node_map()
   defp ui_node(type, children) when is_binary(type) and is_list(children) do
     %{"type" => type, "children" => children, "label" => ""}
   end
 
-  @spec ui_group_node(term(), term()) :: map()
+  @spec ui_group_node(EvalTypes.command_map(), EvalTypes.runtime_value()) :: EvalTypes.ui_node_map()
   defp ui_group_node(style, ops) when is_map(style) do
     node = ui_node("group", ui_children_from_value(ops))
 
@@ -3496,7 +3490,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp ui_group_node(_style, ops), do: ui_node("group", ui_children_from_value(ops))
 
-  @spec ui_context_style(term()) :: map()
+  @spec ui_context_style(list()) :: EvalTypes.command_map()
   defp ui_context_style(settings) when is_list(settings) do
     Enum.reduce(settings, %{}, fn
       {:ui_context_setting, key, value}, acc when is_binary(key) ->
@@ -3509,7 +3503,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp ui_context_style(_settings), do: %{}
 
-  @spec expr_node(term()) :: map()
+  @spec expr_node(EvalTypes.runtime_value()) :: EvalTypes.ui_node_map()
   defp expr_node(value) when is_integer(value) or is_float(value),
     do: %{"type" => "expr", "value" => value, "children" => []}
 
@@ -3522,7 +3516,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp expr_node(%{} = node), do: node
   defp expr_node(value), do: %{"type" => "expr", "label" => inspect(value), "children" => []}
 
-  @spec path_points_node(term()) :: map()
+  @spec path_points_node([{integer(), integer()}]) :: EvalTypes.ui_node_map()
   defp path_points_node(points) when is_list(points) do
     %{
       "type" => "List",
@@ -3538,7 +3532,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     }
   end
 
-  @spec ui_children_from_value(term()) :: [map()]
+  @spec ui_children_from_value(EvalTypes.runtime_value()) :: [EvalTypes.ui_node_map()]
   defp ui_children_from_value(list) when is_list(list) do
     list
     |> Enum.flat_map(fn
@@ -3552,7 +3546,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp ui_children_from_value(%{} = node), do: [node]
   defp ui_children_from_value(_), do: []
 
-  @spec resolve_zero_arity_value(String.t(), map(), list()) :: {:ok, term()} | :error
+  @spec resolve_zero_arity_value(String.t(), map(), EvalTypes.eval_stack()) :: {:ok, EvalTypes.runtime_value()} | :error
   defp resolve_zero_arity_value(name, context, stack)
        when is_binary(name) and is_map(context) and is_list(stack) do
     {module_name, function_name} = parse_function_name(name, context)
@@ -3575,7 +3569,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp resolve_zero_arity_value(_name, _context, _stack), do: :error
 
-  @spec apply_indexed_function(term(), term(), term(), term()) :: term()
+  @spec apply_indexed_function(String.t(), EvalTypes.runtime_values(), map(), EvalTypes.eval_stack()) :: EvalTypes.eval_result()
   defp apply_indexed_function(name, values, context, stack) do
     {module_name, function_name} = parse_function_name(name, context)
     functions = Map.get(context, :functions, %{})
@@ -3765,11 +3759,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp module_name_candidates(module_name, _functions) when is_binary(module_name),
     do: [module_name]
 
-  @spec function_recursion_depth(term(), term()) :: non_neg_integer()
+  @spec function_recursion_depth(EvalTypes.eval_stack(), EvalTypes.runtime_value()) :: non_neg_integer()
   defp function_recursion_depth(stack, key) when is_list(stack),
     do: Enum.count(stack, &(&1 == key))
-
-  defp function_recursion_depth(_stack, _key), do: 0
 
   @spec compact_module_name(String.t()) :: String.t()
   defp compact_module_name(module_name) when is_binary(module_name) do
@@ -3982,7 +3974,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec parse_function_name(term(), term()) :: {String.t(), String.t()}
+  @spec parse_function_name(EvalTypes.runtime_value(), map()) :: {String.t(), String.t()}
   defp parse_function_name(name, context) when is_binary(name) do
     parts = String.split(name, ".", trim: true)
 
@@ -4000,7 +3992,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec evaluate_case_branches(term(), term(), term(), term(), term()) :: term()
+  @spec evaluate_case_branches(list(), EvalTypes.runtime_value(), EvalTypes.env(), map(), EvalTypes.eval_stack()) :: EvalTypes.eval_result()
   defp evaluate_case_branches(branches, subject, env, context, stack) when is_list(branches) do
     Enum.find_value(branches, {:error, :no_case_branch_match}, fn branch ->
       pattern = branch["pattern"] || branch[:pattern] || %{}
@@ -4024,7 +4016,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp evaluate_case_branches(_branches, _subject, _env, _context, _stack),
     do: {:error, :invalid_case_branches}
 
-  @spec match_pattern(term(), term(), term()) :: term()
+  @spec match_pattern(map(), EvalTypes.runtime_value(), map()) :: EvalTypes.pattern_match_result()
   defp match_pattern(pattern, value, context)
 
   defp match_pattern(pattern, value, context) when is_map(pattern) do
@@ -4160,7 +4152,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp match_pattern(_pattern, _value, _context), do: :nomatch
 
-  @spec normalize_pattern_kind(term()) :: term()
+  @spec normalize_pattern_kind(EvalTypes.runtime_value()) :: atom() | String.t() | nil
   defp normalize_pattern_kind("wildcard"), do: :wildcard
   defp normalize_pattern_kind("var"), do: :var
   defp normalize_pattern_kind("literal"), do: :literal
@@ -4173,12 +4165,19 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp normalize_pattern_kind("alias"), do: :alias
   defp normalize_pattern_kind(kind), do: kind
 
-  @spec literal_pattern_match?(term(), term()) :: boolean()
+  @spec literal_pattern_match?(EvalTypes.runtime_value(), EvalTypes.runtime_value()) :: boolean()
   defp literal_pattern_match?("True", true), do: true
   defp literal_pattern_match?("False", false), do: true
   defp literal_pattern_match?(expected, value), do: expected == value
 
-  @spec match_constructor_by_name(String.t(), term(), term(), term(), term(), term()) :: term()
+  @spec match_constructor_by_name(
+          String.t(),
+          map() | nil,
+          String.t() | nil,
+          map(),
+          EvalTypes.runtime_value(),
+          map()
+        ) :: EvalTypes.pattern_match_result()
   defp match_constructor_by_name(name, arg_pattern, bind_name, pattern, value, context)
        when is_binary(name) do
     short_name = short_ctor_name(name)
@@ -4237,7 +4236,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec constructor_tag_for_name(String.t(), term()) :: integer() | nil
+  @spec constructor_tag_for_name(String.t(), map()) :: integer() | nil
   defp constructor_tag_for_name(short_name, context) when is_binary(short_name) and is_map(context) do
     context
     |> Map.get(:constructor_tags, [])
@@ -4255,7 +4254,13 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp constructor_tag_for_name(_short_name, _context), do: nil
 
-  @spec match_constructor_args(term(), term(), term(), list(), term()) :: term()
+  @spec match_constructor_args(
+          map(),
+          map() | nil,
+          String.t() | nil,
+          list(),
+          map()
+        ) :: EvalTypes.pattern_match_result()
   defp match_constructor_args(pattern, arg_pattern, bind_name, args, context) when is_list(args) do
     cond do
       is_map(arg_pattern) and length(args) == 1 ->
@@ -4285,7 +4290,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec match_pattern_list(term(), term(), term()) :: term()
+  @spec match_pattern_list(list(), list(), map()) :: EvalTypes.pattern_match_result()
   defp match_pattern_list(patterns, values, context)
        when is_list(patterns) and is_list(values) and length(patterns) == length(values) do
     Enum.zip(patterns, values)
@@ -4299,7 +4304,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp match_pattern_list(_patterns, _values, _context), do: :nomatch
 
-  @spec field_access(term(), term()) :: term()
+  @spec field_access(EvalTypes.runtime_value(), String.t()) :: EvalTypes.runtime_value()
   defp field_access(base, field) when is_map(base) and is_binary(field) do
     generic_map_value(base, field)
   end
@@ -4309,7 +4314,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp field_access(_base, _field), do: nil
 
-  @spec numeric_env_value(map(), term()) :: number() | nil
+  @spec numeric_env_value(EvalTypes.env(), String.t() | atom()) :: number() | nil
   defp numeric_env_value(env, name) when is_map(env) and is_binary(name) do
     value =
       case Map.fetch(env, name) do
@@ -4334,7 +4339,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp numeric_env_value(_env, _name), do: nil
 
-  @spec normalize_record_fields(term()) :: term()
+  @spec normalize_record_fields(EvalTypes.runtime_value()) :: EvalTypes.runtime_value()
   defp normalize_record_fields(fields) when is_map(fields), do: Map.to_list(fields)
 
   defp normalize_record_fields(fields) when is_list(fields) do
@@ -4363,7 +4368,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp normalize_record_fields(_), do: []
 
-  @spec compare(term(), term(), term()) :: boolean()
+  @spec compare(atom(), EvalTypes.runtime_value(), EvalTypes.runtime_value()) :: boolean()
   defp compare(kind, left, right) do
     normalized = kind |> to_string() |> String.downcase()
 

@@ -13,6 +13,8 @@ defmodule Mix.Tasks.Formatter.Certify do
 
   use Mix.Task
 
+  alias Ide.Formatter.Types
+
   @switches [
     phase: :string,
     baseline: :string,
@@ -22,7 +24,7 @@ defmodule Mix.Tasks.Formatter.Certify do
   ]
 
   @impl true
-  @spec run(term()) :: term()
+  @spec run(Types.mix_task_args()) :: :ok
   def run(args) do
     Mix.Task.run("app.start")
     {opts, _rest, _invalid} = OptionParser.parse(args, switches: @switches)
@@ -41,7 +43,7 @@ defmodule Mix.Tasks.Formatter.Certify do
   end
 
   @doc false
-  @spec build_parity_args(term()) :: term()
+  @spec build_parity_args(keyword()) :: Types.mix_task_args()
   def build_parity_args(opts) when is_list(opts) do
     []
     |> append_opt("--phase", opts[:phase])
@@ -51,7 +53,8 @@ defmodule Mix.Tasks.Formatter.Certify do
     |> append_opt("--shard-index", opts[:shard_index])
   end
 
-  @spec append_opt(term(), term(), term()) :: term()
+  @spec append_opt(Types.mix_task_args(), String.t(), String.t() | integer() | nil) ::
+          Types.mix_task_args()
   defp append_opt(args, _flag, nil), do: args
   defp append_opt(args, _flag, ""), do: args
   defp append_opt(args, flag, value), do: args ++ [flag, to_string(value)]

@@ -5,11 +5,9 @@ defmodule Ide.Formatter.EditEngine do
   alias Ide.Formatter.Semantics.Rules
   alias Ide.Formatter.Semantics.SpacingRules
 
-  @type edit_result :: %{
-          next_content: String.t(),
-          cursor_start: non_neg_integer(),
-          cursor_end: non_neg_integer()
-        }
+  alias Ide.Formatter.Types
+
+  @type edit_result :: Types.edit_result()
 
   @spec compute_tab_edit(String.t(), non_neg_integer(), non_neg_integer(), boolean()) ::
           edit_result()
@@ -83,7 +81,8 @@ defmodule Ide.Formatter.EditEngine do
     end
   end
 
-  @spec apply_single_indent_edit(term(), term(), term(), term()) :: term()
+  @spec apply_single_indent_edit(String.t(), non_neg_integer(), non_neg_integer(), boolean()) ::
+          edit_result()
   defp apply_single_indent_edit(content, line_start, start_offset, outdent?) do
     if outdent? do
       before_cursor = slice_range(content, line_start, start_offset)
@@ -113,7 +112,14 @@ defmodule Ide.Formatter.EditEngine do
     end
   end
 
-  @spec apply_block_indent_edit(term(), term(), term(), term(), term(), term()) :: term()
+  @spec apply_block_indent_edit(
+          String.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer(),
+          boolean()
+        ) :: edit_result()
   defp apply_block_indent_edit(content, line_start, start_offset, end_offset, block_end, outdent?) do
     block = slice_range(content, line_start, block_end)
     lines = String.split(block, "\n")
@@ -147,12 +153,12 @@ defmodule Ide.Formatter.EditEngine do
     %{next_content: next_content, cursor_start: new_start, cursor_end: new_end}
   end
 
-  @spec clamp_offset(term(), term()) :: term()
+  @spec clamp_offset(String.t(), integer()) :: Types.offset()
   defp clamp_offset(content, offset) do
     max(0, min(offset, String.length(content)))
   end
 
-  @spec current_line_start(term(), term()) :: term()
+  @spec current_line_start(String.t(), integer()) :: Types.offset()
   defp current_line_start(content, offset) do
     prefix = slice_range(content, 0, offset)
 
@@ -166,7 +172,7 @@ defmodule Ide.Formatter.EditEngine do
     end
   end
 
-  @spec current_line_end(term(), term()) :: term()
+  @spec current_line_end(String.t(), integer()) :: Types.offset()
   defp current_line_end(content, offset) do
     case :binary.match(slice_range(content, offset, String.length(content)), "\n") do
       :nomatch -> String.length(content)
@@ -174,7 +180,7 @@ defmodule Ide.Formatter.EditEngine do
     end
   end
 
-  @spec selection_block_end(term(), term()) :: term()
+  @spec selection_block_end(String.t(), integer()) :: Types.offset()
   defp selection_block_end(content, end_offset) do
     case :binary.match(slice_range(content, end_offset, String.length(content)), "\n") do
       :nomatch -> String.length(content)
@@ -182,17 +188,18 @@ defmodule Ide.Formatter.EditEngine do
     end
   end
 
-  @spec char_at(term(), term()) :: term()
+  @spec char_at(String.t(), integer()) :: String.t()
   defp char_at(content, offset) do
     String.at(content, offset) || ""
   end
 
-  @spec leading_whitespace(term()) :: term()
+  @spec leading_whitespace(String.t()) :: String.t()
   defp leading_whitespace(value) do
     (Regex.run(~r/^[ \t]*/, value) || [""]) |> hd()
   end
 
-  @spec enter_indent(term(), term(), term(), term(), term()) :: term()
+  @spec enter_indent(String.t(), String.t(), String.t(), non_neg_integer(), non_neg_integer()) ::
+          String.t()
   defp enter_indent(base_indent, current_line, prefix, start_offset, line_end) do
     next_char = char_at(current_line, String.length(prefix))
     trimmed_prefix = String.trim_trailing(prefix)
@@ -215,7 +222,7 @@ defmodule Ide.Formatter.EditEngine do
     end
   end
 
-  @spec type_equals_split_edit(term(), term(), term()) :: term()
+  @spec type_equals_split_edit(String.t(), integer(), String.t()) :: Types.enter_split()
   defp type_equals_split_edit(current_line, cursor_in_line, leading_whitespace) do
     case :binary.match(current_line, "=") do
       {eq_index, 1} ->
@@ -244,14 +251,14 @@ defmodule Ide.Formatter.EditEngine do
     end
   end
 
-  @spec line_tail_blank?(term(), term(), term()) :: term()
+  @spec line_tail_blank?(String.t(), non_neg_integer(), non_neg_integer()) :: boolean()
   defp line_tail_blank?(prefix, start_offset, line_end)
        when is_integer(start_offset) and is_integer(line_end) do
     _ = prefix
     start_offset >= line_end
   end
 
-  @spec continuation_indent_trigger?(term(), term()) :: term()
+  @spec continuation_indent_trigger?(String.t(), String.t()) :: boolean()
   defp continuation_indent_trigger?(current_line, prefix) do
     trimmed_prefix = String.trim_trailing(prefix)
     trimmed_line = String.trim(current_line)
@@ -262,14 +269,15 @@ defmodule Ide.Formatter.EditEngine do
       type_declaration_head_line?(trimmed_line)
   end
 
-  @spec type_declaration_head_line?(term()) :: term()
+  @spec type_declaration_head_line?(String.t()) :: boolean()
   defp type_declaration_head_line?(line) when is_binary(line) do
     starts_type? = String.starts_with?(line, "type ")
     starts_alias? = String.starts_with?(line, "type alias ")
     starts_type? and not starts_alias?
   end
 
-  @spec normalize_union_alignment_for_enter(term(), term()) :: term()
+  @spec normalize_union_alignment_for_enter(String.t(), non_neg_integer()) ::
+          {String.t(), non_neg_integer()}
   defp normalize_union_alignment_for_enter(content, cursor_offset) do
     if Regex.match?(~r/^\s*[=|]\s/m, content) do
       {line, col} = offset_to_line_col(content, cursor_offset)
@@ -285,7 +293,7 @@ defmodule Ide.Formatter.EditEngine do
     end
   end
 
-  @spec offset_to_line_col(term(), term()) :: term()
+  @spec offset_to_line_col(String.t(), integer()) :: Types.line_col()
   defp offset_to_line_col(content, offset) do
     safe_offset = clamp_offset(content, offset)
     prefix = slice_range(content, 0, safe_offset)
@@ -295,7 +303,7 @@ defmodule Ide.Formatter.EditEngine do
     {line, col}
   end
 
-  @spec line_col_to_offset(term(), term(), term()) :: term()
+  @spec line_col_to_offset(String.t(), pos_integer(), non_neg_integer()) :: Types.offset()
   defp line_col_to_offset(content, line, col) do
     lines = String.split(content, "\n", trim: false)
     safe_line = max(1, min(line, length(lines)))
@@ -309,7 +317,7 @@ defmodule Ide.Formatter.EditEngine do
     line_prefix_len + min(safe_col, String.length(line_text))
   end
 
-  @spec slice_range(term(), term(), term()) :: term()
+  @spec slice_range(String.t(), non_neg_integer(), non_neg_integer()) :: String.t()
   defp slice_range(content, from, to) when from <= to do
     String.slice(content, from, to - from)
   end

@@ -54,7 +54,7 @@ defmodule ElmExecutor do
     end
   end
 
-  @spec maybe_strip_dead_code(term(), term(), term()) :: term()
+  @spec maybe_strip_dead_code(ElmEx.IR.t(), String.t(), boolean() | nil) :: ElmEx.IR.t()
   defp maybe_strip_dead_code(ir, _entry_module, false), do: ir
   defp maybe_strip_dead_code(ir, entry_module, _), do: DeadCode.strip(ir, entry_module)
 end

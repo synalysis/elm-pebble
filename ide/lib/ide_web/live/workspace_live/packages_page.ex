@@ -6,8 +6,14 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
 
   alias Ide.Markdown
   alias Ide.Packages
+  alias Ide.Packages.Types, as: PackageTypes
+  alias Phoenix.LiveView.Rendered
 
-  @spec render(term()) :: term()
+  @type assigns :: map()
+  @type rendered :: Rendered.t()
+  @type package_entry :: map()
+
+  @spec render(assigns()) :: rendered()
   def render(assigns) do
     ~H"""
     <section
@@ -318,7 +324,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
     """
   end
 
-  @spec package_compatibility(term(), term()) :: term()
+  @spec package_compatibility(package_entry(), String.t()) :: PackageTypes.compatibility()
   defp package_compatibility(entry, target_root) when is_map(entry) do
     Map.get(entry, :compatibility) ||
       Map.get(entry, "compatibility") ||
@@ -339,7 +345,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
   defp dependency_compatibility(package, _target_root),
     do: Packages.compatibility_for_package(package, platform_target: :watch)
 
-  @spec catalog_search_description(term()) :: String.t()
+  @spec catalog_search_description(String.t()) :: String.t()
   defp catalog_search_description("phone") do
     "Browse packages like on package.elm-lang.org, then add compatible versions to the companion app elm.json. The catalog marks compatibility for the selected target so you can avoid packages that do not fit the phone companion runtime."
   end
@@ -348,13 +354,13 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
     "Browse packages like on package.elm-lang.org, then add compatible versions to the watch app elm.json. The catalog hides packages that pull in browser or DOM dependencies, so not everything on the registry appears here — only what fits a Pebble watch app."
   end
 
-  @spec compatibility_badge_label(term()) :: term()
+  @spec compatibility_badge_label(PackageTypes.compatibility()) :: String.t()
   defp compatibility_badge_label(%{status: "blocked"}), do: "Blocked"
   defp compatibility_badge_label(%{status: "partial"}), do: "Partial"
   defp compatibility_badge_label(%{status: "supported"}), do: "Supported"
   defp compatibility_badge_label(_), do: "Unknown"
 
-  @spec compatibility_badge_class(term()) :: term()
+  @spec compatibility_badge_class(PackageTypes.compatibility()) :: String.t()
   defp compatibility_badge_class(%{status: "blocked"}),
     do: "rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-800"
 
@@ -367,7 +373,7 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
   defp compatibility_badge_class(_),
     do: "rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700"
 
-  @spec compatibility_reason(term()) :: term()
+  @spec compatibility_reason(PackageTypes.compatibility()) :: String.t() | nil
   defp compatibility_reason(%{message: message}) when is_binary(message) and message != "",
     do: message
 

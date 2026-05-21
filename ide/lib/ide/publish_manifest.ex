@@ -9,10 +9,13 @@ defmodule Ide.PublishManifest do
         }
   @type release_notes_result :: %{path: String.t(), markdown: String.t()}
 
+  @type publish_error ::
+          :publish_manifest_output_not_configured | File.posix() | Exception.t()
+
   @doc """
   Writes a publish manifest JSON file for a project.
   """
-  @spec export(String.t(), keyword()) :: {:ok, export_result()} | {:error, term()}
+  @spec export(String.t(), keyword()) :: {:ok, export_result()} | {:error, publish_error()}
   def export(project_slug, opts) do
     with {:ok, output_root} <- output_root(),
          :ok <- File.mkdir_p(Path.join(output_root, project_slug)) do
@@ -63,7 +66,7 @@ defmodule Ide.PublishManifest do
   Writes a release notes draft markdown file for a project.
   """
   @spec export_release_notes(String.t(), String.t()) ::
-          {:ok, release_notes_result()} | {:error, term()}
+          {:ok, release_notes_result()} | {:error, publish_error()}
   def export_release_notes(project_slug, markdown) do
     with {:ok, output_root} <- output_root(),
          :ok <- File.mkdir_p(Path.join(output_root, project_slug)) do
@@ -76,7 +79,7 @@ defmodule Ide.PublishManifest do
     error -> {:error, error}
   end
 
-  @spec output_root() :: term()
+  @spec output_root() :: {:ok, String.t()} | {:error, :publish_manifest_output_not_configured}
   defp output_root do
     path =
       Application.get_env(:ide, Ide.PublishManifest, [])
@@ -85,7 +88,7 @@ defmodule Ide.PublishManifest do
     if is_binary(path), do: {:ok, path}, else: {:error, :publish_manifest_output_not_configured}
   end
 
-  @spec timestamp() :: term()
+  @spec timestamp() :: String.t()
   defp timestamp do
     DateTime.utc_now()
     |> DateTime.to_iso8601(:basic)

@@ -4,10 +4,11 @@ defmodule Elmc.Runtime.Generator do
   """
 
   alias Elmc.Runtime.JsonSections
+  alias Elmc.Runtime.Generator.Types
 
   @type write_opts :: [prune_from_dir: String.t() | nil, pebble_int32: boolean()]
 
-  @spec write_runtime(String.t(), write_opts()) :: :ok | {:error, term()}
+  @spec write_runtime(String.t(), write_opts()) :: :ok | {:error, Types.file_error()}
   def write_runtime(runtime_dir, opts \\ []) do
     header = runtime_header(opts)
     source = runtime_source()
@@ -22,7 +23,8 @@ defmodule Elmc.Runtime.Generator do
     end
   end
 
-  @spec maybe_prune_runtime(term(), term(), term()) :: term()
+  @spec maybe_prune_runtime(Types.runtime_header(), Types.runtime_source(), String.t() | nil) ::
+          Types.prune_pair()
   defp maybe_prune_runtime(header, source, prune_from_dir) when is_binary(prune_from_dir) do
     with refs when map_size(refs) > 0 <- collect_runtime_references(prune_from_dir),
          source <- maybe_drop_float_runtime(source, refs),
@@ -105,7 +107,7 @@ defmodule Elmc.Runtime.Generator do
     end
   end
 
-  @spec collect_runtime_references(term()) :: term()
+  @spec collect_runtime_references(String.t()) :: Types.runtime_ref_map()
   defp collect_runtime_references(dir) do
     files =
       Path.wildcard(Path.join(dir, "**/*.c"), match_dot: true)
@@ -124,7 +126,7 @@ defmodule Elmc.Runtime.Generator do
     end)
   end
 
-  @spec parse_function_defs(term()) :: term()
+  @spec parse_function_defs(Types.runtime_source()) :: {:ok, [Types.function_def()]}
   defp parse_function_defs(source) do
     line_starts = line_start_offsets(source)
     lines = String.split(source, "\n", trim: false)
@@ -165,7 +167,7 @@ defmodule Elmc.Runtime.Generator do
     {:ok, defs}
   end
 
-  @spec line_start_offsets(term()) :: term()
+  @spec line_start_offsets(Types.runtime_source()) :: Types.line_offsets()
   defp line_start_offsets(source) do
     {_offset, starts} =
       source
@@ -178,12 +180,13 @@ defmodule Elmc.Runtime.Generator do
     Enum.reverse(starts)
   end
 
-  @spec find_matching_brace(term(), term()) :: term()
+  @spec find_matching_brace(Types.runtime_source(), non_neg_integer()) :: Types.brace_result()
   defp find_matching_brace(source, open_idx) do
     do_find_matching_brace(source, open_idx, byte_size(source), 0)
   end
 
-  @spec do_find_matching_brace(term(), term(), term(), term()) :: term()
+  @spec do_find_matching_brace(Types.runtime_source(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
+          Types.brace_result()
   defp do_find_matching_brace(_source, idx, source_size, _depth) when idx >= source_size,
     do: {:error, :unbalanced_braces}
 
@@ -205,7 +208,7 @@ defmodule Elmc.Runtime.Generator do
     end
   end
 
-  @spec transitive_keep_set(term(), term()) :: term()
+  @spec transitive_keep_set([Types.function_def()], Types.runtime_ref_map()) :: Types.keep_set()
   defp transitive_keep_set(defs, refs) do
     def_map = Map.new(defs, &{&1.name, &1.body})
     def_names = Map.keys(def_map) |> MapSet.new()
@@ -219,7 +222,7 @@ defmodule Elmc.Runtime.Generator do
     walk_keep(seed, MapSet.to_list(seed), def_map)
   end
 
-  @spec walk_keep(term(), term(), term()) :: term()
+  @spec walk_keep(Types.keep_set(), [String.t()], Types.def_map()) :: Types.keep_set()
   defp walk_keep(seen, [], _def_map), do: seen
 
   defp walk_keep(seen, frontier, def_map) do
@@ -241,7 +244,7 @@ defmodule Elmc.Runtime.Generator do
     walk_keep(MapSet.union(seen, next), MapSet.to_list(next), def_map)
   end
 
-  @spec called_functions(term(), term()) :: term()
+  @spec called_functions(Types.runtime_source(), Types.def_map()) :: [String.t()]
   defp called_functions(body, def_map) when is_binary(body) do
     Regex.scan(~r/\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/, body)
     |> Enum.map(fn [_, name] -> name end)
@@ -260,7 +263,8 @@ defmodule Elmc.Runtime.Generator do
 
   defp runtime_call_dependencies(name), do: [name]
 
-  @spec prune_source(term(), term(), term()) :: term()
+  @spec prune_source(Types.runtime_source(), [Types.function_def()], Types.keep_set()) ::
+          Types.runtime_source()
   defp prune_source(source, defs, kept_names) do
     first_start =
       case defs do
@@ -284,7 +288,7 @@ defmodule Elmc.Runtime.Generator do
     preamble <> kept_bodies <> "\n"
   end
 
-  @spec maybe_drop_process_globals(term(), term()) :: term()
+  @spec maybe_drop_process_globals(Types.runtime_source(), Types.keep_set()) :: Types.runtime_source()
   defp maybe_drop_process_globals(preamble, kept_names) do
     process_api =
       MapSet.new([

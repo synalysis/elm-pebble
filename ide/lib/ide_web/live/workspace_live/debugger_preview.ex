@@ -4,7 +4,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   @default_screen_w 144
   @default_screen_h 168
 
-  @spec screen_dimensions(term(), term()) :: {pos_integer(), pos_integer()}
+  @type runtime_input :: map() | nil
+  @type view_tree :: map() | nil
+  @type wire_value :: String.t() | integer() | float() | boolean() | map() | list() | nil
+  @type model_map :: map()
+  @type view_node :: map()
+  @type svg_op :: map()
+  @type compact_scene :: map()
+  @type bounds_map :: map()
+  @type unresolved_row :: map()
+  @type hash_input :: map() | [String.t()]
+
+  @spec screen_dimensions(runtime_input(), view_tree()) :: {pos_integer(), pos_integer()}
   def screen_dimensions(runtime, tree \\ nil) do
     raw_model = raw_runtime_model(runtime)
     model = runtime_model(runtime)
@@ -30,7 +41,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     {dimension_int(width, @default_screen_w), dimension_int(height, @default_screen_h)}
   end
 
-  @spec screen_round?(term(), term()) :: boolean()
+  @spec screen_round?(runtime_input(), view_tree()) :: boolean()
   def screen_round?(runtime, tree \\ nil) do
     raw_model = raw_runtime_model(runtime)
     model = runtime_model(runtime)
@@ -53,7 +64,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     boolean_value?(round?) || shape == "round"
   end
 
-  @spec svg_ops(term(), term()) :: term()
+  @spec svg_ops(view_tree(), runtime_input()) :: [svg_op()]
   def svg_ops(tree, runtime) when is_map(tree) do
     runtime_ops = runtime_compact_scene_output(runtime)
 
@@ -72,7 +83,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   def svg_ops(_tree, runtime), do: runtime_compact_scene_output(runtime)
 
-  @spec compact_scene(term()) :: map()
+  @spec compact_scene(runtime_input()) :: map()
   def compact_scene(runtime) when is_map(runtime) do
     model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
 
@@ -94,7 +105,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   def compact_scene(_runtime), do: build_compact_scene([])
 
-  @spec compact_scene_diff(term(), term()) :: map()
+  @spec compact_scene_diff(compact_scene() | runtime_input(), compact_scene() | runtime_input()) :: map()
   def compact_scene_diff(previous, current) do
     previous_scene = normalize_compact_scene_map(previous)
     current_scene = normalize_compact_scene_map(current)
@@ -131,7 +142,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     }
   end
 
-  @spec unresolved_summary(term()) :: term()
+  @spec unresolved_summary([unresolved_row()]) :: String.t()
   def unresolved_summary(rows) when is_list(rows) and rows != [] do
     sample =
       rows
@@ -146,11 +157,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   def unresolved_summary(_rows), do: ""
 
-  @spec display_node_type(term()) :: String.t()
+  @spec display_node_type(wire_value()) :: String.t()
   defp display_node_type(value) when is_binary(value), do: value
   defp display_node_type(_), do: "node"
 
-  @spec arc_path(term()) :: term()
+  @spec arc_path(svg_op()) :: String.t()
   def arc_path(op) when is_map(op) do
     x = op.x || 0
     y = op.y || 0
@@ -184,7 +195,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   def arc_path(_), do: ""
 
-  @spec runtime_model(term()) :: term()
+  @spec runtime_model(runtime_input()) :: model_map()
   def runtime_model(runtime) when is_map(runtime) do
     model = raw_runtime_model(runtime)
     runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model)
@@ -193,24 +204,24 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   def runtime_model(_runtime), do: %{}
 
-  @spec raw_runtime_model(term()) :: term()
+  @spec raw_runtime_model(runtime_input()) :: model_map()
   defp raw_runtime_model(runtime) when is_map(runtime) do
     Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
   end
 
   defp raw_runtime_model(_runtime), do: %{}
 
-  @spec first_map([term()]) :: map()
+  @spec first_map([wire_value()]) :: map()
   defp first_map(values) when is_list(values) do
     Enum.find(values, %{}, &is_map/1)
   end
 
-  @spec first_present([term()]) :: term()
+  @spec first_present([wire_value()]) :: wire_value()
   defp first_present(values) when is_list(values) do
     Enum.find(values, fn value -> not is_nil(value) end)
   end
 
-  @spec map_get_any(term(), String.t()) :: term()
+  @spec map_get_any(map() | nil, String.t()) :: wire_value()
   defp map_get_any(map, key) when is_map(map) and is_binary(key) do
     case Map.fetch(map, key) do
       {:ok, value} ->
@@ -223,7 +234,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp map_get_any(_map, _key), do: nil
 
-  @spec map_value_by_atom_name(map(), String.t()) :: term()
+  @spec map_value_by_atom_name(map(), String.t()) :: wire_value()
   defp map_value_by_atom_name(map, key) when is_map(map) and is_binary(key) do
     Enum.find_value(map, fn
       {atom_key, value} when is_atom(atom_key) ->
@@ -234,7 +245,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end)
   end
 
-  @spec dimension_int(term(), pos_integer()) :: pos_integer()
+  @spec dimension_int(wire_value(), pos_integer()) :: pos_integer()
   defp dimension_int(value, _fallback) when is_integer(value) and value > 0, do: value
 
   defp dimension_int(value, _fallback) when is_float(value) and value > 0,
@@ -249,11 +260,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp dimension_int(_value, fallback), do: fallback
 
-  @spec boolean_value?(term()) :: boolean()
+  @spec boolean_value?(wire_value()) :: boolean()
   defp boolean_value?(value) when value in [true, 1, "true", "True", "TRUE"], do: true
   defp boolean_value?(_value), do: false
 
-  @spec primary_int_model_value(term()) :: term()
+  @spec primary_int_model_value(model_map()) :: integer() | nil
   def primary_int_model_value(model) when is_map(model) do
     ints =
       model
@@ -268,7 +279,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   def primary_int_model_value(_model), do: nil
 
-  @spec text_label_from_node(term(), term()) :: term()
+  @spec text_label_from_node(view_node(), model_map()) :: String.t()
   def text_label_from_node(node, model \\ %{})
 
   def text_label_from_node(node, model) when is_map(node) and is_map(model) do
@@ -288,7 +299,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   def text_label_from_node(_node, _model), do: "Label"
 
-  @spec resolve_text_label_value(term(), map()) :: String.t() | nil
+  @spec resolve_text_label_value(view_node(), map()) :: String.t() | nil
   defp resolve_text_label_value(node, env) when is_map(node) and is_map(env) do
     value = Map.get(node, "value") || Map.get(node, :value)
     op = (Map.get(node, "op") || Map.get(node, :op) || "") |> to_string()
@@ -371,7 +382,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp resolve_field_access_text(_node, _env), do: nil
 
-  @spec resolve_raw_value(term(), map()) :: term()
+  @spec resolve_raw_value(view_node(), map()) :: wire_value()
   defp resolve_raw_value(node, env) when is_map(node) and is_map(env) do
     value = Map.get(node, "value") || Map.get(node, :value)
     type = (Map.get(node, "type") || Map.get(node, :type) || "") |> to_string()
@@ -395,7 +406,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp resolve_raw_value(_node, _env), do: nil
 
-  @spec normalize_text_value(term()) :: String.t() | nil
+  @spec normalize_text_value(wire_value()) :: String.t() | nil
   defp normalize_text_value(value) when is_binary(value) do
     if String.trim(value) != "", do: value, else: nil
   end
@@ -407,7 +418,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp normalize_text_value(_value), do: nil
 
-  @spec map_value_by_key(map(), String.t()) :: term()
+  @spec map_value_by_key(map(), String.t()) :: wire_value()
   defp map_value_by_key(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) ||
       Enum.find_value(map, fn
@@ -419,14 +430,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
       end)
   end
 
-  @spec pebble_angle_to_rad(term()) :: term()
+  @spec pebble_angle_to_rad(integer()) :: float()
   defp pebble_angle_to_rad(angle) when is_integer(angle) do
     angle * 2.0 * :math.pi() / 65_536.0 - :math.pi() / 2.0
   end
 
   defp pebble_angle_to_rad(_), do: -:math.pi() / 2.0
 
-  @spec runtime_compact_scene_output(term()) :: [map()]
+  @spec runtime_compact_scene_output(runtime_input()) :: [map()]
   defp runtime_compact_scene_output(runtime) do
     runtime
     |> compact_scene()
@@ -474,7 +485,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     }
   end
 
-  @spec normalize_compact_scene_map(term()) :: map()
+  @spec normalize_compact_scene_map(compact_scene() | runtime_input()) :: map()
   defp normalize_compact_scene_map(%{version: _, ops: _} = scene),
     do: normalize_compact_scene(scene)
 
@@ -505,7 +516,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end)
   end
 
-  @spec normalize_kind_atom(term()) :: atom() | term()
+  @spec normalize_kind_atom(String.t() | atom()) :: atom()
   defp normalize_kind_atom(value) when is_atom(value), do: value
 
   defp normalize_kind_atom(value) when is_binary(value) do
@@ -663,12 +674,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp compact_op_bounds(_op), do: nil
 
-  @spec op_hash(term()) :: term()
+  @spec op_hash(svg_op() | map()) :: String.t() | nil
   defp op_hash(%{hash: hash}), do: hash
   defp op_hash(%{"hash" => hash}), do: hash
   defp op_hash(_), do: nil
 
-  @spec op_bounds(term()) :: term()
+  @spec op_bounds(svg_op() | map() | nil) :: bounds_map() | nil
   defp op_bounds(%{bounds: bounds}), do: bounds
   defp op_bounds(%{"bounds" => bounds}), do: bounds
   defp op_bounds(_), do: nil
@@ -687,17 +698,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end)
   end
 
-  @spec bounds_map(term(), term(), term(), term()) :: map()
+  @spec bounds_map(wire_value(), wire_value(), wire_value(), wire_value()) :: map()
   defp bounds_map(x, y, w, h), do: %{x: x || 0, y: y || 0, w: max(w || 0, 0), h: max(h || 0, 0)}
 
-  @spec stable_hash(term()) :: String.t()
+  @spec stable_hash(hash_input()) :: String.t()
   defp stable_hash(value) do
     :sha256
     |> :crypto.hash(:erlang.term_to_binary(value))
     |> Base.encode16(case: :lower)
   end
 
-  @spec normalize_svg_op(term()) :: term()
+  @spec normalize_svg_op(map()) :: svg_op() | map() | nil
   defp normalize_svg_op(op) when is_map(op) do
     kind = to_string(Map.get(op, "kind") || Map.get(op, :kind) || "")
 
@@ -955,7 +966,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp normalize_svg_op(_op), do: nil
 
-  @spec maybe_put_svg_source(term(), map()) :: term()
+  @spec maybe_put_svg_source(svg_op(), map()) :: svg_op()
   defp maybe_put_svg_source(%{} = normalized, original) when is_map(original) do
     case Map.get(original, "source") || Map.get(original, :source) do
       %{} = source -> Map.put(normalized, :source, source)
@@ -1078,7 +1089,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp pop_svg_style([_current, parent | rest]), do: [parent | rest]
   defp pop_svg_style(stack), do: stack
 
-  @spec update_svg_style([map()], atom(), term()) :: [map()]
+  @spec update_svg_style([svg_op()], atom(), wire_value()) :: [map()]
   defp update_svg_style([style | rest], key, value), do: [Map.put(style, key, value) | rest]
   defp update_svg_style([], key, value), do: [Map.put(default_svg_style(), key, value)]
 
@@ -1137,10 +1148,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     |> Map.put(:compositing_mode, style.compositing_mode)
   end
 
-  @spec style_color(map(), atom(), term()) :: term()
+  @spec style_color(map(), atom(), wire_value()) :: integer() | nil
   defp style_color(style, key, fallback), do: Map.get(style, key) || fallback
 
-  @spec map_integer_required(term(), term()) :: term()
+  @spec map_integer_required(map(), String.t()) :: {:ok, integer()} | :error
   defp map_integer_required(map, key) when is_map(map) and is_binary(key) do
     value = map_integer(map, key, :__missing__)
     if is_integer(value), do: {:ok, value}, else: :error
@@ -1148,7 +1159,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp map_integer_required(_map, _key), do: :error
 
-  @spec map_integers_required(term(), term()) :: term()
+  @spec map_integers_required(map(), [String.t()]) :: {:ok, [integer()]} | :error
   defp map_integers_required(map, keys) when is_map(map) and is_list(keys) do
     values = Enum.map(keys, &map_integer_required(map, &1))
 
@@ -1161,7 +1172,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp map_integers_required(_map, _keys), do: :error
 
-  @spec map_path_required(term()) :: term()
+  @spec map_path_required(map()) :: {:ok, map()} | :error
   defp map_path_required(map) when is_map(map) do
     with {:ok, points} <- map_points_required(map),
          {:ok, offset_x} <- map_integer_required(map, "offset_x"),
@@ -1173,7 +1184,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec map_points_required(term()) :: term()
+  @spec map_points_required(map()) :: {:ok, [[integer()]]} | :error
   defp map_points_required(map) when is_map(map) do
     points = Map.get(map, "points") || Map.get(map, :points)
 
@@ -1194,7 +1205,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec normalize_point_pair(term()) :: term()
+  @spec normalize_point_pair(wire_value()) :: {:ok, [integer()]} | :error
   defp normalize_point_pair([x, y]) when is_integer(x) and is_integer(y), do: {:ok, [x, y]}
   defp normalize_point_pair({x, y}) when is_integer(x) and is_integer(y), do: {:ok, [x, y]}
 
@@ -1204,7 +1215,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp normalize_point_pair(%{x: x, y: y}) when is_integer(x) and is_integer(y), do: {:ok, [x, y]}
   defp normalize_point_pair(_), do: :error
 
-  @spec unresolved_svg_op(term(), term(), term()) :: term()
+  @spec unresolved_svg_op(String.t(), [String.t()], map()) :: svg_op()
   defp unresolved_svg_op(node_type, required_keys, op) do
     %{
       kind: :unresolved,
@@ -1215,7 +1226,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     }
   end
 
-  @spec map_integer(term(), term(), term()) :: term()
+  @spec map_integer(map(), String.t(), integer() | atom()) :: integer() | atom()
   defp map_integer(map, key, fallback) when is_map(map) and is_binary(key) do
     atom_key =
       case key do
@@ -1271,7 +1282,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec collect_view_nodes(term()) :: term()
+  @spec collect_view_nodes(view_tree()) :: [view_node()]
   defp collect_view_nodes(node) when is_map(node) do
     type = node |> Map.get("type", Map.get(node, :type, "")) |> to_string()
 
@@ -1337,7 +1348,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     here ++ child_nodes
   end
 
-  @spec svg_op_from_node(term(), term(), term()) :: term()
+  @spec svg_op_from_node(view_node(), integer() | nil, model_map()) :: [svg_op()]
   defp svg_op_from_node(node, primary_int, model) when is_map(node) do
     type = node |> Map.get("type", Map.get(node, :type, "")) |> to_string()
     ints = node_int_args(node, model)
@@ -1535,7 +1546,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec svg_op_from_node_children(map(), String.t(), [integer()], term(), term()) :: [map()]
+  @spec svg_op_from_node_children(map(), String.t(), [integer()], integer() | nil, model_map()) :: [map()]
   defp svg_op_from_node_children(node, type, ints, primary_int, model) do
     case type do
       "clear" ->
@@ -2034,7 +2045,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     ]
   end
 
-  @spec node_int_args(map(), term()) :: [integer()]
+  @spec node_int_args(map(), model_map()) :: [integer()]
   defp node_int_args(node, model) when is_map(node) do
     case structured_node_int_args(node, model) do
       {:ok, values} ->
@@ -2048,7 +2059,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec structured_node_int_args(map(), term()) :: {:ok, [integer()]} | :error
+  @spec structured_node_int_args(map(), model_map()) :: {:ok, [integer()]} | :error
   defp structured_node_int_args(node, model) when is_map(node) do
     type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
     children = node_children(node)
@@ -2118,10 +2129,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec node_int_value(term()) :: term()
+  @spec node_int_value(view_node()) :: integer() | nil
   defp node_int_value(node), do: node_int_value(node, %{})
 
-  @spec node_int_value(term(), term()) :: term()
+  @spec node_int_value(view_node(), model_map()) :: integer() | nil
   defp node_int_value(node, model) when is_map(node) do
     evaluated = evaluated_node_value(node, model)
     value = Map.get(node, "value") || Map.get(node, :value)
@@ -2154,19 +2165,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp node_int_value(_node, _model), do: nil
 
-  @spec evaluated_node_value(term(), term()) :: term()
+  @spec evaluated_node_value(view_node(), model_map()) :: wire_value()
   defp evaluated_node_value(node, model) when is_map(node) and is_map(model) do
     ElmExecutor.Runtime.SemanticExecutor.evaluate_view_tree_value(node, model, %{})
   end
 
   defp evaluated_node_value(_node, _model), do: nil
 
-  @spec node_color_value(map(), term()) :: integer() | nil
+  @spec node_color_value(map(), model_map()) :: integer() | nil
   defp node_color_value(node, model) when is_map(node) do
     node_int_value(node, model) || color_constructor_value(node, model)
   end
 
-  @spec bitmap_node_id(map(), term()) :: integer() | nil
+  @spec bitmap_node_id(map(), model_map()) :: integer() | nil
   defp bitmap_node_id(node, model) when is_map(node) do
     evaluated = evaluated_node_value(node, model)
 
@@ -2190,7 +2201,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec color_constructor_value(map(), term()) :: integer() | nil
+  @spec color_constructor_value(map(), model_map()) :: integer() | nil
   defp color_constructor_value(node, model) when is_map(node) do
     target =
       to_string(Map.get(node, "qualified_target") || Map.get(node, :qualified_target) || "")
@@ -2232,13 +2243,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec rect_node_ints(term(), term()) :: {:ok, [integer()]} | :error
+  @spec rect_node_ints(view_node(), model_map()) :: {:ok, [integer()]} | :error
   defp rect_node_ints(node, model), do: record_field_ints(node, ["x", "y", "w", "h"], model)
 
-  @spec point_node_ints(term(), term()) :: {:ok, [integer()]} | :error
+  @spec point_node_ints(view_node(), model_map()) :: {:ok, [integer()]} | :error
   defp point_node_ints(node, model), do: record_field_ints(node, ["x", "y"], model)
 
-  @spec text_option_names_from_node(term(), term()) :: {String.t(), String.t()}
+  @spec text_option_names_from_node(view_node(), model_map()) :: {String.t(), String.t()}
   defp text_option_names_from_node(node, model) do
     case record_field_ints(node, ["alignment", "overflow"], model) do
       {:ok, [alignment, overflow]} ->
@@ -2257,7 +2268,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defp text_overflow_name(2), do: "fill"
   defp text_overflow_name(_), do: "word_wrap"
 
-  @spec record_field_ints(term(), [String.t()], term()) :: {:ok, [integer()]} | :error
+  @spec record_field_ints(view_node(), [String.t()], model_map()) :: {:ok, [integer()]} | :error
   defp record_field_ints(node, keys, model) when is_map(node) and is_list(keys) do
     evaluated = evaluated_node_value(node, model)
 
@@ -2286,7 +2297,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp record_field_ints(_node, _keys, _model), do: :error
 
-  @spec field_node(term(), String.t()) :: map() | nil
+  @spec field_node(view_node(), String.t()) :: map() | nil
   defp field_node(node, key) when is_map(node) and is_binary(key) do
     node
     |> node_children()
@@ -2298,7 +2309,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp field_node(_node, _key), do: nil
 
-  @spec node_children(term()) :: [map()]
+  @spec node_children(view_node()) :: [map()]
   defp node_children(node) when is_map(node) do
     case Map.get(node, "children") || Map.get(node, :children) do
       list when is_list(list) ->
@@ -2333,7 +2344,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec path_from_view_node(term()) :: term()
+  @spec path_from_view_node(view_node()) :: {:ok, map()} | :error
   defp path_from_view_node(node) when is_map(node) do
     children = node_children(node)
 
@@ -2353,7 +2364,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec points_from_points_node(term()) :: term()
+  @spec points_from_points_node(view_node()) :: {:ok, [any()]} | :error
   defp points_from_points_node(node) when is_map(node) do
     type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
 
@@ -2374,7 +2385,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec point_pair_from_point_node(term()) :: term()
+  @spec point_pair_from_point_node(view_node()) :: {:ok, [integer()]} | :error
   defp point_pair_from_point_node(node) when is_map(node) do
     type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
     op = to_string(Map.get(node, "op") || Map.get(node, :op) || "")
@@ -2436,10 +2447,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp point_pair_from_point_node(_), do: :error
 
-  @spec field_value_int(term()) :: integer() | nil
+  @spec field_value_int(view_node()) :: integer() | nil
   defp field_value_int(field_node), do: field_value_int(field_node, %{})
 
-  @spec field_value_int(term(), term()) :: integer() | nil
+  @spec field_value_int(view_node(), model_map()) :: integer() | nil
   defp field_value_int(field_node, model) when is_map(field_node) do
     case node_children(field_node) do
       [value_node | _] -> node_int_value(value_node, model)
@@ -2449,13 +2460,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp field_value_int(_field_node, _model), do: nil
 
-  @spec extract_ints(term()) :: term()
+  @spec extract_ints(String.t()) :: [integer()]
   defp extract_ints(text) when is_binary(text) do
     Regex.scan(~r/-?\d+/, text)
     |> Enum.map(fn [raw] -> String.to_integer(raw) end)
   end
 
-  @spec require_ints(term(), term()) :: term()
+  @spec require_ints([integer()], pos_integer()) :: {:ok, [integer()]} | :error
   defp require_ints(values, required)
        when is_list(values) and is_integer(required) and required > 0 do
     if length(values) >= required do
@@ -2468,7 +2479,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   defp require_ints(_values, _required), do: :error
 
-  @spec clamp(term(), term(), term()) :: term()
+  @spec clamp(integer(), integer(), integer()) :: integer()
   defp clamp(value, min, max) when is_integer(value), do: max(min, min(value, max))
-  defp clamp(_value, min, _max), do: min
 end

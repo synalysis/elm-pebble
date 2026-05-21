@@ -4,6 +4,11 @@ defmodule Ide.Mcp.Server do
   """
 
   alias Ide.Mcp.Protocol
+  alias Ide.Mcp.Types
+
+  @type capabilities :: Protocol.capabilities()
+  @type read_message_result ::
+          {:ok, Protocol.json_rpc_request()} | :eof | {:error, Types.stdio_read_error()}
 
   @spec run(keyword()) :: :ok
   def run(opts \\ []) do
@@ -11,7 +16,7 @@ defmodule Ide.Mcp.Server do
     loop(capabilities)
   end
 
-  @spec loop(term()) :: term()
+  @spec loop(capabilities()) :: :ok
   defp loop(capabilities) do
     case read_message() do
       {:ok, message} ->
@@ -26,7 +31,7 @@ defmodule Ide.Mcp.Server do
     end
   end
 
-  @spec maybe_respond(term(), term()) :: term()
+  @spec maybe_respond(Protocol.json_rpc_request(), capabilities()) :: :ok
   defp maybe_respond(%{"id" => _id} = request, capabilities) do
     request
     |> Protocol.response(capabilities)
@@ -35,7 +40,7 @@ defmodule Ide.Mcp.Server do
 
   defp maybe_respond(_notification, _capabilities), do: :ok
 
-  @spec read_message() :: term()
+  @spec read_message() :: read_message_result()
   defp read_message do
     with {:ok, content_length} <- read_headers(nil),
          {:ok, payload} <- read_exact(content_length),
@@ -44,7 +49,8 @@ defmodule Ide.Mcp.Server do
     end
   end
 
-  @spec read_headers(term()) :: term()
+  @spec read_headers(non_neg_integer() | nil) ::
+          {:ok, non_neg_integer()} | :eof | {:error, Types.stdio_read_error()}
   defp read_headers(content_length) do
     case IO.binread(:stdio, :line) do
       :eof ->
@@ -80,7 +86,7 @@ defmodule Ide.Mcp.Server do
     end
   end
 
-  @spec read_exact(term()) :: term()
+  @spec read_exact(non_neg_integer()) :: {:ok, String.t()} | {:error, Types.stdio_read_error()}
   defp read_exact(0), do: {:ok, ""}
 
   defp read_exact(length) when is_integer(length) and length > 0 do
@@ -91,7 +97,9 @@ defmodule Ide.Mcp.Server do
     end
   end
 
-  @spec write_message(term()) :: term()
+  @spec write_message(Protocol.json_rpc_response() | nil) :: :ok
+  defp write_message(nil), do: :ok
+
   defp write_message(payload) do
     encoded = Jason.encode!(payload)
 

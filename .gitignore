@@ -57,3 +57,4 @@ ide/workspace_projects/**
 # Locally built escript binaries
 elmc/elmc
 elm_executor/elm_executor
+start-ide-public_custom.sh

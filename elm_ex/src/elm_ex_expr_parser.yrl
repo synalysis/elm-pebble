@@ -277,26 +277,18 @@ build_app(Base, Args) ->
     #{op := field_call, arg := Arg, field := Field, args := ExistingArgs} ->
       #{op => field_call, arg => Arg, field => Field, args => ExistingArgs ++ Args};
     #{op := compose_left, f := F, g := G} ->
-      case Args of
-        [Arg | Rest] ->
-          First = build_named_call(F, [build_named_call(G, [Arg])]),
-          case Rest of
-            [] -> First;
-            _ -> build_app(First, Rest)
-          end;
-        [] ->
-          #{op => call, name => <<"__apply__">>, args => [Base]}
+      [Arg | Rest] = Args,
+      First = build_named_call(F, [build_named_call(G, [Arg])]),
+      case Rest of
+        [] -> First;
+        _ -> build_app(First, Rest)
       end;
     #{op := compose_right, f := F, g := G} ->
-      case Args of
-        [Arg | Rest] ->
-          First = build_named_call(G, [build_named_call(F, [Arg])]),
-          case Rest of
-            [] -> First;
-            _ -> build_app(First, Rest)
-          end;
-        [] ->
-          #{op => call, name => <<"__apply__">>, args => [Base]}
+      [Arg | Rest] = Args,
+      First = build_named_call(G, [build_named_call(F, [Arg])]),
+      case Rest of
+        [] -> First;
+        _ -> build_app(First, Rest)
       end;
     _ ->
       #{op => call, name => "__apply__", args => [Base | Args]}

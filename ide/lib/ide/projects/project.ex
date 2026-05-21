@@ -6,6 +6,8 @@ defmodule Ide.Projects.Project do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Ide.Projects.Types
+
   @target_types ~w(app watchface companion)
   @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time game-basic game-tiny-bird game-greeneys-run game-2048)
 
@@ -22,11 +24,11 @@ defmodule Ide.Projects.Project do
           latest_published_version: String.t() | nil,
           latest_published_at: DateTime.t() | nil,
           store_sync_at: DateTime.t() | nil,
-          store_metadata_cache: map() | nil,
-          package_metadata_cache: map() | nil,
-          release_defaults: map() | nil,
-          github: map() | nil,
-          debugger_settings: map() | nil,
+          store_metadata_cache: Types.store_metadata() | nil,
+          package_metadata_cache: Types.package_metadata() | nil,
+          release_defaults: Types.release_defaults() | nil,
+          github: Types.github_config() | nil,
+          debugger_settings: Types.debugger_settings() | nil,
           template: String.t() | nil,
           inserted_at: DateTime.t() | nil,
           updated_at: DateTime.t() | nil
@@ -57,7 +59,7 @@ defmodule Ide.Projects.Project do
   @doc """
   Builds a changeset for project create/update.
   """
-  @spec changeset(term(), term()) :: term()
+  @spec changeset(t() | %__MODULE__{}, Types.project_attrs()) :: Ecto.Changeset.t()
   def changeset(project, attrs) do
     project
     |> cast(attrs, [

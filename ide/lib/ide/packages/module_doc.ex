@@ -1,6 +1,8 @@
 defmodule Ide.Packages.ModuleDoc do
   @moduledoc false
 
+  alias Ide.Packages.Types
+
   @doc """
   Converts a single module entry from package.elm-lang.org `docs.json` into Markdown
   suitable for `Ide.Markdown.readme_to_html/1`.
@@ -22,7 +24,7 @@ defmodule Ide.Packages.ModuleDoc do
     Enum.join(sections, "\n\n---\n\n")
   end
 
-  @spec module_overview(term(), term()) :: term()
+  @spec module_overview(String.t(), String.t() | nil) :: String.t()
   defp module_overview("", _), do: ""
 
   defp module_overview(name, comment) do
@@ -35,7 +37,7 @@ defmodule Ide.Packages.ModuleDoc do
     end
   end
 
-  @spec unions_section(term()) :: term()
+  @spec unions_section([Types.docs_json_module()] | nil) :: String.t()
   defp unions_section(nil), do: ""
   defp unions_section([]), do: ""
 
@@ -66,7 +68,7 @@ defmodule Ide.Packages.ModuleDoc do
     "## Union types\n\n" <> Enum.join(blocks, "\n\n")
   end
 
-  @spec format_union_cases(term()) :: term()
+  @spec format_union_cases(list()) :: String.t()
   defp format_union_cases(cases) when is_list(cases) do
     cases
     |> Enum.map(fn
@@ -83,7 +85,7 @@ defmodule Ide.Packages.ModuleDoc do
     |> Enum.join(" | ")
   end
 
-  @spec aliases_section(term()) :: term()
+  @spec aliases_section([Types.docs_json_module()] | nil) :: String.t()
   defp aliases_section(nil), do: ""
   defp aliases_section([]), do: ""
 
@@ -109,7 +111,7 @@ defmodule Ide.Packages.ModuleDoc do
     "## Type aliases\n\n" <> Enum.join(blocks, "\n\n")
   end
 
-  @spec values_section(term(), term()) :: term()
+  @spec values_section(String.t(), [Types.docs_json_module()] | nil) :: String.t()
   defp values_section(_title, nil), do: ""
   defp values_section(_title, []), do: ""
 
@@ -134,7 +136,7 @@ defmodule Ide.Packages.ModuleDoc do
     "## #{title}\n\n" <> Enum.join(blocks, "\n\n")
   end
 
-  @spec value_extra_lines(term()) :: term()
+  @spec value_extra_lines(Types.docs_json_module()) :: String.t()
   defp value_extra_lines(%{"associativity" => a, "precedence" => p})
        when is_binary(a) and is_integer(p) do
     "**Operator:** associativity `#{a}`, precedence `#{p}`\n\n"

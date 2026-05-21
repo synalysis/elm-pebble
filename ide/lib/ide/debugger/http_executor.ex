@@ -4,11 +4,12 @@ defmodule Ide.Debugger.HttpExecutor do
   """
 
   alias ElmExecutor.Runtime.CoreIREvaluator
+  alias Ide.Debugger.Types
 
   @default_timeout_ms 10_000
 
-  @type command :: map()
-  @type result :: {:ok, map()} | {:error, term()}
+  @type command :: Types.cmd_call()
+  @type result :: {:ok, map()} | {:error, Types.http_executor_error()}
 
   @spec execute(command(), map()) :: result()
   def execute(command, eval_context \\ %{})
@@ -28,7 +29,7 @@ defmodule Ide.Debugger.HttpExecutor do
 
   def execute(_command, _eval_context), do: {:error, :invalid_http_command}
 
-  @spec request(command()) :: {:ok, map()} | {:error, term()}
+  @spec request(command()) :: {:ok, map()} | {:error, Types.http_executor_error()}
   defp request(command) do
     request_fun = Application.get_env(:ide, __MODULE__, []) |> Keyword.get(:request_fun)
 
@@ -39,7 +40,7 @@ defmodule Ide.Debugger.HttpExecutor do
     end
   end
 
-  @spec default_request(command()) :: {:ok, map()} | {:error, term()}
+  @spec default_request(command()) :: {:ok, map()}
   defp default_request(command) do
     if Mix.env() == :test do
       {:ok,
@@ -49,7 +50,7 @@ defmodule Ide.Debugger.HttpExecutor do
     end
   end
 
-  @spec run_default_request(command()) :: {:ok, map()} | {:error, term()}
+  @spec run_default_request(command()) :: {:ok, map()}
   defp run_default_request(command) do
     options = req_options(command)
 
@@ -135,7 +136,9 @@ defmodule Ide.Debugger.HttpExecutor do
     end
   end
 
-  @spec request_body(term()) :: term()
+  @type wire_value :: String.t() | integer() | float() | boolean() | map() | list() | nil
+
+  @spec request_body(map() | nil) :: String.t() | nil
   defp request_body(%{} = body) do
     case map_value(body, "kind") do
       "empty" -> nil
@@ -153,7 +156,7 @@ defmodule Ide.Debugger.HttpExecutor do
     end
   end
 
-  @spec response_body(term()) :: String.t()
+  @spec response_body(String.t() | map() | list() | nil) :: String.t()
   defp response_body(body) when is_binary(body), do: body
 
   defp response_body(body) do
@@ -163,7 +166,7 @@ defmodule Ide.Debugger.HttpExecutor do
     end
   end
 
-  @spec display_message(term()) :: String.t()
+  @spec display_message(Types.protocol_ctor_value() | map() | String.t() | nil) :: String.t()
   defp display_message(%{"ctor" => ctor, "args" => args})
        when is_binary(ctor) and is_list(args) do
     args_text =
@@ -176,7 +179,7 @@ defmodule Ide.Debugger.HttpExecutor do
 
   defp display_message(value), do: inspect(value)
 
-  @spec map_value(term(), term()) :: term()
+  @spec map_value(map(), String.t()) :: wire_value()
   defp map_value(map, key) when is_map(map) and is_binary(key) do
     case Map.fetch(map, key) do
       {:ok, value} ->

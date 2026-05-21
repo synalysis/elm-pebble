@@ -5,8 +5,21 @@ defmodule ElmExecutor.Runtime.Worker do
 
   use GenServer
   alias ElmExecutor.Runtime.Scheduler
+  alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
 
   @max_scheduler_steps 64
+
+  @type worker_state :: %{
+          module: module(),
+          request_template: map(),
+          current_model: map(),
+          current_view_tree: map(),
+          last_result: map() | nil,
+          history_limit: pos_integer(),
+          scheduler: Scheduler.t()
+        }
+
+  @type exec_error :: SemTypes.exec_error() | :dispatch_failed | :tick_failed
 
   @type start_opts :: [
           {:module, module()},
@@ -19,12 +32,12 @@ defmodule ElmExecutor.Runtime.Worker do
     GenServer.start_link(__MODULE__, opts)
   end
 
-  @spec dispatch(pid(), String.t()) :: {:ok, map()} | {:error, term()}
+  @spec dispatch(pid(), String.t()) :: {:ok, map()} | {:error, exec_error()}
   def dispatch(pid, message) when is_binary(message) do
     GenServer.call(pid, {:dispatch, message})
   end
 
-  @spec inject_tick(pid(), map()) :: {:ok, map()} | {:error, term()}
+  @spec inject_tick(pid(), map()) :: {:ok, map()} | {:error, exec_error()}
   def inject_tick(pid, payload \\ %{}) when is_map(payload) do
     GenServer.call(pid, {:tick, payload})
   end
@@ -40,7 +53,7 @@ defmodule ElmExecutor.Runtime.Worker do
   end
 
   @impl true
-  @spec init(term()) :: term()
+  @spec init(start_opts()) :: {:ok, worker_state()}
   def init(opts) do
     module = Keyword.fetch!(opts, :module)
     request_template = Keyword.get(opts, :request_template, %{})
@@ -60,7 +73,8 @@ defmodule ElmExecutor.Runtime.Worker do
   end
 
   @impl true
-  @spec handle_call(term(), term(), term()) :: term()
+  @spec handle_call(term(), GenServer.from(), worker_state()) ::
+          {:reply, term(), worker_state()}
   def handle_call({:dispatch, message}, _from, state) do
     scheduler =
       state.scheduler
@@ -116,12 +130,13 @@ defmodule ElmExecutor.Runtime.Worker do
 
   def handle_call(:state, _from, state), do: {:reply, state, state}
 
-  @spec run_scheduler(term(), term(), term(), term(), term()) :: term()
+  @spec run_scheduler(Scheduler.t(), module(), map(), map(), map()) :: Scheduler.t()
   defp run_scheduler(scheduler, module, request_template, current_model, current_view_tree) do
     run_scheduler_loop(scheduler, module, request_template, current_model, current_view_tree, 0)
   end
 
-  @spec run_scheduler_loop(term(), term(), term(), term(), term(), term()) :: term()
+  @spec run_scheduler_loop(Scheduler.t(), module(), map(), map(), map(), non_neg_integer()) ::
+          Scheduler.t()
   defp run_scheduler_loop(
          scheduler,
          _module,
@@ -182,7 +197,7 @@ defmodule ElmExecutor.Runtime.Worker do
     end
   end
 
-  @spec enqueue_followup_messages(term(), term()) :: term()
+  @spec enqueue_followup_messages(Scheduler.t(), map()) :: Scheduler.t()
   defp enqueue_followup_messages(scheduler, result) when is_map(result) do
     followups =
       case Map.get(result, :followup_messages) || Map.get(result, "followup_messages") do
@@ -211,7 +226,7 @@ defmodule ElmExecutor.Runtime.Worker do
 
   defp enqueue_followup_messages(scheduler, _result), do: scheduler
 
-  @spec extract_runtime_model(term(), term()) :: term()
+  @spec extract_runtime_model(map(), map()) :: map()
   defp extract_runtime_model(result, fallback) when is_map(result) do
     case Map.get(result, :model_patch) || Map.get(result, "model_patch") do
       patch when is_map(patch) ->
@@ -225,9 +240,7 @@ defmodule ElmExecutor.Runtime.Worker do
     end
   end
 
-  defp extract_runtime_model(_result, fallback), do: fallback
-
-  @spec extract_view_tree(term(), term()) :: term()
+  @spec extract_view_tree(map(), map()) :: map()
   defp extract_view_tree(result, fallback) when is_map(result) do
     case Map.get(result, :view_tree) || Map.get(result, "view_tree") do
       tree when is_map(tree) -> tree
@@ -235,9 +248,7 @@ defmodule ElmExecutor.Runtime.Worker do
     end
   end
 
-  defp extract_view_tree(_result, fallback), do: fallback
-
-  @spec state_from_event(term(), term(), term()) :: term()
+  @spec state_from_event(worker_state(), Scheduler.t(), Scheduler.event()) :: worker_state()
   defp state_from_event(state, scheduler, event) do
     result = event.payload.result
     next_model = Map.get(result, :model_patch, %{})["runtime_model"] || %{}
@@ -254,7 +265,7 @@ defmodule ElmExecutor.Runtime.Worker do
     trim_history(next_state)
   end
 
-  @spec trim_history(term()) :: term()
+  @spec trim_history(worker_state()) :: worker_state()
   defp trim_history(state) do
     history_limit = state.history_limit
     scheduler = state.scheduler
@@ -263,14 +274,14 @@ defmodule ElmExecutor.Runtime.Worker do
   end
 
   @impl true
-  @spec handle_info(term(), term()) :: term()
+  @spec handle_info(term(), worker_state()) :: {:noreply, worker_state()}
   def handle_info(_msg, state), do: {:noreply, state}
 
   @impl true
-  @spec terminate(term(), term()) :: term()
+  @spec terminate(term(), worker_state()) :: :ok
   def terminate(_reason, _state), do: :ok
 
   @impl true
-  @spec code_change(term(), term(), term()) :: term()
+  @spec code_change(term(), worker_state(), term()) :: {:ok, worker_state()}
   def code_change(_old_vsn, state, _extra), do: {:ok, state}
 end

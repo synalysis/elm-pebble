@@ -1,5 +1,6 @@
 defmodule Ide.Formatter.Printer.Pattern do
   @moduledoc false
+  alias Ide.Formatter.Types
 
   @spec normalize_case_constructor_parens(String.t()) :: String.t()
   def normalize_case_constructor_parens(source) when is_binary(source) do
@@ -14,7 +15,7 @@ defmodule Ide.Formatter.Printer.Pattern do
     do_normalize_nested_as_pattern_parens(source)
   end
 
-  @spec normalize_case_constructor_line(term()) :: term()
+  @spec normalize_case_constructor_line(String.t()) :: String.t()
   defp normalize_case_constructor_line(line) do
     trimmed = String.trim_leading(line)
 
@@ -56,7 +57,7 @@ defmodule Ide.Formatter.Printer.Pattern do
     end
   end
 
-  @spec do_normalize_nested_as_pattern_parens(term()) :: term()
+  @spec do_normalize_nested_as_pattern_parens(String.t()) :: String.t()
   defp do_normalize_nested_as_pattern_parens(source) do
     case :binary.match(source, "((") do
       :nomatch ->
@@ -79,7 +80,7 @@ defmodule Ide.Formatter.Printer.Pattern do
     end
   end
 
-  @spec consume_nested_as_pattern(term()) :: term()
+  @spec consume_nested_as_pattern(String.t()) :: {:ok, String.t(), non_neg_integer()} | :error
   defp consume_nested_as_pattern("((" <> rest) do
     with {:ok, ctor, after_ctor} <- take_until(rest, ")"),
          true <- uppercase_path?(String.trim(ctor)),
@@ -97,7 +98,7 @@ defmodule Ide.Formatter.Printer.Pattern do
 
   defp consume_nested_as_pattern(_), do: :error
 
-  @spec split_once(term(), term()) :: term()
+  @spec split_once(String.t(), String.t()) :: Types.split_result()
   defp split_once(value, delimiter) do
     case :binary.match(value, delimiter) do
       {idx, len} ->
@@ -111,7 +112,7 @@ defmodule Ide.Formatter.Printer.Pattern do
     end
   end
 
-  @spec split_last_once(term(), term()) :: term()
+  @spec split_last_once(String.t(), String.t()) :: Types.split_result()
   defp split_last_once(value, delimiter) do
     case :binary.matches(value, delimiter) do
       [] ->
@@ -127,7 +128,7 @@ defmodule Ide.Formatter.Printer.Pattern do
     end
   end
 
-  @spec take_until(term(), term()) :: term()
+  @spec take_until(String.t(), String.t()) :: Types.take_until_result()
   defp take_until(value, delimiter) do
     case :binary.match(value, delimiter) do
       {idx, len} ->
@@ -142,7 +143,7 @@ defmodule Ide.Formatter.Printer.Pattern do
     end
   end
 
-  @spec take_identifier(term()) :: term()
+  @spec take_identifier(String.t()) :: {:ok, String.t(), String.t()} | :error
   defp take_identifier(value) do
     chars = String.graphemes(value)
     {name_chars, remaining} = Enum.split_while(chars, &as_var_char?/1)
@@ -156,7 +157,7 @@ defmodule Ide.Formatter.Printer.Pattern do
     end
   end
 
-  @spec as_var_char?(term()) :: term()
+  @spec as_var_char?(String.t()) :: boolean()
   defp as_var_char?(char) when is_binary(char) do
     case String.to_charlist(char) do
       [c] -> c in ?a..?z or c in ?A..?Z or c in ?0..?9 or c == ?_
@@ -164,7 +165,7 @@ defmodule Ide.Formatter.Printer.Pattern do
     end
   end
 
-  @spec uppercase_path?(term()) :: term()
+  @spec uppercase_path?(String.t()) :: boolean()
   defp uppercase_path?(value) do
     value
     |> String.split(".", trim: true)
@@ -185,15 +186,15 @@ defmodule Ide.Formatter.Printer.Pattern do
     end
   end
 
-  @spec identifier_char?(term()) :: term()
+  @spec identifier_char?(non_neg_integer()) :: boolean()
   defp identifier_char?(c), do: c in ?A..?Z or c in ?a..?z or c in ?0..?9 or c in [?_, ?.]
 
-  @spec leading_spaces(term()) :: term()
+  @spec leading_spaces(String.t()) :: String.t()
   defp leading_spaces(line) do
     String.slice(line, 0, leading_indent(line))
   end
 
-  @spec leading_indent(term()) :: term()
+  @spec leading_indent(String.t()) :: non_neg_integer()
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
   end

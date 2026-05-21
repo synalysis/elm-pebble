@@ -5,11 +5,15 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter do
 
   @behaviour Ide.Debugger.RuntimeExecutor
 
+  alias Ide.Debugger.Types
+
   @type execution_input :: Ide.Debugger.RuntimeExecutor.execution_input()
   @type execution_result :: Ide.Debugger.RuntimeExecutor.execution_result()
+  @type executor_result :: {:ok, map()} | {:error, Types.execution_error()}
+  @type compiled_module_result :: {:ok, module()} | :none | {:error, Types.execution_error()}
 
   @impl true
-  @spec execute(execution_input()) :: {:ok, execution_result()} | {:error, term()}
+  @spec execute(execution_input()) :: {:ok, execution_result()} | {:error, Types.execution_error()}
   def execute(input) when is_map(input) do
     request = Map.put(input, :debugger_contract, "elm_executor.runtime_executor.v1")
 
@@ -35,7 +39,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter do
 
   def execute(_), do: {:error, :invalid_execution_input}
 
-  @spec execute_via_compiled_module_or_runtime(term()) :: term()
+  @spec execute_via_compiled_module_or_runtime(map()) :: executor_result() | map()
   defp execute_via_compiled_module_or_runtime(request) do
     case compiled_runtime_module() do
       {:ok, module} -> module.debugger_execute(request)
@@ -44,7 +48,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter do
     end
   end
 
-  @spec execute_runtime_with_optional_core_ir(term()) :: term()
+  @spec execute_runtime_with_optional_core_ir(map()) :: executor_result() | map()
   defp execute_runtime_with_optional_core_ir(request) when is_map(request) do
     core_ir = Map.get(request, :elm_executor_core_ir) || Map.get(request, "elm_executor_core_ir")
 
@@ -58,7 +62,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter do
     end
   end
 
-  @spec compiled_runtime_module() :: term()
+  @spec compiled_runtime_module() :: compiled_module_result()
   defp compiled_runtime_module do
     opts = Application.get_env(:ide, __MODULE__, [])
     out_dir = Keyword.get(opts, :compiled_out_dir)
@@ -73,19 +77,19 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter do
     end
   end
 
-  @spec map_field(term(), term()) :: term()
+  @spec map_field(map(), atom()) :: map()
   defp map_field(map, key) when is_map(map) and is_atom(key) do
     value = Map.get(map, key) || Map.get(map, Atom.to_string(key))
     if is_map(value), do: value, else: %{}
   end
 
-  @spec map_or_nil_field(term(), term()) :: term()
+  @spec map_or_nil_field(map(), atom()) :: map() | nil
   defp map_or_nil_field(map, key) when is_map(map) and is_atom(key) do
     value = Map.get(map, key) || Map.get(map, Atom.to_string(key))
     if is_map(value), do: value, else: nil
   end
 
-  @spec list_field(term(), term()) :: term()
+  @spec list_field(map(), atom()) :: list()
   defp list_field(map, key) when is_map(map) and is_atom(key) do
     value = Map.get(map, key) || Map.get(map, Atom.to_string(key))
     if is_list(value), do: value, else: []

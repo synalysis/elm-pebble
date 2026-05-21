@@ -3,6 +3,14 @@ defmodule Ide.Png do
 
   @signature <<137, 80, 78, 71, 13, 10, 26, 10>>
 
+  @type png_error ::
+          :invalid_png
+          | :unsupported_png_format
+          | :invalid_rgba_buffer
+          | :unsupported_png_filter
+          | {:png_decompress_failed, term()}
+          | {:png_incomplete_image_data, non_neg_integer(), non_neg_integer()}
+
   @spec dimensions(binary() | String.t()) :: {:ok, pos_integer(), pos_integer()} | :error
   def dimensions(path) when is_binary(path) do
     data =
@@ -30,7 +38,7 @@ defmodule Ide.Png do
   @doc """
   Resizes a truecolor RGBA PNG to `{width, height}` when needed.
   """
-  @spec fit(binary(), pos_integer(), pos_integer()) :: {:ok, binary()} | {:error, term()}
+  @spec fit(binary(), pos_integer(), pos_integer()) :: {:ok, binary()} | {:error, png_error()}
   def fit(png, width, height) when is_binary(png) and width > 0 and height > 0 do
     case dimensions(png) do
       {:ok, ^width, ^height} ->
@@ -48,7 +56,7 @@ defmodule Ide.Png do
     end
   end
 
-  @spec decode_rgba(binary()) :: {:ok, binary()} | {:error, term()}
+  @spec decode_rgba(binary()) :: {:ok, binary()} | {:error, png_error()}
   defp decode_rgba(png) do
     with {:ok, width, height, _meta, idat} <- parse_chunks(png),
          {:ok, inflated} <- zlib_uncompress(idat),
@@ -248,7 +256,7 @@ defmodule Ide.Png do
   defp add_bytes(<<>>, <<>>), do: <<>>
 
   @spec resize_rgba(binary(), pos_integer(), pos_integer(), pos_integer(), pos_integer()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, binary()} | {:error, png_error()}
   defp resize_rgba(rgba, src_w, src_h, dst_w, dst_h) do
     if byte_size(rgba) < src_w * src_h * 4 do
       {:error, :invalid_rgba_buffer}
@@ -266,7 +274,7 @@ defmodule Ide.Png do
   end
 
   @doc false
-  @spec encode_rgba(binary(), pos_integer(), pos_integer()) :: {:ok, binary()} | {:error, term()}
+  @spec encode_rgba(binary(), pos_integer(), pos_integer()) :: {:ok, binary()} | {:error, png_error()}
   def encode_rgba(rgba, width, height) do
     expected = width * height * 4
 

@@ -26,7 +26,7 @@ defmodule Ide.Markdown do
     end
   end
 
-  @spec fallback_paragraph(term()) :: term()
+  @spec fallback_paragraph(String.t()) :: String.t()
   defp fallback_paragraph(text) do
     "<p>#{Plug.HTML.html_escape(text)}</p>"
   end

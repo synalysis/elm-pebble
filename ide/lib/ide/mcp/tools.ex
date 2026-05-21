@@ -10,6 +10,9 @@ defmodule Ide.Mcp.Tools do
   alias Ide.Compiler.ManifestCache
   alias Ide.Mcp.Audit
   alias Ide.Mcp.CheckCache
+  alias Ide.Mcp.JsonSchema
+  alias Ide.Mcp.ToolTypes
+  alias Ide.Mcp.WireTypes
   alias Ide.Packages
   alias Ide.EmulatorSupport
   alias Ide.PebbleToolchain
@@ -24,7 +27,7 @@ defmodule Ide.Mcp.Tools do
   alias IdeWeb.WorkspaceLive.PublishFlow
 
   @type capability :: :read | :edit | :build | :publish
-  @type tool_result :: {:ok, map()} | {:error, String.t()}
+  @type tool_result :: ToolTypes.tool_result()
   @type maybe_since :: DateTime.t() | nil
   @type maybe_slug :: String.t() | nil
   @type maybe_trace_id :: String.t() | nil
@@ -33,7 +36,7 @@ defmodule Ide.Mcp.Tools do
 
   @simulator_settings_schema %{
     type: "object",
-    additionalProperties: false,
+    additionalProperties: JsonSchema.disallow_extra_properties(),
     properties: %{
       battery_percent: %{type: "integer", minimum: 0, maximum: 100},
       charging: %{type: "boolean"},
@@ -62,7 +65,7 @@ defmodule Ide.Mcp.Tools do
 
   @github_settings_schema %{
     type: "object",
-    additionalProperties: false,
+    additionalProperties: JsonSchema.disallow_extra_properties(),
     properties: %{
       owner: %{type: "string"},
       repo: %{type: "string"},
@@ -73,7 +76,7 @@ defmodule Ide.Mcp.Tools do
 
   @release_defaults_schema %{
     type: "object",
-    additionalProperties: false,
+    additionalProperties: JsonSchema.disallow_extra_properties(),
     properties: %{
       version_label: %{type: "string"},
       tags: %{type: "string"},
@@ -86,7 +89,7 @@ defmodule Ide.Mcp.Tools do
     %{
       name: "projects.list",
       description: "List known IDE projects.",
-      inputSchema: %{type: "object", additionalProperties: false, properties: %{}}
+      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
     },
     %{
       name: "projects.settings",
@@ -94,7 +97,7 @@ defmodule Ide.Mcp.Tools do
         "Read persisted project settings used by IDE automation, including release defaults, GitHub config, and debugger settings.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -106,7 +109,7 @@ defmodule Ide.Mcp.Tools do
       description: "List source tree grouped by roots for a project.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string", description: "Project slug."}
@@ -118,7 +121,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read a source file from a project root.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "source_root", "rel_path"],
         properties: %{
           slug: %{type: "string"},
@@ -133,7 +136,7 @@ defmodule Ide.Mcp.Tools do
         "Return metadata for a source file, including byte size, mtime, and SHA-256 revision hash.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "source_root", "rel_path"],
         properties: %{
           slug: %{type: "string"},
@@ -147,7 +150,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read a line range from a source file in a project root.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "source_root", "rel_path", "offset", "limit"],
         properties: %{
           slug: %{type: "string"},
@@ -163,7 +166,7 @@ defmodule Ide.Mcp.Tools do
       description: "Search project source files with a literal text query.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "query"],
         properties: %{
           slug: %{type: "string"},
@@ -178,7 +181,7 @@ defmodule Ide.Mcp.Tools do
       description: "Return git diff output for one project workspace, when available.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -192,7 +195,7 @@ defmodule Ide.Mcp.Tools do
         "List saved screenshots for a project, including target device, timestamp, URL, and stored path.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string", description: "Project slug."}
@@ -205,7 +208,7 @@ defmodule Ide.Mcp.Tools do
         "Read one saved project screenshot as base64-encoded binary data with MIME type and metadata.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "emulator_target", "filename"],
         properties: %{
           slug: %{type: "string", description: "Project slug."},
@@ -222,7 +225,7 @@ defmodule Ide.Mcp.Tools do
       description: "Search Elm package catalog entries.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           query: %{type: "string"},
           page: %{type: "integer", minimum: 1, maximum: 500},
@@ -240,7 +243,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read package details and versions from catalog.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["package"],
         properties: %{
           package: %{type: "string"}
@@ -252,7 +255,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read all known versions for a package.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["package"],
         properties: %{
           package: %{type: "string"}
@@ -264,7 +267,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read package README markdown for selected package/version.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["package"],
         properties: %{
           package: %{type: "string"},
@@ -278,7 +281,7 @@ defmodule Ide.Mcp.Tools do
         "Read Markdown API documentation for one exposed Elm package module, including internal Pebble packages.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["package", "module"],
         properties: %{
           package: %{type: "string"},
@@ -290,14 +293,14 @@ defmodule Ide.Mcp.Tools do
     %{
       name: "projects.graph",
       description: "Return project context graph with workspace and file counts.",
-      inputSchema: %{type: "object", additionalProperties: false, properties: %{}}
+      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
     },
     %{
       name: "audit.recent",
       description: "Read recent MCP action traces.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           limit: %{type: "integer", minimum: 1, maximum: 200},
           since: %{type: "string", description: "ISO8601 lower bound for activity timestamp."}
@@ -309,7 +312,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read most recent cached compiler check result for a project.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -321,7 +324,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read recent compiler check history from cache.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           slug: %{type: "string"},
           limit: %{type: "integer", minimum: 1, maximum: 200},
@@ -334,7 +337,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read most recent cached compiler compile result for a project.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -346,7 +349,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read recent compiler compile history from cache.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           slug: %{type: "string"},
           limit: %{type: "integer", minimum: 1, maximum: 200},
@@ -359,7 +362,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read most recent cached compiler manifest result for a project.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -371,7 +374,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read recent compiler manifest history from cache.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           slug: %{type: "string"},
           limit: %{type: "integer", minimum: 1, maximum: 200},
@@ -384,7 +387,7 @@ defmodule Ide.Mcp.Tools do
       description: "Summarize recent project activity for AI context.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           slug: %{type: "string"},
           limit: %{type: "integer", minimum: 1, maximum: 200},
@@ -397,7 +400,7 @@ defmodule Ide.Mcp.Tools do
       description: "Return compact per-project status summaries for AI prompts.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           slug: %{type: "string"},
           since: %{type: "string", description: "ISO8601 lower bound for activity timestamp."}
@@ -409,7 +412,7 @@ defmodule Ide.Mcp.Tools do
       description: "Report trace export storage health and cleanup recommendations.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           warn_count: %{type: "integer", minimum: 1, maximum: 100_000},
           warn_bytes: %{type: "integer", minimum: 1}
@@ -421,7 +424,7 @@ defmodule Ide.Mcp.Tools do
       description: "Return correlated audit + compiler context for reproducible trace workflows.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           trace_id: %{type: "string"},
           slug: %{type: "string"},
@@ -435,7 +438,7 @@ defmodule Ide.Mcp.Tools do
       description: "Return compact trace summary for prompt-budget sensitive workflows.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           trace_id: %{type: "string"},
           slug: %{type: "string"},
@@ -449,7 +452,7 @@ defmodule Ide.Mcp.Tools do
       description: "Return deterministic JSON trace export payload and checksum.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           trace_id: %{type: "string"},
           slug: %{type: "string"},
@@ -463,7 +466,7 @@ defmodule Ide.Mcp.Tools do
       description: "List persisted trace export artifacts from disk.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           limit: %{type: "integer", minimum: 1, maximum: 200}
         }
@@ -472,12 +475,12 @@ defmodule Ide.Mcp.Tools do
     %{
       name: "traces.policy",
       description: "Read effective trace retention policy defaults.",
-      inputSchema: %{type: "object", additionalProperties: false, properties: %{}}
+      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
     },
     %{
       name: "traces.policy_validate",
       description: "Validate effective trace retention policy and return safety findings.",
-      inputSchema: %{type: "object", additionalProperties: false, properties: %{}}
+      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
     },
     %{
       name: "debugger.state",
@@ -485,7 +488,7 @@ defmodule Ide.Mcp.Tools do
         "Read debugger runtime state snapshot for a project. Set replay_metadata_only=true for lightweight polling.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -520,7 +523,7 @@ defmodule Ide.Mcp.Tools do
         "Export deterministic JSON trace of debugger events and runtime snapshots for replay and bug reports.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -546,7 +549,7 @@ defmodule Ide.Mcp.Tools do
         "Read debugger table rows (update messages, protocol exchange, view renders, lifecycle) scoped to a timeline cursor, matching the Debugger tab. Lifecycle includes debugger.elm_introspect when a non-trivial parser snapshot was merged on reload. Also returns elmc_diagnostics (capped preview rows), elmc_diagnostics_source (event_payload | cursor_model | cursor_model_companion | cursor_model_phone | none), and elm_introspect (watch | companion | phone parser snapshots: imported_modules (explicit imports only), source_byte_size and source_line_count (raw file), import_entries/module_exposing/ports/port_module from parser-derived `elmc` header metadata (see `ElmEx.Frontend.GeneratedParser` contract), type_aliases, unions (custom type names), functions (top-level definitions), init_model (tuple peel, or first init case-branch model when branches return ( model, Cmd )), init_cmd_ops (peeled init tuple Cmd side, or the same Cmd outline from each branch of a recognized top-level init case on init parameters / param.field), init_case_branches and init_case_subject (same recognition rules as init_cmd_ops case), init_params, msg_constructors, update_params, update_cmd_ops (top-level ( model, Cmd ) tuple, or the same Cmd outline from each branch of a recognized top-level case on msg / parameters / param.field), update_case_branches and update_case_subject (top-level case on msg, message, any update parameter, or param.field chains), view_case_branches and view_case_subject (top-level view case on model, the first view parameter, or param.field chains), subscription_ops (top-level Sub/Cmd batch outline, or merged from each branch of a recognized top-level case on subscriptions parameters / param.field), subscriptions_case_branches and subscriptions_case_subject (same recognition rules as subscription_ops case), subscriptions_params, view_params, main_program when present, view_tree when present). Loads the newest events up to event_limit (default 500). Omit cursor_seq to use the latest seq in that window.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -581,7 +584,7 @@ defmodule Ide.Mcp.Tools do
         "Read the current debugger-rendered tree and flattened node bounds for a runtime surface.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -603,7 +606,7 @@ defmodule Ide.Mcp.Tools do
         "Explain how the debugger preview tree was selected for a runtime surface, including runtime output counts, fallback source, latest render events, and compact fingerprints.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -627,7 +630,7 @@ defmodule Ide.Mcp.Tools do
         "Read compact watch, companion, and phone debugger models without full event snapshots.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -648,7 +651,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read compact debugger timeline rows without full runtime snapshots.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -668,7 +671,7 @@ defmodule Ide.Mcp.Tools do
         "Read one debugger surface model, runtime fingerprint, protocol messages, and optional render bounds.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -694,7 +697,7 @@ defmodule Ide.Mcp.Tools do
         "Read persisted and active debugger simulator inputs for watch device data and companion APIs.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -707,7 +710,7 @@ defmodule Ide.Mcp.Tools do
         "Read persisted companion configuration values and the current debugger configuration model.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -720,7 +723,7 @@ defmodule Ide.Mcp.Tools do
         "Read debugger auto-fire settings persisted for a project and active runtime state.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -732,7 +735,7 @@ defmodule Ide.Mcp.Tools do
       description: "Read debugger subscription enable/disable settings for a project.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -742,7 +745,7 @@ defmodule Ide.Mcp.Tools do
     %{
       name: "debugger.watch_profiles",
       description: "List watch profiles available to debugger launch contexts.",
-      inputSchema: %{type: "object", additionalProperties: false, properties: %{}}
+      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
     }
   ]
 
@@ -752,7 +755,7 @@ defmodule Ide.Mcp.Tools do
       description: "Create a new IDE project and bootstrap source roots.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["name", "slug"],
         properties: %{
           name: %{type: "string"},
@@ -781,7 +784,7 @@ defmodule Ide.Mcp.Tools do
       description: "Delete an IDE project and remove its local workspace.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -794,7 +797,7 @@ defmodule Ide.Mcp.Tools do
         "Update safe persisted project settings such as name, target type, release defaults, GitHub config, and selected debugger/emulator preferences.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -805,7 +808,7 @@ defmodule Ide.Mcp.Tools do
           github: @github_settings_schema,
           debugger: %{
             type: "object",
-            additionalProperties: false,
+            additionalProperties: JsonSchema.disallow_extra_properties(),
             properties: %{
               timeline_mode: %{type: "string", enum: ["watch", "companion", "mixed", "separate"]},
               watch_profile_id: %{type: "string"},
@@ -821,7 +824,7 @@ defmodule Ide.Mcp.Tools do
       description: "Write a source file in a project root.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "source_root", "rel_path", "content"],
         properties: %{
           slug: %{type: "string"},
@@ -837,7 +840,7 @@ defmodule Ide.Mcp.Tools do
         "Replace one expected string in a source file, guarded by optional SHA-256 revision.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "source_root", "rel_path", "old_string", "new_string"],
         properties: %{
           slug: %{type: "string"},
@@ -858,7 +861,7 @@ defmodule Ide.Mcp.Tools do
         "Add package dependency to project elm.json using compatible version auto-resolution.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "package"],
         properties: %{
           slug: %{type: "string"},
@@ -883,7 +886,7 @@ defmodule Ide.Mcp.Tools do
         "Remove a direct package dependency from elm.json and re-resolve indirect dependencies. Built-in Pebble packages cannot be removed.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "package"],
         properties: %{
           slug: %{type: "string"},
@@ -902,7 +905,7 @@ defmodule Ide.Mcp.Tools do
       description: "Write deterministic trace export JSON to disk.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           trace_id: %{type: "string"},
           slug: %{type: "string"},
@@ -916,7 +919,7 @@ defmodule Ide.Mcp.Tools do
       description: "Delete older trace exports, keeping the most recent N.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           keep_latest: %{type: "integer", minimum: 0, maximum: 2000}
         }
@@ -927,7 +930,7 @@ defmodule Ide.Mcp.Tools do
       description: "Evaluate trace health and optionally prune in one guarded operation.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         properties: %{
           warn_count: %{type: "integer", minimum: 1, maximum: 100_000},
           warn_bytes: %{type: "integer", minimum: 1},
@@ -941,7 +944,7 @@ defmodule Ide.Mcp.Tools do
       description: "Start debugger runtime session for a project.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -953,7 +956,7 @@ defmodule Ide.Mcp.Tools do
       description: "Reset debugger runtime state for a project.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -965,7 +968,7 @@ defmodule Ide.Mcp.Tools do
       description: "Set the debugger watch profile and relaunch context for a project.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "watch_profile_id"],
         properties: %{
           slug: %{type: "string"},
@@ -983,7 +986,7 @@ defmodule Ide.Mcp.Tools do
         "Persist and apply debugger simulator inputs for watch device data and companion geolocation.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "settings"],
         properties: %{
           slug: %{type: "string"},
@@ -996,11 +999,11 @@ defmodule Ide.Mcp.Tools do
       description: "Persist and apply companion configuration values in the debugger.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "values"],
         properties: %{
           slug: %{type: "string"},
-          values: %{type: "object", additionalProperties: true}
+          values: %{type: "object", additionalProperties: JsonSchema.allow_extra_properties()}
         }
       }
     },
@@ -1009,7 +1012,7 @@ defmodule Ide.Mcp.Tools do
       description: "Persist and apply debugger natural subscription auto-fire settings.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "target", "enabled"],
         properties: %{
           slug: %{type: "string"},
@@ -1024,7 +1027,7 @@ defmodule Ide.Mcp.Tools do
       description: "Persist and apply debugger subscription enable/disable settings.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "target", "trigger", "enabled"],
         properties: %{
           slug: %{type: "string"},
@@ -1040,7 +1043,7 @@ defmodule Ide.Mcp.Tools do
         "Simulate IDE hot reload after a file change (revision bump, update_in, protocol, view renders). Matches save-hook behavior.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "rel_path"],
         properties: %{
           slug: %{type: "string"},
@@ -1062,7 +1065,7 @@ defmodule Ide.Mcp.Tools do
         "Apply deterministic debugger step events for a target runtime (watch/companion/phone) to advance debugger state.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -1078,7 +1081,7 @@ defmodule Ide.Mcp.Tools do
         "Inject deterministic subscription-style tick messages into debugger runtimes (single target or all surfaces).",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -1093,7 +1096,7 @@ defmodule Ide.Mcp.Tools do
         "Start fixed-interval deterministic tick ingress into debugger runtimes until stopped.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -1108,7 +1111,7 @@ defmodule Ide.Mcp.Tools do
       description: "Stop fixed-interval deterministic tick ingress.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -1121,7 +1124,7 @@ defmodule Ide.Mcp.Tools do
         "Replay recent debugger update messages back into runtime state (deterministic oldest-to-newest application within the selected window).",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -1153,7 +1156,7 @@ defmodule Ide.Mcp.Tools do
         "Materialize a selected timeline snapshot into live debugger tip state, then continue stepping/ticking from that snapshot.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -1172,7 +1175,7 @@ defmodule Ide.Mcp.Tools do
         "Replace debugger state with a deterministic JSON trace export (replay). project_slug in JSON must match slug unless strict_slug is false.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "export_json"],
         properties: %{
           slug: %{type: "string"},
@@ -1194,7 +1197,7 @@ defmodule Ide.Mcp.Tools do
       description: "Build a project-specific .pbw artifact for emulator/install workflows.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -1207,7 +1210,7 @@ defmodule Ide.Mcp.Tools do
         "Install a .pbw artifact to a Pebble emulator target. If package_path is omitted, package is generated first.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -1222,7 +1225,7 @@ defmodule Ide.Mcp.Tools do
       description: "Capture a screenshot from the selected emulator target.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -1236,7 +1239,7 @@ defmodule Ide.Mcp.Tools do
         "Build the PBW, validate publish readiness, and export publish manifest plus release notes.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -1249,7 +1252,7 @@ defmodule Ide.Mcp.Tools do
         "Validate publish readiness for a project. By default this packages the project first so appinfo and PBW checks use current artifacts.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -1268,7 +1271,7 @@ defmodule Ide.Mcp.Tools do
       description: "Run elmc check for a project and return diagnostics.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -1280,7 +1283,7 @@ defmodule Ide.Mcp.Tools do
       description: "Run the editor-style compiler check for one source root.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug", "source_root"],
         properties: %{
           slug: %{type: "string"},
@@ -1296,7 +1299,7 @@ defmodule Ide.Mcp.Tools do
       description: "Run elmc compile for a project and return diagnostics.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"}
@@ -1308,7 +1311,7 @@ defmodule Ide.Mcp.Tools do
       description: "Run elmc manifest for a project and return manifest JSON + diagnostics.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -1328,7 +1331,7 @@ defmodule Ide.Mcp.Tools do
         "Submit a prepared release through the App Store API. Requires publish capability and can package first when app_root is omitted.",
       inputSchema: %{
         type: "object",
-        additionalProperties: false,
+        additionalProperties: JsonSchema.disallow_extra_properties(),
         required: ["slug"],
         properties: %{
           slug: %{type: "string"},
@@ -1423,19 +1426,8 @@ defmodule Ide.Mcp.Tools do
 
   @spec do_call(String.t(), map()) :: tool_result()
   defp do_call("projects.list", _args) do
-    projects =
-      Projects.list_projects()
-      |> Enum.map(fn project ->
-        %{
-          name: project.name,
-          slug: project.slug,
-          target_type: project.target_type,
-          source_roots: project.source_roots,
-          active: project.active
-        }
-      end)
-
-    {:ok, %{projects: projects}}
+    projects = Enum.map(Projects.list_projects(), &project_summary/1)
+    {:ok, projects_list_payload(projects)}
   end
 
   defp do_call("projects.settings", %{"slug" => slug}) do
@@ -1448,29 +1440,16 @@ defmodule Ide.Mcp.Tools do
 
   defp do_call("projects.tree", %{"slug" => slug}) do
     with {:ok, project} <- fetch_project(slug) do
-      {:ok, %{slug: slug, tree: Projects.list_source_tree(project)}}
+      {:ok, projects_tree_payload(slug, Projects.list_source_tree(project))}
     end
   end
 
   defp do_call("projects.graph", _args) do
     projects =
       Projects.list_projects()
-      |> Enum.map(fn project ->
-        workspace = Projects.project_workspace_path(project)
-        tree = Projects.list_source_tree(project)
+      |> Enum.map(&project_graph_entry/1)
 
-        %{
-          name: project.name,
-          slug: project.slug,
-          target_type: project.target_type,
-          active: project.active,
-          source_roots: project.source_roots,
-          workspace_path: workspace,
-          file_count: count_files(tree)
-        }
-      end)
-
-    {:ok, %{projects: projects}}
+    {:ok, projects_graph_payload(projects)}
   end
 
   defp do_call("projects.create", %{"name" => name, "slug" => slug} = args) do
@@ -1484,14 +1463,7 @@ defmodule Ide.Mcp.Tools do
 
     case Projects.create_project(attrs) do
       {:ok, project} ->
-        {:ok,
-         %{
-           name: project.name,
-           slug: project.slug,
-           target_type: project.target_type,
-           source_roots: project.source_roots,
-           active: project.active
-         }}
+        {:ok, project_create_payload(project)}
 
       {:error, reason} ->
         {:error, "project create failed: #{inspect(reason)}"}
@@ -1512,7 +1484,7 @@ defmodule Ide.Mcp.Tools do
   defp do_call("projects.delete", %{"slug" => slug}) do
     with {:ok, project} <- fetch_project(slug),
          {:ok, _deleted} <- Projects.delete_project(project) do
-      {:ok, %{slug: slug, deleted: true}}
+      {:ok, projects_delete_payload(slug)}
     else
       {:error, reason} -> {:error, "project delete failed: #{inspect(reason)}"}
     end
@@ -1525,7 +1497,7 @@ defmodule Ide.Mcp.Tools do
        }) do
     with {:ok, project} <- fetch_project(slug),
          {:ok, content} <- Projects.read_source_file(project, source_root, rel_path) do
-      {:ok, %{slug: slug, source_root: source_root, rel_path: rel_path, content: content}}
+      {:ok, files_read_payload(slug, source_root, rel_path, content)}
     else
       {:error, reason} -> {:error, "read failed: #{inspect(reason)}"}
     end
@@ -1679,7 +1651,7 @@ defmodule Ide.Mcp.Tools do
 
     case Packages.module_doc_markdown(package, version, module_name, []) do
       {:ok, markdown} ->
-        {:ok, %{package: package, version: version, module: module_name, markdown: markdown}}
+        {:ok, packages_module_docs_payload(package, version, module_name, markdown)}
 
       {:error, reason} ->
         {:error, "packages module docs failed: #{inspect(reason)}"}
@@ -1697,7 +1669,7 @@ defmodule Ide.Mcp.Tools do
        ) do
     with {:ok, project} <- fetch_project(slug),
          :ok <- Projects.write_source_file(project, source_root, rel_path, content) do
-      {:ok, %{saved: true, slug: slug, source_root: source_root, rel_path: rel_path}}
+      {:ok, files_write_payload(slug, source_root, rel_path)}
     else
       {:error, reason} -> {:error, "write failed: #{inspect(reason)}"}
     end
@@ -1719,14 +1691,7 @@ defmodule Ide.Mcp.Tools do
          {:ok, patched} <- replace_once(current, old_string, new_string),
          :ok <- Projects.write_source_file(project, source_root, rel_path, patched) do
       {:ok,
-       %{
-         saved: true,
-         slug: slug,
-         source_root: source_root,
-         rel_path: rel_path,
-         old_sha256: sha256_hex(current),
-         new_sha256: sha256_hex(patched)
-       }}
+       files_patch_payload(slug, source_root, rel_path, sha256_hex(current), sha256_hex(patched))}
     else
       {:error, reason} -> {:error, "patch failed: #{inspect(reason)}"}
     end
@@ -1771,16 +1736,7 @@ defmodule Ide.Mcp.Tools do
       counts = Diagnostics.summary(diagnostics)
       :ok = CheckCache.put(slug, result)
 
-      {:ok,
-       %{
-         slug: slug,
-         status: result.status,
-         checked_path: result.checked_path,
-         diagnostics: diagnostics,
-         error_count: counts.error_count,
-         warning_count: counts.warning_count,
-         output: result.output
-       }}
+      {:ok, compiler_check_payload(slug, result, diagnostics, counts)}
     else
       {:error, reason} -> {:error, "check failed: #{inspect(reason)}"}
     end
@@ -1792,29 +1748,24 @@ defmodule Ide.Mcp.Tools do
        }) do
     compiler = compiler_module()
 
-    with {:ok, project} <- fetch_project(slug),
-         true <- source_root in project.source_roots,
-         {:ok, result} <-
-           compiler.check_source_root("#{slug}:#{source_root}",
-             workspace_root: Projects.project_workspace_path(project),
-             source_root: source_root
-           ) do
-      diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
-      counts = Diagnostics.summary(diagnostics)
+    with {:ok, project} <- fetch_project(slug) do
+      if source_root in project.source_roots do
+        with {:ok, result} <-
+               compiler.check_source_root("#{slug}:#{source_root}",
+                 workspace_root: Projects.project_workspace_path(project),
+                 source_root: source_root
+               ) do
+          diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
+          counts = Diagnostics.summary(diagnostics)
 
-      {:ok,
-       %{
-         slug: slug,
-         source_root: source_root,
-         status: result.status,
-         checked_path: result.checked_path,
-         diagnostics: diagnostics,
-         error_count: counts.error_count,
-         warning_count: counts.warning_count,
-         output: result.output
-       }}
+          {:ok, compiler_check_source_root_payload(slug, source_root, result, diagnostics, counts)}
+        else
+          {:error, reason} -> {:error, "check source root failed: #{inspect(reason)}"}
+        end
+      else
+        {:error, "check source root failed: :invalid_source_root"}
+      end
     else
-      false -> {:error, "check source root failed: :invalid_source_root"}
       {:error, reason} -> {:error, "check source root failed: #{inspect(reason)}"}
     end
   end
@@ -1829,14 +1780,7 @@ defmodule Ide.Mcp.Tools do
              target_type: project.target_type,
              project_name: project.name
            ) do
-      {:ok,
-       %{
-         slug: slug,
-         status: result.status,
-         artifact_path: result.artifact_path,
-         app_root: result.app_root,
-         build_result: result.build_result
-       }}
+      {:ok, pebble_package_payload(slug, result)}
     else
       {:error, reason} -> {:error, "pebble package failed: #{inspect(reason)}"}
     end
@@ -1854,7 +1798,7 @@ defmodule Ide.Mcp.Tools do
              package_path: package_path,
              logs_snapshot_seconds: logs_snapshot_seconds
            ) do
-      {:ok, %{slug: slug, artifact_path: package_path, install_result: install_result}}
+      {:ok, pebble_install_payload(slug, package_path, install_result)}
     else
       {:error, reason} -> {:error, "pebble install failed: #{inspect(reason)}"}
     end
@@ -1867,12 +1811,7 @@ defmodule Ide.Mcp.Tools do
          {:ok, shots} <- screenshots.list(slug, []) do
       entries = Enum.map(shots, &mcp_screenshot_entry/1)
 
-      {:ok,
-       %{
-         slug: slug,
-         count: length(entries),
-         screenshots: entries
-       }}
+      {:ok, screenshots_list_payload(slug, entries)}
     else
       {:error, reason} -> {:error, "screenshot list failed: #{inspect(reason)}"}
     end
@@ -1892,15 +1831,14 @@ defmodule Ide.Mcp.Tools do
       metadata = mcp_screenshot_entry(shot)
 
       {:ok,
-       %{
-         slug: slug,
-         screenshot: metadata,
-         mime_type: metadata.mime_type,
-         encoding: "base64",
-         bytes: byte_size(data),
-         sha256: Base.encode16(:crypto.hash(:sha256, data), case: :lower),
-         content_base64: Base.encode64(data)
-       }}
+       screenshots_read_payload(
+         slug,
+         metadata,
+         metadata.mime_type,
+         byte_size(data),
+         Base.encode16(:crypto.hash(:sha256, data), case: :lower),
+         Base.encode64(data)
+       )}
     else
       {:error, reason} -> {:error, "screenshot read failed: #{inspect(reason)}"}
     end
@@ -1916,14 +1854,14 @@ defmodule Ide.Mcp.Tools do
              emulator_target: Map.get(args, "emulator_target")
            ) do
       {:ok,
-       %{
-         slug: slug,
-         screenshot: result.screenshot,
-         output: result.output,
-         exit_code: result.exit_code,
-         command: result.command,
-         cwd: result.cwd
-       }}
+       screenshots_capture_payload(
+         slug,
+         result.screenshot,
+         result.output,
+         result.exit_code,
+         result.command,
+         result.cwd
+       )}
     else
       {:error, reason} -> {:error, "screenshot capture failed: #{inspect(reason)}"}
     end
@@ -1939,18 +1877,7 @@ defmodule Ide.Mcp.Tools do
       diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
       counts = Diagnostics.summary(diagnostics)
 
-      {:ok,
-       %{
-         slug: slug,
-         status: result.status,
-         compiled_path: result.compiled_path,
-         revision: result.revision,
-         cached: result.cached?,
-         diagnostics: diagnostics,
-         error_count: counts.error_count,
-         warning_count: counts.warning_count,
-         output: result.output
-       }}
+      {:ok, compiler_compile_payload(slug, result, diagnostics, counts)}
     else
       {:error, reason} -> {:error, "compile failed: #{inspect(reason)}"}
     end
@@ -1969,20 +1896,7 @@ defmodule Ide.Mcp.Tools do
       diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
       counts = Diagnostics.summary(diagnostics)
 
-      {:ok,
-       %{
-         slug: slug,
-         status: result.status,
-         manifest_path: result.manifest_path,
-         revision: result.revision,
-         cached: result.cached?,
-         strict: result.strict?,
-         manifest: result.manifest,
-         diagnostics: diagnostics,
-         error_count: counts.error_count,
-         warning_count: counts.warning_count,
-         output: result.output
-       }}
+      {:ok, compiler_manifest_payload(slug, result, diagnostics, counts)}
     else
       {:error, reason} -> {:error, "manifest failed: #{inspect(reason)}"}
     end
@@ -2006,8 +1920,7 @@ defmodule Ide.Mcp.Tools do
          {:ok, release_notes} <-
            PublishManifest.export_release_notes(slug, context.validation.release_notes_md) do
       {:ok,
-       %{
-         slug: slug,
+       publish_prepare_payload(slug, %{
          status: context.validation.status,
          artifact_path: package.artifact_path,
          app_root: package.app_root,
@@ -2018,7 +1931,7 @@ defmodule Ide.Mcp.Tools do
          release_notes_path: release_notes.path,
          release_notes_md: context.validation.release_notes_md,
          build_result: package.build_result
-       }}
+       })}
     else
       {:error, reason} -> {:error, "publish prepare failed: #{inspect(reason)}"}
     end
@@ -2029,8 +1942,7 @@ defmodule Ide.Mcp.Tools do
          {:ok, package} <- resolve_publish_validation_package(project, args),
          {:ok, context} <- publish_context(project, package) do
       {:ok,
-       %{
-         slug: slug,
+       publish_validate_payload(slug, %{
          status: context.validation.status,
          artifact_path: package.artifact_path,
          app_root: package.app_root,
@@ -2039,7 +1951,7 @@ defmodule Ide.Mcp.Tools do
          checks: context.validation.checks,
          release_notes_md: context.validation.release_notes_md,
          build_result: Map.get(package, :build_result)
-       }}
+       })}
     else
       {:error, reason} -> {:error, "publish validate failed: #{inspect(reason)}"}
     end
@@ -2057,7 +1969,7 @@ defmodule Ide.Mcp.Tools do
            app_store_publisher_module().publish(project,
              app_root: package.app_root,
              artifact_path: package.artifact_path,
-             release_notes: release_notes || "",
+             release_notes: release_notes,
              version: Map.get(args, "version") || publish_version(project),
              description: Map.get(args, "description") || publish_description(project),
              screenshots: screenshot_paths,
@@ -2069,8 +1981,7 @@ defmodule Ide.Mcp.Tools do
                Ide.StoreAssets.publish_icon_paths(Projects.project_workspace_path(project))
            ) do
       {:ok,
-       %{
-         slug: slug,
+       publish_submit_payload(slug, %{
          status: result.status,
          command: result.command,
          exit_code: result.exit_code,
@@ -2080,7 +1991,7 @@ defmodule Ide.Mcp.Tools do
          app_root: package.app_root,
          readiness: context.readiness,
          checks: context.validation.checks
-       }}
+       })}
     else
       {:error, reason} -> {:error, "publish submit failed: #{inspect(reason)}"}
     end
@@ -2089,14 +2000,7 @@ defmodule Ide.Mcp.Tools do
   defp do_call("compiler.compile_cached", %{"slug" => slug}) do
     case CompileCache.latest(slug) do
       {:ok, entry} ->
-        {:ok,
-         %{
-           slug: slug,
-           cached: true,
-           at: entry.at,
-           revision: entry.revision,
-           result: entry.result
-         }}
+        {:ok, compiler_cached_payload(slug, entry, include_revision: true)}
 
       {:error, :not_found} ->
         {:error, "no cached compile result for #{slug}"}
@@ -2112,21 +2016,14 @@ defmodule Ide.Mcp.Tools do
     with {:ok, since} <- parse_since(Map.get(args, "since")) do
       slug = Map.get(args, "slug")
       entries = CompileCache.recent(limit, slug) |> filter_since(since)
-      {:ok, %{entries: entries, limit: limit, slug: slug, since: format_since(since)}}
+      {:ok, compiler_recent_payload(entries, limit, slug, since)}
     end
   end
 
   defp do_call("compiler.manifest_cached", %{"slug" => slug}) do
     case ManifestCache.latest(slug) do
       {:ok, entry} ->
-        {:ok,
-         %{
-           slug: slug,
-           cached: true,
-           at: entry.at,
-           revision: entry.revision,
-           result: entry.result
-         }}
+        {:ok, compiler_cached_payload(slug, entry, include_revision: true)}
 
       {:error, :not_found} ->
         {:error, "no cached manifest result for #{slug}"}
@@ -2142,14 +2039,14 @@ defmodule Ide.Mcp.Tools do
     with {:ok, since} <- parse_since(Map.get(args, "since")) do
       slug = Map.get(args, "slug")
       entries = ManifestCache.recent(limit, slug) |> filter_since(since)
-      {:ok, %{entries: entries, limit: limit, slug: slug, since: format_since(since)}}
+      {:ok, compiler_recent_payload(entries, limit, slug, since)}
     end
   end
 
   defp do_call("compiler.check_cached", %{"slug" => slug}) do
     case CheckCache.latest(slug) do
       {:ok, entry} ->
-        {:ok, %{slug: slug, cached: true, at: entry.at, result: entry.result}}
+        {:ok, compiler_cached_payload(slug, entry)}
 
       {:error, :not_found} ->
         {:error, "no cached check result for #{slug}"}
@@ -2165,7 +2062,7 @@ defmodule Ide.Mcp.Tools do
     with {:ok, since} <- parse_since(Map.get(args, "since")) do
       slug = Map.get(args, "slug")
       entries = CheckCache.recent(limit, slug) |> filter_since(since)
-      {:ok, %{entries: entries, limit: limit, slug: slug, since: format_since(since)}}
+      {:ok, compiler_recent_payload(entries, limit, slug, since)}
     end
   end
 
@@ -2177,7 +2074,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, since} <- parse_since(Map.get(args, "since")) do
       entries = Audit.recent(limit) |> filter_since(since)
-      {:ok, %{entries: entries, limit: limit, since: format_since(since)}}
+      {:ok, audit_recent_payload(entries, limit, since)}
     end
   end
 
@@ -2194,26 +2091,7 @@ defmodule Ide.Mcp.Tools do
       manifests = bundle.compiler_context.recent.manifests
       actions = bundle.audit_entries
 
-      {:ok,
-       %{
-         trace_id: bundle.trace_id,
-         slug: bundle.slug,
-         since: bundle.since,
-         window: %{
-           limit: bundle.limit,
-           audit_entries: length(actions),
-           checks: length(checks),
-           compiles: length(compiles),
-           manifests: length(manifests)
-         },
-         latest_status: %{
-           check: status_of_entry(bundle.compiler_context.latest.check),
-           compile: status_of_entry(bundle.compiler_context.latest.compile),
-           manifest: status_of_entry(bundle.compiler_context.latest.manifest),
-           manifest_strict: strict_of_entry(bundle.compiler_context.latest.manifest)
-         },
-         actions: action_counts(actions)
-       }}
+      {:ok, traces_summary_payload(bundle, actions, checks, compiles, manifests)}
     end
   end
 
@@ -2226,15 +2104,7 @@ defmodule Ide.Mcp.Tools do
         :crypto.hash(:sha256, export_json)
         |> Base.encode16(case: :lower)
 
-      {:ok,
-       %{
-         trace_id: bundle.trace_id,
-         slug: bundle.slug,
-         since: bundle.since,
-         limit: bundle.limit,
-         export_sha256: export_sha256,
-         export_json: export_json
-       }}
+      {:ok, traces_export_payload(bundle, export_json, export_sha256)}
     end
   end
 
@@ -2248,51 +2118,22 @@ defmodule Ide.Mcp.Tools do
       entries =
         files
         |> Enum.take(limit)
-        |> Enum.map(fn file ->
-          %{
-            file_name: file.file_name,
-            path: file.path,
-            bytes: file.bytes,
-            modified_at: file.modified_at
-          }
-        end)
+        |> Enum.map(&trace_export_file_entry/1)
 
-      {:ok, %{entries: entries, limit: limit, total_available: length(files)}}
+      {:ok, traces_exports_list_payload(entries, limit, length(files))}
     else
       {:error, reason} -> {:error, "trace exports list failed: #{inspect(reason)}"}
     end
   end
 
   defp do_call("traces.policy", _args) do
-    configured_policy = trace_policy()
-
-    {:ok,
-     %{
-       configured: %{
-         warn_count: Keyword.get(configured_policy, :warn_count),
-         warn_bytes: Keyword.get(configured_policy, :warn_bytes),
-         keep_latest: Keyword.get(configured_policy, :keep_latest),
-         target_keep_latest: Keyword.get(configured_policy, :target_keep_latest)
-       },
-       effective: %{
-         warn_count: default_warn_count(),
-         warn_bytes: default_warn_bytes(),
-         keep_latest: default_keep_latest(),
-         target_keep_latest: default_target_keep_latest()
-       }
-     }}
+    {:ok, traces_policy_payload()}
   end
 
   defp do_call("traces.policy_validate", _args) do
-    effective = %{
-      warn_count: default_warn_count(),
-      warn_bytes: default_warn_bytes(),
-      keep_latest: default_keep_latest(),
-      target_keep_latest: default_target_keep_latest()
-    }
+    effective = trace_policy_effective_settings()
 
-    validation = policy_validation_payload(effective)
-    {:ok, %{status: validation.status, policy: effective, findings: validation.findings}}
+    {:ok, traces_policy_validate_payload(effective)}
   end
 
   defp do_call("debugger.state", %{"slug" => slug} = args) do
@@ -2328,23 +2169,18 @@ defmodule Ide.Mcp.Tools do
 
       if replay_metadata_only? do
         {:ok,
-         %{
-           slug: slug,
-           event_window: length(events),
-           runtime_fingerprint_digest: runtime_fingerprint_digest,
-           snapshot_refs: snapshot_refs
-         }
+         debugger_state_replay_payload(slug, length(events), runtime_fingerprint_digest, snapshot_refs)
          |> maybe_put_runtime_fingerprint_compare(runtime_fingerprint_compare)
          |> maybe_put_replay_metadata(replay_metadata)}
       else
         {:ok,
-         %{
-           slug: slug,
-           state: state,
-           runtime_fingerprints: runtime_fingerprints,
-           runtime_fingerprint_digest: runtime_fingerprint_digest,
-           snapshot_refs: snapshot_refs
-         }
+         debugger_state_full_payload(
+           slug,
+           state,
+           runtime_fingerprints,
+           runtime_fingerprint_digest,
+           snapshot_refs
+         )
          |> maybe_put_runtime_fingerprint_compare(runtime_fingerprint_compare)
          |> maybe_put_replay_metadata(replay_metadata)}
       end
@@ -2400,40 +2236,28 @@ defmodule Ide.Mcp.Tools do
 
       payload =
         if replay_metadata_only? do
-          %{
-            slug: slug,
-            cursor_seq: resolved_cursor,
-            event_window: length(events),
-            snapshot_refs: snapshot_refs
-          }
+          debugger_cursor_inspect_replay_payload(
+            slug,
+            resolved_cursor,
+            length(events),
+            snapshot_refs
+          )
         else
-          %{
-            slug: slug,
-            cursor_seq: resolved_cursor,
-            event_window: length(events),
-            snapshot_refs: snapshot_refs,
-            elmc_diagnostics: diag.rows,
-            elmc_diagnostics_source: diag.source,
-            elm_introspect: intro,
-            runtime_fingerprints: runtime_fingerprints,
-            runtime_fingerprint_digest: runtime_fingerprint_digest,
-            update_messages:
-              DebuggerSupport.update_messages_at_cursor(events, resolved_cursor, update_limit),
-            protocol_exchange:
-              DebuggerSupport.protocol_exchange_at_cursor(
-                events,
-                resolved_cursor,
-                protocol_limit
-              ),
-            view_renders:
-              DebuggerSupport.render_events_at_cursor(events, resolved_cursor, render_limit),
-            lifecycle:
-              DebuggerSupport.lifecycle_events_at_cursor(
-                events,
-                resolved_cursor,
-                lifecycle_limit
-              )
-          }
+          debugger_cursor_inspect_full_payload(
+            slug,
+            resolved_cursor,
+            length(events),
+            snapshot_refs,
+            diag,
+            intro,
+            runtime_fingerprints,
+            runtime_fingerprint_digest,
+            events,
+            update_limit,
+            protocol_limit,
+            render_limit,
+            lifecycle_limit
+          )
         end
 
       {:ok,
@@ -2464,18 +2288,16 @@ defmodule Ide.Mcp.Tools do
       screen = debugger_surface_screen(state, runtime, target_atom)
       nodes = flatten_rendered_nodes(tree, screen.width, screen.height)
 
-      payload = %{
-        slug: slug,
-        target: Atom.to_string(target_atom),
-        screen: screen,
-        root_type: rendered_node_type(tree),
-        node_count: length(nodes),
-        nodes: nodes
-      }
-
-      {:ok, if(include_tree?, do: Map.put(payload, :tree, tree), else: payload)}
+      {:ok,
+       debugger_render_tree_payload(
+         slug,
+         target_atom,
+         screen,
+         tree,
+         nodes,
+         include_tree?
+       )}
     else
-      {:ok, nil} -> {:error, "debugger render_tree failed: :no_rendered_tree"}
       nil -> {:error, "debugger render_tree failed: :no_rendered_tree"}
       {:error, reason} -> {:error, "debugger render_tree failed: #{inspect(reason)}"}
     end
@@ -2523,15 +2345,7 @@ defmodule Ide.Mcp.Tools do
         end)
         |> Map.new()
 
-      {:ok,
-       %{
-         slug: slug,
-         seq: Map.get(state, :seq),
-         running: Map.get(state, :running, false),
-         revision: Map.get(state, :revision),
-         watch_profile_id: Map.get(state, :watch_profile_id),
-         models: models
-       }}
+      {:ok, debugger_models_payload(slug, state, models)}
     else
       {:error, reason} -> {:error, "debugger models failed: #{inspect(reason)}"}
     end
@@ -2547,13 +2361,7 @@ defmodule Ide.Mcp.Tools do
            ) do
       events = Map.get(state, :events) || []
 
-      {:ok,
-       %{
-         slug: slug,
-         seq: Map.get(state, :seq),
-         count: length(events),
-         timeline: Enum.map(events, &compact_debugger_event/1)
-       }}
+      {:ok, debugger_timeline_payload(slug, state, events)}
     else
       {:error, reason} -> {:error, "debugger timeline failed: #{inspect(reason)}"}
     end
@@ -2573,27 +2381,23 @@ defmodule Ide.Mcp.Tools do
       render_tree = maybe_render_tree_payload(runtime, screen, include_render_tree?)
 
       {:ok,
-       %{
-         slug: slug,
-         seq: Map.get(state, :seq),
-         target: Atom.to_string(target_atom),
-         screen: screen,
-         model: surface_model_payload(state, target_atom, include_view_output?),
-         last_message: map_get_any(runtime, [:last_message, "last_message"], nil),
-         protocol_messages: map_get_any(runtime, [:protocol_messages, "protocol_messages"], []),
-         runtime_fingerprint:
-           events
-           |> DebuggerSupport.runtime_fingerprints_at_cursor(nil)
-           |> Map.get(target_atom),
-         render_tree: render_tree
-       }}
+       debugger_surface_state_payload(
+         slug,
+         state,
+         target_atom,
+         screen,
+         surface_model_payload(state, target_atom, include_view_output?),
+         runtime,
+         events,
+         render_tree
+       )}
     else
       {:error, reason} -> {:error, "debugger surface_state failed: #{inspect(reason)}"}
     end
   end
 
   defp do_call("debugger.watch_profiles", _args) do
-    {:ok, %{watch_profiles: Debugger.watch_profiles()}}
+    {:ok, debugger_watch_profiles_payload()}
   end
 
   defp do_call("debugger.simulator_settings", %{"slug" => slug}) do
@@ -2601,7 +2405,7 @@ defmodule Ide.Mcp.Tools do
          {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
       persisted = project_simulator_settings(project)
       active = Map.get(state, :simulator_settings) || persisted
-      {:ok, %{slug: slug, settings: active, persisted_settings: persisted}}
+      {:ok, debugger_simulator_settings_payload(slug, active, persisted)}
     else
       {:error, reason} -> {:error, "debugger simulator settings failed: #{inspect(reason)}"}
     end
@@ -2619,12 +2423,7 @@ defmodule Ide.Mcp.Tools do
           get_in(companion_model, ["runtime_model", "configuration"]) ||
           %{}
 
-      {:ok,
-       %{
-         slug: slug,
-         values: persisted_values,
-         configuration: configuration
-       }}
+      {:ok, debugger_configuration_payload(slug, persisted_values, configuration)}
     else
       {:error, reason} -> {:error, "debugger configuration failed: #{inspect(reason)}"}
     end
@@ -2635,13 +2434,7 @@ defmodule Ide.Mcp.Tools do
          {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
       settings = project.debugger_settings || %{}
 
-      {:ok,
-       %{
-         slug: slug,
-         auto_fire: map_value(settings, "auto_fire") || %{},
-         auto_fire_subscriptions: map_value(settings, "auto_fire_subscriptions") || [],
-         runtime_auto_tick: Map.get(state, :auto_tick) || %{}
-       }}
+      {:ok, debugger_auto_fire_payload(slug, settings, state)}
     else
       {:error, reason} -> {:error, "debugger auto_fire failed: #{inspect(reason)}"}
     end
@@ -2652,12 +2445,7 @@ defmodule Ide.Mcp.Tools do
          {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
       settings = project.debugger_settings || %{}
 
-      {:ok,
-       %{
-         slug: slug,
-         disabled_subscriptions: map_value(settings, "disabled_subscriptions") || [],
-         runtime_disabled_subscriptions: Map.get(state, :disabled_subscriptions) || []
-       }}
+      {:ok, debugger_disabled_subscriptions_payload(slug, settings, state)}
     else
       {:error, reason} -> {:error, "debugger disabled_subscriptions failed: #{inspect(reason)}"}
     end
@@ -2666,7 +2454,7 @@ defmodule Ide.Mcp.Tools do
   defp do_call("debugger.start", %{"slug" => slug}) do
     with {:ok, _project} <- fetch_project(slug),
          {:ok, state} <- Debugger.start_session(slug) do
-      {:ok, %{slug: slug, state: state}}
+      {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger start failed: #{inspect(reason)}"}
     end
@@ -2675,7 +2463,7 @@ defmodule Ide.Mcp.Tools do
   defp do_call("debugger.reset", %{"slug" => slug}) do
     with {:ok, _project} <- fetch_project(slug),
          {:ok, state} <- Debugger.reset(slug) do
-      {:ok, %{slug: slug, state: state}}
+      {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger reset failed: #{inspect(reason)}"}
     end
@@ -2695,7 +2483,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, _project} <- fetch_project(slug),
          {:ok, state} <- Debugger.set_watch_profile(slug, attrs) do
-      {:ok, %{slug: slug, state: state}}
+      {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger set_watch_profile failed: #{inspect(reason)}"}
     end
@@ -2707,7 +2495,7 @@ defmodule Ide.Mcp.Tools do
          normalized <- normalize_mcp_simulator_settings(settings),
          {:ok, _project} <- persist_project_debugger_setting(project, "simulator", normalized),
          {:ok, state} <- Debugger.set_simulator_settings(slug, normalized) do
-      {:ok, %{slug: slug, settings: normalized, state: state}}
+      {:ok, debugger_simulator_settings_state_payload(slug, normalized, state)}
     else
       {:error, reason} -> {:error, "debugger set_simulator_settings failed: #{inspect(reason)}"}
     end
@@ -2720,7 +2508,7 @@ defmodule Ide.Mcp.Tools do
          {:ok, _project} <-
            persist_project_debugger_setting(project, "configuration_values", values),
          {:ok, state} <- Debugger.save_configuration(slug, values) do
-      {:ok, %{slug: slug, values: values, state: state}}
+      {:ok, debugger_configuration_values_state_payload(slug, values, state)}
     else
       {:error, reason} -> {:error, "debugger save_configuration failed: #{inspect(reason)}"}
     end
@@ -2739,12 +2527,12 @@ defmodule Ide.Mcp.Tools do
       settings = project.debugger_settings || %{}
 
       {:ok,
-       %{
-         slug: slug,
-         auto_fire: map_value(settings, "auto_fire") || %{},
-         auto_fire_subscriptions: map_value(settings, "auto_fire_subscriptions") || [],
-         state: state
-       }}
+       debugger_auto_fire_settings_state_payload(
+         slug,
+         map_value(settings, "auto_fire") || %{},
+         map_value(settings, "auto_fire_subscriptions") || [],
+         state
+       )}
     else
       {:error, reason} -> {:error, "debugger set_auto_fire failed: #{inspect(reason)}"}
     end
@@ -2763,11 +2551,11 @@ defmodule Ide.Mcp.Tools do
       settings = project.debugger_settings || %{}
 
       {:ok,
-       %{
-         slug: slug,
-         disabled_subscriptions: map_value(settings, "disabled_subscriptions") || [],
-         state: state
-       }}
+       debugger_disabled_subscriptions_state_payload(
+         slug,
+         map_value(settings, "disabled_subscriptions") || [],
+         state
+       )}
     else
       {:error, reason} ->
         {:error, "debugger set_subscription_enabled failed: #{inspect(reason)}"}
@@ -2789,7 +2577,7 @@ defmodule Ide.Mcp.Tools do
              reason: reason,
              source_root: source_root
            }) do
-      {:ok, %{slug: slug, state: state}}
+      {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger reload failed: #{inspect(reason)}"}
     end
@@ -2804,7 +2592,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, _project} <- fetch_project(slug),
          {:ok, state} <- Debugger.step(slug, step_attrs) do
-      {:ok, %{slug: slug, state: state}}
+      {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger step failed: #{inspect(reason)}"}
     end
@@ -2818,7 +2606,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, _project} <- fetch_project(slug),
          {:ok, state} <- Debugger.tick(slug, tick_attrs) do
-      {:ok, %{slug: slug, state: state}}
+      {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger tick failed: #{inspect(reason)}"}
     end
@@ -2833,7 +2621,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, _project} <- fetch_project(slug),
          {:ok, state} <- Debugger.start_auto_tick(slug, tick_attrs) do
-      {:ok, %{slug: slug, state: state}}
+      {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger auto_tick_start failed: #{inspect(reason)}"}
     end
@@ -2842,7 +2630,7 @@ defmodule Ide.Mcp.Tools do
   defp do_call("debugger.auto_tick_stop", %{"slug" => slug}) do
     with {:ok, _project} <- fetch_project(slug),
          {:ok, state} <- Debugger.stop_auto_tick(slug) do
-      {:ok, %{slug: slug, state: state}}
+      {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger auto_tick_stop failed: #{inspect(reason)}"}
     end
@@ -2861,7 +2649,7 @@ defmodule Ide.Mcp.Tools do
              replay_mode: replay_mode,
              replay_drift_seq: replay_drift_seq
            }) do
-      {:ok, %{slug: slug, state: state}}
+      {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, "invalid replay_mode (expected frozen|live)"} = err ->
         err
@@ -2884,7 +2672,7 @@ defmodule Ide.Mcp.Tools do
            Debugger.continue_from_snapshot(slug, %{
              cursor_seq: Map.get(args, "cursor_seq")
            }) do
-      {:ok, %{slug: slug, state: state}}
+      {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, "invalid cursor_seq (expected non-negative integer)"} = err ->
         err
@@ -2906,13 +2694,7 @@ defmodule Ide.Mcp.Tools do
              compare_cursor_seq: compare_cursor_seq,
              baseline_cursor_seq: baseline_cursor_seq
            ) do
-      {:ok,
-       %{
-         slug: slug,
-         export_json: export.json,
-         sha256: export.sha256,
-         byte_size: export.byte_size
-       }}
+      {:ok, debugger_export_trace_payload(slug, export)}
     else
       {:error, "invalid compare_cursor_seq (expected non-negative integer)"} = err ->
         err
@@ -2936,7 +2718,7 @@ defmodule Ide.Mcp.Tools do
     with {:ok, _project} <- fetch_project(slug),
          :ok <- verify_export_sha256(json, expected_sha),
          {:ok, state} <- Debugger.import_trace(slug, json, opts) do
-      {:ok, %{slug: slug, state: state}}
+      {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger import_trace failed: #{inspect(reason)}"}
     end
@@ -2950,14 +2732,7 @@ defmodule Ide.Mcp.Tools do
          :ok <- File.write(absolute_path, export.export_json),
          {:ok, stat} <- File.stat(absolute_path) do
       {:ok,
-       %{
-         trace_id: export.trace_id,
-         slug: export.slug,
-         export_sha256: export.export_sha256,
-         bytes: stat.size,
-         path: absolute_path,
-         file_name: file_name
-       }}
+       traces_export_write_payload(export, stat.size, absolute_path, file_name)}
     else
       {:error, reason} -> {:error, "trace export write failed: #{inspect(reason)}"}
     end
@@ -2981,13 +2756,7 @@ defmodule Ide.Mcp.Tools do
         end)
         |> Enum.reverse()
 
-      {:ok,
-       %{
-         keep_latest: keep_latest,
-         deleted_count: length(deleted),
-         deleted_files: deleted,
-         remaining_count: max(length(files) - length(deleted), 0)
-       }}
+      {:ok, traces_exports_prune_payload(keep_latest, deleted, max(length(files) - length(deleted), 0))}
     else
       {:error, reason} -> {:error, "trace exports prune failed: #{inspect(reason)}"}
     end
@@ -3022,27 +2791,23 @@ defmodule Ide.Mcp.Tools do
             {:error, reason} -> {:error, reason}
           end
         else
-          {:ok,
-           %{
-             deleted_count: 0,
-             deleted_files: [],
-             remaining_count: before.trace_exports.total_count
-           }}
+          {:ok, traces_maintenance_prune_skipped_payload(before.trace_exports.total_count)}
         end
 
       with {:ok, prune_payload} <- prune_result,
            {:ok, health_after} <- trace_health_payload(warn_count, warn_bytes) do
         {:ok,
-         %{
-           mode: if(apply?, do: "apply", else: "dry_run"),
-           status: if(pruned, do: "pruned", else: "no_change"),
-           policy_validation: policy_validation,
-           health_before: before,
-           health_after: health_after,
-           thresholds: %{warn_count: warn_count, warn_bytes: warn_bytes},
-           target_keep_latest: target_keep_latest,
-           prune: prune_payload
-         }}
+         traces_maintenance_payload(
+           apply?,
+           pruned,
+           policy_validation,
+           before,
+           health_after,
+           warn_count,
+           warn_bytes,
+           target_keep_latest,
+           prune_payload
+         )}
       else
         {:error, reason} -> {:error, "trace maintenance failed: #{inspect(reason)}"}
       end
@@ -3107,7 +2872,7 @@ defmodule Ide.Mcp.Tools do
           }
         end)
 
-      {:ok, %{projects: projects, limit: limit, slug: requested_slug, since: format_since(since)}}
+      {:ok, sessions_recent_activity_payload(projects, limit, requested_slug, since)}
     end
   end
 
@@ -3118,68 +2883,9 @@ defmodule Ide.Mcp.Tools do
       summaries =
         Projects.list_projects()
         |> maybe_filter_projects(requested_slug)
-        |> Enum.map(fn project ->
-          recent_checks =
-            CheckCache.recent(50, project.slug)
-            |> filter_since(since)
+        |> Enum.map(&session_project_summary(&1, since))
 
-          recent_actions =
-            recent_project_actions(project.slug, 100, since)
-
-          latest_check_status =
-            case CheckCache.latest(project.slug) do
-              {:ok, entry} ->
-                if keep_since?(entry, since), do: entry.result[:status], else: nil
-
-              _ ->
-                nil
-            end
-
-          latest_compile_status =
-            case CompileCache.latest(project.slug) do
-              {:ok, entry} ->
-                if keep_since?(entry, since), do: entry.result[:status], else: nil
-
-              _ ->
-                nil
-            end
-
-          latest_manifest_status =
-            case ManifestCache.latest(project.slug) do
-              {:ok, entry} ->
-                if keep_since?(entry, since), do: entry.result[:status], else: nil
-
-              _ ->
-                nil
-            end
-
-          latest_manifest_strict =
-            case ManifestCache.latest(project.slug) do
-              {:ok, entry} ->
-                if keep_since?(entry, since), do: entry.result[:strict?], else: nil
-
-              _ ->
-                nil
-            end
-
-          %{
-            slug: project.slug,
-            active: project.active,
-            target_type: project.target_type,
-            latest_check_status: latest_check_status,
-            latest_compile_status: latest_compile_status,
-            latest_manifest_status: latest_manifest_status,
-            latest_manifest_strict: latest_manifest_strict,
-            checks_count: length(recent_checks),
-            compiles_count: length(CompileCache.recent(50, project.slug) |> filter_since(since)),
-            manifests_count:
-              length(ManifestCache.recent(50, project.slug) |> filter_since(since)),
-            actions_count: length(recent_actions),
-            screenshots_count: screenshot_count(project)
-          }
-        end)
-
-      {:ok, %{projects: summaries, slug: requested_slug, since: format_since(since)}}
+      {:ok, sessions_summary_payload(summaries, requested_slug, since)}
     end
   end
 
@@ -3196,8 +2902,8 @@ defmodule Ide.Mcp.Tools do
 
     policy_validation = policy_validation_payload(policy)
 
-    with {:ok, payload} <- trace_health_payload(warn_count, warn_bytes) do
-      {:ok, Map.put(payload, :policy_validation, policy_validation)}
+    with {:ok, health} <- trace_health_payload(warn_count, warn_bytes) do
+      {:ok, sessions_trace_health_payload(health, policy_validation)}
     else
       {:error, reason} -> {:error, "trace health failed: #{inspect(reason)}"}
     end
@@ -3205,7 +2911,762 @@ defmodule Ide.Mcp.Tools do
 
   defp do_call(name, _args), do: {:error, "unknown tool: #{name}"}
 
-  @spec build_trace_bundle(map()) :: tool_result()
+  @spec compiler_recent_payload([map()], pos_integer(), String.t() | nil, DateTime.t() | nil) ::
+          ToolTypes.compiler_recent_result()
+  defp compiler_recent_payload(entries, limit, slug, since) do
+    %{
+      entries: entries,
+      limit: limit,
+      slug: slug,
+      since: format_since(since)
+    }
+  end
+
+  @spec audit_recent_payload([map()], pos_integer(), DateTime.t() | nil) ::
+          ToolTypes.audit_recent_result()
+  defp audit_recent_payload(entries, limit, since) do
+    %{entries: entries, limit: limit, since: format_since(since)}
+  end
+
+  @spec cache_latest_result_field(module(), String.t(), DateTime.t() | nil, atom()) ::
+          term() | nil
+  defp cache_latest_result_field(cache, slug, since, field) when is_binary(slug) and is_atom(field) do
+    case cache.latest(slug) do
+      {:ok, entry} ->
+        if keep_since?(entry, since) do
+          entry
+          |> Map.get(:result, %{})
+          |> Map.get(field)
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  @spec compiler_check_payload(String.t(), Ide.Compiler.check_result(), [map()], map()) ::
+          ToolTypes.compiler_check_result()
+  defp compiler_check_payload(slug, result, diagnostics, counts) do
+    %{
+      slug: slug,
+      status: result.status,
+      checked_path: result.checked_path,
+      diagnostics: diagnostics,
+      error_count: counts.error_count,
+      warning_count: counts.warning_count,
+      output: result.output
+    }
+  end
+
+  @spec compiler_check_source_root_payload(
+          String.t(),
+          String.t(),
+          Ide.Compiler.check_result(),
+          [map()],
+          map()
+        ) :: ToolTypes.compiler_check_result()
+  defp compiler_check_source_root_payload(slug, source_root, result, diagnostics, counts) do
+    %{
+      slug: slug,
+      source_root: source_root,
+      status: result.status,
+      checked_path: result.checked_path,
+      diagnostics: diagnostics,
+      error_count: counts.error_count,
+      warning_count: counts.warning_count,
+      output: result.output
+    }
+  end
+
+  @spec compiler_compile_payload(
+          String.t(),
+          Ide.Compiler.compile_result(),
+          [map()],
+          map()
+        ) :: ToolTypes.compiler_compile_result()
+  defp compiler_compile_payload(slug, result, diagnostics, counts) do
+    %{
+      slug: slug,
+      status: result.status,
+      compiled_path: result.compiled_path,
+      revision: result.revision,
+      cached: result.cached?,
+      diagnostics: diagnostics,
+      error_count: counts.error_count,
+      warning_count: counts.warning_count,
+      output: result.output
+    }
+  end
+
+  @spec normalize_compiler_status(String.t() | atom()) :: :ok | :error
+  defp normalize_compiler_status(status) when status in [:ok, :error], do: status
+  defp normalize_compiler_status("ok"), do: :ok
+  defp normalize_compiler_status(_), do: :error
+
+  @spec compiler_manifest_payload(String.t(), map(), [map()], map()) ::
+          ToolTypes.compiler_manifest_result()
+  defp compiler_manifest_payload(slug, result, diagnostics, counts) when is_map(result) do
+    %{
+      slug: slug,
+      status: normalize_compiler_status(Map.get(result, :status)),
+      manifest_path: Map.get(result, :manifest_path, ""),
+      revision: Map.get(result, :revision, ""),
+      cached: Map.get(result, :cached?) == true or Map.get(result, :cached) == true,
+      strict: Map.get(result, :strict?) == true or Map.get(result, :strict) == true,
+      manifest: Map.get(result, :manifest),
+      diagnostics: diagnostics,
+      error_count: counts.error_count,
+      warning_count: counts.warning_count,
+      output: Map.get(result, :output, "")
+    }
+  end
+
+  @spec debugger_auto_fire_payload(String.t(), map(), map()) :: ToolTypes.debugger_auto_fire_result()
+  defp debugger_auto_fire_payload(slug, settings, state)
+       when is_binary(slug) and is_map(settings) and is_map(state) do
+    %{
+      slug: slug,
+      auto_fire: map_value(settings, "auto_fire") || %{},
+      auto_fire_subscriptions: map_value(settings, "auto_fire_subscriptions") || [],
+      runtime_auto_tick: Map.get(state, :auto_tick) || %{}
+    }
+  end
+
+  @spec debugger_auto_fire_settings_state_payload(String.t(), map(), list(), map()) ::
+          ToolTypes.debugger_auto_fire_settings_state_result()
+  defp debugger_auto_fire_settings_state_payload(slug, auto_fire, auto_fire_subscriptions, state)
+       when is_binary(slug) and is_map(auto_fire) and is_list(auto_fire_subscriptions) and
+              is_map(state) do
+    %{slug: slug, auto_fire: auto_fire, auto_fire_subscriptions: auto_fire_subscriptions, state: state}
+  end
+
+  @spec debugger_configuration_payload(String.t(), map(), map()) ::
+          ToolTypes.debugger_configuration_result()
+  defp debugger_configuration_payload(slug, values, configuration)
+       when is_binary(slug) and is_map(values) and is_map(configuration) do
+    %{slug: slug, values: values, configuration: configuration}
+  end
+
+  @spec debugger_configuration_values_state_payload(String.t(), map(), map()) ::
+          ToolTypes.debugger_configuration_values_state_result()
+  defp debugger_configuration_values_state_payload(slug, values, state)
+       when is_binary(slug) and is_map(values) and is_map(state) do
+    %{slug: slug, values: values, state: state}
+  end
+
+  @spec debugger_cursor_inspect_full_payload(
+          String.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          [map()],
+          map(),
+          map(),
+          map(),
+          map(),
+          [map()],
+          pos_integer(),
+          pos_integer(),
+          pos_integer(),
+          pos_integer()
+        ) :: ToolTypes.debugger_cursor_inspect_full_result()
+  defp debugger_cursor_inspect_full_payload(
+         slug,
+         cursor_seq,
+         event_window,
+         snapshot_refs,
+         diag,
+         intro,
+         runtime_fingerprints,
+         runtime_fingerprint_digest,
+         events,
+         update_limit,
+         protocol_limit,
+         render_limit,
+         lifecycle_limit
+       )
+       when is_map(diag) and is_list(events) do
+    %{
+      slug: slug,
+      cursor_seq: cursor_seq,
+      event_window: event_window,
+      snapshot_refs: snapshot_refs,
+      elmc_diagnostics: Map.get(diag, :rows, []),
+      elmc_diagnostics_source: Map.get(diag, :source),
+      elm_introspect: intro,
+      runtime_fingerprints: runtime_fingerprints,
+      runtime_fingerprint_digest: runtime_fingerprint_digest,
+      update_messages:
+        DebuggerSupport.update_messages_at_cursor(events, cursor_seq, update_limit),
+      protocol_exchange:
+        DebuggerSupport.protocol_exchange_at_cursor(events, cursor_seq, protocol_limit),
+      view_renders: DebuggerSupport.render_events_at_cursor(events, cursor_seq, render_limit),
+      lifecycle: DebuggerSupport.lifecycle_events_at_cursor(events, cursor_seq, lifecycle_limit)
+    }
+  end
+
+  @spec debugger_cursor_inspect_replay_payload(
+          String.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          [map()]
+        ) :: ToolTypes.debugger_cursor_inspect_replay_result()
+  defp debugger_cursor_inspect_replay_payload(slug, cursor_seq, event_window, snapshot_refs) do
+    %{slug: slug, cursor_seq: cursor_seq, event_window: event_window, snapshot_refs: snapshot_refs}
+  end
+
+  @spec debugger_disabled_subscriptions_payload(String.t(), map(), map()) ::
+          ToolTypes.debugger_disabled_subscriptions_result()
+  defp debugger_disabled_subscriptions_payload(slug, settings, state)
+       when is_binary(slug) and is_map(settings) and is_map(state) do
+    %{
+      slug: slug,
+      disabled_subscriptions: map_value(settings, "disabled_subscriptions") || [],
+      runtime_disabled_subscriptions: Map.get(state, :disabled_subscriptions) || []
+    }
+  end
+
+  @spec debugger_disabled_subscriptions_state_payload(String.t(), list(), map()) ::
+          ToolTypes.debugger_disabled_subscriptions_state_result()
+  defp debugger_disabled_subscriptions_state_payload(slug, disabled_subscriptions, state)
+       when is_binary(slug) and is_list(disabled_subscriptions) and is_map(state) do
+    %{slug: slug, disabled_subscriptions: disabled_subscriptions, state: state}
+  end
+
+  @spec debugger_export_trace_payload(String.t(), map()) :: ToolTypes.debugger_export_trace_result()
+  defp debugger_export_trace_payload(slug, export) when is_binary(slug) and is_map(export) do
+    %{
+      slug: slug,
+      export_json: Map.fetch!(export, :json),
+      sha256: Map.fetch!(export, :sha256),
+      byte_size: Map.fetch!(export, :byte_size)
+    }
+  end
+
+  @spec debugger_models_payload(String.t(), map(), map()) :: ToolTypes.debugger_models_result()
+  defp debugger_models_payload(slug, state, models) when is_map(state) and is_map(models) do
+    %{
+      slug: slug,
+      seq: Map.get(state, :seq, 0),
+      running: Map.get(state, :running, false),
+      revision: Map.get(state, :revision),
+      watch_profile_id: Map.get(state, :watch_profile_id),
+      models: models
+    }
+  end
+
+  @spec debugger_render_tree_payload(
+          String.t(),
+          atom(),
+          map(),
+          map(),
+          [map()],
+          boolean()
+        ) :: ToolTypes.render_tree_result()
+  defp debugger_render_tree_payload(slug, target_atom, screen, tree, nodes, include_tree?) do
+    payload = %{
+      slug: slug,
+      target: Atom.to_string(target_atom),
+      screen: screen,
+      root_type: rendered_node_type(tree),
+      node_count: length(nodes),
+      nodes: nodes
+    }
+
+    if include_tree?, do: Map.put(payload, :tree, tree), else: payload
+  end
+
+  @spec debugger_simulator_settings_payload(
+          String.t(),
+          Ide.Debugger.Types.simulator_settings(),
+          Ide.Debugger.Types.simulator_settings()
+        ) :: ToolTypes.debugger_simulator_settings_result()
+  defp debugger_simulator_settings_payload(slug, settings, persisted) do
+    %{slug: slug, settings: settings, persisted_settings: persisted}
+  end
+
+  @spec debugger_simulator_settings_state_payload(String.t(), map(), map()) ::
+          ToolTypes.debugger_simulator_settings_state_result()
+  defp debugger_simulator_settings_state_payload(slug, settings, state)
+       when is_binary(slug) and is_map(settings) and is_map(state) do
+    %{slug: slug, settings: settings, state: state}
+  end
+
+  @spec debugger_slug_state_payload(String.t(), map()) :: ToolTypes.debugger_slug_state_result()
+  defp debugger_slug_state_payload(slug, state) when is_binary(slug) and is_map(state) do
+    %{slug: slug, state: state}
+  end
+
+  @spec debugger_state_full_payload(
+          String.t(),
+          map(),
+          map(),
+          map(),
+          [map()]
+        ) :: ToolTypes.debugger_state_full_result()
+  defp debugger_state_full_payload(slug, state, fingerprints, digest, snapshot_refs) do
+    %{
+      slug: slug,
+      state: state,
+      runtime_fingerprints: fingerprints,
+      runtime_fingerprint_digest: digest,
+      snapshot_refs: snapshot_refs
+    }
+  end
+
+  @spec debugger_state_replay_payload(
+          String.t(),
+          non_neg_integer(),
+          map(),
+          [map()]
+        ) :: ToolTypes.debugger_state_replay_result()
+  defp debugger_state_replay_payload(slug, event_window, digest, snapshot_refs) do
+    %{
+      slug: slug,
+      event_window: event_window,
+      runtime_fingerprint_digest: digest,
+      snapshot_refs: snapshot_refs
+    }
+  end
+
+  @spec debugger_surface_state_payload(
+          String.t(),
+          map(),
+          Ide.Debugger.Types.surface_target(),
+          map(),
+          ToolTypes.debugger_surface_model_entry(),
+          map(),
+          [map()],
+          ToolTypes.debugger_render_tree_summary() | nil
+        ) :: ToolTypes.debugger_surface_state_result()
+  defp debugger_surface_state_payload(
+         slug,
+         state,
+         target_atom,
+         screen,
+         model,
+         runtime,
+         events,
+         render_tree
+       )
+       when is_map(state) and is_map(runtime) do
+    %{
+      slug: slug,
+      seq: Map.get(state, :seq, 0),
+      target: Atom.to_string(target_atom),
+      screen: screen,
+      model: model,
+      last_message: map_get_any(runtime, [:last_message, "last_message"], nil),
+      protocol_messages: map_get_any(runtime, [:protocol_messages, "protocol_messages"], []),
+      runtime_fingerprint:
+        events
+        |> DebuggerSupport.runtime_fingerprints_at_cursor(nil)
+        |> Map.get(target_atom),
+      render_tree: render_tree
+    }
+  end
+
+  @spec debugger_timeline_payload(String.t(), map(), [map()]) ::
+          ToolTypes.debugger_timeline_result()
+  defp debugger_timeline_payload(slug, state, events) do
+    %{
+      slug: slug,
+      seq: Map.get(state, :seq, 0),
+      count: length(events),
+      timeline: Enum.map(events, &compact_debugger_event/1)
+    }
+  end
+
+  @spec debugger_watch_profiles_payload() :: ToolTypes.debugger_watch_profiles_result()
+  defp debugger_watch_profiles_payload do
+    %{watch_profiles: Debugger.watch_profiles()}
+  end
+
+  @spec files_patch_payload(
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t()
+        ) :: ToolTypes.files_patch_result()
+  defp files_patch_payload(slug, source_root, rel_path, old_sha256, new_sha256) do
+    %{
+      saved: true,
+      slug: slug,
+      source_root: source_root,
+      rel_path: rel_path,
+      old_sha256: old_sha256,
+      new_sha256: new_sha256
+    }
+  end
+
+  @spec files_read_payload(String.t(), String.t(), String.t(), binary()) ::
+          ToolTypes.files_read_result()
+  defp files_read_payload(slug, source_root, rel_path, content) do
+    %{slug: slug, source_root: source_root, rel_path: rel_path, content: content}
+  end
+
+  @spec files_write_payload(String.t(), String.t(), String.t()) :: ToolTypes.files_write_result()
+  defp files_write_payload(slug, source_root, rel_path) do
+    %{saved: true, slug: slug, source_root: source_root, rel_path: rel_path}
+  end
+
+  @spec packages_module_docs_payload(String.t(), String.t(), String.t(), String.t()) ::
+          ToolTypes.packages_module_docs_result()
+  defp packages_module_docs_payload(package, version, module_name, markdown)
+       when is_binary(package) and is_binary(version) and is_binary(module_name) and
+              is_binary(markdown) do
+    %{package: package, version: version, module: module_name, markdown: markdown}
+  end
+
+  @spec pebble_install_payload(String.t(), String.t(), map()) :: ToolTypes.pebble_install_result()
+  defp pebble_install_payload(slug, artifact_path, install_result)
+       when is_binary(slug) and is_binary(artifact_path) and is_map(install_result) do
+    %{slug: slug, artifact_path: artifact_path, install_result: install_result}
+  end
+
+  @spec pebble_package_payload(String.t(), Ide.PebbleToolchain.package_result()) ::
+          ToolTypes.pebble_package_result()
+  defp pebble_package_payload(slug, result) do
+    %{
+      slug: slug,
+      status: result.status,
+      artifact_path: result.artifact_path,
+      app_root: result.app_root,
+      build_result: result.build_result
+    }
+  end
+
+  @spec project_create_payload(Ide.Projects.Project.t()) :: ToolTypes.project_create_result()
+  defp project_create_payload(%Ide.Projects.Project{} = project), do: project_summary(project)
+
+  @spec project_graph_entry(Ide.Projects.Project.t()) :: ToolTypes.project_graph_entry()
+  defp project_graph_entry(%Ide.Projects.Project{} = project) do
+    tree = Projects.list_source_tree(project)
+
+    %{
+      name: project.name,
+      slug: project.slug,
+      target_type: project.target_type,
+      active: project.active,
+      source_roots: project.source_roots,
+      workspace_path: Projects.project_workspace_path(project),
+      file_count: count_files(tree)
+    }
+  end
+
+  @spec project_summary(Ide.Projects.Project.t()) :: ToolTypes.project_summary()
+  defp project_summary(%Ide.Projects.Project{} = project) do
+    %{
+      name: project.name,
+      slug: project.slug,
+      target_type: project.target_type,
+      source_roots: project.source_roots,
+      active: project.active
+    }
+  end
+
+  @spec projects_graph_payload([ToolTypes.project_graph_entry()]) ::
+          ToolTypes.projects_graph_result()
+  defp projects_graph_payload(projects), do: %{projects: projects}
+
+  @spec projects_list_payload([ToolTypes.project_summary()]) :: ToolTypes.projects_list_result()
+  defp projects_list_payload(projects), do: %{projects: projects}
+
+  @spec projects_delete_payload(String.t()) :: ToolTypes.slug_ok_result()
+  defp projects_delete_payload(slug), do: %{slug: slug, deleted: true}
+
+  @spec compiler_cached_payload(String.t(), map(), keyword()) :: ToolTypes.compiler_cached_result()
+  defp compiler_cached_payload(slug, entry, opts \\ []) when is_map(entry) do
+    base = %{
+      slug: slug,
+      cached: true,
+      at: Map.fetch!(entry, :at),
+      result: Map.fetch!(entry, :result)
+    }
+
+    if Keyword.get(opts, :include_revision, false) do
+      Map.put(base, :revision, Map.fetch!(entry, :revision))
+    else
+      base
+    end
+  end
+
+  @spec projects_tree_payload(String.t(), Ide.Projects.Types.source_tree()) ::
+          ToolTypes.projects_tree_result()
+  defp projects_tree_payload(slug, tree) do
+    %{slug: slug, tree: tree}
+  end
+
+  @spec publish_prepare_payload(String.t(), map()) :: ToolTypes.publish_prepare_result()
+  defp publish_prepare_payload(slug, fields) when is_map(fields) do
+    %{slug: slug, status: Map.fetch!(fields, :status)}
+    |> Map.merge(Map.drop(fields, [:status]))
+  end
+
+  @spec publish_submit_payload(String.t(), map()) :: ToolTypes.publish_submit_result()
+  defp publish_submit_payload(slug, fields) when is_map(fields) do
+    %{slug: slug, status: Map.fetch!(fields, :status)}
+    |> Map.merge(Map.drop(fields, [:status]))
+  end
+
+  @spec publish_validate_payload(String.t(), map()) :: ToolTypes.publish_validate_result()
+  defp publish_validate_payload(slug, fields) when is_map(fields) do
+    %{slug: slug, status: Map.fetch!(fields, :status)}
+    |> Map.merge(Map.drop(fields, [:status]))
+  end
+
+  @spec screenshots_capture_payload(
+          String.t(),
+          map() | nil,
+          String.t(),
+          integer(),
+          String.t(),
+          String.t()
+        ) :: ToolTypes.screenshots_capture_result()
+  defp screenshots_capture_payload(slug, screenshot, output, exit_code, command, cwd)
+       when is_binary(slug) and is_binary(output) and is_integer(exit_code) and is_binary(command) and
+              is_binary(cwd) do
+    %{slug: slug, screenshot: screenshot, output: output, exit_code: exit_code, command: command, cwd: cwd}
+  end
+
+  @spec screenshots_list_payload(String.t(), [map()]) :: ToolTypes.screenshots_list_result()
+  defp screenshots_list_payload(slug, entries) when is_binary(slug) and is_list(entries) do
+    %{slug: slug, count: length(entries), screenshots: entries}
+  end
+
+  @spec screenshots_read_payload(
+          String.t(),
+          map(),
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t()
+        ) :: ToolTypes.screenshots_read_result()
+  defp screenshots_read_payload(slug, screenshot, mime_type, bytes, sha256, content_base64)
+       when is_binary(slug) and is_map(screenshot) and is_binary(mime_type) and is_integer(bytes) and
+              is_binary(sha256) and is_binary(content_base64) do
+    %{
+      slug: slug,
+      screenshot: screenshot,
+      mime_type: mime_type,
+      encoding: "base64",
+      bytes: bytes,
+      sha256: sha256,
+      content_base64: content_base64
+    }
+  end
+
+  @spec session_project_summary(Ide.Projects.Project.t(), DateTime.t() | nil) ::
+          ToolTypes.sessions_summary_entry()
+  defp session_project_summary(%Ide.Projects.Project{} = project, since) do
+    recent_checks = CheckCache.recent(50, project.slug) |> filter_since(since)
+    recent_actions = recent_project_actions(project.slug, 100, since)
+
+    %{
+      slug: project.slug,
+      active: project.active,
+      target_type: project.target_type,
+      latest_check_status: cache_latest_result_field(CheckCache, project.slug, since, :status),
+      latest_compile_status: cache_latest_result_field(CompileCache, project.slug, since, :status),
+      latest_manifest_status:
+        cache_latest_result_field(ManifestCache, project.slug, since, :status),
+      latest_manifest_strict:
+        cache_latest_result_field(ManifestCache, project.slug, since, :strict?),
+      checks_count: length(recent_checks),
+      compiles_count: length(CompileCache.recent(50, project.slug) |> filter_since(since)),
+      manifests_count: length(ManifestCache.recent(50, project.slug) |> filter_since(since)),
+      actions_count: length(recent_actions),
+      screenshots_count: screenshot_count(project)
+    }
+  end
+
+  @spec sessions_recent_activity_payload(
+          [map()],
+          pos_integer(),
+          String.t() | nil,
+          DateTime.t() | nil
+        ) :: ToolTypes.sessions_recent_activity_result()
+  defp sessions_recent_activity_payload(projects, limit, slug, since) do
+    %{projects: projects, limit: limit, slug: slug, since: format_since(since)}
+  end
+
+  @spec sessions_summary_payload(
+          [ToolTypes.sessions_summary_entry()],
+          String.t() | nil,
+          DateTime.t() | nil
+        ) :: ToolTypes.sessions_summary_result()
+  defp sessions_summary_payload(summaries, slug, since) do
+    %{projects: summaries, slug: slug, since: format_since(since)}
+  end
+
+  @spec sessions_trace_health_payload(ToolTypes.trace_health_status_result(), ToolTypes.policy_validation_result()) ::
+          ToolTypes.sessions_trace_health_result()
+  defp sessions_trace_health_payload(health, policy_validation)
+       when is_map(health) and is_map(policy_validation) do
+    Map.put(health, :policy_validation, policy_validation)
+  end
+
+  @spec trace_export_file_entry(ToolTypes.trace_export_file_internal()) :: ToolTypes.trace_export_file_entry()
+  defp trace_export_file_entry(file) when is_map(file) do
+    %{
+      file_name: Map.fetch!(file, :file_name),
+      path: Map.fetch!(file, :path),
+      bytes: Map.fetch!(file, :bytes),
+      modified_at: Map.get(file, :modified_at)
+    }
+  end
+
+  @spec trace_policy_effective_settings() :: ToolTypes.traces_policy_effective_settings()
+  defp trace_policy_effective_settings do
+    %{
+      warn_count: default_warn_count(),
+      warn_bytes: default_warn_bytes(),
+      keep_latest: default_keep_latest(),
+      target_keep_latest: default_target_keep_latest()
+    }
+  end
+
+  @spec trace_policy_settings_map(keyword()) :: ToolTypes.traces_policy_configured_settings()
+  defp trace_policy_settings_map(policy) when is_list(policy) do
+    %{
+      warn_count: Keyword.get(policy, :warn_count),
+      warn_bytes: Keyword.get(policy, :warn_bytes),
+      keep_latest: Keyword.get(policy, :keep_latest),
+      target_keep_latest: Keyword.get(policy, :target_keep_latest)
+    }
+  end
+
+  @spec traces_export_payload(ToolTypes.trace_bundle(), String.t(), String.t()) :: ToolTypes.traces_export_result()
+  defp traces_export_payload(bundle, export_json, export_sha256)
+       when is_map(bundle) and is_binary(export_json) and is_binary(export_sha256) do
+    %{
+      trace_id: Map.get(bundle, :trace_id),
+      slug: Map.get(bundle, :slug),
+      since: Map.get(bundle, :since),
+      limit: Map.get(bundle, :limit),
+      export_sha256: export_sha256,
+      export_json: export_json
+    }
+  end
+
+  @spec traces_export_write_payload(map(), non_neg_integer(), String.t(), String.t()) ::
+          ToolTypes.traces_export_write_result()
+  defp traces_export_write_payload(export, bytes, path, file_name)
+       when is_map(export) and is_integer(bytes) and is_binary(path) and is_binary(file_name) do
+    %{
+      trace_id: Map.get(export, :trace_id),
+      slug: Map.get(export, :slug),
+      export_sha256: Map.fetch!(export, :export_sha256),
+      bytes: bytes,
+      path: path,
+      file_name: file_name
+    }
+  end
+
+  @spec traces_exports_list_payload([ToolTypes.trace_export_file_entry()], pos_integer(), non_neg_integer()) ::
+          ToolTypes.traces_exports_list_result()
+  defp traces_exports_list_payload(entries, limit, total_available) do
+    %{entries: entries, limit: limit, total_available: total_available}
+  end
+
+  @spec traces_exports_prune_payload(pos_integer(), [String.t()], non_neg_integer()) ::
+          ToolTypes.traces_exports_prune_result()
+  defp traces_exports_prune_payload(keep_latest, deleted_files, remaining_count)
+       when is_integer(keep_latest) and is_list(deleted_files) and is_integer(remaining_count) do
+    %{
+      keep_latest: keep_latest,
+      deleted_count: length(deleted_files),
+      deleted_files: deleted_files,
+      remaining_count: remaining_count
+    }
+  end
+
+  @spec traces_maintenance_payload(
+          boolean(),
+          boolean(),
+          ToolTypes.policy_validation_result(),
+          ToolTypes.trace_health_status_result(),
+          ToolTypes.trace_health_status_result(),
+          pos_integer(),
+          pos_integer(),
+          pos_integer(),
+          ToolTypes.traces_exports_prune_result() | ToolTypes.traces_maintenance_prune_skipped()
+        ) :: ToolTypes.traces_maintenance_result()
+  defp traces_maintenance_payload(
+         apply?,
+         pruned,
+         policy_validation,
+         health_before,
+         health_after,
+         warn_count,
+         warn_bytes,
+         target_keep_latest,
+         prune_payload
+       )
+       when is_boolean(apply?) and is_boolean(pruned) and is_map(policy_validation) and
+              is_map(health_before) and is_map(health_after) and is_map(prune_payload) do
+    %{
+      mode: if(apply?, do: "apply", else: "dry_run"),
+      status: if(pruned, do: "pruned", else: "no_change"),
+      policy_validation: policy_validation,
+      health_before: health_before,
+      health_after: health_after,
+      thresholds: %{warn_count: warn_count, warn_bytes: warn_bytes},
+      target_keep_latest: target_keep_latest,
+      prune: prune_payload
+    }
+  end
+
+  @spec traces_maintenance_prune_skipped_payload(non_neg_integer()) ::
+          ToolTypes.traces_maintenance_prune_skipped()
+  defp traces_maintenance_prune_skipped_payload(remaining_count) when is_integer(remaining_count) do
+    %{deleted_count: 0, deleted_files: [], remaining_count: remaining_count}
+  end
+
+  @spec traces_policy_payload() :: ToolTypes.traces_policy_result()
+  defp traces_policy_payload do
+    configured = trace_policy()
+
+    %{
+      configured: trace_policy_settings_map(configured),
+      effective: trace_policy_effective_settings()
+    }
+  end
+
+  @spec traces_policy_validate_payload(ToolTypes.traces_policy_effective_settings()) ::
+          ToolTypes.traces_policy_validate_result()
+  defp traces_policy_validate_payload(effective) when is_map(effective) do
+    validation = policy_validation_payload(effective)
+
+    %{status: validation.status, policy: effective, findings: validation.findings}
+  end
+
+  @spec traces_summary_payload(map(), [map()], [map()], [map()], [map()]) ::
+          ToolTypes.traces_summary_result()
+  defp traces_summary_payload(bundle, actions, checks, compiles, manifests) when is_map(bundle) do
+    %{
+      trace_id: Map.get(bundle, :trace_id),
+      slug: Map.get(bundle, :slug),
+      since: Map.get(bundle, :since),
+      window: %{
+        limit: Map.get(bundle, :limit),
+        audit_entries: length(actions),
+        checks: length(checks),
+        compiles: length(compiles),
+        manifests: length(manifests)
+      },
+      latest_status: %{
+        check: status_of_entry(get_in(bundle, [:compiler_context, :latest, :check])),
+        compile: status_of_entry(get_in(bundle, [:compiler_context, :latest, :compile])),
+        manifest: status_of_entry(get_in(bundle, [:compiler_context, :latest, :manifest])),
+        manifest_strict: strict_of_entry(get_in(bundle, [:compiler_context, :latest, :manifest]))
+      },
+      actions: action_counts(actions)
+    }
+  end
+
+  @spec build_trace_bundle(map()) ::
+          {:ok, ToolTypes.trace_bundle()} | {:error, String.t()}
   defp build_trace_bundle(args) do
     limit =
       args
@@ -3251,8 +3712,8 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  @spec project_settings_payload(map()) :: map()
-  defp project_settings_payload(project) when is_map(project) do
+  @spec project_settings_payload(Ide.Projects.Project.t()) :: ToolTypes.projects_settings_result()
+  defp project_settings_payload(%Ide.Projects.Project{} = project) do
     %{
       name: Map.get(project, :name),
       slug: Map.get(project, :slug),
@@ -3314,7 +3775,7 @@ defmodule Ide.Mcp.Tools do
     {:ok, attrs}
   end
 
-  @spec safe_release_defaults(term()) :: map()
+  @spec safe_release_defaults(map()) :: map()
   defp safe_release_defaults(map) when is_map(map) do
     %{}
     |> maybe_put_string_setting(map, "version_label")
@@ -3323,9 +3784,7 @@ defmodule Ide.Mcp.Tools do
     |> maybe_put_string_list_setting(map, "capabilities")
   end
 
-  defp safe_release_defaults(_), do: %{}
-
-  @spec safe_github_settings(term()) :: map()
+  @spec safe_github_settings(map()) :: map()
   defp safe_github_settings(map) when is_map(map) do
     visibility =
       map
@@ -3349,7 +3808,7 @@ defmodule Ide.Mcp.Tools do
 
   defp safe_github_settings(_), do: %{}
 
-  @spec safe_debugger_settings(term()) :: map()
+  @spec safe_debugger_settings(map()) :: map()
   defp safe_debugger_settings(map) when is_map(map) do
     %{}
     |> maybe_put_existing(map, "timeline_mode")
@@ -3365,7 +3824,7 @@ defmodule Ide.Mcp.Tools do
 
   defp safe_debugger_settings(_), do: %{"simulator" => Debugger.default_simulator_settings()}
 
-  @spec safe_debugger_settings_update(term()) :: map()
+  @spec safe_debugger_settings_update(map()) :: map()
   defp safe_debugger_settings_update(map) when is_map(map) do
     %{}
     |> maybe_put_inclusion_setting(map, "timeline_mode", ~w(watch companion mixed separate))
@@ -3373,8 +3832,6 @@ defmodule Ide.Mcp.Tools do
     |> maybe_put_string_setting(map, "emulator_target")
     |> maybe_put_inclusion_setting(map, "emulator_mode", EmulatorSupport.allowed_mode_ids())
   end
-
-  defp safe_debugger_settings_update(_), do: %{}
 
   defp patch_emulator_mode_tool_schemas(tools) do
     modes = EmulatorSupport.allowed_mode_ids()
@@ -3400,7 +3857,7 @@ defmodule Ide.Mcp.Tools do
     |> normalize_mcp_simulator_settings()
   end
 
-  @spec normalize_mcp_simulator_settings(term()) :: map()
+  @spec normalize_mcp_simulator_settings(map()) :: map()
   defp normalize_mcp_simulator_settings(settings) when is_map(settings) do
     defaults = Debugger.default_simulator_settings()
 
@@ -3458,7 +3915,7 @@ defmodule Ide.Mcp.Tools do
     end)
   end
 
-  @spec persist_project_debugger_setting(map(), String.t(), term()) ::
+  @spec persist_project_debugger_setting(map(), String.t(), WireTypes.debugger_setting_value()) ::
           {:ok, map()} | {:error, term()}
   defp persist_project_debugger_setting(project, key, value)
        when is_map(project) and is_binary(key) do
@@ -3470,7 +3927,7 @@ defmodule Ide.Mcp.Tools do
     Projects.update_project(project, %{"debugger_settings" => settings})
   end
 
-  @spec persist_project_auto_fire_setting(map(), map()) :: {:ok, map()} | {:error, term()}
+  @spec persist_project_auto_fire_setting(map(), map()) :: {:ok, map()} | {:error, String.t()}
   defp persist_project_auto_fire_setting(project, attrs) when is_map(project) and is_map(attrs) do
     target = debugger_setting_target(map_value(attrs, "target"))
     trigger = map_value(attrs, "trigger")
@@ -3516,7 +3973,7 @@ defmodule Ide.Mcp.Tools do
     })
   end
 
-  @spec update_project_auto_fire_subscriptions(term(), term(), term(), boolean()) :: [map()]
+  @spec update_project_auto_fire_subscriptions([map()], String.t(), String.t(), boolean()) :: [map()]
   defp update_project_auto_fire_subscriptions(subscriptions, target, trigger, enabled?) do
     trigger = String.trim(to_string(trigger))
 
@@ -3534,7 +3991,7 @@ defmodule Ide.Mcp.Tools do
     |> Enum.uniq_by(&{map_value(&1, "target"), map_value(&1, "trigger")})
   end
 
-  @spec update_project_disabled_subscriptions(term(), term(), term(), boolean()) :: [map()]
+  @spec update_project_disabled_subscriptions([map()], String.t(), String.t(), boolean()) :: [map()]
   defp update_project_disabled_subscriptions(subscriptions, target, trigger, enabled?)
        when is_binary(trigger) and trigger != "" do
     trigger = String.trim(trigger)
@@ -3556,13 +4013,10 @@ defmodule Ide.Mcp.Tools do
   defp update_project_disabled_subscriptions(subscriptions, _target, _trigger, _enabled?),
     do: subscriptions |> List.wrap() |> Enum.filter(&is_map/1)
 
-  @spec debugger_setting_target(term()) :: String.t()
+  @spec debugger_setting_target(String.t() | atom()) :: String.t()
   defp debugger_setting_target("protocol"), do: "protocol"
   defp debugger_setting_target("companion"), do: "phone"
   defp debugger_setting_target("phone"), do: "phone"
-  defp debugger_setting_target(:protocol), do: "protocol"
-  defp debugger_setting_target(:companion), do: "phone"
-  defp debugger_setting_target(:phone), do: "phone"
   defp debugger_setting_target(_target), do: "watch"
 
   defp package_for_publish(project) do
@@ -3579,17 +4033,19 @@ defmodule Ide.Mcp.Tools do
     )
   end
 
-  defp resolve_publish_validation_package(_project, %{"package" => false} = args) do
-    {:ok,
-     %{
-       status: :unknown,
-       artifact_path: Map.get(args, "artifact_path"),
-       app_root: Map.get(args, "app_root"),
-       build_result: nil
-     }}
+  defp resolve_publish_validation_package(project, args) do
+    if is_map(args) and Map.get(args, "package") == false do
+      {:ok,
+       %{
+         status: :unknown,
+         artifact_path: Map.get(args, "artifact_path"),
+         app_root: Map.get(args, "app_root"),
+         build_result: nil
+       }}
+    else
+      package_for_publish(project)
+    end
   end
-
-  defp resolve_publish_validation_package(project, _args), do: package_for_publish(project)
 
   defp resolve_publish_submit_package(_project, %{"app_root" => app_root} = args)
        when is_binary(app_root) and app_root != "" do
@@ -3798,8 +4254,10 @@ defmodule Ide.Mcp.Tools do
   defp authorized?(_, _), do: false
 
   @spec add_if(list(), boolean(), list()) :: list()
-  defp add_if(list, true, entries), do: list ++ entries
-  defp add_if(list, false, _entries), do: list
+  @spec add_if([term()], boolean(), [term()]) :: [term()]
+  defp add_if(list, condition, entries) when is_boolean(condition) do
+    if condition, do: list ++ entries, else: list
+  end
 
   @spec publish_tool_name(map()) :: map()
   defp publish_tool_name(%{name: name} = tool) when is_binary(name) do
@@ -3829,7 +4287,7 @@ defmodule Ide.Mcp.Tools do
     end)
   end
 
-  @spec parse_limit(term()) :: pos_integer()
+  @spec parse_limit(WireTypes.limit_input()) :: pos_integer()
   defp parse_limit(value) when is_integer(value), do: clamp_limit(value)
 
   defp parse_limit(value) when is_binary(value) do
@@ -3841,17 +4299,17 @@ defmodule Ide.Mcp.Tools do
 
   defp parse_limit(_), do: 20
 
-  @spec put_opt(keyword(), atom(), term()) :: keyword()
+  @spec put_opt(keyword(), atom(), WireTypes.json_value()) :: keyword()
   defp put_opt(opts, _key, nil), do: opts
   defp put_opt(opts, _key, ""), do: opts
   defp put_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
-  @spec put_opt_map(map(), String.t(), term()) :: map()
+  @spec put_opt_map(map(), String.t(), WireTypes.json_value()) :: map()
   defp put_opt_map(map, _key, nil), do: map
   defp put_opt_map(map, _key, ""), do: map
   defp put_opt_map(map, key, value), do: Map.put(map, key, value)
 
-  @spec map_value(map(), String.t()) :: term()
+  @spec map_value(map(), String.t()) :: WireTypes.map_value_result()
   defp map_value(map, key) when is_map(map) and is_binary(key),
     do: Map.get(map, key) || Map.get(map, String.to_atom(key))
 
@@ -3915,7 +4373,7 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  @spec normalize_mcp_integer(term(), integer(), integer(), integer()) :: integer()
+  @spec normalize_mcp_integer(WireTypes.integer_input(), integer(), integer(), integer()) :: integer()
   defp normalize_mcp_integer(value, _default, min, max) when is_integer(value),
     do: value |> Kernel.max(min) |> Kernel.min(max)
 
@@ -3928,7 +4386,7 @@ defmodule Ide.Mcp.Tools do
 
   defp normalize_mcp_integer(_value, default, _min, _max), do: default
 
-  @spec normalize_mcp_float(term(), float(), float(), float()) :: float()
+  @spec normalize_mcp_float(WireTypes.float_input(), float(), float(), float()) :: float()
   defp normalize_mcp_float(value, _default, min, max) when is_float(value),
     do: value |> Kernel.max(min) |> Kernel.min(max)
 
@@ -3944,7 +4402,7 @@ defmodule Ide.Mcp.Tools do
 
   defp normalize_mcp_float(_value, default, _min, _max), do: default
 
-  @spec normalize_mcp_optional_string(term(), String.t() | nil) :: String.t() | nil
+  @spec normalize_mcp_optional_string(WireTypes.optional_string(), String.t() | nil) :: String.t() | nil
   defp normalize_mcp_optional_string(value, _default) when is_binary(value) do
     case String.trim(value) do
       "" -> nil
@@ -3954,15 +4412,25 @@ defmodule Ide.Mcp.Tools do
 
   defp normalize_mcp_optional_string(_value, default), do: default
 
-  @spec normalize_mcp_boolean(term(), boolean()) :: boolean()
-  defp normalize_mcp_boolean(value, _default) when value in [true, "true", "on", "1", 1],
-    do: true
+  @spec normalize_mcp_boolean(WireTypes.boolean_input(), boolean()) :: boolean()
+  defp normalize_mcp_boolean(value, default) do
+    cond do
+      value in [true, "true", "on", "1", 1] ->
+        true
 
-  defp normalize_mcp_boolean(value, _default) when value in [false, "false", "off", "0", 0],
-    do: false
+      value in [false, "false", "off", "0", 0] ->
+        false
 
-  defp normalize_mcp_boolean([value | _], default), do: normalize_mcp_boolean(value, default)
-  defp normalize_mcp_boolean(_value, default), do: default
+      is_list(value) ->
+        case value do
+          [first | _] -> normalize_mcp_boolean(first, default)
+          _ -> default
+        end
+
+      true ->
+        default
+    end
+  end
 
   @spec redact_patch_argument(map(), String.t()) :: map()
   defp redact_patch_argument(args, key) do
@@ -3978,7 +4446,7 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  @spec parse_platform_target(term()) :: term()
+  @spec parse_platform_target(String.t() | atom() | nil) :: :watch | :phone | nil
   defp parse_platform_target("watch"), do: :watch
   defp parse_platform_target("phone"), do: :phone
   defp parse_platform_target(_), do: nil
@@ -4003,7 +4471,7 @@ defmodule Ide.Mcp.Tools do
     |> Enum.take(limit)
   end
 
-  @spec screenshot_count(term()) :: non_neg_integer()
+  @spec screenshot_count(Projects.Project.t() | String.t()) :: non_neg_integer()
   defp screenshot_count(%Projects.Project{} = project) do
     case Screenshots.list(project, []) do
       {:ok, shots} -> length(shots)
@@ -4025,10 +4493,8 @@ defmodule Ide.Mcp.Tools do
       result
       |> Map.put_new(:source_root, compile_result_source_root(project, result))
 
-    case Debugger.ingest_elmc_compile(slug, attrs) do
-      {:ok, _state} -> :ok
-      _ -> :ok
-    end
+    {:ok, _state} = Debugger.ingest_elmc_compile(slug, attrs)
+    :ok
   end
 
   defp ingest_compile_result(_slug, _project, _result), do: :ok
@@ -4040,9 +4506,12 @@ defmodule Ide.Mcp.Tools do
 
     with path when is_binary(path) <- compiled_path,
          relative when relative != path <- Path.relative_to(path, workspace),
-         [source_root | _] <- Path.split(relative),
-         true <- source_root in project.source_roots do
-      source_root
+         [source_root | _] <- Path.split(relative) do
+      if source_root in project.source_roots do
+        source_root
+      else
+        List.first(project.source_roots) || "watch"
+      end
     else
       _ -> List.first(project.source_roots) || "watch"
     end
@@ -4080,7 +4549,7 @@ defmodule Ide.Mcp.Tools do
   @spec sha256_hex(binary()) :: String.t()
   defp sha256_hex(content), do: Base.encode16(:crypto.hash(:sha256, content), case: :lower)
 
-  @spec validate_expected_sha256(binary(), term()) :: :ok | {:error, atom()}
+  @spec validate_expected_sha256(binary(), WireTypes.sha256_input()) :: :ok | {:error, atom()}
   defp validate_expected_sha256(_content, nil), do: :ok
   defp validate_expected_sha256(_content, ""), do: :ok
 
@@ -4108,7 +4577,7 @@ defmodule Ide.Mcp.Tools do
 
   defp replace_once(_content, _old_string, _new_string), do: {:error, :invalid_patch}
 
-  @spec search_source_roots(map(), term()) :: {:ok, [String.t()]} | {:error, atom()}
+  @spec search_source_roots(map(), WireTypes.json_value()) :: {:ok, [String.t()]} | {:error, atom()}
   defp search_source_roots(project, nil), do: {:ok, project.source_roots}
   defp search_source_roots(project, ""), do: {:ok, project.source_roots}
 
@@ -4166,7 +4635,7 @@ defmodule Ide.Mcp.Tools do
     end)
   end
 
-  @spec parse_diff_limit(term()) :: pos_integer()
+  @spec parse_diff_limit(WireTypes.limit_input()) :: pos_integer()
   defp parse_diff_limit(value) when is_integer(value), do: value |> max(1) |> min(200_000)
 
   defp parse_diff_limit(value) when is_binary(value) do
@@ -4178,7 +4647,7 @@ defmodule Ide.Mcp.Tools do
 
   defp parse_diff_limit(_value), do: 50_000
 
-  @spec mcp_screenshot_entry(map()) :: map()
+  @spec mcp_screenshot_entry(map()) :: ToolTypes.screenshot_entry()
   defp mcp_screenshot_entry(shot) when is_map(shot) do
     target = Map.get(shot, :emulator_target)
     captured_at = Map.get(shot, :captured_at)
@@ -4222,7 +4691,7 @@ defmodule Ide.Mcp.Tools do
 
   defp screenshot_mime_type(_filename), do: "application/octet-stream"
 
-  @spec parse_since(term()) :: {:ok, maybe_since()} | {:error, String.t()}
+  @spec parse_since(WireTypes.since_input()) :: {:ok, maybe_since()} | {:error, String.t()}
   defp parse_since(nil), do: {:ok, nil}
   defp parse_since(""), do: {:ok, nil}
 
@@ -4235,19 +4704,19 @@ defmodule Ide.Mcp.Tools do
 
   defp parse_since(_), do: {:error, "invalid since timestamp (expected ISO8601)"}
 
-  @spec parse_trace_id(term()) :: {:ok, maybe_trace_id()} | {:error, String.t()}
+  @spec parse_trace_id(WireTypes.trace_id_input()) :: {:ok, maybe_trace_id()} | {:error, String.t()}
   defp parse_trace_id(nil), do: {:ok, nil}
   defp parse_trace_id(""), do: {:ok, nil}
   defp parse_trace_id(value) when is_binary(value), do: {:ok, value}
   defp parse_trace_id(_), do: {:error, "invalid trace_id (expected string)"}
 
-  @spec parse_optional_slug(term()) :: {:ok, maybe_slug()} | {:error, String.t()}
+  @spec parse_optional_slug(WireTypes.slug_input()) :: {:ok, maybe_slug()} | {:error, String.t()}
   defp parse_optional_slug(nil), do: {:ok, nil}
   defp parse_optional_slug(""), do: {:ok, nil}
   defp parse_optional_slug(value) when is_binary(value), do: {:ok, value}
   defp parse_optional_slug(_), do: {:error, "invalid slug (expected string)"}
 
-  @spec parse_prune_keep_latest(term()) :: non_neg_integer()
+  @spec parse_prune_keep_latest(WireTypes.integer_input()) :: non_neg_integer()
   defp parse_prune_keep_latest(value) when is_integer(value), do: max(value, 0)
 
   defp parse_prune_keep_latest(value) when is_binary(value) do
@@ -4259,7 +4728,7 @@ defmodule Ide.Mcp.Tools do
 
   defp parse_prune_keep_latest(_), do: default_keep_latest()
 
-  @spec parse_positive_integer(term(), pos_integer()) :: pos_integer()
+  @spec parse_positive_integer(WireTypes.integer_input(), pos_integer()) :: pos_integer()
   defp parse_positive_integer(value, _fallback) when is_integer(value) and value > 0, do: value
 
   defp parse_positive_integer(value, fallback) when is_binary(value) do
@@ -4271,7 +4740,7 @@ defmodule Ide.Mcp.Tools do
 
   defp parse_positive_integer(_value, fallback), do: fallback
 
-  @spec parse_event_limit(term()) :: pos_integer()
+  @spec parse_event_limit(WireTypes.limit_input()) :: pos_integer()
   defp parse_event_limit(value) when is_integer(value) and value > 0, do: min(value, 500)
 
   defp parse_event_limit(value) when is_binary(value) do
@@ -4283,7 +4752,7 @@ defmodule Ide.Mcp.Tools do
 
   defp parse_event_limit(_), do: 50
 
-  @spec parse_since_seq(term()) :: non_neg_integer() | nil
+  @spec parse_since_seq(WireTypes.cursor_seq_input()) :: non_neg_integer() | nil
   defp parse_since_seq(value) when is_integer(value) and value >= 0, do: value
 
   defp parse_since_seq(value) when is_binary(value) do
@@ -4295,11 +4764,12 @@ defmodule Ide.Mcp.Tools do
 
   defp parse_since_seq(_), do: nil
 
-  @spec truthy?(term()) :: boolean()
-  defp truthy?(value) when value in [true, 1, "1", "true", "TRUE", "True"], do: true
-  defp truthy?(_), do: false
+  @spec truthy?(WireTypes.json_value()) :: boolean()
+  defp truthy?(value) do
+    value in [true, 1, "1", "true", "TRUE", "True"]
+  end
 
-  @spec parse_render_tree_target(term()) :: {:ok, :watch | :companion | :phone} | {:error, atom()}
+  @spec parse_render_tree_target(WireTypes.render_tree_target_input()) :: {:ok, :watch | :companion | :phone} | {:error, atom()}
   defp parse_render_tree_target(nil), do: {:ok, :watch}
   defp parse_render_tree_target(""), do: {:ok, :watch}
   defp parse_render_tree_target("watch"), do: {:ok, :watch}
@@ -4310,7 +4780,7 @@ defmodule Ide.Mcp.Tools do
   defp parse_render_tree_target(:phone), do: {:ok, :phone}
   defp parse_render_tree_target(_target), do: {:error, :invalid_target}
 
-  @spec parse_optional_debugger_targets(term()) ::
+  @spec parse_optional_debugger_targets(WireTypes.debugger_targets_input()) ::
           {:ok, [:watch | :companion | :phone]} | {:error, atom()}
   defp parse_optional_debugger_targets(nil), do: {:ok, [:watch, :companion, :phone]}
   defp parse_optional_debugger_targets(""), do: {:ok, [:watch, :companion, :phone]}
@@ -4329,7 +4799,8 @@ defmodule Ide.Mcp.Tools do
 
   defp debugger_surface_runtime(_state, _target), do: {:error, :invalid_target}
 
-  @spec surface_model_payload(map(), atom(), boolean()) :: map()
+  @spec surface_model_payload(map(), Ide.Debugger.Types.surface_target(), boolean()) ::
+          ToolTypes.debugger_surface_model_entry()
   defp surface_model_payload(state, target, include_view_output?)
        when target in [:watch, :companion, :phone] do
     runtime = Map.get(state, target) || %{}
@@ -4355,7 +4826,7 @@ defmodule Ide.Mcp.Tools do
     }
   end
 
-  @spec compact_debugger_model(term(), boolean()) :: map()
+  @spec compact_debugger_model(map(), boolean()) :: map()
   defp compact_debugger_model(model, include_view_output?) when is_map(model) do
     drop_keys =
       [
@@ -4379,30 +4850,30 @@ defmodule Ide.Mcp.Tools do
 
   defp compact_debugger_model(_model, _include_view_output?), do: %{}
 
-  @spec model_keys(term()) :: [String.t()]
+  @spec model_keys(map()) :: [String.t()]
   defp model_keys(model) when is_map(model),
     do: model |> Map.keys() |> Enum.map(&to_string/1) |> Enum.sort()
 
   defp model_keys(_model), do: []
 
   @spec maybe_render_tree_payload(map() | nil, map(), boolean()) :: map() | nil
-  defp maybe_render_tree_payload(runtime, screen, true) when is_map(runtime) do
-    case DebuggerSupport.rendered_tree(runtime) do
-      %{} = tree ->
-        nodes = flatten_rendered_nodes(tree, screen.width, screen.height)
+  defp maybe_render_tree_payload(runtime, screen, include?) do
+    if include? && is_map(runtime) do
+      case DebuggerSupport.rendered_tree(runtime) do
+        %{} = tree ->
+          nodes = flatten_rendered_nodes(tree, screen.width, screen.height)
 
-        %{
-          root_type: rendered_node_type(tree),
-          node_count: length(nodes),
-          nodes: nodes
-        }
+          %{
+            root_type: rendered_node_type(tree),
+            node_count: length(nodes),
+            nodes: nodes
+          }
 
-      _ ->
-        nil
+        _ ->
+          nil
+      end
     end
   end
-
-  defp maybe_render_tree_payload(_runtime, _screen, _include?), do: nil
 
   @spec preview_diagnostics_payload(
           String.t(),
@@ -4413,7 +4884,7 @@ defmodule Ide.Mcp.Tools do
           map(),
           [map()],
           non_neg_integer() | nil
-        ) :: map()
+        ) :: ToolTypes.debugger_preview_diagnostics_result()
   defp preview_diagnostics_payload(
          slug,
          state,
@@ -4429,10 +4900,15 @@ defmodule Ide.Mcp.Tools do
     rendered_tree = DebuggerSupport.rendered_tree(runtime)
     runtime_output = runtime_view_output_rows(model)
     render_source = preview_render_source(runtime_output, view_tree, rendered_tree)
-    nodes = preview_nodes(rendered_tree, screen)
+    nodes =
+      if is_map(rendered_tree) do
+        preview_nodes(rendered_tree, screen)
+      else
+        []
+      end
     root_type = rendered_node_type(rendered_tree)
     runtime_fingerprint = Map.get(runtime_fingerprints, target)
-    surface_tree_sha256 = stable_term_sha256(view_tree)
+    surface_tree_sha256 = if is_map(view_tree), do: stable_term_sha256(view_tree), else: nil
 
     fingerprint_view_tree_sha256 =
       map_get_any(runtime_fingerprint || %{}, [:view_tree_sha256, "view_tree_sha256"], nil)
@@ -4481,8 +4957,6 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  defp runtime_view_output_rows(_model), do: []
-
   @spec runtime_view_output_kinds([map()]) :: [String.t()]
   defp runtime_view_output_kinds(rows) when is_list(rows) do
     rows
@@ -4495,7 +4969,7 @@ defmodule Ide.Mcp.Tools do
     |> Enum.take(24)
   end
 
-  @spec preview_render_source([map()], term(), term()) :: String.t()
+  @spec preview_render_source([map()], map(), map()) :: String.t()
   defp preview_render_source([_ | _], _view_tree, _rendered_tree), do: "runtime_view_output"
 
   defp preview_render_source([], %{} = view_tree, _rendered_tree) do
@@ -4511,8 +4985,8 @@ defmodule Ide.Mcp.Tools do
   defp preview_status(_source, []), do: "empty"
   defp preview_status(_source, _nodes), do: "ok"
 
-  @spec preview_nodes(term(), map()) :: [map()]
-  defp preview_nodes(%{} = tree, screen) when is_map(screen) do
+  @spec preview_nodes(map(), map()) :: [map()]
+  defp preview_nodes(tree, screen) when is_map(tree) and is_map(screen) do
     flatten_rendered_nodes(
       tree,
       integer_or_default(map_get_any(screen, ["width", :width], nil), 0),
@@ -4520,9 +4994,8 @@ defmodule Ide.Mcp.Tools do
     )
   end
 
-  defp preview_nodes(_tree, _screen), do: []
-
-  @spec preview_findings(String.t(), term(), [map()], term(), term(), term()) :: [String.t()]
+  @spec preview_findings(String.t(), map() | nil, [map()], map() | nil, String.t() | nil, String.t() | nil) ::
+          [String.t()]
   defp preview_findings(
          render_source,
          rendered_tree,
@@ -4533,7 +5006,7 @@ defmodule Ide.Mcp.Tools do
        ) do
     []
     |> maybe_add_finding(runtime_output == [], "no_runtime_view_output")
-    |> maybe_add_finding(rendered_tree == nil, "no_rendered_tree")
+    |> maybe_add_finding(not is_map(rendered_tree), "no_rendered_tree")
     |> maybe_add_finding(render_source == "parser_view_tree", "using_static_parser_view_tree")
     |> maybe_add_finding(
       fingerprint_view_tree_sha256_mismatch?(surface_tree_sha256, fingerprint_view_tree_sha256),
@@ -4547,10 +5020,11 @@ defmodule Ide.Mcp.Tools do
   end
 
   @spec maybe_add_finding([String.t()], boolean(), String.t()) :: [String.t()]
-  defp maybe_add_finding(findings, true, finding), do: [finding | findings]
-  defp maybe_add_finding(findings, false, _finding), do: findings
+  defp maybe_add_finding(findings, condition, finding) when is_boolean(condition) do
+    if condition, do: [finding | findings], else: findings
+  end
 
-  @spec fingerprint_view_tree_sha256_mismatch?(term(), term()) :: boolean()
+  @spec fingerprint_view_tree_sha256_mismatch?(String.t(), String.t()) :: boolean()
   defp fingerprint_view_tree_sha256_mismatch?(displayed, fingerprint)
        when is_binary(displayed) and is_binary(fingerprint) and displayed != "" and
               fingerprint != "",
@@ -4558,19 +5032,14 @@ defmodule Ide.Mcp.Tools do
 
   defp fingerprint_view_tree_sha256_mismatch?(_displayed, _fingerprint), do: false
 
-  @spec stable_term_sha256(term()) :: String.t() | nil
-  defp stable_term_sha256(nil), do: nil
-
+  @spec stable_term_sha256(term()) :: String.t()
   defp stable_term_sha256(term) do
     :crypto.hash(:sha256, :erlang.term_to_binary(term))
     |> Base.encode16(case: :lower)
   end
 
-  @spec parser_expression_view_tree?(term()) :: boolean()
+  @spec parser_expression_view_tree?(map() | nil) :: boolean()
   defp parser_expression_view_tree?(%{"type" => type}) when is_binary(type),
-    do: parser_expression_root_type?(type)
-
-  defp parser_expression_view_tree?(%{type: type}) when is_binary(type),
     do: parser_expression_root_type?(type)
 
   defp parser_expression_view_tree?(_tree), do: false
@@ -4679,7 +5148,7 @@ defmodule Ide.Mcp.Tools do
     Map.new(map, fn {key, value} -> {to_string(key), value} end)
   end
 
-  @spec debugger_reload_source(map(), String.t(), String.t(), term()) ::
+  @spec debugger_reload_source(map(), String.t(), String.t(), WireTypes.json_value()) ::
           {:ok, String.t()} | {:error, term()}
   defp debugger_reload_source(_project, _source_root, _rel_path, source) when is_binary(source),
     do: {:ok, source}
@@ -4776,7 +5245,7 @@ defmodule Ide.Mcp.Tools do
 
   defp do_flatten_rendered_nodes(_node, _path, _root, _screen_w, _screen_h), do: []
 
-  @spec rendered_node_type(term()) :: String.t()
+  @spec rendered_node_type(map()) :: String.t()
   defp rendered_node_type(node) when is_map(node) do
     node
     |> map_get_any(["type", :type], "")
@@ -4785,7 +5254,7 @@ defmodule Ide.Mcp.Tools do
 
   defp rendered_node_type(_node), do: ""
 
-  @spec rendered_node_label(term()) :: String.t() | nil
+  @spec rendered_node_label(map()) :: String.t() | nil
   defp rendered_node_label(node) when is_map(node) do
     case map_get_any(node, ["label", :label, "text", :text], nil) do
       nil -> nil
@@ -4793,9 +5262,7 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  defp rendered_node_label(_node), do: nil
-
-  @spec rendered_box_bounds(term()) :: map() | nil
+  @spec rendered_box_bounds(map()) :: map() | nil
   defp rendered_box_bounds(node) when is_map(node) do
     case map_get_any(node, ["box", :box], nil) do
       %{} = box ->
@@ -4811,9 +5278,8 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  defp rendered_box_bounds(_node), do: nil
-
-  @spec map_get_any(map(), [term()], term()) :: term()
+  @spec map_get_any(map(), [atom() | String.t()], WireTypes.map_value_result()) ::
+          WireTypes.map_value_result()
   defp map_get_any(map, keys, default) when is_map(map) and is_list(keys) do
     Enum.find_value(keys, default, fn key ->
       case Map.fetch(map, key) do
@@ -4825,7 +5291,7 @@ defmodule Ide.Mcp.Tools do
 
   defp map_get_any(_map, _keys, default), do: default
 
-  @spec integer_or_default(term(), integer()) :: integer()
+  @spec integer_or_default(WireTypes.integer_input(), integer()) :: integer()
   defp integer_or_default(value, _default) when is_integer(value), do: value
 
   defp integer_or_default(value, default) when is_binary(value) do
@@ -4837,15 +5303,16 @@ defmodule Ide.Mcp.Tools do
 
   defp integer_or_default(_value, default), do: default
 
-  @spec include_replay_metadata?(term()) :: boolean()
-  defp include_replay_metadata?(nil), do: true
+  @spec include_replay_metadata?(WireTypes.boolean_input()) :: boolean()
+  defp include_replay_metadata?(value) do
+    cond do
+      is_nil(value) -> true
+      value in [false, 0, "0", "false", "FALSE", "False"] -> false
+      true -> true
+    end
+  end
 
-  defp include_replay_metadata?(value) when value in [false, 0, "0", "false", "FALSE", "False"],
-    do: false
-
-  defp include_replay_metadata?(_), do: true
-
-  @spec parse_compare_cursor_seq(term()) ::
+  @spec parse_compare_cursor_seq(WireTypes.cursor_seq_input()) ::
           {:ok, non_neg_integer() | nil} | {:error, String.t()}
   defp parse_compare_cursor_seq(nil), do: {:ok, nil}
 
@@ -4856,7 +5323,7 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  @spec parse_baseline_cursor_seq(term()) ::
+  @spec parse_baseline_cursor_seq(WireTypes.cursor_seq_input()) ::
           {:ok, non_neg_integer() | nil} | {:error, String.t()}
   defp parse_baseline_cursor_seq(nil), do: {:ok, nil}
 
@@ -4988,13 +5455,13 @@ defmodule Ide.Mcp.Tools do
     Map.put(payload, :runtime_fingerprint_compare, compare)
   end
 
-  @spec parse_replay_mode_arg(term()) :: {:ok, String.t() | nil} | {:error, String.t()}
+  @spec parse_replay_mode_arg(WireTypes.replay_mode_input()) :: {:ok, String.t() | nil} | {:error, String.t()}
   defp parse_replay_mode_arg(nil), do: {:ok, nil}
   defp parse_replay_mode_arg("frozen"), do: {:ok, "frozen"}
   defp parse_replay_mode_arg("live"), do: {:ok, "live"}
   defp parse_replay_mode_arg(_), do: {:error, "invalid replay_mode (expected frozen|live)"}
 
-  @spec parse_replay_drift_seq(term()) :: {:ok, non_neg_integer() | nil} | {:error, String.t()}
+  @spec parse_replay_drift_seq(WireTypes.cursor_seq_input()) :: {:ok, non_neg_integer() | nil} | {:error, String.t()}
   defp parse_replay_drift_seq(nil), do: {:ok, nil}
 
   defp parse_replay_drift_seq(n) when is_integer(n) and n >= 0, do: {:ok, n}
@@ -5021,7 +5488,7 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  @spec parse_cursor_inspect_event_limit(term()) :: term()
+  @spec parse_cursor_inspect_event_limit(WireTypes.limit_input()) :: pos_integer()
   defp parse_cursor_inspect_event_limit(value) when is_integer(value) and value > 0,
     do: min(value, 500)
 
@@ -5034,7 +5501,7 @@ defmodule Ide.Mcp.Tools do
 
   defp parse_cursor_inspect_event_limit(_), do: 500
 
-  @spec parse_cursor_seq(term()) :: term()
+  @spec parse_cursor_seq(WireTypes.cursor_seq_input()) :: {:ok, non_neg_integer() | nil} | {:error, String.t()}
   defp parse_cursor_seq(nil), do: {:ok, nil}
 
   defp parse_cursor_seq(n) when is_integer(n) and n >= 0, do: {:ok, n}
@@ -5048,7 +5515,7 @@ defmodule Ide.Mcp.Tools do
 
   defp parse_cursor_seq(_), do: {:error, "invalid cursor_seq (expected non-negative integer)"}
 
-  @spec parse_inspect_table_limit(term(), term()) :: term()
+  @spec parse_inspect_table_limit(WireTypes.limit_input(), pos_integer()) :: pos_integer()
   defp parse_inspect_table_limit(nil, default), do: default
 
   defp parse_inspect_table_limit(n, _default) when is_integer(n) and n > 0, do: min(n, 100)
@@ -5067,7 +5534,7 @@ defmodule Ide.Mcp.Tools do
     CursorSeq.resolve_at_or_before(events, requested_seq)
   end
 
-  @spec parse_event_types(term()) :: [String.t()] | nil
+  @spec parse_event_types(WireTypes.event_types_input()) :: [String.t()] | nil
   defp parse_event_types(nil), do: nil
 
   defp parse_event_types(value) when is_list(value) do
@@ -5153,7 +5620,7 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  @spec status_of_entry(map() | nil) :: term() | nil
+  @spec status_of_entry(map() | nil) :: :ok | :error | String.t() | nil
   defp status_of_entry(nil), do: nil
 
   defp status_of_entry(entry) when is_map(entry) do
@@ -5186,7 +5653,7 @@ defmodule Ide.Mcp.Tools do
     |> Enum.sort_by(& &1.action)
   end
 
-  @spec encode_canonical_json(term()) :: String.t()
+  @spec encode_canonical_json(WireTypes.json_value() | map()) :: String.t()
   defp encode_canonical_json(value) when is_map(value) do
     members =
       value
@@ -5228,7 +5695,8 @@ defmodule Ide.Mcp.Tools do
     Path.join(:code.priv_dir(:ide), "mcp/trace_exports")
   end
 
-  @spec read_trace_export_files() :: {:ok, [map()]} | {:error, term()}
+  @spec read_trace_export_files() ::
+          {:ok, [ToolTypes.trace_export_file_internal()]} | {:error, term()}
   defp read_trace_export_files do
     case File.ls(trace_export_dir()) do
       {:ok, names} ->
@@ -5265,7 +5733,8 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  @spec trace_health_payload(pos_integer(), pos_integer()) :: {:ok, map()} | {:error, term()}
+  @spec trace_health_payload(pos_integer(), pos_integer()) ::
+          {:ok, ToolTypes.trace_health_status_result()} | {:error, term()}
   defp trace_health_payload(warn_count, warn_bytes) do
     with {:ok, files} <- read_trace_export_files() do
       total_count = length(files)
@@ -5367,17 +5836,19 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  @spec policy_validation_payload(map()) :: map()
+  @spec policy_validation_payload(map()) :: ToolTypes.policy_validation_result()
   defp policy_validation_payload(policy) when is_map(policy) do
     findings = validate_trace_policy(policy)
     %{status: findings_status(findings), findings: findings}
   end
 
   @spec maybe_add_finding([map()], boolean(), String.t(), String.t(), String.t()) :: [map()]
-  defp maybe_add_finding(findings, false, _severity, _code, _message), do: findings
-
-  defp maybe_add_finding(findings, true, severity, code, message) do
-    findings ++ [%{severity: severity, code: code, message: message}]
+  defp maybe_add_finding(findings, condition, severity, code, message) when is_boolean(condition) do
+    if condition do
+      findings ++ [%{severity: severity, code: code, message: message}]
+    else
+      findings
+    end
   end
 
   @spec default_warn_count() :: pos_integer()
@@ -5465,7 +5936,7 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  @spec parse_logs_snapshot_seconds(term()) :: pos_integer()
+  @spec parse_logs_snapshot_seconds(WireTypes.integer_input()) :: pos_integer()
   defp parse_logs_snapshot_seconds(value) when is_integer(value) and value >= 1 do
     min(value, 30)
   end
@@ -5479,7 +5950,7 @@ defmodule Ide.Mcp.Tools do
 
   defp parse_logs_snapshot_seconds(_), do: 4
 
-  @spec verify_export_sha256(String.t(), term()) :: :ok | {:error, term()}
+  @spec verify_export_sha256(String.t(), WireTypes.sha256_input()) :: :ok | {:error, atom()}
   defp verify_export_sha256(_json, nil), do: :ok
   defp verify_export_sha256(_json, ""), do: :ok
 

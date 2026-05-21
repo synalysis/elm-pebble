@@ -47,7 +47,7 @@ defmodule Ide.Formatter.Semantics.TextOps do
     |> Enum.join()
   end
 
-  @spec do_normalize_comma_spacing(term(), term(), term(), term()) :: term()
+  @spec do_normalize_comma_spacing([String.t()], [String.t()], boolean(), boolean()) :: [String.t()]
   defp do_normalize_comma_spacing([], acc, _in_string, _escape_next), do: acc
 
   defp do_normalize_comma_spacing([char | rest], acc, in_string, escape_next)
@@ -74,7 +74,7 @@ defmodule Ide.Formatter.Semantics.TextOps do
   defp do_normalize_comma_spacing([char | rest], acc, in_string, escape_next),
     do: do_normalize_comma_spacing(rest, [char | acc], in_string, escape_next)
 
-  @spec do_normalize_colon_spacing(term(), term(), term()) :: term()
+  @spec do_normalize_colon_spacing([String.t()], [String.t()], String.t() | nil) :: [String.t()]
   defp do_normalize_colon_spacing([], acc, _next), do: acc
 
   defp do_normalize_colon_spacing([":" | rest], acc, prev_char) do
@@ -92,18 +92,18 @@ defmodule Ide.Formatter.Semantics.TextOps do
   defp do_normalize_colon_spacing([char | rest], acc, _prev_char),
     do: do_normalize_colon_spacing(rest, [char | acc], char)
 
-  @spec trim_trailing_horizontal_before_delimiter(term()) :: term()
+  @spec trim_trailing_horizontal_before_delimiter([String.t()]) :: [String.t()]
   defp trim_trailing_horizontal_before_delimiter(acc) do
     trimmed = Enum.drop_while(acc, &horizontal_ws?/1)
     if trimmed == [], do: acc, else: trimmed
   end
 
-  @spec drop_leading_horizontal(term()) :: term()
+  @spec drop_leading_horizontal([String.t()]) :: {[String.t()], String.t() | nil}
   defp drop_leading_horizontal(chars) do
     remaining = Enum.drop_while(chars, &horizontal_ws?/1)
     {remaining, List.first(remaining)}
   end
 
-  @spec horizontal_ws?(term()) :: term()
+  @spec horizontal_ws?(String.t()) :: boolean()
   defp horizontal_ws?(value), do: value in [" ", "\t"]
 end

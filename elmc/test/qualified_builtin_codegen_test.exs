@@ -979,7 +979,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     [literal_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
 
     assert literal_body =~
-             "elmc_fn_Main_nativeTextAt_commands_append_native(255, \"Direct\""
+             "elmc_fn_Main_nativeTextAt_commands_append_native(ELMC_COLOR_WHITE, \"Direct\""
 
     refute literal_body =~ "elmc_new_string(\"Direct\")"
     refute literal_body =~ "elmc_new_int(255)"
@@ -1106,9 +1106,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "out_cmds[*count].p5 = (0 + (0 * 4));"
-    assert generated_c =~ "out_cmds[*count].p5 = (1 + (1 * 4));"
-    assert generated_c =~ "out_cmds[*count].p5 = (2 + (2 * 4));"
+    assert generated_c =~
+             "out_cmds[*count].p5 = (ELMC_TEXT_ALIGN_LEFT + (ELMC_TEXT_OVERFLOW_WORD_WRAP * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+
+    assert generated_c =~
+             "out_cmds[*count].p5 = (ELMC_TEXT_ALIGN_CENTER + (ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
+
+    assert generated_c =~
+             "out_cmds[*count].p5 = (ELMC_TEXT_ALIGN_RIGHT + (ELMC_TEXT_OVERFLOW_FILL * (1 << ELMC_TEXT_OVERFLOW_SHIFT)));"
   end
 
   test "direct command Int lets stay native inside bounds records" do
@@ -1236,7 +1241,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     [condition_body | _rest] = String.split(body, "int elmc_fn_", parts: 2)
 
     assert condition_body =~ "if (elmc_as_bool(enabled))"
-    assert condition_body =~ "elmc_generated_draw_init(&out_cmds[*count], ELMC_PEBBLE_DRAW_CLEAR)"
+    assert condition_body =~ "elmc_generated_draw_init(&out_cmds[*count], ELMC_RENDER_OP_CLEAR)"
     refute condition_body =~ "elmc_generated_draw_init(&out_cmds[*count], 2)"
     refute condition_body =~ "elmc_retain(enabled)"
     refute condition_body =~ "elmc_release(enabled)"

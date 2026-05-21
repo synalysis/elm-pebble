@@ -18,6 +18,7 @@ defmodule IdeWeb.WorkspaceLive do
   alias Ide.PublishReadiness
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias Ide.Projects.Types, as: ProjectTypes
   alias Ide.Resources.ResourceStore
   alias Ide.Settings
   alias Ide.Screenshots
@@ -41,12 +42,26 @@ defmodule IdeWeb.WorkspaceLive do
   alias IdeWeb.WorkspaceLive.DebuggerPage
   alias IdeWeb.WorkspaceLive.State
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
+  alias IdeWeb.WorkspaceLive.Types
 
   @debugger_auto_fire_refresh_interval_ms 1_000
   @debugger_auto_fire_min_refresh_interval_ms 100
 
+  alias Phoenix.LiveView.Rendered
+
+  @type socket :: Phoenix.LiveView.Socket.t()
+  @type lv_mount :: {:ok, socket()}
+  @type lv_noreply :: {:noreply, socket()}
+  @type assigns :: map()
+  @type wire_input :: String.t() | integer() | float() | boolean() | nil | [wire_input()]
+  @type pane :: atom()
+  @type debugger_import_reason :: :invalid_json | :invalid_trace | :slug_mismatch
+  @type bootstrap_source ::
+          {:ok, String.t(), String.t(), String.t()} | :error
+  @type dependency_row :: map()
+
   @impl true
-  @spec mount(term(), term(), term()) :: term()
+  @spec mount(map(), map(), socket()) :: lv_mount()
   def mount(_params, _session, socket) do
     settings = Settings.current()
 
@@ -54,7 +69,7 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   @impl true
-  @spec handle_params(term(), term(), term()) :: term()
+  @spec handle_params(map(), String.t(), socket()) :: lv_noreply()
   def handle_params(%{"slug" => slug}, _uri, socket) do
     case Projects.get_project_by_slug(slug, socket.assigns.current_user) do
       nil ->
@@ -108,7 +123,7 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   @impl true
-  @spec handle_event(term(), term(), term()) :: term()
+  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
   def handle_event("open-file", %{"source-root" => source_root, "rel-path" => rel_path}, socket) do
     tab_id = tab_id(source_root, rel_path)
     existing_tab = Enum.find(socket.assigns.tabs, &(&1.id == tab_id))
@@ -274,8 +289,8 @@ defmodule IdeWeb.WorkspaceLive do
                  |> assign(:active_tab_id, next_active && next_active.id)
                  |> assign(:active_diagnostic_index, next_state[:active_diagnostic_index])
                  |> assign_tokenization(
-                   next_active && next_active.content,
-                   next_active && next_active.rel_path
+                   tab_content(next_active),
+                   tab_rel_path(next_active)
                  )
                  |> restore_editor_state(next_state)
                  |> refresh_tree()
@@ -313,8 +328,8 @@ defmodule IdeWeb.WorkspaceLive do
      |> assign(:active_tab_id, id)
      |> assign(:active_diagnostic_index, selected_state[:active_diagnostic_index])
      |> assign_tokenization(
-       selected_tab && selected_tab.content,
-       selected_tab && selected_tab.rel_path
+       tab_content(selected_tab),
+       tab_rel_path(selected_tab)
      )
      |> restore_editor_state(selected_state)}
   end
@@ -332,15 +347,15 @@ defmodule IdeWeb.WorkspaceLive do
      |> assign(tabs: tabs, active_tab_id: next_active && next_active.id)
      |> assign(:active_diagnostic_index, next_state[:active_diagnostic_index])
      |> assign_tokenization(
-       next_active && next_active.content,
-       next_active && next_active.rel_path
+       tab_content(next_active),
+       tab_rel_path(next_active)
      )
      |> restore_editor_state(next_state)}
   end
 
   def handle_event("editor-change", %{"editor" => %{"content" => content}}, socket) do
     active = active_tab(socket)
-    active_rel_path = active && active.rel_path
+    active_rel_path = tab_rel_path(active)
 
     cond do
       read_only_tab?(active) ->
@@ -360,7 +375,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   def handle_event("editor-change", %{"content" => content}, socket) do
     active = active_tab(socket)
-    active_rel_path = active && active.rel_path
+    active_rel_path = tab_rel_path(active)
 
     cond do
       read_only_tab?(active) ->
@@ -401,7 +416,7 @@ defmodule IdeWeb.WorkspaceLive do
         end
 
       active = active_tab(socket)
-      active_rel_path = active && active.rel_path
+      active_rel_path = tab_rel_path(active)
       next_content = apply_text_patch(content, edit_result)
 
       {:noreply,
@@ -857,7 +872,7 @@ defmodule IdeWeb.WorkspaceLive do
     readme =
       case Packages.readme(package, version, []) do
         {:ok, payload} ->
-          payload.readme || ""
+          payload.readme
 
         _ ->
           "(Could not load README for #{package} #{version}.)"
@@ -2542,7 +2557,7 @@ defmodule IdeWeb.WorkspaceLive do
   defp refresh_tab_read_only(tab), do: tab
 
   @impl true
-  @spec handle_async(term(), term(), term()) :: term()
+  @spec handle_async(atom(), Types.async_result(), socket()) :: lv_noreply()
   def handle_async(:run_check, result, socket),
     do: BuildFlow.handle_async(:run_check, result, socket)
 
@@ -3479,7 +3494,7 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   @impl true
-  @spec handle_info(term(), term()) :: term()
+  @spec handle_info(Types.info_message() | Types.liveview_system_message(), socket()) :: lv_noreply()
   def handle_info({:debugger_auto_fire_refresh, project_slug}, socket) do
     socket = assign(socket, :debugger_auto_fire_refresh_scheduled, false)
     project = socket.assigns[:project]
@@ -3543,7 +3558,7 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   @impl true
-  @spec render(term()) :: term()
+  @spec render(assigns()) :: Rendered.t()
   def render(assigns) do
     ~H"""
     <div
@@ -3678,6 +3693,12 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp tab_with_save_content(tab, _params), do: tab
 
+  defp tab_content(nil), do: nil
+  defp tab_content(%{content: content}), do: content
+
+  defp tab_rel_path(nil), do: nil
+  defp tab_rel_path(%{rel_path: rel_path}), do: rel_path
+
   @spec creatable_source_roots(Project.t() | nil) :: [String.t()]
   defp creatable_source_roots(%Project{} = project) do
     workspace_root = Projects.project_workspace_path(project)
@@ -3696,7 +3717,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp creatable_source_roots(_project), do: ["watch"]
 
-  @spec validate_creatable_source_root(Project.t() | nil, term()) ::
+  @spec validate_creatable_source_root(Project.t() | nil, String.t()) ::
           :ok | {:error, :invalid_source_root}
   defp validate_creatable_source_root(project, source_root) do
     if source_root in creatable_source_roots(project),
@@ -3717,7 +3738,7 @@ defmodule IdeWeb.WorkspaceLive do
               ),
               to: EditorSupport
 
-  @spec debugger_import_error(term()) :: term()
+  @spec debugger_import_error(debugger_import_reason()) :: String.t()
   defp debugger_import_error(:invalid_json), do: "Trace import failed: invalid JSON."
 
   defp debugger_import_error(:invalid_trace),
@@ -3727,14 +3748,14 @@ defmodule IdeWeb.WorkspaceLive do
   defp debugger_import_error(:slug_mismatch),
     do: "Trace import failed: project_slug in JSON does not match this project."
 
-  @spec package_add_error(term()) :: String.t()
+  @spec package_add_error(ProjectTypes.project_error()) :: String.t()
   defp package_add_error({:package_not_supported_for_phone, package}) do
     "Could not add #{package}: this package is not supported for the companion phone elm.json."
   end
 
   defp package_add_error(reason), do: "Could not add package: #{inspect(reason)}"
 
-  @spec mark_dependency_used(term(), String.t()) :: term()
+  @spec mark_dependency_used(socket(), String.t()) :: socket()
   defp mark_dependency_used(socket, package) when is_binary(package) do
     socket
     |> assign(
@@ -3747,7 +3768,7 @@ defmodule IdeWeb.WorkspaceLive do
     )
   end
 
-  @spec mark_dependency_rows_used(term(), String.t()) :: [map()]
+  @spec mark_dependency_rows_used([dependency_row()], String.t()) :: [dependency_row()]
   defp mark_dependency_rows_used(rows, package) when is_list(rows) and is_binary(package) do
     Enum.map(rows, fn
       %{name: ^package} = row -> Map.put(row, :used?, true)
@@ -3758,13 +3779,13 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp mark_dependency_rows_used(_rows, _package), do: []
 
-  @spec pane_class(term(), term()) :: term()
+  @spec pane_class(pane(), pane()) :: String.t()
   defp pane_class(active, pane) when active == pane,
     do: "rounded bg-blue-100 px-3 py-2 text-blue-800"
 
   defp pane_class(_active, _pane), do: "rounded bg-zinc-100 px-3 py-2"
 
-  @spec load_editor_doc_body(term(), term(), term(), term()) :: term()
+  @spec load_editor_doc_body(socket(), String.t(), String.t() | nil, String.t()) :: socket()
   defp load_editor_doc_body(socket, package, version, module) do
     package = to_string(package)
 
@@ -3816,15 +3837,15 @@ defmodule IdeWeb.WorkspaceLive do
     assign(socket, :editor_doc_html, Markdown.readme_to_html(header <> markdown))
   end
 
-  @spec editor_package_readme_slice(term(), term(), term()) :: term()
+  @spec editor_package_readme_slice(String.t(), String.t(), keyword()) :: String.t()
   defp editor_package_readme_slice(package, version, opts) do
     case Packages.readme(package, version, opts) do
-      {:ok, payload} -> String.slice(payload.readme || "", 0, 12_000)
+      {:ok, payload} -> String.slice(payload.readme, 0, 12_000)
       _ -> "_Could not load README for `#{package}` at `#{version}`._"
     end
   end
 
-  @spec editor_module_doc_readme_fallback(term(), term(), term(), term(), term()) :: term()
+  @spec editor_module_doc_readme_fallback(String.t(), String.t(), String.t(), String.t(), keyword()) :: {String.t(), String.t()}
   defp editor_module_doc_readme_fallback(package, version, module, ver_display, opts) do
     readme = editor_package_readme_slice(package, version, opts)
     ref_url = EditorDocLinks.package_elm_doc_url(package, module, "")
@@ -3847,7 +3868,7 @@ defmodule IdeWeb.WorkspaceLive do
     {readme, intro}
   end
 
-  @spec apply_doc_catalog_rows(term(), term()) :: term()
+  @spec apply_doc_catalog_rows(socket(), [map()]) :: socket()
   defp apply_doc_catalog_rows(socket, rows) when is_list(rows) do
     socket = assign(socket, :editor_doc_packages, rows)
 
@@ -3889,7 +3910,7 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  @spec init_editor_doc_selection(term(), term()) :: term()
+  @spec init_editor_doc_selection(socket(), [map()]) :: socket()
   defp init_editor_doc_selection(socket, row) do
     mod = List.first(row.modules) || ""
 
@@ -3900,7 +3921,7 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   @doc false
-  @spec editor_doc_modules_for_package(term(), term(), term()) :: term()
+  @spec editor_doc_modules_for_package([map()], String.t(), String.t()) :: [String.t()]
   def editor_doc_modules_for_package(rows, pkg, query \\ "")
 
   def editor_doc_modules_for_package(rows, pkg, query) when is_list(rows) and is_binary(pkg) do
@@ -3915,7 +3936,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   def editor_doc_modules_for_package(_, _, _), do: []
 
-  @spec filter_editor_doc_modules([String.t()], term()) :: [String.t()]
+  @spec filter_editor_doc_modules([String.t()], String.t()) :: [String.t()]
   defp filter_editor_doc_modules(modules, query) when is_list(modules) do
     needle = query |> to_string() |> String.trim() |> String.downcase()
 
@@ -3934,7 +3955,7 @@ defmodule IdeWeb.WorkspaceLive do
   defdelegate schedule_compiler_check(socket), to: BuildFlow
   defdelegate warm_debugger_compile_context(socket, project), to: BuildFlow
 
-  @spec maybe_refresh_debugger(term()) :: term()
+  @spec maybe_refresh_debugger(socket()) :: socket()
   defp maybe_refresh_debugger(socket) do
     if socket.assigns[:pane] == :debugger do
       DebuggerSupport.refresh(socket)
@@ -4047,12 +4068,12 @@ defmodule IdeWeb.WorkspaceLive do
     end)
   end
 
-  @spec debugger_session_active?(term()) :: term()
+  @spec debugger_session_active?(socket()) :: boolean()
   defp debugger_session_active?(socket) do
     debugger_state_running?(socket.assigns[:debugger_state])
   end
 
-  @spec debugger_state_running?(term()) :: boolean()
+  @spec debugger_state_running?(map() | nil) :: boolean()
   defp debugger_state_running?(%{running: true}), do: true
   defp debugger_state_running?(_), do: false
 
@@ -4099,7 +4120,7 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  @spec debugger_bootstrap_elm_source(term(), term()) :: term()
+  @spec debugger_bootstrap_elm_source(Project.t(), socket()) :: bootstrap_source()
   defp debugger_bootstrap_elm_source(project, socket) do
     case active_tab(socket) do
       %{rel_path: rel_path, content: content, source_root: "watch"} = tab ->
@@ -4114,7 +4135,7 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  @spec elm_bootstrap_tab?(term()) :: term()
+  @spec elm_bootstrap_tab?(map()) :: boolean()
   defp elm_bootstrap_tab?(%{rel_path: p, content: c})
        when is_binary(p) and is_binary(c) do
     String.ends_with?(p, ".elm")
@@ -4122,7 +4143,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp elm_bootstrap_tab?(_), do: false
 
-  @spec try_read_watch_main_elm(term()) :: term()
+  @spec try_read_watch_main_elm(Project.t()) :: bootstrap_source()
   defp try_read_watch_main_elm(project) do
     candidates = [{"watch", "src/Main.elm"}, {"watch", "Main.elm"}]
 
@@ -4134,7 +4155,7 @@ defmodule IdeWeb.WorkspaceLive do
     end)
   end
 
-  @spec merge_publish_submit_options(term(), term()) :: term()
+  @spec merge_publish_submit_options(map(), map()) :: map()
   defp merge_publish_submit_options(existing, updates)
        when is_map(existing) and is_map(updates) do
     existing
@@ -4162,7 +4183,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp blank?(value), do: is_nil(value) or String.trim(to_string(value)) == ""
 
-  @spec to_bool(term()) :: term()
+  @spec to_bool(wire_input()) :: boolean()
   defp to_bool(value) when value in [true, "true", "on", "1", 1], do: true
   defp to_bool(_), do: false
 
@@ -4192,7 +4213,7 @@ defmodule IdeWeb.WorkspaceLive do
   defdelegate load_screenshots(project), to: ResourcesFlow
   defdelegate group_screenshots(shots), to: ResourcesFlow
 
-  @spec persist_project_publish_metadata(term(), term(), term()) :: term()
+  @spec persist_project_publish_metadata(Project.t(), map(), map()) :: Project.t()
   defp persist_project_publish_metadata(
          %Project{} = project,
          submitted_release_summary,
@@ -4231,7 +4252,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp persist_project_debugger_timeline_mode(project, _mode), do: project
 
-  @spec persist_project_emulator_selection(Project.t() | term(), String.t(), String.t()) :: term()
+  @spec persist_project_emulator_selection(Project.t(), String.t(), String.t()) :: Project.t()
   defp persist_project_emulator_selection(%Project{} = project, target, mode) do
     selected_target = normalize_emulator_target(target)
     selected_mode = normalize_emulator_mode(selected_target, mode)
@@ -4281,7 +4302,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp persist_project_debugger_simulator_settings(project, _settings), do: project
 
-  @spec normalize_debugger_simulator_settings(term()) :: map()
+  @spec normalize_debugger_simulator_settings(map()) :: map()
   defp normalize_debugger_simulator_settings(settings) when is_map(settings) do
     defaults = Ide.Debugger.default_simulator_settings()
 
@@ -4329,10 +4350,7 @@ defmodule IdeWeb.WorkspaceLive do
     }
   end
 
-  defp normalize_debugger_simulator_settings(_settings),
-    do: Ide.Debugger.default_simulator_settings()
-
-  @spec map_get_string(map(), String.t()) :: term()
+  @spec map_get_string(map(), String.t()) :: wire_input()
   defp map_get_string(map, key) when is_map(map) and is_binary(key) do
     case Map.fetch(map, key) do
       {:ok, value} ->
@@ -4349,7 +4367,7 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  @spec normalize_debugger_integer(term(), integer(), integer(), integer()) :: integer()
+  @spec normalize_debugger_integer(wire_input(), integer(), integer(), integer()) :: integer()
   defp normalize_debugger_integer(value, _default, min_value, max_value) when is_integer(value),
     do: value |> min(max_value) |> max(min_value)
 
@@ -4362,7 +4380,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp normalize_debugger_integer(_value, default, _min_value, _max_value), do: default
 
-  @spec normalize_debugger_float(term(), float(), float(), float()) :: float()
+  @spec normalize_debugger_float(wire_input(), float(), float(), float()) :: float()
   defp normalize_debugger_float(value, _default, min_value, max_value) when is_float(value),
     do: value |> min(max_value) |> max(min_value)
 
@@ -4378,7 +4396,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp normalize_debugger_float(_value, default, _min_value, _max_value), do: default
 
-  @spec normalize_debugger_optional_string(term(), String.t() | nil) :: String.t() | nil
+  @spec normalize_debugger_optional_string(wire_input(), String.t() | nil) :: String.t() | nil
   defp normalize_debugger_optional_string(value, _default) when is_binary(value) do
     case String.trim(value) do
       "" -> nil
@@ -4388,7 +4406,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp normalize_debugger_optional_string(_value, default), do: default
 
-  @spec normalize_debugger_boolean(term(), boolean()) :: boolean()
+  @spec normalize_debugger_boolean(wire_input(), boolean()) :: boolean()
   defp normalize_debugger_boolean(values, default) when is_list(values),
     do: Enum.any?(values, &normalize_debugger_boolean(&1, default))
 
@@ -4424,7 +4442,7 @@ defmodule IdeWeb.WorkspaceLive do
     end)
   end
 
-  @spec normalize_configuration_form_list_value([term()]) :: term()
+  @spec normalize_configuration_form_list_value([wire_input()]) :: wire_input()
   defp normalize_configuration_form_list_value(values) when is_list(values) do
     if Enum.all?(values, &configuration_boolean_form_value?/1) do
       Enum.any?(values, &configuration_truthy_form_value?/1)
@@ -4471,7 +4489,7 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  @spec normalize_project_debugger_timeline_mode(term(), boolean()) :: String.t()
+  @spec normalize_project_debugger_timeline_mode(wire_input(), boolean()) :: String.t()
   defp normalize_project_debugger_timeline_mode(_mode, false), do: "watch"
 
   defp normalize_project_debugger_timeline_mode(mode, true)
@@ -4480,23 +4498,18 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp normalize_project_debugger_timeline_mode(_mode, true), do: "mixed"
 
-  @spec project_emulator_target(term()) :: String.t()
+  @spec project_emulator_target(Project.t()) :: String.t()
   defp project_emulator_target(%Project{} = project) do
     settings = project.debugger_settings || %{}
     normalize_emulator_target(Map.get(settings, "emulator_target"))
   end
 
-  defp project_emulator_target(_), do: default_emulator_target()
-
-  @spec project_emulator_mode(term()) :: String.t()
+  @spec project_emulator_mode(Project.t()) :: String.t()
   defp project_emulator_mode(%Project{} = project) do
     settings = project.debugger_settings || %{}
     target = project_emulator_target(project)
     normalize_emulator_mode(target, Map.get(settings, "emulator_mode"))
   end
-
-  defp project_emulator_mode(_),
-    do: normalize_emulator_mode(default_emulator_target(), "embedded")
 
   @spec project_debugger_watch_profile_id(Project.t()) :: String.t()
   defp project_debugger_watch_profile_id(%Project{} = project) do
@@ -4504,7 +4517,7 @@ defmodule IdeWeb.WorkspaceLive do
     normalize_debugger_watch_profile_id(Map.get(settings, "watch_profile_id"))
   end
 
-  @spec normalize_debugger_watch_profile_id(term()) :: String.t()
+  @spec normalize_debugger_watch_profile_id(wire_input()) :: String.t()
   defp normalize_debugger_watch_profile_id(value) when is_binary(value) do
     normalized = value |> String.trim() |> String.downcase()
 
@@ -4522,7 +4535,7 @@ defmodule IdeWeb.WorkspaceLive do
     |> Enum.filter(&is_binary/1)
   end
 
-  @spec open_debugger_trigger_modal(term(), map()) :: term()
+  @spec open_debugger_trigger_modal(socket(), map()) :: socket()
   defp open_debugger_trigger_modal(socket, params) when is_map(params) do
     trigger = Map.get(params, "trigger") || ""
     target = Map.get(params, "target") || "watch"
@@ -4535,7 +4548,7 @@ defmodule IdeWeb.WorkspaceLive do
     )
   end
 
-  @spec debugger_trigger_modal_supported?(term(), map()) :: boolean()
+  @spec debugger_trigger_modal_supported?(socket(), map()) :: boolean()
   defp debugger_trigger_modal_supported?(socket, params) when is_map(params) do
     state = socket.assigns[:debugger_state]
 
@@ -4548,9 +4561,7 @@ defmodule IdeWeb.WorkspaceLive do
     Ide.Debugger.subscription_trigger_injection_modal_supported?(state, row)
   end
 
-  defp debugger_trigger_modal_supported?(_socket, _params), do: false
-
-  @spec close_debugger_trigger_modal(term()) :: term()
+  @spec close_debugger_trigger_modal(socket()) :: socket()
   defp close_debugger_trigger_modal(socket) do
     assign(socket,
       debugger_trigger_modal_open: false,
@@ -4558,7 +4569,7 @@ defmodule IdeWeb.WorkspaceLive do
     )
   end
 
-  @spec default_debugger_trigger_form(term(), term(), term()) :: map()
+  @spec default_debugger_trigger_form(String.t(), String.t(), String.t()) :: map()
   defp default_debugger_trigger_form(trigger, target, message) do
     constructor =
       case message do
@@ -4841,7 +4852,7 @@ defmodule IdeWeb.WorkspaceLive do
   defp update_project_disabled_subscriptions(subscriptions, _target, _trigger, _enabled?),
     do: List.wrap(subscriptions) |> Enum.filter(&is_map/1)
 
-  @spec maybe_schedule_debugger_auto_fire_refresh(term()) :: term()
+  @spec maybe_schedule_debugger_auto_fire_refresh(socket()) :: socket()
   defp maybe_schedule_debugger_auto_fire_refresh(socket) do
     project = socket.assigns[:project]
 
@@ -4860,7 +4871,7 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  @spec debugger_auto_fire_refresh_active?(term()) :: boolean()
+  @spec debugger_auto_fire_refresh_active?(socket()) :: boolean()
   defp debugger_auto_fire_refresh_active?(socket) do
     auto_tick =
       socket.assigns[:debugger_state]
@@ -4877,7 +4888,7 @@ defmodule IdeWeb.WorkspaceLive do
       |> Enum.any?()
   end
 
-  @spec debugger_auto_fire_refresh_interval_ms(term()) :: pos_integer()
+  @spec debugger_auto_fire_refresh_interval_ms(socket()) :: pos_integer()
   defp debugger_auto_fire_refresh_interval_ms(socket) do
     auto_tick =
       socket.assigns[:debugger_state]
@@ -4903,25 +4914,25 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  @spec debugger_auto_fire_enabled?(Project.t(), term()) :: boolean()
+  @spec debugger_auto_fire_enabled?(Project.t(), wire_input()) :: boolean()
   defp debugger_auto_fire_enabled?(%Project{} = project, target) do
     settings = project.debugger_settings || %{}
     auto_fire = Map.get(settings, "auto_fire", %{})
     Map.get(auto_fire, debugger_auto_fire_target(target)) == true
   end
 
-  @spec debugger_auto_fire_target(term()) :: String.t()
+  @spec debugger_auto_fire_target(wire_input()) :: String.t()
   defp debugger_auto_fire_target("protocol"), do: "protocol"
   defp debugger_auto_fire_target("companion"), do: "phone"
   defp debugger_auto_fire_target(:protocol), do: "protocol"
   defp debugger_auto_fire_target(:companion), do: "phone"
   defp debugger_auto_fire_target(_target), do: "watch"
 
-  @spec debugger_checkbox_enabled?(term()) :: boolean()
+  @spec debugger_checkbox_enabled?(wire_input()) :: boolean()
   defp debugger_checkbox_enabled?(value) when value in [true, "true", "on", "1", 1], do: true
   defp debugger_checkbox_enabled?(_value), do: false
 
-  @spec maybe_warn_uncommitted_prepare_release(term(), term()) :: term()
+  @spec maybe_warn_uncommitted_prepare_release(socket(), String.t()) :: socket()
   defp maybe_warn_uncommitted_prepare_release(socket, workspace_root) do
     case workspace_uncommitted_changes(workspace_root) do
       {:ok, 0} ->
@@ -4939,7 +4950,8 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  @spec workspace_uncommitted_changes(term()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @spec workspace_uncommitted_changes(String.t()) ::
+          {:ok, non_neg_integer()} | {:error, :git_unavailable_or_not_repo}
   defp workspace_uncommitted_changes(workspace_root) when is_binary(workspace_root) do
     case System.cmd("git", ["status", "--porcelain"], cd: workspace_root, stderr_to_stdout: true) do
       {output, 0} ->
@@ -4955,7 +4967,7 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  @spec format_github_push_error(term()) :: String.t()
+  @spec format_github_push_error(atom() | tuple() | String.t()) :: String.t()
   defp format_github_push_error({:missing_repo_field, field}),
     do: "Missing repository field: #{field}"
 
@@ -5122,16 +5134,16 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  @spec default_emulator_target() :: term()
+  @spec default_emulator_target() :: String.t()
   defp default_emulator_target do
     Application.get_env(:ide, Ide.PebbleToolchain, [])
     |> Keyword.get(:emulator_target, "basalt")
   end
 
-  @spec normalize_emulator_target(term()) :: String.t()
+  @spec normalize_emulator_target(wire_input()) :: String.t()
   defp normalize_emulator_target(target), do: EmulatorSupport.normalize_target(target)
 
-  @spec normalize_emulator_mode(String.t() | nil, term()) :: String.t()
+  @spec normalize_emulator_mode(String.t() | nil, wire_input()) :: String.t()
   defp normalize_emulator_mode(target, mode), do: EmulatorSupport.normalize_mode(target, mode)
 
   defp external_emulator_blocked?(socket) do

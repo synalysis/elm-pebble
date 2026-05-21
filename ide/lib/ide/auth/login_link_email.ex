@@ -4,11 +4,13 @@ defmodule Ide.Auth.LoginLinkEmail do
   import Swoosh.Email
 
   alias Ide.Auth
+  alias Ide.Auth.Types, as: AuthTypes
   alias Ide.Auth.LoginLink
   alias Ide.Auth.User
   alias Ide.Mailer
 
-  @spec deliver(User.t(), String.t()) :: {:ok, term()} | {:error, term()}
+  @spec deliver(User.t(), String.t()) ::
+          {:ok, AuthTypes.mail_delivery_response()} | {:error, AuthTypes.mail_delivery_error()}
   def deliver(%User{} = user, raw_token) when is_binary(raw_token) do
     url = LoginLink.verify_url(raw_token)
     {from_name, from_address} = Auth.mail_from()

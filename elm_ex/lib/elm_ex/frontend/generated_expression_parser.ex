@@ -3,11 +3,15 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   Generated expression parser adapter based on leex/yecc artifacts.
   """
 
+  alias ElmEx.Types
+
   @typep source() :: String.t()
   @typep line() :: String.t()
   @typep lines() :: [line()]
+  @typep expr() :: map()
+  @typep normalized_value() :: map() | list() | String.t() | number() | boolean() | nil | atom()
 
-  @spec parse(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec parse(String.t()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
   def parse(source) when is_binary(source) do
     source_for_parse =
       if unbalanced_multiline_string_delimiter?(source),
@@ -310,7 +314,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
       )
   end
 
-  @spec normalize(term()) :: term()
+  @spec normalize(normalized_value()) :: normalized_value()
   defp normalize(value) when is_map(value) do
     value
     |> Enum.map(fn {k, v} -> {k, normalize(v)} end)
@@ -520,7 +524,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     end
   end
 
-  @spec maybe_fallback_unsupported(source(), term()) :: {:ok, map()} | {:error, term()}
+  @spec maybe_fallback_unsupported(source(), Types.parse_error_reason()) ::
+          {:ok, expr()} | {:error, Types.parse_error_reason()}
   defp maybe_fallback_unsupported(source, reason) when is_binary(source) do
     if fallback_unsupported_reason?(source, reason) do
       {:ok, %{op: :unsupported, source: String.trim(source)}}
@@ -529,10 +534,10 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     end
   end
 
-  @spec fallback_unsupported_reason?(source(), term()) :: boolean()
+  @spec fallback_unsupported_reason?(source(), Types.parse_error_reason()) :: boolean()
   defp fallback_unsupported_reason?(_source, _reason), do: false
 
-  @spec parse_once(source()) :: {:ok, map()} | {:error, term()}
+  @spec parse_once(source()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
   defp parse_once(source) when is_binary(source) do
     prepared = prepare_source(source)
 
@@ -546,7 +551,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     end
   end
 
-  @spec recover_source_for_reason(source(), term()) :: source() | nil
+  @spec recover_source_for_reason(source(), Types.parse_error_reason()) :: source() | nil
   defp recover_source_for_reason(source, {line, :elm_ex_expr_parser, [_msg, token]})
        when is_integer(line) do
     case token do

@@ -1,9 +1,10 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
   @moduledoc false
 
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd
 
-  @spec eval(String.t(), String.t(), list(), map()) :: term()
+  @spec eval(String.t(), String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result() | EvalTypes.command_map() | :no_builtin
   def eval("pebble.storage", function_name, values, ops),
     do: eval_storage_builtin(function_name, values, ops)
 
@@ -40,7 +41,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
 
   defp eval_protocol_builtin(_direction, _function_name, _values, _ops), do: :no_builtin
 
-  @spec eval_storage_builtin(String.t(), list(), map()) :: term()
+  @spec eval_storage_builtin(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result() | EvalTypes.command_map()
   defp eval_storage_builtin(function_name, values, ops) do
     case function_name do
       "readint" -> storage_read_command("int", values, 0, ops)
@@ -52,7 +53,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
     end
   end
 
-  @spec eval_pebble_watch_kernel_builtin(String.t(), list(), map()) :: term()
+  @spec eval_pebble_watch_kernel_builtin(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result() | EvalTypes.command_map()
   defp eval_pebble_watch_kernel_builtin(function_name, values, ops) do
     case function_name do
       "none" ->
@@ -108,7 +109,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
     end
   end
 
-  @spec eval_device_builtin(String.t(), list(), map()) :: term()
+  @spec eval_device_builtin(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result() | EvalTypes.command_map()
   defp eval_device_builtin(function_name, values, ops) do
     case function_name do
       "none" ->
@@ -152,7 +153,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
     end
   end
 
-  @spec device_command(String.t(), list(), term(), map()) :: term()
+  @spec device_command(String.t(), EvalTypes.runtime_values(), EvalTypes.runtime_value(), EvalTypes.ops_context()) :: EvalTypes.command_map()
   defp device_command(kind, [to_msg], value, ops) do
     with {:ok, message_value} <- ops.call.(to_msg, [value]) do
       {:ok,
@@ -168,7 +169,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
 
   defp device_command(_kind, _values, _value, _ops), do: :no_builtin
 
-  @spec storage_read_command(String.t(), list(), term(), map()) :: term()
+  @spec storage_read_command(String.t(), EvalTypes.runtime_values(), EvalTypes.runtime_value(), EvalTypes.ops_context()) :: EvalTypes.command_map()
   defp storage_read_command(type, [key, to_msg], default_value, ops) when is_integer(key) do
     with {:ok, message_value} <- ops.call.(to_msg, [default_value]) do
       {:ok,
@@ -185,7 +186,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
 
   defp storage_read_command(_type, _values, _default_value, _ops), do: :no_builtin
 
-  @spec storage_write_command(String.t(), list()) :: term()
+  @spec storage_write_command(String.t(), EvalTypes.runtime_values()) ::
+          EvalTypes.cmd_eval_result()
   defp storage_write_command(type, [key, value]) when is_integer(key) do
     {:ok,
      %{
@@ -198,7 +200,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
 
   defp storage_write_command(_type, _values), do: :no_builtin
 
-  @spec storage_delete_command(list()) :: term()
+  @spec storage_delete_command(EvalTypes.runtime_values()) :: EvalTypes.cmd_eval_result()
   defp storage_delete_command([key]) when is_integer(key) do
     {:ok,
      %{
@@ -210,7 +212,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
 
   defp storage_delete_command(_values), do: :no_builtin
 
-  @spec protocol_command(String.t(), String.t(), String.t(), String.t(), term(), map()) :: map()
+  @spec protocol_command(
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          EvalTypes.runtime_value(),
+          EvalTypes.ops_context()
+        ) :: EvalTypes.command_map()
   defp protocol_command(direction, from, to, union, message, ops) do
     message_value = ops.normalize_union_value.(message, union)
 
@@ -225,7 +234,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
     }
   end
 
-  @spec message_name(term()) :: String.t()
+  @spec message_name(EvalTypes.runtime_value()) :: String.t()
   defp message_name(%{"ctor" => ctor}) when is_binary(ctor), do: ctor
   defp message_name(%{ctor: ctor}) when is_binary(ctor), do: ctor
   defp message_name({tag, _payload}) when is_integer(tag), do: "tag:#{tag}"

@@ -18,6 +18,11 @@ defmodule IdeWeb.CoreComponents do
   use Gettext, backend: IdeWeb.Gettext
 
   alias Phoenix.LiveView.JS
+  alias Phoenix.LiveView.Rendered
+
+  @type assigns :: map()
+  @type translation :: {String.t(), keyword()}
+  @type field_errors :: [{atom() | String.t(), translation()}]
 
   @doc """
   Renders a modal.
@@ -41,7 +46,7 @@ defmodule IdeWeb.CoreComponents do
   attr :on_cancel, JS, default: %JS{}
   slot :inner_block, required: true
 
-  @spec modal(term()) :: term()
+  @spec modal(assigns()) :: Rendered.t()
   def modal(assigns) do
     ~H"""
     <div
@@ -106,7 +111,7 @@ defmodule IdeWeb.CoreComponents do
 
   slot :inner_block, doc: "the optional inner block that renders the flash message"
 
-  @spec flash(term()) :: term()
+  @spec flash(assigns()) :: Rendered.t()
   def flash(assigns) do
     assigns = assign_new(assigns, :id, fn -> "flash-#{assigns.kind}" end)
 
@@ -149,7 +154,7 @@ defmodule IdeWeb.CoreComponents do
   attr :flash, :map, required: true, doc: "the map of flash messages"
   attr :id, :string, default: "flash-group", doc: "the optional id of flash container"
 
-  @spec flash_group(term()) :: term()
+  @spec flash_group(assigns()) :: Rendered.t()
   def flash_group(assigns) do
     ~H"""
     <div id={@id}>
@@ -205,7 +210,7 @@ defmodule IdeWeb.CoreComponents do
   slot :inner_block, required: true
   slot :actions, doc: "the slot for form actions, such as a submit button"
 
-  @spec simple_form(term()) :: term()
+  @spec simple_form(assigns()) :: Rendered.t()
   def simple_form(assigns) do
     ~H"""
     <.form :let={f} for={@for} as={@as} {@rest}>
@@ -233,7 +238,7 @@ defmodule IdeWeb.CoreComponents do
 
   slot :inner_block, required: true
 
-  @spec button(term()) :: term()
+  @spec button(assigns()) :: Rendered.t()
   def button(assigns) do
     ~H"""
     <button
@@ -301,7 +306,7 @@ defmodule IdeWeb.CoreComponents do
                 multiple pattern phx-change phx-debounce phx-submit placeholder readonly required rows size
                 step)
 
-  @spec input(term()) :: term()
+  @spec input(assigns()) :: Rendered.t()
   def input(%{field: %Phoenix.HTML.FormField{} = field} = assigns) do
     errors = if Phoenix.Component.used_input?(field), do: field.errors, else: []
 
@@ -405,7 +410,7 @@ defmodule IdeWeb.CoreComponents do
   attr :for, :string, default: nil
   slot :inner_block, required: true
 
-  @spec label(term()) :: term()
+  @spec label(assigns()) :: Rendered.t()
   def label(assigns) do
     ~H"""
     <label for={@for} class="block text-sm font-semibold leading-6 text-zinc-800">
@@ -419,7 +424,7 @@ defmodule IdeWeb.CoreComponents do
   """
   slot :inner_block, required: true
 
-  @spec error(term()) :: term()
+  @spec error(assigns()) :: Rendered.t()
   def error(assigns) do
     ~H"""
     <p class="mt-3 flex gap-3 text-sm leading-6 text-rose-600">
@@ -438,7 +443,7 @@ defmodule IdeWeb.CoreComponents do
   slot :subtitle
   slot :actions
 
-  @spec header(term()) :: term()
+  @spec header(assigns()) :: Rendered.t()
   def header(assigns) do
     ~H"""
     <header class={[@actions != [] && "flex items-center justify-between gap-6", @class]}>
@@ -480,7 +485,7 @@ defmodule IdeWeb.CoreComponents do
 
   slot :action, doc: "the slot for showing user actions in the last table column"
 
-  @spec table(term()) :: term()
+  @spec table(assigns()) :: Rendered.t()
   def table(assigns) do
     assigns =
       with %{rows: %Phoenix.LiveView.LiveStream{}} <- assigns do
@@ -548,7 +553,7 @@ defmodule IdeWeb.CoreComponents do
     attr :title, :string, required: true
   end
 
-  @spec list(term()) :: term()
+  @spec list(assigns()) :: Rendered.t()
   def list(assigns) do
     ~H"""
     <div class="mt-14">
@@ -572,7 +577,7 @@ defmodule IdeWeb.CoreComponents do
   attr :navigate, :any, required: true
   slot :inner_block, required: true
 
-  @spec back(term()) :: term()
+  @spec back(assigns()) :: Rendered.t()
   def back(assigns) do
     ~H"""
     <div class="mt-16">
@@ -608,7 +613,7 @@ defmodule IdeWeb.CoreComponents do
   attr :name, :string, required: true
   attr :class, :string, default: nil
 
-  @spec icon(term()) :: term()
+  @spec icon(assigns()) :: Rendered.t()
   def icon(%{name: "hero-" <> _} = assigns) do
     ~H"""
     <span class={[@name, @class]} />
@@ -617,7 +622,7 @@ defmodule IdeWeb.CoreComponents do
 
   ## JS Commands
 
-  @spec show(term(), term()) :: term()
+  @spec show(JS.t(), String.t()) :: JS.t()
   def show(js \\ %JS{}, selector) do
     JS.show(js,
       to: selector,
@@ -629,7 +634,7 @@ defmodule IdeWeb.CoreComponents do
     )
   end
 
-  @spec hide(term(), term()) :: term()
+  @spec hide(JS.t(), String.t()) :: JS.t()
   def hide(js \\ %JS{}, selector) do
     JS.hide(js,
       to: selector,
@@ -641,7 +646,7 @@ defmodule IdeWeb.CoreComponents do
     )
   end
 
-  @spec show_modal(term(), term()) :: term()
+  @spec show_modal(JS.t(), String.t()) :: JS.t()
   def show_modal(js \\ %JS{}, id) when is_binary(id) do
     js
     |> JS.show(to: "##{id}")
@@ -655,7 +660,7 @@ defmodule IdeWeb.CoreComponents do
     |> JS.focus_first(to: "##{id}-content")
   end
 
-  @spec hide_modal(term(), term()) :: term()
+  @spec hide_modal(JS.t(), String.t()) :: JS.t()
   def hide_modal(js \\ %JS{}, id) do
     js
     |> JS.hide(
@@ -671,7 +676,7 @@ defmodule IdeWeb.CoreComponents do
   @doc """
   Translates an error message using gettext.
   """
-  @spec translate_error(term()) :: term()
+  @spec translate_error(translation()) :: String.t()
   def translate_error({msg, opts}) do
     # When using gettext, we typically pass the strings we want
     # to translate as a static argument:
@@ -693,7 +698,7 @@ defmodule IdeWeb.CoreComponents do
   @doc """
   Translates the errors for a field from a keyword list of errors.
   """
-  @spec translate_errors(term(), term()) :: term()
+  @spec translate_errors(field_errors(), atom() | String.t()) :: [String.t()]
   def translate_errors(errors, field) when is_list(errors) do
     for {^field, {msg, opts}} <- errors, do: translate_error({msg, opts})
   end

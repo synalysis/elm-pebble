@@ -13,6 +13,13 @@ defmodule Ide.StoreAssets do
   @type icon_key :: :icon_small | :icon_large
   @type icon_spec :: %{key: icon_key(), filename: String.t(), width: pos_integer(), height: pos_integer()}
 
+  @type store_asset_error ::
+          :invalid_icon_key
+          | :invalid_png
+          | {:invalid_dimensions,
+             %{expected: {pos_integer(), pos_integer()}, actual: {pos_integer(), pos_integer()}}}
+          | File.posix()
+
   @icon_specs [
     %{key: :icon_small, filename: @icon_small_filename, width: elem(@icon_small, 0), height: elem(@icon_small, 1)},
     %{key: :icon_large, filename: @icon_large_filename, width: elem(@icon_large, 0), height: elem(@icon_large, 1)}
@@ -114,7 +121,7 @@ defmodule Ide.StoreAssets do
     end)
   end
 
-  @spec save_icon(String.t(), icon_key(), String.t()) :: :ok | {:error, term()}
+  @spec save_icon(String.t(), icon_key(), String.t()) :: :ok | {:error, store_asset_error()}
   def save_icon(workspace_root, key, source_path)
       when is_binary(workspace_root) and key in [:icon_small, :icon_large] and is_binary(source_path) do
     case Enum.find(@icon_specs, &(&1.key == key)) do
@@ -131,7 +138,8 @@ defmodule Ide.StoreAssets do
     end
   end
 
-  @spec validate_png_dimensions(String.t(), icon_spec() | icon_key()) :: :ok | {:error, term()}
+  @spec validate_png_dimensions(String.t(), icon_spec() | icon_key()) ::
+          :ok | {:error, store_asset_error()}
   def validate_png_dimensions(source_path, key) when key in [:icon_small, :icon_large] do
     spec = Enum.find(@icon_specs, &(&1.key == key))
     validate_png_dimensions(source_path, spec)

@@ -1,9 +1,10 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Char do
   @moduledoc false
 
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.String, as: StringValue
 
-  @spec eval(String.t(), term()) :: {:ok, term()} | :no_builtin
+  @spec eval(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
   def eval("fromcode", [code]) when is_integer(code), do: {:ok, StringValue.char_from_code(code)}
   def eval("tocode", [char]), do: {:ok, StringValue.char_to_code(char)}
 

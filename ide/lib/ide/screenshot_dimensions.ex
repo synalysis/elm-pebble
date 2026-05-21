@@ -57,7 +57,7 @@ defmodule Ide.ScreenshotDimensions do
   Passes through unchanged when the platform is unknown or dimensions already match.
   Upscales/downscales with nearest-neighbor sampling when they differ.
   """
-  @spec normalize_for_store(binary(), String.t()) :: {:ok, binary()} | {:error, term()}
+  @spec normalize_for_store(binary(), String.t()) :: {:ok, binary()} | {:error, Png.png_error()}
   def normalize_for_store(png, platform) when is_binary(png) do
     case store_dimensions(platform) do
       nil ->

@@ -3,7 +3,7 @@ defmodule Ide.GitHub.Repositories do
   GitHub repository lookup and creation for project settings.
   """
 
-  alias Ide.GitHub.{Client, Credentials}
+  alias Ide.GitHub.{Client, Credentials, Types}
   alias Ide.Projects.Project
 
   @type repo_status ::
@@ -17,7 +17,8 @@ defmodule Ide.GitHub.Repositories do
 
   @valid_visibilities ~w(private public)
 
-  @spec lookup_status(map(), keyword()) :: repo_status() | {:error, term()}
+  @spec lookup_status(map(), keyword()) ::
+          repo_status() | {:error, Types.connection_error() | Types.http_error()}
   def lookup_status(repo_config, opts \\ []) when is_map(repo_config) do
     with {:ok, repo} <- fetch_field(repo_config, "repo"),
          {:ok, token} <- fetch_token(),
@@ -32,11 +33,11 @@ defmodule Ide.GitHub.Repositories do
       {:error, :missing_field} -> :unconfigured
       {:error, :github_not_connected} -> {:error, :github_not_connected}
       {:error, :missing_github_user} -> {:error, :missing_github_user}
-      error -> error
     end
   end
 
-  @spec create_repository(Project.t(), map(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec create_repository(Project.t(), Ide.Projects.Types.github_config(), keyword()) ::
+          {:ok, map()} | {:error, Types.github_error()}
   def create_repository(%Project{} = project, repo_config, opts \\ []) when is_map(repo_config) do
     with {:ok, repo} <- fetch_field(repo_config, "repo"),
          :ok <- validate_repo_name(repo),
@@ -55,7 +56,7 @@ defmodule Ide.GitHub.Repositories do
     end
   end
 
-  @spec status_label(repo_status() | {:error, term()}) :: String.t()
+  @spec status_label(repo_status() | {:error, Types.github_error()}) :: String.t()
   def status_label(:idle), do: "Not checked yet"
   def status_label(:checking), do: "Checking…"
   def status_label(:unconfigured), do: "Set repository name (owner defaults to your GitHub user)"
@@ -72,7 +73,7 @@ defmodule Ide.GitHub.Repositories do
 
   def status_label({:error, reason}), do: "Error: #{format_error(reason)}"
 
-  @spec format_error(term()) :: String.t()
+  @spec format_error(Types.github_error()) :: String.t()
   def format_error({:http_error, status, %{"message" => message}}),
     do: "GitHub API (#{status}): #{message}"
 
@@ -118,7 +119,8 @@ defmodule Ide.GitHub.Repositories do
     end
   end
 
-  @spec resolve_owner(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  @spec resolve_owner(String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, :missing_github_user}
   defp resolve_owner(owner, opts) do
     owner = String.trim(owner)
 

@@ -3,11 +3,22 @@ defmodule IdeWeb.SettingsLive do
 
   alias Ide.Emulator
   alias Ide.GitHub.AuthFlow
+  alias Ide.GitHub.Types, as: GitHubTypes
   alias Ide.Settings
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
 
+  alias Phoenix.LiveView.Rendered
+
+  @type socket :: Phoenix.LiveView.Socket.t()
+  @type lv_mount :: {:ok, socket()}
+  @type lv_noreply :: {:noreply, socket()}
+  @type assigns :: map()
+  @type wire_input :: String.t() | integer() | boolean() | nil | [wire_input()]
+  @type emulator_installation_status :: map()
+  @type info_message :: :clear_info_flash | {:github_poll, String.t()}
+
   @impl true
-  @spec mount(term(), term(), term()) :: term()
+  @spec mount(map(), map(), socket()) :: lv_mount()
   def mount(_params, _session, socket) do
     settings = Settings.current()
 
@@ -30,13 +41,13 @@ defmodule IdeWeb.SettingsLive do
   end
 
   @impl true
-  @spec handle_params(term(), term(), term()) :: term()
+  @spec handle_params(map(), String.t(), socket()) :: lv_noreply()
   def handle_params(params, _uri, socket) do
     {:noreply, assign(socket, :return_to, sanitize_return_to(params["return_to"]))}
   end
 
   @impl true
-  @spec handle_event(term(), term(), term()) :: term()
+  @spec handle_event(String.t(), map(), socket()) :: lv_noreply()
   def handle_event("save", %{"settings" => params}, socket) do
     auto_format = parse_checkbox(params["auto_format_on_save"])
     debug_mode = parse_checkbox(params["debug_mode"])
@@ -53,9 +64,9 @@ defmodule IdeWeb.SettingsLive do
 
     with :ok <- Settings.set_auto_format_on_save(auto_format),
          :ok <- Settings.set_debug_mode(debug_mode),
-         :ok <- Settings.set_formatter_backend(formatter_backend),
-         :ok <- Settings.set_editor_mode(editor_mode),
-         :ok <- Settings.set_editor_theme(editor_theme),
+         :ok <- Settings.set_formatter_backend(Atom.to_string(formatter_backend)),
+         :ok <- Settings.set_editor_mode(Atom.to_string(editor_mode)),
+         :ok <- Settings.set_editor_theme(Atom.to_string(editor_theme)),
          :ok <- Settings.set_editor_line_numbers(editor_line_numbers),
          :ok <- Settings.set_editor_active_line_highlight(editor_active_line_highlight),
          :ok <- Settings.set_mcp_http_enabled(mcp_http_enabled),
@@ -173,7 +184,7 @@ defmodule IdeWeb.SettingsLive do
   end
 
   @impl true
-  @spec handle_info(term(), term()) :: term()
+  @spec handle_info(info_message(), socket()) :: lv_noreply()
   def handle_info(:clear_info_flash, socket) do
     {:noreply, clear_flash(socket, :info)}
   end
@@ -294,7 +305,7 @@ defmodule IdeWeb.SettingsLive do
   end
 
   @impl true
-  @spec render(term()) :: term()
+  @spec render(assigns()) :: Rendered.t()
   def render(assigns) do
     ~H"""
     <div class="mx-auto max-w-3xl space-y-6 p-6">
@@ -800,12 +811,12 @@ defmodule IdeWeb.SettingsLive do
     )
   end
 
-  @spec parse_checkbox(term()) :: term()
+  @spec parse_checkbox(wire_input()) :: boolean()
   defp parse_checkbox("true"), do: true
   defp parse_checkbox("on"), do: true
   defp parse_checkbox(_), do: false
 
-  @spec parse_formatter_backend(term()) :: term()
+  @spec parse_formatter_backend(String.t() | nil) :: Ide.Settings.formatter_backend()
   defp parse_formatter_backend("elm_format"), do: :elm_format
   defp parse_formatter_backend("elm-format"), do: :elm_format
   defp parse_formatter_backend(_), do: :built_in
@@ -1000,11 +1011,11 @@ defmodule IdeWeb.SettingsLive do
     "'" <> String.replace(to_string(value), "'", "'\"'\"'") <> "'"
   end
 
-  @spec parse_editor_mode(term()) :: term()
+  @spec parse_editor_mode(String.t() | nil) :: Ide.Settings.editor_mode()
   defp parse_editor_mode("vim"), do: :vim
   defp parse_editor_mode(_), do: :regular
 
-  @spec parse_editor_theme(term()) :: term()
+  @spec parse_editor_theme(String.t() | nil) :: Ide.Settings.editor_theme()
   defp parse_editor_theme("dark"), do: :dark
   defp parse_editor_theme("light"), do: :light
   defp parse_editor_theme(_), do: :system
@@ -1018,7 +1029,7 @@ defmodule IdeWeb.SettingsLive do
 
   defp github_status_line(_), do: "Not connected."
 
-  @spec github_flow_status_label(term()) :: String.t()
+  @spec github_flow_status_label(String.t()) :: String.t()
   defp github_flow_status_label("waiting_for_authorization"), do: "Waiting for authorization..."
 
   defp github_flow_status_label("slowing_down"),
@@ -1029,7 +1040,7 @@ defmodule IdeWeb.SettingsLive do
   defp github_flow_status_label("error"), do: "Error"
   defp github_flow_status_label(_), do: "In progress"
 
-  @spec github_connect_error_message(term()) :: String.t()
+  @spec github_connect_error_message(GitHubTypes.api_error() | String.t()) :: String.t()
   defp github_connect_error_message({:http_error, 404, _body}) do
     "GitHub device-flow endpoint was not found (404). Use a Client ID from a GitHub OAuth App (not a GitHub App) and enable Device Flow for that app."
   end
@@ -1070,7 +1081,7 @@ defmodule IdeWeb.SettingsLive do
     |> normalize_emulator_target()
   end
 
-  @spec normalize_emulator_target(term()) :: String.t()
+  @spec normalize_emulator_target(String.t()) :: String.t()
   defp normalize_emulator_target(target) when is_binary(target) do
     target = String.trim(target)
     targets = ToolchainPresenter.emulator_targets()
@@ -1085,7 +1096,7 @@ defmodule IdeWeb.SettingsLive do
 
   defp normalize_emulator_target(_), do: normalize_emulator_target("basalt")
 
-  @spec emulator_installation_class(term()) :: String.t()
+  @spec emulator_installation_class(emulator_installation_status()) :: String.t()
   defp emulator_installation_class(%{status: :ok}),
     do: "mt-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-900"
 
@@ -1095,7 +1106,7 @@ defmodule IdeWeb.SettingsLive do
   defp emulator_installation_class(_),
     do: "mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-amber-900"
 
-  @spec emulator_installation_summary(term()) :: String.t()
+  @spec emulator_installation_summary(emulator_installation_status()) :: String.t()
   defp emulator_installation_summary(%{status: :checking, platform: platform}),
     do: "Checking embedded emulator dependencies for #{platform}..."
 
@@ -1110,32 +1121,34 @@ defmodule IdeWeb.SettingsLive do
   defp emulator_installation_summary(%{error: error}) when is_binary(error), do: error
   defp emulator_installation_summary(_), do: "Embedded emulator setup needs attention."
 
-  @spec emulator_components(term()) :: [map()]
+  @type emulator_component_status :: :ok | :missing | atom()
+
+  @spec emulator_components(emulator_installation_status()) :: [map()]
   defp emulator_components(%{components: components}) when is_list(components), do: components
   defp emulator_components(_), do: []
 
-  @spec emulator_installable?(term()) :: boolean()
+  @spec emulator_installable?(emulator_installation_status()) :: boolean()
   defp emulator_installable?(%{installable: true, missing: missing}) when is_list(missing),
     do: missing != []
 
   defp emulator_installable?(_), do: false
 
-  @spec emulator_component_class(term()) :: String.t()
+  @spec emulator_component_class(emulator_component_status()) :: String.t()
   defp emulator_component_class(:ok), do: "ml-2 font-mono text-[11px] text-emerald-700"
   defp emulator_component_class(_), do: "ml-2 font-mono text-[11px] text-amber-700"
 
-  @spec emulator_component_status(term()) :: String.t()
+  @spec emulator_component_status(emulator_component_status()) :: String.t()
   defp emulator_component_status(:ok), do: "ok"
   defp emulator_component_status(:missing), do: "missing"
   defp emulator_component_status(status), do: to_string(status || "unknown")
 
-  @spec schedule_info_flash_clear(term()) :: term()
+  @spec schedule_info_flash_clear(socket()) :: socket()
   defp schedule_info_flash_clear(socket) do
     _ = Process.send_after(self(), :clear_info_flash, 2_500)
     socket
   end
 
-  @spec sanitize_return_to(term()) :: String.t()
+  @spec sanitize_return_to(String.t() | nil) :: String.t()
   defp sanitize_return_to(path) when is_binary(path) do
     path = String.trim(path)
 

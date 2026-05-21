@@ -24,8 +24,10 @@ defmodule Ide.CompanionProtocolGenerator do
           wire_type: :int | :bool | :string | {:enum, String.t()} | {:union, String.t()}
         }
 
+  @type generator_error :: {:missing_union, String.t()} | File.posix()
+
   @spec generate(String.t(), String.t(), String.t(), String.t(), keyword()) ::
-          :ok | {:error, term()}
+          :ok | {:error, generator_error()}
   def generate(types_elm, out_h, out_c, out_js, opts \\ []) do
     with {:ok, source} <- File.read(types_elm),
          {:ok, schema} <- schema_from_source(source),
@@ -38,7 +40,7 @@ defmodule Ide.CompanionProtocolGenerator do
     end
   end
 
-  @spec generate_elm_internal(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec generate_elm_internal(String.t(), String.t()) :: :ok | {:error, generator_error()}
   def generate_elm_internal(types_elm, out_elm) do
     with {:ok, source} <- File.read(types_elm),
          {:ok, schema} <- schema_from_source(source),
@@ -49,7 +51,7 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   @spec message_keys(String.t()) ::
-          {:ok, %{optional(String.t()) => pos_integer()}} | {:error, term()}
+          {:ok, %{optional(String.t()) => pos_integer()}} | {:error, generator_error()}
   def message_keys(types_elm) do
     with {:ok, source} <- File.read(types_elm),
          {:ok, schema} <- schema_from_source(source) do
@@ -57,7 +59,7 @@ defmodule Ide.CompanionProtocolGenerator do
     end
   end
 
-  @spec schema_from_source(String.t()) :: {:ok, schema()} | {:error, term()}
+  @spec schema_from_source(String.t()) :: {:ok, schema()} | {:error, generator_error()}
   def schema_from_source(source) when is_binary(source) do
     unions = parse_unions(source)
     enums = enum_unions(unions, ["WatchToPhone", "PhoneToWatch"])

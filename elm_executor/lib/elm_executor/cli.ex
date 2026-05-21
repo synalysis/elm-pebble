@@ -22,7 +22,7 @@ defmodule ElmExecutor.CLI do
     end
   end
 
-  @spec run_check(term()) :: term()
+  @spec run_check(String.t()) :: :ok | no_return()
   defp run_check(project_dir) do
     case ElmExecutor.check(project_dir) do
       {:ok, project} ->
@@ -36,7 +36,7 @@ defmodule ElmExecutor.CLI do
     end
   end
 
-  @spec run_compile(term(), term(), term()) :: term()
+  @spec run_compile(String.t(), String.t(), atom()) :: :ok | no_return()
   defp run_compile(project_dir, out_dir, mode) do
     case ElmExecutor.compile(project_dir, %{out_dir: out_dir, mode: mode}) do
       {:ok, _result} ->
@@ -51,7 +51,7 @@ defmodule ElmExecutor.CLI do
     end
   end
 
-  @spec print_help() :: term()
+  @spec print_help() :: :ok
   defp print_help do
     IO.puts("""
     elm_executor usage:

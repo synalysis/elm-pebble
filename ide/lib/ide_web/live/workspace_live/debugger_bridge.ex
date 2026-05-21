@@ -5,6 +5,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
   alias Ide.Projects
   alias IdeWeb.WorkspaceLive.DebuggerSupport
 
+  @type socket :: Phoenix.LiveView.Socket.t()
+  @type compiler_result :: Ide.Compiler.check_result() | Ide.Compiler.compile_result() | Ide.Compiler.manifest_result() | map()
+
   @spec sync_check(Phoenix.LiveView.Socket.t(), map()) :: Phoenix.LiveView.Socket.t()
   def sync_check(socket, result) do
     case socket.assigns[:project] do
@@ -189,7 +192,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     end
   end
 
-  @spec manifest_schema_version_from_result(term()) :: term()
+  @spec manifest_schema_version_from_result(map()) :: integer() | String.t() | nil
   defp manifest_schema_version_from_result(result) do
     case Map.get(result, :manifest) do
       %{"schema_version" => v} -> v
@@ -198,7 +201,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     end
   end
 
-  @spec async_task_failure_diagnostics(term()) :: term()
+  @spec async_task_failure_diagnostics(String.t()) :: [Ide.Compiler.diagnostic()]
   defp async_task_failure_diagnostics(message) when is_binary(message) do
     [
       %{
@@ -212,7 +215,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     ]
   end
 
-  @spec result_diagnostics(term()) :: term()
+  @spec result_diagnostics(compiler_result()) :: [Ide.Compiler.diagnostic()]
   defp result_diagnostics(result) when is_map(result) do
     result
     |> Map.get(:diagnostics, Map.get(result, "diagnostics"))
@@ -230,8 +233,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
     end
   end
 
-  @spec infer_source_root_from_compiled_path(Phoenix.LiveView.Socket.t(), term()) ::
-          String.t() | nil
+  @spec infer_source_root_from_compiled_path(socket(), String.t() | nil) :: String.t() | nil
   defp infer_source_root_from_compiled_path(socket, compiled_path)
        when is_binary(compiled_path) do
     with %{source_roots: source_roots} = project <- socket.assigns[:project],
@@ -252,7 +254,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
 
   defp infer_source_root_from_compiled_path(_socket, _compiled_path), do: nil
 
-  @spec debugger_session_active?(term()) :: term()
+  @spec debugger_session_active?(socket()) :: boolean()
   defp debugger_session_active?(socket) do
     match?(%{running: true}, socket.assigns[:debugger_state])
   end

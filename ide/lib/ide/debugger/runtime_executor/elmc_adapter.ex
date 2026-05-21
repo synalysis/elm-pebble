@@ -8,6 +8,8 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmcAdapter do
 
   @behaviour Ide.Debugger.RuntimeExecutor
 
+  alias Ide.Debugger.Types
+
   @type execution_input :: Ide.Debugger.RuntimeExecutor.execution_input()
   @type execution_result :: Ide.Debugger.RuntimeExecutor.execution_result()
 
@@ -21,7 +23,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmcAdapter do
   ]
 
   @impl true
-  @spec execute(execution_input()) :: {:ok, execution_result()} | {:error, term()}
+  @spec execute(execution_input()) :: {:ok, execution_result()} | {:error, Types.execution_error()}
   def execute(input) when is_map(input) do
     case first_available_candidate(candidate_calls()) do
       {:ok, {mod, fun, _arity}} ->
@@ -89,7 +91,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmcAdapter do
     |> maybe_put_optional_context(:elm_executor_metadata, Map.get(input, :elm_executor_metadata))
   end
 
-  @spec maybe_put_optional_context(term(), term(), term()) :: term()
+  @spec maybe_put_optional_context(map(), atom(), map()) :: map()
   defp maybe_put_optional_context(request, key, value)
        when is_map(request) and is_atom(key) and is_map(value) do
     Map.put(request, key, value)

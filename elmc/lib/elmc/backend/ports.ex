@@ -5,7 +5,9 @@ defmodule Elmc.Backend.Ports do
 
   alias ElmEx.IR
 
-  @spec write_port_headers(IR.t(), String.t()) :: :ok | {:error, term()}
+  alias Elmc.Types
+
+  @spec write_port_headers(IR.t(), String.t()) :: :ok | {:error, Types.file_error()}
   def write_port_headers(_ir, out_dir) do
     ports_dir = Path.join(out_dir, "ports")
 

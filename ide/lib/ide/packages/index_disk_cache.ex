@@ -1,10 +1,12 @@
 defmodule Ide.Packages.IndexDiskCache do
   @moduledoc false
 
+  alias Ide.Packages.Types
+
   @doc """
   Load a previously persisted index row into ETS so conditional HTTP can return 304 after restart.
   """
-  @spec hydrate_to_ets!(atom() | :ets.tid(), term()) :: :ok
+  @spec hydrate_to_ets!(atom() | :ets.tid(), Types.index_cache_key()) :: :ok
   def hydrate_to_ets!(ets_table, key) when is_atom(ets_table) or is_reference(ets_table) do
     if enabled?() do
       stem = stem_for(key)
@@ -31,7 +33,7 @@ defmodule Ide.Packages.IndexDiskCache do
   @doc """
   Persist index payload and validators (async) after a successful download.
   """
-  @spec schedule_persist(term(), map(), term()) :: :ok
+  @spec schedule_persist(Types.index_cache_key(), map(), Types.search_payload()) :: :ok
   def schedule_persist(key, meta, payload) when is_map(meta) do
     if enabled?() do
       _ =
@@ -43,7 +45,7 @@ defmodule Ide.Packages.IndexDiskCache do
     :ok
   end
 
-  @spec persist_sync(term(), term(), term()) :: term()
+  @spec persist_sync(Types.index_cache_key(), map(), Types.search_payload()) :: :ok
   defp persist_sync(key, meta, payload) do
     dir = cache_dir()
     :ok = File.mkdir_p(dir)
@@ -66,14 +68,14 @@ defmodule Ide.Packages.IndexDiskCache do
     _ -> :ok
   end
 
-  @spec write_atomic(term(), term()) :: term()
+  @spec write_atomic(String.t(), iodata()) :: :ok
   defp write_atomic(path, data) do
     tmp = path <> ".tmp." <> Integer.to_string(:erlang.unique_integer([:positive]))
     File.write!(tmp, data)
     File.rename!(tmp, path)
   end
 
-  @spec stem_for(term()) :: term()
+  @spec stem_for(Types.index_cache_key()) :: String.t()
   defp stem_for(key) do
     digest =
       key
@@ -84,14 +86,14 @@ defmodule Ide.Packages.IndexDiskCache do
     "idx_" <> digest
   end
 
-  @spec cache_dir() :: term()
+  @spec cache_dir() :: String.t()
   defp cache_dir do
     Application.get_env(:ide, Ide.Packages, [])
     |> Keyword.get(:index_disk_cache_dir) ||
       Path.join(System.user_home!(), ".cache/elm-pebble-ide/package-registry")
   end
 
-  @spec enabled?() :: term()
+  @spec enabled?() :: boolean()
   defp enabled? do
     Application.get_env(:ide, Ide.Packages, [])
     |> Keyword.get(:index_disk_cache, true)

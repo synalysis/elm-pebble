@@ -2,9 +2,10 @@ defmodule IdeWeb.ScreenshotController do
   use IdeWeb, :controller
 
   alias Ide.Projects
+  alias Ide.Projects.Project
   alias Ide.Screenshots
 
-  @spec show(term(), term()) :: term()
+  @spec show(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def show(conn, %{"slug" => slug, "target" => target, "name" => name}) do
     with %{} = project <- Projects.get_project_by_slug(slug, conn.assigns.current_user),
          {:ok, emulator_target} <- Screenshots.normalize_emulator_target_public(target),
@@ -20,7 +21,7 @@ defmodule IdeWeb.ScreenshotController do
     end
   end
 
-  @spec screenshot_path(term(), String.t(), String.t()) :: String.t()
+  @spec screenshot_path(Project.t(), String.t(), String.t()) :: String.t()
   defp screenshot_path(project, emulator_target, filename) do
     Path.join([Projects.screenshots_path(project), emulator_target, filename])
   end

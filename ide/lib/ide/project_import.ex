@@ -5,10 +5,13 @@ defmodule Ide.ProjectImport do
 
   @source_roots ~w(watch protocol phone)
 
+  @type import_error :: :import_source_not_found | File.posix()
+  @type import_result :: :ok | {:error, import_error()}
+
   @doc """
   Imports source files from an existing path into workspace roots.
   """
-  @spec import(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec import(String.t(), String.t()) :: import_result()
   def import(import_path, workspace_path) do
     source_path = Path.expand(import_path)
 
@@ -33,12 +36,12 @@ defmodule Ide.ProjectImport do
     end
   end
 
-  @spec multi_root_layout?(term()) :: term()
+  @spec multi_root_layout?(String.t()) :: boolean()
   defp multi_root_layout?(source_path) do
     Enum.any?(@source_roots, &File.dir?(Path.join(source_path, &1)))
   end
 
-  @spec replace_dir(term(), term()) :: term()
+  @spec replace_dir(String.t(), String.t()) :: import_result()
   defp replace_dir(source, target) do
     _ = File.rm_rf(target)
     :ok = File.mkdir_p(Path.dirname(target))

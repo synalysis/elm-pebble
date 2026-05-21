@@ -4,7 +4,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
 
   import IdeWeb.WorkspaceLive.ProjectSettingsPage, only: [settings_nav: 1]
 
-  @spec render(term()) :: term()
+  alias Phoenix.LiveView.Rendered
+
+  @type assigns :: map()
+  @type rendered :: Rendered.t()
+
+  @spec render(assigns()) :: rendered()
   def render(assigns) do
     ~H"""
     <section

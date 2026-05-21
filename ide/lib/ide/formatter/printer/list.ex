@@ -1,6 +1,13 @@
 defmodule Ide.Formatter.Printer.List do
   @moduledoc false
   alias Ide.Formatter.Semantics.Rules
+  alias Ide.Formatter.Types
+
+  @type split_target :: %{column: pos_integer(), indent: non_neg_integer()}
+  @type inline_list_result ::
+          {:ok, String.t(), [String.t()], String.t(), non_neg_integer()} | :error
+  @type opening_comma_result ::
+          {:ok, String.t(), String.t(), String.t(), non_neg_integer()} | :error
 
   @spec normalize_item_splits(String.t(), [map()] | nil) :: String.t()
   def normalize_item_splits(source, tokens) when is_binary(source) and is_list(tokens) do
@@ -163,7 +170,7 @@ defmodule Ide.Formatter.Printer.List do
     |> Enum.join("\n")
   end
 
-  @spec list_item_split_targets(term()) :: term()
+  @spec list_item_split_targets([map()]) :: %{pos_integer() => [split_target()]}
   defp list_item_split_targets(tokens) do
     ordered =
       tokens
@@ -214,7 +221,7 @@ defmodule Ide.Formatter.Printer.List do
     split_targets
   end
 
-  @spec split_line_before_column(term(), term(), term()) :: term()
+  @spec split_line_before_column(String.t(), pos_integer(), non_neg_integer()) :: String.t()
   defp split_line_before_column(line, column, indent)
        when is_binary(line) and is_integer(column) do
     split_idx = max(column - 1, 0)
@@ -231,29 +238,30 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec pop_delimiter(term(), term()) :: term()
+  @spec pop_delimiter([String.t()], String.t()) :: [String.t()]
   defp pop_delimiter([], _close), do: []
 
   defp pop_delimiter([open | rest], close) do
     if delimiters_match?(open, close), do: rest, else: [open | rest]
   end
 
-  @spec delimiters_match?(term(), term()) :: term()
+  @spec delimiters_match?(String.t(), String.t()) :: boolean()
   defp delimiters_match?("[", "]"), do: true
   defp delimiters_match?("(", ")"), do: true
   defp delimiters_match?("{", "}"), do: true
   defp delimiters_match?(_, _), do: false
 
-  @spec starts_with_trimmed?(term(), term()) :: term()
+  @spec starts_with_trimmed?(String.t(), String.t()) :: boolean()
   defp starts_with_trimmed?(line, marker),
     do: String.starts_with?(String.trim_leading(line), marker)
 
-  @spec leading_indent(term()) :: term()
+  @spec leading_indent(String.t()) :: non_neg_integer()
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
   end
 
-  @spec split_line_before_top_level_close_bracket(term(), term()) :: term()
+  @spec split_line_before_top_level_close_bracket(String.t(), non_neg_integer()) ::
+          Types.list_split()
   defp split_line_before_top_level_close_bracket(line, list_indent) do
     case list_item_close_bracket_index(line) do
       nil ->
@@ -278,7 +286,7 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec expand_inline_list_line(term()) :: term()
+  @spec expand_inline_list_line(String.t()) :: Types.line_list()
   defp expand_inline_list_line(line) do
     cond do
       String.length(line) < 88 ->
@@ -313,7 +321,7 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec split_inline_list(term()) :: term()
+  @spec split_inline_list(String.t()) :: inline_list_result()
   defp split_inline_list(line) do
     with {:ok, open_idx, close_idx} <- top_level_list_bounds(line),
          true <- open_idx > 0 do
@@ -333,7 +341,7 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec expand_opening_line_with_multiple_items(term()) :: term()
+  @spec expand_opening_line_with_multiple_items(String.t()) :: Types.line_list()
   defp expand_opening_line_with_multiple_items(line) do
     case split_opening_line_first_comma(line) do
       {:ok, prefix, first_item, remainder, indent} ->
@@ -348,7 +356,7 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec split_opening_line_first_comma(term()) :: term()
+  @spec split_opening_line_first_comma(String.t()) :: opening_comma_result()
   defp split_opening_line_first_comma(line) do
     trimmed = String.trim_leading(line)
 
@@ -379,12 +387,19 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec first_list_comma_index(term()) :: term()
+  @spec first_list_comma_index(String.t()) :: {:ok, non_neg_integer(), non_neg_integer()} | :error
   defp first_list_comma_index(line) do
     do_first_list_comma_index(line, [], false, false, 0, nil)
   end
 
-  @spec do_first_list_comma_index(term(), term(), term(), term(), term(), term()) :: term()
+  @spec do_first_list_comma_index(
+          String.t(),
+          list(),
+          boolean(),
+          boolean(),
+          non_neg_integer(),
+          non_neg_integer() | nil
+        ) :: {:ok, non_neg_integer(), non_neg_integer()} | :error
   defp do_first_list_comma_index("", _stack, _in_string, _escape_next, _idx, _open_idx),
     do: :error
 
@@ -429,7 +444,7 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec split_top_level_csv(term()) :: term()
+  @spec split_top_level_csv(String.t()) :: [String.t()]
   defp split_top_level_csv(value) do
     {parts, current, _stack, _in_string, _escape_next} =
       do_split_top_level_csv(value, [], "", [], false, false)
@@ -438,7 +453,14 @@ defmodule Ide.Formatter.Printer.List do
     Enum.reject(parts, &(&1 == ""))
   end
 
-  @spec do_split_top_level_csv(term(), term(), term(), term(), term(), term()) :: term()
+  @spec do_split_top_level_csv(
+          String.t(),
+          [String.t()],
+          String.t(),
+          list(),
+          boolean(),
+          boolean()
+        ) :: {[String.t()], String.t(), list(), boolean(), boolean()}
   defp do_split_top_level_csv("", parts, current, stack, in_string, escape_next),
     do: {parts, current, stack, in_string, escape_next}
 
@@ -498,12 +520,19 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec top_level_list_bounds(term()) :: term()
+  @spec top_level_list_bounds(String.t()) :: {:ok, non_neg_integer(), non_neg_integer()} | :error
   defp top_level_list_bounds(line) do
     do_top_level_list_bounds(line, [], false, false, 0, nil)
   end
 
-  @spec do_top_level_list_bounds(term(), term(), term(), term(), term(), term()) :: term()
+  @spec do_top_level_list_bounds(
+          String.t(),
+          list(),
+          boolean(),
+          boolean(),
+          non_neg_integer(),
+          non_neg_integer() | nil
+        ) :: {:ok, non_neg_integer(), non_neg_integer()} | :error
   defp do_top_level_list_bounds("", _stack, _in_string, _escape_next, _idx, _open_idx), do: :error
 
   defp do_top_level_list_bounds(
@@ -550,7 +579,8 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec normalize_item_split_line_without_tokens(term(), term(), term()) :: term()
+  @spec normalize_item_split_line_without_tokens(String.t(), boolean(), non_neg_integer() | nil) ::
+          {String.t(), boolean(), non_neg_integer() | nil}
   defp normalize_item_split_line_without_tokens(line, inside_multiline_list, list_indent) do
     trimmed = String.trim(line)
     leading = leading_indent(line)
@@ -575,7 +605,7 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec split_line_at_extra_top_level_commas(term(), term()) :: term()
+  @spec split_line_at_extra_top_level_commas(String.t(), non_neg_integer()) :: String.t()
   defp split_line_at_extra_top_level_commas(line, indent) do
     comma_columns = top_level_comma_columns(line)
 
@@ -595,19 +625,25 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec top_level_comma_columns(term()) :: term()
+  @spec top_level_comma_columns(String.t()) :: [pos_integer()]
   defp top_level_comma_columns(line) do
     line
     |> scan_top_level([], false, false, 1, %{char: ?,, columns: []})
     |> Map.get(:columns, [])
   end
 
-  @spec list_item_close_bracket_index(term()) :: term()
+  @spec list_item_close_bracket_index(String.t()) :: non_neg_integer() | nil
   defp list_item_close_bracket_index(line) do
     do_list_item_close_bracket_index(line, [], false, false, 0)
   end
 
-  @spec do_list_item_close_bracket_index(term(), term(), term(), term(), term()) :: term()
+  @spec do_list_item_close_bracket_index(
+          String.t(),
+          list(),
+          boolean(),
+          boolean(),
+          non_neg_integer()
+        ) :: non_neg_integer() | nil
   defp do_list_item_close_bracket_index("", _stack, _in_string, _escape_next, _idx), do: nil
 
   defp do_list_item_close_bracket_index(
@@ -647,12 +683,18 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec visible_char_count(term(), term()) :: term()
+  @spec visible_char_count(String.t(), non_neg_integer()) :: non_neg_integer()
   defp visible_char_count(line, char_code) when is_binary(line) and is_integer(char_code) do
     do_visible_char_count(line, char_code, 0, false, false)
   end
 
-  @spec do_visible_char_count(term(), term(), term(), term(), term()) :: term()
+  @spec do_visible_char_count(
+          String.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          boolean(),
+          boolean()
+        ) :: non_neg_integer()
   defp do_visible_char_count("", _char_code, count, _in_string, _escape_next), do: count
 
   defp do_visible_char_count(
@@ -683,7 +725,14 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec scan_top_level(term(), term(), term(), term(), term(), term()) :: term()
+  @spec scan_top_level(
+          String.t(),
+          list(),
+          boolean(),
+          boolean(),
+          pos_integer(),
+          %{char: non_neg_integer(), columns: [pos_integer()]}
+        ) :: %{char: non_neg_integer(), columns: [pos_integer()]}
   defp scan_top_level("", _stack, _in_string, _escape_next, _col, result), do: result
 
   defp scan_top_level(<<char::utf8, rest::binary>>, stack, in_string, escape_next, col, result) do
@@ -715,20 +764,20 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec pop_stack(term(), term()) :: term()
+  @spec pop_stack(list(), non_neg_integer()) :: list()
   defp pop_stack([], _closing), do: []
 
   defp pop_stack([open | rest], closing) do
     if delimiter_char_match?(open, closing), do: rest, else: [open | rest]
   end
 
-  @spec delimiter_char_match?(term(), term()) :: term()
+  @spec delimiter_char_match?(non_neg_integer(), non_neg_integer()) :: boolean()
   defp delimiter_char_match?(?(, ?)), do: true
   defp delimiter_char_match?(?[, ?]), do: true
   defp delimiter_char_match?(?{, ?}), do: true
   defp delimiter_char_match?(_, _), do: false
 
-  @spec opening_list_indent(term()) :: term()
+  @spec opening_list_indent(String.t()) :: non_neg_integer() | nil
   defp opening_list_indent(line) do
     case opening_list_indents(line) do
       [indent | _] -> indent
@@ -736,14 +785,20 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec opening_list_indents(term()) :: term()
+  @spec opening_list_indents(String.t()) :: [non_neg_integer()]
   defp opening_list_indents(line) do
     do_opening_list_indent(line, 0, [], false, false)
     |> Enum.filter(fn {char, _pos} -> char == ?[ end)
     |> Enum.map(fn {_, pos} -> pos end)
   end
 
-  @spec do_opening_list_indent(term(), term(), term(), term(), term()) :: term()
+  @spec do_opening_list_indent(
+          String.t(),
+          non_neg_integer(),
+          [{non_neg_integer(), non_neg_integer()}],
+          boolean(),
+          boolean()
+        ) :: [{non_neg_integer(), non_neg_integer()}]
   defp do_opening_list_indent("", _col, stack, _in_string, _escape_next) do
     stack
   end
@@ -776,7 +831,8 @@ defmodule Ide.Formatter.Printer.List do
     end
   end
 
-  @spec pop_opening_indent_stack(term(), term()) :: term()
+  @spec pop_opening_indent_stack([{non_neg_integer(), non_neg_integer()}], non_neg_integer()) ::
+          [{non_neg_integer(), non_neg_integer()}]
   defp pop_opening_indent_stack([], _closing), do: []
 
   defp pop_opening_indent_stack([{open, pos} | rest], closing) do

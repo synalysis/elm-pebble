@@ -18,6 +18,7 @@ defmodule Mix.Tasks.Formatter.Parity do
   use Mix.Task
 
   alias Ide.Formatter.Parity
+  alias Ide.Formatter.Types
 
   @switches [
     limit: :integer,
@@ -35,7 +36,7 @@ defmodule Mix.Tasks.Formatter.Parity do
   ]
 
   @impl true
-  @spec run(term()) :: term()
+  @spec run(Types.mix_task_args()) :: :ok
   def run(args) do
     Mix.Task.run("app.start")
 
@@ -95,14 +96,14 @@ defmodule Mix.Tasks.Formatter.Parity do
     end
   end
 
-  @spec format_error(term()) :: String.t()
+  @spec format_error(Parity.discover_error() | atom() | String.t()) :: String.t()
   defp format_error(:missing_fixture_root) do
     "formatter parity requires --fixtures PATH or ELM_FORMAT_FIXTURES_ROOT"
   end
 
   defp format_error(reason), do: "formatter parity failed: #{inspect(reason)}"
 
-  @spec maybe_write_json_output(term(), term()) :: term()
+  @spec maybe_write_json_output(Parity.run_result(), String.t() | nil) :: :ok
   defp maybe_write_json_output(_result, nil), do: :ok
 
   defp maybe_write_json_output(result, output_path) do
@@ -117,7 +118,7 @@ defmodule Mix.Tasks.Formatter.Parity do
     Mix.shell().info("json_report: #{output_path}")
   end
 
-  @spec maybe_write_mismatch_log(term(), term()) :: term()
+  @spec maybe_write_mismatch_log(Parity.run_result(), String.t() | nil) :: :ok
   defp maybe_write_mismatch_log(_result, nil), do: :ok
 
   defp maybe_write_mismatch_log(result, output_path) do
@@ -144,7 +145,7 @@ defmodule Mix.Tasks.Formatter.Parity do
     Mix.shell().info("mismatch_log: #{output_path}")
   end
 
-  @spec maybe_handle_baseline(term(), term()) :: term()
+  @spec maybe_handle_baseline(Parity.run_result(), keyword()) :: :ok
   defp maybe_handle_baseline(result, opts) do
     baseline_path = opts[:baseline]
     update? = opts[:update_baseline] || false
@@ -173,7 +174,7 @@ defmodule Mix.Tasks.Formatter.Parity do
     end
   end
 
-  @spec maybe_enforce_phase_gate(term(), term()) :: term()
+  @spec maybe_enforce_phase_gate(Parity.run_result(), keyword()) :: :ok
   defp maybe_enforce_phase_gate(result, opts) do
     phase = opts[:phase] && String.upcase(opts[:phase])
     min_parity = opts[:min_parity] || phase_threshold(phase)
@@ -201,7 +202,7 @@ defmodule Mix.Tasks.Formatter.Parity do
   end
 
   @doc false
-  @spec phase_gate_outcome(term(), term()) :: term()
+  @spec phase_gate_outcome(Parity.run_result(), float() | nil) :: Types.parity_phase_gate()
   def phase_gate_outcome(result, min_parity) when is_map(result) do
     cond do
       is_nil(min_parity) ->
@@ -222,19 +223,19 @@ defmodule Mix.Tasks.Formatter.Parity do
   end
 
   @doc false
-  @spec baseline_target_match(term()) :: term()
+  @spec baseline_target_match(Types.parity_baseline()) :: non_neg_integer()
   def baseline_target_match(baseline) when is_map(baseline) do
     baseline["actionable_match"] || baseline["match"] || 0
   end
 
-  @spec phase_threshold(term()) :: term()
+  @spec phase_threshold(String.t() | nil) :: float() | nil
   defp phase_threshold(nil), do: nil
   defp phase_threshold("A"), do: 95.0
   defp phase_threshold("B"), do: 98.0
   defp phase_threshold("C"), do: 100.0
   defp phase_threshold(_), do: nil
 
-  @spec write_baseline!(term(), term()) :: term()
+  @spec write_baseline!(String.t(), Parity.run_result()) :: :ok
   defp write_baseline!(path, result) do
     payload = %{
       fixture_root: result.fixture_root,
@@ -251,7 +252,7 @@ defmodule Mix.Tasks.Formatter.Parity do
     File.write!(path, json <> "\n")
   end
 
-  @spec read_baseline!(term()) :: term()
+  @spec read_baseline!(String.t()) :: Types.parity_baseline()
   defp read_baseline!(path) do
     case File.read(path) do
       {:ok, content} ->

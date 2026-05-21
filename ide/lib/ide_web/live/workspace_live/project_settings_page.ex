@@ -2,9 +2,16 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
   @moduledoc false
   use IdeWeb, :html
 
+  alias Phoenix.LiveView.Rendered
+
   @settings_panes [:settings, :settings_store, :settings_github]
 
-  @spec render(term()) :: term()
+  @type assigns :: map()
+  @type rendered :: Rendered.t()
+  @type settings_pane :: :settings | :settings_store | :settings_github
+  @type flow_status :: :idle | :running | :ok | :error
+
+  @spec render(assigns()) :: rendered()
   def render(assigns) do
     ~H"""
     <section
@@ -453,10 +460,10 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
     """
   end
 
-  @spec settings_pane?(term()) :: boolean()
+  @spec settings_pane?(settings_pane() | atom()) :: boolean()
   def settings_pane?(pane), do: pane in @settings_panes
 
-  @spec settings_tab_class(term(), term()) :: String.t()
+  @spec settings_tab_class(settings_pane() | atom(), settings_pane() | atom()) :: String.t()
   def settings_tab_class(active, tab) when active == tab,
     do: "rounded bg-blue-100 px-3 py-1.5 text-blue-800"
 
@@ -479,14 +486,14 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
   defp settings_intro(:settings_github), do: "Repository linkage and snapshot push."
   defp settings_intro(_), do: "Configure project settings."
 
-  @spec status_label(term()) :: String.t()
+  @spec status_label(flow_status() | atom()) :: String.t()
   defp status_label(:idle), do: "idle"
   defp status_label(:running), do: "running"
   defp status_label(:ok), do: "ok"
   defp status_label(:error), do: "error"
   defp status_label(_), do: "unknown"
 
-  @spec push_status_class(term()) :: String.t()
+  @spec push_status_class(flow_status() | atom()) :: String.t()
   defp push_status_class(:ok), do: "text-emerald-700"
   defp push_status_class(:error), do: "text-rose-700"
   defp push_status_class(:running), do: "text-blue-700"

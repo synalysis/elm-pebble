@@ -37,7 +37,7 @@ defmodule Ide.Mcp.Audit do
     Path.join(audit_dir(), "audit.log")
   end
 
-  @spec audit_dir() :: term()
+  @spec audit_dir() :: String.t()
   defp audit_dir do
     Path.join(:code.priv_dir(:ide), "mcp")
   end
