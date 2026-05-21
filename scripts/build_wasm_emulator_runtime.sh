@@ -42,6 +42,23 @@ patch_qemu_dockerfile() {
     "${dockerfile}"
 }
 
+docker_build() {
+  image="$1"
+  dockerfile="$2"
+  context="$3"
+
+  set +e
+  docker build --help 2>&1 | grep -qE '(^|[[:space:]])--progress([[:space:]=]|$)'
+  supports_progress=$?
+  set -e
+
+  if [ "${supports_progress}" -eq 0 ]; then
+    docker build --progress=plain -t "${image}" -f "${dockerfile}" "${context}"
+  else
+    docker build -t "${image}" -f "${dockerfile}" "${context}"
+  fi
+}
+
 need docker
 need git
 need tar
@@ -87,7 +104,7 @@ if ! docker image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
   patch_qemu_dockerfile "${dockerfile}"
 
   echo "Building Docker image ${DOCKER_IMAGE}"
-  docker build --progress=plain -t "${DOCKER_IMAGE}" -f "${dockerfile}" "${QEMU_SRC}"
+  docker_build "${DOCKER_IMAGE}" "${dockerfile}" "${QEMU_SRC}"
 fi
 
 mkdir -p "${OUTPUT_DIR}"
