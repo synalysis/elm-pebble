@@ -58,6 +58,11 @@ defmodule Ide.RepoConfigTest do
     refute Keyword.has_key?(Application.fetch_env!(:ide, Ide.Repo.Postgres), :url)
   end
 
+  test "configured? is false when repo env only contains priv" do
+    Application.put_env(:ide, Ide.Repo.Postgres, priv: "priv/repo")
+    refute RepoConfig.configured?(Ide.Repo.Postgres)
+  end
+
   defp restore_env(key, nil), do: System.delete_env(key)
   defp restore_env(key, value), do: System.put_env(key, value)
 end

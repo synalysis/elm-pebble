@@ -8,7 +8,12 @@ defmodule Ide.Application do
   @impl true
   @spec start(Application.start_type(), term()) :: Supervisor.on_start()
   def start(_type, _args) do
-    repo = Application.fetch_env!(:ide, :repo_module)
+    repo =
+      if release_runtime?() do
+        Ide.RepoConfig.put_runtime_repo_config!()
+      else
+        Application.fetch_env!(:ide, :repo_module)
+      end
 
     children = [
       IdeWeb.Telemetry,
@@ -44,5 +49,10 @@ defmodule Ide.Application do
   def config_change(changed, _new, removed) do
     IdeWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  @spec release_runtime?() :: boolean()
+  defp release_runtime? do
+    not is_nil(System.get_env("RELEASE_ROOT"))
   end
 end

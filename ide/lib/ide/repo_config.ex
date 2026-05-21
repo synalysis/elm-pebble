@@ -63,6 +63,15 @@ defmodule Ide.RepoConfig do
     Keyword.has_key?(config, :database) or Keyword.has_key?(config, :url)
   end
 
+  @doc false
+  @spec configured?(module()) :: boolean()
+  def configured?(repo) when is_atom(repo) do
+    case Application.fetch_env(:ide, repo) do
+      {:ok, config} when is_list(config) -> storage_ready?(config)
+      _ -> false
+    end
+  end
+
   @spec adapter_for(module()) :: module()
   defp adapter_for(Ide.Repo.Postgres), do: Ecto.Adapters.Postgres
   defp adapter_for(Ide.Repo.Sqlite), do: Ecto.Adapters.SQLite3
