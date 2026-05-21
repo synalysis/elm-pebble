@@ -265,6 +265,26 @@ defmodule Ide.CompilerTest do
     assert step.runtime["operation_source"] == "core_ir_update_eval"
   end
 
+  test "compile works without mix on PATH" do
+    workspace_root = tmp_workspace_path("compile-in-process")
+    on_exit(fn -> File.rm_rf(workspace_root) end)
+
+    assert :ok = ProjectTemplates.apply_template("starter", workspace_root)
+
+    previous_path = System.get_env("PATH")
+    System.put_env("PATH", "/nonexistent")
+
+    try do
+      assert {:ok, result} =
+               Compiler.compile("compile-in-process", workspace_root: workspace_root)
+
+      assert result.status == :ok
+      assert is_binary(result.elm_executor_core_ir_b64)
+    after
+      if previous_path in [nil, ""], do: System.delete_env("PATH"), else: System.put_env("PATH", previous_path)
+    end
+  end
+
   defp tmp_workspace_path(prefix) do
     Path.join(System.tmp_dir!(), "#{prefix}-#{System.unique_integer([:positive])}")
   end

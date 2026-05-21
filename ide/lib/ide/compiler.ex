@@ -179,6 +179,9 @@ defmodule Ide.Compiler do
               {:ok, result} ->
                 :ok = Cache.put(project_slug, revision, result)
                 {:ok, result}
+
+              {:error, reason} ->
+                {:error, reason}
             end
         end
     end
@@ -236,6 +239,9 @@ defmodule Ide.Compiler do
               {:ok, result} ->
                 :ok = ManifestCache.put(project_slug, revision, result)
                 {:ok, result}
+
+              {:error, reason} ->
+                {:error, reason}
             end
         end
     end
@@ -243,29 +249,8 @@ defmodule Ide.Compiler do
 
   @spec run_elmc_check(String.t()) :: {:ok, check_result()} | {:error, compiler_error()}
   defp run_elmc_check(project_dir) do
-    expr = "Elmc.CLI.main([\"check\", #{inspect(project_dir)}])"
-
-    {output, exit_code} =
-      System.cmd("mix", ["run", "-e", expr],
-        cd: elmc_root(),
-        stderr_to_stdout: true,
-        env: [{"MIX_ENV", "dev"}, {"ELMC_WARNINGS_JSON", "1"}]
-      )
-
-    status = if exit_code == 0, do: :ok, else: :error
-
-    diagnostics = parse_diagnostics(status, output) |> Diagnostics.normalize_list()
-    counts = Diagnostics.summary(diagnostics)
-
-    {:ok,
-     %{
-       status: status,
-       checked_path: project_dir,
-       output: output,
-       diagnostics: diagnostics,
-       error_count: counts.error_count,
-       warning_count: counts.warning_count
-     }}
+    %{status: status, output: output} = Elmc.CLI.check_project(project_dir)
+    build_check_result(project_dir, status, output)
   rescue
     error -> {:error, error}
   end
@@ -424,18 +409,7 @@ defmodule Ide.Compiler do
   @spec run_elmc_compile(String.t(), String.t()) :: {:ok, compile_result()} | {:error, compiler_error()}
   defp run_elmc_compile(project_dir, revision) do
     out_dir = Path.join(project_dir, ".elmc-build")
-
-    expr =
-      "Elmc.CLI.main([\"compile\", #{inspect(project_dir)}, \"--out-dir\", #{inspect(out_dir)}])"
-
-    {output, exit_code} =
-      System.cmd("mix", ["run", "-e", expr],
-        cd: elmc_root(),
-        stderr_to_stdout: true,
-        env: [{"MIX_ENV", "dev"}, {"ELMC_WARNINGS_JSON", "1"}]
-      )
-
-    status = if exit_code == 0, do: :ok, else: :error
+    %{status: status, output: output} = Elmc.CLI.compile_project(project_dir, out_dir)
 
     diagnostics = parse_diagnostics(status, output) |> Diagnostics.normalize_list()
     counts = Diagnostics.summary(diagnostics)
@@ -534,17 +508,8 @@ defmodule Ide.Compiler do
   @spec run_elmc_manifest(String.t(), String.t(), boolean()) ::
           {:ok, manifest_result()} | {:error, compiler_error()}
   defp run_elmc_manifest(project_dir, revision, strict?) do
-    expr = "Elmc.CLI.main([\"manifest\", #{inspect(project_dir)}])"
-
-    {output, exit_code} =
-      System.cmd("mix", ["run", "-e", expr],
-        cd: elmc_root(),
-        stderr_to_stdout: true,
-        env: [{"MIX_ENV", "dev"}, {"ELMC_WARNINGS_JSON", "1"}]
-      )
-
-    status = if exit_code == 0, do: :ok, else: :error
-    {manifest, manifest_diagnostics} = normalize_manifest_payload(extract_manifest_json(output))
+    %{status: status, output: output, manifest: manifest} = Elmc.CLI.manifest_project(project_dir)
+    {normalized_manifest, manifest_diagnostics} = normalize_manifest_payload(manifest)
 
     diagnostics =
       (parse_diagnostics(status, output) ++ manifest_diagnostics)
@@ -560,7 +525,7 @@ defmodule Ide.Compiler do
        revision: revision,
        cached?: false,
        strict?: strict?,
-       manifest: manifest,
+       manifest: normalized_manifest,
        output: output,
        diagnostics: diagnostics,
        error_count: counts.error_count,
@@ -568,6 +533,23 @@ defmodule Ide.Compiler do
      }}
   rescue
     error -> {:error, error}
+  end
+
+  @spec build_check_result(String.t(), :ok | :error, String.t()) ::
+          {:ok, check_result()} | {:error, compiler_error()}
+  defp build_check_result(project_dir, status, output) do
+    diagnostics = parse_diagnostics(status, output) |> Diagnostics.normalize_list()
+    counts = Diagnostics.summary(diagnostics)
+
+    {:ok,
+     %{
+       status: status,
+       checked_path: project_dir,
+       output: output,
+       diagnostics: diagnostics,
+       error_count: counts.error_count,
+       warning_count: counts.warning_count
+     }}
   end
 
   @spec parse_diagnostics(:ok | :error, String.t()) :: [diagnostic()]
@@ -970,49 +952,6 @@ defmodule Ide.Compiler do
     {normalized, diagnostics}
   end
 
-  @spec extract_manifest_json(String.t()) :: map() | nil
-  defp extract_manifest_json(output) when is_binary(output) do
-    trimmed = String.trim(output)
-
-    cond do
-      trimmed == "" ->
-        nil
-
-      true ->
-        direct_decode(trimmed) || decode_json_window(trimmed)
-    end
-  end
-
-  @spec direct_decode(String.t()) :: map() | nil
-  defp direct_decode(content) do
-    case Jason.decode(content) do
-      {:ok, payload} when is_map(payload) -> payload
-      _ -> nil
-    end
-  end
-
-  @spec decode_json_window(String.t()) :: map() | nil
-  defp decode_json_window(content) do
-    start_idx =
-      case :binary.match(content, "{") do
-        {idx, _len} -> idx
-        :nomatch -> nil
-      end
-
-    end_idx =
-      content
-      |> :binary.matches("}")
-      |> List.last()
-      |> case do
-        {idx, _len} -> idx
-        nil -> nil
-      end
-
-    if is_integer(start_idx) and is_integer(end_idx) and end_idx > start_idx,
-      do: content |> String.slice(start_idx..end_idx) |> direct_decode(),
-      else: nil
-  end
-
   @spec normalize_string_list(list() | map() | nil) :: {[String.t()], [String.t()]}
   defp normalize_string_list(value) when is_list(value) do
     if Enum.all?(value, &is_binary/1) do
@@ -1083,12 +1022,6 @@ defmodule Ide.Compiler do
     else
       {status, diagnostics}
     end
-  end
-
-  @spec elmc_root() :: String.t()
-  defp elmc_root do
-    Application.get_env(:ide, Ide.Compiler, [])
-    |> Keyword.fetch!(:elmc_root)
   end
 
   @spec empty_fallback(String.t(), String.t()) :: String.t()

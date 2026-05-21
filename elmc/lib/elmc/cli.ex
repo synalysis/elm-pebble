@@ -8,6 +8,18 @@ defmodule Elmc.CLI do
   @blocked_package_families ~w(elm/core elm/browser elm/bytes elm/file elm/html elm/http)
 
   @type cli_diagnostic :: map()
+  @type run_status :: :ok | :error
+  @type project_run :: %{
+          status: run_status(),
+          output: String.t(),
+          warnings: [map()]
+        }
+  @type manifest_run :: %{
+          status: run_status(),
+          output: String.t(),
+          warnings: [map()],
+          manifest: map() | nil
+        }
   @type warning_dedupe_key ::
           {String.t(), String.t() | nil, String.t(), String.t() | nil, String.t() | nil,
            integer() | nil, String.t() | nil, String.t() | nil, boolean() | nil,
@@ -36,87 +48,203 @@ defmodule Elmc.CLI do
 
   @spec run_check(String.t()) :: :ok
   defp run_check(project_dir) do
-    case Elmc.check(project_dir) do
-      {:ok, project} ->
-        if error_diagnostics?(project.diagnostics) do
-          IO.puts(:stderr, "check: failed")
-          IO.puts(:stderr, "modules: #{length(project.modules)}")
+    case check_project(project_dir) do
+      %{status: :ok, output: output} ->
+        IO.write(output)
+        :ok
 
-          project.diagnostics
-          |> print_warnings()
-          |> halt_on_error_diagnostics()
-        else
-          IO.puts("check: ok")
-          IO.puts("modules: #{length(project.modules)}")
-          print_warnings(project.diagnostics)
-        end
-
-      {:error, error} ->
-        IO.puts(:stderr, "check: failed")
-        IO.puts(:stderr, DiagnosticFormatter.format_error(error))
+      %{status: :error, output: output} ->
+        IO.puts(:stderr, output)
         System.halt(1)
     end
+  end
+
+  @doc """
+  Runs `elmc check` in-process and returns CLI-compatible output for IDE integration.
+  """
+  @spec check_project(String.t()) :: project_run()
+  def check_project(project_dir) do
+    case Elmc.check(project_dir) do
+      {:ok, project} ->
+        warnings = project |> Map.get(:diagnostics, []) |> dedupe_warnings()
+        status = if error_diagnostics?(warnings), do: :error, else: :ok
+
+        %{
+          status: status,
+          output: check_output(status, project, warnings),
+          warnings: warnings
+        }
+
+      {:error, error} ->
+        %{
+          status: :error,
+          output: "check: failed\n" <> DiagnosticFormatter.format_error(error),
+          warnings: []
+        }
+    end
+  end
+
+  @spec check_output(run_status(), map(), [map()]) :: String.t()
+  defp check_output(:ok, project, warnings) do
+    [
+      "check: ok",
+      "modules: #{length(project.modules)}",
+      warnings_output(warnings)
+    ]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  defp check_output(:error, project, warnings) do
+    [
+      "check: failed",
+      "modules: #{length(project.modules)}",
+      warnings_output(warnings)
+    ]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
   end
 
   @spec run_compile(String.t(), String.t() | nil, boolean()) :: :ok
   defp run_compile(project_dir, out_dir, strip_dead_code) do
-    case Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: strip_dead_code}) do
-      {:ok, result} ->
-        warnings = compile_warnings(result)
+    case compile_project(project_dir, out_dir, strip_dead_code: strip_dead_code) do
+      %{status: :ok, output: output} ->
+        IO.write(output)
+        :ok
 
-        if error_diagnostics?(warnings) do
-          IO.puts(:stderr, "compile: failed")
-          IO.puts(:stderr, "output: #{out_dir}")
-
-          warnings
-          |> print_warnings()
-          |> halt_on_error_diagnostics()
-        else
-          IO.puts("compile: ok")
-          IO.puts("output: #{out_dir}")
-          print_warnings(warnings)
-        end
-
-      {:error, error} ->
-        IO.puts(:stderr, "compile: failed")
-        IO.puts(:stderr, DiagnosticFormatter.format_error(error))
+      %{status: :error, output: output} ->
+        IO.puts(:stderr, output)
         System.halt(1)
     end
   end
 
-  @spec run_manifest(String.t()) :: :ok
-  defp run_manifest(project_dir) do
-    case Elmc.check(project_dir) do
-      {:ok, project} ->
-        dependencies = load_declared_dependencies(project_dir)
-        compatibility = dependency_compatibility_rows(dependencies)
+  @doc """
+  Runs `elmc compile` in-process and returns CLI-compatible output for IDE integration.
+  """
+  @spec compile_project(String.t(), String.t(), keyword()) :: project_run()
+  def compile_project(project_dir, out_dir, opts \\ []) do
+    strip_dead_code = Keyword.get(opts, :strip_dead_code, true)
 
-        {supported_packages, excluded_packages} =
-          compatibility
-          |> Enum.reduce({[], []}, fn row, {supported, excluded} ->
-            case row["status"] do
-              "blocked" -> {supported, [row["package"] | excluded]}
-              _ -> {[row["package"] | supported], excluded}
-            end
-          end)
-          |> then(fn {supported, excluded} ->
-            {Enum.uniq(Enum.reverse(supported)), Enum.uniq(Enum.reverse(excluded))}
-          end)
+    case Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: strip_dead_code}) do
+      {:ok, result} ->
+        warnings = result |> compile_warnings() |> dedupe_warnings()
+        status = if error_diagnostics?(warnings), do: :error, else: :ok
 
-        manifest = %{
-          supported_packages: supported_packages,
-          excluded_packages: excluded_packages,
-          modules_detected: Enum.map(project.modules, & &1.name),
-          dependency_compatibility: compatibility
+        %{
+          status: status,
+          output: compile_output(status, out_dir, warnings),
+          warnings: warnings
         }
 
-        IO.puts(Jason.encode!(manifest, pretty: true))
-
       {:error, error} ->
-        IO.puts(:stderr, "manifest: failed")
-        IO.puts(:stderr, DiagnosticFormatter.format_error(error))
+        %{
+          status: :error,
+          output: "compile: failed\n" <> DiagnosticFormatter.format_error(error),
+          warnings: []
+        }
+    end
+  end
+
+  @spec compile_output(run_status(), String.t(), [map()]) :: String.t()
+  defp compile_output(:ok, out_dir, warnings) do
+    [
+      "compile: ok",
+      "output: #{out_dir}",
+      warnings_output(warnings)
+    ]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  defp compile_output(:error, out_dir, warnings) do
+    [
+      "compile: failed",
+      "output: #{out_dir}",
+      warnings_output(warnings)
+    ]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  @spec run_manifest(String.t()) :: :ok
+  defp run_manifest(project_dir) do
+    case manifest_project(project_dir) do
+      %{status: :ok, output: output} ->
+        IO.write(output)
+        :ok
+
+      %{status: :error, output: output} ->
+        IO.puts(:stderr, output)
         System.halt(1)
     end
+  end
+
+  @doc """
+  Runs `elmc manifest` in-process and returns CLI-compatible output for IDE integration.
+  """
+  @spec manifest_project(String.t()) :: manifest_run()
+  def manifest_project(project_dir) do
+    case Elmc.check(project_dir) do
+      {:ok, project} ->
+        manifest = build_manifest(project_dir, project)
+        output = Jason.encode!(manifest, pretty: true)
+
+        %{
+          status: :ok,
+          output: output,
+          warnings: [],
+          manifest: manifest
+        }
+
+      {:error, error} ->
+        %{
+          status: :error,
+          output: "manifest: failed\n" <> DiagnosticFormatter.format_error(error),
+          warnings: [],
+          manifest: nil
+        }
+    end
+  end
+
+  @spec build_manifest(String.t(), map()) :: map()
+  defp build_manifest(project_dir, project) do
+    dependencies = load_declared_dependencies(project_dir)
+    compatibility = dependency_compatibility_rows(dependencies)
+
+    {supported_packages, excluded_packages} =
+      compatibility
+      |> Enum.reduce({[], []}, fn row, {supported, excluded} ->
+        case row["status"] do
+          "blocked" -> {supported, [row["package"] | excluded]}
+          _ -> {[row["package"] | supported], excluded}
+        end
+      end)
+      |> then(fn {supported, excluded} ->
+        {Enum.uniq(Enum.reverse(supported)), Enum.uniq(Enum.reverse(excluded))}
+      end)
+
+    %{
+      "supported_packages" => supported_packages,
+      "excluded_packages" => excluded_packages,
+      "modules_detected" => Enum.map(project.modules, & &1.name),
+      "dependency_compatibility" => compatibility
+    }
+  end
+
+  @spec warnings_output([map()]) :: String.t()
+  defp warnings_output(warnings) when is_list(warnings) do
+    rendered = DiagnosticFormatter.format_warnings(warnings)
+
+    json_line =
+      if warnings == [] do
+        ""
+      else
+        "ELMC_WARNINGS_JSON:" <> Jason.encode!(warnings)
+      end
+
+    [rendered, json_line]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
   end
 
   @spec print_help() :: :ok
@@ -154,30 +282,6 @@ defmodule Elmc.CLI do
       end)
 
     dedupe_warnings(project_warnings ++ ir_warnings)
-  end
-
-  @spec print_warnings([map()]) :: [map()]
-  defp print_warnings(warnings) when is_list(warnings) do
-    rendered = DiagnosticFormatter.format_warnings(warnings)
-
-    if rendered != "" do
-      IO.puts(:stderr, rendered)
-    end
-
-    if warnings != [] and warnings_json_enabled?() do
-      IO.puts(:stderr, "ELMC_WARNINGS_JSON:" <> Jason.encode!(warnings))
-    end
-
-    warnings
-  end
-
-  @spec halt_on_error_diagnostics([map()]) :: :ok | no_return()
-  defp halt_on_error_diagnostics(diagnostics) when is_list(diagnostics) do
-    if error_diagnostics?(diagnostics) do
-      System.halt(1)
-    end
-
-    :ok
   end
 
   @spec error_diagnostics?([map()]) :: boolean()
@@ -228,14 +332,6 @@ defmodule Elmc.CLI do
   end
 
   defp warning_dedupe_key(other), do: {:unknown, inspect(other)}
-
-  @spec warnings_json_enabled?() :: boolean()
-  defp warnings_json_enabled? do
-    case System.get_env("ELMC_WARNINGS_JSON") do
-      value when value in ["1", "true", "TRUE", "yes", "YES"] -> true
-      _ -> false
-    end
-  end
 
   @spec load_declared_dependencies(String.t()) :: [String.t()]
   defp load_declared_dependencies(project_dir) when is_binary(project_dir) do
