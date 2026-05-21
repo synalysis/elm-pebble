@@ -5,6 +5,7 @@ defmodule Ide.ProjectTemplates do
 
   alias Ide.CompanionProtocolGenerator
   alias Ide.InternalPackages
+  alias Ide.Paths
   alias Ide.PebbleToolchain
 
   @type workspace_path :: String.t()
@@ -148,7 +149,7 @@ defmodule Ide.ProjectTemplates do
   """
   @spec ensure_protocol_shared(String.t()) :: :ok | {:error, template_error()}
   def ensure_protocol_shared(workspace_path) when is_binary(workspace_path) do
-    source_dir = Path.join(repo_root(), "shared/elm")
+    source_dir = Paths.bundled_elm_path("shared-elm", "shared/elm")
     target_dir = Path.join(workspace_path, "protocol/src")
     protocol_root = Path.join(workspace_path, "protocol")
     protocol_types = Path.join(target_dir, "Companion/Types.elm")
@@ -270,7 +271,7 @@ defmodule Ide.ProjectTemplates do
 
   @spec seed_yes_protocol(workspace_path()) :: seed_result()
   defp seed_yes_protocol(workspace_path) do
-    source_dir = Path.join(ide_root(), "priv/project_templates/watchface_yes/protocol/src")
+    source_dir = Paths.priv_path("project_templates/watchface_yes/protocol/src")
     target_dir = Path.join(workspace_path, "protocol/src")
     protocol_root = Path.join(workspace_path, "protocol")
 
@@ -304,7 +305,7 @@ defmodule Ide.ProjectTemplates do
 
   @spec seed_template_protocol(workspace_path(), template_dir_name()) :: seed_result()
   defp seed_template_protocol(workspace_path, template_dir) do
-    source_dir = Path.join(ide_root(), "priv/project_templates/#{template_dir}/protocol/src")
+    source_dir = Paths.priv_path("project_templates/#{template_dir}/protocol/src")
     target_dir = Path.join(workspace_path, "protocol/src")
     protocol_root = Path.join(workspace_path, "protocol")
 
@@ -333,7 +334,7 @@ defmodule Ide.ProjectTemplates do
 
   @spec seed_yes_phone(workspace_path()) :: seed_result()
   defp seed_yes_phone(workspace_path) do
-    source = Path.join(ide_root(), "priv/project_templates/watchface_yes/phone/src")
+    source = Paths.priv_path("project_templates/watchface_yes/phone/src")
     target = Path.join(workspace_path, "phone/src")
 
     with :ok <-
@@ -350,7 +351,7 @@ defmodule Ide.ProjectTemplates do
 
   @spec seed_tangram_time_phone(workspace_path()) :: seed_result()
   defp seed_tangram_time_phone(workspace_path) do
-    source = Path.join(ide_root(), "priv/project_templates/watchface_tangram_time/phone/src")
+    source = Paths.priv_path("project_templates/watchface_tangram_time/phone/src")
     target = Path.join(workspace_path, "phone/src")
 
     copy_file(Path.join(source, "CompanionApp.elm"), Path.join(target, "CompanionApp.elm"))
@@ -358,7 +359,7 @@ defmodule Ide.ProjectTemplates do
 
   @spec seed_watchface_tutorial_phone(workspace_path()) :: seed_result()
   defp seed_watchface_tutorial_phone(workspace_path) do
-    source = Path.join(ide_root(), "priv/project_templates/watchface_tutorial_complete/phone/src")
+    source = Paths.priv_path("project_templates/watchface_tutorial_complete/phone/src")
     target = Path.join(workspace_path, "phone/src")
 
     with :ok <-
@@ -393,12 +394,12 @@ defmodule Ide.ProjectTemplates do
            File.write(Path.join(watch_root, "elm.json"), Jason.encode!(elm_json, pretty: true)),
          :ok <-
            copy_file(
-             Path.join(ide_root(), "priv/project_templates/starter_watch/index.html"),
+             Paths.priv_path("project_templates/starter_watch/index.html"),
              Path.join(watch_root, "index.html")
            ),
          :ok <-
            replace_dir(
-             Path.join(ide_root(), "priv/project_templates/#{watchface_template_dir}/src"),
+             Paths.priv_path("project_templates/#{watchface_template_dir}/src"),
              Path.join(watch_root, "src")
            ),
          :ok <- maybe_copy_template_resources(workspace_path, watchface_template_dir) do
@@ -408,7 +409,7 @@ defmodule Ide.ProjectTemplates do
 
   @spec maybe_copy_template_resources(workspace_path(), template_dir_name()) :: seed_result()
   defp maybe_copy_template_resources(workspace_path, template_dir) do
-    source = Path.join(ide_root(), "priv/project_templates/#{template_dir}/resources")
+    source = Paths.priv_path("project_templates/#{template_dir}/resources")
 
     if File.dir?(source) do
       replace_dir(source, Path.join(workspace_path, "watch/resources"))
@@ -453,7 +454,7 @@ defmodule Ide.ProjectTemplates do
 
   @spec seed_watch_fixture(workspace_path()) :: seed_result()
   defp seed_watch_fixture(workspace_path) do
-    template_root = Path.join(ide_root(), "priv/project_templates/starter_watch")
+    template_root = Paths.priv_path("project_templates/starter_watch")
     watch_root = Path.join(workspace_path, "watch")
 
     elm_json = %{
@@ -499,7 +500,7 @@ defmodule Ide.ProjectTemplates do
 
   @spec seed_phone_companion(workspace_path()) :: seed_result()
   defp seed_phone_companion(workspace_path) do
-    source_dir = Path.join(ide_root(), "priv/pebble_app_template/src/elm")
+    source_dir = Paths.priv_path("pebble_app_template/src/elm")
     target_dir = Path.join(workspace_path, "phone/src")
     phone_root = Path.join(workspace_path, "phone")
 
@@ -544,7 +545,7 @@ defmodule Ide.ProjectTemplates do
 
   @spec ensure_phone_companion_entrypoint(String.t()) :: :ok | {:error, template_error()}
   defp ensure_phone_companion_entrypoint(workspace_path) do
-    source_dir = Path.join(ide_root(), "priv/pebble_app_template/src/elm")
+    source_dir = Paths.priv_path("pebble_app_template/src/elm")
     target_dir = Path.join(workspace_path, "phone/src")
 
     copy_file_if_missing(
@@ -711,7 +712,7 @@ defmodule Ide.ProjectTemplates do
         %{}
 
       dir ->
-        path = Path.join([ide_root(), "priv/project_templates", dir, "template.json"])
+        path = Paths.priv_path("project_templates/#{dir}/template.json")
 
         if File.exists?(path) do
           case File.read(path) do
@@ -752,14 +753,4 @@ defmodule Ide.ProjectTemplates do
   end
 
   defp normalize_target_platforms(_), do: default_target_platforms()
-
-  @spec ide_root() :: String.t()
-  defp ide_root do
-    Path.expand("../..", __DIR__)
-  end
-
-  @spec repo_root() :: String.t()
-  defp repo_root do
-    Path.expand("../../..", __DIR__)
-  end
 end

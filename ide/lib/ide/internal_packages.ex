@@ -8,69 +8,56 @@ defmodule Ide.InternalPackages do
   projects work regardless of `projects_root` configuration.
   """
 
-  @spec ide_root() :: String.t()
-  defp ide_root do
-    Path.expand("../..", __DIR__)
-  end
-
-  @spec repo_root() :: String.t()
-  defp repo_root do
-    Path.expand("..", ide_root())
-  end
+  alias Ide.Paths
 
   @doc false
   @spec shared_elm_abs() :: String.t()
-  def shared_elm_abs do
-    Path.join(repo_root(), "shared/elm") |> Path.expand()
-  end
+  def shared_elm_abs, do: Paths.bundled_elm_path("shared-elm", "shared/elm")
 
   @doc false
   @spec shared_elm_companion_abs() :: String.t()
-  def shared_elm_companion_abs do
-    Path.join(repo_root(), "shared/elm-companion") |> Path.expand()
-  end
+  def shared_elm_companion_abs, do: Paths.bundled_elm_path("shared-elm-companion", "shared/elm-companion")
 
   @doc false
   @spec pebble_elm_src_abs() :: String.t()
-  def pebble_elm_src_abs do
-    Path.join(repo_root(), "packages/elm-pebble/elm-watch/src") |> Path.expand()
-  end
+  def pebble_elm_src_abs,
+    do: Paths.bundled_elm_path("pebble-watch-src", "packages/elm-pebble/elm-watch/src")
 
   @doc false
   @spec pebble_companion_core_elm_src_abs() :: String.t()
-  def pebble_companion_core_elm_src_abs do
-    Path.join(repo_root(), "packages/elm-pebble-companion-core/src") |> Path.expand()
-  end
+  def pebble_companion_core_elm_src_abs,
+    do:
+      Paths.bundled_elm_path(
+        "pebble-companion-core-src",
+        "packages/elm-pebble-companion-core/src"
+      )
 
   @doc false
   @spec pebble_companion_preferences_elm_src_abs() :: String.t()
-  def pebble_companion_preferences_elm_src_abs do
-    Path.join(repo_root(), "packages/elm-pebble-companion-preferences/src") |> Path.expand()
-  end
+  def pebble_companion_preferences_elm_src_abs,
+    do:
+      Paths.bundled_elm_path(
+        "pebble-companion-preferences-src",
+        "packages/elm-pebble-companion-preferences/src"
+      )
 
   @doc false
   @spec phone_pebble_stubs_elm_src_abs() :: String.t()
-  def phone_pebble_stubs_elm_src_abs do
-    Path.join(ide_root(), "priv/internal_packages/phone-pebble-stubs/src") |> Path.expand()
-  end
+  def phone_pebble_stubs_elm_src_abs,
+    do: Paths.priv_path("internal_packages/phone-pebble-stubs/src")
 
   @doc false
   @spec companion_protocol_elm_src_abs() :: String.t()
-  def companion_protocol_elm_src_abs do
-    Path.join(ide_root(), "priv/internal_packages/companion-protocol/src") |> Path.expand()
-  end
+  def companion_protocol_elm_src_abs,
+    do: Paths.priv_path("internal_packages/companion-protocol/src")
 
   @doc false
   @spec elm_time_elm_src_abs() :: String.t()
-  def elm_time_elm_src_abs do
-    Path.join(ide_root(), "priv/internal_packages/elm-time/src") |> Path.expand()
-  end
+  def elm_time_elm_src_abs, do: Paths.priv_path("internal_packages/elm-time/src")
 
   @doc false
   @spec elm_random_elm_src_abs() :: String.t()
-  def elm_random_elm_src_abs do
-    Path.join(ide_root(), "priv/internal_packages/elm-random/src") |> Path.expand()
-  end
+  def elm_random_elm_src_abs, do: Paths.priv_path("internal_packages/elm-random/src")
 
   @doc """
   Absolute paths for extra `source-directories` on watch apps (after `"src"`).

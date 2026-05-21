@@ -1,5 +1,7 @@
 import Config
 
+config :ide, Ide.Paths, repo_root: Path.expand("../..", __DIR__)
+
 # Configure your database
 config :ide, Ide.Repo,
   database: Path.expand("../ide_dev.db", __DIR__),

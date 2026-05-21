@@ -12,6 +12,7 @@ COPY . .
 WORKDIR /app/ide
 
 RUN mix local.hex --force && mix local.rebar --force
+RUN chmod +x scripts/sync_bundled_elm.sh && scripts/sync_bundled_elm.sh /app
 RUN mix deps.get --only prod
 RUN mix deps.compile
 RUN mix compile

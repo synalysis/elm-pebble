@@ -1,5 +1,7 @@
 import Config
 
+config :ide, Ide.Paths, repo_root: Path.expand("../..", __DIR__)
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used
