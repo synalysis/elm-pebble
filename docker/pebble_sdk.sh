@@ -1,7 +1,7 @@
 #!/bin/sh
 # Pebble SDK helpers for docker/entrypoint.sh (POSIX sh).
 
-pebble_sdk_active?() {
+pebble_sdk_active() {
   pebble sdk list 2>/dev/null | grep -q '(active)'
 }
 
@@ -56,7 +56,7 @@ ensure_pebble_sdk() {
 
   seed_bundled_pebble_sdk
 
-  if pebble_sdk_active?; then
+  if pebble_sdk_active; then
     return 0
   fi
 
