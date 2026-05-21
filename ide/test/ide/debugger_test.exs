@@ -509,6 +509,16 @@ defmodule Ide.DebuggerTest do
     assert get_in(updated, [:launch_context, "has_microphone"]) == false
   end
 
+  test "set_watch_profile on aplite exposes BlackWhite color mode on launch screen" do
+    slug = "sim-watch-profile-aplite-color-#{System.unique_integer([:positive])}"
+
+    assert {:ok, _} = Debugger.start_session(slug)
+    assert {:ok, updated} = Debugger.set_watch_profile(slug, %{watch_profile_id: "aplite"})
+
+    assert get_in(updated, [:launch_context, "screen", "color_mode"]) == "BlackWhite"
+    assert get_in(updated, [:launch_context, "supports_health"]) == false
+  end
+
   test "start_session preserves selected watch profile when no profile override is provided" do
     slug = "sim-watch-profile-preserve-#{System.unique_integer([:positive])}"
 

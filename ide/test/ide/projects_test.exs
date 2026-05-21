@@ -1149,6 +1149,39 @@ defmodule Ide.ProjectsTest do
     refute st_has_internal_text_tuple?(reloaded.watch.view_tree)
   end
 
+  test "tangram companion bootstrap reload executes CompanionApp init model" do
+    slug = "tangram-companion-bootstrap-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Tangram Companion Bootstrap",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "watchface-tangram-time"
+             })
+
+    assert {:ok, companion_source} =
+             Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, state} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: companion_source,
+               reason: "debugger_companion_bootstrap",
+               source_root: "phone"
+             })
+
+    companion_model = get_in(state, [:companion, :model]) || %{}
+    companion_runtime = Map.get(companion_model, "runtime_model") || %{}
+
+    assert get_in(companion_model, ["elm_introspect", "module"]) == "CompanionApp"
+    assert companion_runtime["figure"] == 0
+    assert companion_runtime["rotationsSinceDownload"] == 0
+    assert is_list(companion_runtime["names"]) or is_binary(companion_runtime["names"])
+  end
+
   defp st_has_internal_text_tuple?(value) do
     value
     |> inspect()

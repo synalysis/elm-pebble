@@ -1518,20 +1518,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     screen =
       case map_value(context, :screen) do
         value when is_map(value) ->
-          %{
-            "width" => map_value(value, :width) || map_value(context, :screenW) || 144,
-            "height" => map_value(value, :height) || map_value(context, :screenH) || 168,
-            "shape" => launch_context_display_shape(value, context),
-            "color_mode" => launch_context_color_mode_value(value, context)
-          }
+          launch_context_screen(value, context)
 
         _ ->
-          %{
-            "width" => map_value(context, :screenW) || 144,
-            "height" => map_value(context, :screenH) || 168,
-            "shape" => launch_context_display_shape(%{}, context),
-            "color_mode" => launch_context_color_mode_value(%{}, context)
-          }
+          launch_context_screen(%{}, context)
       end
 
     context
@@ -1562,6 +1552,29 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp normalize_launch_context(_context) do
     normalize_launch_context(%{})
   end
+
+  @spec launch_context_screen(map(), map()) :: map()
+  defp launch_context_screen(screen, context) when is_map(screen) and is_map(context) do
+    shape_name = launch_context_display_shape(screen, context)
+    color_name = launch_context_color_mode_value(screen, context)
+
+    %{
+      "width" => map_value(screen, :width) || map_value(context, :screenW) || 144,
+      "height" => map_value(screen, :height) || map_value(context, :screenH) || 168,
+      "shape" => launch_context_display_shape_ctor(shape_name),
+      "color_mode" => color_name,
+      "colorMode" => launch_context_color_mode_ctor(color_name)
+    }
+  end
+
+  @spec launch_context_display_shape_ctor(String.t()) :: map()
+  defp launch_context_display_shape_ctor("Round"), do: %{"ctor" => "Round", "args" => []}
+  defp launch_context_display_shape_ctor(_), do: %{"ctor" => "Rectangular", "args" => []}
+
+  @spec launch_context_color_mode_ctor(String.t()) :: map()
+  defp launch_context_color_mode_ctor("BlackWhite"), do: %{"ctor" => "BlackWhite", "args" => []}
+  defp launch_context_color_mode_ctor("Color"), do: %{"ctor" => "Color", "args" => []}
+  defp launch_context_color_mode_ctor(_), do: %{"ctor" => "Color", "args" => []}
 
   @spec launch_context_display_shape(map(), map()) :: String.t()
   defp launch_context_display_shape(screen, context) when is_map(screen) and is_map(context) do

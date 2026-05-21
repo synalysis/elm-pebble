@@ -1419,7 +1419,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
 
     assert runtime_model["screenW"] == 144
     assert runtime_model["screenH"] == 168
-    assert runtime_model["displayShape"] == "Rectangular"
+    assert runtime_model["displayShape"] == %{"ctor" => "Rectangular", "args" => []}
 
     refute Enum.any?(result.view_output, &(&1["kind"] == "unresolved"))
 
@@ -1441,6 +1441,70 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert Enum.any?(updated.view_output, fn row ->
              row["kind"] == "text_label" and row["text"] == "20:33"
            end)
+  end
+
+  test "runtime resolves launch screen colorMode custom type for monochrome profiles" do
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Main",
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "init",
+              "params" => ["launch"],
+              "expr" => %{
+                "op" => "tuple2",
+                "left" => %{
+                  "op" => "record_literal",
+                  "fields" => [
+                    %{
+                      "name" => "colorMode",
+                      "expr" => %{
+                        "op" => "field_access",
+                        "arg" => %{
+                          "op" => "field_access",
+                          "arg" => %{"op" => "var", "name" => "launch"},
+                          "field" => "screen"
+                        },
+                        "field" => "colorMode"
+                      }
+                    }
+                  ]
+                },
+                "right" => %{"kind" => "cmd.none"}
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: "",
+      introspect: %{
+        "init_model" => %{
+          "colorMode" => %{"$opaque" => true, "op" => "field_access"}
+        },
+        "view_tree" => %{"type" => "root", "children" => []}
+      },
+      current_model: %{
+        "launch_context" => %{
+          "screen" => %{"width" => 144, "height" => 168, "color_mode" => "BlackWhite"}
+        }
+      },
+      current_view_tree: %{},
+      elm_executor_core_ir: core_ir
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert result.model_patch["runtime_model"]["colorMode"] == %{
+             "ctor" => "BlackWhite",
+             "args" => []
+           }
   end
 
   test "core update applies structured CurrentDateTime payload and preserves model fields" do

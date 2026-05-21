@@ -1697,12 +1697,56 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     if is_list(args), do: length(args), else: 0
   end
 
-  @spec debugger_debugger_model(assigns()) :: map()
+  @companion_protocol_runtime_keys ~w(
+    status
+    protocol_message_count
+    protocol_inbound_count
+    protocol_outbound_count
+    protocol_last_inbound_message
+    protocol_last_inbound_from
+  )
+
+  @spec debugger_debugger_model(map() | nil) :: map()
   defp debugger_debugger_model(runtime) do
     runtime
     |> debugger_runtime_model()
     |> hide_debugger_model_metadata()
+    |> hide_companion_protocol_runtime_metadata(runtime)
   end
+
+  @spec hide_companion_protocol_runtime_metadata(map(), map() | nil) :: map()
+  defp hide_companion_protocol_runtime_metadata(model, runtime) when is_map(model) do
+    if companion_protocol_placeholder_model?(model, runtime) do
+      %{}
+    else
+      Map.drop(model, @companion_protocol_runtime_keys)
+    end
+  end
+
+  defp hide_companion_protocol_runtime_metadata(model, _runtime) when is_map(model), do: model
+  defp hide_companion_protocol_runtime_metadata(_model, _runtime), do: %{}
+
+  @spec companion_protocol_placeholder_model?(map(), map() | nil) :: boolean()
+  defp companion_protocol_placeholder_model?(runtime_model, runtime) when is_map(runtime_model) do
+    raw_model = debugger_raw_runtime_model(runtime)
+
+    app_bootstrapped? =
+      is_map(Map.get(raw_model, "elm_introspect") || Map.get(raw_model, :elm_introspect))
+
+    not app_bootstrapped? and
+      Map.keys(runtime_model)
+      |> Enum.map(&to_string/1)
+      |> Enum.all?(&(&1 in @companion_protocol_runtime_keys))
+  end
+
+  defp companion_protocol_placeholder_model?(_runtime_model, _runtime), do: false
+
+  @spec debugger_raw_runtime_model(map() | nil) :: map()
+  defp debugger_raw_runtime_model(%{} = runtime) do
+    Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
+  end
+
+  defp debugger_raw_runtime_model(_runtime), do: %{}
 
   @spec debugger_agent_state_clipboard_text(map()) :: String.t()
   defp debugger_agent_state_clipboard_text(%{} = assigns) do

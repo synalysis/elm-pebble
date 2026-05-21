@@ -7363,7 +7363,11 @@ defmodule Ide.Debugger do
     )
     |> put_launch_context_value_if_missing(
       "displayShape",
-      launch_context_display_shape(Map.get(model, "launch_context"))
+      launch_context_display_shape_ctor(Map.get(model, "launch_context"))
+    )
+    |> put_launch_context_value_if_missing(
+      "colorMode",
+      launch_context_color_capability(Map.get(model, "launch_context"))
     )
   end
 
@@ -7425,6 +7429,28 @@ defmodule Ide.Debugger do
   end
 
   defp launch_context_display_shape(_launch_context), do: nil
+
+  @spec launch_context_display_shape_ctor(map()) :: map() | nil
+  defp launch_context_display_shape_ctor(launch_context) when is_map(launch_context) do
+    case launch_context_display_shape(launch_context) do
+      "Round" -> %{"ctor" => "Round", "args" => []}
+      "Rectangular" -> %{"ctor" => "Rectangular", "args" => []}
+      _ -> nil
+    end
+  end
+
+  defp launch_context_display_shape_ctor(_launch_context), do: nil
+
+  @spec launch_context_color_capability(map()) :: map() | nil
+  defp launch_context_color_capability(launch_context) when is_map(launch_context) do
+    case launch_context_color_mode(launch_context) do
+      "BlackWhite" -> %{"ctor" => "BlackWhite", "args" => []}
+      "Color" -> %{"ctor" => "Color", "args" => []}
+      _ -> nil
+    end
+  end
+
+  defp launch_context_color_capability(_launch_context), do: nil
 
   @spec launch_context_color_mode(map()) :: String.t()
   defp launch_context_color_mode(launch_context) when is_map(launch_context) do

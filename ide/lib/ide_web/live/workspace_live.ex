@@ -4112,7 +4112,7 @@ defmodule IdeWeb.WorkspaceLive do
             rel_path: "src/CompanionApp.elm",
             source: content,
             reason: "debugger_companion_bootstrap",
-            source_root: "protocol"
+            source_root: "phone"
           })
 
         :ok
