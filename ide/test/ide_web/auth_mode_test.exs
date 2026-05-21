@@ -41,6 +41,15 @@ defmodule IdeWeb.AuthModeTest do
     assert redirected_to(conn) == "/login"
   end
 
+  test "public modes disable MCP integration", %{conn: _conn} do
+    for mode <- [:public_pebble, :public_custom] do
+      Application.put_env(:ide, Ide.Auth, mode: mode)
+
+      refute Auth.mcp_enabled?()
+      refute Auth.integration_settings_enabled?()
+    end
+  end
+
   test "public modes disable external emulator option", %{conn: _conn} do
     for mode <- [:public_pebble, :public_custom] do
       Application.put_env(:ide, Ide.Auth, mode: mode)

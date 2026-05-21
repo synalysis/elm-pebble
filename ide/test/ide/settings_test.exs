@@ -95,6 +95,36 @@ defmodule Ide.SettingsTest do
            } = Settings.current()
   end
 
+  test "public auth mode forces MCP and ACP settings off" do
+    temp_path =
+      Path.join(System.tmp_dir!(), "ide_settings_test_#{System.unique_integer([:positive])}.json")
+
+    original_config = Application.get_env(:ide, Ide.Settings, [])
+    original_auth = Application.get_env(:ide, Ide.Auth, [])
+
+    Application.put_env(:ide, Ide.Settings, settings_path: temp_path)
+    Application.put_env(:ide, Ide.Auth, mode: :public_custom)
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.Settings, original_config)
+      Application.put_env(:ide, Ide.Auth, original_auth)
+      File.rm(temp_path)
+    end)
+
+    File.write!(
+      temp_path,
+      Jason.encode!(%{
+        "mcp_http_enabled" => true,
+        "acp_agent_enabled" => true
+      })
+    )
+
+    assert %{mcp_http_enabled: false, acp_agent_enabled: false} = Settings.current()
+    assert :ok = Settings.set_mcp_http_enabled(true)
+    assert :ok = Settings.set_acp_agent_enabled(true)
+    assert %{mcp_http_enabled: false, acp_agent_enabled: false} = Settings.current()
+  end
+
   test "rejects invalid MCP HTTP ports" do
     temp_path =
       Path.join(System.tmp_dir!(), "ide_settings_test_#{System.unique_integer([:positive])}.json")

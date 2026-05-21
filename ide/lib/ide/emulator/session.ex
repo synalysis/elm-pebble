@@ -1643,6 +1643,17 @@ defmodule Ide.Emulator.Session do
       "Fedora: sndio is not currently in the standard Fedora repositories; install a compatible sndio package from a trusted source or build sndio from source, then recheck."
   end
 
+  defp linux_shared_library_detail(path, "libpixman-1.so.0") do
+    "#{path} is not runnable: missing Linux shared library libpixman-1.so.0. " <>
+      "Debian/Ubuntu: install libpixman-1-0 (Docker: rebuild the IDE image with qemu-system-common). " <>
+      "Fedora: install pixman, then recheck."
+  end
+
+  defp linux_shared_library_detail(path, "libSDL2-2.0.so.0") do
+    "#{path} is not runnable: missing Linux shared library libSDL2-2.0.so.0. " <>
+      "Debian/Ubuntu: install libsdl2-2.0-0, then recheck."
+  end
+
   defp linux_shared_library_detail(path, library) do
     "#{path} is not runnable: missing Linux shared library #{library}. " <>
       "Install the OS package that provides #{library}, then recheck."

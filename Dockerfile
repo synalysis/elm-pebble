@@ -32,6 +32,8 @@ RUN apt-get update && \
       python3 \
       pipx \
       qemu-system-data \
+      qemu-system-common \
+      libsdl2-2.0-0 \
       nodejs \
       npm && \
     PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install pebble-tool && \

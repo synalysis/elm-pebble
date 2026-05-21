@@ -2,20 +2,25 @@ defmodule IdeWeb.McpController do
   use IdeWeb, :controller
 
   alias Ide.Mcp.Protocol
+  alias Ide.Auth
   alias Ide.Settings
 
   @doc """
   Handles MCP JSON-RPC over HTTP.
   """
   def show(conn, _params) do
-    conn
-    |> put_resp_header("allow", "POST")
-    |> put_status(:method_not_allowed)
-    |> json(%{
-      "error" => "MCP HTTP endpoint accepts JSON-RPC POST requests.",
-      "transport" => "http",
-      "methods" => ["POST"]
-    })
+    if Auth.mcp_enabled?() do
+      conn
+      |> put_resp_header("allow", "POST")
+      |> put_status(:method_not_allowed)
+      |> json(%{
+        "error" => "MCP HTTP endpoint accepts JSON-RPC POST requests.",
+        "transport" => "http",
+        "methods" => ["POST"]
+      })
+    else
+      disabled_response(conn)
+    end
   end
 
   def create(conn, %{"_json" => request_body}) when is_list(request_body) do
@@ -59,17 +64,21 @@ defmodule IdeWeb.McpController do
   end
 
   defp http_capabilities(conn) do
-    settings = Settings.current()
+    if Auth.mcp_enabled?() do
+      settings = Settings.current()
 
-    if settings.mcp_http_enabled do
-      configured_capabilities = Protocol.normalize_capabilities(settings.mcp_http_capabilities)
+      if settings.mcp_http_enabled do
+        configured_capabilities = Protocol.normalize_capabilities(settings.mcp_http_capabilities)
 
-      requested_capabilities =
-        conn.params
-        |> Map.get("capabilities", configured_capabilities)
-        |> Protocol.normalize_capabilities()
+        requested_capabilities =
+          conn.params
+          |> Map.get("capabilities", configured_capabilities)
+          |> Protocol.normalize_capabilities()
 
-      {:ok, Enum.filter(requested_capabilities, &(&1 in configured_capabilities))}
+        {:ok, Enum.filter(requested_capabilities, &(&1 in configured_capabilities))}
+      else
+        {:error, :disabled}
+      end
     else
       {:error, :disabled}
     end

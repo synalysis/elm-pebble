@@ -13,10 +13,14 @@ defmodule IdeWeb.SettingsLiveTest do
       )
 
     original_config = Application.get_env(:ide, Ide.Settings, [])
+    original_auth = Application.get_env(:ide, Ide.Auth, [])
+
     Application.put_env(:ide, Ide.Settings, settings_path: temp_path)
+    Application.put_env(:ide, Ide.Auth, Keyword.put(original_auth, :mode, :local))
 
     on_exit(fn ->
       Application.put_env(:ide, Ide.Settings, original_config)
+      Application.put_env(:ide, Ide.Auth, original_auth)
       File.rm(temp_path)
     end)
 
@@ -112,6 +116,46 @@ defmodule IdeWeb.SettingsLiveTest do
     assert html =~ "mix ide.mcp --capabilities"
     assert html =~ "read,edit"
     assert html =~ ~s(phx-hook="CopyToClipboard")
+  end
+
+  test "public modes hide MCP and emulator setup sections on settings page", %{conn: conn} do
+    original_auth = Application.get_env(:ide, Ide.Auth, [])
+
+    {:ok, user} =
+      %Ide.Auth.User{}
+      |> Ide.Auth.User.changeset(%{firebase_uid: "settings-public-user", email: "settings@example.test"})
+      |> Ide.Repo.insert()
+
+    for mode <- [:public_pebble, :public_custom] do
+      Application.put_env(:ide, Ide.Auth, Keyword.put(original_auth, :mode, mode))
+
+      conn =
+        conn
+        |> Plug.Test.init_test_session(user_id: user.id)
+
+      assert {:ok, view, html} = live(conn, ~p"/settings")
+
+      refute html =~ "MCP / ACP access"
+      refute html =~ "Embedded Emulator Setup"
+      refute html =~ "Editor configuration snippets"
+
+      view
+      |> form("form", %{
+        "settings" => %{
+          "auto_format_on_save" => "true",
+          "formatter_backend" => "built_in",
+          "editor_mode" => "regular",
+          "editor_theme" => "system",
+          "editor_line_numbers" => "true",
+          "editor_active_line_highlight" => "true"
+        }
+      })
+      |> render_submit()
+
+      assert render(view) =~ "Settings saved."
+      refute Settings.current().mcp_http_enabled
+      refute Settings.current().acp_agent_enabled
+    end
   end
 
   test "emulator dependency install button is disabled while install is running", %{conn: conn} do

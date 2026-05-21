@@ -34,7 +34,7 @@ defmodule IdeWeb.SettingsLive do
      |> assign(:emulator_installation_status, nil)
      |> assign(:emulator_dependency_install_status, :idle)
      |> assign(:emulator_dependency_install_output, nil)
-     |> check_emulator_installation()
+     |> maybe_check_emulator_installation()
      |> assign(:settings, settings)
      |> assign_snippet_state("generic_http_mcp", settings)
      |> assign(:form, settings_form(settings))}
@@ -56,11 +56,6 @@ defmodule IdeWeb.SettingsLive do
     editor_theme = parse_editor_theme(params["editor_theme"])
     editor_line_numbers = parse_checkbox(params["editor_line_numbers"])
     editor_active_line_highlight = parse_checkbox(params["editor_active_line_highlight"])
-    mcp_http_enabled = parse_checkbox(params["mcp_http_enabled"])
-    mcp_http_port = params["mcp_http_port"]
-    mcp_http_capabilities = parse_capability_params(params["mcp_http_capabilities"])
-    acp_agent_enabled = parse_checkbox(params["acp_agent_enabled"])
-    acp_agent_capabilities = parse_capability_params(params["acp_agent_capabilities"])
 
     with :ok <- Settings.set_auto_format_on_save(auto_format),
          :ok <- Settings.set_debug_mode(debug_mode),
@@ -69,25 +64,19 @@ defmodule IdeWeb.SettingsLive do
          :ok <- Settings.set_editor_theme(Atom.to_string(editor_theme)),
          :ok <- Settings.set_editor_line_numbers(editor_line_numbers),
          :ok <- Settings.set_editor_active_line_highlight(editor_active_line_highlight),
-         :ok <- Settings.set_mcp_http_enabled(mcp_http_enabled),
-         :ok <- Settings.set_mcp_http_port(mcp_http_port),
-         :ok <- Settings.set_mcp_http_capabilities(mcp_http_capabilities),
-         :ok <- Settings.set_acp_agent_enabled(acp_agent_enabled),
-         :ok <- Settings.set_acp_agent_capabilities(acp_agent_capabilities) do
-      settings = %{
-        auto_format_on_save: auto_format,
-        debug_mode: debug_mode,
-        formatter_backend: formatter_backend,
-        editor_mode: editor_mode,
-        editor_theme: editor_theme,
-        editor_line_numbers: editor_line_numbers,
-        editor_active_line_highlight: editor_active_line_highlight,
-        mcp_http_enabled: mcp_http_enabled,
-        mcp_http_port: parse_saved_port(mcp_http_port),
-        mcp_http_capabilities: mcp_http_capabilities,
-        acp_agent_enabled: acp_agent_enabled,
-        acp_agent_capabilities: acp_agent_capabilities
-      }
+         :ok <- persist_integration_settings(params, socket.assigns.auth_mode) do
+      settings =
+        build_saved_settings(
+          auto_format,
+          debug_mode,
+          formatter_backend,
+          editor_mode,
+          editor_theme,
+          editor_line_numbers,
+          editor_active_line_highlight,
+          params,
+          socket.assigns.auth_mode
+        )
 
       {:noreply,
        socket
@@ -110,7 +99,7 @@ defmodule IdeWeb.SettingsLive do
   def handle_event(
         "set-emulator-setup-target",
         %{"emulator_setup" => %{"target" => target}},
-        socket
+        %{assigns: %{auth_mode: :local}} = socket
       ) do
     target = normalize_emulator_target(target)
 
@@ -121,11 +110,15 @@ defmodule IdeWeb.SettingsLive do
      |> check_emulator_installation()}
   end
 
-  def handle_event("refresh-emulator-installation", _params, socket) do
+  def handle_event("set-emulator-setup-target", _params, socket), do: {:noreply, socket}
+
+  def handle_event("refresh-emulator-installation", _params, %{assigns: %{auth_mode: :local}} = socket) do
     {:noreply, check_emulator_installation(socket)}
   end
 
-  def handle_event("install-emulator-dependencies", _params, socket) do
+  def handle_event("refresh-emulator-installation", _params, socket), do: {:noreply, socket}
+
+  def handle_event("install-emulator-dependencies", _params, %{assigns: %{auth_mode: :local}} = socket) do
     emulator_target = socket.assigns.selected_emulator_target
 
     {:noreply,
@@ -136,6 +129,8 @@ defmodule IdeWeb.SettingsLive do
        Emulator.install_runtime_dependencies(emulator_target)
      end)}
   end
+
+  def handle_event("install-emulator-dependencies", _params, socket), do: {:noreply, socket}
 
   def handle_event("github-connect", _params, socket) do
     case AuthFlow.start_device_flow() do
@@ -397,7 +392,7 @@ defmodule IdeWeb.SettingsLive do
         </div>
       </section>
 
-      <section class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+      <section :if={@auth_mode == :local} class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 class="text-base font-semibold">Embedded Emulator Setup</h2>
@@ -596,7 +591,7 @@ defmodule IdeWeb.SettingsLive do
             </span>
           </label>
 
-          <div class="rounded border border-zinc-200 bg-zinc-50 p-4">
+          <div :if={@auth_mode == :local} class="rounded border border-zinc-200 bg-zinc-50 p-4">
             <h2 class="text-sm font-semibold text-zinc-900">MCP / ACP access</h2>
             <p class="mt-1 text-xs text-zinc-600">
               Configure the IDE integration surfaces used by external agents and MCP clients.
@@ -1055,6 +1050,104 @@ defmodule IdeWeb.SettingsLive do
 
   defp github_connect_error_message(reason) do
     "Could not start GitHub connect flow: #{inspect(reason)}"
+  end
+
+  @spec maybe_check_emulator_installation(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  defp maybe_check_emulator_installation(%{assigns: %{auth_mode: :local}} = socket),
+    do: check_emulator_installation(socket)
+
+  defp maybe_check_emulator_installation(socket), do: socket
+
+  @spec persist_integration_settings(map(), atom()) :: :ok | {:error, term()}
+  defp persist_integration_settings(_params, mode) when mode != :local, do: :ok
+
+  defp persist_integration_settings(params, :local) do
+    mcp_http_enabled = parse_checkbox(params["mcp_http_enabled"])
+    mcp_http_port = params["mcp_http_port"]
+    mcp_http_capabilities = parse_capability_params(params["mcp_http_capabilities"])
+    acp_agent_enabled = parse_checkbox(params["acp_agent_enabled"])
+    acp_agent_capabilities = parse_capability_params(params["acp_agent_capabilities"])
+
+    with :ok <- Settings.set_mcp_http_enabled(mcp_http_enabled),
+         :ok <- Settings.set_mcp_http_port(mcp_http_port),
+         :ok <- Settings.set_mcp_http_capabilities(mcp_http_capabilities),
+         :ok <- Settings.set_acp_agent_enabled(acp_agent_enabled),
+         :ok <- Settings.set_acp_agent_capabilities(acp_agent_capabilities) do
+      :ok
+    end
+  end
+
+  @spec build_saved_settings(
+          boolean(),
+          boolean(),
+          atom(),
+          atom(),
+          atom(),
+          boolean(),
+          boolean(),
+          map(),
+          atom()
+        ) :: map()
+  defp build_saved_settings(
+         auto_format,
+         debug_mode,
+         formatter_backend,
+         editor_mode,
+         editor_theme,
+         editor_line_numbers,
+         editor_active_line_highlight,
+         params,
+         :local
+       ) do
+    mcp_http_enabled = parse_checkbox(params["mcp_http_enabled"])
+    mcp_http_port = params["mcp_http_port"]
+    mcp_http_capabilities = parse_capability_params(params["mcp_http_capabilities"])
+    acp_agent_enabled = parse_checkbox(params["acp_agent_enabled"])
+    acp_agent_capabilities = parse_capability_params(params["acp_agent_capabilities"])
+
+    %{
+      auto_format_on_save: auto_format,
+      debug_mode: debug_mode,
+      formatter_backend: formatter_backend,
+      editor_mode: editor_mode,
+      editor_theme: editor_theme,
+      editor_line_numbers: editor_line_numbers,
+      editor_active_line_highlight: editor_active_line_highlight,
+      mcp_http_enabled: mcp_http_enabled,
+      mcp_http_port: parse_saved_port(mcp_http_port),
+      mcp_http_capabilities: mcp_http_capabilities,
+      acp_agent_enabled: acp_agent_enabled,
+      acp_agent_capabilities: acp_agent_capabilities
+    }
+  end
+
+  defp build_saved_settings(
+         auto_format,
+         debug_mode,
+         formatter_backend,
+         editor_mode,
+         editor_theme,
+         editor_line_numbers,
+         editor_active_line_highlight,
+         _params,
+         _mode
+       ) do
+    current = Settings.current()
+
+    %{
+      auto_format_on_save: auto_format,
+      debug_mode: debug_mode,
+      formatter_backend: formatter_backend,
+      editor_mode: editor_mode,
+      editor_theme: editor_theme,
+      editor_line_numbers: editor_line_numbers,
+      editor_active_line_highlight: editor_active_line_highlight,
+      mcp_http_enabled: current.mcp_http_enabled,
+      mcp_http_port: current.mcp_http_port,
+      mcp_http_capabilities: current.mcp_http_capabilities,
+      acp_agent_enabled: current.acp_agent_enabled,
+      acp_agent_capabilities: current.acp_agent_capabilities
+    }
   end
 
   @spec check_emulator_installation(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()

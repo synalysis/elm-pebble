@@ -47,6 +47,18 @@ defmodule Ide.Auth do
   def public_custom_mode?, do: mode() == :public_custom
 
   @doc """
+  True when remote MCP/ACP integration is available (local IDE deployments only).
+  """
+  @spec mcp_enabled?() :: boolean()
+  def mcp_enabled?, do: not public_mode?()
+
+  @doc """
+  True when the IDE settings page should expose MCP/ACP and emulator setup controls.
+  """
+  @spec integration_settings_enabled?() :: boolean()
+  def integration_settings_enabled?, do: mcp_enabled?()
+
+  @doc """
   True when the IDE can submit releases to the Rebble App Store API.
   """
   @spec app_store_publish_enabled?() :: boolean()

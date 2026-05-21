@@ -3,6 +3,8 @@ defmodule Ide.Settings do
   Lightweight persisted IDE settings storage.
   """
 
+  alias Ide.Auth
+
   @defaults %{
     "auto_format_on_save" => false,
     "debug_mode" => false,
@@ -66,11 +68,13 @@ defmodule Ide.Settings do
       editor_theme: parse_editor_theme(Map.get(merged, "editor_theme", "system")),
       editor_line_numbers: Map.get(merged, "editor_line_numbers", true) == true,
       editor_active_line_highlight: Map.get(merged, "editor_active_line_highlight", true) == true,
-      mcp_http_enabled: Map.get(merged, "mcp_http_enabled", true) == true,
+      mcp_http_enabled:
+        Auth.mcp_enabled?() and Map.get(merged, "mcp_http_enabled", true) == true,
       mcp_http_port: parse_port(Map.get(merged, "mcp_http_port", 4000)),
       mcp_http_capabilities:
         parse_capabilities(Map.get(merged, "mcp_http_capabilities", ["read"])),
-      acp_agent_enabled: Map.get(merged, "acp_agent_enabled", true) == true,
+      acp_agent_enabled:
+        Auth.mcp_enabled?() and Map.get(merged, "acp_agent_enabled", true) == true,
       acp_agent_capabilities:
         parse_capabilities(Map.get(merged, "acp_agent_capabilities", ["read"]))
     }
@@ -159,55 +163,75 @@ defmodule Ide.Settings do
 
   @spec set_mcp_http_enabled(boolean()) :: settings_set_result()
   def set_mcp_http_enabled(value) when is_boolean(value) do
-    values =
-      read_file_values()
-      |> Map.put("mcp_http_enabled", value)
+    if Auth.mcp_enabled?() do
+      values =
+        read_file_values()
+        |> Map.put("mcp_http_enabled", value)
 
-    write_file_values(values)
+      write_file_values(values)
+    else
+      :ok
+    end
   end
 
   @spec set_mcp_http_port(pos_integer() | String.t()) :: settings_set_result()
   def set_mcp_http_port(value) do
-    case normalize_port(value) do
-      {:ok, port} ->
-        values =
-          read_file_values()
-          |> Map.put("mcp_http_port", port)
+    if Auth.mcp_enabled?() do
+      case normalize_port(value) do
+        {:ok, port} ->
+          values =
+            read_file_values()
+            |> Map.put("mcp_http_port", port)
 
-        write_file_values(values)
+          write_file_values(values)
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      :ok
     end
   end
 
   @spec set_mcp_http_capabilities([capability() | String.t()] | String.t()) ::
           settings_set_result()
   def set_mcp_http_capabilities(value) do
-    values =
-      read_file_values()
-      |> Map.put("mcp_http_capabilities", capabilities_to_strings(value))
+    if Auth.mcp_enabled?() do
+      values =
+        read_file_values()
+        |> Map.put("mcp_http_capabilities", capabilities_to_strings(value))
 
-    write_file_values(values)
+      write_file_values(values)
+    else
+      :ok
+    end
   end
 
   @spec set_acp_agent_enabled(boolean()) :: settings_set_result()
   def set_acp_agent_enabled(value) when is_boolean(value) do
-    values =
-      read_file_values()
-      |> Map.put("acp_agent_enabled", value)
+    if Auth.mcp_enabled?() do
+      values =
+        read_file_values()
+        |> Map.put("acp_agent_enabled", value)
 
-    write_file_values(values)
+      write_file_values(values)
+    else
+      :ok
+    end
   end
 
   @spec set_acp_agent_capabilities([capability() | String.t()] | String.t()) ::
           settings_set_result()
   def set_acp_agent_capabilities(value) do
-    values =
-      read_file_values()
-      |> Map.put("acp_agent_capabilities", capabilities_to_strings(value))
+    if Auth.mcp_enabled?() do
+      values =
+        read_file_values()
+        |> Map.put("acp_agent_capabilities", capabilities_to_strings(value))
 
-    write_file_values(values)
+      write_file_values(values)
+    else
+      :ok
+    end
   end
 
   @spec read_file_values() :: file_values()
