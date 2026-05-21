@@ -175,7 +175,7 @@ if config_env() == :prod do
     System.get_env("GITHUB_CREDENTIALS_FILE") ||
       Path.join(data_root, "config/github_credentials.json")
 
-  database_path = System.get_env("DATABASE_PATH") || Path.join(data_root, "ide_prod.db")
+  repo_adapter = Application.fetch_env!(:ide, :ecto_adapter)
 
   config :ide, Ide.Projects, projects_root: projects_root
   config :ide, Ide.Settings, settings_path: settings_path
@@ -184,9 +184,7 @@ if config_env() == :prod do
     credentials_path: github_credentials_path,
     oauth_client_id: github_oauth_client_id
 
-  config :ide, Ide.Repo,
-    database: database_path,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
+  config :ide, Ide.Repo, Ide.DatabaseConfig.prod_repo_config(repo_adapter)
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

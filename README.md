@@ -101,6 +101,37 @@ cp docker-compose.external-disk.example.yml docker-compose.override.yml
 docker compose up -d
 ```
 
+### PostgreSQL (optional)
+
+Production releases default to **SQLite** on `/var/lib/ide/ide_prod.db`. PostgreSQL
+requires rebuilding the image with the Postgres adapter compiled in:
+
+```bash
+cp docker-compose.postgres.example.yml docker-compose.override.yml
+# set POSTGRES_PASSWORD, SECRET_KEY_BASE, PHX_HOST, etc.
+docker compose up -d --build
+```
+
+Or build a Postgres-capable image manually:
+
+```bash
+docker build --build-arg IDE_REPO_ADAPTER=postgres -t elm-pebble-ide:postgres .
+docker run --env DATABASE_URL=postgres://user:pass@host:5432/ide_prod elm-pebble-ide:postgres
+```
+
+Environment variables:
+
+| Variable | SQLite (default) | PostgreSQL |
+|----------|------------------|------------|
+| `IDE_REPO_ADAPTER` | `sqlite` (build arg) | `postgres` (build arg) |
+| `DATABASE_PATH` | SQLite file path | not used |
+| `DATABASE_URL` | must be unset | **required** |
+| `DATABASE_SSL` | — | `true` for managed Postgres |
+| `POOL_SIZE` | connection pool (default `10`) | same |
+
+Project **source files** still live on disk under `PROJECTS_ROOT`; only users, login
+tokens, and project metadata move to Postgres.
+
 The image build pipeline is defined in `.github/workflows/docker-image.yml`.
 On pushes, GitHub Actions publishes images to GitHub Container Registry as
 `ghcr.io/<owner>/<repo>`.
