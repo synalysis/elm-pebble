@@ -62,5 +62,5 @@ if [ "${ELM_PEBBLE_WASM_BUILD_ON_START:-0}" = "1" ]; then
   fi
 fi
 
-/opt/ide/bin/ide eval "Ide.Release.migrate"
+/opt/ide/bin/ide eval "Ide.Release.setup()"
 exec /opt/ide/bin/ide start
