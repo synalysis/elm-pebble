@@ -13,6 +13,7 @@ defmodule Ide.Release do
   @spec setup() :: :ok
   def setup do
     load_app()
+    RepoConfig.put_runtime_repo_config!()
     create()
     migrate()
     :ok
@@ -24,6 +25,7 @@ defmodule Ide.Release do
   @spec create() :: :ok
   def create do
     load_app()
+    RepoConfig.put_runtime_repo_config!()
 
     for repo <- repos() do
       ensure_storage!(repo)
@@ -35,6 +37,7 @@ defmodule Ide.Release do
   @spec migrate() :: :ok
   def migrate do
     load_app()
+    RepoConfig.put_runtime_repo_config!()
 
     for repo <- repos() do
       {:ok, _, _} =
