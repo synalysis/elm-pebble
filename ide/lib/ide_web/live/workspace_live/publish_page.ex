@@ -315,7 +315,10 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
         ><%= @publish_submit_output %></pre>
       </div>
 
-      <div class="mt-4 rounded border border-zinc-200 p-3 text-xs text-zinc-700">
+      <div
+        :if={@debug_mode}
+        class="mt-4 rounded border border-zinc-200 p-3 text-xs text-zinc-700"
+      >
         <h3 class="text-sm font-semibold">Flow Metrics</h3>
         <p class="mt-1">Last run duration: {@publish_metrics.last_duration_ms || "n/a"} ms</p>
         <p>Last run finished: {@publish_metrics.last_finished_at || "n/a"}</p>
