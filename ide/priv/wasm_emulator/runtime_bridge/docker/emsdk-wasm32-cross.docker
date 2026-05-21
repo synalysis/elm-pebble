@@ -30,20 +30,9 @@ RUN pip3 install meson==${MESON_VERSION} tomli
 RUN mkdir /build
 WORKDIR /build
 RUN mkdir -p $TARGET
-RUN cat > /cross.meson <<'EOT'
-[host_machine]
-system = 'emscripten'
-cpu_family = 'wasm32'
-cpu = 'wasm32'
-endian = 'little'
-
-[binaries]
-c = 'emcc'
-cpp = 'em++'
-ar = 'emar'
-ranlib = 'emranlib'
-pkgconfig = ['pkg-config', '--static']
-EOT
+COPY cross.meson.base /cross.meson
+COPY append_cross_meson_options.sh /usr/local/bin/append_cross_meson_options.sh
+RUN chmod +x /usr/local/bin/append_cross_meson_options.sh
 
 FROM build-base AS zlib-dev
 ARG ZLIB_VERSION
@@ -74,14 +63,7 @@ RUN mkdir /pixman/
 RUN git clone https://gitlab.freedesktop.org/pixman/pixman /pixman/
 WORKDIR /pixman
 RUN git checkout pixman-$PIXMAN_VERSION
-RUN /bin/bash -c 'cat >> /cross.meson <<EOT
-[built-in options]
-c_args = [$(printf "\047%s\047, " $CFLAGS | sed "s/, $//")]
-cpp_args = [$(printf "\047%s\047, " $CFLAGS | sed "s/, $//")]
-objc_args = [$(printf "\047%s\047, " $CFLAGS | sed "s/, $//")]
-c_link_args = [$(printf "\047%s\047, " $LDFLAGS | sed "s/, $//")]
-cpp_link_args = [$(printf "\047%s\047, " $LDFLAGS | sed "s/, $//")]
-EOT'
+RUN append_cross_meson_options.sh
 RUN meson setup _build --prefix=$TARGET --cross-file=/cross.meson \
     --default-library=static \
     --buildtype=release -Dtests=disabled -Ddemos=disabled
@@ -92,15 +74,7 @@ ARG GLIB_VERSION
 ARG GLIB_MINOR_VERSION
 RUN mkdir -p /stub
 WORKDIR /stub
-RUN cat > res_query.c <<'EOT'
-#include <netdb.h>
-int res_query(const char *name, int class,
-              int type, unsigned char *dest, int len)
-{
-    h_errno = HOST_NOT_FOUND;
-    return -1;
-}
-EOT
+COPY res_query.c /stub/res_query.c
 RUN emcc ${CFLAGS} -c res_query.c -fPIC -o libresolv.o
 RUN ar rcs libresolv.a libresolv.o
 RUN mkdir -p $TARGET/lib/
@@ -114,14 +88,7 @@ COPY --from=zlib-dev /builddeps/ /builddeps/
 COPY --from=libffi-dev /builddeps/ /builddeps/
 
 WORKDIR /glib
-RUN /bin/bash -c 'CFLAGS="$CFLAGS -Wno-incompatible-function-pointer-types"; cat >> /cross.meson <<EOT
-[built-in options]
-c_args = [$(printf "\047%s\047, " $CFLAGS | sed "s/, $//")]
-cpp_args = [$(printf "\047%s\047, " $CFLAGS | sed "s/, $//")]
-objc_args = [$(printf "\047%s\047, " $CFLAGS | sed "s/, $//")]
-c_link_args = [$(printf "\047%s\047, " $LDFLAGS | sed "s/, $//")]
-cpp_link_args = [$(printf "\047%s\047, " $LDFLAGS | sed "s/, $//")]
-EOT'
+RUN append_cross_meson_options.sh " -Wno-incompatible-function-pointer-types"
 RUN meson setup _build --prefix=$TARGET --cross-file=/cross.meson \
     --default-library=static --buildtype=release --force-fallback-for=pcre2 \
     -Dselinux=disabled -Dxattr=false -Dlibmount=disabled -Dnls=disabled \
