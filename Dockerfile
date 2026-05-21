@@ -20,20 +20,6 @@ RUN npm ci --prefix assets
 RUN mix assets.deploy
 RUN mix release
 
-ARG BUILD_WASM_EMULATOR=1
-RUN mkdir -p /wasm-emulator-seed
-RUN --mount=type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
-    if [ "$BUILD_WASM_EMULATOR" = "1" ]; then \
-      apt-get update && \
-      apt-get install -y --no-install-recommends docker.io curl git patch xz-utils bzip2 && \
-      rm -rf /var/lib/apt/lists/* && \
-      chmod +x /app/scripts/build_wasm_emulator_runtime.sh && \
-      ELM_PEBBLE_WASM_OUTPUT_DIR=/wasm-emulator-seed \
-      ELM_PEBBLE_WASM_CACHE_DIR=/tmp/wasm-emulator-cache \
-      ELM_PEBBLE_WASM_BRIDGE_DIR=/app/ide/priv/wasm_emulator/runtime_bridge \
-      /app/scripts/build_wasm_emulator_runtime.sh; \
-    fi
-
 FROM debian:bookworm-slim AS runner
 
 ARG PEBBLE_SDK_VERSION=4.9.169
@@ -90,13 +76,13 @@ RUN mkdir -p /var/lib/ide /opt/ide && \
     rm -rf /var/lib/ide/.pebble-sdk
 
 COPY --from=build /app/ide/_build/prod/rel/ide /opt/ide
-COPY --from=build /wasm-emulator-seed /opt/wasm-emulator-seed
 COPY scripts/build_wasm_emulator_runtime.sh /opt/wasm-emulator-build/build_wasm_emulator_runtime.sh
 COPY ide/priv/wasm_emulator/runtime_bridge /opt/wasm-emulator-build/runtime_bridge
 COPY docker/entrypoint.sh /entrypoint.sh
 COPY docker/pebble_sdk.sh /docker/pebble_sdk.sh
 COPY docker/wasm_emulator.sh /docker/wasm_emulator.sh
-RUN chmod +x /entrypoint.sh /docker/pebble_sdk.sh /docker/wasm_emulator.sh /opt/wasm-emulator-build/build_wasm_emulator_runtime.sh && \
+RUN mkdir -p /opt/wasm-emulator-seed /opt/wasm-emulator-build && \
+    chmod +x /entrypoint.sh /docker/pebble_sdk.sh /docker/wasm_emulator.sh /opt/wasm-emulator-build/build_wasm_emulator_runtime.sh && \
     chown -R nobody:nogroup /var/lib/ide /opt/ide /opt/pebble-sdk-seed /opt/wasm-emulator-seed /opt/wasm-emulator-build /entrypoint.sh /docker
 
 USER nobody
