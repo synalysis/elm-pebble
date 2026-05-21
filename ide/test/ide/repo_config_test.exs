@@ -37,6 +37,7 @@ defmodule Ide.RepoConfigTest do
     assert config[:database] == "ide_prod"
     assert config[:hostname] == "db.example.test"
     assert config[:priv] == "priv/repo"
+    refute Keyword.has_key?(config, :ssl)
   end
 
   test "put_runtime_repo_config! writes repo env from DATABASE_URL" do
@@ -53,8 +54,8 @@ defmodule Ide.RepoConfigTest do
 
     assert Ide.Repo.Postgres = RepoConfig.put_runtime_repo_config!()
 
-    assert Application.fetch_env!(:ide, Ide.Repo.Postgres)[:url] ==
-             "postgres://ide:secret@db.example.test:5432/ide_prod"
+    assert Application.fetch_env!(:ide, Ide.Repo.Postgres)[:database] == "ide_prod"
+    refute Keyword.has_key?(Application.fetch_env!(:ide, Ide.Repo.Postgres), :url)
   end
 
   defp restore_env(key, nil), do: System.delete_env(key)

@@ -13,7 +13,7 @@ defmodule Ide.RepoConfig do
   def storage_config(repo) when is_atom(repo) do
     repo
     |> repo_config()
-    |> expand_url_config()
+    |> maybe_normalize_postgres(repo)
   end
 
   @doc """
@@ -51,11 +51,12 @@ defmodule Ide.RepoConfig do
     end
   end
 
-  @spec expand_url_config(keyword()) :: keyword()
-  defp expand_url_config(config) do
-    url_config = Ecto.Repo.Supervisor.parse_url(Keyword.get(config, :url, ""))
-    Keyword.merge(url_config, config)
+  @spec maybe_normalize_postgres(keyword(), module()) :: keyword()
+  defp maybe_normalize_postgres(config, Ide.Repo.Postgres) do
+    DatabaseConfig.normalize_postgres_config(config)
   end
+
+  defp maybe_normalize_postgres(config, _repo), do: config
 
   @spec storage_ready?(keyword()) :: boolean()
   defp storage_ready?(config) do

@@ -67,7 +67,7 @@ defmodule Ide.Release do
           :ok
 
         {:error, reason} when is_binary(reason) ->
-          raise storage_error(repo, reason)
+          raise storage_error(repo, enhance_storage_error(reason))
 
         {:error, reason} ->
           raise storage_error(repo, inspect(reason))
@@ -87,6 +87,20 @@ defmodule Ide.Release do
     when auto-create is required.
     """)
   end
+
+  @spec enhance_storage_error(String.t()) :: String.t()
+  defp enhance_storage_error("ssl not available") do
+    """
+    ssl not available
+
+    The Postgres server rejected SSL, but the client requested it.
+    Unset DATABASE_SSL or set DATABASE_SSL=false, and remove ssl=true from DATABASE_URL unless your server supports TLS.
+    Set DATABASE_SSL=true only when the server requires encrypted connections.
+    """
+    |> String.trim()
+  end
+
+  defp enhance_storage_error(detail), do: detail
 
   @spec repos() :: [module()]
   defp repos do

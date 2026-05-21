@@ -43,18 +43,44 @@ defmodule Ide.DatabaseConfigTest do
     end
   end
 
-  test "postgres release accepts DATABASE_URL" do
+  test "postgres release parses DATABASE_URL without ssl by default" do
     System.put_env("DATABASE_URL", "postgres://ide:ide@db:5432/ide_prod")
 
-    assert [url: "postgres://ide:ide@db:5432/ide_prod", pool_size: 7, priv: "priv/repo"] ==
-             DatabaseConfig.prod_repo_config(Ecto.Adapters.Postgres)
+    config = DatabaseConfig.prod_repo_config(Ecto.Adapters.Postgres)
+
+    assert config[:database] == "ide_prod"
+    assert config[:username] == "ide"
+    assert config[:password] == "ide"
+    assert config[:hostname] == "db"
+    assert config[:port] == 5432
+    assert config[:pool_size] == 7
+    assert config[:priv] == "priv/repo"
+    refute Keyword.has_key?(config, :url)
+    refute Keyword.has_key?(config, :ssl)
+  end
+
+  test "postgres release strips ssl=true from DATABASE_URL unless DATABASE_SSL is set" do
+    System.put_env("DATABASE_URL", "postgres://ide:ide@db:5432/ide_prod?ssl=true")
+
+    config = DatabaseConfig.prod_repo_config(Ecto.Adapters.Postgres)
+
+    refute Keyword.has_key?(config, :ssl)
   end
 
   test "postgres release enables ssl when DATABASE_SSL is set" do
     System.put_env("DATABASE_URL", "postgres://ide:ide@db:5432/ide_prod")
     System.put_env("DATABASE_SSL", "true")
 
-    assert [url: "postgres://ide:ide@db:5432/ide_prod", pool_size: 7, priv: "priv/repo", ssl: true] ==
-             DatabaseConfig.prod_repo_config(Ecto.Adapters.Postgres)
+    config = DatabaseConfig.prod_repo_config(Ecto.Adapters.Postgres)
+
+    assert config[:database] == "ide_prod"
+    assert Keyword.has_key?(config, :ssl)
+  end
+
+  test "postgres release disables ssl when DATABASE_SSL=false" do
+    System.put_env("DATABASE_URL", "postgres://ide:ide@db:5432/ide_prod?ssl=true")
+    System.put_env("DATABASE_SSL", "false")
+
+    assert DatabaseConfig.prod_repo_config(Ecto.Adapters.Postgres)[:ssl] == false
   end
 end

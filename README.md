@@ -127,7 +127,7 @@ Environment variables:
 | `IDE_REPO_ADAPTER` | `sqlite` (optional) | `postgres` |
 | `DATABASE_PATH` | SQLite file path | not used |
 | `DATABASE_URL` | must be unset | **required** (also selects Postgres when adapter unset) |
-| `DATABASE_SSL` | — | `true` for managed Postgres |
+| `DATABASE_SSL` | off (plain TCP) | `true` when the server requires TLS |
 | `POOL_SIZE` | connection pool (default `10`) | same |
 
 Project **source files** still live on disk under `PROJECTS_ROOT`; only users, login
