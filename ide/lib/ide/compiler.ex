@@ -70,7 +70,8 @@ defmodule Ide.Compiler do
   @spec check(project_slug(), opts()) :: {:ok, check_result()} | {:error, compiler_error()}
   def check(_project_slug, opts) do
     workspace_root = Keyword.fetch!(opts, :workspace_root)
-    check_path = detect_check_path(workspace_root)
+    source_roots = Keyword.get(opts, :source_roots)
+    check_path = detect_check_path(workspace_root, source_roots)
 
     case check_path do
       nil ->
@@ -79,8 +80,7 @@ defmodule Ide.Compiler do
             %{
               severity: "error",
               source: "elmc",
-              message:
-                "Could not run check: no elm.json found in workspace root, watch, protocol, or phone.",
+              message: missing_elm_json_message(workspace_root, source_roots),
               file: nil,
               line: nil,
               column: nil
@@ -135,7 +135,8 @@ defmodule Ide.Compiler do
   @spec compile(project_slug(), opts()) :: {:ok, compile_result()} | {:error, compiler_error()}
   def compile(project_slug, opts) do
     workspace_root = Keyword.fetch!(opts, :workspace_root)
-    compile_path = detect_check_path(workspace_root)
+    source_roots = Keyword.get(opts, :source_roots)
+    compile_path = detect_check_path(workspace_root, source_roots)
 
     case compile_path do
       nil ->
@@ -144,8 +145,7 @@ defmodule Ide.Compiler do
             %{
               severity: "error",
               source: "elmc",
-              message:
-                "Could not run compile: no elm.json found in workspace root, watch, protocol, or phone.",
+              message: missing_elm_json_message(workspace_root, source_roots),
               file: nil,
               line: nil,
               column: nil
@@ -193,8 +193,9 @@ defmodule Ide.Compiler do
   @spec manifest(project_slug(), opts()) :: {:ok, manifest_result()} | {:error, compiler_error()}
   def manifest(project_slug, opts) do
     workspace_root = Keyword.fetch!(opts, :workspace_root)
+    source_roots = Keyword.get(opts, :source_roots)
     strict? = Keyword.get(opts, :strict, false)
-    manifest_path = detect_check_path(workspace_root)
+    manifest_path = detect_check_path(workspace_root, source_roots)
 
     case manifest_path do
       nil ->
@@ -203,8 +204,7 @@ defmodule Ide.Compiler do
             %{
               severity: "error",
               source: "elmc",
-              message:
-                "Could not run manifest: no elm.json found in workspace root, watch, protocol, or phone.",
+              message: missing_elm_json_message(workspace_root, source_roots),
               file: nil,
               line: nil,
               column: nil
@@ -855,16 +855,43 @@ defmodule Ide.Compiler do
     }
   end
 
-  @spec detect_check_path(String.t()) :: String.t() | nil
-  defp detect_check_path(workspace_root) do
-    candidate_paths = [
-      workspace_root,
-      Path.join(workspace_root, "watch"),
-      Path.join(workspace_root, "protocol"),
-      Path.join(workspace_root, "phone")
-    ]
+  @spec detect_check_path(String.t(), [String.t()] | nil) :: String.t() | nil
+  defp detect_check_path(workspace_root, source_roots) do
+    resolve_elm_project_dir(workspace_root, source_roots)
+  end
 
-    Enum.find(candidate_paths, &File.exists?(Path.join(&1, "elm.json")))
+  @doc """
+  Resolves the Elm project directory containing `elm.json` for a workspace.
+  """
+  @spec resolve_elm_project_dir(String.t(), [String.t()] | nil) :: String.t() | nil
+  def resolve_elm_project_dir(workspace_root, source_roots \\ nil)
+      when is_binary(workspace_root) do
+    candidates =
+      case source_roots do
+        roots when is_list(roots) and roots != [] ->
+          [workspace_root | Enum.map(roots, &Path.join(workspace_root, &1))]
+
+        _ ->
+          Ide.Projects.FileStore.compiler_root_candidates(workspace_root)
+      end
+
+    Enum.find(candidates, &Ide.Projects.FileStore.elm_project_dir?/1)
+  end
+
+  @spec missing_elm_json_message(String.t(), [String.t()] | nil) :: String.t()
+  defp missing_elm_json_message(workspace_root, source_roots) do
+    tried =
+      case source_roots do
+        roots when is_list(roots) and roots != [] ->
+          [workspace_root | Enum.map(roots, &Path.join(workspace_root, &1))]
+
+        _ ->
+          Ide.Projects.FileStore.compiler_root_candidates(workspace_root)
+      end
+      |> Enum.map_join(", ", &Path.join(&1, "elm.json"))
+      |> empty_fallback("unknown locations")
+
+    "Could not run compiler: no elm.json found. Checked: #{tried}."
   end
 
   @spec workspace_revision(String.t()) :: String.t()

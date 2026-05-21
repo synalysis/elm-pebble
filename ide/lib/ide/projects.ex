@@ -10,6 +10,7 @@ defmodule Ide.Projects do
   alias Ide.Projects.Project
   alias Ide.Projects.Types
   alias Ide.AppStore
+  alias Ide.Compiler
   alias Ide.Debugger
   alias Ide.Resources.ResourceStore
   alias Ide.ProjectBundle
@@ -791,6 +792,29 @@ defmodule Ide.Projects do
     else
       :ok
     end
+  end
+
+  @doc """
+  Ensures compiler roots exist and legacy unscoped workspaces are adopted.
+  """
+  @spec ensure_compiler_workspace(Project.t()) :: :ok | {:error, term()}
+  def ensure_compiler_workspace(%Project{} = project) do
+    workspace = project_workspace_path(project)
+
+    with :ok <- ProjectTemplates.ensure_compiler_roots(workspace, project.source_roots || []) do
+      :ok
+    end
+  end
+
+  @doc """
+  Returns the preferred Elm project directory for compiler operations.
+  """
+  @spec preferred_compiler_root(Project.t()) :: String.t() | nil
+  def preferred_compiler_root(%Project{} = project) do
+    workspace = project_workspace_path(project)
+
+    Compiler.resolve_elm_project_dir(workspace, project.source_roots || []) ||
+      Path.join(workspace, List.first(project.source_roots || ["watch"]) || "watch")
   end
 
   @spec bootstrap_new_project(Project.t(), String.t()) ::

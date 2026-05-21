@@ -312,25 +312,35 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
         socket
 
       project ->
+        :ok = Projects.ensure_compiler_workspace(project)
         workspace_root = Projects.project_workspace_path(project)
+        compiler_root = Projects.preferred_compiler_root(project) || workspace_root
 
         socket
         |> assign(:check_status, :running)
         |> start_async(:run_check, fn ->
-          Compiler.check(project.slug, workspace_root: workspace_root)
+          Compiler.check(project.slug,
+            workspace_root: compiler_root,
+            source_roots: project.source_roots
+          )
         end)
     end
   end
 
   @spec warm_debugger_compile_context(socket(), Project.t()) :: socket()
   def warm_debugger_compile_context(socket, project) do
+    :ok = Projects.ensure_compiler_workspace(project)
     workspace_root = Projects.project_workspace_path(project)
 
     results =
       workspace_root
       |> build_roots(project.source_roots || [])
       |> Enum.map(fn {label, root_path} ->
-        {label, Compiler.compile("#{project.slug}:#{label}", workspace_root: root_path)}
+        {label,
+         Compiler.compile("#{project.slug}:#{label}",
+           workspace_root: root_path,
+           source_roots: project.source_roots
+         )}
       end)
 
     primary =
@@ -758,7 +768,15 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       |> Enum.uniq_by(fn {_label, path} -> path end)
       |> Enum.filter(fn {_label, path} -> File.exists?(Path.join(path, "elm.json")) end)
 
-    if roots == [], do: [{"workspace", workspace_root}], else: roots
+    case roots do
+      [] ->
+        fallback_label = Enum.find(source_roots, &(&1 == "watch")) || List.first(source_roots) || "watch"
+
+        [{fallback_label, Path.join(workspace_root, fallback_label)}]
+
+      found ->
+        found
+    end
   end
 
   @spec render_build_pipeline_output(

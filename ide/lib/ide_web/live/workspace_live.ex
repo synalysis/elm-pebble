@@ -1685,6 +1685,8 @@ defmodule IdeWeb.WorkspaceLive do
             watch_profile_id: project_debugger_watch_profile_id(project)
           })
 
+        :ok = Projects.ensure_compiler_workspace(project)
+
         socket =
           socket
           |> DebuggerSupport.refresh()

@@ -111,6 +111,61 @@ defmodule Ide.ProjectsTest do
     end
   end
 
+  test "owned project adopts legacy unscoped workspace files" do
+    {:ok, user} =
+      %User{}
+      |> User.changeset(%{firebase_uid: "legacy-owner", email: "legacy@example.test"})
+      |> Repo.insert()
+
+    slug = "legacy-adopt-#{System.unique_integer([:positive])}"
+    legacy = Path.join(Projects.projects_root(), slug)
+    on_exit(fn -> File.rm_rf(legacy) end)
+
+    assert {:ok, project} =
+             Projects.create_project(
+               %{"name" => "Legacy Adopt", "slug" => slug, "target_type" => "app"},
+               user
+             )
+
+    scoped = Projects.project_workspace_path(project)
+    on_exit(fn -> File.rm_rf(scoped) end)
+
+    File.rm_rf!(scoped)
+    File.mkdir_p!(Path.join(legacy, "watch/src"))
+    File.write!(Path.join(legacy, "watch/elm.json"), ~s({"type":"application"}))
+    File.write!(Path.join(legacy, "watch/src/Main.elm"), "module Main exposing (main)")
+
+    assert Projects.project_workspace_path(project) == scoped
+    assert File.exists?(Path.join(scoped, "watch/elm.json"))
+    assert File.exists?(Path.join(scoped, "watch/src/Main.elm"))
+  end
+
+  test "ensure_compiler_workspace recreates missing watch elm.json" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Repair Elm Json",
+               "slug" => "repair-elm-json-#{System.unique_integer([:positive])}",
+               "target_type" => "app"
+             })
+
+    base = Projects.project_workspace_path(project)
+    on_exit(fn -> File.rm_rf(base) end)
+
+    File.rm!(Path.join(base, "watch/elm.json"))
+    refute File.exists?(Path.join(base, "watch/elm.json"))
+
+    assert :ok = Projects.ensure_compiler_workspace(project)
+    assert File.exists?(Path.join(base, "watch/elm.json"))
+
+    assert {:ok, result} =
+             Ide.Compiler.compile(project.slug,
+               workspace_root: Path.join(base, "watch"),
+               source_roots: project.source_roots
+             )
+
+    assert result.status == :ok
+  end
+
   test "source file operations across roots" do
     assert {:ok, project} =
              Projects.create_project(%{

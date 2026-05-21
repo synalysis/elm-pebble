@@ -136,10 +136,52 @@ defmodule Ide.Projects.FileStore do
   @spec project_root(Project.t(), FileTypes.projects_root()) :: FileTypes.workspace_path()
   def project_root(%Project{owner_id: owner_id, slug: slug}, projects_root)
       when is_integer(owner_id) do
-    Path.join([projects_root, "users", Integer.to_string(owner_id), slug])
+    scoped = Path.join([projects_root, "users", Integer.to_string(owner_id), slug])
+    legacy = Path.join(projects_root, slug)
+
+    _ = maybe_adopt_legacy_workspace(scoped, legacy)
+    scoped
   end
 
   def project_root(%Project{slug: slug}, projects_root), do: Path.join(projects_root, slug)
+
+  @doc """
+  True when the workspace contains at least one Elm project root (`elm.json`).
+  """
+  @spec workspace_has_elm_roots?(FileTypes.workspace_path()) :: boolean()
+  def workspace_has_elm_roots?(workspace_path) when is_binary(workspace_path) do
+    Enum.any?(compiler_root_candidates(workspace_path), &elm_project_dir?/1)
+  end
+
+  @spec compiler_root_candidates(FileTypes.workspace_path()) :: [FileTypes.workspace_path()]
+  def compiler_root_candidates(workspace_path) when is_binary(workspace_path) do
+    [
+      workspace_path,
+      Path.join(workspace_path, "watch"),
+      Path.join(workspace_path, "protocol"),
+      Path.join(workspace_path, "phone")
+    ]
+  end
+
+  @spec elm_project_dir?(FileTypes.workspace_path()) :: boolean()
+  def elm_project_dir?(path) when is_binary(path),
+    do: File.exists?(Path.join(path, "elm.json"))
+
+  @spec maybe_adopt_legacy_workspace(FileTypes.workspace_path(), FileTypes.workspace_path()) ::
+          :ok
+  defp maybe_adopt_legacy_workspace(scoped, legacy) do
+    if workspace_has_elm_roots?(legacy) and not workspace_has_elm_roots?(scoped) and
+         File.dir?(legacy) do
+      File.mkdir_p(Path.dirname(scoped))
+
+      case File.cp_r(legacy, scoped) do
+        {:ok, _} -> :ok
+        {:error, _reason, _path} -> :ok
+      end
+    else
+      :ok
+    end
+  end
 
   @spec safe_path(Project.t(), FileTypes.projects_root(), String.t(), String.t()) ::
           {:ok, String.t()} | {:error, FileTypes.path_error()}

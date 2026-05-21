@@ -191,6 +191,124 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
+  @doc """
+  Ensures Elm compiler roots exist for debugger/build flows.
+
+  Recreates missing `elm.json` files when source trees are present and applies
+  watch/protocol source-directory fixes for companion projects.
+  """
+  @spec ensure_compiler_roots(String.t(), [String.t()]) :: :ok | {:error, template_error()}
+  def ensure_compiler_roots(workspace_path, _source_roots \\ ~w(watch protocol phone))
+      when is_binary(workspace_path) do
+    with :ok <- ensure_watch_compiler_root(workspace_path),
+         :ok <- ensure_protocol_compiler_root(workspace_path),
+         :ok <- ensure_phone_compiler_root(workspace_path),
+         :ok <- ensure_watch_protocol_source_dir(workspace_path),
+         :ok <- ensure_phone_companion_source_dirs(workspace_path) do
+      :ok
+    end
+  end
+
+  @spec ensure_watch_compiler_root(String.t()) :: :ok | {:error, template_error()}
+  defp ensure_watch_compiler_root(workspace_path) do
+    ensure_root_elm_json(
+      Path.join(workspace_path, "watch"),
+      watchface_elm_json_template(),
+      Path.join(workspace_path, "watch/src/Main.elm")
+    )
+  end
+
+  @spec ensure_protocol_compiler_root(String.t()) :: :ok | {:error, template_error()}
+  defp ensure_protocol_compiler_root(workspace_path) do
+    ensure_root_elm_json(
+      Path.join(workspace_path, "protocol"),
+      protocol_elm_json_template(),
+      Path.join(workspace_path, "protocol/src/Companion/Types.elm")
+    )
+  end
+
+  @spec ensure_phone_compiler_root(String.t()) :: :ok | {:error, template_error()}
+  defp ensure_phone_compiler_root(workspace_path) do
+    ensure_root_elm_json(
+      Path.join(workspace_path, "phone"),
+      phone_elm_json_template(),
+      Path.join(workspace_path, "phone/src/CompanionApp.elm")
+    )
+  end
+
+  @spec ensure_root_elm_json(String.t(), map(), String.t()) :: :ok | {:error, template_error()}
+  defp ensure_root_elm_json(root_path, template, marker_source_path) do
+    elm_json_path = Path.join(root_path, "elm.json")
+
+    cond do
+      File.exists?(elm_json_path) ->
+        :ok
+
+      File.exists?(marker_source_path) ->
+        with :ok <- File.mkdir_p(root_path),
+             :ok <- File.write(elm_json_path, Jason.encode!(template, pretty: true)) do
+          :ok
+        end
+
+      true ->
+        :ok
+    end
+  end
+
+  @spec watchface_elm_json_template() :: map()
+  defp watchface_elm_json_template do
+    %{
+      "type" => "application",
+      "source-directories" => ["src", "../protocol/src"],
+      "elm-version" => "0.19.1",
+      "dependencies" => %{
+        "direct" => %{
+          "elm/core" => "1.0.5",
+          "elm/json" => "1.1.3",
+          "elm/time" => "1.0.0"
+        },
+        "indirect" => %{}
+      },
+      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+    }
+  end
+
+  @spec protocol_elm_json_template() :: map()
+  defp protocol_elm_json_template do
+    %{
+      "type" => "application",
+      "source-directories" => ["src"],
+      "elm-version" => "0.19.1",
+      "dependencies" => %{
+        "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
+        "indirect" => %{}
+      },
+      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+    }
+  end
+
+  @spec phone_elm_json_template() :: map()
+  defp phone_elm_json_template do
+    %{
+      "type" => "application",
+      "source-directories" => phone_source_directories(),
+      "elm-version" => "0.19.1",
+      "dependencies" => %{
+        "direct" => %{
+          "elm/core" => "1.0.5",
+          "elm/http" => "2.0.0",
+          "elm/json" => "1.1.3",
+          "elm/time" => "1.0.0"
+        },
+        "indirect" => %{
+          "elm/bytes" => "1.0.8",
+          "elm/file" => "1.0.5"
+        }
+      },
+      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+    }
+  end
+
   @spec ensure_phone_companion_source_dirs(String.t()) :: :ok | {:error, template_error()}
   def ensure_phone_companion_source_dirs(workspace_path) when is_binary(workspace_path) do
     elm_json_path = Path.join([workspace_path, "phone", "elm.json"])
