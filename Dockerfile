@@ -5,8 +5,6 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 ENV MIX_ENV=prod
-ARG IDE_REPO_ADAPTER=sqlite
-ENV IDE_REPO_ADAPTER=${IDE_REPO_ADAPTER}
 WORKDIR /app
 
 COPY . .

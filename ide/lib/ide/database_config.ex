@@ -8,11 +8,11 @@ defmodule Ide.DatabaseConfig do
   def prod_repo_config(@postgres) do
     case blank_to_nil(System.get_env("DATABASE_URL")) do
       url when is_binary(url) ->
-        [url: url, pool_size: pool_size()] ++ ssl_options()
+        [url: url, pool_size: pool_size(), priv: "priv/repo"] ++ ssl_options()
 
       _ ->
         raise """
-        DATABASE_URL is required when this release was built with IDE_REPO_ADAPTER=postgres.
+        DATABASE_URL is required when using Postgres (IDE_REPO_ADAPTER=postgres or DATABASE_URL set).
 
         Example:
           DATABASE_URL=postgres://ide:ide@db:5432/ide_prod
@@ -23,9 +23,9 @@ defmodule Ide.DatabaseConfig do
   def prod_repo_config(@sqlite) do
     if url = blank_to_nil(System.get_env("DATABASE_URL")) do
       raise """
-      DATABASE_URL is set but this release uses SQLite.
+      DATABASE_URL is set but IDE_REPO_ADAPTER=sqlite (or inferred SQLite).
 
-      Remove DATABASE_URL or rebuild the image with IDE_REPO_ADAPTER=postgres.
+      Unset DATABASE_URL, or set IDE_REPO_ADAPTER=postgres to use Postgres.
       Current value: #{url}
       """
     end
@@ -35,7 +35,7 @@ defmodule Ide.DatabaseConfig do
     database_path =
       System.get_env("DATABASE_PATH") || Path.join(data_root, "ide_prod.db")
 
-    [database: database_path, pool_size: pool_size()]
+    [database: database_path, pool_size: pool_size(), priv: "priv/repo"]
   end
 
   def prod_repo_config(adapter) do

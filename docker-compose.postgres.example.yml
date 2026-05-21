@@ -19,8 +19,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        IDE_REPO_ADAPTER: postgres
     image: ${ELM_PEBBLE_IMAGE:-elm-pebble-ide:postgres}
     container_name: elm-pebble-ide
     depends_on:

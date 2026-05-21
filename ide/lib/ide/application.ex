@@ -8,9 +8,11 @@ defmodule Ide.Application do
   @impl true
   @spec start(Application.start_type(), term()) :: Supervisor.on_start()
   def start(_type, _args) do
+    repo = Application.fetch_env!(:ide, :repo_module)
+
     children = [
       IdeWeb.Telemetry,
-      Ide.Repo,
+      repo,
       Ide.Compiler.Cache,
       Ide.Compiler.ManifestCache,
       Ide.Mcp.CheckCache,

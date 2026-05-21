@@ -25,14 +25,14 @@ defmodule Ide.DatabaseConfigTest do
   end
 
   test "sqlite release uses DATABASE_PATH under IDE_DATA_ROOT" do
-    assert [database: "/tmp/ide-data/ide_prod.db", pool_size: 7] ==
+    assert [database: "/tmp/ide-data/ide_prod.db", pool_size: 7, priv: "priv/repo"] ==
              DatabaseConfig.prod_repo_config(Ecto.Adapters.SQLite3)
   end
 
   test "sqlite release rejects DATABASE_URL" do
     System.put_env("DATABASE_URL", "postgres://example.test/ide")
 
-    assert_raise RuntimeError, ~r/DATABASE_URL is set but this release uses SQLite/, fn ->
+    assert_raise RuntimeError, ~r/DATABASE_URL is set but IDE_REPO_ADAPTER=sqlite/, fn ->
       DatabaseConfig.prod_repo_config(Ecto.Adapters.SQLite3)
     end
   end
@@ -46,7 +46,7 @@ defmodule Ide.DatabaseConfigTest do
   test "postgres release accepts DATABASE_URL" do
     System.put_env("DATABASE_URL", "postgres://ide:ide@db:5432/ide_prod")
 
-    assert [url: "postgres://ide:ide@db:5432/ide_prod", pool_size: 7] ==
+    assert [url: "postgres://ide:ide@db:5432/ide_prod", pool_size: 7, priv: "priv/repo"] ==
              DatabaseConfig.prod_repo_config(Ecto.Adapters.Postgres)
   end
 
@@ -54,7 +54,7 @@ defmodule Ide.DatabaseConfigTest do
     System.put_env("DATABASE_URL", "postgres://ide:ide@db:5432/ide_prod")
     System.put_env("DATABASE_SSL", "true")
 
-    assert [url: "postgres://ide:ide@db:5432/ide_prod", pool_size: 7, ssl: true] ==
+    assert [url: "postgres://ide:ide@db:5432/ide_prod", pool_size: 7, priv: "priv/repo", ssl: true] ==
              DatabaseConfig.prod_repo_config(Ecto.Adapters.Postgres)
   end
 end

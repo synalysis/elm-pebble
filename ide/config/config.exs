@@ -7,16 +7,14 @@
 # General application configuration
 import Config
 
-repo_adapter =
-  case System.get_env("IDE_REPO_ADAPTER") do
-    adapter when adapter in ~w(postgres postgresql) -> Ecto.Adapters.Postgres
-    _ -> Ecto.Adapters.SQLite3
-  end
-
 config :ide,
-  ecto_repos: [Ide.Repo],
-  ecto_adapter: repo_adapter,
+  ecto_repos: [Ide.Repo.Sqlite],
+  ecto_adapter: Ecto.Adapters.SQLite3,
+  repo_module: Ide.Repo.Sqlite,
   generators: [timestamp_type: :utc_datetime]
+
+config :ide, Ide.Repo.Sqlite, priv: "priv/repo"
+config :ide, Ide.Repo.Postgres, priv: "priv/repo"
 
 config :ide, Ide.Projects, projects_root: Path.expand("../workspace_projects", __DIR__)
 

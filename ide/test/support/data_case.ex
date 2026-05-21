@@ -42,7 +42,7 @@ defmodule Ide.DataCase do
       ownership_timeout: tags[:ownership_timeout] || 300_000
     ]
 
-    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Ide.Repo, sandbox_opts)
+    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Ide.Repo.Sqlite, sandbox_opts)
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
   end
 

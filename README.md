@@ -103,8 +103,9 @@ docker compose up -d
 
 ### PostgreSQL (optional)
 
-Production releases default to **SQLite** on `/var/lib/ide/ide_prod.db`. PostgreSQL
-requires rebuilding the image with the Postgres adapter compiled in:
+Production releases support **SQLite** (default) or **PostgreSQL**. The adapter is
+selected at **runtime** via `IDE_REPO_ADAPTER` or by setting `DATABASE_URL` (which
+implies Postgres). Both adapters are included in the same release image.
 
 ```bash
 cp docker-compose.postgres.example.yml docker-compose.override.yml
@@ -112,20 +113,20 @@ cp docker-compose.postgres.example.yml docker-compose.override.yml
 docker compose up -d --build
 ```
 
-Or build a Postgres-capable image manually:
+Or run a Postgres-backed container manually:
 
 ```bash
-docker build --build-arg IDE_REPO_ADAPTER=postgres -t elm-pebble-ide:postgres .
-docker run --env DATABASE_URL=postgres://user:pass@host:5432/ide_prod elm-pebble-ide:postgres
+docker build -t elm-pebble-ide .
+docker run --env DATABASE_URL=postgres://user:pass@host:5432/ide_prod elm-pebble-ide
 ```
 
 Environment variables:
 
 | Variable | SQLite (default) | PostgreSQL |
 |----------|------------------|------------|
-| `IDE_REPO_ADAPTER` | `sqlite` (build arg) | `postgres` (build arg) |
+| `IDE_REPO_ADAPTER` | `sqlite` (optional) | `postgres` |
 | `DATABASE_PATH` | SQLite file path | not used |
-| `DATABASE_URL` | must be unset | **required** |
+| `DATABASE_URL` | must be unset | **required** (also selects Postgres when adapter unset) |
 | `DATABASE_SSL` | — | `true` for managed Postgres |
 | `POOL_SIZE` | connection pool (default `10`) | same |
 
