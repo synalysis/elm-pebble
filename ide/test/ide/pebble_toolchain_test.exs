@@ -16,6 +16,22 @@ defmodule Ide.PebbleToolchainTest do
     :ok
   end
 
+  test "template_app_root_path resolves bundled priv template when config path is stale" do
+    original = Application.get_env(:ide, Ide.PebbleToolchain, [])
+
+    Application.put_env(
+      :ide,
+      Ide.PebbleToolchain,
+      Keyword.put(original, :template_app_root, "/nonexistent/build-time/pebble_app_template")
+    )
+
+    on_exit(fn -> Application.put_env(:ide, Ide.PebbleToolchain, original) end)
+
+    assert {:ok, path} = PebbleToolchain.template_app_root_path()
+    assert File.dir?(path)
+    assert String.ends_with?(Path.expand(path), "pebble_app_template")
+  end
+
   test "publish passes app description for non-interactive new app creation" do
     root = Path.join(System.tmp_dir!(), "ide_publish_test_#{System.unique_integer([:positive])}")
     app_root = Path.join(root, "app")

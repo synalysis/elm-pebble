@@ -5,6 +5,7 @@ defmodule Ide.PebbleToolchain do
   import Bitwise, only: [&&&: 2, |||: 2]
 
   alias Ide.CompanionProtocolGenerator
+  alias Ide.Paths
   alias Ide.PebblePreferences
   alias Ide.Resources.ResourceStore
   alias Ide.WatchModels
@@ -2029,14 +2030,18 @@ defmodule Ide.PebbleToolchain do
 
   @spec template_app_root() :: {:ok, String.t()} | {:error, :template_app_root_not_found}
   defp template_app_root do
-    path =
+    configured =
       Application.get_env(:ide, Ide.PebbleToolchain, [])
       |> Keyword.get(:template_app_root)
 
-    if is_binary(path) and File.dir?(path) do
-      {:ok, path}
-    else
-      {:error, :template_app_root_not_found}
+    candidates = [
+      Paths.priv_path("pebble_app_template"),
+      configured
+    ]
+
+    case Enum.find(candidates, &(is_binary(&1) and &1 != "" and File.dir?(&1))) do
+      path when is_binary(path) -> {:ok, Path.expand(path)}
+      _ -> {:error, :template_app_root_not_found}
     end
   end
 
