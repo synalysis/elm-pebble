@@ -7,12 +7,21 @@ defmodule Ide.GitHub.Client do
   @token_path "/login/oauth/access_token"
   @user_path "/user"
   @device_grant_type "urn:ietf:params:oauth:grant-type:device_code"
+  @oauth_scope "public_repo"
+
+  @doc """
+  OAuth scope requested during GitHub device authorization.
+
+  Uses `public_repo` so the IDE can read and write public repositories only.
+  """
+  @spec oauth_scope() :: String.t()
+  def oauth_scope, do: @oauth_scope
 
   @type http_method :: :get | :post
   @type mock_response :: {:ok, %{status: integer(), body: map() | term()}} | {:error, Types.api_error()}
 
   @spec start_device_flow(String.t() | nil) :: {:ok, map()} | {:error, Types.api_error()}
-  def start_device_flow(scope \\ "repo") do
+  def start_device_flow(scope \\ @oauth_scope) do
     with {:ok, client_id} <- oauth_client_id(),
          {:ok, response} <-
            req_github()
@@ -20,7 +29,7 @@ defmodule Ide.GitHub.Client do
              url: @device_code_path,
              form: %{
                client_id: client_id,
-               scope: scope || "repo"
+               scope: scope || @oauth_scope
              }
            ),
          {:ok, body} <- normalize_body(response) do

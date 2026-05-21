@@ -413,27 +413,15 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         </label>
       </div>
       <fieldset class="mt-3">
-        <legend class="text-xs font-medium text-zinc-700">Visibility for new repositories</legend>
-        <div class="mt-2 flex flex-wrap gap-4 text-xs text-zinc-700">
-          <label class="inline-flex items-center gap-2">
-            <input
-              type="radio"
-              name={@project_settings_form["github_visibility"].name}
-              value="private"
-              checked={@project_settings_form["github_visibility"].value == "private"}
-            />
-            Private
-          </label>
-          <label class="inline-flex items-center gap-2">
-            <input
-              type="radio"
-              name={@project_settings_form["github_visibility"].name}
-              value="public"
-              checked={@project_settings_form["github_visibility"].value == "public"}
-            />
-            Public
-          </label>
-        </div>
+        <legend class="text-xs font-medium text-zinc-700">Repository visibility</legend>
+        <p class="mt-2 text-xs text-zinc-600">
+          GitHub access is limited to public repositories. New repositories are created as public.
+        </p>
+        <input
+          type="hidden"
+          name={@project_settings_form["github_visibility"].name}
+          value="public"
+        />
       </fieldset>
       <div
         :if={@github_connected? and @github_repo_status == :not_found}

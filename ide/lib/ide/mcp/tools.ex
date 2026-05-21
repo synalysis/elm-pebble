@@ -71,7 +71,7 @@ defmodule Ide.Mcp.Tools do
       owner: %{type: "string"},
       repo: %{type: "string"},
       branch: %{type: "string"},
-      visibility: %{type: "string", enum: ["private", "public"]}
+      visibility: %{type: "string", enum: ["public"]}
     }
   }
 
@@ -3794,7 +3794,7 @@ defmodule Ide.Mcp.Tools do
       map
       |> Map.get("visibility", Map.get(map, :visibility))
       |> then(fn
-        v when v in ["private", "public"] -> v
+        "public" -> "public"
         _ -> nil
       end)
 

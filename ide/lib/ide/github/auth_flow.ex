@@ -5,7 +5,7 @@ defmodule Ide.GitHub.AuthFlow do
 
   @spec start_device_flow() :: {:ok, map()} | {:error, Types.api_error()}
   def start_device_flow do
-    with {:ok, result} <- Client.start_device_flow("repo"),
+    with {:ok, result} <- Client.start_device_flow(Client.oauth_scope()),
          true <- is_binary(result["device_code"]),
          true <- is_binary(result["user_code"]),
          true <- is_binary(result["verification_uri"]) do

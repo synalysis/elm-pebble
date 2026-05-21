@@ -43,6 +43,23 @@ defmodule Ide.Projects.FileStore do
   end
 
   @doc """
+  Removes the on-disk workspace directory for a user account, if present.
+  """
+  @spec remove_user_workspace(integer(), FileTypes.projects_root()) :: :ok
+  def remove_user_workspace(owner_id, projects_root) when is_integer(owner_id) do
+    _ = File.rm_rf(user_workspace_root(owner_id, projects_root))
+    :ok
+  end
+
+  @doc """
+  Returns the on-disk workspace directory for a user account.
+  """
+  @spec user_workspace_root(integer(), FileTypes.projects_root()) :: FileTypes.workspace_path()
+  def user_workspace_root(owner_id, projects_root) when is_integer(owner_id) do
+    Path.join([projects_root, "users", Integer.to_string(owner_id)])
+  end
+
+  @doc """
   Ensures root folders exist for a project.
   """
   @spec ensure_roots(Project.t(), FileTypes.projects_root()) :: FileTypes.ensure_roots_result()

@@ -180,6 +180,32 @@ defmodule IdeWeb.AuthController do
     |> json(%{logged_in: false})
   end
 
+  @spec delete_data(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def delete_data(conn, _params) do
+    if Auth.public_mode?() do
+      case conn.assigns[:current_user] do
+        %Ide.Auth.User{} = user ->
+          case Auth.delete_user_data(user) do
+            :ok ->
+              conn
+              |> renew_session()
+              |> put_flash(:info, "Your account data has been deleted.")
+              |> redirect(to: ~p"/login")
+
+            {:error, reason} ->
+              conn
+              |> put_flash(:error, "Could not delete your data: #{inspect(reason)}")
+              |> redirect(to: ~p"/projects")
+          end
+
+        _ ->
+          conn |> put_status(:not_found) |> text("Not found")
+      end
+    else
+      conn |> put_status(:not_found) |> text("Not found")
+    end
+  end
+
   defp custom_login_step(%{"step" => "sent"}), do: :sent
   defp custom_login_step(_), do: :email
 

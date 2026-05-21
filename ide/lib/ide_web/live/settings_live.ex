@@ -319,7 +319,7 @@ defmodule IdeWeb.SettingsLive do
           <div>
             <h2 class="text-base font-semibold">GitHub Integration</h2>
             <p class="mt-1 text-sm text-zinc-600">
-              Connect once globally, then configure and push individual projects.
+              Connect once globally, then configure and push individual projects. Access is limited to public repositories.
             </p>
             <p class="mt-2 text-xs text-zinc-600">{github_status_line(@github_status)}</p>
             <p :if={not @github_oauth_ready} class="mt-2 text-xs text-amber-700">
@@ -353,6 +353,9 @@ defmodule IdeWeb.SettingsLive do
         <div :if={@github_flow} class="mt-4 rounded border border-zinc-200 bg-zinc-50 p-3 text-xs">
           <p class="font-semibold text-zinc-800">Authorize this IDE in GitHub</p>
           <p class="mt-1 text-zinc-700">
+            GitHub will ask you to grant access to public repositories only.
+          </p>
+          <p class="mt-2 text-zinc-700">
             Open:
             <a
               href={@github_flow["verification_uri"]}
@@ -1018,8 +1021,8 @@ defmodule IdeWeb.SettingsLive do
   @spec github_status_line(map()) :: String.t()
   defp github_status_line(%{connected?: true} = status) do
     login = status.user_login || "unknown user"
-    scope = status.scope || "unknown scope"
-    "Connected as #{login} (scope: #{scope})."
+    scope = status.scope || Ide.GitHub.Client.oauth_scope()
+    "Connected as #{login} (#{scope}; public repositories only)."
   end
 
   defp github_status_line(_), do: "Not connected."

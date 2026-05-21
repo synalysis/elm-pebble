@@ -14,6 +14,7 @@ defmodule Ide.Auth do
   alias Ide.Auth.Email
   alias Ide.Auth.User
   alias Ide.Auth.Types, as: AuthTypes
+  alias Ide.Projects
   alias Ide.Repo
 
   @cloudpebble_firebase_api_key "AIzaSyBZ9Cdvwwv9At2lPmc8TxyyEqSXGXejGvc"
@@ -212,6 +213,25 @@ defmodule Ide.Auth do
 
   @spec preload_user_projects(User.t()) :: User.t()
   def preload_user_projects(%User{} = user), do: Repo.preload(user, :projects)
+
+  @doc """
+  Deletes a user's account, projects, login tokens, and on-disk workspace data.
+  """
+  @spec delete_user_data(User.t()) :: :ok | {:error, Ecto.Changeset.t()}
+  def delete_user_data(%User{id: id} = user) when is_integer(id) do
+    Repo.transaction(fn ->
+      :ok = Projects.delete_all_for_user(user)
+
+      case Repo.delete(user) do
+        {:ok, _deleted} -> :ok
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
+    |> case do
+      {:ok, :ok} -> :ok
+      {:error, changeset} -> {:error, changeset}
+    end
+  end
 
   @spec user_query() :: Ecto.Query.t()
   def user_query, do: from(u in User)

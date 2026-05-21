@@ -44,7 +44,7 @@ defmodule Ide.GitHub.RepositoriesTest do
       assert url == "https://api.github.com/user/repos"
       assert Jason.decode!(body) == %{
                "name" => "counter-app",
-               "private" => true,
+               "private" => false,
                "auto_init" => false,
                "description" => "A counter watchapp"
              }
@@ -54,7 +54,7 @@ defmodule Ide.GitHub.RepositoriesTest do
          status: 201,
          body: %{
            "html_url" => "https://github.com/pebbledev/counter-app",
-           "private" => true
+           "private" => false
          }
        }}
     end
@@ -70,6 +70,7 @@ defmodule Ide.GitHub.RepositoriesTest do
     assert created.owner == "pebbledev"
     assert created.repo == "counter-app"
     assert created.html_url =~ "counter-app"
+    refute created.private
   end
 
   test "create_repository uses org endpoint when owner differs from user login" do
@@ -101,7 +102,7 @@ defmodule Ide.GitHub.RepositoriesTest do
     assert {:error, {:invalid_repo_name, _}} =
              Repositories.create_repository(
                project,
-               %{"repo" => "bad name", "visibility" => "private"},
+               %{"repo" => "bad name", "visibility" => "public"},
                user_login: "pebbledev"
              )
   end

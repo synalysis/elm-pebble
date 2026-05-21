@@ -13,8 +13,8 @@ import Diagram.Vec2 as WiringVec2
 import FatalError exposing (FatalError)
 import Head
 import Head.Seo as Seo
-import Html exposing (div, h1, h2, img, li, node, p, section, span, text, ul)
-import Html.Attributes exposing (alt, attribute, src, type_)
+import Html exposing (a, div, h1, h2, img, li, node, p, section, span, text, ul)
+import Html.Attributes exposing (alt, attribute, href, rel, src, type_)
 import Pages.Url
 import PagesMsg exposing (PagesMsg)
 import Route
@@ -321,6 +321,24 @@ hero =
                         ]
                     ]
                     [ text "Elm Pebble gives Pebble developers a real language and a tight feedback loop: model your app in Elm, see it on a tiny round screen, and keep the logic understandable as the interface evolves." ]
+                , a
+                    [ href "https://ide.elm-pebble.dev"
+                    , rel "noreferrer"
+                    , classes
+                        [ Tw.mt s6
+                        , Tw.inline_flex
+                        , Tw.rounded_lg
+                        , Tw.bg_color (blue s600)
+                        , Tw.px s6
+                        , Tw.py s3
+                        , Tw.font_semibold
+                        , Tw.text_simple white
+                        , Tw.shadow_lg
+                        , Tw.transition_colors
+                        , Tw.raw "hover:bg-blue-700"
+                        ]
+                    ]
+                    [ text "Open the IDE" ]
                 , betaNotice
                 ]
             ]

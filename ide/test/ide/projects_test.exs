@@ -1077,7 +1077,7 @@ defmodule Ide.ProjectsTest do
              "owner" => "pebbledev",
              "repo" => "my-watchface",
              "branch" => "main",
-             "visibility" => "private"
+             "visibility" => "public"
            }
 
     assert {:ok, _} = Projects.read_source_file(project, "watch", "src/Main.elm")

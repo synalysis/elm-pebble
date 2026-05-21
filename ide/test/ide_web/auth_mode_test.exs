@@ -116,6 +116,9 @@ defmodule IdeWeb.AuthModeTest do
     conn = get(conn, ~p"/login")
 
     assert html_response(conn, 200) =~ "Email me a login link"
+    assert html_response(conn, 200) =~ "only used to sign you in and keep your data separate"
+    assert html_response(conn, 200) =~ "run this IDE locally"
+    assert html_response(conn, 200) =~ "https://github.com/synalysis/elm-pebble"
     assert html_response(conn, 200) =~ ~p"/auth/email/continue"
     assert html_response(conn, 200) =~ ~s(data-submit-once)
     assert html_response(conn, 200) =~ ~s(data-disable-with="Sending...")
@@ -151,6 +154,8 @@ defmodule IdeWeb.AuthModeTest do
     conn = get(conn, ~p"/login")
 
     assert html_response(conn, 200) =~ "Log in with Google"
+    assert html_response(conn, 200) =~ "run this IDE locally"
+    assert html_response(conn, 200) =~ "https://github.com/synalysis/elm-pebble"
     refute html_response(conn, 200) =~ ~p"/auth/email/continue"
   end
 end

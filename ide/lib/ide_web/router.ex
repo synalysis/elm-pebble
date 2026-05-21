@@ -45,6 +45,8 @@ defmodule IdeWeb.Router do
   scope "/", IdeWeb do
     pipe_through [:browser, :authenticated_browser]
 
+    post "/auth/delete-data", AuthController, :delete_data
+
     get "/projects/:id/export", ProjectExportController, :show
     get "/projects/:slug/publish/pbw", ProjectPublishController, :pbw
     get "/projects/:slug/store_assets/:name", StoreAssetController, :show

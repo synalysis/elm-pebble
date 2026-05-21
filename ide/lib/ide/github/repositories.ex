@@ -15,8 +15,6 @@ defmodule Ide.GitHub.Repositories do
           | :forbidden
           | :error
 
-  @valid_visibilities ~w(private public)
-
   @spec lookup_status(map(), keyword()) ::
           repo_status() | {:error, Types.connection_error() | Types.http_error()}
   def lookup_status(repo_config, opts \\ []) when is_map(repo_config) do
@@ -62,7 +60,8 @@ defmodule Ide.GitHub.Repositories do
   def status_label(:unconfigured), do: "Set repository name (owner defaults to your GitHub user)"
   def status_label(:exists), do: "Repository exists on GitHub"
   def status_label(:not_found), do: "Repository not found on GitHub"
-  def status_label(:forbidden), do: "No access (or repository is private to another account)"
+  def status_label(:forbidden),
+    do: "No access (repository may be private or belong to another account)"
   def status_label(:error), do: "Could not check repository status"
 
   def status_label({:error, :github_not_connected}),
@@ -135,18 +134,7 @@ defmodule Ide.GitHub.Repositories do
   end
 
   @spec fetch_visibility(map()) :: {:ok, String.t()}
-  defp fetch_visibility(repo_config) do
-    visibility =
-      repo_config
-      |> Map.get("visibility", Map.get(repo_config, :visibility, "private"))
-      |> to_string()
-      |> String.trim()
-      |> String.downcase()
-
-    if visibility in @valid_visibilities,
-      do: {:ok, visibility},
-      else: {:ok, "private"}
-  end
+  defp fetch_visibility(_repo_config), do: {:ok, "public"}
 
   @spec validate_repo_name(String.t()) :: :ok | {:error, {:invalid_repo_name, String.t()}}
   defp validate_repo_name(name) do

@@ -234,7 +234,7 @@ defmodule Ide.Projects do
         "owner" => owner,
         "repo" => repo,
         "branch" => branch,
-        "visibility" => "private"
+        "visibility" => "public"
       })
 
     attrs
@@ -346,18 +346,18 @@ defmodule Ide.Projects do
       "owner" => Map.get(config, "owner", ""),
       "repo" => Map.get(config, "repo", ""),
       "branch" => Map.get(config, "branch", "main"),
-      "visibility" => github_visibility(Map.get(config, "visibility", "private"))
+      "visibility" => github_visibility(Map.get(config, "visibility", "public"))
     }
   end
 
   @spec github_visibility(String.t() | atom() | nil) :: String.t()
-  def github_visibility(value) when value in ["private", "public"], do: value
+  def github_visibility(value) when value in ["private", "public"], do: "public"
 
   def github_visibility(value) when is_atom(value) do
     value |> Atom.to_string() |> github_visibility()
   end
 
-  def github_visibility(_), do: "private"
+  def github_visibility(_), do: "public"
 
   @doc """
   Updates project GitHub repository config.
@@ -411,6 +411,21 @@ defmodule Ide.Projects do
       other ->
         other
     end
+  end
+
+  @doc """
+  Deletes every project and workspace directory owned by a user.
+  """
+  @spec delete_all_for_user(Types.scope_user()) :: :ok
+  def delete_all_for_user(%{id: owner_id} = user) when is_integer(owner_id) do
+    root = projects_root()
+
+    for project <- list_projects(user) do
+      :ok = Debugger.forget_project(project.slug)
+      :ok = FileStore.remove_workspace(project, root)
+    end
+
+    :ok = FileStore.remove_user_workspace(owner_id, root)
   end
 
   @doc """

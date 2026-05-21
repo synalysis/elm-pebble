@@ -328,7 +328,7 @@ defmodule IdeWeb.WorkspaceLive.State do
       "github_owner" => Map.get(github, "owner", ""),
       "github_repo" => Map.get(github, "repo", ""),
       "github_branch" => Map.get(github, "branch", "main"),
-      "github_visibility" => Map.get(github, "visibility", "private"),
+      "github_visibility" => Map.get(github, "visibility", "public"),
       "generate_store_graphics" => PublishFlow.generate_store_graphics?(project)
     }
   end
@@ -345,7 +345,7 @@ defmodule IdeWeb.WorkspaceLive.State do
       "github_owner" => "",
       "github_repo" => "",
       "github_branch" => "main",
-      "github_visibility" => "private",
+      "github_visibility" => "public",
       "generate_store_graphics" => false
     }
 

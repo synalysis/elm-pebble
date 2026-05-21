@@ -1,12 +1,13 @@
 <section
-  class="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6 py-12"
+  class="mx-auto flex min-h-screen max-w-xl flex-col px-6 py-12"
   data-firebase-config={Jason.encode!(@firebase_config)}
 >
-  <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+  <div class="flex flex-1 flex-col justify-center">
+    <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
     <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">elm-pebble IDE</p>
     <h1 class="mt-2 text-2xl font-semibold text-zinc-900">Log in to continue</h1>
     <p class="mt-2 text-sm text-zinc-600">
-      Sign in with your Rebble developer account. Projects and App Store publishing stay tied to your account.
+      Log in with your Rebble developer account. Your projects and App Store publishing stay tied to that account.
     </p>
 
     <div class="mt-5 space-y-2">
@@ -34,5 +35,7 @@
     </div>
 
     <p id="firebase-login-status" class="mt-4 text-sm text-zinc-600"></p>
+    </div>
   </div>
+  <.local_run_footer class="mt-8" />
 </section>

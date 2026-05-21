@@ -1,6 +1,7 @@
 defmodule IdeWeb.ProjectsLive do
   use IdeWeb, :live_view
 
+  alias Ide.Auth
   alias Ide.GitHub.Credentials
   alias Ide.ProjectTemplates
   alias Ide.Projects
@@ -477,6 +478,28 @@ defmodule IdeWeb.ProjectsLive do
           </table>
         </div>
       </section>
+
+      <section
+        :if={Auth.public_mode?() and @current_user}
+        class="rounded-lg border border-rose-200 bg-rose-50 p-5 shadow-sm"
+      >
+        <h2 class="text-base font-semibold text-rose-900">Delete your data</h2>
+        <p class="mt-2 text-sm text-rose-800">
+          Permanently delete your account, all projects, and workspace files from this IDE. This cannot be undone.
+        </p>
+        <form action={~p"/auth/delete-data"} method="post" class="mt-4">
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <button
+            type="submit"
+            data-confirm="Delete all your projects and account data? This cannot be undone."
+            class="rounded bg-rose-700 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-800"
+          >
+            Delete my data
+          </button>
+        </form>
+      </section>
+
+      <.local_run_footer class="pt-2" />
     </div>
     """
   end

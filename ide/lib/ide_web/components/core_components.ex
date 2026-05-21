@@ -702,4 +702,30 @@ defmodule IdeWeb.CoreComponents do
   def translate_errors(errors, field) when is_list(errors) do
     for {^field, {msg, opts}} <- errors, do: translate_error({msg, opts})
   end
+
+  @local_run_repo_url "https://github.com/synalysis/elm-pebble"
+
+  @doc """
+  Footer pointing users to local IDE setup instructions.
+  """
+  attr :class, :string, default: nil
+
+  @spec local_run_footer(map()) :: Rendered.t()
+  def local_run_footer(assigns) do
+    assigns = assign(assigns, :repo_url, @local_run_repo_url)
+
+    ~H"""
+    <footer class={["text-center text-xs text-zinc-500", @class]}>
+      You can also run this IDE locally.
+      <a
+        href={@repo_url}
+        class="font-medium text-blue-700 hover:text-blue-800"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Setup instructions on GitHub
+      </a>
+    </footer>
+    """
+  end
 end
