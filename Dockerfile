@@ -22,6 +22,8 @@ RUN mix release
 
 FROM debian:bookworm-slim AS runner
 
+ARG PEBBLE_SDK_VERSION=4.9.169
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       libstdc++6 \
@@ -34,6 +36,7 @@ RUN apt-get update && \
       qemu-system-data \
       qemu-system-common \
       libsdl2-2.0-0 \
+      libfreetype6 \
       nodejs \
       npm && \
     PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install pebble-tool && \
@@ -49,7 +52,7 @@ ENV IDE_DATA_ROOT=/var/lib/ide
 ENV DATABASE_PATH=/var/lib/ide/ide_prod.db
 ENV PROJECTS_ROOT=/var/lib/ide/workspace_projects
 ENV SETTINGS_FILE=/var/lib/ide/config/settings.json
-ENV PEBBLE_SDK_VERSION=latest
+ENV PEBBLE_SDK_VERSION=${PEBBLE_SDK_VERSION}
 ENV INSTALL_PEBBLE_SDK=1
 ENV ELM_PEBBLE_QEMU_BIN=/var/lib/ide/.pebble-sdk/SDKs/current/toolchain/bin/qemu-pebble
 ENV ELM_PEBBLE_PYPKJS_BIN=/opt/pipx/venvs/pebble-tool/bin/pypkjs
@@ -62,11 +65,16 @@ ENV SECRET_KEY_BASE=8eXjTGrTXoJHN8S-sqKoLrXp1xQ8vlqv2Ryr_5wPjMz5f4lAQ9S3v5dvU7uI
 WORKDIR /opt/ide
 
 RUN mkdir -p /var/lib/ide /opt/ide && \
-    chown -R nobody:nogroup /var/lib/ide /opt/ide
+    HOME=/var/lib/ide pebble sdk install "${PEBBLE_SDK_VERSION}" && \
+    HOME=/var/lib/ide pebble sdk activate "${PEBBLE_SDK_VERSION}" && \
+    cp -a /var/lib/ide/.pebble-sdk /opt/pebble-sdk-seed && \
+    rm -rf /var/lib/ide/.pebble-sdk
 
 COPY --from=build /app/ide/_build/prod/rel/ide /opt/ide
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY docker/pebble_sdk.sh /docker/pebble_sdk.sh
+RUN chmod +x /entrypoint.sh /docker/pebble_sdk.sh && \
+    chown -R nobody:nogroup /var/lib/ide /opt/ide /opt/pebble-sdk-seed /entrypoint.sh /docker
 
 USER nobody
 

@@ -14,7 +14,7 @@ services:
       DATABASE_PATH: /var/lib/ide/ide_prod.db
       PROJECTS_ROOT: /var/lib/ide/workspace_projects
       SETTINGS_FILE: /var/lib/ide/config/settings.json
-      PEBBLE_SDK_VERSION: ${PEBBLE_SDK_VERSION:-latest}
+      PEBBLE_SDK_VERSION: ${PEBBLE_SDK_VERSION:-4.9.169}
       INSTALL_PEBBLE_SDK: ${INSTALL_PEBBLE_SDK:-1}
       ELM_PEBBLE_QEMU_BIN: /var/lib/ide/.pebble-sdk/SDKs/current/toolchain/bin/qemu-pebble
       ELM_PEBBLE_PYPKJS_BIN: /opt/pipx/venvs/pebble-tool/bin/pypkjs
