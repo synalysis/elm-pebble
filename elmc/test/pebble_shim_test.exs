@@ -1127,26 +1127,35 @@ defmodule Elmc.PebbleShimTest do
       static ElmcValue *test_launch_context(void) {
         ElmcValue *screen_width = elmc_new_int(144);
         ElmcValue *screen_height = elmc_new_int(168);
-        ElmcValue *screen_is_color = elmc_new_bool(1);
-        ElmcValue *screen_is_round = elmc_new_bool(0);
-        const char *screen_names[] = {"height", "isColor", "isRound", "width"};
-        ElmcValue *screen_values[] = {screen_height, screen_is_color, screen_is_round, screen_width};
+        ElmcValue *screen_shape = elmc_new_string("Rectangular");
+        ElmcValue *screen_color_mode = elmc_new_string("Color");
+        const char *screen_names[] = {"color_mode", "height", "shape", "width"};
+        ElmcValue *screen_values[] = {screen_color_mode, screen_height, screen_shape, screen_width};
         ElmcValue *screen = elmc_record_new(4, screen_names, screen_values);
         elmc_release(screen_width);
         elmc_release(screen_height);
-        elmc_release(screen_is_color);
-        elmc_release(screen_is_round);
+        elmc_release(screen_shape);
+        elmc_release(screen_color_mode);
 
         ElmcValue *reason = elmc_new_int(2);
         ElmcValue *watch_model = elmc_new_string("");
         ElmcValue *watch_profile_id = elmc_new_string("flint");
-        const char *context_names[] = {"reason", "screen", "watchModel", "watchProfileId"};
-        ElmcValue *context_values[] = {reason, screen, watch_model, watch_profile_id};
-        ElmcValue *context = elmc_record_new(4, context_names, context_values);
+        ElmcValue *has_microphone = elmc_new_bool(1);
+        ElmcValue *has_compass = elmc_new_bool(0);
+        ElmcValue *supports_health = elmc_new_bool(1);
+        const char *context_names[] = {
+            "has_compass", "has_microphone", "reason", "screen", "supports_health", "watchModel",
+            "watchProfileId"};
+        ElmcValue *context_values[] = {has_compass, has_microphone, reason, screen, supports_health,
+                                       watch_model, watch_profile_id};
+        ElmcValue *context = elmc_record_new(7, context_names, context_values);
         elmc_release(reason);
         elmc_release(screen);
         elmc_release(watch_model);
         elmc_release(watch_profile_id);
+        elmc_release(has_microphone);
+        elmc_release(has_compass);
+        elmc_release(supports_health);
         return context;
       }
 

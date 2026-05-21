@@ -1248,7 +1248,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
                       }
                     },
                     %{
-                      "name" => "isRound",
+                      "name" => "displayShape",
                       "expr" => %{
                         "op" => "field_access",
                         "arg" => %{
@@ -1256,7 +1256,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
                           "arg" => %{"op" => "var", "name" => "launch"},
                           "field" => "screen"
                         },
-                        "field" => "isRound"
+                        "field" => "shape"
                       }
                     }
                   ]
@@ -1401,13 +1401,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
         "init_model" => %{
           "screenW" => %{"$opaque" => true, "op" => "field_access"},
           "screenH" => %{"$opaque" => true, "op" => "field_access"},
-          "isRound" => %{"$opaque" => true, "op" => "field_access"}
+          "displayShape" => %{"$opaque" => true, "op" => "field_access"}
         },
         "view_tree" => %{"type" => "root", "children" => []}
       },
       current_model: %{
         "launch_context" => %{
-          "screen" => %{"width" => 144, "height" => 168, "isRound" => false}
+          "screen" => %{"width" => 144, "height" => 168, "shape" => "Rectangular"}
         }
       },
       current_view_tree: %{},
@@ -1419,7 +1419,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
 
     assert runtime_model["screenW"] == 144
     assert runtime_model["screenH"] == 168
-    assert runtime_model["isRound"] == false
+    assert runtime_model["displayShape"] == "Rectangular"
 
     refute Enum.any?(result.view_output, &(&1["kind"] == "unresolved"))
 

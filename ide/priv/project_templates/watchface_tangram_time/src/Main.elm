@@ -15,7 +15,7 @@ type alias Model =
     { now : Maybe PebbleCmd.CurrentDateTime
     , screenW : Int
     , screenH : Int
-    , isColor : Bool
+    , colorMode : Platform.ColorCapability
     , companionFigure : Maybe Int
     , downloadedPieces : List DownloadedPiece
     , pendingFigure : Maybe PendingFigure
@@ -57,7 +57,7 @@ init context =
     ( { now = Nothing
       , screenW = context.screen.width
       , screenH = context.screen.height
-      , isColor = context.screen.isColor
+      , colorMode = context.screen.colorMode
       , companionFigure = Nothing
       , downloadedPieces = []
       , pendingFigure = Nothing
@@ -156,10 +156,10 @@ view model =
         , hourMarkers cx cy markerRadius (foregroundColor model)
         , case model.downloadedPieces of
             [] ->
-                timeTangram model.isColor scale cx cy hour minute figure
+                timeTangram model.colorMode scale cx cy hour minute figure
 
             pieces ->
-                downloadedTangram model.isColor scale cx cy hour minute figure pieces
+                downloadedTangram model.colorMode scale cx cy hour minute figure pieces
         , [ Ui.fillCircle (clockPoint cx cy hour hourRadius) 4 (accentColor model)
           , Ui.fillCircle (minutePoint cx cy minute minuteRadius) 3 (accentColor model)
           ]
@@ -168,139 +168,139 @@ view model =
         |> Ui.toUiNode
 
 
-timeTangram : Bool -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-timeTangram isColor scale cx cy hour minute figure =
+timeTangram : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
+timeTangram colorMode scale cx cy hour minute figure =
     case modBy figureCount figure of
         0 ->
-            birdForm isColor scale cx cy hour minute figure
+            birdForm colorMode scale cx cy hour minute figure
 
         1 ->
-            cometForm isColor scale cx cy hour minute figure
+            cometForm colorMode scale cx cy hour minute figure
 
         2 ->
-            crownForm isColor scale cx cy hour minute figure
+            crownForm colorMode scale cx cy hour minute figure
 
         3 ->
-            boatForm isColor scale cx cy hour minute figure
+            boatForm colorMode scale cx cy hour minute figure
 
         4 ->
-            flowerForm isColor scale cx cy hour minute figure
+            flowerForm colorMode scale cx cy hour minute figure
 
         _ ->
-            kiteForm isColor scale cx cy hour minute figure
+            kiteForm colorMode scale cx cy hour minute figure
 
 
-birdForm : Bool -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-birdForm isColor scale cx cy hour minute figure =
+birdForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
+birdForm colorMode scale cx cy hour minute figure =
     let
         base =
             formOrigin scale cx cy hour minute figure
     in
     List.concat
-        [ tangramPiece (displayColor isColor Color.vividCerulean) (shapeAt scale base [ o -8 -6, o -42 -30, o -52 10 ])
-        , tangramPiece (displayColor isColor Color.pictonBlue) (shapeAt scale base [ o 8 -6, o 42 -30, o 52 10 ])
-        , tangramPiece (displayColor isColor Color.tiffanyBlue) (shapeAt scale base [ o -18 2, o 0 -12, o 18 2, o 0 18 ])
-        , tangramPiece (displayColor isColor Color.cyan) (shapeAt scale base [ o 18 -4, o 36 -12, o 32 8 ])
-        , tangramPiece (displayColor isColor Color.blueMoon) (shapeAt scale base [ o -18 8, o -40 0, o -46 16, o -24 24 ])
-        , tangramPiece (displayColor isColor Color.electricBlue) (shapeAt scale base [ o -5 18, o -28 34, o 4 32 ])
-        , tangramPiece (displayColor isColor Color.veryLightBlue) (shapeAt scale base [ o 6 18, o 34 32, o 12 36 ])
+        [ tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o -8 -6, o -42 -30, o -52 10 ])
+        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o 8 -6, o 42 -30, o 52 10 ])
+        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -18 2, o 0 -12, o 18 2, o 0 18 ])
+        , tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o 18 -4, o 36 -12, o 32 8 ])
+        , tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o -18 8, o -40 0, o -46 16, o -24 24 ])
+        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o -5 18, o -28 34, o 4 32 ])
+        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o 6 18, o 34 32, o 12 36 ])
         ]
 
 
-cometForm : Bool -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-cometForm isColor scale cx cy hour minute figure =
+cometForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
+cometForm colorMode scale cx cy hour minute figure =
     let
         base =
             formOrigin scale cx cy hour minute figure
     in
     List.concat
-        [ tangramPiece (displayColor isColor Color.cyan) (shapeAt scale base [ o 24 -4, o 42 -22, o 60 -4, o 42 14 ])
-        , tangramPiece (displayColor isColor Color.vividCerulean) (shapeAt scale base [ o 8 -12, o 32 -4, o 8 14 ])
-        , tangramPiece (displayColor isColor Color.pictonBlue) (shapeAt scale base [ o -10 -18, o 12 -8, o -12 2 ])
-        , tangramPiece (displayColor isColor Color.tiffanyBlue) (shapeAt scale base [ o -26 -20, o -4 -8, o -28 4 ])
-        , tangramPiece (displayColor isColor Color.blueMoon) (shapeAt scale base [ o -48 -18, o -18 -8, o -8 8, o -38 -2 ])
-        , tangramPiece (displayColor isColor Color.electricBlue) (shapeAt scale base [ o -52 4, o -16 8, o -44 24 ])
-        , tangramPiece (displayColor isColor Color.veryLightBlue) (shapeAt scale base [ o -36 -36, o -8 -16, o -48 -16 ])
+        [ tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o 24 -4, o 42 -22, o 60 -4, o 42 14 ])
+        , tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o 8 -12, o 32 -4, o 8 14 ])
+        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o -10 -18, o 12 -8, o -12 2 ])
+        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -26 -20, o -4 -8, o -28 4 ])
+        , tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o -48 -18, o -18 -8, o -8 8, o -38 -2 ])
+        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o -52 4, o -16 8, o -44 24 ])
+        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o -36 -36, o -8 -16, o -48 -16 ])
         ]
 
 
-crownForm : Bool -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-crownForm isColor scale cx cy hour minute figure =
+crownForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
+crownForm colorMode scale cx cy hour minute figure =
     let
         base =
             formOrigin scale cx cy hour minute figure
     in
     List.concat
-        [ tangramPiece (displayColor isColor Color.blueMoon) (shapeAt scale base [ o -48 12, o 38 12, o 48 30, o -38 30 ])
-        , tangramPiece (displayColor isColor Color.vividCerulean) (shapeAt scale base [ o -48 12, o -30 -28, o -8 12 ])
-        , tangramPiece (displayColor isColor Color.pictonBlue) (shapeAt scale base [ o -16 12, o 0 -36, o 16 12 ])
-        , tangramPiece (displayColor isColor Color.electricBlue) (shapeAt scale base [ o 8 12, o 30 -28, o 48 12 ])
-        , tangramPiece (displayColor isColor Color.cyan) (shapeAt scale base [ o -8 2, o 0 -10, o 8 2, o 0 14 ])
-        , tangramPiece (displayColor isColor Color.tiffanyBlue) (shapeAt scale base [ o -36 10, o -24 -8, o -12 10 ])
-        , tangramPiece (displayColor isColor Color.veryLightBlue) (shapeAt scale base [ o 12 10, o 24 -8, o 36 10 ])
+        [ tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o -48 12, o 38 12, o 48 30, o -38 30 ])
+        , tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o -48 12, o -30 -28, o -8 12 ])
+        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o -16 12, o 0 -36, o 16 12 ])
+        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o 8 12, o 30 -28, o 48 12 ])
+        , tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o -8 2, o 0 -10, o 8 2, o 0 14 ])
+        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -36 10, o -24 -8, o -12 10 ])
+        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o 12 10, o 24 -8, o 36 10 ])
         ]
 
 
-boatForm : Bool -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-boatForm isColor scale cx cy hour minute figure =
+boatForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
+boatForm colorMode scale cx cy hour minute figure =
     let
         base =
             formOrigin scale cx cy hour minute figure
     in
     List.concat
-        [ tangramPiece (displayColor isColor Color.blueMoon) (shapeAt scale base [ o -54 18, o 44 18, o 32 38, o -34 38 ])
-        , tangramPiece (displayColor isColor Color.vividCerulean) (shapeAt scale base [ o -8 14, o -8 -34, o -44 14 ])
-        , tangramPiece (displayColor isColor Color.pictonBlue) (shapeAt scale base [ o -4 14, o 28 -26, o 36 14 ])
-        , tangramPiece (displayColor isColor Color.tiffanyBlue) (shapeAt scale base [ o -8 -34, o 2 -8, o -8 14, o -20 -8 ])
-        , tangramPiece (displayColor isColor Color.cyan) (shapeAt scale base [ o -34 28, o -14 16, o 4 28, o -14 40 ])
-        , tangramPiece (displayColor isColor Color.electricBlue) (shapeAt scale base [ o 10 20, o 30 20, o 20 34 ])
-        , tangramPiece (displayColor isColor Color.veryLightBlue) (shapeAt scale base [ o -48 18, o -30 8, o -24 18 ])
+        [ tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o -54 18, o 44 18, o 32 38, o -34 38 ])
+        , tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o -8 14, o -8 -34, o -44 14 ])
+        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o -4 14, o 28 -26, o 36 14 ])
+        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -8 -34, o 2 -8, o -8 14, o -20 -8 ])
+        , tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o -34 28, o -14 16, o 4 28, o -14 40 ])
+        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o 10 20, o 30 20, o 20 34 ])
+        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o -48 18, o -30 8, o -24 18 ])
         ]
 
 
-flowerForm : Bool -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-flowerForm isColor scale cx cy hour minute figure =
+flowerForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
+flowerForm colorMode scale cx cy hour minute figure =
     let
         base =
             formOrigin scale cx cy hour minute figure
     in
     List.concat
-        [ tangramPiece (displayColor isColor Color.cyan) (shapeAt scale base [ o -12 0, o 0 -12, o 12 0, o 0 12 ])
-        , tangramPiece (displayColor isColor Color.vividCerulean) (shapeAt scale base [ o -16 -10, o 0 -44, o 16 -10 ])
-        , tangramPiece (displayColor isColor Color.pictonBlue) (shapeAt scale base [ o 10 -16, o 44 0, o 10 16 ])
-        , tangramPiece (displayColor isColor Color.tiffanyBlue) (shapeAt scale base [ o -16 10, o 0 44, o 16 10 ])
-        , tangramPiece (displayColor isColor Color.electricBlue) (shapeAt scale base [ o -10 -16, o -44 0, o -10 16 ])
-        , tangramPiece (displayColor isColor Color.blueMoon) (shapeAt scale base [ o 10 10, o 34 16, o 16 34, o 0 20 ])
-        , tangramPiece (displayColor isColor Color.veryLightBlue) (shapeAt scale base [ o -10 10, o -34 16, o -16 34 ])
+        [ tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o -12 0, o 0 -12, o 12 0, o 0 12 ])
+        , tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o -16 -10, o 0 -44, o 16 -10 ])
+        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o 10 -16, o 44 0, o 10 16 ])
+        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -16 10, o 0 44, o 16 10 ])
+        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o -10 -16, o -44 0, o -10 16 ])
+        , tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o 10 10, o 34 16, o 16 34, o 0 20 ])
+        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o -10 10, o -34 16, o -16 34 ])
         ]
 
 
-kiteForm : Bool -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-kiteForm isColor scale cx cy hour minute figure =
+kiteForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
+kiteForm colorMode scale cx cy hour minute figure =
     let
         base =
             formOrigin scale cx cy hour minute figure
     in
     List.concat
-        [ tangramPiece (displayColor isColor Color.cyan) (shapeAt scale base [ o 0 -48, o 28 -10, o 0 12, o -28 -10 ])
-        , tangramPiece (displayColor isColor Color.vividCerulean) (shapeAt scale base [ o 0 -48, o 28 -10, o 0 -10 ])
-        , tangramPiece (displayColor isColor Color.pictonBlue) (shapeAt scale base [ o 0 -48, o 0 -10, o -28 -10 ])
-        , tangramPiece (displayColor isColor Color.blueMoon) (shapeAt scale base [ o -28 -10, o 0 12, o 28 -10, o 0 34 ])
-        , tangramPiece (displayColor isColor Color.tiffanyBlue) (shapeAt scale base [ o -12 30, o 0 42, o 12 30 ])
-        , tangramPiece (displayColor isColor Color.electricBlue) (shapeAt scale base [ o 0 42, o -16 50, o 2 52 ])
-        , tangramPiece (displayColor isColor Color.veryLightBlue) (shapeAt scale base [ o 2 52, o 18 58, o 8 64 ])
+        [ tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o 0 -48, o 28 -10, o 0 12, o -28 -10 ])
+        , tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o 0 -48, o 28 -10, o 0 -10 ])
+        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o 0 -48, o 0 -10, o -28 -10 ])
+        , tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o -28 -10, o 0 12, o 28 -10, o 0 34 ])
+        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -12 30, o 0 42, o 12 30 ])
+        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o 0 42, o -16 50, o 2 52 ])
+        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o 2 52, o 18 58, o 8 64 ])
         ]
 
 
-downloadedTangram : Bool -> Int -> Int -> Int -> Int -> Int -> Int -> List DownloadedPiece -> List Ui.RenderOp
-downloadedTangram isColor scale cx cy hour minute figure pieces =
+downloadedTangram : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List DownloadedPiece -> List Ui.RenderOp
+downloadedTangram colorMode scale cx cy hour minute figure pieces =
     let
         base =
             formOrigin scale cx cy hour minute figure
     in
     pieces
         |> List.reverse
-        |> List.concatMap (\piece -> tangramPiece (displayColor isColor (pieceColor piece.index)) (shapeAt scale base (piecePoints piece)))
+        |> List.concatMap (\piece -> tangramPiece (displayColor colorMode (pieceColor piece.index)) (shapeAt scale base (piecePoints piece)))
 
 
 piecePoints : DownloadedPiece -> List Ui.Point
@@ -338,7 +338,7 @@ pieceColor index =
 
 backgroundColor : Model -> Color.Color
 backgroundColor model =
-    if model.isColor then
+    if Platform.colorCapabilityIsColor model.colorMode then
         Color.oxfordBlue
     else
         Color.white
@@ -346,7 +346,7 @@ backgroundColor model =
 
 foregroundColor : Model -> Color.Color
 foregroundColor model =
-    if model.isColor then
+    if Platform.colorCapabilityIsColor model.colorMode then
         Color.white
     else
         Color.black
@@ -354,7 +354,7 @@ foregroundColor model =
 
 clockColor : Model -> Color.Color
 clockColor model =
-    if model.isColor then
+    if Platform.colorCapabilityIsColor model.colorMode then
         Color.veryLightBlue
     else
         Color.black
@@ -362,15 +362,15 @@ clockColor model =
 
 accentColor : Model -> Color.Color
 accentColor model =
-    if model.isColor then
+    if Platform.colorCapabilityIsColor model.colorMode then
         Color.chromeYellow
     else
         Color.black
 
 
-displayColor : Bool -> Color.Color -> Color.Color
-displayColor isColor color =
-    if isColor then
+displayColor : Platform.ColorCapability -> Color.Color -> Color.Color
+displayColor colorMode color =
+    if Platform.colorCapabilityIsColor colorMode then
         color
     else
         Color.black

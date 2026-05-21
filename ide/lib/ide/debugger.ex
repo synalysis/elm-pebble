@@ -3494,8 +3494,8 @@ defmodule Ide.Debugger do
 
   defp finalize_device_request(%{kind: "watch_color"} = req, model) when is_map(model) do
     launch_context = Map.get(model, "launch_context") || %{}
-    is_color = get_in(launch_context, ["screen", "is_color"]) == true
-    Map.put(req, :preview, if(is_color, do: "Color", else: "BlackWhite"))
+    color_mode = launch_context_color_mode(launch_context)
+    Map.put(req, :preview, color_mode)
   end
 
   defp finalize_device_request(%{kind: "firmware_version"} = req, _model),
@@ -7203,7 +7203,7 @@ defmodule Ide.Debugger do
   defp merge_launch_context_model(model, launch_context)
        when is_map(model) and is_map(launch_context) do
     profile_id = Map.get(launch_context, "watch_profile_id")
-    is_color = get_in(launch_context, ["screen", "is_color"])
+    color_mode = launch_context_color_mode(launch_context)
     width = get_in(launch_context, ["screen", "width"])
     height = get_in(launch_context, ["screen", "height"])
 
@@ -7212,7 +7212,7 @@ defmodule Ide.Debugger do
     |> Map.put("watch_profile_id", profile_id)
     |> Map.put("screen_width", width)
     |> Map.put("screen_height", height)
-    |> Map.put("supports_color", is_color)
+    |> Map.put("supports_color", color_mode == "Color")
   end
 
   defp merge_launch_context_model(model, _launch_context) when is_map(model), do: model
@@ -7362,8 +7362,8 @@ defmodule Ide.Debugger do
       get_in(model, ["launch_context", "screen", "height"])
     )
     |> put_launch_context_value_if_missing(
-      "isRound",
-      launch_context_round?(Map.get(model, "launch_context"))
+      "displayShape",
+      launch_context_display_shape(Map.get(model, "launch_context"))
     )
   end
 
@@ -7397,16 +7397,54 @@ defmodule Ide.Debugger do
   defp unresolved_runtime_value?(%{op: :field_access}), do: true
   defp unresolved_runtime_value?(_value), do: false
 
-  @spec launch_context_round?(map()) :: boolean() | nil
-  defp launch_context_round?(%{"screen" => %{} = screen}) do
+  @spec launch_context_display_shape(map()) :: String.t() | nil
+  defp launch_context_display_shape(%{"screen" => %{} = screen}) do
     cond do
-      is_boolean(Map.get(screen, "isRound")) -> Map.get(screen, "isRound")
-      is_binary(Map.get(screen, "shape")) -> Map.get(screen, "shape") == "round"
-      true -> nil
+      Map.get(screen, "shape") in ["Round", "Rectangular"] ->
+        Map.get(screen, "shape")
+
+      Map.get(screen, "shape") == "round" ->
+        "Round"
+
+      Map.get(screen, "shape") == "rect" ->
+        "Rectangular"
+
+      Map.get(screen, "isRound") == true ->
+        "Round"
+
+      Map.get(screen, "isRound") == false ->
+        "Rectangular"
+
+      true ->
+        nil
     end
   end
 
-  defp launch_context_round?(_launch_context), do: nil
+  defp launch_context_display_shape(%{"shape" => shape}) when shape in ["round", "rect"] do
+    if shape == "round", do: "Round", else: "Rectangular"
+  end
+
+  defp launch_context_display_shape(_launch_context), do: nil
+
+  @spec launch_context_color_mode(map()) :: String.t()
+  defp launch_context_color_mode(launch_context) when is_map(launch_context) do
+    cond do
+      get_in(launch_context, ["screen", "color_mode"]) in ["Color", "BlackWhite"] ->
+        get_in(launch_context, ["screen", "color_mode"])
+
+      get_in(launch_context, ["screen", "colorMode"]) in ["Color", "BlackWhite"] ->
+        get_in(launch_context, ["screen", "colorMode"])
+
+      get_in(launch_context, ["screen", "is_color"]) == true ->
+        "Color"
+
+      get_in(launch_context, ["screen", "is_color"]) == false ->
+        "BlackWhite"
+
+      true ->
+        "Color"
+    end
+  end
 
   @spec hydrate_runtime_model_message_payload(map(), String.t() | nil) :: map()
   defp hydrate_runtime_model_message_payload(runtime_model, message)
@@ -7653,7 +7691,14 @@ defmodule Ide.Debugger do
     screen = Map.get(profile, "screen") || %{}
     width = Map.get(screen, "width") || 0
     height = Map.get(screen, "height") || 0
-    color = if Map.get(screen, "is_color") == true, do: "color", else: "mono"
+
+    color =
+      case Map.get(profile, "color_mode") do
+        "Color" -> "color"
+        "BlackWhite" -> "mono"
+        _ -> "mono"
+      end
+
     "#{name} (#{width}x#{height}, #{color})"
   end
 
@@ -7670,17 +7715,27 @@ defmodule Ide.Debugger do
       )
 
     screen = Map.get(profile, "screen") || %{}
+    profile_shape = Map.get(profile, "shape")
+
+    display_shape =
+      case profile_shape do
+        "round" -> "Round"
+        _ -> "Rectangular"
+      end
 
     %{
       "launch_reason" => launch_reason,
       "watch_profile_id" => watch_profile_id,
       "watch_model" => Map.get(profile, "name"),
-      "shape" => Map.get(profile, "shape"),
+      "shape" => profile_shape,
+      "has_microphone" => Map.get(profile, "has_microphone") == true,
+      "has_compass" => Map.get(profile, "has_compass") == true,
+      "supports_health" => Map.get(profile, "supports_health") == true,
       "screen" => %{
         "width" => Map.get(screen, "width") || 144,
         "height" => Map.get(screen, "height") || 168,
-        "isRound" => Map.get(profile, "shape") == "round",
-        "is_color" => Map.get(screen, "is_color") == true
+        "shape" => display_shape,
+        "color_mode" => Map.get(profile, "color_mode") || "Color"
       }
     }
   end

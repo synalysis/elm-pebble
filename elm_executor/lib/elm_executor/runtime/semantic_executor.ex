@@ -1521,16 +1521,16 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
           %{
             "width" => map_value(value, :width) || map_value(context, :screenW) || 144,
             "height" => map_value(value, :height) || map_value(context, :screenH) || 168,
-            "isColor" => map_value(value, :is_color) || map_value(value, :isColor) || true,
-            "isRound" => map_value(value, :is_round) || map_value(value, :isRound) || false
+            "shape" => launch_context_display_shape(value, context),
+            "color_mode" => launch_context_color_mode_value(value, context)
           }
 
         _ ->
           %{
             "width" => map_value(context, :screenW) || 144,
             "height" => map_value(context, :screenH) || 168,
-            "isColor" => map_value(context, :is_color) || true,
-            "isRound" => map_value(context, :is_round) || false
+            "shape" => launch_context_display_shape(%{}, context),
+            "color_mode" => launch_context_color_mode_value(%{}, context)
           }
       end
 
@@ -1545,10 +1545,77 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       map_value(context, :watch_profile_id) || map_value(context, :watchProfileId) || "basalt"
     )
     |> Map.put("screen", screen)
+    |> Map.put(
+      "hasMicrophone",
+      map_value(context, :has_microphone) || map_value(context, :hasMicrophone) || false
+    )
+    |> Map.put(
+      "hasCompass",
+      map_value(context, :has_compass) || map_value(context, :hasCompass) || false
+    )
+    |> Map.put(
+      "supportsHealth",
+      map_value(context, :supports_health) || map_value(context, :supportsHealth) || false
+    )
   end
 
   defp normalize_launch_context(_context) do
     normalize_launch_context(%{})
+  end
+
+  @spec launch_context_display_shape(map(), map()) :: String.t()
+  defp launch_context_display_shape(screen, context) when is_map(screen) and is_map(context) do
+    cond do
+      map_value(screen, :shape) in ["Round", "Rectangular"] ->
+        map_value(screen, :shape)
+
+      map_value(screen, :shape) == "round" ->
+        "Round"
+
+      map_value(screen, :shape) == "rect" ->
+        "Rectangular"
+
+      map_value(screen, :is_round) == true or map_value(screen, :isRound) == true ->
+        "Round"
+
+      map_value(screen, :is_round) == false or map_value(screen, :isRound) == false ->
+        "Rectangular"
+
+      map_value(context, :shape) == "round" ->
+        "Round"
+
+      map_value(context, :shape) == "rect" ->
+        "Rectangular"
+
+      true ->
+        "Rectangular"
+    end
+  end
+
+  @spec launch_context_color_mode_value(map(), map()) :: String.t()
+  defp launch_context_color_mode_value(screen, context) when is_map(screen) and is_map(context) do
+    cond do
+      map_value(screen, :color_mode) in ["Color", "BlackWhite"] ->
+        map_value(screen, :color_mode)
+
+      map_value(screen, :colorMode) in ["Color", "BlackWhite"] ->
+        map_value(screen, :colorMode)
+
+      map_value(screen, :is_color) == true or map_value(screen, :isColor) == true ->
+        "Color"
+
+      map_value(screen, :is_color) == false or map_value(screen, :isColor) == false ->
+        "BlackWhite"
+
+      map_value(context, :is_color) == true ->
+        "Color"
+
+      map_value(context, :is_color) == false ->
+        "BlackWhite"
+
+      true ->
+        "Color"
+    end
   end
 
   @spec launch_reason_value(String.t()) :: map()

@@ -59,9 +59,10 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
   @transparent <<0, 0, 0, 0>>
 
   @spec blank_bgrx_pixel(map()) :: <<_::32>>
+  def blank_bgrx_pixel(%{"color_mode" => "BlackWhite"}), do: @opaque_white
   def blank_bgrx_pixel(%{"is_color" => false}), do: @opaque_white
   def blank_bgrx_pixel(%{"shape" => "round"}), do: @transparent
-  def blank_bgrx_pixel(_color), do: @opaque_black
+  def blank_bgrx_pixel(_profile), do: @opaque_black
 
   @spec finalize(binary(), pos_integer(), pos_integer(), String.t(), pixel_format()) ::
           {:ok, binary()} | {:error, term()}

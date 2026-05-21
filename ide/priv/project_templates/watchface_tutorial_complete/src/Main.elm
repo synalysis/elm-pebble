@@ -16,7 +16,7 @@ import Pebble.Vibes as PebbleVibes
 type alias Model =
     { screenW : Int
     , screenH : Int
-    , isRound : Bool
+    , displayShape : PebblePlatform.DisplayShape
     , currentDateTime : Maybe PebbleTime.CurrentDateTime
     , batteryLevel : Maybe Int
     , connected : Maybe Bool
@@ -41,7 +41,7 @@ init : PebblePlatform.LaunchContext -> ( Model, Cmd Msg )
 init context =
     ( { screenW = context.screen.width
       , screenH = context.screen.height
-      , isRound = context.screen.isRound
+      , displayShape = context.screen.shape
       , currentDateTime = Nothing
       , batteryLevel = Nothing
       , connected = Nothing
@@ -141,7 +141,7 @@ view model =
 
         weatherY =
             h
-                - (if model.isRound then
+                - (if PebblePlatform.displayShapeIsRound model.displayShape then
                     42
 
                    else
@@ -155,7 +155,7 @@ view model =
             (w - batteryW) // 2
 
         batteryY =
-            if model.isRound then
+            if PebblePlatform.displayShapeIsRound model.displayShape then
                 h // 8
 
             else

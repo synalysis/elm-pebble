@@ -688,13 +688,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     runtime = %{
       model: %{
         "launch_context" => %{
-          "screen" => %{"width" => 180, "height" => 180, "isRound" => true}
+          "screen" => %{"width" => 180, "height" => 180, "shape" => "Round"}
         }
       }
     }
 
     refute DebuggerPreview.screen_round?(%{
-             model: %{"launch_context" => %{"screen" => %{"isRound" => false}}}
+             model: %{"launch_context" => %{"screen" => %{"shape" => "Rectangular"}}}
            })
 
     assert DebuggerPreview.screen_round?(runtime)
@@ -704,7 +704,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     runtime = %{
       model: %{
         "launch_context" => %{
-          "screen" => %{"width" => 180, "height" => 180, "isRound" => true}
+          "screen" => %{"width" => 180, "height" => 180, "shape" => "Round"}
         }
       }
     }

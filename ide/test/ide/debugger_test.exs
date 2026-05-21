@@ -496,7 +496,7 @@ defmodule Ide.DebuggerTest do
     assert get_in(updated, [:watch, :model, "supports_color"]) == true
   end
 
-  test "set_watch_profile exposes isRound on launch screen contract" do
+  test "set_watch_profile exposes Round display shape on launch screen contract" do
     slug = "sim-watch-profile-is-round-#{System.unique_integer([:positive])}"
 
     assert {:ok, _} = Debugger.start_session(slug)
@@ -504,7 +504,9 @@ defmodule Ide.DebuggerTest do
 
     assert get_in(updated, [:launch_context, "screen", "width"]) == 180
     assert get_in(updated, [:launch_context, "screen", "height"]) == 180
-    assert get_in(updated, [:launch_context, "screen", "isRound"]) == true
+    assert get_in(updated, [:launch_context, "screen", "shape"]) == "Round"
+    assert get_in(updated, [:launch_context, "supports_health"]) == true
+    assert get_in(updated, [:launch_context, "has_microphone"]) == false
   end
 
   test "start_session preserves selected watch profile when no profile override is provided" do

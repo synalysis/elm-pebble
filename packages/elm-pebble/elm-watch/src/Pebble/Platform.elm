@@ -2,7 +2,11 @@ module Pebble.Platform exposing
     ( LaunchContext
     , LaunchReason(..)
     , LaunchScreen
+    , ColorCapability(..)
+    , DisplayShape(..)
     , application
+    , colorCapabilityIsColor
+    , displayShapeIsRound
     , launchReasonFromTag
     , launchReasonToInt
     , watchface
@@ -14,7 +18,7 @@ This module wraps `Platform.worker` so your `init` function receives a
 typed `LaunchContext` decoded from JSON launch metadata.
 
 # Launch metadata
-@docs LaunchReason, LaunchScreen, LaunchContext, launchReasonFromTag, launchReasonToInt
+@docs LaunchReason, LaunchScreen, LaunchContext, ColorCapability, DisplayShape, launchReasonFromTag, launchReasonToInt, colorCapabilityIsColor, displayShapeIsRound
 
 # Program entrypoint
 @docs watchface, application
@@ -37,6 +41,20 @@ type LaunchReason
     | LaunchTimelineAction
     | LaunchSmartstrap
     | LaunchUnknown
+
+
+{-| Display shape for the currently simulated or connected watch model.
+-}
+type DisplayShape
+    = Rectangular
+    | Round
+
+
+{-| Color capability for the currently simulated or connected watch model.
+-}
+type ColorCapability
+    = BlackWhite
+    | Color
 
 
 {-| Encode a `LaunchReason` into the integer tag used by the native runtime.
@@ -77,8 +95,8 @@ launchReasonToInt launchReason =
 type alias LaunchScreen =
     { width : Int
     , height : Int
-    , isColor : Bool
-    , isRound : Bool
+    , shape : DisplayShape
+    , colorMode : ColorCapability
     }
 
 
@@ -89,6 +107,9 @@ type alias LaunchContext =
     , watchModel : String
     , watchProfileId : String
     , screen : LaunchScreen
+    , hasMicrophone : Bool
+    , hasCompass : Bool
+    , supportsHealth : Bool
     }
 
 
@@ -138,12 +159,48 @@ launchReasonFromString value =
         LaunchUnknown
 
 
+displayShapeFromString : String -> DisplayShape
+displayShapeFromString value =
+    if value == "Round" || value == "round" then
+        Round
+    else
+        Rectangular
+
+
+colorCapabilityFromString : String -> ColorCapability
+colorCapabilityFromString value =
+    if value == "Color" || value == "color" then
+        Color
+    else
+        BlackWhite
+
+
+displayShapeIsRound : DisplayShape -> Bool
+displayShapeIsRound shape =
+    case shape of
+        Round ->
+            True
+
+        Rectangular ->
+            False
+
+
+colorCapabilityIsColor : ColorCapability -> Bool
+colorCapabilityIsColor colorMode =
+    case colorMode of
+        Color ->
+            True
+
+        BlackWhite ->
+            False
+
+
 defaultScreen : LaunchScreen
 defaultScreen =
     { width = 144
     , height = 168
-    , isColor = True
-    , isRound = False
+    , shape = Rectangular
+    , colorMode = Color
     }
 
 
@@ -153,6 +210,9 @@ defaultContext =
     , watchModel = "Pebble Time Steel"
     , watchProfileId = "basalt"
     , screen = defaultScreen
+    , hasMicrophone = False
+    , hasCompass = False
+    , supportsHealth = True
     }
 
 
@@ -173,36 +233,105 @@ launchReasonDecoder =
     Decode.map launchReasonFromString Decode.string
 
 
+displayShapeDecoder : Decoder DisplayShape
+displayShapeDecoder =
+    Decode.oneOf
+        [ Decode.map displayShapeFromString Decode.string
+        , Decode.map (\isRound -> if isRound then Round else Rectangular) Decode.bool
+        ]
+
+
+colorCapabilityDecoder : Decoder ColorCapability
+colorCapabilityDecoder =
+    Decode.oneOf
+        [ Decode.map colorCapabilityFromString Decode.string
+        , Decode.map (\isColor -> if isColor then Color else BlackWhite) Decode.bool
+        ]
+
+
 screenDecoder : Decoder LaunchScreen
 screenDecoder =
     Decode.map4
-        (\width height isColor isRound ->
+        (\width height shape colorMode ->
             { width = width
             , height = height
-            , isColor = isColor
-            , isRound = isRound
+            , shape = shape
+            , colorMode = colorMode
             }
         )
         (decodeFieldWithDefault "width" Decode.int defaultScreen.width)
         (decodeFieldWithDefault "height" Decode.int defaultScreen.height)
-        (decodeFieldWithDefault "is_color" Decode.bool defaultScreen.isColor)
-        (Decode.map (\shape -> shape == "round") (decodeFieldWithDefault "shape" Decode.string "rect"))
+        (Decode.oneOf
+            [ decodeFieldWithDefault "shape" displayShapeDecoder defaultScreen.shape
+            , Decode.map
+                (\legacyShape ->
+                    if legacyShape == "round" then
+                        Round
+                    else
+                        Rectangular
+                )
+                (decodeFieldWithDefault "shape" Decode.string "rect")
+            ]
+        )
+        (Decode.oneOf
+            [ decodeFieldWithDefault "color_mode" colorCapabilityDecoder defaultScreen.colorMode
+            , decodeFieldWithDefault "colorMode" colorCapabilityDecoder defaultScreen.colorMode
+            , Decode.map
+                (\isColor ->
+                    if isColor then
+                        Color
+                    else
+                        BlackWhite
+                )
+                (decodeFieldWithDefault "is_color" Decode.bool (colorCapabilityIsColor defaultScreen.colorMode))
+            ]
+        )
 
 
 contextObjectDecoder : Decoder LaunchContext
 contextObjectDecoder =
-    Decode.map4
-        (\reason watchModel watchProfileId screen ->
+    Decode.map7
+        (\reason watchModel watchProfileId screen hasMicrophone hasCompass supportsHealth ->
             { reason = reason
             , watchModel = watchModel
             , watchProfileId = watchProfileId
             , screen = screen
+            , hasMicrophone = hasMicrophone
+            , hasCompass = hasCompass
+            , supportsHealth = supportsHealth
             }
         )
-        (decodeFieldWithDefault "launch_reason" launchReasonDecoder defaultContext.reason)
-        (decodeFieldWithDefault "watch_model" Decode.string defaultContext.watchModel)
-        (decodeFieldWithDefault "watch_profile_id" Decode.string defaultContext.watchProfileId)
+        (Decode.oneOf
+            [ decodeFieldWithDefault "launch_reason" launchReasonDecoder defaultContext.reason
+            , decodeFieldWithDefault "reason" launchReasonDecoder defaultContext.reason
+            ]
+        )
+        (Decode.oneOf
+            [ decodeFieldWithDefault "watch_model" Decode.string defaultContext.watchModel
+            , decodeFieldWithDefault "watchModel" Decode.string defaultContext.watchModel
+            ]
+        )
+        (Decode.oneOf
+            [ decodeFieldWithDefault "watch_profile_id" Decode.string defaultContext.watchProfileId
+            , decodeFieldWithDefault "watchProfileId" Decode.string defaultContext.watchProfileId
+            ]
+        )
         (decodeFieldWithDefault "screen" screenDecoder defaultContext.screen)
+        (Decode.oneOf
+            [ decodeFieldWithDefault "has_microphone" Decode.bool defaultContext.hasMicrophone
+            , decodeFieldWithDefault "hasMicrophone" Decode.bool defaultContext.hasMicrophone
+            ]
+        )
+        (Decode.oneOf
+            [ decodeFieldWithDefault "has_compass" Decode.bool defaultContext.hasCompass
+            , decodeFieldWithDefault "hasCompass" Decode.bool defaultContext.hasCompass
+            ]
+        )
+        (Decode.oneOf
+            [ decodeFieldWithDefault "supports_health" Decode.bool defaultContext.supportsHealth
+            , decodeFieldWithDefault "supportsHealth" Decode.bool defaultContext.supportsHealth
+            ]
+        )
 
 
 launchContextDecoder : Decoder LaunchContext

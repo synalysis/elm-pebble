@@ -20,7 +20,7 @@ type alias Model =
     , turn : Int
     , screenW : Int
     , screenH : Int
-    , isRound : Bool
+    , displayShape : Platform.DisplayShape
     }
 
 
@@ -49,7 +49,7 @@ init context =
       , turn = 0
       , screenW = context.screen.width
       , screenH = context.screen.height
-      , isRound = context.screen.isRound
+      , displayShape = context.screen.shape
       }
     , Cmd.batch
         [ Storage.readString 2048 BestLoaded
@@ -389,14 +389,14 @@ view model =
             boardLayout model
 
         textOptions =
-            if model.isRound then
+            if Platform.displayShapeIsRound model.displayShape then
                 Ui.alignCenter Ui.defaultTextOptions
 
             else
                 Ui.defaultTextOptions
 
         chromeOps =
-            if model.isRound then
+            if Platform.displayShapeIsRound model.displayShape then
                 let
                     textW =
                         (min model.screenW model.screenH * 4) // 9
@@ -429,7 +429,7 @@ type alias BoardLayout =
 
 boardLayout : Model -> BoardLayout
 boardLayout model =
-    if model.isRound then
+    if Platform.displayShapeIsRound model.displayShape then
         let
             diameter =
                 min model.screenW model.screenH

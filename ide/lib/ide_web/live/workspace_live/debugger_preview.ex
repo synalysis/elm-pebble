@@ -53,6 +53,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
     round? =
       first_present([
+        case map_get_any(launch_screen, "shape") do
+          "Round" -> true
+          "Rectangular" -> false
+          "round" -> true
+          "rect" -> false
+          _ -> nil
+        end,
         map_get_any(launch_screen, "isRound")
       ])
 

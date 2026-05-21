@@ -13,7 +13,7 @@ type alias Model =
     { timeString : String
     , screenW : Int
     , screenH : Int
-    , isRound : Bool
+    , displayShape : PebblePlatform.DisplayShape
     }
 
 
@@ -27,7 +27,7 @@ init context =
     ( { timeString = "--:--"
       , screenW = context.screen.width
       , screenH = context.screen.height
-      , isRound = context.screen.isRound
+      , displayShape = context.screen.shape
       }
     , PebbleCmd.getCurrentTimeString CurrentTimeString
     )

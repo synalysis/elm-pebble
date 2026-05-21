@@ -191,7 +191,7 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
 
   defp maybe_flood_rect_letterbox(rgba, width, height, %{
          "shape" => "rect",
-         "screen" => %{"is_color" => false}
+         "color_mode" => "BlackWhite"
        }) do
     background = border_connected_black(width, height, rgba)
     paint_indices(rgba, width, background, <<255, 255, 255, 255>>)

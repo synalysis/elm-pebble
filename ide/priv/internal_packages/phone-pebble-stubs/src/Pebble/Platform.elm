@@ -2,7 +2,11 @@ module Pebble.Platform exposing
     ( LaunchContext
     , LaunchReason(..)
     , LaunchScreen
+    , ColorCapability(..)
+    , DisplayShape(..)
     , application
+    , colorCapabilityIsColor
+    , displayShapeIsRound
     , launchReasonFromTag
     , launchReasonToInt
     , watchface
@@ -23,11 +27,21 @@ type LaunchReason
     | LaunchUnknown
 
 
+type DisplayShape
+    = Rectangular
+    | Round
+
+
+type ColorCapability
+    = BlackWhite
+    | Color
+
+
 type alias LaunchScreen =
     { width : Int
     , height : Int
-    , isColor : Bool
-    , isRound : Bool
+    , shape : DisplayShape
+    , colorMode : ColorCapability
     }
 
 
@@ -36,6 +50,9 @@ type alias LaunchContext =
     , watchModel : String
     , watchProfileId : String
     , screen : LaunchScreen
+    , hasMicrophone : Bool
+    , hasCompass : Bool
+    , supportsHealth : Bool
     }
 
 
@@ -125,10 +142,38 @@ launchReasonFromTag tag =
             LaunchUnknown
 
 
+displayShapeIsRound : DisplayShape -> Bool
+displayShapeIsRound shape =
+    case shape of
+        Round ->
+            True
+
+        Rectangular ->
+            False
+
+
+colorCapabilityIsColor : ColorCapability -> Bool
+colorCapabilityIsColor colorMode =
+    case colorMode of
+        Color ->
+            True
+
+        BlackWhite ->
+            False
+
+
 defaultLaunchContext : LaunchContext
 defaultLaunchContext =
     { reason = LaunchUnknown
     , watchModel = "unknown"
     , watchProfileId = "unknown"
-    , screen = { width = 144, height = 168, isColor = True, isRound = False }
+    , screen =
+        { width = 144
+        , height = 168
+        , shape = Rectangular
+        , colorMode = Color
+        }
+    , hasMicrophone = False
+    , hasCompass = False
+    , supportsHealth = False
     }

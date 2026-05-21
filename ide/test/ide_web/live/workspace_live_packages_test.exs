@@ -576,7 +576,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     assert get_in(watch_runtime_model, ["backgroundColor", "ctor"]) == "Just"
     assert get_in(watch_runtime_model, ["textColor", "ctor"]) == "Just"
-    assert watch_runtime_model["isRound"] == false
+    assert watch_runtime_model["displayShape"] == "Rectangular"
     refute Map.has_key?(watch_runtime_model, "protocol_message_count")
 
     assert get_in(saved_state.watch, [:view_tree, "type"]) == "windowStack"

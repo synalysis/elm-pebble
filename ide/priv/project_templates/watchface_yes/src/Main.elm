@@ -76,7 +76,7 @@ type alias Altitude =
 type alias Model =
     { screenW : Int
     , screenH : Int
-    , isRound : Bool
+    , displayShape : Platform.DisplayShape
     , now : Maybe Time.CurrentDateTime
     , tickSecond : Int
     , batteryLevel : Maybe Int
@@ -112,7 +112,7 @@ init : Platform.LaunchContext -> ( Model, Cmd Msg )
 init context =
     ( { screenW = context.screen.width
       , screenH = context.screen.height
-      , isRound = context.screen.isRound
+      , displayShape = context.screen.shape
       , now = Nothing
       , tickSecond = 0
       , batteryLevel = Nothing
