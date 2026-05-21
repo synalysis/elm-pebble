@@ -166,6 +166,25 @@ defmodule Ide.ProjectsTest do
     assert result.status == :ok
   end
 
+  test "package_for_emulator_session repairs missing watch elm.json before packaging" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Emulator Package Repair",
+               "slug" => "emulator-package-repair-#{System.unique_integer([:positive])}",
+               "target_type" => "watchface"
+             })
+
+    workspace_root = Projects.project_workspace_path(project)
+    on_exit(fn -> File.rm_rf(workspace_root) end)
+
+    File.rm!(Path.join(workspace_root, "watch/elm.json"))
+    refute File.exists?(Path.join(workspace_root, "watch/elm.json"))
+
+    assert :ok = Projects.ensure_compiler_workspace(project)
+    assert File.exists?(Path.join(workspace_root, "watch/elm.json"))
+    assert Ide.Compiler.resolve_elm_project_dir(workspace_root, project.source_roots)
+  end
+
   test "source file operations across roots" do
     assert {:ok, project} =
              Projects.create_project(%{

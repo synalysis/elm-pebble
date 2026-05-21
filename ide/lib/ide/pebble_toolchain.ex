@@ -5,6 +5,7 @@ defmodule Ide.PebbleToolchain do
   import Bitwise, only: [&&&: 2, |||: 2]
 
   alias Ide.CompanionProtocolGenerator
+  alias Ide.Compiler
   alias Ide.Paths
   alias Ide.PebblePreferences
   alias Ide.Resources.ResourceStore
@@ -738,8 +739,10 @@ defmodule Ide.PebbleToolchain do
   @spec prepare_project_build_app(project_slug(), String.t(), String.t(), String.t(), opts()) ::
           {:ok, String.t()} | {:error, toolchain_error()}
   defp prepare_project_build_app(project_slug, workspace_root, target_type, project_name, opts) do
+    source_roots = Keyword.get(opts, :source_roots)
+
     with {:ok, template_root} <- template_app_root(),
-         {:ok, compile_project_root} <- compile_project_root(workspace_root),
+         {:ok, compile_project_root} <- compile_project_root(workspace_root, source_roots),
          {:ok, app_root} <- ensure_build_app_root(workspace_root),
          :ok <- ResourceStore.ensure_generated_workspace(workspace_root),
          resolved_target_type <- infer_package_target_type(compile_project_root, target_type),
@@ -832,18 +835,12 @@ defmodule Ide.PebbleToolchain do
 
   defp normalize_workspace_root(_), do: {:error, :workspace_root_required}
 
-  @spec compile_project_root(String.t()) :: {:ok, String.t()} | {:error, :compile_project_root_not_found}
-  defp compile_project_root(workspace_root) do
-    candidates = [
-      Path.join(workspace_root, "watch"),
-      workspace_root,
-      Path.join(workspace_root, "protocol"),
-      Path.join(workspace_root, "phone")
-    ]
-
-    case Enum.find(candidates, &File.exists?(Path.join(&1, "elm.json"))) do
-      nil -> {:error, :compile_project_root_not_found}
-      root -> {:ok, root}
+  @spec compile_project_root(String.t(), [String.t()] | nil) ::
+          {:ok, String.t()} | {:error, :compile_project_root_not_found}
+  defp compile_project_root(workspace_root, source_roots) do
+    case Compiler.resolve_elm_project_dir(workspace_root, source_roots) do
+      root when is_binary(root) -> {:ok, root}
+      _ -> {:error, :compile_project_root_not_found}
     end
   end
 

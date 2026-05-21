@@ -744,12 +744,14 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   @spec package_for_emulator_session(Project.t(), String.t(), String.t()) ::
           {:ok, PebbleToolchain.package_result()} | {:error, PebbleToolchain.toolchain_error()}
   def package_for_emulator_session(project, workspace_root, emulator_target) do
-    with {:ok, packaged} <-
+    with :ok <- Projects.ensure_compiler_workspace(project),
+         {:ok, packaged} <-
            PebbleToolchain.package(project.slug,
              workspace_root: workspace_root,
              target_type: project.target_type,
              project_name: project.name,
-             target_platforms: [emulator_target]
+             target_platforms: [emulator_target],
+             source_roots: project.source_roots
            ) do
       {:ok, packaged}
     end

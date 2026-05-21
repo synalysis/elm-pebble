@@ -395,6 +395,10 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
+  defp launch_error_message(:compile_project_root_not_found) do
+    "Could not find Elm project files (elm.json) in this workspace. Open the editor and save your project, or create a project from a template, then try again."
+  end
+
   defp launch_error_message({:embedded_emulator_unavailable, missing}) when is_list(missing) do
     "Embedded emulator dependencies are missing: #{Enum.join(missing, ", ")}. " <>
       "Install Pebble QEMU/pypkjs or set ELM_PEBBLE_QEMU_BIN, ELM_PEBBLE_PYPKJS_BIN, and ELM_PEBBLE_QEMU_IMAGE_ROOT."
