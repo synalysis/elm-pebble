@@ -16,6 +16,7 @@ defmodule Ide.Release do
     RepoConfig.put_runtime_repo_config!()
     create()
     migrate()
+    Ide.WasmEmulator.sync_sdk_firmware_if_needed()
     :ok
   end
 

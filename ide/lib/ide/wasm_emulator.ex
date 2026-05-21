@@ -39,6 +39,22 @@ defmodule Ide.WasmEmulator do
     end
   end
 
+  @doc """
+  True when SDK firmware is present under the WASM emulator root.
+  """
+  @spec sdk_firmware_available?() :: boolean()
+  def sdk_firmware_available? do
+    sdk_firmware_available?(asset_root())
+  end
+
+  @doc """
+  Copies QEMU firmware images from the active Pebble SDK when missing.
+  """
+  @spec sync_sdk_firmware_if_needed() :: :ok
+  def sync_sdk_firmware_if_needed do
+    Ide.WasmEmulator.FirmwareSync.sync_sdk_firmware_if_needed()
+  end
+
   @spec status() :: map()
   def status do
     root = asset_root()
@@ -50,6 +66,7 @@ defmodule Ide.WasmEmulator do
     optional_missing = Enum.reject(@optional_assets, &File.regular?(Path.join(root, &1)))
     install_bridge = install_bridge_status(root)
     firmware = firmware_status(root)
+    runtime_ready? = runtime_missing == []
 
     %{
       available?: missing == [],
@@ -62,7 +79,8 @@ defmodule Ide.WasmEmulator do
       firmware: firmware,
       asset_base: "/wasm-emulator/assets/",
       install_bridge: install_bridge,
-      setup: setup(root)
+      runtime_build: Ide.WasmEmulator.RuntimeBuilder.build_status(),
+      setup: setup(root, runtime_ready?)
     }
   end
 
@@ -151,7 +169,7 @@ defmodule Ide.WasmEmulator do
     end
   end
 
-  defp setup(root) do
+  defp setup(root, runtime_ready?) do
     %{
       upstream_url: "https://github.com/ericmigi/pebble-qemu-wasm",
       runtime_target: root,
@@ -159,14 +177,27 @@ defmodule Ide.WasmEmulator do
       full_firmware_target: Path.join([root, "firmware", "full"]),
       build_command: "docker compose run --rm wasm-emulator-builder",
       auto_build_command: "COMPOSE_PROFILES=wasm-emulator docker compose up -d",
-      notes: [
-        "Copy qemu-system-arm.js, qemu-system-arm.wasm, and qemu-system-arm.worker.js from the upstream web/ directory into the runtime target.",
-        "To build those runtime files locally, run scripts/build_wasm_emulator_runtime.sh, or use docker compose run --rm wasm-emulator-builder.",
-        "Copy qemu_micro_flash.bin and decompressed qemu_spi_flash.bin into firmware/sdk/<platform>. The legacy firmware/sdk path is still supported for a single SDK image. Firmware binaries are not committed by this project.",
-        "For app install, the WASM runtime must expose Module.pebbleInstallPbw(plan), Module.pebbleControlSend(bytes) and Module.pebbleControlRecv(), or the patched _pebble_control_wasm_send/_pebble_control_wasm_recv exports.",
-        "Optional full firmware can be copied into firmware/full with the same filenames."
-      ]
+      runtime_ready?: runtime_ready?,
+      notes: setup_notes(runtime_ready?)
     }
+  end
+
+  defp setup_notes(true) do
+    [
+      "SDK firmware is synced automatically from the active Pebble SDK on IDE startup.",
+      "For app install, the WASM runtime must expose Module.pebbleInstallPbw(plan), Module.pebbleControlSend(bytes) and Module.pebbleControlRecv(), or the patched _pebble_control_wasm_send/_pebble_control_wasm_recv exports.",
+      "Optional full firmware can be copied into firmware/full with the same filenames."
+    ]
+  end
+
+  defp setup_notes(false) do
+    [
+      "The browser QEMU runtime is seeded from the Docker image when available, or built automatically in the background after startup when Docker is available.",
+      "Manual build from a checkout: docker compose run --rm wasm-emulator-builder",
+      "SDK firmware is copied automatically from the active Pebble SDK on IDE startup.",
+      "For app install, the WASM runtime must expose Module.pebbleInstallPbw(plan), Module.pebbleControlSend(bytes) and Module.pebbleControlRecv(), or the patched _pebble_control_wasm_send/_pebble_control_wasm_recv exports.",
+      "Optional full firmware can be copied into firmware/full with the same filenames."
+    ]
   end
 
   defp install_bridge_status(root) do

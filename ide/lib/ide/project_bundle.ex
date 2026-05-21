@@ -27,7 +27,8 @@ defmodule Ide.ProjectBundle do
           package_metadata_cache: map(),
           release_defaults: map(),
           github: map(),
-          debugger_settings: map()
+          debugger_settings: map(),
+          template: String.t() | nil
         }
 
   @type manifest_parse_error :: :invalid_manifest | manifest_field_error()
@@ -53,22 +54,25 @@ defmodule Ide.ProjectBundle do
   @spec write_manifest(String.t(), Project.t(), keyword()) :: :ok | {:error, bundle_error()}
   def write_manifest(workspace_root, %Project{} = project, opts \\ []) do
     import_path = opts[:import_path] || @default_import_path
+    template = Keyword.get(opts, :template) |> normalize_manifest_template()
 
-    payload = %{
-      "schema_version" => 1,
-      "name" => project.name,
-      "slug" => project.slug,
-      "target_type" => project.target_type,
-      "source_roots" => project.source_roots || @default_source_roots,
-      "import_path" => import_path,
-      "store_app_id" => project.store_app_id,
-      "app_uuid" => project.app_uuid,
-      "latest_published_version" => project.latest_published_version,
-      "package_metadata_cache" => project.package_metadata_cache || %{},
-      "release_defaults" => project.release_defaults || %{},
-      "github" => project.github || %{},
-      "debugger_settings" => project.debugger_settings || %{}
-    }
+    payload =
+      %{
+        "schema_version" => 1,
+        "name" => project.name,
+        "slug" => project.slug,
+        "target_type" => project.target_type,
+        "source_roots" => project.source_roots || @default_source_roots,
+        "import_path" => import_path,
+        "store_app_id" => project.store_app_id,
+        "app_uuid" => project.app_uuid,
+        "latest_published_version" => project.latest_published_version,
+        "package_metadata_cache" => project.package_metadata_cache || %{},
+        "release_defaults" => project.release_defaults || %{},
+        "github" => project.github || %{},
+        "debugger_settings" => project.debugger_settings || %{}
+      }
+      |> maybe_put_template(template)
 
     with {:ok, encoded} <- Jason.encode(payload, pretty: true),
          :ok <- File.write(Path.join(workspace_root, @manifest_filename), encoded <> "\n") do
@@ -305,7 +309,8 @@ defmodule Ide.ProjectBundle do
          {:ok, package_metadata_cache} <- fetch_optional_map(decoded, "package_metadata_cache"),
          {:ok, release_defaults} <- fetch_optional_map(decoded, "release_defaults"),
          {:ok, github} <- fetch_optional_map(decoded, "github"),
-         {:ok, debugger_settings} <- fetch_optional_map(decoded, "debugger_settings") do
+         {:ok, debugger_settings} <- fetch_optional_map(decoded, "debugger_settings"),
+         {:ok, template} <- fetch_optional_string(decoded, "template") do
       {:ok,
        %{
          name: name,
@@ -319,7 +324,8 @@ defmodule Ide.ProjectBundle do
          package_metadata_cache: package_metadata_cache,
          release_defaults: release_defaults,
          github: github,
-         debugger_settings: debugger_settings
+         debugger_settings: debugger_settings,
+         template: template
        }}
     end
   end
@@ -414,4 +420,19 @@ defmodule Ide.ProjectBundle do
         attrs
     end
   end
+
+  @spec maybe_put_template(map(), String.t() | nil) :: map()
+  defp maybe_put_template(payload, template) when is_binary(template) do
+    Map.put(payload, "template", template)
+  end
+
+  defp maybe_put_template(payload, _), do: payload
+
+  @spec normalize_manifest_template(String.t() | nil) :: String.t() | nil
+  defp normalize_manifest_template(template) when is_binary(template) do
+    template = String.trim(template)
+    if template == "", do: nil, else: template
+  end
+
+  defp normalize_manifest_template(_), do: nil
 end

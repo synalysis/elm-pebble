@@ -395,6 +395,10 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
+  defp launch_error_message({:workspace_bootstrap_failed, reason}) do
+    "Could not restore project source files: #{inspect(reason)}"
+  end
+
   defp launch_error_message(:compile_project_root_not_found) do
     "Could not find Elm project files (elm.json) in this workspace. Open the editor and save your project, or create a project from a template, then try again."
   end

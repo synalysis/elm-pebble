@@ -22,6 +22,7 @@ services:
       ELM_PEBBLE_QEMU_DATA_ROOT: /usr/share/qemu
       ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES: ${ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES:-1}
       ELM_PEBBLE_WASM_EMULATOR_ROOT: /var/lib/ide/wasm_emulator
+      ELM_PEBBLE_WASM_BUILD_ON_START: ${ELM_PEBBLE_WASM_BUILD_ON_START:-1}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-8eXjTGrTXoJHN8S-sqKoLrXp1xQ8vlqv2Ryr_5wPjMz5f4lAQ9S3v5dvU7uIGrYb}
     volumes:
       - elm_pebble_ide_data:/var/lib/ide

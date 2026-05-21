@@ -185,6 +185,30 @@ defmodule Ide.ProjectsTest do
     assert Ide.Compiler.resolve_elm_project_dir(workspace_root, project.source_roots)
   end
 
+  test "ensure_packagable_workspace re-seeds an empty workspace from saved template" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Packagable Repair",
+               "slug" => "packagable-repair-#{System.unique_integer([:positive])}",
+               "target_type" => "watchface",
+               "template" => "watchface-digital"
+             })
+
+    workspace_root = Projects.project_workspace_path(project)
+    on_exit(fn -> File.rm_rf(workspace_root) end)
+
+    for root <- ["watch", "protocol", "phone"] do
+      path = Path.join(workspace_root, root)
+      if File.exists?(path), do: File.rm_rf!(path)
+    end
+
+    refute Ide.Projects.FileStore.workspace_has_elm_roots?(workspace_root)
+
+    assert :ok = Projects.ensure_packagable_workspace(project)
+    assert Ide.Projects.FileStore.workspace_has_elm_roots?(workspace_root)
+    assert File.exists?(Path.join(workspace_root, "watch/src/Main.elm"))
+  end
+
   test "source file operations across roots" do
     assert {:ok, project} =
              Projects.create_project(%{

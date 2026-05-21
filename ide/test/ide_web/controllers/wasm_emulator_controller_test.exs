@@ -48,7 +48,9 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     assert body["firmware"]["sdk"] == nil
     assert body["setup"]["runtime_target"] == assets
     assert body["setup"]["build_command"] == "docker compose run --rm wasm-emulator-builder"
-    assert Enum.any?(body["setup"]["notes"], &String.contains?(&1, "wasm-emulator-builder"))
+    assert body["runtime_build"]["status"] in ["missing", "building", "failed", "ready"]
+    assert is_boolean(body["runtime_build"]["in_progress?"])
+    assert Enum.any?(body["setup"]["notes"], &String.contains?(&1, "background"))
   end
 
   test "status reports sdk firmware manifest when present", %{conn: conn, assets: assets} do
