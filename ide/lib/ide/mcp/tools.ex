@@ -17,6 +17,7 @@ defmodule Ide.Mcp.Tools do
   alias Ide.EmulatorSupport
   alias Ide.PebbleToolchain
   alias Ide.Projects
+  alias Ide.Projects.BootstrapError
   alias Ide.PublishManifest
   alias Ide.PublishReadiness
   alias Ide.Debugger
@@ -1466,7 +1467,10 @@ defmodule Ide.Mcp.Tools do
         {:ok, project_create_payload(project)}
 
       {:error, reason} ->
-        {:error, "project create failed: #{inspect(reason)}"}
+        template = Map.get(args, "template", "starter")
+
+        {:error,
+         "project create failed: #{BootstrapError.describe(reason, %{template: template, operation: :create})}"}
     end
   end
 

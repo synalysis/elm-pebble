@@ -34,6 +34,15 @@ defmodule Ide.Projects.FileStore do
   @type source_tree :: FileTypes.source_tree()
 
   @doc """
+  Removes a project's workspace directory from disk, if present.
+  """
+  @spec remove_workspace(Project.t(), FileTypes.projects_root()) :: :ok
+  def remove_workspace(project, projects_root) do
+    _ = File.rm_rf(project_root(project, projects_root))
+    :ok
+  end
+
+  @doc """
   Ensures root folders exist for a project.
   """
   @spec ensure_roots(Project.t(), FileTypes.projects_root()) :: FileTypes.ensure_roots_result()

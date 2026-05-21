@@ -17,6 +17,7 @@ defmodule Ide.Projects do
   alias Ide.GitHub.Clone, as: GitHubClone
   alias Ide.ProjectImport
   alias Ide.ProjectTemplates
+  alias Ide.Projects.BootstrapError
   alias Ide.PebblePreferences
   alias Ide.Repo
 
@@ -77,18 +78,24 @@ defmodule Ide.Projects do
       |> assign_default_app_uuid()
 
     Repo.transaction(fn ->
-      with {:ok, project} <- %Project{} |> Project.changeset(attrs) |> Repo.insert(),
-           :ok <- FileStore.ensure_roots(project, projects_root()),
-           :ok <-
-             ProjectTemplates.apply_template(template_key(attrs), project_workspace_path(project)),
-           :ok <- Ide.ProjectReadme.write(project_workspace_path(project), project),
-           :ok <- ProjectBundle.write_manifest(project_workspace_path(project), project),
-           :ok <- ensure_bitmap_generated(project) do
-        maybe_activate_first(project)
-        get_project!(project.id)
-      else
-        {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(changeset)
-        {:error, reason} -> Repo.rollback(reason)
+      case %Project{} |> Project.changeset(attrs) |> Repo.insert() do
+        {:ok, project} ->
+          case bootstrap_new_project(project, template_key(attrs)) do
+            {:ok, bootstrapped} ->
+              maybe_activate_first(bootstrapped)
+              get_project!(bootstrapped.id)
+
+            {:error, %Ecto.Changeset{} = changeset} ->
+              rollback_bootstrap(project, :create, changeset,
+                template: template_key(attrs)
+              )
+
+            {:error, reason} ->
+              rollback_bootstrap(project, :create, reason, template: template_key(attrs))
+          end
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          Repo.rollback(changeset)
       end
     end)
     |> case do
@@ -115,14 +122,24 @@ defmodule Ide.Projects do
 
     Repo.transaction(fn ->
       with {:ok, source_path} <- ProjectBundle.resolve_import_source(import_root, attrs),
-           project_attrs <- Map.drop(attrs, ["import_path"]),
-           {:ok, project} <- %Project{} |> Project.changeset(project_attrs) |> Repo.insert(),
-           :ok <- FileStore.ensure_roots(project, projects_root()),
-           :ok <- ProjectImport.import(source_path, project_workspace_path(project)),
-           :ok <- ProjectBundle.write_manifest(project_workspace_path(project), project),
-           :ok <- ensure_bitmap_generated(project) do
-        maybe_activate_first(project)
-        get_project!(project.id)
+           project_attrs <- Map.drop(attrs, ["import_path"]) do
+        case %Project{} |> Project.changeset(project_attrs) |> Repo.insert() do
+          {:ok, project} ->
+            case bootstrap_imported_project(project, source_path) do
+              {:ok, bootstrapped} ->
+                maybe_activate_first(bootstrapped)
+                get_project!(bootstrapped.id)
+
+              {:error, %Ecto.Changeset{} = changeset} ->
+                rollback_bootstrap(project, :import, changeset, source_path: source_path)
+
+              {:error, reason} ->
+                rollback_bootstrap(project, :import, reason, source_path: source_path)
+            end
+
+          {:error, %Ecto.Changeset{} = changeset} ->
+            Repo.rollback(changeset)
+        end
       else
         {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(changeset)
         {:error, reason} -> Repo.rollback(reason)
@@ -774,6 +791,48 @@ defmodule Ide.Projects do
     else
       :ok
     end
+  end
+
+  @spec bootstrap_new_project(Project.t(), String.t()) ::
+          {:ok, Project.t()} | {:error, Ecto.Changeset.t() | term()}
+  defp bootstrap_new_project(%Project{} = project, template) do
+    workspace = project_workspace_path(project)
+
+    with :ok <- FileStore.ensure_roots(project, projects_root()),
+         :ok <- ProjectTemplates.apply_template(template, workspace),
+         :ok <- Ide.ProjectReadme.write(workspace, project),
+         :ok <- ProjectBundle.write_manifest(workspace, project),
+         :ok <- ensure_bitmap_generated(project) do
+      {:ok, project}
+    end
+  end
+
+  @spec bootstrap_imported_project(Project.t(), String.t()) ::
+          {:ok, Project.t()} | {:error, Ecto.Changeset.t() | term()}
+  defp bootstrap_imported_project(%Project{} = project, source_path) do
+    workspace = project_workspace_path(project)
+
+    with :ok <- FileStore.ensure_roots(project, projects_root()),
+         :ok <- ProjectImport.import(source_path, workspace),
+         :ok <- ProjectBundle.write_manifest(workspace, project),
+         :ok <- ensure_bitmap_generated(project) do
+      {:ok, project}
+    end
+  end
+
+  @spec rollback_bootstrap(Project.t(), BootstrapError.operation(), term(), keyword()) :: no_return()
+  defp rollback_bootstrap(%Project{} = project, operation, reason, context) do
+    workspace = project_workspace_path(project)
+
+    BootstrapError.log_failure(
+      operation,
+      project,
+      reason,
+      Map.new(context) |> Map.put(:workspace, workspace)
+    )
+
+    FileStore.remove_workspace(project, projects_root())
+    Repo.rollback(reason)
   end
 
   defp active_scope_for(%Project{owner_id: nil}) do

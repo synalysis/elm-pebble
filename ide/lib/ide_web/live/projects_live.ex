@@ -4,6 +4,7 @@ defmodule IdeWeb.ProjectsLive do
   alias Ide.GitHub.Credentials
   alias Ide.ProjectTemplates
   alias Ide.Projects
+  alias Ide.Projects.BootstrapError
   alias Ide.Projects.Project
   alias Ide.Projects.Types, as: ProjectTypes
 
@@ -55,7 +56,12 @@ defmodule IdeWeb.ProjectsLive do
         {:noreply, assign(socket, :form, to_form(Map.put(changeset, :action, :validate)))}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not create project: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Could not create project: #{BootstrapError.describe(reason, %{template: Map.get(params, "template", "starter")})}"
+         )}
     end
   end
 
@@ -243,7 +249,7 @@ defmodule IdeWeb.ProjectsLive do
   defp format_import_error(:invalid_repo_ref),
     do: "Could not parse the repository URL or owner/repo fields."
 
-  defp format_import_error(reason), do: inspect(reason)
+  defp format_import_error(reason), do: BootstrapError.describe(reason, %{operation: :import})
 
   @spec format_changeset_errors(Ecto.Changeset.t()) :: String.t()
   defp format_changeset_errors(changeset) do

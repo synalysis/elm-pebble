@@ -14,6 +14,7 @@ defmodule Ide.ProjectTemplates do
   @type wire_target_platforms :: list() | nil | boolean() | number() | String.t() | map()
   @type template_error ::
           {:unknown_template, String.t()}
+          | {:missing_template_asset, String.t()}
           | :invalid_phone_elm_json
           | :invalid_watch_elm_json
           | {:missing_union, String.t()}
@@ -665,20 +666,28 @@ defmodule Ide.ProjectTemplates do
 
   @spec replace_dir(String.t(), String.t()) :: seed_result()
   defp replace_dir(source, target) do
-    _ = File.rm_rf(target)
-    File.mkdir_p(Path.dirname(target))
+    if File.exists?(source) do
+      _ = File.rm_rf(target)
+      File.mkdir_p(Path.dirname(target))
 
-    case File.cp_r(source, target) do
-      {:ok, _} -> :ok
-      {:error, reason, _path} -> {:error, reason}
+      case File.cp_r(source, target) do
+        {:ok, _} -> :ok
+        {:error, reason, _path} -> {:error, reason}
+      end
+    else
+      {:error, {:missing_template_asset, source}}
     end
   end
 
   @spec copy_file(String.t(), String.t()) :: seed_result()
   defp copy_file(source, target) do
-    with :ok <- File.mkdir_p(Path.dirname(target)),
-         :ok <- File.cp(source, target) do
-      :ok
+    if File.exists?(source) do
+      with :ok <- File.mkdir_p(Path.dirname(target)),
+           :ok <- File.cp(source, target) do
+        :ok
+      end
+    else
+      {:error, {:missing_template_asset, source}}
     end
   end
 
