@@ -29,6 +29,11 @@ defmodule Ide.Auth.EmailTest do
     end)
   end
 
+  test "send_login_link rejects invalid punycode domain" do
+    assert {:error, :invalid_email} = Email.send_login_link("test@xn--y0.net")
+    refute Repo.get_by(User, email: "test@xn--y0.net")
+  end
+
   test "verify_login_token logs in once" do
     assert :ok = Email.send_login_link("verify@example.test")
 

@@ -118,6 +118,25 @@ function authConfigFromElement(el) {
   return JSON.parse(raw)
 }
 
+document.addEventListener("submit", event => {
+  const form = event.target
+  if (!(form instanceof HTMLFormElement) || !form.matches("[data-submit-once]")) return
+
+  if (form.dataset.submitting === "true") {
+    event.preventDefault()
+    return
+  }
+
+  form.dataset.submitting = "true"
+
+  const button = form.querySelector("button[type='submit']")
+  if (button instanceof HTMLButtonElement) {
+    button.disabled = true
+    const disableWith = button.dataset.disableWith
+    if (disableWith) button.textContent = disableWith
+  }
+})
+
 document.addEventListener("click", async event => {
   const loginButton = event.target.closest(".firebase-login")
   const sessionLogoutButton = event.target.closest(".ide-session-logout")

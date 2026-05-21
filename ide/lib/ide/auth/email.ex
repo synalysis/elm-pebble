@@ -7,6 +7,7 @@ defmodule Ide.Auth.Email do
 
   alias Ide.Auth.LoginLink
   alias Ide.Auth.LoginLinkEmail
+  alias Ide.Auth.EmailAddress
   alias Ide.Auth.LoginToken
   alias Ide.Auth.User
   alias Ide.Repo
@@ -27,6 +28,9 @@ defmodule Ide.Auth.Email do
           {:error, :invalid_email}
 
         {:error, :mailer_not_configured} = error ->
+          error
+
+        {:error, :invalid_email} = error ->
           error
 
         {:error, reason} ->
@@ -174,6 +178,7 @@ defmodule Ide.Auth.Email do
   end
 
   defp valid_email?(email) do
-    email != "" and String.match?(email, ~r/^[^\s]+@[^\s]+$/)
+    email != "" and String.match?(email, ~r/^[^\s]+@[^\s]+$/) and
+      EmailAddress.smtp_deliverable?(email)
   end
 end

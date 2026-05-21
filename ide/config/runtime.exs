@@ -95,6 +95,50 @@ if smtp_relay = System.get_env("SMTP_RELAY") do
       _ -> :always
     end
 
+  smtp_tls_hostname = System.get_env("SMTP_TLS_HOSTNAME") || smtp_relay
+  smtp_sni = String.to_charlist(smtp_tls_hostname)
+
+  smtp_hostname_check = [
+    match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+  ]
+
+  smtp_verify_options =
+    case :public_key.cacerts_get() do
+      cacerts when is_list(cacerts) and cacerts != [] ->
+        [
+          verify: :verify_peer,
+          cacerts: cacerts,
+          server_name_indication: smtp_sni,
+          hostname: smtp_tls_hostname,
+          depth: 99,
+          customize_hostname_check: smtp_hostname_check
+        ]
+
+      _ ->
+        cacertfile =
+          Enum.find(
+            [
+              "/etc/ssl/cert.pem",
+              "/etc/pki/tls/certs/ca-bundle.crt",
+              "/etc/ssl/certs/ca-certificates.crt"
+            ],
+            &File.regular?/1
+          )
+
+        if cacertfile do
+          [
+            verify: :verify_peer,
+            cacertfile: cacertfile,
+            server_name_indication: smtp_sni,
+            hostname: smtp_tls_hostname,
+            depth: 99,
+            customize_hostname_check: smtp_hostname_check
+          ]
+        else
+          []
+        end
+    end
+
   config :ide, Ide.Mailer,
     adapter: Swoosh.Adapters.SMTP,
     relay: smtp_relay,
@@ -104,6 +148,8 @@ if smtp_relay = System.get_env("SMTP_RELAY") do
     tls: smtp_tls,
     auth: if(System.get_env("SMTP_USERNAME"), do: :always, else: :never),
     ssl: smtp_ssl,
+    tls_options: smtp_verify_options,
+    ssl_options: smtp_verify_options,
     retries: 1,
     no_mx_lookups: true
 end

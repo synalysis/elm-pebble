@@ -16,7 +16,7 @@
           {@flash[:info]}
         </p>
 
-        <form action={~p"/auth/email/continue"} method="post" class="mt-5 space-y-3">
+        <form action={~p"/auth/email/continue"} method="post" class="mt-5 space-y-3" data-submit-once>
           <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
           <label class="block text-sm">
             <span class="mb-1 block font-medium text-zinc-700">Email</span>
@@ -32,7 +32,8 @@
           </label>
           <button
             type="submit"
-            class="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+            data-disable-with="Sending..."
+            class="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Email me a login link
           </button>

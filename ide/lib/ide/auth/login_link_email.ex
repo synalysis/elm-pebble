@@ -18,7 +18,7 @@ defmodule Ide.Auth.LoginLinkEmail do
     email =
       new()
       |> from({from_name, from_address})
-      |> to({user.display_name || "", user.email})
+      |> to(user.email)
       |> subject("Log in to elm-pebble IDE")
       |> text_body("""
       Use this link to log in to the elm-pebble IDE:
@@ -35,6 +35,11 @@ defmodule Ide.Auth.LoginLinkEmail do
       <p style="font-size:14px;color:#52525b;">This link expires in #{Auth.login_link_ttl_days()} days and works once. If you did not request it, you can ignore this email.</p>
       """)
 
-    Mailer.deliver(email)
+    try do
+      Mailer.deliver(email)
+    catch
+      :exit, {:bad_label, _} -> {:error, :invalid_email}
+      :exit, reason -> {:error, reason}
+    end
   end
 end

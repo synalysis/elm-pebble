@@ -108,6 +108,8 @@ defmodule IdeWeb.AuthModeTest do
 
     assert html_response(conn, 200) =~ "Email me a login link"
     assert html_response(conn, 200) =~ ~p"/auth/email/continue"
+    assert html_response(conn, 200) =~ ~s(data-submit-once)
+    assert html_response(conn, 200) =~ ~s(data-disable-with="Sending...")
     refute html_response(conn, 200) =~ "password"
   end
 
