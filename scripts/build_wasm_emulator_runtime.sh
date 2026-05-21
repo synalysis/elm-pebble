@@ -53,9 +53,31 @@ docker_build() {
   set -e
 
   if [ "${supports_progress}" -eq 0 ]; then
-    docker build --progress=plain -t "${image}" -f "${dockerfile}" "${context}"
+    DOCKER_BUILDKIT=1 docker build --progress=plain -t "${image}" -f "${dockerfile}" "${context}"
   else
     docker build -t "${image}" -f "${dockerfile}" "${context}"
+  fi
+}
+
+emscripten_dockerfile() {
+  bundled="${BRIDGE_DIR}/docker/emsdk-wasm32-cross.docker"
+
+  if [ -f "${bundled}" ]; then
+    printf '%s\n' "${bundled}"
+  else
+    upstream="${QEMU_SRC}/tests/docker/dockerfiles/emsdk-wasm32-cross.docker"
+    patch_qemu_dockerfile "${upstream}"
+    printf '%s\n' "${upstream}"
+  fi
+}
+
+emscripten_docker_context() {
+  bundled="${BRIDGE_DIR}/docker/emsdk-wasm32-cross.docker"
+
+  if [ -f "${bundled}" ]; then
+    printf '%s\n' "${BRIDGE_DIR}/docker"
+  else
+    printf '%s\n' "${QEMU_SRC}"
   fi
 }
 
@@ -95,16 +117,16 @@ if [ -z "${QEMU_SRC_OVERRIDE}" ]; then
 fi
 
 if ! docker image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
-  dockerfile="${QEMU_SRC}/tests/docker/dockerfiles/emsdk-wasm32-cross.docker"
+  dockerfile="$(emscripten_dockerfile)"
+  docker_context="$(emscripten_docker_context)"
+
   if [ ! -f "${dockerfile}" ]; then
     echo "Could not find QEMU Emscripten dockerfile: ${dockerfile}" >&2
     exit 2
   fi
 
-  patch_qemu_dockerfile "${dockerfile}"
-
   echo "Building Docker image ${DOCKER_IMAGE}"
-  docker_build "${DOCKER_IMAGE}" "${dockerfile}" "${QEMU_SRC}"
+  docker_build "${DOCKER_IMAGE}" "${dockerfile}" "${docker_context}"
 fi
 
 mkdir -p "${OUTPUT_DIR}"
