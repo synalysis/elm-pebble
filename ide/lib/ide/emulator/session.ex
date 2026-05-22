@@ -1237,12 +1237,13 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  defp emulator_state_dir(project_slug, platform) do
+  @spec emulator_state_dir(String.t(), String.t()) :: String.t()
+  defp emulator_state_dir(session_key, platform) do
     root = config(:state_root, Path.join(System.tmp_dir!(), "elm-pebble-emulator-state"))
 
     Path.join([
       root,
-      safe_path_fragment(project_slug, "project"),
+      safe_path_fragment(session_key, "project"),
       safe_path_fragment(platform, "platform")
     ])
   end

@@ -404,7 +404,7 @@ defmodule Ide.Projects do
 
     case Repo.delete(project) do
       {:ok, deleted} ->
-        :ok = Debugger.forget_project(project.slug)
+        :ok = Debugger.forget_project(scope_key(project))
         _ = File.rm_rf(workspace_path)
         {:ok, deleted}
 
@@ -421,7 +421,7 @@ defmodule Ide.Projects do
     root = projects_root()
 
     for project <- list_projects(user) do
-      :ok = Debugger.forget_project(project.slug)
+      :ok = Debugger.forget_project(scope_key(project))
       :ok = FileStore.remove_workspace(project, root)
     end
 
@@ -585,6 +585,73 @@ defmodule Ide.Projects do
   def projects_root do
     Application.get_env(:ide, Ide.Projects, [])
     |> Keyword.get(:projects_root, Path.expand("workspace_projects"))
+  end
+
+  @doc """
+  Stable session/cache key for debugger, compiler caches, and emulator state.
+
+  Owned projects are isolated under `users/{owner_id}/{slug}`; local-mode
+  projects keep the bare slug for backward compatibility.
+  """
+  @spec scope_key(Project.t()) :: String.t()
+  def scope_key(%Project{owner_id: owner_id, slug: slug})
+      when is_integer(owner_id) and is_binary(slug) do
+    Path.join(["users", Integer.to_string(owner_id), slug])
+  end
+
+  def scope_key(%Project{slug: slug}) when is_binary(slug), do: slug
+
+  @doc """
+  Parses a session/cache key into `{owner_id, slug}`.
+  """
+  @spec parse_scope_key(String.t()) :: {:ok, integer() | nil, String.t()} | :error
+  def parse_scope_key("users/" <> rest) do
+    case String.split(rest, "/", parts: 2) do
+      [owner, slug] when slug != "" ->
+        case Integer.parse(owner) do
+          {id, ""} -> {:ok, id, slug}
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  def parse_scope_key(slug) when is_binary(slug) and slug != "" do
+    {:ok, nil, slug}
+  end
+
+  def parse_scope_key(_), do: :error
+
+  @doc """
+  Fetches a project from a session/cache key produced by `scope_key/1`.
+  """
+  @spec get_project_by_scope_key(String.t()) :: Project.t() | nil
+  def get_project_by_scope_key(scope_key) when is_binary(scope_key) do
+    case parse_scope_key(scope_key) do
+      {:ok, owner_id, slug} when is_integer(owner_id) ->
+        Repo.get_by(Project, owner_id: owner_id, slug: slug)
+
+      {:ok, nil, slug} ->
+        get_project_by_slug(slug, nil)
+
+      :error ->
+        nil
+    end
+  end
+
+  @doc """
+  Builds a compiler cache key for a project source root or suffix label.
+  """
+  @spec compiler_cache_key(Project.t() | String.t(), String.t()) :: String.t()
+  def compiler_cache_key(%Project{} = project, suffix) when is_binary(suffix) do
+    compiler_cache_key(scope_key(project), suffix)
+  end
+
+  def compiler_cache_key(scope_key, suffix)
+      when is_binary(scope_key) and is_binary(suffix) do
+    scope_key <> ":" <> suffix
   end
 
   @doc """

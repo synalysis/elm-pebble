@@ -11,13 +11,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
   @spec sync_check(Phoenix.LiveView.Socket.t(), map()) :: Phoenix.LiveView.Socket.t()
   def sync_check(socket, result) do
     case socket.assigns[:project] do
-      %{slug: slug} when not is_nil(slug) ->
+      %{slug: slug} = project when not is_nil(slug) ->
+        session_key = Projects.scope_key(project)
+
         if debugger_session_active?(socket) do
           diagnostics = result_diagnostics(result)
           counts = Diagnostics.summary(diagnostics)
 
           {:ok, _} =
-            Ide.Debugger.ingest_elmc_check(slug, %{
+            Ide.Debugger.ingest_elmc_check(session_key, %{
               status: result.status,
               checked_path: result.checked_path,
               error_count: counts.error_count,
@@ -38,12 +40,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
   @spec sync_check_failed(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
   def sync_check_failed(socket, message) do
     case socket.assigns[:project] do
-      %{slug: slug} when not is_nil(slug) ->
+      project when is_map(project) ->
         if debugger_session_active?(socket) do
-          workspace = Projects.project_workspace_path(socket.assigns.project)
+          workspace = Projects.project_workspace_path(project)
 
           {:ok, _} =
-            Ide.Debugger.ingest_elmc_check(slug, %{
+            Ide.Debugger.ingest_elmc_check(project_session_key(project), %{
               status: :error,
               checked_path: workspace,
               error_count: 1,
@@ -64,13 +66,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
   @spec sync_compile(Phoenix.LiveView.Socket.t(), map()) :: Phoenix.LiveView.Socket.t()
   def sync_compile(socket, result) do
     case socket.assigns[:project] do
-      %{slug: slug} when not is_nil(slug) ->
+      project when is_map(project) ->
         if debugger_session_active?(socket) do
           diagnostics = result_diagnostics(result)
           counts = Diagnostics.summary(diagnostics)
 
           {:ok, _} =
-            Ide.Debugger.ingest_elmc_compile(slug, %{
+            Ide.Debugger.ingest_elmc_compile(project_session_key(project), %{
               status: result.status,
               compiled_path: result.compiled_path,
               source_root: compile_result_source_root(socket, result),
@@ -101,12 +103,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
           Phoenix.LiveView.Socket.t()
   def sync_compile_failed(socket, message) do
     case socket.assigns[:project] do
-      %{slug: slug} when not is_nil(slug) ->
+      project when is_map(project) ->
         if debugger_session_active?(socket) do
-          workspace = Projects.project_workspace_path(socket.assigns.project)
+          workspace = Projects.project_workspace_path(project)
 
           {:ok, _} =
-            Ide.Debugger.ingest_elmc_compile(slug, %{
+            Ide.Debugger.ingest_elmc_compile(project_session_key(project), %{
               status: :error,
               compiled_path: workspace,
               revision: "—",
@@ -130,14 +132,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
   @spec sync_manifest(Phoenix.LiveView.Socket.t(), map()) :: Phoenix.LiveView.Socket.t()
   def sync_manifest(socket, result) do
     case socket.assigns[:project] do
-      %{slug: slug} when not is_nil(slug) ->
+      project when is_map(project) ->
         if debugger_session_active?(socket) do
           diagnostics = result_diagnostics(result)
           counts = Diagnostics.summary(diagnostics)
           schema_version = manifest_schema_version_from_result(result)
 
           {:ok, _} =
-            Ide.Debugger.ingest_elmc_manifest(slug, %{
+            Ide.Debugger.ingest_elmc_manifest(project_session_key(project), %{
               status: result.status,
               manifest_path: result.manifest_path,
               revision: result.revision,
@@ -163,13 +165,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
           Phoenix.LiveView.Socket.t()
   def sync_manifest_failed(socket, message) do
     case socket.assigns[:project] do
-      %{slug: slug} when not is_nil(slug) ->
+      project when is_map(project) ->
         if debugger_session_active?(socket) do
-          workspace = Projects.project_workspace_path(socket.assigns.project)
+          workspace = Projects.project_workspace_path(project)
           strict? = socket.assigns[:manifest_strict_mode] == true
 
           {:ok, _} =
-            Ide.Debugger.ingest_elmc_manifest(slug, %{
+            Ide.Debugger.ingest_elmc_manifest(project_session_key(project), %{
               status: :error,
               manifest_path: workspace,
               revision: "—",
@@ -258,4 +260,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
   defp debugger_session_active?(socket) do
     match?(%{running: true}, socket.assigns[:debugger_state])
   end
+
+  @spec project_session_key(map()) :: String.t()
+  defp project_session_key(project), do: Projects.scope_key(project)
 end

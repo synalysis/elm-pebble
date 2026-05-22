@@ -1681,7 +1681,7 @@ defmodule IdeWeb.WorkspaceLive do
 
       project ->
         {:ok, _state} =
-          Ide.Debugger.start_session(project.slug, %{
+          Ide.Debugger.start_session(Projects.scope_key(project), %{
             watch_profile_id: project_debugger_watch_profile_id(project)
           })
 
@@ -1757,7 +1757,7 @@ defmodule IdeWeb.WorkspaceLive do
         }
 
         project = persist_project_auto_fire_setting(project, attrs)
-        {:ok, _state} = Ide.Debugger.set_auto_fire(project.slug, attrs)
+        {:ok, _state} = Ide.Debugger.set_auto_fire(Projects.scope_key(project), attrs)
 
         {:noreply,
          socket
@@ -1780,7 +1780,7 @@ defmodule IdeWeb.WorkspaceLive do
         }
 
         project = persist_project_subscription_enabled_setting(project, attrs)
-        {:ok, _state} = Ide.Debugger.set_subscription_enabled(project.slug, attrs)
+        {:ok, _state} = Ide.Debugger.set_subscription_enabled(Projects.scope_key(project), attrs)
 
         {:noreply,
          socket
@@ -1800,7 +1800,7 @@ defmodule IdeWeb.WorkspaceLive do
 
       project ->
         project = persist_project_debugger_configuration_values(project, values)
-        {:ok, _state} = Ide.Debugger.save_configuration(project.slug, values)
+        {:ok, _state} = Ide.Debugger.save_configuration(Projects.scope_key(project), values)
 
         {:noreply,
          socket
@@ -1833,7 +1833,7 @@ defmodule IdeWeb.WorkspaceLive do
 
       project ->
         project = reset_project_debugger_configuration_values(project)
-        {:ok, _state} = Ide.Debugger.reload_configuration(project.slug)
+        {:ok, _state} = Ide.Debugger.reload_configuration(Projects.scope_key(project))
 
         {:noreply,
          socket
@@ -1859,7 +1859,7 @@ defmodule IdeWeb.WorkspaceLive do
         project = persist_project_debugger_watch_profile(project, selected_watch_profile_id)
 
         {:ok, _state} =
-          Ide.Debugger.set_watch_profile(project.slug, %{
+          Ide.Debugger.set_watch_profile(Projects.scope_key(project), %{
             watch_profile_id: selected_watch_profile_id
           })
 
@@ -1880,7 +1880,7 @@ defmodule IdeWeb.WorkspaceLive do
       project ->
         simulator_settings = normalize_debugger_simulator_settings(values)
         project = persist_project_debugger_simulator_settings(project, simulator_settings)
-        {:ok, _state} = Ide.Debugger.set_simulator_settings(project.slug, simulator_settings)
+        {:ok, _state} = Ide.Debugger.set_simulator_settings(Projects.scope_key(project), simulator_settings)
 
         {:noreply,
          socket
@@ -1897,7 +1897,7 @@ defmodule IdeWeb.WorkspaceLive do
         {:noreply, socket}
 
       project ->
-        {:ok, _state} = Ide.Debugger.tick(project.slug, %{target: "watch"})
+        {:ok, _state} = Ide.Debugger.tick(Projects.scope_key(project), %{target: "watch"})
 
         {:noreply,
          socket
@@ -1914,7 +1914,7 @@ defmodule IdeWeb.WorkspaceLive do
 
       project ->
         {:ok, _state} =
-          Ide.Debugger.start_auto_tick(project.slug, %{
+          Ide.Debugger.start_auto_tick(Projects.scope_key(project), %{
             target: "watch",
             interval_ms: 1_000,
             count: 1
@@ -1931,7 +1931,7 @@ defmodule IdeWeb.WorkspaceLive do
         {:noreply, socket}
 
       project ->
-        {:ok, _state} = Ide.Debugger.stop_auto_tick(project.slug)
+        {:ok, _state} = Ide.Debugger.stop_auto_tick(Projects.scope_key(project))
         {:noreply, socket |> DebuggerSupport.refresh() |> put_flash(:info, "Auto tick stopped.")}
     end
   end
@@ -1980,7 +1980,7 @@ defmodule IdeWeb.WorkspaceLive do
           message: debugger_trigger_submit_message(params)
         }
 
-        {:ok, _state} = Ide.Debugger.inject_trigger(project.slug, attrs)
+        {:ok, _state} = Ide.Debugger.inject_trigger(Projects.scope_key(project), attrs)
 
         {:noreply,
          socket
@@ -2005,7 +2005,7 @@ defmodule IdeWeb.WorkspaceLive do
           message_value: Map.get(params, "message_value")
         }
 
-        {:ok, _state} = Ide.Debugger.inject_trigger(project.slug, attrs)
+        {:ok, _state} = Ide.Debugger.inject_trigger(Projects.scope_key(project), attrs)
 
         {:noreply,
          socket
@@ -2022,7 +2022,7 @@ defmodule IdeWeb.WorkspaceLive do
 
       project ->
         {:ok, _state} =
-          Ide.Debugger.continue_from_snapshot(project.slug, %{
+          Ide.Debugger.continue_from_snapshot(Projects.scope_key(project), %{
             cursor_seq: socket.assigns[:debugger_cursor_seq]
           })
 
@@ -2134,7 +2134,7 @@ defmodule IdeWeb.WorkspaceLive do
         export_opts = DebuggerSupport.export_trace_opts(socket, export_params)
         compare_cursor_seq = Keyword.get(export_opts, :compare_cursor_seq)
         baseline_cursor_seq = Keyword.get(export_opts, :baseline_cursor_seq)
-        {:ok, export} = Ide.Debugger.export_trace(project.slug, export_opts)
+        {:ok, export} = Ide.Debugger.export_trace(Projects.scope_key(project), export_opts)
 
         {:noreply,
          socket
@@ -2171,7 +2171,7 @@ defmodule IdeWeb.WorkspaceLive do
             {:noreply, put_flash(socket, :error, "Paste trace JSON before importing.")}
 
           true ->
-            case Ide.Debugger.import_trace(project.slug, json) do
+            case Ide.Debugger.import_trace(Projects.scope_key(project), json) do
               {:ok, _state} ->
                 {:noreply,
                  socket
@@ -4086,7 +4086,7 @@ defmodule IdeWeb.WorkspaceLive do
       {:ok, rel_path, content, source_root} ->
         maybe_bootstrap_companion_debugger(project)
 
-        case Ide.Debugger.reload(project.slug, %{
+        case Ide.Debugger.reload(Projects.scope_key(project), %{
                rel_path: rel_path,
                source: content,
                reason: "debugger_bootstrap",
@@ -4108,7 +4108,7 @@ defmodule IdeWeb.WorkspaceLive do
     case Projects.read_source_file(project, "phone", "src/CompanionApp.elm") do
       {:ok, content} ->
         _ =
-          Ide.Debugger.reload(project.slug, %{
+          Ide.Debugger.reload(Projects.scope_key(project), %{
             rel_path: "src/CompanionApp.elm",
             source: content,
             reason: "debugger_companion_bootstrap",
@@ -4749,9 +4749,9 @@ defmodule IdeWeb.WorkspaceLive do
 
     for %{"target" => target, "trigger" => trigger} <-
           Map.get(settings, "disabled_subscriptions", []),
-        auto_fire_trigger_available?(project.slug, target, trigger) do
+        auto_fire_trigger_available?(Projects.scope_key(project), target, trigger) do
       {:ok, _state} =
-        Ide.Debugger.set_subscription_enabled(project.slug, %{
+        Ide.Debugger.set_subscription_enabled(Projects.scope_key(project), %{
           target: target,
           trigger: trigger,
           enabled: false
@@ -4760,9 +4760,9 @@ defmodule IdeWeb.WorkspaceLive do
 
     for %{"target" => target, "trigger" => trigger} <-
           Map.get(settings, "auto_fire_subscriptions", []),
-        auto_fire_trigger_available?(project.slug, target, trigger) do
+        auto_fire_trigger_available?(Projects.scope_key(project), target, trigger) do
       {:ok, _state} =
-        Ide.Debugger.set_auto_fire(project.slug, %{
+        Ide.Debugger.set_auto_fire(Projects.scope_key(project), %{
           target: target,
           trigger: trigger,
           enabled: true
@@ -4772,9 +4772,9 @@ defmodule IdeWeb.WorkspaceLive do
     if Map.get(settings, "auto_fire_subscriptions", []) == [] do
       for target <- ["watch", "protocol"],
           debugger_auto_fire_enabled?(project, target),
-          auto_fire_available?(project.slug, target) do
+          auto_fire_available?(Projects.scope_key(project), target) do
         {:ok, _state} =
-          Ide.Debugger.set_auto_fire(project.slug, %{
+          Ide.Debugger.set_auto_fire(Projects.scope_key(project), %{
             target: target,
             enabled: true
           })

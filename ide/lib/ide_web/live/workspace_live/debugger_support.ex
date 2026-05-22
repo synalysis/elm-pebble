@@ -5,6 +5,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   alias Ide.Debugger
   alias Ide.Debugger.ElmIntrospect
   alias Ide.Debugger.RuntimeFingerprintDrift
+  alias Ide.Projects
   alias Phoenix.Component
 
   @default_event_limit 500
@@ -235,7 +236,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
       project ->
         {:ok, debugger_state} =
-          Debugger.snapshot(project.slug,
+          Debugger.snapshot(Projects.scope_key(project),
             event_limit: socket.assigns[:debugger_event_limit] || @default_event_limit,
             since_seq: socket.assigns[:debugger_since_seq],
             types: socket.assigns[:debugger_types]
@@ -355,7 +356,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
       project ->
         {:ok, _state} =
-          Debugger.reload(project.slug, %{
+          Debugger.reload(Projects.scope_key(project), %{
             rel_path: rel_path,
             source: content,
             reason: reason,
@@ -438,7 +439,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
             attrs_base
           end
 
-        {:ok, _state} = Debugger.replay_recent(project.slug, attrs)
+        {:ok, _state} = Debugger.replay_recent(Projects.scope_key(project), attrs)
 
         target_value = if is_binary(target), do: target, else: "all"
 

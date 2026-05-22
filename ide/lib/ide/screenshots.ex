@@ -781,10 +781,12 @@ defmodule Ide.Screenshots do
   end
 
   defp launch_embedded_session(project_slug, target, opts) do
+    session_key = emulator_session_key(project_slug, opts)
+
     with {:ok, package} <- resolve_capture_package(project_slug, target, opts),
          {:ok, info} <-
            Emulator.launch(
-             project_slug: project_slug,
+             project_slug: session_key,
              platform: target,
              artifact_path: package.artifact_path,
              has_phone_companion: Map.get(package, :has_phone_companion, false)
@@ -978,4 +980,20 @@ defmodule Ide.Screenshots do
   @doc false
   @spec mime_type_for_path(String.t()) :: String.t()
   def mime_type_for_path(path), do: mime_type_from_filename(Path.basename(path))
+
+  @spec emulator_session_key(String.t(), keyword()) :: String.t()
+  defp emulator_session_key(slug, opts) do
+    case Keyword.get(opts, :project) do
+      %Project{} = project -> Projects.scope_key(project)
+      _ -> project_session_key_from_slug(slug)
+    end
+  end
+
+  @spec project_session_key_from_slug(String.t()) :: String.t()
+  defp project_session_key_from_slug(slug) do
+    case Projects.get_project_by_slug(slug) do
+      %Project{} = project -> Projects.scope_key(project)
+      nil -> slug
+    end
+  end
 end

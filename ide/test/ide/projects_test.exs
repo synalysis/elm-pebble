@@ -101,6 +101,10 @@ defmodule Ide.ProjectsTest do
     assert Projects.project_workspace_path(alice_project) =~ "/users/#{alice.id}/shared"
     assert Projects.project_workspace_path(bob_project) =~ "/users/#{bob.id}/shared"
 
+    assert Projects.scope_key(alice_project) == "users/#{alice.id}/shared"
+    assert Projects.scope_key(bob_project) == "users/#{bob.id}/shared"
+    refute Projects.scope_key(alice_project) == Projects.scope_key(bob_project)
+
     Process.put(:ide_current_user, alice)
 
     try do

@@ -32,7 +32,7 @@ defmodule IdeWeb.EmulatorController do
            package_for_launch(project, workspace_root, platform),
          {:ok, info} <-
            Emulator.launch(
-             project_slug: project.slug,
+             project_slug: Projects.scope_key(project),
              platform: launch_platform,
              artifact_path: package_result.artifact_path,
              has_phone_companion: package_result.has_phone_companion

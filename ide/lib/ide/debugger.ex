@@ -1186,8 +1186,10 @@ defmodule Ide.Debugger do
       if is_integer(limit) and limit > 0, do: min(limit, @history_limit), else: @history_limit
 
     with {:ok, state} <- snapshot(project_slug, event_limit: limit) do
+      human_slug = Map.get(state, :project_slug, human_slug_from_session_key(project_slug))
+
       body =
-        export_payload(project_slug, state,
+        export_payload(human_slug, state,
           compare_cursor_seq: compare_cursor_seq,
           baseline_cursor_seq: baseline_cursor_seq
         )
@@ -1200,21 +1202,28 @@ defmodule Ide.Debugger do
 
   @spec import_trace(String.t(), String.t() | map(), keyword()) ::
           {:ok, runtime_state()} | {:error, term()}
-  def import_trace(project_slug, input, opts \\ []) when is_binary(project_slug) do
+  def import_trace(session_key, input, opts \\ []) when is_binary(session_key) do
+    human_slug = human_slug_from_session_key(session_key)
+
     with {:ok, body} <- decode_import_body(input),
          :ok <- validate_import_body(body),
-         :ok <- maybe_match_import_slug(body, project_slug, opts) do
-      state = state_from_import_body(body)
+         :ok <- maybe_match_import_slug(body, human_slug, opts) do
+      state =
+        body
+        |> state_from_import_body()
+        |> Map.put(:scope_key, session_key)
+        |> Map.put(:project_slug, human_slug)
+
       :ok = ensure_started()
 
       Agent.get_and_update(__MODULE__, fn store ->
-        previous = Map.get(store, project_slug)
+        previous = Map.get(store, session_key)
 
         if is_map(previous) do
           _ = stop_auto_tick_worker(previous)
         end
 
-        {state, Map.put(store, project_slug, ensure_phone_state(state))}
+        {state, Map.put(store, session_key, ensure_phone_state(state))}
       end)
 
       {:ok, state}
@@ -2468,8 +2477,8 @@ defmodule Ide.Debugger do
 
   @spec project_protocol_schema(map()) :: {:ok, map()} | {:error, Types.protocol_error()}
   defp project_protocol_schema(state) when is_map(state) do
-    with project_slug when is_binary(project_slug) <- Map.get(state, :project_slug),
-         %{} = project <- Projects.get_project_by_slug(project_slug),
+    with session_key when is_binary(session_key) <- session_key_from_state(state),
+         %{} = project <- Projects.get_project_by_scope_key(session_key),
          workspace_root <- Projects.project_workspace_path(project),
          protocol_types <- Path.join(workspace_root, "protocol/src/Companion/Types.elm"),
          true <- File.exists?(protocol_types),
@@ -4086,12 +4095,12 @@ defmodule Ide.Debugger do
   @spec runtime_entrypoint_source(runtime_state(), Types.surface_target()) ::
           {:ok, String.t(), String.t(), String.t(), map()} | :error
   defp runtime_entrypoint_source(state, target) when is_map(state) do
-    with project_slug when is_binary(project_slug) <- Map.get(state, :project_slug),
-         %{} = project <- Projects.get_project_by_slug(project_slug),
+    with session_key when is_binary(session_key) <- session_key_from_state(state),
+         %{} = project <- Projects.get_project_by_scope_key(session_key),
          {source_root, rel_path} <- runtime_entrypoint_path(target),
          {:ok, source} <- Projects.read_source_file(project, source_root, rel_path),
          true <- is_binary(source) and String.trim(source) != "" do
-      artifacts = runtime_entrypoint_artifacts(project_slug, project, source_root)
+      artifacts = runtime_entrypoint_artifacts(session_key, project, source_root)
       {:ok, source_root, rel_path, source, artifacts}
     else
       _ -> :error
@@ -4110,14 +4119,16 @@ defmodule Ide.Debugger do
   defp runtime_entrypoint_path(_target), do: nil
 
   @spec runtime_entrypoint_artifacts(String.t(), map(), String.t()) :: map()
-  defp runtime_entrypoint_artifacts(project_slug, project, source_root)
-       when is_binary(project_slug) and is_binary(source_root) do
+  defp runtime_entrypoint_artifacts(session_key, project, source_root)
+       when is_binary(session_key) and is_binary(source_root) do
     workspace_root =
       project
       |> Projects.project_workspace_path()
       |> Path.join(source_root)
 
-    case Compiler.compile("#{project_slug}:#{source_root}", workspace_root: workspace_root) do
+    case Compiler.compile(Projects.compiler_cache_key(session_key, source_root),
+           workspace_root: workspace_root
+         ) do
       {:ok, result} when is_map(result) ->
         optional_runtime_artifacts_from_attrs(result)
 
@@ -6516,14 +6527,17 @@ defmodule Ide.Debugger do
   defp filter_events_since_seq(state, _since_seq), do: state
 
   @spec default_state(String.t()) :: runtime_state()
-  defp default_state(project_slug) do
+  defp default_state(session_key) do
+    project_slug = human_slug_from_session_key(session_key)
+
     watch_profile_id =
-      persisted_project_watch_profile_id(project_slug) || default_watch_profile_id()
+      persisted_project_watch_profile_id(session_key) || default_watch_profile_id()
 
     launch_context = launch_context_for(watch_profile_id, "LaunchUser")
-    simulator_settings = persisted_project_simulator_settings(project_slug)
+    simulator_settings = persisted_project_simulator_settings(session_key)
 
     %{
+      scope_key: session_key,
       project_slug: project_slug,
       running: false,
       revision: nil,
@@ -6545,10 +6559,10 @@ defmodule Ide.Debugger do
   end
 
   @spec persisted_project_watch_profile_id(String.t()) :: String.t() | nil
-  defp persisted_project_watch_profile_id(project_slug) when is_binary(project_slug) do
+  defp persisted_project_watch_profile_id(session_key) when is_binary(session_key) do
     try do
       with %{debugger_settings: settings} when is_map(settings) <-
-             Projects.get_project_by_slug(project_slug),
+             Projects.get_project_by_scope_key(session_key),
            profile_id when is_binary(profile_id) <- Map.get(settings, "watch_profile_id") do
         parse_optional_watch_profile_id(profile_id)
       else
@@ -6567,13 +6581,13 @@ defmodule Ide.Debugger do
     end
   end
 
-  defp persisted_project_watch_profile_id(_project_slug), do: nil
+  defp persisted_project_watch_profile_id(_session_key), do: nil
 
   @spec persisted_project_simulator_settings(String.t()) :: map()
-  defp persisted_project_simulator_settings(project_slug) when is_binary(project_slug) do
+  defp persisted_project_simulator_settings(session_key) when is_binary(session_key) do
     try do
       with %{debugger_settings: settings} when is_map(settings) <-
-             Projects.get_project_by_slug(project_slug),
+             Projects.get_project_by_scope_key(session_key),
            simulator when is_map(simulator) <- Map.get(settings, "simulator") do
         normalize_simulator_settings(simulator)
       else
@@ -6584,7 +6598,22 @@ defmodule Ide.Debugger do
     end
   end
 
-  defp persisted_project_simulator_settings(_project_slug), do: default_simulator_settings()
+  defp persisted_project_simulator_settings(_session_key), do: default_simulator_settings()
+
+  @spec session_key_from_state(map()) :: String.t() | nil
+  defp session_key_from_state(%{scope_key: key}) when is_binary(key), do: key
+
+  defp session_key_from_state(%{project_slug: slug}) when is_binary(slug), do: slug
+
+  defp session_key_from_state(_), do: nil
+
+  @spec human_slug_from_session_key(String.t()) :: String.t()
+  defp human_slug_from_session_key(session_key) do
+    case Projects.parse_scope_key(session_key) do
+      {:ok, _, slug} -> slug
+      :error -> session_key
+    end
+  end
 
   @spec default_auto_tick() :: map()
   defp default_auto_tick do
@@ -6625,9 +6654,9 @@ defmodule Ide.Debugger do
   end
 
   @spec attach_companion_configuration(map(), String.t()) :: map()
-  defp attach_companion_configuration(state, project_slug)
-       when is_map(state) and is_binary(project_slug) do
-    case companion_configuration_model(project_slug) do
+  defp attach_companion_configuration(state, session_key)
+       when is_map(state) and is_binary(session_key) do
+    case companion_configuration_model(session_key) do
       nil ->
         update_in(state, [:companion, :model], &drop_companion_configuration/1)
 
@@ -6644,12 +6673,12 @@ defmodule Ide.Debugger do
     end
   end
 
-  defp attach_companion_configuration(state, _project_slug), do: state
+  defp attach_companion_configuration(state, _session_key), do: state
 
   @spec companion_configuration_model(String.t()) :: map() | nil
-  defp companion_configuration_model(project_slug) do
+  defp companion_configuration_model(session_key) do
     try do
-      with %{} = project <- Projects.get_project_by_slug(project_slug),
+      with %{} = project <- Projects.get_project_by_scope_key(session_key),
            workspace_root <- Projects.project_workspace_path(project),
            phone_root <- Path.join(workspace_root, "phone"),
            true <- File.exists?(Path.join(phone_root, "elm.json")),

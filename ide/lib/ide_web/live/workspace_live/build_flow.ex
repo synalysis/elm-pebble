@@ -75,7 +75,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
      socket
      |> assign(:compile_status, :running)
      |> start_async(:run_compile, fn ->
-       Compiler.compile(project.slug, workspace_root: workspace_root)
+       Compiler.compile(Projects.scope_key(project), workspace_root: workspace_root)
      end)}
   end
 
@@ -88,7 +88,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
      socket
      |> assign(:manifest_status, :running)
      |> start_async(:run_manifest, fn ->
-       Compiler.manifest(project.slug, workspace_root: workspace_root, strict: strict?)
+       Compiler.manifest(Projects.scope_key(project), workspace_root: workspace_root, strict: strict?)
      end)}
   end
 
@@ -319,7 +319,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
         socket
         |> assign(:check_status, :running)
         |> start_async(:run_check, fn ->
-          Compiler.check(project.slug,
+          Compiler.check(Projects.scope_key(project),
             workspace_root: compiler_root,
             source_roots: project.source_roots
           )
@@ -337,7 +337,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       |> build_roots(project.source_roots || [])
       |> Enum.map(fn {label, root_path} ->
         {label,
-         Compiler.compile("#{project.slug}:#{label}",
+         Compiler.compile(Projects.compiler_cache_key(project, label),
            workspace_root: root_path,
            source_roots: project.source_roots
          )}
@@ -380,7 +380,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     root_results =
       roots
       |> Enum.map(fn {label, root_path} ->
-        {:ok, single} = run_build_pipeline_for_root(project.slug, label, root_path, strict?)
+        {:ok, single} = run_build_pipeline_for_root(Projects.scope_key(project), label, root_path, strict?)
         single
       end)
 
@@ -677,8 +677,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
   @spec run_build_pipeline_for_root(String.t(), String.t(), String.t(), boolean()) ::
           {:ok, root_build_result()}
-  def run_build_pipeline_for_root(project_slug, label, root_path, strict?) do
-    scoped_slug = "#{project_slug}:#{label}"
+  def run_build_pipeline_for_root(scope_key, label, root_path, strict?) do
+    scoped_slug = Projects.compiler_cache_key(scope_key, label)
 
     with {:ok, check_result} <- Compiler.check(scoped_slug, workspace_root: root_path) do
       if check_result.status == :ok do

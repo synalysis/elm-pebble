@@ -1734,11 +1734,12 @@ defmodule Ide.Mcp.Tools do
     compiler = compiler_module()
 
     with {:ok, project} <- fetch_project(slug),
+         session_key = Projects.scope_key(project),
          {:ok, result} <-
-           compiler.check(slug, workspace_root: Projects.project_workspace_path(project)) do
+           compiler.check(session_key, workspace_root: Projects.project_workspace_path(project)) do
       diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
       counts = Diagnostics.summary(diagnostics)
-      :ok = CheckCache.put(slug, result)
+      :ok = CheckCache.put(session_key, result)
 
       {:ok, compiler_check_payload(slug, result, diagnostics, counts)}
     else
@@ -1755,7 +1756,7 @@ defmodule Ide.Mcp.Tools do
     with {:ok, project} <- fetch_project(slug) do
       if source_root in project.source_roots do
         with {:ok, result} <-
-               compiler.check_source_root("#{slug}:#{source_root}",
+               compiler.check_source_root(Projects.compiler_cache_key(project, source_root),
                  workspace_root: Projects.project_workspace_path(project),
                  source_root: source_root
                ) do
@@ -1875,8 +1876,9 @@ defmodule Ide.Mcp.Tools do
     compiler = compiler_module()
 
     with {:ok, project} <- fetch_project(slug),
+         session_key = Projects.scope_key(project),
          {:ok, result} <-
-           compiler.compile(slug, workspace_root: Projects.project_workspace_path(project)),
+           compiler.compile(session_key, workspace_root: Projects.project_workspace_path(project)),
          :ok <- ingest_compile_result(slug, project, result) do
       diagnostics = Diagnostics.normalize_list(result.diagnostics || [])
       counts = Diagnostics.summary(diagnostics)
@@ -1892,8 +1894,9 @@ defmodule Ide.Mcp.Tools do
     compiler = compiler_module()
 
     with {:ok, project} <- fetch_project(slug),
+         session_key = Projects.scope_key(project),
          {:ok, result} <-
-           compiler.manifest(slug,
+           compiler.manifest(session_key,
              workspace_root: Projects.project_workspace_path(project),
              strict: strict?
            ) do
@@ -2002,7 +2005,7 @@ defmodule Ide.Mcp.Tools do
   end
 
   defp do_call("compiler.compile_cached", %{"slug" => slug}) do
-    case CompileCache.latest(slug) do
+    case CompileCache.latest(project_session_key(slug)) do
       {:ok, entry} ->
         {:ok, compiler_cached_payload(slug, entry, include_revision: true)}
 
@@ -2019,13 +2022,13 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, since} <- parse_since(Map.get(args, "since")) do
       slug = Map.get(args, "slug")
-      entries = CompileCache.recent(limit, slug) |> filter_since(since)
+      entries = CompileCache.recent(limit, project_session_key(slug)) |> filter_since(since)
       {:ok, compiler_recent_payload(entries, limit, slug, since)}
     end
   end
 
   defp do_call("compiler.manifest_cached", %{"slug" => slug}) do
-    case ManifestCache.latest(slug) do
+    case ManifestCache.latest(project_session_key(slug)) do
       {:ok, entry} ->
         {:ok, compiler_cached_payload(slug, entry, include_revision: true)}
 
@@ -2042,13 +2045,13 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, since} <- parse_since(Map.get(args, "since")) do
       slug = Map.get(args, "slug")
-      entries = ManifestCache.recent(limit, slug) |> filter_since(since)
+      entries = ManifestCache.recent(limit, project_session_key(slug)) |> filter_since(since)
       {:ok, compiler_recent_payload(entries, limit, slug, since)}
     end
   end
 
   defp do_call("compiler.check_cached", %{"slug" => slug}) do
-    case CheckCache.latest(slug) do
+    case CheckCache.latest(project_session_key(slug)) do
       {:ok, entry} ->
         {:ok, compiler_cached_payload(slug, entry)}
 
@@ -2065,7 +2068,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, since} <- parse_since(Map.get(args, "since")) do
       slug = Map.get(args, "slug")
-      entries = CheckCache.recent(limit, slug) |> filter_since(since)
+      entries = CheckCache.recent(limit, project_session_key(slug)) |> filter_since(since)
       {:ok, compiler_recent_payload(entries, limit, slug, since)}
     end
   end
@@ -2148,7 +2151,7 @@ defmodule Ide.Mcp.Tools do
            parse_compare_cursor_seq(Map.get(args, "compare_cursor_seq")),
          {:ok, _project} <- fetch_project(slug),
          {:ok, state} <-
-           Debugger.snapshot(slug,
+           Debugger.snapshot(project_session_key(slug),
              event_limit: parse_event_limit(args["event_limit"]),
              since_seq: parse_since_seq(args["since_seq"]),
              types: parse_event_types(args["types"])
@@ -2206,7 +2209,7 @@ defmodule Ide.Mcp.Tools do
          {:ok, compare_cursor_seq} <-
            parse_compare_cursor_seq(Map.get(args, "compare_cursor_seq")),
          {:ok, _project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(slug, event_limit: event_limit) do
+         {:ok, state} <- Debugger.snapshot(project_session_key(slug), event_limit: event_limit) do
       events = Map.get(state, :events) || []
       snapshot_refs = Debugger.snapshot_reference_rows(events)
 
@@ -2286,7 +2289,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, target_atom} <- parse_render_tree_target(target),
          {:ok, _project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1),
+         {:ok, state} <- Debugger.snapshot(project_session_key(slug), event_limit: 1),
          {:ok, runtime} <- debugger_surface_runtime(state, target_atom),
          %{} = tree <- DebuggerSupport.rendered_tree(runtime) do
       screen = debugger_surface_screen(state, runtime, target_atom)
@@ -2313,7 +2316,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, target_atom} <- parse_render_tree_target(target),
          {:ok, _project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(slug, event_limit: event_limit),
+         {:ok, state} <- Debugger.snapshot(project_session_key(slug), event_limit: event_limit),
          {:ok, runtime} <- debugger_surface_runtime(state, target_atom) do
       events = Map.get(state, :events) || []
       cursor_seq = resolve_cursor_seq(events, nil)
@@ -2341,7 +2344,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, targets} <- parse_optional_debugger_targets(Map.get(args, "target")),
          {:ok, _project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
+         {:ok, state} <- Debugger.snapshot(project_session_key(slug), event_limit: 1) do
       models =
         targets
         |> Enum.map(fn target ->
@@ -2358,7 +2361,7 @@ defmodule Ide.Mcp.Tools do
   defp do_call("debugger.timeline", %{"slug" => slug} = args) do
     with {:ok, _project} <- fetch_project(slug),
          {:ok, state} <-
-           Debugger.snapshot(slug,
+           Debugger.snapshot(project_session_key(slug),
              event_limit: parse_event_limit(args["event_limit"]),
              since_seq: parse_since_seq(args["since_seq"]),
              types: parse_event_types(args["types"])
@@ -2378,7 +2381,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, target_atom} <- parse_render_tree_target(target),
          {:ok, _project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(slug, event_limit: 100),
+         {:ok, state} <- Debugger.snapshot(project_session_key(slug), event_limit: 100),
          {:ok, runtime} <- debugger_surface_runtime(state, target_atom) do
       events = Map.get(state, :events) || []
       screen = debugger_surface_screen(state, runtime, target_atom)
@@ -2406,7 +2409,7 @@ defmodule Ide.Mcp.Tools do
 
   defp do_call("debugger.simulator_settings", %{"slug" => slug}) do
     with {:ok, project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
+         {:ok, state} <- Debugger.snapshot(project_session_key(slug), event_limit: 1) do
       persisted = project_simulator_settings(project)
       active = Map.get(state, :simulator_settings) || persisted
       {:ok, debugger_simulator_settings_payload(slug, active, persisted)}
@@ -2417,7 +2420,7 @@ defmodule Ide.Mcp.Tools do
 
   defp do_call("debugger.configuration", %{"slug" => slug}) do
     with {:ok, project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
+         {:ok, state} <- Debugger.snapshot(project_session_key(slug), event_limit: 1) do
       settings = project.debugger_settings || %{}
       persisted_values = map_value(settings, "configuration_values") || %{}
       companion_model = get_in(state, [:companion, :model]) || %{}
@@ -2435,7 +2438,7 @@ defmodule Ide.Mcp.Tools do
 
   defp do_call("debugger.auto_fire", %{"slug" => slug}) do
     with {:ok, project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
+         {:ok, state} <- Debugger.snapshot(project_session_key(slug), event_limit: 1) do
       settings = project.debugger_settings || %{}
 
       {:ok, debugger_auto_fire_payload(slug, settings, state)}
@@ -2446,7 +2449,7 @@ defmodule Ide.Mcp.Tools do
 
   defp do_call("debugger.disabled_subscriptions", %{"slug" => slug}) do
     with {:ok, project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.snapshot(slug, event_limit: 1) do
+         {:ok, state} <- Debugger.snapshot(project_session_key(slug), event_limit: 1) do
       settings = project.debugger_settings || %{}
 
       {:ok, debugger_disabled_subscriptions_payload(slug, settings, state)}
@@ -2486,7 +2489,7 @@ defmodule Ide.Mcp.Tools do
     }
 
     with {:ok, _project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.set_watch_profile(slug, attrs) do
+         {:ok, state} <- Debugger.set_watch_profile(project_session_key(slug), attrs) do
       {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger set_watch_profile failed: #{inspect(reason)}"}
@@ -2498,7 +2501,7 @@ defmodule Ide.Mcp.Tools do
     with {:ok, project} <- fetch_project(slug),
          normalized <- normalize_mcp_simulator_settings(settings),
          {:ok, _project} <- persist_project_debugger_setting(project, "simulator", normalized),
-         {:ok, state} <- Debugger.set_simulator_settings(slug, normalized) do
+         {:ok, state} <- Debugger.set_simulator_settings(project_session_key(slug), normalized) do
       {:ok, debugger_simulator_settings_state_payload(slug, normalized, state)}
     else
       {:error, reason} -> {:error, "debugger set_simulator_settings failed: #{inspect(reason)}"}
@@ -2511,7 +2514,7 @@ defmodule Ide.Mcp.Tools do
          values <- normalize_configuration_values(values),
          {:ok, _project} <-
            persist_project_debugger_setting(project, "configuration_values", values),
-         {:ok, state} <- Debugger.save_configuration(slug, values) do
+         {:ok, state} <- Debugger.save_configuration(project_session_key(slug), values) do
       {:ok, debugger_configuration_values_state_payload(slug, values, state)}
     else
       {:error, reason} -> {:error, "debugger save_configuration failed: #{inspect(reason)}"}
@@ -2527,7 +2530,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, project} <- fetch_project(slug),
          {:ok, project} <- persist_project_auto_fire_setting(project, attrs),
-         {:ok, state} <- Debugger.set_auto_fire(slug, attrs) do
+         {:ok, state} <- Debugger.set_auto_fire(project_session_key(slug), attrs) do
       settings = project.debugger_settings || %{}
 
       {:ok,
@@ -2551,7 +2554,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, project} <- fetch_project(slug),
          {:ok, project} <- persist_project_disabled_subscription_setting(project, attrs),
-         {:ok, state} <- Debugger.set_subscription_enabled(slug, attrs) do
+         {:ok, state} <- Debugger.set_subscription_enabled(project_session_key(slug), attrs) do
       settings = project.debugger_settings || %{}
 
       {:ok,
@@ -2575,7 +2578,7 @@ defmodule Ide.Mcp.Tools do
          {:ok, source} <-
            debugger_reload_source(project, source_root, rel_path, Map.get(args, "source")),
          {:ok, state} <-
-           Debugger.reload(slug, %{
+           Debugger.reload(project_session_key(slug), %{
              rel_path: rel_path,
              source: source,
              reason: reason,
@@ -2595,7 +2598,7 @@ defmodule Ide.Mcp.Tools do
     }
 
     with {:ok, _project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.step(slug, step_attrs) do
+         {:ok, state} <- Debugger.step(project_session_key(slug), step_attrs) do
       {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger step failed: #{inspect(reason)}"}
@@ -2609,7 +2612,7 @@ defmodule Ide.Mcp.Tools do
     }
 
     with {:ok, _project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.tick(slug, tick_attrs) do
+         {:ok, state} <- Debugger.tick(project_session_key(slug), tick_attrs) do
       {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger tick failed: #{inspect(reason)}"}
@@ -2624,7 +2627,7 @@ defmodule Ide.Mcp.Tools do
     }
 
     with {:ok, _project} <- fetch_project(slug),
-         {:ok, state} <- Debugger.start_auto_tick(slug, tick_attrs) do
+         {:ok, state} <- Debugger.start_auto_tick(project_session_key(slug), tick_attrs) do
       {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger auto_tick_start failed: #{inspect(reason)}"}
@@ -2646,7 +2649,7 @@ defmodule Ide.Mcp.Tools do
          {:ok, _cursor_seq} <- parse_cursor_seq(args["cursor_seq"]),
          {:ok, _project} <- fetch_project(slug),
          {:ok, state} <-
-           Debugger.replay_recent(slug, %{
+           Debugger.replay_recent(project_session_key(slug), %{
              target: Map.get(args, "target"),
              count: Map.get(args, "count"),
              cursor_seq: Map.get(args, "cursor_seq"),
@@ -2673,7 +2676,7 @@ defmodule Ide.Mcp.Tools do
     with {:ok, _cursor_seq} <- parse_cursor_seq(args["cursor_seq"]),
          {:ok, _project} <- fetch_project(slug),
          {:ok, state} <-
-           Debugger.continue_from_snapshot(slug, %{
+           Debugger.continue_from_snapshot(project_session_key(slug), %{
              cursor_seq: Map.get(args, "cursor_seq")
            }) do
       {:ok, debugger_slug_state_payload(slug, state)}
@@ -2693,7 +2696,7 @@ defmodule Ide.Mcp.Tools do
            parse_baseline_cursor_seq(Map.get(args, "baseline_cursor_seq")),
          {:ok, _project} <- fetch_project(slug),
          {:ok, export} <-
-           Debugger.export_trace(slug,
+           Debugger.export_trace(project_session_key(slug),
              event_limit: parse_event_limit(args["event_limit"]),
              compare_cursor_seq: compare_cursor_seq,
              baseline_cursor_seq: baseline_cursor_seq
@@ -2721,7 +2724,7 @@ defmodule Ide.Mcp.Tools do
 
     with {:ok, _project} <- fetch_project(slug),
          :ok <- verify_export_sha256(json, expected_sha),
-         {:ok, state} <- Debugger.import_trace(slug, json, opts) do
+         {:ok, state} <- Debugger.import_trace(project_session_key(slug), json, opts) do
       {:ok, debugger_slug_state_payload(slug, state)}
     else
       {:error, reason} -> {:error, "debugger import_trace failed: #{inspect(reason)}"}
@@ -2833,22 +2836,22 @@ defmodule Ide.Mcp.Tools do
         Projects.list_projects()
         |> maybe_filter_projects(requested_slug)
         |> Enum.map(fn project ->
-          checks = CheckCache.recent(limit, project.slug) |> filter_since(since)
+          checks = CheckCache.recent(limit, project_session_key(project)) |> filter_since(since)
 
           latest_check =
-            case CheckCache.latest(project.slug) do
+            case CheckCache.latest(project_session_key(project)) do
               {:ok, entry} -> if keep_since?(entry, since), do: entry, else: nil
               {:error, :not_found} -> nil
             end
 
           latest_compile =
-            case CompileCache.latest(project.slug) do
+            case CompileCache.latest(project_session_key(project)) do
               {:ok, entry} -> if keep_since?(entry, since), do: entry, else: nil
               {:error, :not_found} -> nil
             end
 
           latest_manifest =
-            case ManifestCache.latest(project.slug) do
+            case ManifestCache.latest(project_session_key(project)) do
               {:ok, entry} -> if keep_since?(entry, since), do: entry, else: nil
               {:error, :not_found} -> nil
             end
@@ -2870,8 +2873,8 @@ defmodule Ide.Mcp.Tools do
             latest_manifest: latest_manifest,
             latest_manifest_strict: latest_manifest_strict,
             recent_checks: checks,
-            recent_compiles: CompileCache.recent(limit, project.slug) |> filter_since(since),
-            recent_manifests: ManifestCache.recent(limit, project.slug) |> filter_since(since),
+            recent_compiles: CompileCache.recent(limit, project_session_key(project)) |> filter_since(since),
+            recent_manifests: ManifestCache.recent(limit, project_session_key(project)) |> filter_since(since),
             recent_actions: recent_project_actions(project.slug, limit, since)
           }
         end)
@@ -3463,22 +3466,22 @@ defmodule Ide.Mcp.Tools do
   @spec session_project_summary(Ide.Projects.Project.t(), DateTime.t() | nil) ::
           ToolTypes.sessions_summary_entry()
   defp session_project_summary(%Ide.Projects.Project{} = project, since) do
-    recent_checks = CheckCache.recent(50, project.slug) |> filter_since(since)
+    recent_checks = CheckCache.recent(50, project_session_key(project)) |> filter_since(since)
     recent_actions = recent_project_actions(project.slug, 100, since)
 
     %{
       slug: project.slug,
       active: project.active,
       target_type: project.target_type,
-      latest_check_status: cache_latest_result_field(CheckCache, project.slug, since, :status),
-      latest_compile_status: cache_latest_result_field(CompileCache, project.slug, since, :status),
+      latest_check_status: cache_latest_result_field(CheckCache, project_session_key(project), since, :status),
+      latest_compile_status: cache_latest_result_field(CompileCache, project_session_key(project), since, :status),
       latest_manifest_status:
-        cache_latest_result_field(ManifestCache, project.slug, since, :status),
+        cache_latest_result_field(ManifestCache, project_session_key(project), since, :status),
       latest_manifest_strict:
-        cache_latest_result_field(ManifestCache, project.slug, since, :strict?),
+        cache_latest_result_field(ManifestCache, project_session_key(project), since, :strict?),
       checks_count: length(recent_checks),
-      compiles_count: length(CompileCache.recent(50, project.slug) |> filter_since(since)),
-      manifests_count: length(ManifestCache.recent(50, project.slug) |> filter_since(since)),
+      compiles_count: length(CompileCache.recent(50, project_session_key(project)) |> filter_since(since)),
+      manifests_count: length(ManifestCache.recent(50, project_session_key(project)) |> filter_since(since)),
       actions_count: length(recent_actions),
       screenshots_count: screenshot_count(project)
     }
@@ -3689,9 +3692,11 @@ defmodule Ide.Mcp.Tools do
 
       slug = requested_slug || infer_slug_from_audit_entries(audit_entries)
 
-      check_entries = CheckCache.recent(limit, slug) |> filter_since(since)
-      compile_entries = CompileCache.recent(limit, slug) |> filter_since(since)
-      manifest_entries = ManifestCache.recent(limit, slug) |> filter_since(since)
+      session_key = if is_binary(slug), do: project_session_key(slug), else: nil
+
+      check_entries = CheckCache.recent(limit, session_key) |> filter_since(since)
+      compile_entries = CompileCache.recent(limit, session_key) |> filter_since(since)
+      manifest_entries = ManifestCache.recent(limit, session_key) |> filter_since(since)
 
       {:ok,
        %{
@@ -3702,9 +3707,9 @@ defmodule Ide.Mcp.Tools do
          audit_entries: audit_entries,
          compiler_context: %{
            latest: %{
-             check: latest_entry(CheckCache, slug, since),
-             compile: latest_entry(CompileCache, slug, since),
-             manifest: latest_entry(ManifestCache, slug, since)
+             check: latest_entry(CheckCache, session_key, since),
+             compile: latest_entry(CompileCache, session_key, since),
+             manifest: latest_entry(ManifestCache, session_key, since)
            },
            recent: %{
              checks: check_entries,
@@ -4174,6 +4179,16 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
+  @spec project_session_key(String.t() | map()) :: String.t()
+  defp project_session_key(%{} = project), do: Projects.scope_key(project)
+
+  defp project_session_key(slug) when is_binary(slug) do
+    case Projects.get_project_by_slug(slug) do
+      %{} = project -> Projects.scope_key(project)
+      nil -> slug
+    end
+  end
+
   @spec authorized?(String.t(), [capability()]) :: boolean()
   defp authorized?("projects.list", capabilities), do: :read in capabilities
   defp authorized?("projects.settings", capabilities), do: :read in capabilities
@@ -4497,7 +4512,7 @@ defmodule Ide.Mcp.Tools do
       result
       |> Map.put_new(:source_root, compile_result_source_root(project, result))
 
-    {:ok, _state} = Debugger.ingest_elmc_compile(slug, attrs)
+    {:ok, _state} = Debugger.ingest_elmc_compile(Projects.scope_key(project), attrs)
     :ok
   end
 
