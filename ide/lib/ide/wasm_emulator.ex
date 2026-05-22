@@ -79,7 +79,6 @@ defmodule Ide.WasmEmulator do
       firmware: firmware,
       asset_base: "/wasm-emulator/assets/",
       install_bridge: install_bridge,
-      runtime_build: Ide.WasmEmulator.RuntimeBuilder.build_status(),
       setup: setup(root, runtime_ready?)
     }
   end
@@ -92,14 +91,15 @@ defmodule Ide.WasmEmulator do
   end
 
   defp sdk_firmware_status(root) do
-    legacy = firmware_manifest(Path.join([root, "firmware", "sdk", "manifest.json"]))
+    legacy_dir = Path.join([root, "firmware", "sdk"])
+    legacy = platform_firmware_manifest(legacy_dir)
 
     platforms =
       @sdk_platforms
       |> Enum.reduce(%{}, fn platform, acc ->
-        manifest_path = Path.join([root, "firmware", "sdk", platform, "manifest.json"])
+        dir = Path.join([root, "firmware", "sdk", platform])
 
-        case firmware_manifest(manifest_path) do
+        case platform_firmware_manifest(dir) do
           nil -> acc
           manifest -> Map.put(acc, platform, manifest)
         end
@@ -169,6 +169,14 @@ defmodule Ide.WasmEmulator do
     end
   end
 
+  defp platform_firmware_manifest(dir) do
+    if File.regular?(Path.join(dir, "qemu_micro_flash.bin")) and
+         File.regular?(Path.join(dir, "qemu_spi_flash.bin")) and
+         File.regular?(Path.join(dir, "manifest.json")) do
+      firmware_manifest(Path.join(dir, "manifest.json"))
+    end
+  end
+
   defp setup(root, runtime_ready?) do
     %{
       upstream_url: "https://github.com/ericmigi/pebble-qemu-wasm",
@@ -176,7 +184,6 @@ defmodule Ide.WasmEmulator do
       sdk_firmware_target: Path.join([root, "firmware", "sdk"]),
       full_firmware_target: Path.join([root, "firmware", "full"]),
       build_command: "docker compose run --rm wasm-emulator-builder",
-      auto_build_command: "COMPOSE_PROFILES=wasm-emulator docker compose up -d",
       runtime_ready?: runtime_ready?,
       notes: setup_notes(runtime_ready?)
     }
@@ -192,8 +199,9 @@ defmodule Ide.WasmEmulator do
 
   defp setup_notes(false) do
     [
-      "The browser QEMU runtime is seeded from the Docker image when available, or built automatically in the background after startup when Docker is available.",
-      "Manual build from a checkout: docker compose run --rm wasm-emulator-builder",
+      "Build the browser QEMU runtime once from a checkout of this repository:",
+      "docker compose run --rm wasm-emulator-builder",
+      "Or run scripts/build_wasm_emulator_runtime.sh on a machine with Docker, then copy qemu-system-arm.* into the WASM emulator root.",
       "SDK firmware is copied automatically from the active Pebble SDK on IDE startup.",
       "For app install, the WASM runtime must expose Module.pebbleInstallPbw(plan), Module.pebbleControlSend(bytes) and Module.pebbleControlRecv(), or the patched _pebble_control_wasm_send/_pebble_control_wasm_recv exports.",
       "Optional full firmware can be copied into firmware/full with the same filenames."

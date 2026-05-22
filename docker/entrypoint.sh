@@ -28,6 +28,8 @@ export ELM_PEBBLE_QEMU_DATA_ROOT="${ELM_PEBBLE_QEMU_DATA_ROOT:-/usr/share/qemu}"
 export ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES="${ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES:-1}"
 export ELM_PEBBLE_WASM_EMULATOR_ROOT="${ELM_PEBBLE_WASM_EMULATOR_ROOT:-$DATA_ROOT/wasm_emulator}"
 
+mkdir -p "$ELM_PEBBLE_WASM_EMULATOR_ROOT"
+
 ensure_wasm_emulator_runtime
 
 /opt/ide/bin/ide eval "Ide.Release.setup()"

@@ -133,7 +133,6 @@ export class WasmEmulatorHost {
   destroy() {
     window.removeEventListener("message", this.handleMessage)
     if (this.handleWindowBlur) window.removeEventListener("blur", this.handleWindowBlur)
-    if (this.assetRecheckTimer) clearTimeout(this.assetRecheckTimer)
     this.releaseButtons()
   }
 
@@ -180,10 +179,6 @@ export class WasmEmulatorHost {
       this.assetsAvailable = assetsAvailable
       this.installBridgeAvailable = installBridgeAvailable
       this.renderAssetsStatus()
-
-      if (status.runtime_build?.status === "building") {
-        this.scheduleAssetRecheck()
-      }
     } catch (error) {
       this.setAssets(`Could not check WASM assets: ${error.message}`)
       this.assetsAvailable = false
@@ -502,29 +497,11 @@ export class WasmEmulatorHost {
     }
   }
 
-  scheduleAssetRecheck() {
-    if (this.assetRecheckTimer) return
-    this.assetRecheckTimer = setTimeout(() => {
-      this.assetRecheckTimer = null
-      this.checkAssets()
-    }, 5000)
-  }
-
   missingAssetMessage(status) {
     const parts = []
     if (status.runtime_missing?.length) {
-      const build = status.runtime_build
-      if (build?.status === "building") {
-        parts.push("QEMU browser runtime is building in the background (first start can take a while).")
-        if (build.log_path) parts.push(`Build log: ${build.log_path}`)
-      } else if (build?.status === "failed") {
-        parts.push(`QEMU browser runtime build failed. See ${build.log_path || "build.log"} for details.`)
-        parts.push(`Manual build: ${status.setup?.build_command || "docker compose run --rm wasm-emulator-builder"}`)
-      } else {
-        parts.push(`QEMU runtime missing: ${status.runtime_missing.join(", ")} -> ${status.setup?.runtime_target || status.root}`)
-        parts.push("The IDE starts a background build automatically when Docker is available.")
-        parts.push(`Manual build: ${status.setup?.build_command || "docker compose run --rm wasm-emulator-builder"}`)
-      }
+      parts.push(`QEMU runtime missing: ${status.runtime_missing.join(", ")} -> ${status.setup?.runtime_target || status.root}`)
+      parts.push(`Build once: ${status.setup?.build_command || "docker compose run --rm wasm-emulator-builder"}`)
     }
     if (status.firmware_missing?.length) {
       parts.push(`SDK firmware missing: ${status.firmware_missing.map(path => path.replace(/^firmware\/sdk\//, "")).join(", ")} -> ${status.setup?.sdk_firmware_target || status.root}`)
