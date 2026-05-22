@@ -63,7 +63,6 @@ ENV ELM_PEBBLE_PYPKJS_BIN=/opt/pipx/venvs/pebble-tool/bin/pypkjs
 ENV ELM_PEBBLE_QEMU_IMAGE_ROOT=/var/lib/ide/.pebble-sdk/SDKs/current/sdk-core/pebble
 ENV ELM_PEBBLE_QEMU_DATA_ROOT=/usr/share/qemu
 ENV ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES=1
-ENV ELM_PEBBLE_WASM_EMULATOR_ROOT=/var/lib/ide/wasm_emulator
 ENV SECRET_KEY_BASE=8eXjTGrTXoJHN8S-sqKoLrXp1xQ8vlqv2Ryr_5wPjMz5f4lAQ9S3v5dvU7uIGrYb
 
 WORKDIR /opt/ide
@@ -75,14 +74,10 @@ RUN mkdir -p /var/lib/ide /opt/ide && \
     rm -rf /var/lib/ide/.pebble-sdk
 
 COPY --from=build /app/ide/_build/prod/rel/ide /opt/ide
-COPY scripts/build_wasm_emulator_runtime.sh /opt/wasm-emulator-build/build_wasm_emulator_runtime.sh
-COPY ide/priv/wasm_emulator/runtime_bridge /opt/wasm-emulator-build/runtime_bridge
 COPY docker/entrypoint.sh /entrypoint.sh
 COPY docker/pebble_sdk.sh /docker/pebble_sdk.sh
-COPY docker/wasm_emulator.sh /docker/wasm_emulator.sh
-RUN mkdir -p /opt/wasm-emulator-seed /opt/wasm-emulator-build && \
-    chmod +x /entrypoint.sh /docker/pebble_sdk.sh /docker/wasm_emulator.sh /opt/wasm-emulator-build/build_wasm_emulator_runtime.sh && \
-    chown -R nobody:nogroup /var/lib/ide /opt/ide /opt/pebble-sdk-seed /opt/wasm-emulator-seed /opt/wasm-emulator-build /entrypoint.sh /docker
+RUN chmod +x /entrypoint.sh /docker/pebble_sdk.sh && \
+    chown -R nobody:nogroup /var/lib/ide /opt/ide /opt/pebble-sdk-seed /entrypoint.sh /docker
 
 USER nobody
 

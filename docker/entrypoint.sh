@@ -8,7 +8,6 @@ PEBBLE_SDK_VERSION="${PEBBLE_SDK_VERSION:-4.9.169}"
 INSTALL_PEBBLE_SDK="${INSTALL_PEBBLE_SDK:-1}"
 
 . /docker/pebble_sdk.sh
-. /docker/wasm_emulator.sh
 
 mkdir -p "$DATA_ROOT" "$PROJECTS_ROOT" "$(dirname "$SETTINGS_FILE")"
 
@@ -26,11 +25,6 @@ export ELM_PEBBLE_PYPKJS_BIN="${ELM_PEBBLE_PYPKJS_BIN:-/opt/pipx/venvs/pebble-to
 export ELM_PEBBLE_QEMU_IMAGE_ROOT="${ELM_PEBBLE_QEMU_IMAGE_ROOT:-$DATA_ROOT/.pebble-sdk/SDKs/current/sdk-core/pebble}"
 export ELM_PEBBLE_QEMU_DATA_ROOT="${ELM_PEBBLE_QEMU_DATA_ROOT:-/usr/share/qemu}"
 export ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES="${ELM_PEBBLE_QEMU_DOWNLOAD_IMAGES:-1}"
-export ELM_PEBBLE_WASM_EMULATOR_ROOT="${ELM_PEBBLE_WASM_EMULATOR_ROOT:-$DATA_ROOT/wasm_emulator}"
-
-mkdir -p "$ELM_PEBBLE_WASM_EMULATOR_ROOT"
-
-ensure_wasm_emulator_runtime
 
 /opt/ide/bin/ide eval "Ide.Release.setup()"
 exec /opt/ide/bin/ide start
