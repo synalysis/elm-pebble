@@ -1,8 +1,8 @@
 module CompanionApp exposing (main)
 
 import Companion.GeneratedPreferences as GeneratedPreferences
-import Companion.Geolocation as Geolocation
-import Companion.Phone as CompanionPhone
+import Pebble.Companion.Geolocation as Geolocation
+import Pebble.Companion.Phone as CompanionPhone
 import Companion.Types exposing (PhoneToWatch(..), SunMode(..), WatchToPhone(..))
 import CompanionPreferences
 import Json.Decode as Decode

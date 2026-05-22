@@ -16,26 +16,32 @@ defmodule Ide.PackageDocs.Exporter do
   def export(opts \\ []) do
     output_root = Keyword.get(opts, :output_root, @default_output)
     packages = Keyword.get(opts, :packages, packages())
+    staging_root = staging_output_root(output_root)
 
-    with :ok <- reset_output_root(output_root) do
-      packages
-      |> Enum.reduce_while({:ok, []}, fn package, {:ok, acc} ->
-        case export_package(package, output_root) do
-          {:ok, result} -> {:cont, {:ok, [result | acc]}}
-          {:error, reason} -> {:halt, {:error, reason}}
-        end
-      end)
-      |> case do
-        {:ok, results} ->
-          {:ok,
-           %{
-             output_root: output_root,
-             packages: Enum.reverse(results)
-           }}
+    with :ok <- reset_output_root(staging_root),
+         {:ok, results} <- export_packages(packages, staging_root),
+         :ok <- promote_output_root(staging_root, output_root) do
+      {:ok, %{output_root: output_root, packages: results}}
+    else
+      {:error, _} = error ->
+        File.rm_rf(staging_root)
+        error
+    end
+  end
 
-        {:error, _} = error ->
-          error
+  @spec export_packages([package_spec()], String.t()) ::
+          {:ok, [map()]} | {:error, Types.export_error()}
+  defp export_packages(packages, output_root) do
+    packages
+    |> Enum.reduce_while({:ok, []}, fn package, {:ok, acc} ->
+      case export_package(package, output_root) do
+        {:ok, result} -> {:cont, {:ok, [result | acc]}}
+        {:error, reason} -> {:halt, {:error, reason}}
       end
+    end)
+    |> case do
+      {:ok, results} -> {:ok, Enum.reverse(results)}
+      {:error, _} = error -> error
     end
   end
 
@@ -75,6 +81,67 @@ defmodule Ide.PackageDocs.Exporter do
       {:ok, _} -> File.mkdir_p(output_root)
       {:error, reason, path} -> {:error, {:remove_output_failed, path, reason}}
     end
+  end
+
+  @spec staging_output_root(String.t()) :: String.t()
+  defp staging_output_root(output_root) when is_binary(output_root) do
+    output_root <> ".staging-" <> Integer.to_string(System.unique_integer([:positive]))
+  end
+
+  @spec promote_output_root(String.t(), String.t()) :: :ok | {:error, Types.export_error()}
+  defp promote_output_root(staging_root, output_root)
+       when is_binary(staging_root) and is_binary(output_root) do
+    backup_root = output_root <> ".backup-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    with :ok <- move_path(staging_root, output_root, backup_root),
+         :ok <- cleanup_backup(backup_root) do
+      :ok
+    else
+      {:error, _} = error ->
+        _ = restore_backup(backup_root, output_root)
+        _ = File.rm_rf(staging_root)
+        error
+    end
+  end
+
+  @spec move_path(String.t(), String.t(), String.t()) :: :ok | {:error, Types.export_error()}
+  defp move_path(from, to, backup_root) do
+    cond do
+      File.exists?(to) ->
+        with :ok <- rename_path(to, backup_root),
+             :ok <- rename_path(from, to) do
+          :ok
+        end
+
+      true ->
+        rename_path(from, to)
+    end
+  end
+
+  @spec rename_path(String.t(), String.t()) :: :ok | {:error, Types.export_error()}
+  defp rename_path(from, to) do
+    case File.rename(from, to) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:rename_output_failed, from, to, reason}}
+    end
+  end
+
+  @spec cleanup_backup(String.t()) :: :ok
+  defp cleanup_backup(backup_root) when is_binary(backup_root) do
+    case File.rm_rf(backup_root) do
+      {:ok, _} -> :ok
+      _ -> :ok
+    end
+  end
+
+  @spec restore_backup(String.t(), String.t()) :: :ok
+  defp restore_backup(backup_root, output_root) do
+    if File.exists?(backup_root) do
+      _ = File.rm_rf(output_root)
+      _ = File.rename(backup_root, output_root)
+    end
+
+    :ok
   end
 
   @spec write_package(String.t(), String.t(), map(), [map()]) :: :ok | {:error, Types.export_error()}

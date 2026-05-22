@@ -435,7 +435,7 @@ defmodule Ide.ProjectsTest do
     phone_dirs = Map.fetch!(phone_decoded, "source-directories")
     assert "../protocol/src" in phone_dirs
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "phone-pebble-stubs/src"))
-    assert Enum.any?(phone_dirs, &String.ends_with?(&1, "shared/elm-companion"))
+    refute Enum.any?(phone_dirs, &String.ends_with?(&1, "shared/elm-companion"))
     assert Enum.any?(phone_dirs, &String.ends_with?(&1, "packages/elm-pebble-companion-core/src"))
 
     assert Enum.any?(
@@ -592,7 +592,7 @@ defmodule Ide.ProjectsTest do
     assert {:ok, phone_decoded} = Jason.decode(phone_elm_json_raw)
     phone_dirs = Map.fetch!(phone_decoded, "source-directories")
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "phone-pebble-stubs/src"))
-    assert Enum.any?(phone_dirs, &String.ends_with?(&1, "shared/elm-companion"))
+    refute Enum.any?(phone_dirs, &String.ends_with?(&1, "shared/elm-companion"))
     assert Enum.any?(phone_dirs, &String.ends_with?(&1, "packages/elm-pebble-companion-core/src"))
 
     assert Enum.any?(

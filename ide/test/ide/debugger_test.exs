@@ -709,7 +709,7 @@ defmodule Ide.DebuggerTest do
     source = """
     module GeoSnap exposing (..)
 
-    import Companion.Geolocation as Geolocation exposing (Location)
+    import Pebble.Companion.Geolocation as Geolocation exposing (Location)
 
     type Msg
         = CurrentPosition (Result String Location)
@@ -764,7 +764,7 @@ defmodule Ide.DebuggerTest do
     source = """
     module GeoSettingsSnap exposing (..)
 
-    import Companion.Geolocation as Geolocation exposing (Location)
+    import Pebble.Companion.Geolocation as Geolocation exposing (Location)
 
     type Msg
         = CurrentPosition (Result String Location)

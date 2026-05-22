@@ -381,18 +381,15 @@ defmodule Ide.PackagesTest do
 
     refute Enum.any?(rows, &(&1.package == "elm-pebble/elm-phone"))
 
-    companion_internal = Enum.find(rows, &(&1.package == "elm-pebble/companion-internal"))
-    assert companion_internal
-    assert "Companion.Phone" in companion_internal.modules
+    companion_core = Enum.find(rows, &(&1.package == "elm-pebble/companion-core"))
+    assert companion_core
+    refute "Pebble.Companion.AppMessage" in companion_core.modules
+    assert "Pebble.Companion.Phone" in companion_core.modules
+    assert "Pebble.Companion.Weather" in companion_core.modules
 
     companion_protocol = Enum.find(rows, &(&1.package == "elm-pebble/companion-protocol"))
     assert companion_protocol
     assert "Companion.Watch" in companion_protocol.modules
-
-    companion_core = Enum.find(rows, &(&1.package == "elm-pebble/companion-core"))
-    assert companion_core
-    refute "Pebble.Companion.AppMessage" in companion_core.modules
-    assert "Pebble.Companion.Command" in companion_core.modules
 
     companion_preferences = Enum.find(rows, &(&1.package == "elm-pebble/companion-preferences"))
     assert companion_preferences

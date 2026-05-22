@@ -5,13 +5,13 @@
         "args": [],
         "comment": "Accelerometer sampling configuration.",
         "name": "Config",
-        "type": "{ samplesPerUpdate : Int\n, samplingRate : SamplingRate\n}"
+        "type": "    { samplesPerUpdate : Int\n    , samplingRate : SamplingRate\n    }"
       },
       {
         "args": [],
         "comment": "One accelerometer sample.",
         "name": "Sample",
-        "type": "{ x : Int\n, y : Int\n, z : Int\n}"
+        "type": "    { x : Int\n    , y : Int\n    , z : Int\n    }"
       }
     ],
     "binops": [],
@@ -138,7 +138,7 @@
         "args": [],
         "comment": "Structured local time/date information from the watch runtime.",
         "name": "CurrentDateTime",
-        "type": "{ year : Int\n, month : Int\n, day : Int\n, dayOfWeek : Weekday\n, hour : Int\n, minute : Int\n, second : Int\n, utcOffsetMinutes : Int\n}"
+        "type": "    { year : Int\n    , month : Int\n    , day : Int\n    , dayOfWeek : Weekday\n    , hour : Int\n    , minute : Int\n    , second : Int\n    , utcOffsetMinutes : Int\n    }"
       }
     ],
     "binops": [],
@@ -213,7 +213,7 @@
         "args": [],
         "comment": "Information delivered with each frame.",
         "name": "Frame",
-        "type": "{ dtMs : Int\n, elapsedMs : Int\n, frame : Int\n}"
+        "type": "    { dtMs : Int\n    , elapsedMs : Int\n    , frame : Int\n    }"
       }
     ],
     "binops": [],
@@ -239,13 +239,13 @@
         "args": [],
         "comment": "Axis-aligned rectangle bounds.",
         "name": "Rect",
-        "type": "{ x : Int\n, y : Int\n, w : Int\n, h : Int\n}"
+        "type": "    { x : Int\n    , y : Int\n    , w : Int\n    , h : Int\n    }"
       },
       {
         "args": [],
         "comment": "Circle bounds with integer center and radius.",
         "name": "Circle",
-        "type": "{ x : Int\n, y : Int\n, r : Int\n}"
+        "type": "    { x : Int\n    , y : Int\n    , r : Int\n    }"
       }
     ],
     "binops": [],
@@ -276,7 +276,7 @@
         "args": [],
         "comment": "Two-dimensional floating-point vector.",
         "name": "Vec2",
-        "type": "{ x : Float\n, y : Float\n}"
+        "type": "    { x : Float\n    , y : Float\n    }"
       }
     ],
     "binops": [],
@@ -327,7 +327,7 @@
         "args": [],
         "comment": "Bitmap sprite with integer bounds.",
         "name": "Sprite",
-        "type": "{ bitmap : Ui.Bitmap\n, x : Int\n, y : Int\n, w : Int\n, h : Int\n}"
+        "type": "    { bitmap : Ui.Bitmap\n    , x : Int\n    , y : Int\n    , w : Int\n    , h : Int\n    }"
       }
     ],
     "binops": [],
@@ -676,17 +676,17 @@
         "args": [],
         "comment": "Screen details for the currently simulated or connected watch model.",
         "name": "LaunchScreen",
-        "type": "{ width : Int\n, height : Int\n, isColor : Bool\n, isRound : Bool\n}"
+        "type": "    { width : Int\n    , height : Int\n    , shape : DisplayShape\n    , colorMode : ColorCapability\n    }"
       },
       {
         "args": [],
         "comment": "Full launch metadata delivered to `init`.",
         "name": "LaunchContext",
-        "type": "{ reason : LaunchReason\n, watchModel : String\n, watchProfileId : String\n, screen : LaunchScreen\n}"
+        "type": "    { reason : LaunchReason\n    , watchModel : String\n    , watchProfileId : String\n    , screen : LaunchScreen\n    , hasMicrophone : Bool\n    , hasCompass : Bool\n    , supportsHealth : Bool\n    }"
       }
     ],
     "binops": [],
-    "comment": "Platform glue for Pebble watch applications.\n\nThis module wraps `Platform.worker` so your `init` function receives a\ntyped `LaunchContext` decoded from JSON launch metadata.\n\n# Launch metadata\n@docs LaunchReason, LaunchScreen, LaunchContext, launchReasonFromTag, launchReasonToInt\n\n# Program entrypoint\n@docs watchface, application",
+    "comment": "Platform glue for Pebble watch applications.\n\nThis module wraps `Platform.worker` so your `init` function receives a\ntyped `LaunchContext` decoded from JSON launch metadata.\n\n# Launch metadata\n@docs LaunchReason, LaunchScreen, LaunchContext, ColorCapability, DisplayShape, launchReasonFromTag, launchReasonToInt, colorCapabilityIsColor, displayShapeIsRound\n\n# Program entrypoint\n@docs watchface, application",
     "name": "Pebble.Platform",
     "unions": [
       {
@@ -731,6 +731,36 @@
         ],
         "comment": "Why the app or worker launched on the watch.",
         "name": "LaunchReason"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "BlackWhite",
+            []
+          ],
+          [
+            "Color",
+            []
+          ]
+        ],
+        "comment": "Color capability for the currently simulated or connected watch model.",
+        "name": "ColorCapability"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "Rectangular",
+            []
+          ],
+          [
+            "Round",
+            []
+          ]
+        ],
+        "comment": "Display shape for the currently simulated or connected watch model.",
+        "name": "DisplayShape"
       }
     ],
     "values": [
@@ -743,6 +773,16 @@
         "comment": "Encode a `LaunchReason` into the integer tag used by the native runtime.",
         "name": "launchReasonToInt",
         "type": "LaunchReason -> Int"
+      },
+      {
+        "comment": "Whether a color capability supports color rendering.",
+        "name": "colorCapabilityIsColor",
+        "type": "ColorCapability -> Bool"
+      },
+      {
+        "comment": "Whether a display shape is round.",
+        "name": "displayShapeIsRound",
+        "type": "DisplayShape -> Bool"
       },
       {
         "comment": "Start a Pebble watchface.\n\n`config.init` receives a typed launch context. `view` is retained as the\nwatch rendering contract, while init/update/subscriptions are forwarded to\nElm's headless `Platform.worker`.",
@@ -825,7 +865,7 @@
         "args": [],
         "comment": "Structured local time/date information from the watch runtime.",
         "name": "CurrentDateTime",
-        "type": "{ year : Int\n, month : Int\n, day : Int\n, dayOfWeek : DayOfWeek\n, hour : Int\n, minute : Int\n, second : Int\n, utcOffsetMinutes : Int\n}"
+        "type": "    { year : Int\n    , month : Int\n    , day : Int\n    , dayOfWeek : DayOfWeek\n    , hour : Int\n    , minute : Int\n    , second : Int\n    , utcOffsetMinutes : Int\n    }"
       }
     ],
     "binops": [],
@@ -926,19 +966,19 @@
         "args": [],
         "comment": "2D point for draw positions.",
         "name": "Point",
-        "type": "{ x : Int\n, y : Int\n}"
+        "type": "    { x : Int\n    , y : Int\n    }"
       },
       {
         "args": [],
         "comment": "Rectangle bounds for draw operations.",
         "name": "Rect",
-        "type": "{ x : Int\n, y : Int\n, w : Int\n, h : Int\n}"
+        "type": "    { x : Int\n    , y : Int\n    , w : Int\n    , h : Int\n    }"
       },
       {
         "args": [],
         "comment": "Options passed to Pebble text layout.",
         "name": "TextOptions",
-        "type": "{ alignment : TextAlignment\n, overflow : TextOverflow\n}"
+        "type": "    { alignment : TextAlignment\n    , overflow : TextOverflow\n    }"
       }
     ],
     "binops": [],
@@ -1325,7 +1365,7 @@
         "args": [],
         "comment": "Firmware version of the watch.\n\nThis corresponds to the C `WatchInfoVersion` struct.\n\nThe version has the form `X.[X.[X]]`. When a version component is not present,\nit is reported as `0`.\n\nExamples:\n\n  - `2.4.1` is represented as `{ major = 2, minor = 4, patch = 1 }`\n  - `2.4` is represented as `{ major = 2, minor = 4, patch = 0 }`",
         "name": "FirmwareVersion",
-        "type": "{ major : Int\n, minor : Int\n, patch : Int\n}"
+        "type": "    { major : Int\n    , minor : Int\n    , patch : Int\n    }"
       }
     ],
     "binops": [],

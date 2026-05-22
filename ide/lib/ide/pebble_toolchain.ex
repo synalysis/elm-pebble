@@ -1892,6 +1892,12 @@ defmodule Ide.PebbleToolchain do
             });
         }
 
+        if (app.ports && app.ports.bridgeInterest) {
+            app.ports.bridgeInterest.subscribe(function (payload) {
+                handleOutgoing(payload);
+            });
+        }
+
         if (app.ports && app.ports.incoming) {
             incomingPort = app.ports.incoming;
             while (pendingIncoming.length > 0) {

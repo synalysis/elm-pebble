@@ -6,7 +6,7 @@ defmodule Ide.ProjectCapabilitiesTest do
   @phone_geolocation """
   module CompanionApp exposing (..)
 
-  import Companion.Geolocation as Geolocation exposing (Location)
+  import Pebble.Companion.Geolocation as Geolocation exposing (Location)
 
   type alias Model =
       { location : Maybe Location }
@@ -29,7 +29,7 @@ defmodule Ide.ProjectCapabilitiesTest do
   @phone_configuration """
   module CompanionApp exposing (..)
 
-  import Companion.Phone as Phone
+  import Pebble.Companion.Phone as Phone
   import Pebble.Companion.Configuration as Configuration
 
   type alias Model = {}

@@ -5,7 +5,7 @@
         "args": [],
         "comment": "A visual group of fields.",
         "name": "Section",
-        "type": "{ title : String\n, fields : List FieldDefinition\n}"
+        "type": "    { title : String\n    , fields : List FieldDefinition\n    }"
       },
       {
         "args": [],

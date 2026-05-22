@@ -47,7 +47,7 @@ defmodule ElmEx.Frontend.DocsMetadataTest do
     assert metadata.docs == ["value", "Alias", "Thing"]
     assert metadata.module_exposing == ["Alias", "Thing(..)", "value"]
     assert metadata.declarations["value"].comment == "A documented value."
-    assert metadata.declarations["Alias"].type == "{ name : String\n}"
+    assert metadata.declarations["Alias"].type == "    { name : String\n    }"
     assert metadata.declarations["Thing"].cases == [["One", []], ["Two", ["Int"]]]
   end
 

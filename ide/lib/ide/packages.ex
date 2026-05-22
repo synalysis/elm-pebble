@@ -184,9 +184,6 @@ defmodule Ide.Packages do
   defp builtin_docs_source_root("elm-pebble/companion-protocol"),
     do: {:ok, Ide.InternalPackages.companion_protocol_elm_src_abs()}
 
-  defp builtin_docs_source_root("elm-pebble/companion-internal"),
-    do: {:ok, Ide.InternalPackages.shared_elm_companion_abs()}
-
   defp builtin_docs_source_root("elm/time"),
     do: {:ok, Ide.InternalPackages.elm_time_elm_src_abs()}
 
@@ -580,16 +577,13 @@ defmodule Ide.Packages do
     do: "elm-pebble/elm-watch (Pebble watch runtime)"
 
   defp doc_catalog_builtin_label("elm-pebble/companion-core"),
-    do: "elm-pebble/companion-core (Pebble companion bridge contracts)"
+    do: "elm-pebble/companion-core (Pebble companion platform APIs)"
 
   defp doc_catalog_builtin_label("elm-pebble/companion-preferences"),
     do: "elm-pebble/companion-preferences (typed companion configuration UI)"
 
   defp doc_catalog_builtin_label("elm-pebble/companion-protocol"),
     do: "elm-pebble/companion-protocol (typed watch/phone protocol bridge)"
-
-  defp doc_catalog_builtin_label("elm-pebble/companion-internal"),
-    do: "elm-pebble/companion-internal (source-backed companion modules)"
 
   defp doc_catalog_builtin_label(pkg) when is_binary(pkg), do: "#{pkg} (platform)"
 
@@ -604,7 +598,6 @@ defmodule Ide.Packages do
           "elm-pebble/companion-core",
           "elm-pebble/companion-preferences",
           "elm-pebble/companion-protocol",
-          "elm-pebble/companion-internal",
           "elm/core",
           "elm/json",
           "elm/random",
@@ -728,13 +721,6 @@ defmodule Ide.Packages do
 
   defp fallback_builtin_source_modules("elm-pebble/companion-protocol") do
     case ElmSourceDocs.list_modules(Ide.InternalPackages.companion_protocol_elm_src_abs()) do
-      {:ok, modules} -> modules
-      _ -> []
-    end
-  end
-
-  defp fallback_builtin_source_modules("elm-pebble/companion-internal") do
-    case ElmSourceDocs.list_modules(Ide.InternalPackages.shared_elm_companion_abs()) do
       {:ok, modules} -> modules
       _ -> []
     end

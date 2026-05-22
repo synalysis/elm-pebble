@@ -1,17 +1,35 @@
 module PackageDocs.View exposing
-    ( breadcrumb
+    ( Declaration(..)
+    , breadcrumb
     , declarationCount
+    , declarationIndex
+    , declarationName
     , moduleCard
     , moduleDocs
+    , normalizeDocName
     , packageCard
     , packageShell
+    , parseDocSections
     , renderComment
     )
 
+import Dict exposing (Dict)
 import Html exposing (Html, a, code, div, h1, h2, h3, li, p, pre, section, span, text, ul)
 import Html.Attributes exposing (class, href, id)
 import PackageDocs exposing (AliasDoc, ElmJson, ModuleDoc, PackageData, PackageRoute, UnionDoc, ValueDoc)
 import Route
+
+
+type Declaration
+    = UnionDeclaration UnionDoc
+    | AliasDeclaration AliasDoc
+    | ValueDeclaration ValueDoc
+
+
+type alias DocSection =
+    { title : String
+    , names : List String
+    }
 
 
 packageShell : List (Html msg) -> Html msg
@@ -85,15 +103,218 @@ moduleCard route moduleDoc =
 
 moduleDocs : ModuleDoc -> Html msg
 moduleDocs moduleDoc =
+    let
+        ( intro, sections ) =
+            parseDocSections moduleDoc.comment
+
+        index =
+            declarationIndex moduleDoc
+
+        declarationViews =
+            if List.isEmpty sections then
+                defaultDeclarationSections moduleDoc
+
+            else
+                sections
+                    |> List.filterMap (renderDocSection index)
+    in
     div [ class "space-y-10" ]
         [ section [ class "rounded-2xl border border-gray-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900" ]
             [ h1 [ class "font-mono text-3xl font-black tracking-tight md:text-4xl" ] [ text moduleDoc.name ]
-            , div [ class "mt-6 space-y-4 text-gray-700 dark:text-gray-300" ] (renderComment moduleDoc.comment)
+            , if String.trim intro == "" then
+                text ""
+
+              else
+                div [ class "mt-6 space-y-4 text-gray-700 dark:text-gray-300" ] (renderComment intro)
             ]
-        , declarationsSection "Union Types" (List.map unionDoc moduleDoc.unions)
-        , declarationsSection "Type Aliases" (List.map aliasDoc moduleDoc.aliases)
-        , declarationsSection "Values" (List.map valueDoc moduleDoc.values)
+        , div [] declarationViews
         ]
+
+
+defaultDeclarationSections : ModuleDoc -> List (Html msg)
+defaultDeclarationSections moduleDoc =
+    let
+        ( commands, subscriptions, otherValues ) =
+            partitionValues moduleDoc.values
+    in
+    List.filterMap identity
+        [ renderSectionIfAny "Union Types" (List.map unionDoc moduleDoc.unions)
+        , renderSectionIfAny "Type Aliases" (List.map aliasDoc moduleDoc.aliases)
+        , renderSectionIfAny "Commands" (List.map valueDoc commands)
+        , renderSectionIfAny "Subscriptions" (List.map valueDoc subscriptions)
+        , renderSectionIfAny "Values" (List.map valueDoc otherValues)
+        ]
+
+
+renderSectionIfAny : String -> List (Html msg) -> Maybe (Html msg)
+renderSectionIfAny title children =
+    if List.isEmpty children then
+        Nothing
+
+    else
+        Just (declarationsSection title children)
+
+
+renderDocSection : Dict String Declaration -> DocSection -> Maybe (Html msg)
+renderDocSection index section =
+    let
+        children =
+            section.names
+                |> List.filterMap (\name -> Dict.get (normalizeDocName name) index)
+                |> List.map renderDeclaration
+    in
+    renderSectionIfAny section.title children
+
+
+renderDeclaration : Declaration -> Html msg
+renderDeclaration declaration =
+    case declaration of
+        UnionDeclaration union ->
+            unionDoc union
+
+        AliasDeclaration alias_ ->
+            aliasDoc alias_
+
+        ValueDeclaration value ->
+            valueDoc value
+
+
+declarationName : Declaration -> String
+declarationName declaration =
+    case declaration of
+        UnionDeclaration union ->
+            union.name
+
+        AliasDeclaration alias_ ->
+            alias_.name
+
+        ValueDeclaration value ->
+            value.name
+
+
+declarationIndex : ModuleDoc -> Dict String Declaration
+declarationIndex moduleDoc =
+    let
+        unionEntries =
+            List.map (\union -> ( union.name, UnionDeclaration union )) moduleDoc.unions
+
+        aliasEntries =
+            List.map (\alias_ -> ( alias_.name, AliasDeclaration alias_ )) moduleDoc.aliases
+
+        valueEntries =
+            List.map (\value -> ( value.name, ValueDeclaration value )) moduleDoc.values
+    in
+    Dict.fromList (unionEntries ++ aliasEntries ++ valueEntries)
+
+
+partitionValues : List ValueDoc -> ( List ValueDoc, List ValueDoc, List ValueDoc )
+partitionValues values =
+    List.foldr classifyValue ( [], [], [] ) values
+
+
+classifyValue : ValueDoc -> ( List ValueDoc, List ValueDoc, List ValueDoc ) -> ( List ValueDoc, List ValueDoc, List ValueDoc )
+classifyValue value ( commands, subscriptions, others ) =
+    if isSubscriptionType value.tipe then
+        ( commands, value :: subscriptions, others )
+
+    else if isCommandType value.tipe then
+        ( value :: commands, subscriptions, others )
+
+    else
+        ( commands, subscriptions, value :: others )
+
+
+isCommandType : String -> Bool
+isCommandType tipe =
+    String.endsWith "Cmd msg" (String.trim tipe)
+
+
+isSubscriptionType : String -> Bool
+isSubscriptionType tipe =
+    String.endsWith "Sub msg" (String.trim tipe)
+
+
+parseDocSections : String -> ( String, List DocSection )
+parseDocSections comment =
+    let
+        ( introLines, sections ) =
+            parseSectionLines [] [] (String.split "\n" comment)
+    in
+    ( introLines |> List.reverse |> String.join "\n" |> String.trim
+    , List.reverse sections
+    )
+
+
+parseSectionLines : List String -> List DocSection -> List String -> ( List String, List DocSection )
+parseSectionLines introAcc sectionAcc lines =
+    case lines of
+        [] ->
+            ( introAcc, sectionAcc )
+
+        line :: rest ->
+            let
+                trimmed =
+                    String.trim line
+            in
+            if String.startsWith "# " trimmed then
+                case takeDocsLine rest of
+                    Nothing ->
+                        parseSectionLines (line :: introAcc) sectionAcc rest
+
+                    Just ( docsLine, remaining ) ->
+                        parseSectionLines
+                            introAcc
+                            ({ title = String.dropLeft 2 trimmed
+                             , names = parseDocsNames docsLine
+                             }
+                                :: sectionAcc
+                            )
+                            remaining
+
+            else if String.startsWith "@docs" trimmed then
+                parseSectionLines introAcc sectionAcc rest
+
+            else
+                parseSectionLines (line :: introAcc) sectionAcc rest
+
+
+takeDocsLine : List String -> Maybe ( String, List String )
+takeDocsLine lines =
+    case lines of
+        [] ->
+            Nothing
+
+        line :: rest ->
+            let
+                trimmed =
+                    String.trim line
+            in
+            if trimmed == "" then
+                takeDocsLine rest
+
+            else if String.startsWith "@docs" trimmed then
+                Just ( trimmed, rest )
+
+            else
+                Nothing
+
+
+parseDocsNames : String -> List String
+parseDocsNames line =
+    line
+        |> String.replace "@docs" ""
+        |> String.split ","
+        |> List.map (String.trim >> normalizeDocName)
+        |> List.filter ((/=) "")
+
+
+normalizeDocName : String -> String
+normalizeDocName name =
+    name
+        |> String.split "("
+        |> List.head
+        |> Maybe.withDefault name
+        |> String.trim
 
 
 declarationsSection : String -> List (Html msg) -> Html msg
@@ -111,26 +332,37 @@ declarationsSection title children =
 unionDoc : UnionDoc -> Html msg
 unionDoc union =
     declarationBlock union.name
-        (typeHeader ("type " ++ union.name ++ argsSuffix union.args)
-            :: (case union.cases of
-                    [] ->
-                        []
+        (case union.cases of
+            [] ->
+                typeHeader ("type " ++ union.name ++ argsSuffix union.args)
+                    :: renderComment union.comment
 
-                    cases ->
-                        [ pre [ class "mt-3 overflow-x-auto rounded-lg bg-slate-950 p-4 text-sm text-slate-100" ]
-                            [ code [] [ text (unionCasesSource union.name cases) ] ]
-                        ]
-               )
-            ++ renderComment union.comment
+            cases ->
+                pre [ class "overflow-x-auto rounded-lg bg-slate-950 p-4 text-sm text-slate-100" ]
+                    [ code [] [ text (unionCasesSource union.name cases) ] ]
+                    :: renderComment union.comment
         )
 
 
 aliasDoc : AliasDoc -> Html msg
 aliasDoc alias_ =
     declarationBlock alias_.name
-        (typeHeader ("type alias " ++ alias_.name ++ argsSuffix alias_.args ++ " = " ++ alias_.tipe)
+        (typeHeader (formatAliasSource alias_.name alias_.args alias_.tipe)
             :: renderComment alias_.comment
         )
+
+
+formatAliasSource : String -> List String -> String -> String
+formatAliasSource name args tipe =
+    let
+        header =
+            "type alias " ++ name ++ argsSuffix args
+    in
+    if String.contains "\n" tipe then
+        header ++ " =\n" ++ tipe
+
+    else
+        header ++ " = " ++ tipe
 
 
 valueDoc : ValueDoc -> Html msg

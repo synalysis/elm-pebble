@@ -1,6 +1,6 @@
 module CompanionApp exposing (main)
 
-import Companion.Phone as CompanionPhone
+import Pebble.Companion.Phone as CompanionPhone
 import Companion.Types exposing (Location(..), PhoneToWatch(..), Temperature(..), WatchToPhone(..), WeatherCondition(..))
 import CompanionPreferences
 import Companion.GeneratedPreferences as GeneratedPreferences

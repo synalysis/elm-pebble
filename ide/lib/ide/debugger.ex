@@ -43,8 +43,8 @@ defmodule Ide.Debugger do
     },
     %{
       source: "network",
-      names: ["onNetwork"],
-      target_suffixes: [".onNetwork"],
+      names: ["onConnectivity"],
+      target_suffixes: [".onConnectivity"],
       payload: :network
     },
     %{
@@ -78,7 +78,7 @@ defmodule Ide.Debugger do
   }
   @preferences_result_contract %{
     names: ["onPreference"],
-    target_suffixes: [".onPreference"]
+    target_suffixes: [".onPreference", ".PreferenceStore.onPreference"]
   }
 
   @type runtime_event :: %{
@@ -1784,7 +1784,7 @@ defmodule Ide.Debugger do
 
       case callback do
         value when is_binary(value) and value != "" ->
-          payload = companion_bridge_payload(acc, Map.fetch!(contract, :payload))
+          payload = companion_bridge_payload(acc, Map.fetch!(contract, :payload), %{op: "subscribe"})
           trigger = Map.fetch!(contract, :source)
 
           acc
@@ -1808,8 +1808,21 @@ defmodule Ide.Debugger do
     Enum.map(@companion_bridge_subscription_contracts, &Map.fetch!(&1, :source))
   end
 
-  @spec companion_bridge_payload(map(), atom()) :: map() | nil
-  defp companion_bridge_payload(state, kind) when is_map(state) do
+  @spec companion_bridge_payload(map(), atom(), map()) :: term()
+  defp companion_bridge_payload(state, kind, request)
+
+  defp companion_bridge_payload(state, :weather, request) when is_map(state) and is_map(request) do
+    settings = simulator_settings_from_state(state)
+    weather = settings["weather"]
+
+    case Map.get(request, :op) do
+      "forecast" -> [weather]
+      "subscribe" -> %{"ctor" => "Current", "args" => [weather]}
+      _ -> weather
+    end
+  end
+
+  defp companion_bridge_payload(state, kind, _request) when is_map(state) do
     settings = simulator_settings_from_state(state)
 
     case kind do
@@ -1833,9 +1846,6 @@ defmodule Ide.Debugger do
           "notificationsEnabled" => settings["notifications_enabled"]
         }
 
-      :weather ->
-        [settings["weather"]]
-
       :calendar ->
         settings["calendar_events"]
 
@@ -1849,11 +1859,18 @@ defmodule Ide.Debugger do
     calls
     |> Enum.flat_map(&companion_bridge_request_from_cmd_call/1)
     |> Enum.uniq_by(
-      &{Map.get(&1, :api), Map.get(&1, :op), Map.get(&1, :key), inspect(Map.get(&1, :value))}
+      &{Map.get(&1, :api), Map.get(&1, :op), Map.get(&1, :key), Map.get(&1, :callback),
+        inspect(Map.get(&1, :value))}
     )
   end
 
   defp companion_bridge_requests_from_cmd_calls(_calls), do: []
+
+  defp companion_bridge_request_meta(row) when is_map(row) do
+    %{callback: Map.get(row, "callback_constructor")}
+  end
+
+  defp companion_bridge_request_meta(_row), do: %{callback: nil}
 
   @spec companion_bridge_request_from_cmd_call(Types.cmd_call()) :: [map()]
   defp companion_bridge_request_from_cmd_call(row) when is_map(row) do
@@ -1861,40 +1878,105 @@ defmodule Ide.Debugger do
     target = (Map.get(row, "target") || "") |> to_string()
     normalized = String.downcase(target)
     args = Map.get(row, "arg_values") || []
+    meta = companion_bridge_request_meta(row)
 
     cond do
-      companion_call_target?(normalized, "battery") and name in ["current", "status", "subscribe"] ->
-        [%{api: "battery", op: "status"}]
+      name == "subscribe" ->
+        []
 
-      companion_call_target?(normalized, "locale") and name in ["current", "status", "subscribe"] ->
-        [%{api: "locale", op: "status"}]
+      companion_call_target?(normalized, "battery") and name in ["current", "status"] ->
+        [Map.merge(%{api: "battery", op: "status"}, meta)]
 
-      companion_call_target?(normalized, "network") and name in ["current", "status", "subscribe"] ->
-        [%{api: "network", op: "status"}]
+      companion_call_target?(normalized, "locale") and name in ["current", "status"] ->
+        [Map.merge(%{api: "locale", op: "status"}, meta)]
 
-      companion_call_target?(normalized, "notifications") and
-          name in ["current", "status", "subscribe"] ->
-        [%{api: "notifications", op: "status"}]
+      companion_call_target?(normalized, "connectivity") and name in ["current", "status"] ->
+        [Map.merge(%{api: "network", op: "status", plain_result: true}, meta)]
 
-      companion_call_target?(normalized, "weather") and
-          name in ["current", "forecast", "subscribe"] ->
-        [%{api: "weather", op: name}]
+      companion_call_target?(normalized, "network") and name in ["current", "status"] ->
+        [Map.merge(%{api: "network", op: "status", plain_result: true}, meta)]
 
-      companion_call_target?(normalized, "calendar") and
-          name in ["current", "nextEvent", "upcoming", "subscribe"] ->
-        [%{api: "calendar", op: name}]
+      companion_call_target?(normalized, "notifications") and name in ["current", "status"] ->
+        [Map.merge(%{api: "notifications", op: "status"}, meta)]
 
-      companion_call_target?(normalized, "environment") and name in ["current", "subscribe"] ->
-        [%{api: "environment", op: "current"}]
+      companion_call_target?(normalized, "weather") and name in ["current", "forecast"] ->
+        [Map.merge(%{api: "weather", op: name}, meta)]
 
-      companion_call_target?(normalized, "storage") and name in ["get", "set", "remove", "clear"] ->
-        [%{api: "storage", op: name, key: companion_arg_string(args, 0), value: Enum.at(args, 1)}]
+      companion_call_target?(normalized, "calendar") and name in ["current", "nextEvent", "upcoming"] ->
+        [
+          Map.merge(
+            %{api: "calendar", op: if(name == "current", do: "nextEvent", else: name)},
+            meta
+          )
+        ]
 
-      companion_call_target?(normalized, "preferences") and name in ["get", "set", "subscribe"] ->
+      companion_call_target?(normalized, "environment") and name == "current" ->
+        [Map.merge(%{api: "environment", op: "current"}, meta)]
+
+      companion_call_target?(normalized, "storage") and name == "get" ->
+        [
+          Map.merge(
+            %{
+              api: "storage",
+              op: "get",
+              key: companion_arg_string(args, 0),
+              value: Enum.at(args, 1)
+            },
+            meta
+          )
+        ]
+
+      companion_call_target?(normalized, "storage") and name in ["set", "remove", "clear"] ->
+        [
+          %{
+            api: "storage",
+            op: name,
+            key: companion_arg_string(args, 0),
+            value: Enum.at(args, 1)
+          }
+        ]
+
+      companion_call_target?(normalized, "preferencestore") and name == "get" ->
+        [
+          Map.merge(
+            %{
+              api: "preferences",
+              op: "get",
+              key: companion_arg_string(args, 0),
+              value: Enum.at(args, 1)
+            },
+            meta
+          )
+        ]
+
+      companion_call_target?(normalized, "preferencestore") and name == "set" ->
         [
           %{
             api: "preferences",
-            op: name,
+            op: "set",
+            key: companion_arg_string(args, 0),
+            value: Enum.at(args, 1)
+          }
+        ]
+
+      companion_call_target?(normalized, "preferences") and name == "get" ->
+        [
+          Map.merge(
+            %{
+              api: "preferences",
+              op: "get",
+              key: companion_arg_string(args, 0),
+              value: Enum.at(args, 1)
+            },
+            meta
+          )
+        ]
+
+      companion_call_target?(normalized, "preferences") and name == "set" ->
+        [
+          %{
+            api: "preferences",
+            op: "set",
             key: companion_arg_string(args, 0),
             value: Enum.at(args, 1)
           }
@@ -1902,7 +1984,7 @@ defmodule Ide.Debugger do
 
       companion_call_target?(normalized, "geolocation") and
           name in ["currentPosition", "getCurrentPosition"] ->
-        [%{api: "geolocation", op: "getCurrentPosition"}]
+        [Map.merge(%{api: "geolocation", op: "getCurrentPosition"}, meta)]
 
       true ->
         []
@@ -1914,7 +1996,8 @@ defmodule Ide.Debugger do
   defp companion_call_target?(target, module_name)
        when is_binary(target) and is_binary(module_name) do
     String.contains?(target, module_name <> ".") or
-      String.contains?(target, "companion." <> module_name)
+      String.contains?(target, "companion." <> module_name) or
+      String.contains?(target, "pebble.companion." <> module_name)
   end
 
   @spec companion_arg_string([Types.protocol_wire_arg() | String.t()], non_neg_integer()) ::
@@ -1937,8 +2020,15 @@ defmodule Ide.Debugger do
   defp apply_companion_bridge_requests(_requests, state, _target, _source), do: state
 
   @spec apply_companion_bridge_request(map(), :companion, map(), String.t()) :: map()
+  defp apply_companion_bridge_request(state, _target, %{api: "storage", op: op} = request, _source)
+       when op in ["set", "remove", "clear"] do
+    {next_state, _result} = companion_storage_result(state, request)
+    next_state
+  end
+
   defp apply_companion_bridge_request(state, target, %{api: "storage"} = request, source) do
-    callback = subscription_callback_from_state(state, target, @storage_result_contract)
+    callback =
+      companion_bridge_callback(request, state, target, @storage_result_contract)
 
     case callback do
       value when is_binary(value) and value != "" ->
@@ -1959,8 +2049,14 @@ defmodule Ide.Debugger do
     end
   end
 
+  defp apply_companion_bridge_request(state, _target, %{api: "preferences", op: "set"} = request, _source) do
+    {next_state, _result} = companion_preferences_result(state, request)
+    next_state
+  end
+
   defp apply_companion_bridge_request(state, target, %{api: "preferences"} = request, source) do
-    callback = subscription_callback_from_state(state, target, @preferences_result_contract)
+    callback =
+      companion_bridge_callback(request, state, target, @preferences_result_contract)
 
     case callback do
       value when is_binary(value) and value != "" ->
@@ -1981,9 +2077,9 @@ defmodule Ide.Debugger do
     end
   end
 
-  defp apply_companion_bridge_request(state, target, %{api: "geolocation"}, source) do
+  defp apply_companion_bridge_request(state, target, %{api: "geolocation"} = request, source) do
     callback =
-      geolocation_subscription_callback(get_in(state, [target, :model, "elm_introspect"]))
+      companion_bridge_callback(request, state, target, @geolocation_subscription_contract)
 
     case callback do
       value when is_binary(value) and value != "" ->
@@ -1994,7 +2090,7 @@ defmodule Ide.Debugger do
           {:ok, debugger_geolocation_location(state)},
           source,
           "geolocation",
-          %{api: "geolocation", op: "getCurrentPosition"}
+          request
         )
 
       _ ->
@@ -2007,11 +2103,14 @@ defmodule Ide.Debugger do
     contract =
       Enum.find(@companion_bridge_subscription_contracts, &(Map.fetch!(&1, :source) == api))
 
-    callback = if contract, do: subscription_callback_from_state(state, target, contract)
+    callback =
+      if contract,
+        do: companion_bridge_callback(request, state, target, contract),
+        else: nil
 
     case {contract, callback} do
       {%{} = found_contract, value} when is_binary(value) and value != "" ->
-        payload = companion_bridge_payload(state, Map.fetch!(found_contract, :payload))
+        payload = companion_bridge_payload(state, Map.fetch!(found_contract, :payload), request)
 
         apply_companion_bridge_callback(
           state,
@@ -2030,12 +2129,47 @@ defmodule Ide.Debugger do
 
   defp apply_companion_bridge_request(state, _target, _request, _source), do: state
 
+  @spec companion_bridge_callback(map(), map(), :companion, map()) :: String.t() | nil
+  defp companion_bridge_callback(%{callback: callback}, _state, _target, _contract)
+       when is_binary(callback) and callback != "",
+       do: callback
+
+  defp companion_bridge_callback(request, state, target, contract) when is_map(request) do
+    subscription_callback_from_state(state, target, contract)
+  end
+
+  defp companion_bridge_callback(_request, _state, _target, _contract), do: nil
+
   defp apply_companion_bridge_callback(state, target, callback, result, source, api, request)
        when is_map(state) and is_binary(callback) and is_binary(source) and is_binary(api) do
-    {result_ctor, payload} =
-      case result do
-        {:ok, value} -> {"Ok", value}
-        {:error, message} -> {"Err", message}
+    plain? = Map.get(request, :plain_result) == true
+
+    {result_ctor, payload, message_value} =
+      if plain? do
+        connectivity =
+          case result do
+            {:ok, true} ->
+              %{"ctor" => "Online", "args" => []}
+
+            {:ok, false} ->
+              %{"ctor" => "Offline", "args" => []}
+
+            {:ok, value} ->
+              value
+
+            _ ->
+              %{"ctor" => "Offline", "args" => []}
+          end
+
+        {"plain", connectivity, %{"ctor" => callback, "args" => [connectivity]}}
+      else
+        {result_ctor, payload} =
+          case result do
+            {:ok, value} -> {"Ok", value}
+            {:error, message} -> {"Err", message}
+          end
+
+        {result_ctor, payload, subscription_result_message_value(callback, result_ctor, payload)}
       end
 
     state
@@ -2050,7 +2184,7 @@ defmodule Ide.Debugger do
     |> apply_step_once(
       target,
       callback,
-      subscription_result_message_value(callback, result_ctor, payload),
+      message_value,
       source,
       api
     )

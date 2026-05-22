@@ -7,7 +7,6 @@ defmodule Ide.CompanionPebbleApisTest do
   @bridge_schema Path.join(@root, "shared/companion-protocol/phone_bridge_v1.json")
   @core_elm_json Path.join(@root, "packages/elm-pebble-companion-core/elm.json")
   @core_src Path.join(@root, "packages/elm-pebble-companion-core/src/Pebble/Companion")
-  @shared_src Path.join(@root, "shared/elm-companion/Companion")
   @docs_json Path.join(
                @root,
                "elm_pebble_dev/public/package-docs/packages/elm-pebble/companion-core/0.1.0/docs.json"
@@ -32,7 +31,7 @@ defmodule Ide.CompanionPebbleApisTest do
     assert apis["storage"] == ["set", "get", "remove", "clear"]
   end
 
-  test "companion-core exposes typed contract modules and app wrappers use Result String" do
+  test "companion-core exposes developer-facing Pebble.Companion modules" do
     exposed =
       @core_elm_json
       |> File.read!()
@@ -40,25 +39,28 @@ defmodule Ide.CompanionPebbleApisTest do
       |> Map.fetch!("exposed-modules")
 
     for module <-
-          ~w(Battery Calendar Environment Locale Network Notifications Preferences Storage Timeline Weather) do
+          ~w(Battery Calendar Connectivity Environment Geolocation Locale Notifications PreferenceStore Storage Weather Phone) do
       assert "Pebble.Companion.#{module}" in exposed
       assert File.exists?(Path.join(@core_src, "#{module}.elm"))
     end
 
-    for module <-
-          ~w(Battery Calendar Environment Locale Network Notifications Preferences Storage Weather) do
-      wrapper = File.read!(Path.join(@shared_src, "#{module}.elm"))
-      assert String.contains?(wrapper, "Result String")
-      assert String.contains?(wrapper, "Phone.sendBridgeCommand")
-      assert String.contains?(wrapper, "Phone.onRawMessage")
-    end
+    weather = File.read!(Path.join(@core_src, "Weather.elm"))
+    assert String.contains?(weather, "(Result String WeatherInfo -> msg) -> Cmd msg")
+    assert String.contains?(weather, "type WeatherUpdate")
+    assert String.contains?(weather, "Phone.send toMsg")
+    assert String.contains?(weather, "onWeather")
+
+    connectivity = File.read!(Path.join(@core_src, "Connectivity.elm"))
+    assert String.contains?(connectivity, "type Connectivity")
+    assert String.contains?(connectivity, "(Connectivity -> msg) -> Cmd msg")
   end
 
   test "elm_pebble_dev package docs mirror includes companion Pebble API modules" do
     docs = @docs_json |> File.read!() |> Jason.decode!()
     documented = MapSet.new(docs, &Map.fetch!(&1, "name"))
 
-    for module <- ~w(Battery Calendar Environment Locale Notifications Preferences Weather) do
+    for module <-
+          ~w(Battery Calendar Connectivity Environment Locale Notifications PreferenceStore Weather) do
       assert MapSet.member?(documented, "Pebble.Companion.#{module}")
     end
   end
@@ -117,10 +119,10 @@ defmodule Ide.CompanionPebbleApisTest do
     source = """
     module CompanionApiCommands exposing (..)
 
-    import Companion.Preferences as Preferences
-    import Companion.Storage as Storage
     import Json.Decode as Decode
     import Json.Encode as Encode
+    import Pebble.Companion.PreferenceStore as PreferenceStore
+    import Pebble.Companion.Storage as Storage
 
     type alias Model =
         { stored : String
@@ -128,14 +130,14 @@ defmodule Ide.CompanionPebbleApisTest do
         }
 
     type Msg
-        = GotStorage (Result String Storage.Value)
+        = GotStorage (Result Storage.Error Storage.Value)
         | GotPreference (Result String ( String, Decode.Value ))
 
     init _ =
         ( { stored = "", preferenceKey = "" }
         , Cmd.batch
-            [ Storage.get "theme"
-            , Preferences.get "units"
+            [ Storage.get "theme" GotStorage
+            , PreferenceStore.get "units" GotPreference
             ]
         )
 
@@ -148,10 +150,7 @@ defmodule Ide.CompanionPebbleApisTest do
                 ( { model | preferenceKey = "received" }, Cmd.none )
 
     subscriptions _ =
-        Sub.batch
-            [ Storage.onStorage GotStorage
-            , Preferences.onPreference GotPreference
-            ]
+        Sub.none
     """
 
     {:ok, _state} = Debugger.start_session(slug)
@@ -196,13 +195,13 @@ defmodule Ide.CompanionPebbleApisTest do
     source = """
     module CompanionApiAllCommands exposing (..)
 
-    import Companion.Battery as Battery
-    import Companion.Calendar as Calendar
-    import Companion.Environment as Environment
-    import Companion.Locale as Locale
-    import Companion.Network as Network
-    import Companion.Notifications as Notifications
-    import Companion.Weather as Weather
+    import Pebble.Companion.Battery as Battery
+    import Pebble.Companion.Calendar as Calendar
+    import Pebble.Companion.Connectivity as Connectivity
+    import Pebble.Companion.Environment as Environment
+    import Pebble.Companion.Locale as Locale
+    import Pebble.Companion.Notifications as Notifications
+    import Pebble.Companion.Weather as Weather
 
     type alias Model =
         { count : Int }
@@ -212,20 +211,20 @@ defmodule Ide.CompanionPebbleApisTest do
         | GotCalendar (Result String (List Calendar.CalendarEvent))
         | GotEnvironment (Result String Environment.EnvironmentInfo)
         | GotLocale (Result String Locale.LocaleInfo)
-        | GotNetwork (Result String Bool)
+        | GotConnectivity Connectivity.Connectivity
         | GotNotifications (Result String Notifications.NotificationStatus)
         | GotWeather (Result String (List Weather.WeatherInfo))
 
     init _ =
         ( { count = 0 }
         , Cmd.batch
-            [ Battery.current
-            , Calendar.upcoming 2
-            , Environment.current
-            , Locale.current
-            , Network.current
-            , Notifications.current
-            , Weather.forecast
+            [ Battery.current GotBattery
+            , Calendar.upcoming 2 GotCalendar
+            , Environment.current GotEnvironment
+            , Locale.current GotLocale
+            , Connectivity.current GotConnectivity
+            , Notifications.current GotNotifications
+            , Weather.forecast GotWeather
             ]
         )
 
@@ -233,15 +232,7 @@ defmodule Ide.CompanionPebbleApisTest do
         ( { model | count = model.count + 1 }, Cmd.none )
 
     subscriptions _ =
-        Sub.batch
-            [ Battery.onBattery GotBattery
-            , Calendar.onCalendar GotCalendar
-            , Environment.onEnvironment GotEnvironment
-            , Locale.onLocale GotLocale
-            , Network.onNetwork GotNetwork
-            , Notifications.onNotifications GotNotifications
-            , Weather.onWeather GotWeather
-            ]
+        Sub.none
     """
 
     {:ok, _state} = Debugger.start_session(slug)
@@ -262,7 +253,7 @@ defmodule Ide.CompanionPebbleApisTest do
     for api <- ~w(battery calendar environment locale network notifications weather) do
       assert Enum.any?(
                bridge_events,
-               &(Map.get(&1, :api) == api and Map.get(&1, :result) == "Ok")
+               &(Map.get(&1, :api) == api and Map.get(&1, :result) in ["Ok", "plain"])
              )
     end
 
@@ -275,23 +266,23 @@ defmodule Ide.CompanionPebbleApisTest do
     source = """
     module CompanionApiMutations exposing (..)
 
-    import Companion.Preferences as Preferences
-    import Companion.Storage as Storage
     import Json.Decode as Decode
     import Json.Encode as Encode
+    import Pebble.Companion.PreferenceStore as PreferenceStore
+    import Pebble.Companion.Storage as Storage
 
     type alias Model =
         { count : Int }
 
     type Msg
-        = GotStorage (Result String Storage.Value)
+        = GotStorage (Result Storage.Error Storage.Value)
         | GotPreference (Result String ( String, Decode.Value ))
 
     init _ =
         ( { count = 0 }
         , Cmd.batch
             [ Storage.set "theme" (Storage.StringValue "light")
-            , Preferences.set "units" (Encode.string "imperial")
+            , PreferenceStore.set "units" (Encode.string "imperial")
             ]
         )
 
@@ -299,10 +290,7 @@ defmodule Ide.CompanionPebbleApisTest do
         ( { model | count = model.count + 1 }, Cmd.none )
 
     subscriptions _ =
-        Sub.batch
-            [ Storage.onStorage GotStorage
-            , Preferences.onPreference GotPreference
-            ]
+        Sub.none
     """
 
     {:ok, _state} = Debugger.start_session(slug)
@@ -321,6 +309,5 @@ defmodule Ide.CompanionPebbleApisTest do
            }
 
     assert get_in(state, [:simulator_settings, "preferences", "units"]) == "imperial"
-    assert get_in(state, [:companion, :model, "runtime_model", "count"]) >= 2
   end
 end

@@ -1,12 +1,11 @@
 # elm-pebble/companion-core
 
-Protocol contracts and codecs for Pebble companion apps compiled with the original Elm compiler.
+Developer-facing Pebble companion platform APIs for phone apps compiled with the original Elm compiler.
 
-This package is intentionally effect-free. Side effects run through generated ports and JS bridge handlers.
+Import `Pebble.Companion.*` modules for weather, storage, connectivity, and other phone-side capabilities. Watch↔phone protocol modules remain under project-local `Companion.*` namespaces.
 
 See:
 
 - `shared/companion-protocol/phone_bridge_v1.json`
-- `elmc/scripts/generate_phone_bridge.py`
 - `docs/PEBBLE_PHONE_PROTOCOL.md`
 - `docs/PEBBLE_PHONE_API_MATRIX.md`

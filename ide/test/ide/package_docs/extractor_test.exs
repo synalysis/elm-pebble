@@ -15,7 +15,7 @@ defmodule Ide.PackageDocs.ExtractorTest do
     assert [%{"name" => "Thing", "cases" => [["One", []], ["Two", ["Int"]]]}] =
              module_doc["unions"]
 
-    assert [%{"name" => "Alias", "type" => "{ name : String\n}"}] = module_doc["aliases"]
+    assert [%{"name" => "Alias", "type" => "    { name : String\n    }"}] = module_doc["aliases"]
     assert [%{"name" => "value", "type" => "Int"}] = module_doc["values"]
   end
 

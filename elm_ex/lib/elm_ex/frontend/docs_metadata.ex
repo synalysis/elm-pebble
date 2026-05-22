@@ -391,7 +391,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
       kind: :alias,
       name: name,
       args: args,
-      type: String.trim(body),
+      type: normalize_alias_type(body),
       comment: comment,
       line: state.i + 1
     })
@@ -425,7 +425,7 @@ defmodule ElmEx.Frontend.DocsMetadata do
           {Enum.join(acc, "\n"), i}
 
         String.starts_with?(line, "    ") or String.starts_with?(line, "\t") ->
-          do_read_alias_body(lines, i + 1, name, acc ++ [trimmed])
+          do_read_alias_body(lines, i + 1, name, acc ++ [String.trim_trailing(line)])
 
         true ->
           {Enum.join(acc, "\n"), i}
@@ -537,5 +537,58 @@ defmodule ElmEx.Frontend.DocsMetadata do
   @spec put_declaration(map(), String.t(), declaration()) :: map()
   defp put_declaration(state, name, declaration) do
     %{state | declarations: Map.put(state.declarations, name, declaration)}
+  end
+
+  @spec normalize_alias_type(String.t()) :: String.t()
+  defp normalize_alias_type(body) when is_binary(body) do
+    body
+    |> String.trim()
+    |> case do
+      "{" <> _ -> format_record_type(body)
+      other -> other
+    end
+  end
+
+  @spec format_record_type(String.t()) :: String.t()
+  defp format_record_type(body) when is_binary(body) do
+    body
+    |> String.trim()
+    |> String.trim_leading("{")
+    |> String.trim_trailing("}")
+    |> split_record_fields()
+    |> case do
+      [] ->
+        "    {}"
+
+      fields ->
+        "    { " <>
+          hd(fields) <>
+          (fields
+           |> tl()
+           |> Enum.map(fn field -> "\n    , " <> field end)
+           |> Enum.join("")) <>
+          "\n    }"
+    end
+  end
+
+  @spec split_record_fields(String.t()) :: [String.t()]
+  defp split_record_fields(inner) when is_binary(inner) do
+    inner
+    |> String.split("\n", trim: false)
+    |> Enum.flat_map(&split_record_field_tokens/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+  end
+
+  @spec split_record_field_tokens(String.t()) :: [String.t()]
+  defp split_record_field_tokens(line) when is_binary(line) do
+    line
+    |> String.trim()
+    |> String.trim_leading(",")
+    |> String.trim()
+    |> case do
+      "" -> []
+      field -> String.split(field, ~r/\s*,\s*/, trim: true)
+    end
   end
 end

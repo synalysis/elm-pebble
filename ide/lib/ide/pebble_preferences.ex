@@ -240,7 +240,7 @@ defmodule Ide.PebblePreferences do
 
     import #{module_name} as PreferencesSchema
     import Json.Decode as Decode
-    import Companion.Phone as RawBridge
+    import Pebble.Companion.Phone as RawBridge
     import Pebble.Companion.Preferences as Preferences
 
 

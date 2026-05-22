@@ -25,6 +25,58 @@ defmodule Ide.PackageDocs.ExporterTest do
     assert {:ok, %{"name" => "example/sample"}} = elm_json_path |> File.read!() |> Jason.decode()
   end
 
+  test "failed export leaves existing output root untouched" do
+    package_root = package_fixture()
+    output_root = output_fixture()
+    File.mkdir_p!(Path.join(output_root, "packages/example/sample/1.0.0"))
+    marker_path = Path.join(output_root, "packages/example/sample/1.0.0/docs.json")
+    File.write!(marker_path, "keep-me\n")
+
+    invalid_root =
+      Path.join([
+        System.tmp_dir!(),
+        "ide_package_docs_exporter_invalid_#{System.unique_integer([:positive])}"
+      ])
+
+    File.mkdir_p!(Path.join(invalid_root, "src"))
+
+    File.write!(Path.join(invalid_root, "elm.json"), """
+    {
+      "type": "package",
+      "name": "example/broken",
+      "summary": "Broken package",
+      "license": "MIT",
+      "version": "1.0.0",
+      "exposed-modules": ["Broken"],
+      "elm-version": "0.19.0 <= v < 0.20.0",
+      "dependencies": {
+        "elm/core": "1.0.0 <= v < 2.0.0"
+      },
+      "test-dependencies": {}
+    }
+    """)
+
+    File.write!(Path.join(invalid_root, "src/Broken.elm"), """
+    module Broken exposing (value)
+
+    value : Int
+    value =
+        1
+    """)
+
+    assert {:error, {:missing_module_comment, "Broken", _}} =
+             Exporter.export(
+               output_root: output_root,
+               packages: [
+                 %{name: "example/sample", root: package_root},
+                 %{name: "example/broken", root: invalid_root}
+               ]
+             )
+
+    assert File.read!(marker_path) == "keep-me\n"
+    refute File.exists?(Path.join(output_root, "packages/example/broken/1.0.0/docs.json"))
+  end
+
   defp package_fixture do
     root =
       Path.join([

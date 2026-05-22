@@ -15,10 +15,6 @@ defmodule Ide.InternalPackages do
   def shared_elm_abs, do: Paths.bundled_elm_path("shared-elm", "shared/elm")
 
   @doc false
-  @spec shared_elm_companion_abs() :: String.t()
-  def shared_elm_companion_abs, do: Paths.bundled_elm_path("shared-elm-companion", "shared/elm-companion")
-
-  @doc false
   @spec pebble_elm_src_abs() :: String.t()
   def pebble_elm_src_abs,
     do: Paths.bundled_elm_path("pebble-watch-src", "packages/elm-pebble/elm-watch/src")
@@ -94,7 +90,6 @@ defmodule Ide.InternalPackages do
       pebble_companion_core_elm_src_abs(),
       pebble_companion_preferences_elm_src_abs(),
       shared_elm_abs(),
-      shared_elm_companion_abs(),
       elm_time_elm_src_abs()
     ]
   end

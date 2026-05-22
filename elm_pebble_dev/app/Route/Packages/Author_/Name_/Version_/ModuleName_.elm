@@ -4,6 +4,7 @@ import BackendTask exposing (BackendTask)
 import FatalError exposing (FatalError)
 import Head
 import Head.Seo as Seo
+import Dict exposing (Dict)
 import Html exposing (Html, a, aside, div, h2, li, p, section, text, ul)
 import Html.Attributes exposing (class, href)
 import PackageDocs exposing (ModuleDoc, PackageData, PackageRoute)
@@ -158,14 +159,55 @@ moduleSidebar package moduleDoc =
             ]
             [ text ("Back to " ++ package.elmJson.name) ]
         , h2 [ class "mt-8 text-lg font-bold" ] [ text "Declarations" ]
-        , ul [ class "mt-3 space-y-2 text-sm" ]
+        , moduleSidebarDeclarations moduleDoc
+        ]
+
+
+moduleSidebarDeclarations : ModuleDoc -> Html msg
+moduleSidebarDeclarations moduleDoc =
+    let
+        ( _, sections ) =
+            DocsView.parseDocSections moduleDoc.comment
+
+        index =
+            DocsView.declarationIndex moduleDoc
+    in
+    if List.isEmpty sections then
+        ul [ class "mt-3 space-y-2 text-sm" ]
             (List.concat
                 [ List.map declarationLink moduleDoc.unions
                 , List.map declarationLink moduleDoc.aliases
                 , List.map declarationLink moduleDoc.values
                 ]
             )
-        ]
+
+    else
+        div [ class "mt-3 space-y-6 text-sm" ]
+            (sections
+                |> List.filterMap
+                    (\section ->
+                        let
+                            items =
+                                section.names
+                                    |> List.filterMap (\name -> Dict.get (DocsView.normalizeDocName name) index)
+                        in
+                        if List.isEmpty items then
+                            Nothing
+
+                        else
+                            Just
+                                (div []
+                                    [ p [ class "font-semibold text-slate-950 dark:text-white" ] [ text section.title ]
+                                    , ul [ class "mt-2 space-y-2" ] (List.map sidebarDeclarationLink items)
+                                    ]
+                                )
+                    )
+            )
+
+
+sidebarDeclarationLink : DocsView.Declaration -> Html msg
+sidebarDeclarationLink declaration =
+    declarationLink { name = DocsView.declarationName declaration }
 
 
 declarationLink : { a | name : String } -> Html msg

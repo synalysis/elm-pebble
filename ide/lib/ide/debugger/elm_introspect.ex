@@ -2183,8 +2183,7 @@ defmodule Ide.Debugger.ElmIntrospect do
         Ide.InternalPackages.companion_protocol_elm_src_abs(),
         Ide.InternalPackages.elm_time_elm_src_abs(),
         Ide.InternalPackages.elm_random_elm_src_abs(),
-        Ide.InternalPackages.shared_elm_abs(),
-        Ide.InternalPackages.shared_elm_companion_abs()
+        Ide.InternalPackages.shared_elm_abs()
       ]
 
     (current_roots ++ package_roots)

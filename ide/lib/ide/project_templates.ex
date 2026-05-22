@@ -678,7 +678,6 @@ defmodule Ide.ProjectTemplates do
     [
       "src",
       "../protocol/src",
-      InternalPackages.shared_elm_companion_abs(),
       InternalPackages.pebble_companion_core_elm_src_abs(),
       InternalPackages.pebble_companion_preferences_elm_src_abs()
     ]
@@ -688,7 +687,6 @@ defmodule Ide.ProjectTemplates do
   defp phone_source_directory_additions(_workspace_path) do
     [
       "../protocol/src",
-      InternalPackages.shared_elm_companion_abs(),
       InternalPackages.pebble_companion_core_elm_src_abs(),
       InternalPackages.pebble_companion_preferences_elm_src_abs()
     ]
@@ -708,7 +706,8 @@ defmodule Ide.ProjectTemplates do
     [
       InternalPackages.phone_pebble_stubs_elm_src_abs(),
       InternalPackages.elm_random_elm_src_abs(),
-      InternalPackages.pebble_elm_src_abs()
+      InternalPackages.pebble_elm_src_abs(),
+      Ide.Paths.bundled_elm_path("shared-elm-companion", "shared/elm-companion")
     ]
     |> Enum.map(&Path.expand/1)
   end
