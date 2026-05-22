@@ -180,23 +180,15 @@ defmodule Ide.WasmEmulator.FirmwareSync do
   defp arm_objcopy_bin do
     sdk_root = sdk_toolchain_root()
 
-    candidates =
-      [
-        "arm-none-eabi-objcopy",
-        "llvm-objcopy",
-        sdk_root && Path.join(sdk_root, "arm-none-eabi/bin/arm-none-eabi-objcopy")
-      ]
-      |> Enum.reject(&is_nil/1)
-
-    Enum.find_value(candidates, fn candidate ->
-      if String.contains?(candidate, "/") do
-        if File.regular?(candidate), do: candidate
-      else
-        case System.cmd("command", ["-v", candidate], stderr_to_stdout: true) do
-          {found, 0} -> String.trim(found)
-          _ -> nil
-        end
-      end
+    [
+      sdk_root && Path.join(sdk_root, "arm-none-eabi/bin/arm-none-eabi-objcopy"),
+      System.find_executable("arm-none-eabi-objcopy"),
+      System.find_executable("llvm-objcopy")
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.find_value(fn candidate ->
+      if File.regular?(candidate), do: candidate
     end)
   end
 
