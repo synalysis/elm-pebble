@@ -874,14 +874,29 @@ defmodule Ide.Debugger do
           resolved_message_value =
             subscription_trigger_message_value(resolved_message, requested_message_value)
 
-          apply_step_once(
-            state,
-            target,
-            resolved_message,
-            resolved_message_value,
-            "subscription_trigger",
-            "subscription_trigger"
-          )
+          row = %{
+            trigger: trigger,
+            message: resolved_message,
+            target: source_root_for_target(target)
+          }
+
+          if subscription_model_active?(state, target, row) do
+            apply_step_once(
+              state,
+              target,
+              resolved_message,
+              resolved_message_value,
+              "subscription_trigger",
+              "subscription_trigger"
+            )
+          else
+            append_event(state, "debugger.subscription_toggle", %{
+              action: "blocked_inactive",
+              target: source_root_for_target(target),
+              trigger: trigger,
+              message: resolved_message
+            })
+          end
         end
       else
         state
@@ -3756,6 +3771,7 @@ defmodule Ide.Debugger do
       shape = normalize_runtime_shape(previous_value, initial_value)
       {key, normalize_runtime_value(shape, value)}
     end)
+    |> hydrate_static_runtime_model_values()
   end
 
   @spec normalize_runtime_model_against_introspect(map(), Types.runtime_model()) :: map()
@@ -3769,7 +3785,7 @@ defmodule Ide.Debugger do
   @spec introspect_init_model(Types.runtime_model()) :: Types.init_model_values()
   defp introspect_init_model(model) when is_map(model) do
     case get_in(model, ["elm_introspect", "init_model"]) do
-      value when is_map(value) -> hydrate_static_runtime_value(value)
+      value when is_map(value) -> hydrate_static_runtime_model_values(value)
       _ -> %{}
     end
   end
@@ -3872,7 +3888,19 @@ defmodule Ide.Debugger do
   defp normalize_runtime_value(_previous, values) when is_list(values),
     do: Enum.map(values, &normalize_runtime_value(nil, &1))
 
-  defp normalize_runtime_value(_previous, value), do: value
+  defp normalize_runtime_value(shape, value),
+    do: coerce_runtime_scalar(value, shape)
+
+  @spec coerce_runtime_scalar(Types.wire_input(), Types.wire_input()) :: Types.wire_input()
+  defp coerce_runtime_scalar(value, shape) do
+    value = hydrate_static_runtime_value(value)
+
+    cond do
+      is_boolean(shape) -> normalize_boolean(value, shape)
+      is_boolean(value) -> value
+      true -> value
+    end
+  end
 
   @spec maybe_put_device_preview(Types.runtime_model(), Types.device_request()) ::
           Types.runtime_model()
@@ -4371,13 +4399,20 @@ defmodule Ide.Debugger do
           |> button_subscription_metadata()
           |> Map.merge(subscription_timing_metadata(op))
 
+        trigger_row = %{
+          trigger: to_string(trigger || "trigger"),
+          message: message,
+          target: target_name
+        }
+
         %{
           id: "#{target_name}:#{trigger_id}:#{normalize_trigger_id(message)}",
           label: normalize_trigger_label(label),
-          trigger: to_string(trigger || "trigger"),
+          trigger: trigger_row.trigger,
           target: target_name,
           message: message,
-          source: "subscription"
+          source: "subscription",
+          model_active: subscription_model_active?(state, target, trigger_row)
         }
         |> Map.merge(metadata)
       end)
@@ -4590,6 +4625,183 @@ defmodule Ide.Debugger do
   end
 
   defp subscription_op_fireable?(_op), do: false
+
+  @doc false
+  @spec subscription_model_active?(runtime_state(), Types.surface_target(), map()) :: boolean()
+  def subscription_model_active?(state, target, row)
+      when is_map(state) and target in [:watch, :companion, :phone] and is_map(row) do
+    guards = subscription_activation_guards_for_row(state, target, row)
+    guards == :always or subscription_guards_satisfied?(state, target, guards)
+  end
+
+  def subscription_model_active?(_state, _target, _row), do: true
+
+  @spec subscription_activation_guards_for_row(runtime_state(), Types.surface_target(), map()) ::
+          :always | [map()]
+  defp subscription_activation_guards_for_row(state, target, row)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_map(row) do
+    model = get_in(state, [target, :model]) || %{}
+    ei = Map.get(model, "elm_introspect")
+    calls = introspect_cmd_calls(ei, "subscription_calls")
+
+    row_trigger =
+      row
+      |> trigger_candidate_field(:trigger)
+      |> to_string()
+      |> normalize_trigger_id()
+
+    row_message =
+      row
+      |> trigger_candidate_field(:message)
+      |> case do
+        message when is_binary(message) -> String.trim(message)
+        _ -> ""
+      end
+
+    matching =
+      Enum.filter(calls, fn call ->
+        call_trigger =
+          call
+          |> subscription_trigger_for_call()
+          |> to_string()
+          |> normalize_trigger_id()
+
+        call_message = Map.get(call, "callback_constructor") |> to_string()
+
+        call_trigger == row_trigger and
+          (row_message == "" or call_message == "" or call_message == row_message)
+      end)
+
+    case matching do
+      [%{"activation_guards" => guards} | _] when is_list(guards) and guards != [] ->
+        guards
+
+      _ ->
+        :always
+    end
+  end
+
+  defp subscription_activation_guards_for_row(_state, _target, _row), do: :always
+
+  @spec subscription_guards_satisfied?(runtime_state(), Types.surface_target(), [map()]) ::
+          boolean()
+  defp subscription_guards_satisfied?(state, target, guards)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_list(guards) do
+    Enum.all?(guards, &subscription_guard_satisfied?(state, target, &1))
+  end
+
+  defp subscription_guards_satisfied?(_state, _target, _guards), do: true
+
+  @spec subscription_guard_satisfied?(runtime_state(), Types.surface_target(), map()) :: boolean()
+  defp subscription_guard_satisfied?(state, target, %{"kind" => "field_truthy", "subject" => subject})
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(subject) do
+    case runtime_field_value(state, target, subject) do
+      {:ok, value} -> runtime_value_truthy?(value)
+      _ -> false
+    end
+  end
+
+  defp subscription_guard_satisfied?(state, target, %{"kind" => "field_falsy", "subject" => subject})
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(subject) do
+    case runtime_field_value(state, target, subject) do
+      {:ok, value} -> not runtime_value_truthy?(value)
+      _ -> false
+    end
+  end
+
+  defp subscription_guard_satisfied?(state, target, %{
+         "kind" => "case_branch",
+         "subject" => subject,
+         "branch" => branch
+       })
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(subject) and
+              is_binary(branch) do
+    case runtime_field_value(state, target, subject) do
+      {:ok, value} -> runtime_value_branch_label(value) == branch
+      _ -> false
+    end
+  end
+
+  defp subscription_guard_satisfied?(_state, _target, _guard), do: true
+
+  @spec runtime_field_value(runtime_state(), Types.surface_target(), String.t()) ::
+          {:ok, term()} | :error
+  defp runtime_field_value(state, target, subject)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(subject) do
+    model = get_in(state, [target, :model]) || %{}
+    runtime_model = Map.get(model, "runtime_model")
+    runtime_model = if is_map(runtime_model), do: runtime_model, else: %{}
+    ei = Map.get(model, "elm_introspect") || %{}
+    subscriptions_params = introspect_list(ei, "subscriptions_params")
+
+    case runtime_field_key(subject, subscriptions_params) do
+      "" ->
+        :error
+
+      field ->
+        value =
+          case Map.fetch(runtime_model, field) do
+            {:ok, found} -> hydrate_static_runtime_value(found)
+            :error ->
+              init = introspect_init_model(model)
+              hydrate_static_runtime_value(Map.get(init, field))
+          end
+
+        {:ok, value}
+    end
+  end
+
+  defp runtime_field_value(_state, _target, _subject), do: :error
+
+  @spec runtime_field_key(String.t(), Types.param_list()) :: String.t()
+  defp runtime_field_key(subject, subscriptions_params)
+       when is_binary(subject) and is_list(subscriptions_params) do
+    Enum.find_value(subscriptions_params, fn param ->
+      prefix = param <> "."
+
+      if is_binary(param) and param != "_" and param != "" and String.starts_with?(subject, prefix) do
+        String.replace_prefix(subject, prefix, "")
+      end
+    end) || ""
+  end
+
+  defp runtime_field_key(_subject, _subscriptions_params), do: ""
+
+  @spec runtime_value_truthy?(term()) :: boolean()
+  defp runtime_value_truthy?(value) when is_boolean(value), do: value
+  defp runtime_value_truthy?(nil), do: false
+  defp runtime_value_truthy?(0), do: false
+  defp runtime_value_truthy?(%{"ctor" => "Nothing", "args" => []}), do: false
+  defp runtime_value_truthy?(%{"$ctor" => "Nothing", "$args" => []}), do: false
+
+  defp runtime_value_truthy?(%{"ctor" => "Just", "args" => [value]}),
+    do: runtime_value_truthy?(value)
+
+  defp runtime_value_truthy?(%{"$ctor" => "Just", "$args" => [value]}),
+    do: runtime_value_truthy?(value)
+
+  defp runtime_value_truthy?(value) when is_binary(value) do
+    case normalize_runtime_boolean_string(value) do
+      bool when is_boolean(bool) -> bool
+      _ -> String.trim(value) != ""
+    end
+  end
+
+  defp runtime_value_truthy?(_value), do: true
+
+  @spec runtime_value_branch_label(term()) :: String.t()
+  defp runtime_value_branch_label(value) when is_binary(value), do: value
+  defp runtime_value_branch_label(value) when is_atom(value), do: Atom.to_string(value)
+
+  defp runtime_value_branch_label(%{"ctor" => ctor, "args" => _})
+       when is_binary(ctor),
+       do: ctor
+
+  defp runtime_value_branch_label(%{"$ctor" => ctor, "$args" => _})
+       when is_binary(ctor),
+       do: ctor
+
+  defp runtime_value_branch_label(value), do: to_string(value)
 
   @spec trigger_message_for_surface(runtime_state(), Types.surface_target(), String.t(), String.t() | nil) ::
           String.t()
@@ -5311,7 +5523,8 @@ defmodule Ide.Debugger do
         Map.get(row, :source) == "subscription" and is_binary(Map.get(row, :message)) and
           Map.get(row, :message) != "" and is_binary(Map.get(row, :trigger)) and
           Map.get(row, :trigger) != "" and subscription_trigger_enabled?(state, target, row) and
-          auto_fire_subscription_enabled?(state, target, row)
+          auto_fire_subscription_enabled?(state, target, row) and
+          subscription_model_active?(state, target, row)
       end)
 
     {Enum.filter(rows, &auto_fire_subscription_due?(state, target, &1, now)), state}
@@ -6433,7 +6646,7 @@ defmodule Ide.Debugger do
         rows
         |> Enum.filter(&is_map/1)
         |> Enum.map(fn row ->
-          %{
+          base = %{
             "target" => Map.get(row, "target") || Map.get(row, :target),
             "name" => Map.get(row, "name") || Map.get(row, :name),
             "callback_constructor" =>
@@ -6447,6 +6660,14 @@ defmodule Ide.Debugger do
             "arg_values" => Map.get(row, "arg_values") || Map.get(row, :arg_values) || [],
             "arg_kinds" => Map.get(row, "arg_kinds") || Map.get(row, :arg_kinds) || []
           }
+
+          case Map.get(row, "activation_guards") || Map.get(row, :activation_guards) do
+            guards when is_list(guards) and guards != [] ->
+              Map.put(base, "activation_guards", guards)
+
+            _ ->
+              base
+          end
         end)
         |> Enum.filter(fn row ->
           is_binary(row["name"]) and row["name"] != ""
@@ -7325,13 +7546,12 @@ defmodule Ide.Debugger do
       Map.has_key?(value, "$ctor") ->
         ctor = to_string(Map.get(value, "$ctor") || "")
         args = Map.get(value, "$args") || []
-        args = if is_list(args), do: Enum.map(args, &hydrate_static_runtime_value/1), else: []
+        hydrate_constructor_value(ctor, args)
 
-        case {ctor, args} do
-          {"True", []} -> true
-          {"False", []} -> false
-          _ -> %{"ctor" => ctor, "args" => args}
-        end
+      Map.has_key?(value, "ctor") ->
+        ctor = to_string(Map.get(value, "ctor") || "")
+        args = Map.get(value, "args") || []
+        hydrate_constructor_value(ctor, args)
 
       Map.has_key?(value, "$call") ->
         call = to_string(Map.get(value, "$call") || "")
@@ -7351,7 +7571,33 @@ defmodule Ide.Debugger do
   defp hydrate_static_runtime_value(values) when is_list(values),
     do: Enum.map(values, &hydrate_static_runtime_value/1)
 
+  defp hydrate_static_runtime_value(value) when is_binary(value),
+    do: normalize_runtime_boolean_string(value)
+
+  defp hydrate_static_runtime_value(value) when is_boolean(value), do: value
   defp hydrate_static_runtime_value(value), do: value
+
+  @spec hydrate_constructor_value(String.t(), list()) :: Types.wire_input()
+  defp hydrate_constructor_value(ctor, args) when is_binary(ctor) do
+    args = if is_list(args), do: Enum.map(args, &hydrate_static_runtime_value/1), else: []
+
+    case {ctor, args} do
+      {"True", []} -> true
+      {"False", []} -> false
+      _ -> %{"ctor" => ctor, "args" => args}
+    end
+  end
+
+  @spec normalize_runtime_boolean_string(String.t()) :: boolean() | String.t()
+  defp normalize_runtime_boolean_string(value) when is_binary(value) do
+    case String.trim(value) do
+      "True" -> true
+      "False" -> false
+      "true" -> true
+      "false" -> false
+      other -> other
+    end
+  end
 
   @spec static_color_call_value(String.t(), list()) :: {:ok, integer()} | :error
   defp static_color_call_value(call, []) when is_binary(call) do

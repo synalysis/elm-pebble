@@ -76,12 +76,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         >
           {if debugger_state_running?(@debugger_state), do: "Restart", else: "Start"}
         </button>
-        <form class="flex items-center gap-1" phx-change="debugger-set-watch-profile">
-          <label class="flex items-center gap-1 text-xs text-zinc-600">
-            <span>Watch model</span>
+        <form class="flex items-center gap-2" phx-change="debugger-set-watch-profile">
+          <label class="flex items-center gap-2 text-xs text-zinc-600">
+            <span class="shrink-0">Watch model</span>
             <select
               name="watch_profile_id"
-              class="rounded border border-zinc-300 bg-white px-2 py-1 text-xs"
+              class="min-w-[12rem] max-w-full rounded border border-zinc-300 bg-white py-1 pl-2 pr-8 text-xs"
             >
               <option
                 :for={profile <- Ide.Debugger.watch_profiles()}
@@ -316,7 +316,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             <span>Watch model profile</span>
             <select
               name="watch_profile_id"
-              class="rounded border border-zinc-300 bg-white px-2 py-1 text-xs"
+              class="min-w-[12rem] max-w-full rounded border border-zinc-300 bg-white py-1 pl-2 pr-8 text-xs"
             >
               <option
                 :for={profile <- Ide.Debugger.watch_profiles()}
@@ -1602,7 +1602,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_model_scalar(nil), do: "null"
   defp debugger_model_scalar(value) when is_binary(value), do: inspect(value)
-  defp debugger_model_scalar(value) when is_boolean(value), do: to_string(value)
+  defp debugger_model_scalar(value) when is_boolean(value),
+    do: if(value, do: "True", else: "False")
   defp debugger_model_scalar(value) when is_number(value), do: to_string(value)
   defp debugger_model_scalar(value) when is_atom(value), do: Atom.to_string(value)
   defp debugger_model_scalar(value), do: inspect(value)
@@ -2050,7 +2051,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             phx-value-message={row.message}
             disabled={
               not subscription_trigger_enabled?(@disabled_subscriptions, @target, row.trigger) or
-                not subscription_trigger_injection_supported?(row)
+                not subscription_trigger_injection_supported?(row) or
+                not row.model_active?
             }
             title={subscription_trigger_button_title(row)}
             class="rounded bg-zinc-200 px-2 py-1 text-[10px] font-medium text-zinc-800 hover:bg-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
@@ -2084,10 +2086,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   @spec subscription_trigger_button_title(map()) :: String.t()
   defp subscription_trigger_button_title(row) when is_map(row) do
-    if subscription_trigger_injection_supported?(row) do
-      "Fire this subscribed event"
-    else
-      "This subscribed event needs a payload shape the debugger form cannot represent."
+    model_active? = Map.get(row, :model_active?, Map.get(row, "model_active?", true)) == true
+
+    cond do
+      not model_active? ->
+        "Inactive for the current model state"
+
+      subscription_trigger_injection_supported?(row) ->
+        "Fire this subscribed event"
+
+      true ->
+        "This subscribed event needs a payload shape the debugger form cannot represent."
     end
   end
 

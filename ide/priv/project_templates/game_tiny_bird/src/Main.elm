@@ -26,6 +26,9 @@ type alias Model =
     , score : Int
     , best : Int
     , alive : Bool
+    , screenW : Int
+    , screenH : Int
+    , displayShape : Platform.DisplayShape
     }
 
 
@@ -36,18 +39,23 @@ type Msg
 
 
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
-init _ =
-    ( reset 0, Storage.readString 42 StorageStringLoaded )
+init context =
+    ( reset 0 context.screen.width context.screen.height context.screen.shape
+    , Storage.readString 42 StorageStringLoaded
+    )
 
 
-reset : Int -> Model
-reset best =
+reset : Int -> Int -> Int -> Platform.DisplayShape -> Model
+reset best screenW screenH displayShape =
     { birdY = 60
     , velocity = 0
     , tubes = [ { x = 120, gapY = 62 }, { x = 198, gapY = 88 } ]
     , score = 0
     , best = best
     , alive = True
+    , screenW = screenW
+    , screenH = screenH
+    , displayShape = displayShape
     }
 
 
@@ -66,7 +74,7 @@ update msg model =
                 ( { model | velocity = -8 }, Cmd.none )
 
             else
-                ( reset model.best, Cmd.none )
+                ( reset model.best model.screenW model.screenH model.displayShape, Cmd.none )
 
         StorageStringLoaded value ->
             ( { model | best = Maybe.withDefault 0 (String.toInt value) }, Cmd.none )
@@ -159,9 +167,35 @@ view model =
                     []
 
                 else
-                    [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 24, y = 76, w = 100, h = 28 } "Press Up" ]
+                    [ gameOverOp model ]
                )
         )
+
+
+gameOverOp : Model -> Ui.RenderOp
+gameOverOp model =
+    let
+        textOptions =
+            Ui.alignCenter Ui.defaultTextOptions
+
+        textW =
+            if Platform.displayShapeIsRound model.displayShape then
+                (min model.screenW model.screenH * 4) // 9
+
+            else
+                100
+
+        textX =
+            (model.screenW - textW) // 2
+
+        textY =
+            if Platform.displayShapeIsRound model.displayShape then
+                (min model.screenW model.screenH * 3 // 5) - 14
+
+            else
+                76
+    in
+    Ui.text Resources.DefaultFont textOptions { x = textX, y = textY, w = textW, h = 28 } "Press Up"
 
 
 drawTube : Tube -> List Ui.RenderOp

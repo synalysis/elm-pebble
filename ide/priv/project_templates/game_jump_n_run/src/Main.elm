@@ -46,7 +46,7 @@ type Msg
     = FrameTick Frame.Frame
     | UpPressed
     | DownPressed
-    | StorageStringLoaded String
+    | BestScoreLoaded Int
 
 
 playerW : Int
@@ -77,7 +77,7 @@ storageKey =
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
 init context =
     ( freshModel 0 context.screen.width context.screen.height context.screen.shape
-    , Storage.readString storageKey StorageStringLoaded
+    , Storage.readInt storageKey BestScoreLoaded
     )
 
 
@@ -125,8 +125,8 @@ update msg model =
             else
                 ( model, Cmd.none )
 
-        StorageStringLoaded value ->
-            ( { model | best = Maybe.withDefault 0 (String.toInt value) }, Cmd.none )
+        BestScoreLoaded value ->
+            ( { model | best = max 0 value }, Cmd.none )
 
 
 step : Model -> ( Model, Cmd Msg )
@@ -198,7 +198,7 @@ step model =
 
         persistCmd =
             if nextBest > model.best || dead then
-                Storage.writeString storageKey (String.fromInt nextBest)
+                Storage.writeInt storageKey nextBest
 
             else
                 Cmd.none
@@ -446,7 +446,7 @@ gameOverOps model =
 
         textY =
             if Platform.displayShapeIsRound model.displayShape then
-                model.screenH - 36
+                (min model.screenW model.screenH * 3 // 5) - 14
 
             else
                 model.screenH - 24

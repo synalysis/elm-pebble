@@ -3987,6 +3987,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       interval_ms: Map.get(row, :interval_ms) || Map.get(row, "interval_ms"),
       declared_interval_ms:
         Map.get(row, :declared_interval_ms) || Map.get(row, "declared_interval_ms"),
+      model_active?: Map.get(row, :model_active, Map.get(row, "model_active", true)) == true,
       injection_supported?:
         Debugger.subscription_trigger_injection_modal_supported?(debugger_state, row)
     }

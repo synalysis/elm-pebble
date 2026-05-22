@@ -3,6 +3,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   use IdeWeb, :html
 
   alias Ide.Projects.Project
+  alias Ide.WatchModels
   alias Phoenix.LiveView.Rendered
 
   @type assigns :: map()
@@ -71,6 +72,8 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
         phx-hook="EmbeddedEmulator"
         data-project-slug={@project.slug}
         data-emulator-target={@selected_emulator_target}
+        data-emulator-screen-width={elem(emulator_screen_size(@selected_emulator_target), 0)}
+        data-emulator-screen-height={elem(emulator_screen_size(@selected_emulator_target), 1)}
         class="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4"
       >
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -114,13 +117,13 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             </button>
           </div>
         </div>
-        <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(320px,1fr)_18rem]">
-          <div class="rounded border border-zinc-300 bg-black p-3">
-            <div class="mx-auto flex w-max items-center gap-4 overflow-x-auto py-4">
+        <div class="mt-4 grid gap-3 lg:grid-cols-[auto_16rem_minmax(0,1fr)] lg:items-start">
+          <div class="w-fit rounded border border-zinc-300 bg-black p-1">
+            <div class="flex items-center gap-1.5">
               <button
                 type="button"
                 data-emulator-button="back"
-                class="rounded bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
               >
                 Back
               </button>
@@ -128,28 +131,29 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
                 id="embedded-emulator-display"
                 data-emulator-canvas
                 phx-update="ignore"
-                class="min-h-[168px] min-w-[144px] overflow-hidden rounded bg-zinc-950"
+                class="shrink-0 overflow-hidden rounded bg-zinc-950"
+                style={emulator_canvas_style(@selected_emulator_target)}
               >
               </div>
-              <div class="flex flex-col gap-2">
+              <div class="flex flex-col gap-1.5">
                 <button
                   type="button"
                   data-emulator-button="up"
-                  class="rounded bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                  class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
                 >
                   Up
                 </button>
                 <button
                   type="button"
                   data-emulator-button="select"
-                  class="rounded bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                  class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
                 >
                   Select
                 </button>
                 <button
                   type="button"
                   data-emulator-button="down"
-                  class="rounded bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
+                  class="rounded bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-300 hover:bg-white"
                 >
                   Down
                 </button>
@@ -160,7 +164,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             <p data-emulator-status class="rounded bg-white px-3 py-2 text-xs text-zinc-700">
               Embedded emulator is idle.
             </p>
-            <div class="rounded bg-white p-3 text-xs text-zinc-700">
+            <div class="space-y-3 rounded bg-white p-3 text-xs text-zinc-700">
               <label class="block font-medium">
                 Battery
                 <input
@@ -169,22 +173,24 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
                   min="0"
                   max="100"
                   value="80"
-                  class="mt-1 w-full"
+                  class="mt-2 w-full"
                 />
               </label>
-              <label class="mt-2 flex items-center gap-2">
-                <input data-emulator-charging type="checkbox" /> Charging
-              </label>
-              <label class="mt-2 flex items-center gap-2">
-                <input data-emulator-bluetooth type="checkbox" checked /> Bluetooth connected
-              </label>
-              <label class="mt-2 flex items-center gap-2">
-                <input data-emulator-24h type="checkbox" /> 24h time
-              </label>
-              <label class="mt-2 flex items-center gap-2">
-                <input data-emulator-peek type="checkbox" /> Timeline peek
-              </label>
-              <div class="mt-3 flex flex-wrap gap-2">
+              <div class="space-y-2.5">
+                <label class="flex items-center gap-2">
+                  <input data-emulator-charging type="checkbox" /> Charging
+                </label>
+                <label class="flex items-center gap-2">
+                  <input data-emulator-bluetooth type="checkbox" checked /> Bluetooth connected
+                </label>
+                <label class="flex items-center gap-2">
+                  <input data-emulator-24h type="checkbox" /> 24h time
+                </label>
+                <label class="flex items-center gap-2">
+                  <input data-emulator-peek type="checkbox" /> Timeline peek
+                </label>
+              </div>
+              <div>
                 <button
                   type="button"
                   data-emulator-tap
@@ -195,72 +201,72 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               </div>
             </div>
           </div>
-        </div>
-        <div class="mt-4 rounded border border-zinc-200 bg-white p-3">
-          <div class="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <h4 class="text-sm font-semibold text-zinc-900">Storage</h4>
-              <p class="mt-1 text-xs text-zinc-600">
-                Shows Pebble.Storage keys observed in emulator logs. Edit values, add a key, or delete all known keys for testing.
-              </p>
+          <div class="flex min-h-0 flex-col rounded border border-zinc-200 bg-white p-3">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <h4 class="text-sm font-semibold text-zinc-900">Storage</h4>
+                <p class="mt-0.5 text-[11px] leading-snug text-zinc-600">
+                  Pebble.Storage keys from emulator logs. Edit, add, or reset keys for testing.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-emulator-storage-reset
+                disabled
+                class="shrink-0 rounded bg-rose-100 px-2 py-1.5 text-[11px] font-semibold text-rose-800 hover:bg-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Reset
+              </button>
             </div>
-            <button
-              type="button"
-              data-emulator-storage-reset
-              disabled
-              class="rounded bg-rose-100 px-3 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Reset known keys
-            </button>
-          </div>
-          <div class="mt-3 overflow-x-auto">
-            <table class="min-w-full text-left text-xs">
-              <thead class="border-b border-zinc-200 text-[11px] uppercase tracking-wide text-zinc-500">
-                <tr>
-                  <th class="py-1 pr-2">Key</th>
-                  <th class="py-1 pr-2">Type</th>
-                  <th class="py-1 pr-2">Value</th>
-                  <th class="py-1 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody data-emulator-storage-rows>
-                <tr data-emulator-storage-empty>
-                  <td colspan="4" class="py-3 text-zinc-500">
-                    No storage keys observed yet. Launch the app or add a test key below.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="mt-3 grid gap-2 md:grid-cols-[8rem_7rem_1fr_auto]">
-            <input
-              data-emulator-storage-new-key
-              type="number"
-              min="0"
-              placeholder="Key"
-              class="rounded border border-zinc-300 px-2 py-1 text-xs"
-            />
-            <select
-              data-emulator-storage-new-type
-              class="rounded border border-zinc-300 px-2 py-1 text-xs"
-            >
-              <option value="string">String</option>
-              <option value="int">Int</option>
-            </select>
-            <input
-              data-emulator-storage-new-value
-              type="text"
-              placeholder="Value"
-              class="rounded border border-zinc-300 px-2 py-1 text-xs"
-            />
-            <button
-              type="button"
-              data-emulator-storage-add
-              disabled
-              class="rounded bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Save key
-            </button>
+            <div class="mt-2 min-h-0 flex-1 overflow-auto">
+              <table class="min-w-full text-left text-xs">
+                <thead class="sticky top-0 border-b border-zinc-200 bg-white text-[10px] uppercase tracking-wide text-zinc-500">
+                  <tr>
+                    <th class="py-1 pr-2">Key</th>
+                    <th class="min-w-[5.5rem] py-1 pr-2">Type</th>
+                    <th class="py-1 pr-2">Value</th>
+                    <th class="py-1 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody data-emulator-storage-rows>
+                  <tr data-emulator-storage-empty>
+                    <td colspan="4" class="py-2 text-zinc-500">
+                      No storage keys yet. Launch the app or add a test key.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="mt-3 space-y-2 border-t border-zinc-100 pt-3">
+              <input
+                data-emulator-storage-new-key
+                type="number"
+                min="0"
+                placeholder="Key"
+                class="w-full rounded border border-zinc-300 px-2 py-1.5 text-xs"
+              />
+              <select
+                data-emulator-storage-new-type
+                class="ide-select w-full min-w-[7rem] rounded border border-zinc-300 bg-white py-1.5 pl-2 text-xs"
+              >
+                <option value="string">String</option>
+                <option value="int">Int</option>
+              </select>
+              <input
+                data-emulator-storage-new-value
+                type="text"
+                placeholder="Value"
+                class="w-full rounded border border-zinc-300 px-2 py-1.5 text-xs"
+              />
+              <button
+                type="button"
+                data-emulator-storage-add
+                disabled
+                class="w-full rounded bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Save key
+              </button>
+            </div>
           </div>
         </div>
         <pre
@@ -776,6 +782,24 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   defp wasm_emulator_mode?("wasm"), do: true
   defp wasm_emulator_mode?(_), do: false
+
+  @spec emulator_screen_size(String.t()) :: {pos_integer(), pos_integer()}
+  defp emulator_screen_size(target) when is_binary(target) do
+    screen = target |> WatchModels.profile_for() |> Map.get("screen", %{})
+
+    {
+      Map.get(screen, "width", 144) |> max(1),
+      Map.get(screen, "height", 168) |> max(1)
+    }
+  end
+
+  defp emulator_screen_size(_), do: {144, 168}
+
+  @spec emulator_canvas_style(String.t()) :: String.t()
+  defp emulator_canvas_style(target) do
+    {width, height} = emulator_screen_size(target)
+    "width: #{width}px; height: #{height}px;"
+  end
 
   @spec emulator_settings_path(Project.t() | map() | nil) :: String.t()
   defp emulator_settings_path(%{slug: slug}) when is_binary(slug) do

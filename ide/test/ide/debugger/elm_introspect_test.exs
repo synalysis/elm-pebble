@@ -1221,6 +1221,137 @@ defmodule Ide.Debugger.ElmIntrospectTest do
     assert "Sub.none" in ei["subscription_ops"]
   end
 
+  @subs_if_in_batch """
+  module SubIfBatch exposing (..)
+
+  import Pebble.Button as Button
+  import Pebble.Events as Events
+  import Pebble.Frame as Frame
+
+  type Msg
+      = FrameTick
+      | UpPressed
+
+  type alias Model =
+      { alive : Bool }
+
+  subscriptions model =
+      Events.batch
+          [ if model.alive then
+                Frame.every 33 FrameTick
+            else
+                Sub.none
+          , Button.onPress Button.Up UpPressed
+          ]
+
+  init _ =
+      ( {}, Cmd.none )
+
+  update _ m =
+      m
+
+  view _ =
+      X.y []
+  """
+
+  test "analyze_source extracts subscription_ops from if expressions inside batch lists" do
+    assert {:ok, %{"elm_introspect" => ei}} =
+             ElmIntrospect.analyze_source(@subs_if_in_batch, "SubIfBatch.elm")
+
+    ops = ei["subscription_ops"]
+    assert Enum.any?(ops, &String.contains?(&1, "every"))
+    assert Enum.any?(ops, &String.contains?(&1, "onPress"))
+    assert "Sub.none" in ops
+
+    calls = ei["subscription_calls"]
+
+    assert Enum.any?(
+             calls,
+             &match?(%{"event_kind" => "every", "callback_constructor" => "FrameTick"}, &1)
+           )
+
+    assert Enum.any?(
+             calls,
+             &match?(%{"event_kind" => "on_press", "callback_constructor" => "UpPressed"}, &1)
+           )
+
+    frame_call =
+      Enum.find(
+        calls,
+        &match?(%{"event_kind" => "every", "callback_constructor" => "FrameTick"}, &1)
+      )
+
+    assert frame_call["activation_guards"] == [
+             %{"kind" => "field_truthy", "subject" => "model.alive"}
+           ]
+
+    refute Enum.any?(
+             calls,
+             &match?(
+               %{
+                 "event_kind" => "on_press",
+                 "callback_constructor" => "UpPressed",
+                 "activation_guards" => [_ | _]
+               },
+               &1
+             )
+           )
+  end
+
+  @subs_if_top_level """
+  module SubIfTop exposing (..)
+
+  import Pebble.Button as Button
+  import Pebble.Events as Events
+  import Pebble.Frame as Frame
+
+  type Msg
+      = FrameTick
+      | UpPressed
+
+  type alias Model =
+      { alive : Bool }
+
+  subscriptions model =
+      if model.alive then
+          Events.batch
+              [ Frame.every 33 FrameTick
+              , Button.onPress Button.Up UpPressed
+              ]
+      else
+          Events.batch [ Button.onPress Button.Up UpPressed ]
+
+  init _ =
+      ( {}, Cmd.none )
+
+  update _ m =
+      m
+
+  view _ =
+      X.y []
+  """
+
+  test "analyze_source extracts subscription_ops from top-level if branches" do
+    assert {:ok, %{"elm_introspect" => ei}} =
+             ElmIntrospect.analyze_source(@subs_if_top_level, "SubIfTop.elm")
+
+    ops = ei["subscription_ops"]
+    assert Enum.any?(ops, &String.contains?(&1, "every"))
+    assert Enum.any?(ops, &String.contains?(&1, "onPress"))
+
+    calls = ei["subscription_calls"]
+
+    assert Enum.any?(
+             calls,
+             &match?(%{"event_kind" => "every", "callback_constructor" => "FrameTick"}, &1)
+           )
+
+    assert Enum.any?(
+             calls,
+             &match?(%{"event_kind" => "on_press", "callback_constructor" => "UpPressed"}, &1)
+           )
+  end
+
   @subs_case_bad """
   module SubBad exposing (..)
 

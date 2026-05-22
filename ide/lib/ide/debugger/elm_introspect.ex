@@ -121,7 +121,8 @@ defmodule Ide.Debugger.ElmIntrospect do
 
     subscription_ops = map_expr(sub_e, &subscriptions_outline(&1, subscriptions_params), [])
 
-    subscription_calls = map_expr(sub_e, &extract_subscription_calls/1, [])
+    subscription_calls =
+      map_expr(sub_e, &extract_subscription_calls(&1, subscriptions_params), [])
 
     main_e = find_main_expr(mod)
     main_program = main_program_outline(main_e)
@@ -650,7 +651,7 @@ defmodule Ide.Debugger.ElmIntrospect do
          args: [%{op: :list_literal, items: items}]
        })
        when is_list(items) do
-    items |> Enum.map(&subscription_item_label/1) |> Enum.reject(&is_nil/1)
+    items |> Enum.flat_map(&extract_subscription_items/1) |> Enum.uniq()
   end
 
   defp extract_subscription_items(%{op: :qualified_call} = qc) do
@@ -667,13 +668,18 @@ defmodule Ide.Debugger.ElmIntrospect do
        })
        when is_list(items) and is_binary(name) do
     items
-    |> Enum.map(&subscription_item_label/1)
-    |> Enum.reject(&is_nil/1)
+    |> Enum.flat_map(&extract_subscription_items/1)
+    |> Enum.uniq()
     |> then(fn xs -> if xs != [], do: xs, else: [name <> "(…)"] end)
   end
 
   defp extract_subscription_items(%{op: :list_literal, items: items}) when is_list(items) do
-    items |> Enum.map(&subscription_item_label/1) |> Enum.reject(&is_nil/1)
+    items |> Enum.flat_map(&extract_subscription_items/1) |> Enum.uniq()
+  end
+
+  defp extract_subscription_items(%{op: :if, then_expr: then_expr, else_expr: else_expr}) do
+    extract_subscription_items(then_expr) ++ extract_subscription_items(else_expr)
+    |> Enum.uniq()
   end
 
   defp extract_subscription_items(expr) do
@@ -683,8 +689,9 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec extract_subscription_calls(Types.ast_expr()) :: Types.cmd_call_list()
-  defp extract_subscription_calls(expr), do: extract_subscription_calls(expr, %{})
+  @spec extract_subscription_calls(Types.ast_expr(), Types.param_list()) :: Types.cmd_call_list()
+  defp extract_subscription_calls(expr, subscriptions_params),
+    do: extract_subscription_calls(expr, %{}, [], subscriptions_params)
 
   defp extract_subscription_calls(
          %{
@@ -692,13 +699,16 @@ defmodule Ide.Debugger.ElmIntrospect do
            target: target,
            args: [%{op: :list_literal, items: items}]
          },
-         bindings
+         bindings,
+         guards,
+         subscriptions_params
        )
-       when is_binary(target) and is_list(items) and is_map(bindings) do
+       when is_binary(target) and is_list(items) and is_map(bindings) and is_list(guards) and
+              is_list(subscriptions_params) do
     if subscription_batch_target?(target) do
-      Enum.flat_map(items, &extract_subscription_calls(&1, bindings))
+      Enum.flat_map(items, &extract_subscription_calls(&1, bindings, guards, subscriptions_params))
     else
-      subscription_call_rows(target, [%{op: :list_literal, items: items}], bindings)
+      subscription_call_rows(target, [%{op: :list_literal, items: items}], bindings, guards)
     end
   end
 
@@ -708,51 +718,195 @@ defmodule Ide.Debugger.ElmIntrospect do
            target: target,
            args: args
          },
-         bindings
+         bindings,
+         guards,
+         subscriptions_params
        )
-       when is_binary(target) and is_list(args) and is_map(bindings) do
-    subscription_call_rows(target, args, bindings)
+       when is_binary(target) and is_list(args) and is_map(bindings) and is_list(guards) and
+              is_list(subscriptions_params) do
+    subscription_call_rows(target, args, bindings, guards)
   end
 
   defp extract_subscription_calls(
          %{op: :let_in, name: name, value_expr: value_expr, in_expr: inner},
-         bindings
+         bindings,
+         guards,
+         subscriptions_params
        )
-       when is_binary(name) and is_map(bindings) do
-    extract_subscription_calls(inner, Map.put(bindings, name, value_expr))
+       when is_binary(name) and is_map(bindings) and is_list(guards) and is_list(subscriptions_params) do
+    extract_subscription_calls(
+      inner,
+      Map.put(bindings, name, value_expr),
+      guards,
+      subscriptions_params
+    )
   end
 
-  defp extract_subscription_calls(%{op: :let_in, in_expr: inner}, bindings) when is_map(bindings),
-    do: extract_subscription_calls(inner, bindings)
+  defp extract_subscription_calls(
+         %{op: :let_in, in_expr: inner},
+         bindings,
+         guards,
+         subscriptions_params
+       )
+       when is_map(bindings) and is_list(guards) and is_list(subscriptions_params),
+       do: extract_subscription_calls(inner, bindings, guards, subscriptions_params)
 
-  defp extract_subscription_calls(%{op: :list_literal, items: items}, bindings)
-       when is_list(items) and is_map(bindings),
-       do: Enum.flat_map(items, &extract_subscription_calls(&1, bindings))
+  defp extract_subscription_calls(
+         %{op: :list_literal, items: items},
+         bindings,
+         guards,
+         subscriptions_params
+       )
+       when is_list(items) and is_map(bindings) and is_list(guards) and is_list(subscriptions_params),
+       do: Enum.flat_map(items, &extract_subscription_calls(&1, bindings, guards, subscriptions_params))
 
-  defp extract_subscription_calls(%{op: :case, branches: branches}, bindings)
-       when is_list(branches) and is_map(bindings) do
+  defp extract_subscription_calls(
+         %{op: :case, subject: subj, branches: branches},
+         bindings,
+         guards,
+         subscriptions_params
+       )
+       when is_list(branches) and is_map(bindings) and is_list(guards) and is_list(subscriptions_params) do
+    allowed = init_case_subjects(subscriptions_params)
+    resolved_subj = resolve_case_subject(subj, bindings)
+
     Enum.flat_map(branches, fn
-      %{expr: expr} -> extract_subscription_calls(expr, bindings)
-      _ -> []
+      %{pattern: pattern, expr: expr} ->
+        branch_guards =
+          if init_case_subject_allowed?(resolved_subj, allowed, subscriptions_params) do
+            guards ++ maybe_case_branch_guards(resolved_subj, pattern)
+          else
+            guards
+          end
+
+        extract_subscription_calls(expr, bindings, branch_guards, subscriptions_params)
+
+      %{expr: expr} ->
+        extract_subscription_calls(expr, bindings, guards, subscriptions_params)
+
+      _ ->
+        []
     end)
   end
 
-  defp extract_subscription_calls(_, _), do: []
+  defp extract_subscription_calls(
+         %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr},
+         bindings,
+         guards,
+         subscriptions_params
+       )
+       when is_map(bindings) and is_list(guards) and is_list(subscriptions_params) do
+    allowed = init_case_subjects(subscriptions_params)
 
-  @spec subscription_call_rows(String.t(), list(), Types.binding_map()) :: Types.cmd_call_list()
-  defp subscription_call_rows(target, args, bindings)
-       when is_binary(target) and is_list(args) and is_map(bindings) do
+    then_guards =
+      guards ++ maybe_if_branch_guards(cond, bindings, allowed, subscriptions_params, :then)
+
+    else_guards =
+      guards ++ maybe_if_branch_guards(cond, bindings, allowed, subscriptions_params, :else)
+
+    extract_subscription_calls(then_expr, bindings, then_guards, subscriptions_params) ++
+      extract_subscription_calls(else_expr, bindings, else_guards, subscriptions_params)
+  end
+
+  defp extract_subscription_calls(
+         %{op: :if, then_expr: then_expr, else_expr: else_expr},
+         bindings,
+         guards,
+         subscriptions_params
+       )
+       when is_map(bindings) and is_list(guards) and is_list(subscriptions_params) do
+    extract_subscription_calls(then_expr, bindings, guards, subscriptions_params) ++
+      extract_subscription_calls(else_expr, bindings, guards, subscriptions_params)
+  end
+
+  defp extract_subscription_calls(_, _, _, _), do: []
+
+  @spec subscription_call_rows(String.t(), list(), Types.binding_map(), list()) ::
+          Types.cmd_call_list()
+  defp subscription_call_rows(target, args, bindings, guards)
+       when is_binary(target) and is_list(args) and is_map(bindings) and is_list(guards) do
+    active_guards = Enum.filter(guards, &is_map/1)
+
+    row = %{
+      "target" => target,
+      "name" => view_type_name(target),
+      "event_kind" => subscription_event_kind(target),
+      "callback_constructor" => callback_constructor_from_args(args, bindings),
+      "label" => subscription_item_label(%{op: :qualified_call, target: target, args: args}),
+      "arg_snippets" => Enum.map(args, &subscription_arg_snippet/1),
+      "arg_kinds" => Enum.map(args, &expr_arg_kind/1)
+    }
+
     [
-      %{
-        "target" => target,
-        "name" => view_type_name(target),
-        "event_kind" => subscription_event_kind(target),
-        "callback_constructor" => callback_constructor_from_args(args, bindings),
-        "label" => subscription_item_label(%{op: :qualified_call, target: target, args: args}),
-        "arg_snippets" => Enum.map(args, &subscription_arg_snippet/1),
-        "arg_kinds" => Enum.map(args, &expr_arg_kind/1)
-      }
+      if active_guards == [] do
+        row
+      else
+        Map.put(row, "activation_guards", active_guards)
+      end
     ]
+  end
+
+  @spec maybe_if_branch_guards(
+          Types.ast_expr(),
+          Types.binding_map(),
+          Types.param_list(),
+          Types.param_list(),
+          :then | :else
+        ) :: [map()]
+  defp maybe_if_branch_guards(cond, bindings, allowed, subscriptions_params, branch)
+       when is_map(bindings) and is_list(allowed) and is_list(subscriptions_params) and
+              branch in [:then, :else] do
+    case guard_from_if_cond(cond, bindings, allowed, subscriptions_params, branch) do
+      nil -> []
+      guard -> [guard]
+    end
+  end
+
+  @spec maybe_case_branch_guards(String.t(), Types.ast_expr()) :: [map()]
+  defp maybe_case_branch_guards(subject, pattern) when is_binary(subject) do
+    case guard_from_case_branch(subject, pattern) do
+      nil -> []
+      guard -> [guard]
+    end
+  end
+
+  @spec guard_from_if_cond(
+          Types.ast_expr(),
+          Types.binding_map(),
+          Types.param_list(),
+          Types.param_list(),
+          :then | :else
+        ) :: map() | nil
+  defp guard_from_if_cond(cond, bindings, allowed, subscriptions_params, branch)
+       when is_map(bindings) and is_list(allowed) and is_list(subscriptions_params) and
+              branch in [:then, :else] do
+    with subject when is_binary(subject) and subject != "" <-
+           subscription_guard_subject(cond, bindings),
+         true <- init_case_subject_allowed?(subject, allowed, subscriptions_params) do
+      %{
+        "kind" => if(branch == :then, do: "field_truthy", else: "field_falsy"),
+        "subject" => subject
+      }
+    else
+      _ -> nil
+    end
+  end
+
+  @spec guard_from_case_branch(String.t(), Types.ast_expr()) :: map() | nil
+  defp guard_from_case_branch(subject, pattern) when is_binary(subject) do
+    label = pattern_branch_label(pattern)
+
+    if label in ["?", "_", ""] do
+      nil
+    else
+      %{"kind" => "case_branch", "subject" => subject, "branch" => label}
+    end
+  end
+
+  @spec subscription_guard_subject(Types.ast_expr(), Types.binding_map()) :: String.t() | nil
+  defp subscription_guard_subject(expr, bindings) when is_map(bindings) do
+    subject = resolve_case_subject_expr(expr, bindings)
+    if subject != "", do: subject, else: nil
   end
 
   @spec subscription_batch_target?(String.t()) :: boolean()

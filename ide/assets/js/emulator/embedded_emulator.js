@@ -214,6 +214,7 @@ export class EmbeddedEmulatorHost {
     window.addEventListener("focus", this.handlePageVisible)
     document.addEventListener("visibilitychange", this.handlePageVisible)
     this.resumeExistingSession()
+    this.applyCanvasSize()
     this.syncStateToDom()
     this.ensureVncAttached()
   }
@@ -238,6 +239,7 @@ export class EmbeddedEmulatorHost {
     this.renderStorage()
     this.bindEmulatorButtons()
     this.updateControlButtons()
+    this.applyCanvasSize()
     if (this.session?.backend_enabled && this.rfb && previousCanvas && previousCanvas !== this.canvas) {
       // #region agent log
       agentDebugLog("initial", "H19", "embedded_emulator.js:updated:canvas_replaced", "emulator canvas replaced during liveview update", {
@@ -1337,7 +1339,7 @@ export class EmbeddedEmulatorHost {
     row.children[0].textContent = String(entry.key)
 
     const type = document.createElement("select")
-    type.className = "rounded border border-zinc-300 px-2 py-1 text-xs"
+    type.className = "ide-select min-w-[5.5rem] w-full rounded border border-zinc-300 bg-white py-1 pl-2 text-xs"
     type.innerHTML = `<option value="string">String</option><option value="int">Int</option>`
     type.value = entry.type
     row.children[1].append(type)
@@ -1416,6 +1418,16 @@ export class EmbeddedEmulatorHost {
     }
   }
 
+  targetScreenSize() {
+    const width = parseInt(this.el.dataset.emulatorScreenWidth || "144", 10)
+    const height = parseInt(this.el.dataset.emulatorScreenHeight || "168", 10)
+    return {width, height}
+  }
+
+  applyCanvasSize() {
+    this.resizeCanvas(this.session?.screen || this.targetScreenSize())
+  }
+
   resizeCanvas(screen) {
     if (!this.canvas || !screen) return
     this.canvas.style.width = `${screen.width}px`
@@ -1480,6 +1492,7 @@ export class EmbeddedEmulatorHost {
       this.phoneSocket = null
       oldPhoneSocket.close()
     }
+    this.applyCanvasSize()
     this.setStatus(message)
     this.updateControlButtons()
   }
