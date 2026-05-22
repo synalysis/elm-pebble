@@ -95,6 +95,39 @@ defmodule Ide.SettingsTest do
            } = Settings.current()
   end
 
+  test "public mode stores settings per user" do
+    data_root = Path.join(System.tmp_dir!(), "ide_settings_users_#{System.unique_integer([:positive])}")
+
+    original_config = Application.get_env(:ide, Ide.Settings, [])
+    original_auth = Application.get_env(:ide, Ide.Auth, [])
+
+    Application.put_env(:ide, Ide.Settings, data_root: data_root)
+    Application.put_env(:ide, Ide.Auth, mode: :public_custom)
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.Settings, original_config)
+      Application.put_env(:ide, Ide.Auth, original_auth)
+      File.rm_rf(data_root)
+      Process.delete(:ide_current_user)
+    end)
+
+    alice = %{id: 1}
+    bob = %{id: 2}
+
+    Process.put(:ide_current_user, alice)
+    assert :ok = Settings.set_editor_mode("vim")
+    assert %{editor_mode: :vim} = Settings.current()
+
+    Process.put(:ide_current_user, bob)
+    assert %{editor_mode: :regular} = Settings.current()
+
+    Process.put(:ide_current_user, alice)
+    assert %{editor_mode: :vim} = Settings.current()
+
+    assert File.exists?(Path.join(data_root, "users/1/settings.json"))
+    refute File.exists?(Path.join(data_root, "users/2/settings.json"))
+  end
+
   test "public auth mode forces MCP and ACP settings off" do
     temp_path =
       Path.join(System.tmp_dir!(), "ide_settings_test_#{System.unique_integer([:positive])}.json")

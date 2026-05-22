@@ -24,7 +24,7 @@ and stores all runtime data in the named volume `elm_pebble_ide_data`:
 
 - SQLite database (`/var/lib/ide/ide_prod.db`)
 - project workspace files (`/var/lib/ide/workspace_projects`)
-- user settings (`/var/lib/ide/config/settings.json`)
+- user settings (`/var/lib/ide/config/settings.json` in local mode, or `/var/lib/ide/users/<id>/settings.json` per user in public mode)
 - Pebble SDK state (`/var/lib/ide/.pebble-sdk`)
 
 Container image includes required toolchain binaries:

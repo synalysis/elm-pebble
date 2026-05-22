@@ -13,6 +13,10 @@ defmodule IdeWeb.AuthHooks do
     token = session["firebase_id_token"]
     token_exp = session["firebase_id_token_exp"]
 
+    if user do
+      Process.put(:ide_current_user, user)
+    end
+
     socket =
       socket
       |> assign(:auth_mode, Auth.mode())

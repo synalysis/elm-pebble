@@ -14,10 +14,18 @@ defmodule IdeWeb.Plugs.FetchCurrentUser do
     token = get_session(conn, :firebase_id_token)
     token_exp = get_session(conn, :firebase_id_token_exp)
 
+    if user do
+      Process.put(:ide_current_user, user)
+    end
+
     conn
     |> assign(:current_user, user)
     |> assign(:firebase_id_token, token)
     |> assign(:firebase_id_token_exp, token_exp)
     |> assign(:auth_mode, Auth.mode())
+    |> register_before_send(fn conn ->
+      Process.delete(:ide_current_user)
+      conn
+    end)
   end
 end

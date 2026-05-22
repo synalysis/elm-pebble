@@ -4,6 +4,7 @@ defmodule Ide.Settings do
   """
 
   alias Ide.Auth
+  alias Ide.Auth.User
 
   @defaults %{
     "auto_format_on_save" => false,
@@ -234,38 +235,115 @@ defmodule Ide.Settings do
     end
   end
 
+  @doc """
+  Returns the on-disk settings path for `user` in public mode, or the global
+  settings path in local mode.
+  """
+  @spec user_settings_path(User.t() | integer()) :: String.t() | nil
+  def user_settings_path(%User{id: id}), do: user_settings_path(id)
+
+  def user_settings_path(id) when is_integer(id) do
+    if Auth.public_mode?() do
+      Path.join([data_root(), "users", Integer.to_string(id), "settings.json"])
+    else
+      global_settings_path()
+    end
+  end
+
+  @doc """
+  Removes a user's persisted settings file in public mode.
+  """
+  @spec delete_user_settings(User.t()) :: :ok
+  def delete_user_settings(%User{id: id}) when is_integer(id) do
+    if Auth.public_mode?() do
+      path = user_settings_path(id)
+
+      if is_binary(path) and File.exists?(path) do
+        File.rm(path)
+      end
+
+      user_dir = Path.dirname(path)
+
+      case File.ls(user_dir) do
+        {:ok, []} -> File.rmdir(user_dir)
+        _ -> :ok
+      end
+    end
+
+    :ok
+  end
+
+  @spec data_root() :: String.t()
+  def data_root do
+    Application.get_env(:ide, Ide.Settings, [])
+    |> Keyword.get(:data_root, "/var/lib/ide")
+  end
+
   @spec read_file_values() :: file_values()
   defp read_file_values do
-    path = settings_path()
-
-    case File.read(path) do
-      {:ok, content} ->
-        case Jason.decode(content) do
-          {:ok, values} when is_map(values) -> values
-          _ -> %{}
-        end
-
-      {:error, _reason} ->
+    case settings_path() do
+      nil ->
         %{}
+
+      path ->
+        case File.read(path) do
+          {:ok, content} ->
+            case Jason.decode(content) do
+              {:ok, values} when is_map(values) -> values
+              _ -> %{}
+            end
+
+          {:error, _reason} ->
+            %{}
+        end
     end
   end
 
-  @spec write_file_values(file_values()) :: settings_write_result()
+  @spec write_file_values(file_values()) :: settings_write_result() | {:error, :no_settings_scope}
   defp write_file_values(values) do
-    path = settings_path()
-    parent = Path.dirname(path)
+    case settings_path() do
+      nil ->
+        {:error, :no_settings_scope}
 
-    with :ok <- File.mkdir_p(parent),
-         {:ok, encoded} <- Jason.encode(values, pretty: true),
-         :ok <- File.write(path, encoded <> "\n") do
-      :ok
+      path ->
+        parent = Path.dirname(path)
+
+        with :ok <- File.mkdir_p(parent),
+             {:ok, encoded} <- Jason.encode(values, pretty: true),
+             :ok <- File.write(path, encoded <> "\n") do
+          :ok
+        end
     end
   end
 
-  @spec settings_path() :: String.t()
+  @spec settings_path() :: String.t() | nil
   defp settings_path do
-    Application.get_env(:ide, Ide.Settings, [])
-    |> Keyword.fetch!(:settings_path)
+    config = Application.get_env(:ide, Ide.Settings, [])
+
+    case Keyword.get(config, :settings_path) do
+      path when is_binary(path) and path != "" ->
+        path
+
+      _ ->
+        resolve_settings_path()
+    end
+  end
+
+  @spec resolve_settings_path() :: String.t() | nil
+  defp resolve_settings_path do
+    if Auth.public_mode?() do
+      case Process.get(:ide_current_user) do
+        %{id: id} when is_integer(id) -> user_settings_path(id)
+        _ -> nil
+      end
+    else
+      global_settings_path()
+    end
+  end
+
+  @spec global_settings_path() :: String.t()
+  defp global_settings_path do
+    System.get_env("SETTINGS_FILE") || Path.join(data_root(), "config/settings.json")
   end
 
   @spec parse_editor_mode(wire_input()) :: editor_mode()

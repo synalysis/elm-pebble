@@ -7,11 +7,24 @@ defmodule Ide.Auth.DeleteUserDataTest do
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.Repo
+  alias Ide.Settings
 
   setup do
     root = Path.join(System.tmp_dir!(), "ide_delete_user_#{System.unique_integer([:positive])}")
+    data_root = Path.join(System.tmp_dir!(), "ide_delete_user_settings_#{System.unique_integer([:positive])}")
+
     Application.put_env(:ide, Ide.Projects, projects_root: root)
-    on_exit(fn -> File.rm_rf(root) end)
+    Application.put_env(:ide, Ide.Settings, data_root: data_root)
+
+    original_auth = Application.get_env(:ide, Ide.Auth, [])
+    Application.put_env(:ide, Ide.Auth, mode: :public_custom)
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.Auth, original_auth)
+      File.rm_rf(root)
+      File.rm_rf(data_root)
+    end)
+
     :ok
   end
 
@@ -35,6 +48,10 @@ defmodule Ide.Auth.DeleteUserDataTest do
 
     assert File.dir?(workspace_path)
 
+    settings_path = Settings.user_settings_path(user.id)
+    File.mkdir_p!(Path.dirname(settings_path))
+    File.write!(settings_path, Jason.encode!(%{"editor_mode" => "vim"}))
+
     expires_at = DateTime.utc_now() |> DateTime.add(3600, :second) |> DateTime.truncate(:second)
 
     assert {:ok, _token} =
@@ -53,5 +70,7 @@ defmodule Ide.Auth.DeleteUserDataTest do
     refute Repo.get_by(LoginToken, user_id: user.id)
     refute File.exists?(workspace_path)
     refute File.exists?(Path.dirname(workspace_path))
+    refute File.exists?(settings_path)
+    refute File.exists?(Path.dirname(settings_path))
   end
 end

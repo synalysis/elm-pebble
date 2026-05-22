@@ -157,18 +157,26 @@ end
 if config_env() == :prod do
   data_root = System.get_env("IDE_DATA_ROOT") || "/var/lib/ide"
   projects_root = System.get_env("PROJECTS_ROOT") || Path.join(data_root, "workspace_projects")
-  settings_path = System.get_env("SETTINGS_FILE") || Path.join(data_root, "config/settings.json")
+
+  auth_mode = System.get_env("IDE_AUTH_MODE", "local") |> String.downcase()
+  public_mode = auth_mode in ["public", "public_pebble", "public_custom"]
 
   settings_values =
-    case File.read(settings_path) do
-      {:ok, content} ->
-        case Jason.decode(content) do
-          {:ok, values} when is_map(values) -> values
-          _ -> %{}
-        end
+    if public_mode do
+      %{}
+    else
+      settings_path = System.get_env("SETTINGS_FILE") || Path.join(data_root, "config/settings.json")
 
-      _ ->
-        %{}
+      case File.read(settings_path) do
+        {:ok, content} ->
+          case Jason.decode(content) do
+            {:ok, values} when is_map(values) -> values
+            _ -> %{}
+          end
+
+        _ ->
+          %{}
+      end
     end
 
   github_credentials_path =
@@ -184,7 +192,7 @@ if config_env() == :prod do
     repo_module: repo_module
 
   config :ide, Ide.Projects, projects_root: projects_root
-  config :ide, Ide.Settings, settings_path: settings_path
+  config :ide, Ide.Settings, data_root: data_root
 
   config :ide, Ide.GitHub,
     credentials_path: github_credentials_path,
