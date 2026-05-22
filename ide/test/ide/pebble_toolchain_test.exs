@@ -84,6 +84,18 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ ~s(args ++ ["--version", trimmed])
   end
 
+  test "emulator packaging writes storage log build flags header" do
+    source = File.read!("lib/ide/pebble_toolchain.ex")
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert source =~ "write_emulator_build_flags"
+    assert source =~ "elmc_emulator_build_flags.h"
+    assert source =~ "ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1"
+    assert template =~ ~s(#include "elmc_emulator_build_flags.h")
+    assert template =~ "emulator_storage_snapshot_callback"
+    assert template =~ "ELMC_DEBUG_STORAGE_OP_SNAPSHOT"
+  end
+
   test "infer_package_target_type follows Pebble.Platform watchface entrypoint" do
     slug = "toolchain-watchface-#{System.unique_integer([:positive])}"
 

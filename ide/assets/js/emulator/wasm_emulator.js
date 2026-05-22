@@ -520,12 +520,19 @@ export class WasmEmulatorHost {
     if (this.log) this.log.textContent = this.logLines.join("\n")
   }
 
+  storageLogBody(message) {
+    if (typeof message !== "string") return ""
+    const appLog = message.match(/AppLog(?:\s+\S+)*\s+[^:]+:\s*(.+)$/)
+    return appLog ? appLog[1] : message
+  }
+
   observeStorageLog(message) {
-    const match = message.match(/(?:cmd|debug) storage_(read|write)(?:_string)? key=(\d+)(?: value=(.*?)(?: status=| rc=|$))?/)
+    const body = this.storageLogBody(message)
+    const match = body.match(/(?:cmd|debug) storage_(read|write)(?:_string)? key=(\d+)(?: value=(.*?)(?:\s+status=|\s+rc=|$))?/)
     if (match) {
       const operation = match[1]
       const key = parseInt(match[2], 10)
-      const stringLike = message.includes("storage_read_string") || message.includes("storage_write_string")
+      const stringLike = body.includes("storage_read_string") || body.includes("storage_write_string")
       const value = typeof match[3] === "string" ? match[3] : ""
       this.storageEntries.set(String(key), {
         key,
@@ -537,7 +544,7 @@ export class WasmEmulatorHost {
       return
     }
 
-    const deleted = message.match(/(?:cmd|debug) storage_delete key=(\d+)/)
+    const deleted = body.match(/(?:cmd|debug) storage_delete key=(\d+)/)
     if (deleted) {
       this.storageEntries.delete(deleted[1])
       this.renderStorage()

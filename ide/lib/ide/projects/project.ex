@@ -9,7 +9,7 @@ defmodule Ide.Projects.Project do
   alias Ide.Projects.Types
 
   @target_types ~w(app watchface companion)
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time game-basic game-tiny-bird game-greeneys-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time game-basic game-tiny-bird game-jump-n-run game-2048)
 
   @type t :: %__MODULE__{
           id: integer() | nil,

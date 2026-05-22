@@ -30,6 +30,9 @@ def configure(ctx):
     if os.environ.get('ELMC_ALLOC_TRACE') in ('1', 'true', 'TRUE', 'yes', 'YES'):
         for env in ctx.all_envs.values():
             env.append_value('CFLAGS', ['-DELMC_ALLOC_TRACE=1'])
+    if os.environ.get('ELMC_PEBBLE_EMULATOR_STORAGE_LOGS') in ('1', 'true', 'TRUE', 'yes', 'YES'):
+        for env in ctx.all_envs.values():
+            env.append_value('CFLAGS', ['-DELMC_PEBBLE_EMULATOR_STORAGE_LOGS=1'])
 
 def build(ctx):
     ctx.load('pebble_sdk')

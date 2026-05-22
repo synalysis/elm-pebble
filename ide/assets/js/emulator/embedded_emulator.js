@@ -24,6 +24,7 @@ const DEBUG_STORAGE = {
   stringValue: 0x454c4d04,
   opWrite: 1,
   opDelete: 2,
+  opSnapshot: 4,
   typeInt: 1,
   typeString: 2
 }
@@ -328,6 +329,13 @@ export class EmbeddedEmulatorHost {
         this.startPing()
       }
       this.setStatus(this.session.backend_enabled ? "Embedded emulator connected" : "Embedded emulator backend disabled; launch API is in dry-run mode")
+      if (this.session.backend_enabled) {
+        this.ensurePhoneBridge()
+          .then(() => {
+            if (this.appInstalled) this.enableAppLogs()
+          })
+          .catch(error => this.appendLog(`phone bridge connect failed: ${error.message}`))
+      }
     } catch (error) {
       this.setStatus(`Embedded emulator failed: ${error.message}`)
     } finally {
@@ -567,12 +575,20 @@ export class EmbeddedEmulatorHost {
     try {
       await this.installPbwViaNativeInstaller(installSessionId)
       if (this.session?.id !== installSessionId) return
+      if (this.session?.backend_enabled) {
+        try {
+          await this.ensurePhoneBridge()
+          if (this.session?.id !== installSessionId) return
+          this.enableAppLogs()
+        } catch (error) {
+          if (this.session?.id === installSessionId) {
+            this.appendLog(`phone bridge connect failed: ${error.message}`)
+          }
+        }
+      }
       if (this.session?.has_phone_companion && this.session?.backend_enabled && this.session?.artifact_path) {
         try {
-          if (this.phoneSocket?.readyState !== WebSocket.OPEN) {
-            this.connectPhone()
-            await this.waitForPhoneBridge()
-          }
+          await this.ensurePhoneBridge()
           if (this.session?.id !== installSessionId) return
           await this.installPbwViaPhoneBridge()
         } catch (error) {
@@ -606,7 +622,15 @@ export class EmbeddedEmulatorHost {
     this.appInstalled = true
     this.setStatus(parts ? `PBW installed on embedded emulator (${parts})` : "PBW installed on embedded emulator")
     this.appendLog("native PBW install complete")
-    this.enableAppLogs()
+  }
+
+  async ensurePhoneBridge(timeoutMs = 10_000) {
+    if (!this.session?.backend_enabled) return false
+    if (this.phoneSocket?.readyState !== WebSocket.OPEN) {
+      this.connectPhone()
+      await this.waitForPhoneBridge(timeoutMs)
+    }
+    return true
   }
 
   waitForPhoneBridge(timeoutMs = 10_000) {
@@ -806,7 +830,17 @@ export class EmbeddedEmulatorHost {
     const sent = this.sendPebbleFrame(ENDPOINT_APP_LOG, new Uint8Array([1]))
     if (sent) {
       this.appendLog("requested watch AppLog shipping")
+      window.setTimeout(() => this.requestStorageSnapshot(), 250)
+    } else {
+      this.appendLog("skipped watch AppLog shipping: phone bridge is not connected")
     }
+  }
+
+  requestStorageSnapshot() {
+    if (!this.sendDebugAppMessage([{key: DEBUG_STORAGE.op, type: "uint", value: DEBUG_STORAGE.opSnapshot}], {quiet: true})) {
+      return
+    }
+    this.appendLog("requested watch storage snapshot")
   }
 
   async installPbwViaPhoneBridge() {
@@ -1253,19 +1287,25 @@ export class EmbeddedEmulatorHost {
     this.renderStorage()
   }
 
+  storageLogBody(message) {
+    if (typeof message !== "string") return ""
+    const appLog = message.match(/AppLog(?:\s+\S+)*\s+[^:]+:\s*(.+)$/)
+    return appLog ? appLog[1] : message
+  }
+
   observeStorageLog(message) {
-    const match = message.match(/(?:cmd|debug) storage_(read|write)(?:_string)? key=(\d+)(?: value=(.*?)(?: status=| rc=|$))?/)
+    const body = this.storageLogBody(message)
+    const match = body.match(/(?:cmd|debug) storage_(read|write)(?:_string)? key=(\d+)(?: value=(.*?)(?:\s+status=|\s+rc=|$))?/)
     if (match) {
       const operation = match[1]
       const key = parseInt(match[2], 10)
-      const stringLike = message.includes("storage_read_string") || message.includes("storage_write_string")
+      const stringLike = body.includes("storage_read_string") || body.includes("storage_write_string")
       const value = typeof match[3] === "string" ? match[3] : ""
       this.upsertStorageEntry({key, type: stringLike ? "string" : "int", value})
-      if (operation === "read" && typeof match[3] !== "string") this.renderStorage()
       return
     }
 
-    const deleted = message.match(/(?:cmd|debug) storage_delete key=(\d+)/)
+    const deleted = body.match(/(?:cmd|debug) storage_delete key=(\d+)/)
     if (deleted) {
       this.storageEntries.delete(deleted[1])
       this.renderStorage()

@@ -369,7 +369,7 @@ defmodule Ide.ProjectsTest do
   end
 
   test "game templates seed app projects with Elm game APIs" do
-    for template <- ["game-basic", "game-tiny-bird", "game-greeneys-run", "game-2048"] do
+    for template <- ["game-basic", "game-tiny-bird", "game-jump-n-run", "game-2048"] do
       slug = "#{template}-#{System.unique_integer([:positive])}"
 
       assert {:ok, project} =

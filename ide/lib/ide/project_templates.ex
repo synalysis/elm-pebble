@@ -21,7 +21,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time game-basic game-tiny-bird game-greeneys-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time game-basic game-tiny-bird game-jump-n-run game-2048)
 
   @template_dirs %{
     "starter" => "starter",
@@ -32,7 +32,7 @@ defmodule Ide.ProjectTemplates do
     "watchface-tangram-time" => "watchface_tangram_time",
     "game-basic" => "game_basic",
     "game-tiny-bird" => "game_tiny_bird",
-    "game-greeneys-run" => "game_greeneys_run",
+    "game-jump-n-run" => "game_jump_n_run",
     "game-2048" => "game_2048"
   }
 
@@ -99,7 +99,7 @@ defmodule Ide.ProjectTemplates do
       {"Watchface: Tangram Time (watch, protocol, phone)", "watchface-tangram-time"},
       {"Game: Basic", "game-basic"},
       {"Game: Tiny Bird", "game-tiny-bird"},
-      {"Game: Greeney's Run", "game-greeneys-run"},
+      {"Game: Jump'n Run", "game-jump-n-run"},
       {"Game: 2048", "game-2048"}
     ]
   end
@@ -134,8 +134,8 @@ defmodule Ide.ProjectTemplates do
       "game-tiny-bird" ->
         seed_watch_only_workspace(workspace_path, "game_tiny_bird")
 
-      "game-greeneys-run" ->
-        seed_watch_only_workspace(workspace_path, "game_greeneys_run")
+      "game-jump-n-run" ->
+        seed_watch_only_workspace(workspace_path, "game_jump_n_run")
 
       "game-2048" ->
         seed_watch_only_workspace(workspace_path, "game_2048")

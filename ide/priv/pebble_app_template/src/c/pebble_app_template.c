@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include "elmc_emulator_build_flags.h"
 #include "elmc/c/elmc_pebble.h"
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 #include "generated/companion_protocol.h"
@@ -99,6 +100,39 @@ static inline void elmc_pebble_log_noop(int level, const char *format, ...) {
 }
 #undef APP_LOG
 #define APP_LOG(level, ...) elmc_pebble_log_noop(level, __VA_ARGS__)
+#endif
+
+#ifndef ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+#define ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 0
+#endif
+
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+#define ELMC_PEBBLE_STORAGE_LOG(level, fmt, ...) app_log(level, __FILE_NAME__, __LINE__, fmt, ##__VA_ARGS__)
+
+static void emulator_storage_snapshot_callback(void *data) {
+  (void)data;
+  for (uint32_t key = 0; key < 256; key++) {
+    if (!persist_exists(key)) {
+      continue;
+    }
+    int size = persist_get_size(key);
+    if (size <= 0) {
+      continue;
+    }
+    if (size == (int)sizeof(int32_t)) {
+      int32_t value = persist_read_int(key);
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read key=%lu value=%ld rc=0",
+              (unsigned long)key, (long)value);
+    } else {
+      char value[128] = "";
+      persist_read_string(key, value, sizeof(value));
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read_string key=%lu value=%s rc=0",
+              (unsigned long)key, value);
+    }
+  }
+}
+#else
+#define ELMC_PEBBLE_STORAGE_LOG(level, fmt, ...) do { } while (0)
 #endif
 
 #if defined(ELMC_PEBBLE_TRACE_FUNCTIONS)
@@ -230,6 +264,7 @@ enum {
 enum {
   ELMC_DEBUG_STORAGE_OP_WRITE = 1,
   ELMC_DEBUG_STORAGE_OP_DELETE = 2,
+  ELMC_DEBUG_STORAGE_OP_SNAPSHOT = 4,
 };
 
 enum {
@@ -467,7 +502,7 @@ static void apply_pending_cmd(void) {
       uint32_t key = (uint32_t)cmd.p0;
       int32_t value = (int32_t)cmd.p1;
       status_t status = persist_write_int(key, value);
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write key=%lu value=%ld status=%ld",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write key=%lu value=%ld status=%ld",
               (unsigned long)key, (long)value, (long)status);
       break;
     }
@@ -478,7 +513,7 @@ static void apply_pending_cmd(void) {
       int64_t target = cmd.p1;
       int32_t value = persist_read_int(key);
       int rc = target > 0 ? elmc_pebble_dispatch_tag_value(&s_elm_app, target, value) : -6;
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read key=%lu value=%ld rc=%d",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read key=%lu value=%ld rc=%d",
               (unsigned long)key, (long)value, rc);
       break;
     }
@@ -487,7 +522,7 @@ static void apply_pending_cmd(void) {
     case ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING: {
       uint32_t key = (uint32_t)cmd.p0;
       status_t status = persist_write_string(key, cmd.text);
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write_string key=%lu value=%s status=%ld",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write_string key=%lu value=%s status=%ld",
               (unsigned long)key, cmd.text, (long)status);
       break;
     }
@@ -501,7 +536,7 @@ static void apply_pending_cmd(void) {
         persist_read_string(key, value, sizeof(value));
       }
       int rc = target > 0 ? elmc_pebble_dispatch_tag_string(&s_elm_app, target, value) : -6;
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read_string key=%lu value=%s rc=%d",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read_string key=%lu value=%s rc=%d",
               (unsigned long)key, value, rc);
       break;
     }
@@ -526,7 +561,7 @@ static void apply_pending_cmd(void) {
     case ELMC_PEBBLE_CMD_STORAGE_DELETE: {
       uint32_t key = (uint32_t)cmd.p0;
       status_t status = persist_delete(key);
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd storage_delete key=%lu status=%ld",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_delete key=%lu status=%ld",
               (unsigned long)key, (long)status);
       break;
     }
@@ -1709,7 +1744,23 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
   int32_t op = 0;
   int32_t key_value = 0;
 
-  if (!debug_storage_tuple_int(op_tuple, &op) || !debug_storage_tuple_int(key_tuple, &key_value)) {
+  if (!debug_storage_tuple_int(op_tuple, &op)) {
+    // #region agent log
+    ELMC_AGENT_INIT_PROBE(0xED995101);
+    // #endregion
+    ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
+    return false;
+  }
+
+  if (op == ELMC_DEBUG_STORAGE_OP_SNAPSHOT) {
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    emulator_storage_snapshot_callback(NULL);
+#endif
+    ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
+    return true;
+  }
+
+  if (!debug_storage_tuple_int(key_tuple, &key_value)) {
     // #region agent log
     ELMC_AGENT_INIT_PROBE(0xED995101);
     // #endregion
@@ -1723,7 +1774,7 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
     ELMC_AGENT_INIT_PROBE(0xED9951D1);
     // #endregion
     status_t status = persist_delete(key);
-    APP_LOG(APP_LOG_LEVEL_INFO, "debug storage_delete key=%lu status=%ld",
+    ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "debug storage_delete key=%lu status=%ld",
             (unsigned long)key, (long)status);
     ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
     return true;
@@ -1747,13 +1798,13 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
     // #endregion
     int32_t value = 0;
     if (!debug_storage_tuple_int(dict_find(iter, ELMC_DEBUG_STORAGE_KEY_INT_VALUE), &value)) {
-      APP_LOG(APP_LOG_LEVEL_WARNING, "debug storage_write missing int key=%lu",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_WARNING, "debug storage_write missing int key=%lu",
               (unsigned long)key);
       ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
       return true;
     }
     status_t status = persist_write_int(key, value);
-    APP_LOG(APP_LOG_LEVEL_INFO, "debug storage_write key=%lu value=%ld status=%ld",
+    ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "debug storage_write key=%lu value=%ld status=%ld",
             (unsigned long)key, (long)value, (long)status);
     ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
     return true;
@@ -1766,7 +1817,7 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
     Tuple *value_tuple = dict_find(iter, ELMC_DEBUG_STORAGE_KEY_STRING_VALUE);
     const char *value = value_tuple && value_tuple->type == TUPLE_CSTRING ? value_tuple->value->cstring : "";
     status_t status = persist_write_string(key, value);
-    APP_LOG(APP_LOG_LEVEL_INFO, "debug storage_write_string key=%lu value=%s status=%ld",
+    ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "debug storage_write_string key=%lu value=%s status=%ld",
             (unsigned long)key, value, (long)status);
     ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
     return true;
@@ -2266,6 +2317,10 @@ static void init(void) {
     (void)app_message_rc;
     AppTimer *startup_timer = app_timer_register(1, startup_cmd_callback, NULL);
     (void)startup_timer;
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    AppTimer *storage_snapshot_timer = app_timer_register(1500, emulator_storage_snapshot_callback, NULL);
+    (void)storage_snapshot_timer;
+#endif
 #if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
     if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
       s_frame_interval_ms = frame_interval_from_subscriptions();

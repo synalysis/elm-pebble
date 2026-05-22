@@ -773,7 +773,7 @@ defmodule Ide.Mcp.Tools do
               "watchface-tangram-time",
               "game-basic",
               "game-tiny-bird",
-              "game-greeneys-run",
+              "game-jump-n-run",
               "game-2048"
             ]
           }

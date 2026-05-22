@@ -812,7 +812,8 @@ defmodule Ide.Screenshots do
             workspace_root: workspace,
             target_type: target_type,
             project_name: project_name,
-            target_platforms: [target]
+            target_platforms: [target],
+            emulator_storage_logs: true
           )
         else
           _ -> {:error, :package_path_required}

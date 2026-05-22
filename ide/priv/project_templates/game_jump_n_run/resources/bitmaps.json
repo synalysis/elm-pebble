@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "bitmap_jumpehero",
+      "ctor": "JumpHero",
+      "filename": "JumpHero.png",
+      "mime": "image/png",
+      "bytes": 95,
+      "width": 12,
+      "height": 14
+    }
+  ]
+}
