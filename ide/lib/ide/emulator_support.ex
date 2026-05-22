@@ -36,10 +36,17 @@ defmodule Ide.EmulatorSupport do
   @spec external_mode_enabled?() :: boolean()
   def external_mode_enabled?, do: not Auth.public_mode?()
 
+  @doc """
+  True when the in-browser WASM emulator mode is available (disabled in public IDE modes).
+  """
+  @spec wasm_mode_enabled?() :: boolean()
+  def wasm_mode_enabled?, do: not Auth.public_mode?()
+
   @spec allowed_mode_ids() :: [String.t()]
   def allowed_mode_ids do
     ~w(embedded external wasm)
     |> without_external_unless_enabled()
+    |> without_wasm_unless_enabled()
   end
 
   @spec supported_modes(String.t() | nil) :: [String.t()]
@@ -47,6 +54,7 @@ defmodule Ide.EmulatorSupport do
     @target_mode_ids
     |> Map.get(String.trim(target), default_modes())
     |> without_external_unless_enabled()
+    |> without_wasm_unless_enabled()
     |> Enum.filter(&mode_known?/1)
   end
 
@@ -104,10 +112,18 @@ defmodule Ide.EmulatorSupport do
     end)
   end
 
-  defp default_modes, do: without_external_unless_enabled(~w(embedded external wasm))
+  defp default_modes do
+    ~w(embedded external wasm)
+    |> without_external_unless_enabled()
+    |> without_wasm_unless_enabled()
+  end
 
   defp without_external_unless_enabled(modes) do
     if external_mode_enabled?(), do: modes, else: Enum.reject(modes, &(&1 == "external"))
+  end
+
+  defp without_wasm_unless_enabled(modes) do
+    if wasm_mode_enabled?(), do: modes, else: Enum.reject(modes, &(&1 == "wasm"))
   end
 
   defp default_mode(target) do

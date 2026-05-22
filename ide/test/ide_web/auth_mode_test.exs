@@ -50,11 +50,13 @@ defmodule IdeWeb.AuthModeTest do
     end
   end
 
-  test "public modes disable external emulator option", %{conn: _conn} do
+  test "public modes disable external and wasm emulator options", %{conn: _conn} do
     for mode <- [:public_pebble, :public_custom] do
       Application.put_env(:ide, Ide.Auth, mode: mode)
       refute EmulatorSupport.external_mode_enabled?()
+      refute EmulatorSupport.wasm_mode_enabled?()
       refute "external" in EmulatorSupport.supported_modes("basalt")
+      refute "wasm" in EmulatorSupport.supported_modes("basalt")
     end
   end
 

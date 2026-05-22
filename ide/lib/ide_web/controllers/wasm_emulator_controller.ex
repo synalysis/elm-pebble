@@ -4,10 +4,13 @@ defmodule IdeWeb.WasmEmulatorController do
   alias Ide.Emulator.PBW
   alias Ide.Emulator.PebbleProtocol.CRC32
   alias Ide.Emulator.PebbleProtocol.Packets
+  alias Ide.EmulatorSupport
   alias Ide.Projects
   alias Ide.Screenshots
   alias Ide.WasmEmulator
   alias IdeWeb.WorkspaceLive.BuildFlow
+
+  plug :require_wasm_enabled
 
   @spec status(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def status(conn, _params) do
@@ -1190,5 +1193,16 @@ defmodule IdeWeb.WasmEmulatorController do
       </body>
     </html>
     """
+  end
+
+  defp require_wasm_enabled(conn, _opts) do
+    if EmulatorSupport.wasm_mode_enabled?() do
+      conn
+    else
+      conn
+      |> put_status(:not_found)
+      |> json(%{error: "WASM emulator is not available"})
+      |> halt()
+    end
   end
 end

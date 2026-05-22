@@ -1,11 +1,14 @@
 defmodule IdeWeb.WasmEmulatorControllerTest do
   use IdeWeb.ConnCase, async: false
 
+  alias Ide.Auth.User
   alias Ide.Projects
+  alias Ide.Repo
 
   setup do
     previous_wasm = Application.get_env(:ide, Ide.WasmEmulator)
     previous_screenshots = Application.get_env(:ide, Ide.Screenshots)
+    previous_auth = Application.get_env(:ide, Ide.Auth, [])
 
     root =
       Path.join(System.tmp_dir!(), "elm-pebble-wasm-test-#{System.unique_integer([:positive])}")
@@ -25,10 +28,30 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     on_exit(fn ->
       restore_env(Ide.WasmEmulator, previous_wasm)
       restore_env(Ide.Screenshots, previous_screenshots)
+      Application.put_env(:ide, Ide.Auth, previous_auth)
       File.rm_rf(root)
     end)
 
     {:ok, assets: assets}
+  end
+
+  test "public modes disable wasm routes", %{conn: conn} do
+    Application.put_env(:ide, Ide.Auth, mode: :public_pebble)
+
+    {:ok, user} =
+      %User{}
+      |> User.changeset(%{firebase_uid: "wasm-public-user", email: "wasm@example.test"})
+      |> Repo.insert()
+
+    auth_conn =
+      conn
+      |> Plug.Test.init_test_session(user_id: user.id)
+
+    conn = get(auth_conn, ~p"/api/wasm-emulator/status")
+    assert json_response(conn, 404)["error"] =~ "not available"
+
+    page_conn = get(build_conn(), ~p"/wasm-emulator")
+    assert json_response(page_conn, 404)["error"] =~ "not available"
   end
 
   test "status reports missing wasm assets", %{conn: conn, assets: assets} do
