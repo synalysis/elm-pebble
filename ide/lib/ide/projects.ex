@@ -824,25 +824,20 @@ defmodule Ide.Projects do
   @doc """
   Ensures a project workspace can be packaged by the Pebble toolchain.
 
-  Repairs missing `elm.json` files when Elm sources exist, and re-seeds an empty
-  workspace from the saved or inferred project template when needed.
+  Recreates missing `elm.json` files when marker source files are present. Does not
+  restore missing or deleted project sources.
   """
   @spec ensure_packagable_workspace(Project.t()) ::
-          :ok | {:error, :compile_project_root_not_found | {:workspace_bootstrap_failed, term()}}
+          :ok | {:error, :compile_project_root_not_found}
   def ensure_packagable_workspace(%Project{} = project) do
     workspace = project_workspace_path(project)
 
     with :ok <- FileStore.ensure_roots(project, projects_root()),
          :ok <- ensure_compiler_workspace(project) do
-      cond do
-        FileStore.workspace_has_elm_roots?(workspace) ->
-          :ok
-
-        workspace_has_elm_sources?(workspace) ->
-          {:error, :compile_project_root_not_found}
-
-        true ->
-          repair_empty_workspace(project, workspace)
+      if FileStore.workspace_has_elm_roots?(workspace) do
+        :ok
+      else
+        {:error, :compile_project_root_not_found}
       end
     end
   end
@@ -992,44 +987,4 @@ defmodule Ide.Projects do
     end
   end
 
-  @spec repair_empty_workspace(Project.t(), String.t()) ::
-          :ok | {:error, :compile_project_root_not_found | {:workspace_bootstrap_failed, term()}}
-  defp repair_empty_workspace(%Project{} = project, workspace) do
-    template = workspace_template_key(project, workspace)
-
-    with :ok <- ProjectTemplates.apply_template(template, workspace),
-         :ok <- ensure_compiler_workspace(project),
-         :ok <- ProjectBundle.write_manifest(workspace, project, template: template) do
-      if FileStore.workspace_has_elm_roots?(workspace) do
-        :ok
-      else
-        {:error, :compile_project_root_not_found}
-      end
-    else
-      {:error, reason} -> {:error, {:workspace_bootstrap_failed, reason}}
-    end
-  end
-
-  @spec workspace_template_key(Project.t(), String.t()) :: String.t()
-  defp workspace_template_key(%Project{} = project, workspace) do
-    case ProjectBundle.read_manifest(workspace) do
-      {:ok, %{template: template}} when is_binary(template) and template != "" ->
-        template
-
-      _ ->
-        ProjectTemplates.infer_template_for_project(project)
-    end
-  end
-
-  @spec workspace_has_elm_sources?(String.t()) :: boolean()
-  defp workspace_has_elm_sources?(workspace) when is_binary(workspace) do
-    workspace
-    |> FileStore.compiler_root_candidates()
-    |> Enum.any?(fn root ->
-      case Path.wildcard(Path.join(root, "**/*.elm")) do
-        [_ | _] -> true
-        _ -> false
-      end
-    end)
-  end
 end

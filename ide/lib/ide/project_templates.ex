@@ -7,7 +7,6 @@ defmodule Ide.ProjectTemplates do
   alias Ide.InternalPackages
   alias Ide.Paths
   alias Ide.PebbleToolchain
-  alias Ide.Projects.Project
 
   @type workspace_path :: String.t()
   @type template_dir_name :: String.t()
@@ -58,23 +57,6 @@ defmodule Ide.ProjectTemplates do
       do: "watchface"
 
   def target_type_for_template(_template), do: "app"
-
-  @doc """
-  Chooses a default template when workspace files must be recreated.
-  """
-  @spec infer_template_for_project(Project.t()) :: String.t()
-  def infer_template_for_project(%Project{target_type: "watchface", source_roots: roots})
-      when is_list(roots) do
-    if "phone" in roots and "protocol" in roots do
-      "watchface-yes"
-    else
-      "watchface-digital"
-    end
-  end
-
-  def infer_template_for_project(%Project{target_type: "watchface"}), do: "watchface-digital"
-  def infer_template_for_project(%Project{target_type: "app"}), do: "starter"
-  def infer_template_for_project(_), do: "starter"
 
   @doc """
   Default Pebble target platforms to enable for new projects created from `template`.

@@ -185,7 +185,7 @@ defmodule Ide.ProjectsTest do
     assert Ide.Compiler.resolve_elm_project_dir(workspace_root, project.source_roots)
   end
 
-  test "ensure_packagable_workspace re-seeds an empty workspace from saved template" do
+  test "ensure_packagable_workspace does not restore a missing workspace from template" do
     assert {:ok, project} =
              Projects.create_project(%{
                "name" => "Packagable Repair",
@@ -204,9 +204,10 @@ defmodule Ide.ProjectsTest do
 
     refute Ide.Projects.FileStore.workspace_has_elm_roots?(workspace_root)
 
-    assert :ok = Projects.ensure_packagable_workspace(project)
-    assert Ide.Projects.FileStore.workspace_has_elm_roots?(workspace_root)
-    assert File.exists?(Path.join(workspace_root, "watch/src/Main.elm"))
+    assert {:error, :compile_project_root_not_found} =
+             Projects.ensure_packagable_workspace(project)
+
+    refute File.exists?(Path.join(workspace_root, "watch/src/Main.elm"))
   end
 
   test "source file operations across roots" do
