@@ -2,6 +2,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
   use ExUnit.Case, async: true
 
   alias Ide.Debugger
+  alias Ide.Projects.Project
   alias IdeWeb.WorkspaceLive.DebuggerPreview
   alias IdeWeb.WorkspaceLive.DebuggerSupport
 
@@ -117,7 +118,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     socket =
       %Phoenix.LiveView.Socket{}
       |> DebuggerSupport.assign_defaults()
-      |> Phoenix.Component.assign(:project, %{slug: slug})
+      |> Phoenix.Component.assign(:project, %Project{slug: slug})
       |> DebuggerSupport.refresh()
 
     assert socket.assigns.debugger_cursor_seq == 1
@@ -184,7 +185,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     socket =
       %Phoenix.LiveView.Socket{}
       |> DebuggerSupport.assign_defaults()
-      |> Phoenix.Component.assign(:project, %{slug: slug})
+      |> Phoenix.Component.assign(:project, %Project{slug: slug})
       |> DebuggerSupport.refresh()
 
     assert Enum.any?(socket.assigns.debugger_watch_trigger_buttons, fn row ->
@@ -239,7 +240,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     socket =
       %Phoenix.LiveView.Socket{}
       |> DebuggerSupport.assign_defaults()
-      |> Phoenix.Component.assign(:project, %{slug: slug})
+      |> Phoenix.Component.assign(:project, %Project{slug: slug})
       |> DebuggerSupport.refresh()
 
     rows = socket.assigns.debugger_watch_trigger_buttons
@@ -252,6 +253,72 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert Enum.any?(rows, &(&1.button == "up" and &1.button_event == "pressed"))
     assert Enum.any?(rows, &(&1.button == "down" and &1.button_event == "pressed"))
     assert Enum.any?(rows, &(&1.button == "select" and &1.button_event == "pressed"))
+  end
+
+  test "refresh passes interval_ms through for frame subscriptions" do
+    slug = "support-debugger-frame-every-#{System.unique_integer([:positive])}"
+
+    source = """
+    module FrameEvery exposing (..)
+
+    import Json.Decode as Decode
+    import Pebble.Frame as Frame
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Model =
+        { frame : Int }
+
+    type Msg
+        = FrameTick Frame.Frame
+
+    init _ =
+        ( { frame = 0 }, Cmd.none )
+
+    update msg model =
+        case msg of
+            FrameTick frame ->
+                ( { model | frame = frame.frame }, Cmd.none )
+
+    subscriptions _ =
+        Frame.every 33 FrameTick
+
+    view _ =
+        Ui.toUiNode [ Ui.clear Color.white ]
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    {:ok, _} =
+      Debugger.reload(slug, %{
+        rel_path: "watch/FrameEvery.elm",
+        source: source,
+        reason: "support_frame_every_auto"
+      })
+
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> DebuggerSupport.assign_defaults()
+      |> Phoenix.Component.assign(:project, %Project{slug: slug})
+      |> DebuggerSupport.refresh()
+
+    frame_row =
+      Enum.find(socket.assigns.debugger_watch_trigger_buttons, fn row ->
+        row.message == "FrameTick" and String.contains?(row.trigger, "Frame")
+      end)
+
+    assert frame_row.declared_interval_ms == 33
+    assert frame_row.interval_ms == 100
   end
 
   test "debugger_rows derives selected and paired watch companion snapshots" do

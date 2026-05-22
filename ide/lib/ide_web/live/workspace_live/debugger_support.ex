@@ -3973,24 +3973,30 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp with_live_runtime_fallback(snapshot_runtime, _debugger_state), do: snapshot_runtime
 
+  @spec trigger_button_row(map(), map()) :: map()
+  defp trigger_button_row(row, debugger_state) when is_map(row) and is_map(debugger_state) do
+    %{
+      id: Map.get(row, :id) || Map.get(row, "id"),
+      label: Map.get(row, :label) || Map.get(row, "label"),
+      trigger: Map.get(row, :trigger) || Map.get(row, "trigger"),
+      target: Map.get(row, :target) || Map.get(row, "target"),
+      message: Map.get(row, :message) || Map.get(row, "message"),
+      source: Map.get(row, :source) || Map.get(row, "source"),
+      button: Map.get(row, :button) || Map.get(row, "button"),
+      button_event: Map.get(row, :button_event) || Map.get(row, "button_event"),
+      interval_ms: Map.get(row, :interval_ms) || Map.get(row, "interval_ms"),
+      declared_interval_ms:
+        Map.get(row, :declared_interval_ms) || Map.get(row, "declared_interval_ms"),
+      injection_supported?:
+        Debugger.subscription_trigger_injection_modal_supported?(debugger_state, row)
+    }
+  end
+
   @spec trigger_buttons(map()) :: [map()]
   def trigger_buttons(debugger_state) when is_map(debugger_state) do
     [:watch, :companion]
     |> Enum.flat_map(&Debugger.trigger_candidates(debugger_state, &1))
-    |> Enum.map(fn row ->
-      %{
-        id: Map.get(row, :id) || Map.get(row, "id"),
-        label: Map.get(row, :label) || Map.get(row, "label"),
-        trigger: Map.get(row, :trigger) || Map.get(row, "trigger"),
-        target: Map.get(row, :target) || Map.get(row, "target"),
-        message: Map.get(row, :message) || Map.get(row, "message"),
-        source: Map.get(row, :source) || Map.get(row, "source"),
-        button: Map.get(row, :button) || Map.get(row, "button"),
-        button_event: Map.get(row, :button_event) || Map.get(row, "button_event"),
-        injection_supported?:
-          Debugger.subscription_trigger_injection_modal_supported?(debugger_state, row)
-      }
-    end)
+    |> Enum.map(&trigger_button_row(&1, debugger_state))
     |> Enum.filter(fn row ->
       is_binary(row.id) and row.id != "" and is_binary(row.trigger) and row.trigger != ""
     end)
@@ -4003,20 +4009,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
        when is_map(debugger_state) and target in [:watch, :companion] do
     debugger_state
     |> Debugger.trigger_candidates(target)
-    |> Enum.map(fn row ->
-      %{
-        id: Map.get(row, :id) || Map.get(row, "id"),
-        label: Map.get(row, :label) || Map.get(row, "label"),
-        trigger: Map.get(row, :trigger) || Map.get(row, "trigger"),
-        target: Map.get(row, :target) || Map.get(row, "target"),
-        message: Map.get(row, :message) || Map.get(row, "message"),
-        source: Map.get(row, :source) || Map.get(row, "source"),
-        button: Map.get(row, :button) || Map.get(row, "button"),
-        button_event: Map.get(row, :button_event) || Map.get(row, "button_event"),
-        injection_supported?:
-          Debugger.subscription_trigger_injection_modal_supported?(debugger_state, row)
-      }
-    end)
+    |> Enum.map(&trigger_button_row(&1, debugger_state))
     |> Enum.filter(fn row ->
       row.source == "subscription" and is_binary(row.id) and row.id != "" and
         is_binary(row.trigger) and row.trigger != ""
