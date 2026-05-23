@@ -1,8 +1,8 @@
 var pendingIncoming = [];
-var pendingPlatformIncoming = [];
+var pendingPlatformIncoming = {};
 var pendingGeolocationIncoming = [];
 var incomingPort = null;
-var platformIncomingPort = null;
+var platformIncomingPorts = {};
 var geolocationIncomingPort = null;
 var platformHandlers = {};
 var pendingBridgeResponseIds = {};
@@ -149,6 +149,64 @@ function isPlatformEnvelope(payload) {
 
     return typeof payload.id === "string" && typeof payload.ok === "boolean";
 }
+var PLATFORM_INCOMING_PORT_NAMES = {
+    battery: "batteryPlatformIncoming",
+    locale: "localePlatformIncoming",
+    connectivity: "connectivityPlatformIncoming",
+    notifications: "notificationsPlatformIncoming",
+    weather: "weatherPlatformIncoming",
+    "weather-current": "weatherCurrentPlatformIncoming",
+    "weather-forecast": "weatherForecastPlatformIncoming",
+    calendar: "calendarPlatformIncoming",
+    "calendar-upcoming": "calendarUpcomingPlatformIncoming",
+    "calendar-next": "calendarNextPlatformIncoming",
+    environment: "environmentPlatformIncoming",
+    storage: "storagePlatformIncoming",
+    preferences: "preferencesPlatformIncoming",
+    configuration: "configurationPlatformIncoming",
+    webSocket: "webSocketPlatformIncoming",
+    "webSocket-commands": "webSocketCommandsPlatformIncoming",
+    lifecycle: "lifecyclePlatformIncoming",
+    "timeline-token": "timelineTokenPlatformIncoming",
+    "timeline-commands": "timelineCommandsPlatformIncoming"
+};
+
+function queuePlatformIncoming(handlerId, payload) {
+    if (!pendingPlatformIncoming[handlerId]) {
+        pendingPlatformIncoming[handlerId] = [];
+    }
+
+    pendingPlatformIncoming[handlerId].push(payload);
+}
+
+function deliverPlatformIncomingToHandler(handlerId, payload) {
+    var port = platformIncomingPorts[handlerId];
+
+    if (port) {
+        port.send(payload);
+        return;
+    }
+
+    queuePlatformIncoming(handlerId, payload);
+}
+
+function platformHandlerIdsForPayload(payload) {
+    var handlerIds = matchingPlatformHandlers(payload);
+
+    if (handlerIds.length > 0) {
+        return handlerIds;
+    }
+
+    if (typeof payload.id === "string" && typeof payload.ok === "boolean") {
+        if (pendingBridgeResponseIds[payload.id]) {
+            return Object.keys(platformHandlers).filter(function (handlerId) {
+                return matchesHandlerInterest(platformHandlers[handlerId], payload);
+            });
+        }
+    }
+
+    return [];
+}
 
 function matchesHandlerInterest(interest, payload) {
     if (!interest) {
@@ -197,16 +255,15 @@ function matchesPlatformInterest(payload) {
 function deliverPlatformIncoming(payload) {
     console.log("platform bridge -> Elm companion", JSON.stringify(payload));
 
-    if (!matchesPlatformInterest(payload)) {
+    var handlerIds = platformHandlerIdsForPayload(payload);
+
+    if (handlerIds.length === 0) {
         return;
     }
 
-    if (platformIncomingPort) {
-        platformIncomingPort.send(payload);
-    } else {
-        console.log("platform bridge queued incoming for Elm companion");
-        pendingPlatformIncoming.push(payload);
-    }
+    handlerIds.forEach(function (handlerId) {
+        deliverPlatformIncomingToHandler(handlerId, payload);
+    });
 }
 
 function deliverIncoming(payload) {
@@ -783,12 +840,19 @@ Pebble.addEventListener("ready", function () {
         }
     }
 
-    if (app.ports && app.ports.platformIncoming) {
-        platformIncomingPort = app.ports.platformIncoming;
-        while (pendingPlatformIncoming.length > 0) {
-            platformIncomingPort.send(pendingPlatformIncoming.shift());
+    Object.keys(PLATFORM_INCOMING_PORT_NAMES).forEach(function (handlerId) {
+        var portName = PLATFORM_INCOMING_PORT_NAMES[handlerId];
+
+        if (app.ports && app.ports[portName]) {
+            platformIncomingPorts[handlerId] = app.ports[portName];
+
+            var pending = pendingPlatformIncoming[handlerId] || [];
+
+            while (pending.length > 0) {
+                platformIncomingPorts[handlerId].send(pending.shift());
+            }
         }
-    }
+    });
 
     if (app.ports && app.ports.registerPlatformHandler) {
         app.ports.registerPlatformHandler.subscribe(function (payload) {

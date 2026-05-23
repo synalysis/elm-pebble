@@ -44,7 +44,8 @@ defmodule Ide.CompanionPebbleApisTest do
       assert File.exists?(Path.join(@core_src, "#{module}.elm"))
     end
 
-    assert "Pebble.Companion" in exposed
+    refute "Pebble.Companion" in exposed
+    refute File.exists?(Path.join(@root, "packages/elm-pebble-companion-core/src/Pebble/Companion.elm"))
 
     lifecycle = File.read!(Path.join(@core_src, "Lifecycle.elm"))
     assert String.contains?(lifecycle, "onLifecycle : (Event -> msg) -> Sub msg")
@@ -55,19 +56,18 @@ defmodule Ide.CompanionPebbleApisTest do
     assert String.contains?(configuration, "onClosed : (Maybe String -> msg) -> Sub msg")
 
     platform = File.read!(Path.join(@core_src, "Platform.elm"))
-    assert String.contains?(platform, "batch : List (Part msg) -> Sub msg")
-    refute String.contains?(platform, "@docs Handler")
-    refute String.contains?(platform, "handler,")
-
-    companion = File.read!(Path.join(@root, "packages/elm-pebble-companion-core/src/Pebble/Companion.elm"))
-    assert String.contains?(companion, "batch : List (Platform.Part msg) -> Sub msg")
+    assert String.contains?(platform, "subscribe : Handler msg -> Sub msg")
+    assert String.contains?(platform, "@docs Interest, Handler")
+    assert String.contains?(platform, "handler,")
 
     weather = File.read!(Path.join(@core_src, "Weather.elm"))
     assert String.contains?(weather, "(Result String WeatherInfo -> msg) -> Cmd msg")
     assert String.contains?(weather, "type WeatherUpdate")
-    assert String.contains?(weather, "Platform.with")
+    assert String.contains?(weather, "Platform.subscribe")
     assert String.contains?(weather, "onWeather")
-    assert String.contains?(weather, "part :")
+    assert String.contains?(weather, "onCurrent :")
+    assert String.contains?(weather, "onForecast :")
+    refute String.contains?(weather, "part :")
 
     connectivity = File.read!(Path.join(@core_src, "Connectivity.elm"))
     assert String.contains?(connectivity, "type Connectivity")
@@ -83,15 +83,20 @@ defmodule Ide.CompanionPebbleApisTest do
       assert MapSet.member?(documented, "Pebble.Companion.#{module}")
     end
 
+    refute MapSet.member?(documented, "Pebble.Companion")
+
     phone = File.read!(Path.join(@core_src, "Phone.elm"))
     refute String.contains?(phone, ", request\n")
     refute String.contains?(phone, "@docs Request")
     assert String.contains?(phone, "onWatchToPhone")
     assert String.contains?(phone, "sendPhoneToWatch")
+    assert String.contains?(phone, "platformIncomingFor")
+    assert String.contains?(phone, "batteryPlatformIncoming")
 
     battery = File.read!(Path.join(@core_src, "Battery.elm"))
     refute String.contains?(battery, ", handler")
-    assert String.contains?(battery, "part :")
+    assert String.contains?(battery, "onBattery : (Result String BatteryInfo -> msg) -> Sub msg")
+    refute String.contains?(battery, "part :")
   end
 
   test "debugger simulator settings persist typed phone context fields" do

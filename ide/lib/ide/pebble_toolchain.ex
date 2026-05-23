@@ -538,7 +538,7 @@ defmodule Ide.PebbleToolchain do
   end
 
   @spec run_pebble([String.t()], pebble_opts()) :: {:ok, command_result()} | {:error, toolchain_error()}
-  defp run_pebble(args, opts \\ []) do
+  defp run_pebble(args, opts) do
     with {:ok, pebble_bin} <- pebble_bin(),
          {:ok, cwd} <- command_cwd(opts) do
       env = pebble_command_env(args, opts)

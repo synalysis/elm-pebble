@@ -1,7 +1,6 @@
 module Pebble.Companion.Lifecycle exposing
     ( Event(..)
     , onLifecycle
-    , part
     )
 
 {-| Observe phone companion lifecycle events.
@@ -15,7 +14,7 @@ module Pebble.Companion.Lifecycle exposing
 
 # Subscriptions
 
-@docs onLifecycle, part
+@docs onLifecycle
 
 -}
 
@@ -42,14 +41,7 @@ Registering this subscription also tells the bridge to send lifecycle updates.
 -}
 onLifecycle : (Event -> msg) -> Sub msg
 onLifecycle toMsg =
-    Platform.with [ handler toMsg ]
-
-
-{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
--}
-part : (Event -> msg) -> Platform.Part msg
-part toMsg =
-    Platform.part (handler toMsg)
+    Platform.subscribe (handler toMsg)
 
 
 {-| Platform router handler for lifecycle events.

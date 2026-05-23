@@ -159,7 +159,7 @@ defmodule Ide.GitHub.Repositories do
 
     %{
       "name" => repo,
-      "private" => visibility == "private",
+      "private" => visibility != "public",
       "auto_init" => false
     }
     |> maybe_put_description(description)

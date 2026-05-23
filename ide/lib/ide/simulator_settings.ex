@@ -676,8 +676,6 @@ defmodule Ide.SimulatorSettings do
     end
   end
 
-  defp map_get(_map, _key), do: nil
-
   @spec find_atom_key(map(), String.t()) :: term()
   defp find_atom_key(map, key) do
     Enum.find_value(map, fn

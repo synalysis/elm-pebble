@@ -1,43 +1,41 @@
 module Pebble.Companion.Platform exposing
-    ( Part
-    , batch
-    , with
+    ( Handler
+    , Interest
+    , attach
+    , handler
+    , interest
+    , subscribe
     )
 
-{-| Combine companion platform listeners into one subscription.
+{-| Companion platform subscription wiring.
 
-Use `Pebble.Companion.batch` or the `part` helpers from typed platform modules
-such as `Pebble.Companion.Battery`.
+Each platform API exposes a real `Sub msg` subscription. Compose them with plain
+`Sub.batch` instead of a special batch combinator.
 
-    import Pebble.Companion as Companion
     import Pebble.Companion.Battery as Battery
     import Pebble.Companion.Locale as Locale
+    import Pebble.Companion.Phone as Phone
 
     subscriptions _ =
         Sub.batch
-            [ Companion.batch
-                [ Battery.part GotBattery
-                , Locale.part GotLocale
-                ]
-            , Phone.onWatchToPhone FromWatch
+            [ Phone.onWatchToPhone FromWatch
+            , Battery.onBattery GotBattery
+            , Locale.onLocale GotLocale
             ]
 
-Single-stream apps can keep using `Battery.onBattery GotBattery`.
-
-# Composition
-
-@docs Part, batch, with
+@docs Interest, Handler, handler, interest, subscribe, attach
 
 -}
 
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Contract exposing (CommandEnvelope)
 import Pebble.Companion.Phone as Phone
 import Sub
 
 
+{-| Bridge interest metadata for a platform API incoming stream.
+-}
 type Interest
     = Interest
         { id : String
@@ -47,26 +45,21 @@ type Interest
         }
 
 
+{-| Incoming platform event handler for a dedicated port subscription.
+-}
 type Handler msg
     = Handler Interest (Decode.Value -> Result String msg)
 
 
-{-| A platform listener that can be combined with `batch` or `with`.
+{-| Build a platform handler from interest metadata and decoders.
 -}
-type Part msg
-    = Part (Handler msg)
-
-
 handler : Interest -> (Decode.Value -> Result String a) -> (a -> msg) -> Handler msg
 handler interest decode toMsg =
     Handler interest (decode >> Result.map toMsg)
 
 
-part : Handler msg -> Part msg
-part =
-    Part
-
-
+{-| Describe a platform API bridge interest.
+-}
 interest :
     { id : String
     , subscribeCommand : Maybe CommandEnvelope
@@ -78,6 +71,18 @@ interest =
     Interest
 
 
+{-| Register bridge interest and subscribe to the API's dedicated incoming port.
+-}
+subscribe : Handler msg -> Sub msg
+subscribe (Handler (Interest interest_) decode) =
+    Sub.batch
+        [ Phone.platformIncomingFor interest_.id (decodeIncoming decode)
+        , attach (Handler (Interest interest_) decode)
+        ]
+
+
+{-| Register bridge interest without subscribing to incoming events.
+-}
 attach : Handler msg -> Sub msg
 attach (Handler (Interest interest_) _) =
     Sub.batch <|
@@ -85,36 +90,6 @@ attach (Handler (Interest interest_) _) =
             [ Maybe.map Phone.subscribeBridge interest_.subscribeCommand
             , Just (Phone.registerHandler interest_.id (encodeInterest (Interest interest_)))
             ]
-
-
-subscriptions : List (Handler msg) -> Sub msg
-subscriptions handlers =
-    with handlers
-
-
-{-| Combine multiple platform listeners into one subscription.
--}
-batch : List (Part msg) -> Sub msg
-batch parts =
-    with (List.map (\(Part handler_) -> handler_) parts)
-
-
-{-| Combine multiple platform handlers into one subscription.
--}
-with : List (Handler msg) -> Sub msg
-with handlers =
-    if List.isEmpty handlers then
-        Sub.none
-
-    else
-        Sub.batch <|
-            incoming (route handlers)
-                :: List.map attach handlers
-
-
-incoming : (Decode.Value -> msg) -> Sub msg
-incoming =
-    Phone.platformIncoming
 
 
 encodeInterest : Interest -> Encode.Value
@@ -126,62 +101,11 @@ encodeInterest (Interest interest_) =
         ]
 
 
-route : List (Handler msg) -> Decode.Value -> msg
-route handlers raw =
-    case List.filterMap (tryHandler raw) handlers of
-        msg :: _ ->
+decodeIncoming : (Decode.Value -> Result String msg) -> Decode.Value -> msg
+decodeIncoming decode raw =
+    case decode raw of
+        Ok msg ->
             msg
 
-        [] ->
-            Debug.todo "Unhandled companion platform message"
-
-
-tryHandler : Decode.Value -> Handler msg -> Maybe msg
-tryHandler raw (Handler interest_ decode) =
-    if matches interest_ raw then
-        decode raw
-            |> Result.toMaybe
-
-    else
-        Nothing
-
-
-matches : Interest -> Decode.Value -> Bool
-matches (Interest interest_) raw =
-    case Decode.decodeValue Codec.decodeEvent raw of
-        Ok event ->
-            List.any (\prefix -> String.startsWith prefix event.event) interest_.eventPrefixes
-
         Err _ ->
-            case Decode.decodeValue Codec.decodeResult raw of
-                Ok envelope ->
-                    List.any (\prefix -> String.startsWith prefix envelope.id) interest_.resultIdPrefixes
-
-                Err _ ->
-                    case decodeRoutedEnvelope raw of
-                        Just ( routedId, envelope ) ->
-                            List.any (\prefix -> String.startsWith prefix routedId) interest_.resultIdPrefixes
-                                || List.any
-                                    (\prefix ->
-                                        case Decode.decodeValue Codec.decodeEvent envelope of
-                                            Ok event ->
-                                                String.startsWith prefix event.event
-
-                                            Err _ ->
-                                                False
-                                    )
-                                    interest_.eventPrefixes
-
-                        Nothing ->
-                            False
-
-
-decodeRoutedEnvelope : Decode.Value -> Maybe ( String, Decode.Value )
-decodeRoutedEnvelope raw =
-    Decode.decodeValue
-        (Decode.map2 Tuple.pair
-            (Decode.field "handlerId" Decode.string)
-            (Decode.field "envelope" Decode.value)
-        )
-        raw
-        |> Result.toMaybe
+            Debug.todo "Unexpected platform payload on dedicated incoming port"

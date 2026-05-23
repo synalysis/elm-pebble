@@ -4,7 +4,6 @@ module Pebble.Companion.Storage exposing
     , clear
     , get
     , onStorage
-    , part
     , remove
     , set
     )
@@ -21,7 +20,7 @@ module Pebble.Companion.Storage exposing
 
 # Subscriptions
 
-@docs onStorage, part
+@docs onStorage
 
 -}
 
@@ -109,14 +108,7 @@ clear =
 -}
 onStorage : (Result Error Value -> msg) -> Sub msg
 onStorage toMsg =
-    Platform.with [ handler toMsg ]
-
-
-{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
--}
-part : (Result Error Value -> msg) -> Platform.Part msg
-part toMsg =
-    Platform.part (handler toMsg)
+    Platform.subscribe (handler toMsg)
 
 
 {-| Platform router handler for storage command responses.

@@ -2,9 +2,8 @@ module Pebble.Companion.Calendar exposing
     ( CalendarEvent
     , current
     , onCalendar
-    , part
-    , partCurrent
-    , partUpcoming
+    , onCurrent
+    , onUpcoming
     , upcoming
     )
 
@@ -20,7 +19,7 @@ module Pebble.Companion.Calendar exposing
 
 # Subscriptions
 
-@docs onCalendar, part, partCurrent, partUpcoming
+@docs onCalendar, onCurrent, onUpcoming
 
 -}
 
@@ -69,28 +68,21 @@ Registering this subscription also tells the bridge to send calendar updates.
 -}
 onCalendar : (Result String (List CalendarEvent) -> msg) -> Sub msg
 onCalendar toMsg =
-    Platform.with [ handler toMsg ]
+    Platform.subscribe (handler toMsg)
 
 
-{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
+{-| Receive next-event command responses on the dedicated calendar port.
 -}
-part : (Result String (List CalendarEvent) -> msg) -> Platform.Part msg
-part toMsg =
-    Platform.part (handler toMsg)
+onCurrent : (Result String (Maybe CalendarEvent) -> msg) -> Sub msg
+onCurrent toMsg =
+    Platform.subscribe (handlerCurrent toMsg)
 
 
-{-| Platform listener for `current` command responses.
+{-| Receive upcoming-events command responses on the dedicated calendar port.
 -}
-partCurrent : (Result String (Maybe CalendarEvent) -> msg) -> Platform.Part msg
-partCurrent toMsg =
-    Platform.part (handlerCurrent toMsg)
-
-
-{-| Platform listener for `upcoming` command responses.
--}
-partUpcoming : (Result String (List CalendarEvent) -> msg) -> Platform.Part msg
-partUpcoming toMsg =
-    Platform.part (handlerUpcoming toMsg)
+onUpcoming : (Result String (List CalendarEvent) -> msg) -> Sub msg
+onUpcoming toMsg =
+    Platform.subscribe (handlerUpcoming toMsg)
 
 
 handler toMsg =

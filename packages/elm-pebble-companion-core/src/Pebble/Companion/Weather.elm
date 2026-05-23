@@ -5,9 +5,8 @@ module Pebble.Companion.Weather exposing
     , current
     , forecast
     , onWeather
-    , part
-    , partCurrent
-    , partForecast
+    , onCurrent
+    , onForecast
     )
 
 {-| Platform-provided weather for companion apps.
@@ -56,7 +55,7 @@ weather query.
 
 # Subscriptions
 
-@docs onWeather, part, partCurrent, partForecast
+@docs onWeather, onCurrent, onForecast
 
 -}
 
@@ -122,28 +121,21 @@ Registering this subscription also tells the bridge to send weather updates.
 -}
 onWeather : (Result String WeatherUpdate -> msg) -> Sub msg
 onWeather toMsg =
-    Platform.with [ handler toMsg ]
+    Platform.subscribe (handler toMsg)
 
 
-{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
+{-| Receive current-weather command responses on the dedicated weather port.
 -}
-part : (Result String WeatherUpdate -> msg) -> Platform.Part msg
-part toMsg =
-    Platform.part (handler toMsg)
+onCurrent : (Result String WeatherInfo -> msg) -> Sub msg
+onCurrent toMsg =
+    Platform.subscribe (handlerCurrent toMsg)
 
 
-{-| Platform listener for `current` command responses.
+{-| Receive forecast command responses on the dedicated weather port.
 -}
-partCurrent : (Result String WeatherInfo -> msg) -> Platform.Part msg
-partCurrent toMsg =
-    Platform.part (handlerCurrent toMsg)
-
-
-{-| Platform listener for `forecast` command responses.
--}
-partForecast : (Result String (List WeatherInfo) -> msg) -> Platform.Part msg
-partForecast toMsg =
-    Platform.part (handlerForecast toMsg)
+onForecast : (Result String (List WeatherInfo) -> msg) -> Sub msg
+onForecast toMsg =
+    Platform.subscribe (handlerForecast toMsg)
 
 
 handler toMsg =

@@ -511,6 +511,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
              message: "FromPhone"
            })
 
+    refute Debugger.subscription_trigger_injection_modal_supported?(state, %{
+             trigger: "Companion.Phone.onWatchToPhone",
+             target: "phone",
+             message: "FromWatch"
+           })
+
     assert Debugger.subscription_trigger_injection_modal_supported?(state, %{
              trigger: "Pebble.Events.onSecondChange",
              target: "watch",

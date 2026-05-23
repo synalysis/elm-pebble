@@ -1,7 +1,6 @@
 module CompanionApp exposing (main)
 
 import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
-import Pebble.Companion as Companion
 import Pebble.Companion.Battery as Battery
 import Pebble.Companion.Connectivity as Connectivity
 import Pebble.Companion.Locale as Locale
@@ -80,12 +79,10 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ Phone.onWatchToPhone FromWatch
-        , Companion.batch
-            [ Battery.part GotBattery
-            , Locale.part GotLocale
-            , Connectivity.part GotConnectivity
-            , Notifications.part GotNotifications
-            ]
+        , Battery.onBattery GotBattery
+        , Locale.onLocale GotLocale
+        , Connectivity.onConnectivity GotConnectivity
+        , Notifications.onNotificationStatus GotNotifications
         ]
 
 

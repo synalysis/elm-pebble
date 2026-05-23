@@ -2,7 +2,6 @@ module Pebble.Companion.Locale exposing
     ( LocaleInfo
     , current
     , onLocale
-    , part
     )
 
 {-| Phone locale and regional preference helpers for companion apps.
@@ -23,7 +22,7 @@ module Pebble.Companion.Locale exposing
 
 # Subscriptions
 
-@docs onLocale, part
+@docs onLocale
 
 -}
 
@@ -59,14 +58,7 @@ Registering this subscription also tells the bridge to send locale updates.
 -}
 onLocale : (Result String LocaleInfo -> msg) -> Sub msg
 onLocale toMsg =
-    Platform.with [ handler toMsg ]
-
-
-{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
--}
-part : (Result String LocaleInfo -> msg) -> Platform.Part msg
-part toMsg =
-    Platform.part (handler toMsg)
+    Platform.subscribe (handler toMsg)
 
 
 {-| Platform router handler for locale events and responses.

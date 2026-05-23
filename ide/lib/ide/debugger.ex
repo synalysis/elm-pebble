@@ -21,8 +21,8 @@ defmodule Ide.Debugger do
   @min_auto_fire_interval_ms 100
   @agent_call_timeout_ms 30_000
   @configuration_subscription_contract %{
-    names: ["onConfiguration", "onClosed", "part"],
-    target_suffixes: [".onConfiguration", ".onClosed", ".Configuration.onClosed", ".part", ".Configuration.part"]
+    names: ["onConfiguration", "onClosed"],
+    target_suffixes: [".onConfiguration", ".onClosed", ".Configuration.onClosed"]
   }
   @geolocation_subscription_contract %{
     names: ["onCurrentPosition"],
@@ -31,77 +31,71 @@ defmodule Ide.Debugger do
   @companion_bridge_subscription_contracts [
     %{
       source: "battery",
-      names: ["onBattery", "part"],
-      target_suffixes: [".onBattery", ".Battery.onBattery", ".part", ".Battery.part"],
+      names: ["onBattery"],
+      target_suffixes: [".onBattery", ".Battery.onBattery"],
       payload: :battery
     },
     %{
       source: "locale",
-      names: ["onLocale", "part"],
-      target_suffixes: [".onLocale", ".Locale.onLocale", ".part", ".Locale.part"],
+      names: ["onLocale"],
+      target_suffixes: [".onLocale", ".Locale.onLocale"],
       payload: :locale
     },
     %{
       source: "network",
-      names: ["onConnectivity", "part"],
-      target_suffixes: [".onConnectivity", ".Connectivity.onConnectivity", ".part", ".Connectivity.part"],
+      names: ["onConnectivity"],
+      target_suffixes: [".onConnectivity", ".Connectivity.onConnectivity"],
       payload: :network,
       plain_result: true
     },
     %{
       source: "notifications",
-      names: ["onNotifications", "part"],
-      target_suffixes: [".onNotifications", ".Notifications.onNotifications", ".part", ".Notifications.part"],
+      names: ["onNotificationStatus"],
+      target_suffixes: [".onNotificationStatus", ".Notifications.onNotificationStatus"],
       payload: :notifications
     },
     %{
       source: "weather",
-      names: ["onWeather", "part", "partCurrent", "partForecast"],
+      names: ["onWeather", "onCurrent", "onForecast"],
       target_suffixes: [
         ".onWeather",
         ".Weather.onWeather",
-        ".part",
-        ".Weather.part",
-        ".partCurrent",
-        ".Weather.partCurrent",
-        ".partForecast",
-        ".Weather.partForecast"
+        ".onCurrent",
+        ".Weather.onCurrent",
+        ".onForecast",
+        ".Weather.onForecast"
       ],
       payload: :weather
     },
     %{
       source: "calendar",
-      names: ["onCalendar", "part", "partCurrent", "partUpcoming"],
+      names: ["onCalendar", "onCurrent", "onUpcoming"],
       target_suffixes: [
         ".onCalendar",
         ".Calendar.onCalendar",
-        ".part",
-        ".Calendar.part",
-        ".partCurrent",
-        ".Calendar.partCurrent",
-        ".partUpcoming",
-        ".Calendar.partUpcoming"
+        ".onCurrent",
+        ".Calendar.onCurrent",
+        ".onUpcoming",
+        ".Calendar.onUpcoming"
       ],
       payload: :calendar
     },
     %{
       source: "environment",
-      names: ["onEnvironment", "part"],
-      target_suffixes: [".onEnvironment", ".Environment.onEnvironment", ".part", ".Environment.part"],
+      names: ["onEnvironment"],
+      target_suffixes: [".onEnvironment", ".Environment.onEnvironment"],
       payload: :environment
     }
   ]
   @storage_result_contract %{
-    names: ["onStorage", "part"],
-    target_suffixes: [".onStorage", ".Storage.onStorage", ".part", ".Storage.part"]
+    names: ["onStorage"],
+    target_suffixes: [".onStorage", ".Storage.onStorage"]
   }
   @preferences_result_contract %{
-    names: ["onPreference", "part"],
+    names: ["onPreference"],
     target_suffixes: [
       ".onPreference",
-      ".PreferenceStore.onPreference",
-      ".part",
-      ".PreferenceStore.part"
+      ".PreferenceStore.onPreference"
     ]
   }
 
@@ -936,7 +930,7 @@ defmodule Ide.Debugger do
   Simulator-backed subscriptions are always allowed. Otherwise we require an Elm `Msg`
   constructor present in `elm_introspect.msg_constructor_arities` with arity 0 or 1.
 
-  Gateway subscriptions that deliver opaque variant payloads (e.g. phone→watch) are excluded:
+  Gateway subscriptions that deliver opaque variant payloads (e.g. phone↔watch) are excluded:
   the modal cannot enumerate every constructor payload without structured metadata.
   """
   @spec subscription_trigger_injection_modal_supported?(runtime_state(), map()) :: boolean()
@@ -1009,6 +1003,8 @@ defmodule Ide.Debugger do
 
   defp trigger_row_constructor_message(_message), do: nil
 
+  @opaque_gateway_subscription_triggers ~w(phonetowatch watchtophone)
+
   @spec opaque_gateway_subscription_trigger?(String.t()) :: boolean()
   defp opaque_gateway_subscription_trigger?(trigger) when is_binary(trigger) do
     normalized =
@@ -1016,7 +1012,7 @@ defmodule Ide.Debugger do
       |> String.downcase()
       |> String.replace(~r/[^a-z0-9]/, "")
 
-    String.contains?(normalized, "phonetowatch")
+    Enum.any?(@opaque_gateway_subscription_triggers, &String.contains?(normalized, &1))
   end
 
   defp opaque_gateway_subscription_trigger?(_trigger), do: false
@@ -2649,7 +2645,9 @@ defmodule Ide.Debugger do
           String.t(),
           Types.subscription_payload()
         ) :: [map()]
-  defp protocol_events_for_model_commands(state, model, target, message, message_value \\ nil)
+  defp protocol_events_for_model_commands(state, model, target, message, message_value)
+
+  defp protocol_events_for_model_commands(state, model, target, message, message_value)
        when is_map(model) and target in [:watch, :companion, :phone] and is_binary(message) do
     current_ctor = message_constructor(message)
 
@@ -2696,7 +2694,9 @@ defmodule Ide.Debugger do
           Types.subscription_payload()
         ) ::
           {String.t() | nil, term()}
-  defp protocol_message_payload_for_cmd_call(state, cmd_call, model, direction, message_value \\ nil)
+  defp protocol_message_payload_for_cmd_call(state, cmd_call, model, direction, message_value)
+
+  defp protocol_message_payload_for_cmd_call(state, cmd_call, model, direction, message_value)
        when is_map(cmd_call) and direction in [:watch_to_phone, :phone_to_watch] do
     callback =
       Map.get(cmd_call, "callback_constructor") || Map.get(cmd_call, :callback_constructor)
@@ -3299,15 +3299,6 @@ defmodule Ide.Debugger do
          _message
        ),
        do: :error
-
-  @spec protocol_constructor_args([Types.protocol_wire_arg()]) :: [Types.protocol_wire_arg()]
-  defp protocol_constructor_args([]), do: []
-  defp protocol_constructor_args([_one] = args), do: args
-  defp protocol_constructor_args(args) when is_list(args), do: [protocol_tuple_payload(args)]
-
-  @spec protocol_tuple_payload([Types.protocol_wire_arg()]) :: Types.protocol_wire_arg()
-  defp protocol_tuple_payload([one]), do: one
-  defp protocol_tuple_payload([left | rest]), do: {left, protocol_tuple_payload(rest)}
 
   @spec protocol_schema_message(
           Types.protocol_schema(),
@@ -8496,7 +8487,7 @@ defmodule Ide.Debugger do
   defp maybe_put_message_payload_field(runtime_model, _constructor, _payload), do: runtime_model
 
   @spec model_field_for_message_constructor(String.t(), map() | nil) :: String.t() | nil
-  defp model_field_for_message_constructor(constructor, runtime_model \\ nil)
+  defp model_field_for_message_constructor(constructor, runtime_model)
 
   defp model_field_for_message_constructor("Got" <> rest, _runtime_model),
     do: lower_camel_name(rest)

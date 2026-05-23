@@ -1,7 +1,6 @@
 module Pebble.Companion.PreferenceStore exposing
     ( get
     , onPreference
-    , part
     , set
     )
 
@@ -13,7 +12,7 @@ module Pebble.Companion.PreferenceStore exposing
 
 # Subscriptions
 
-@docs onPreference, part
+@docs onPreference
 
 -}
 
@@ -56,14 +55,7 @@ Registering this subscription also tells the bridge to send preference updates.
 -}
 onPreference : (Result String ( String, Decode.Value ) -> msg) -> Sub msg
 onPreference toMsg =
-    Platform.with [ handler toMsg ]
-
-
-{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
--}
-part : (Result String ( String, Decode.Value ) -> msg) -> Platform.Part msg
-part toMsg =
-    Platform.part (handler toMsg)
+    Platform.subscribe (handler toMsg)
 
 
 {-| Platform router handler for preference events and responses.

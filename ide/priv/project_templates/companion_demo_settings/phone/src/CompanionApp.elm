@@ -1,7 +1,6 @@
 module CompanionApp exposing (main)
 
 import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
-import Pebble.Companion as Companion
 import Pebble.Companion.Configuration as Configuration
 import Pebble.Companion.Lifecycle as Lifecycle
 import Pebble.Companion.Phone as Phone
@@ -66,10 +65,8 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ Phone.onWatchToPhone FromWatch
-        , Companion.batch
-            [ Lifecycle.part LifecycleChanged
-            , Configuration.part ConfigurationClosed
-            ]
+        , Lifecycle.onLifecycle LifecycleChanged
+        , Configuration.onClosed ConfigurationClosed
         ]
 
 

@@ -4,5 +4,11 @@
   {"lib/ide/mcp/tools.ex", :pattern_match},
   {"lib/ide/pebble_toolchain.ex", :pattern_match},
   {"lib/ide_web/live/workspace_live/editor_support.ex", :pattern_match},
-  {"lib/ide_web/live/workspace_live/editor_page.ex", :guard_fail}
+  {"lib/ide_web/live/workspace_live/editor_page.ex", :guard_fail},
+  {"lib/ide/paths.ex", :invalid_contract},
+  {"lib/ide/settings.ex", :pattern_match},
+  {"lib/ide/compiler.ex", :pattern_match},
+  {"lib/ide/package_docs/exporter.ex", :unused_fun},
+  {"lib/ide/projects.ex", :pattern_match},
+  {"lib/ide_web/live/workspace_live.ex", :pattern_match}
 ]

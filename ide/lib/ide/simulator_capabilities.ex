@@ -57,12 +57,6 @@ defmodule Ide.SimulatorCapabilities do
     end
   end
 
-  defp introspect_for(_project, debugger_state, surface) when is_map(debugger_state) do
-    runtime_introspect(debugger_state, surface)
-  end
-
-  defp introspect_for(_project, _debugger_state, _surface), do: nil
-
   @spec runtime_introspect(map(), :watch | :phone | :companion) :: map() | nil
   defp runtime_introspect(%{watch: watch} = _state, :watch) when is_map(watch),
     do: model_introspect(watch)
@@ -91,15 +85,12 @@ defmodule Ide.SimulatorCapabilities do
   defp model_introspect(%{"model" => model}) when is_map(model), do: Map.get(model, "elm_introspect")
   defp model_introspect(%{model: model}) when is_map(model), do: Map.get(model, "elm_introspect")
   defp model_introspect(model) when is_map(model), do: Map.get(model, "elm_introspect")
-  defp model_introspect(_), do: nil
 
   @spec workspace_root(Project.t()) :: String.t() | nil
   defp workspace_root(%Project{} = project) do
     root = Projects.project_workspace_path(project)
     if File.dir?(root), do: root, else: nil
   end
-
-  defp workspace_root(_), do: nil
 
   @spec workspace_introspect(String.t() | nil, :watch | :phone | :companion) :: map() | nil
   defp workspace_introspect(nil, _surface), do: nil

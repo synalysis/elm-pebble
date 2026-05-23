@@ -2,7 +2,6 @@ module Pebble.Companion.Connectivity exposing
     ( Connectivity(..)
     , current
     , onConnectivity
-    , part
     )
 
 {-| Phone internet connectivity exposed by the companion bridge.
@@ -27,7 +26,7 @@ does **not** describe watch-to-phone Bluetooth connection — use
 
 # Subscriptions
 
-@docs onConnectivity, part
+@docs onConnectivity
 
 -}
 
@@ -60,14 +59,7 @@ Registering this subscription also tells the bridge to send connectivity updates
 -}
 onConnectivity : (Connectivity -> msg) -> Sub msg
 onConnectivity toMsg =
-    Platform.with [ handler toMsg ]
-
-
-{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
--}
-part : (Connectivity -> msg) -> Platform.Part msg
-part toMsg =
-    Platform.part (handler toMsg)
+    Platform.subscribe (handler toMsg)
 
 
 {-| Platform router handler for connectivity events and responses.

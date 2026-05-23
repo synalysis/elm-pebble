@@ -1729,9 +1729,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     end
   end
 
-  defp hide_companion_protocol_runtime_metadata(model, _runtime) when is_map(model), do: model
-  defp hide_companion_protocol_runtime_metadata(_model, _runtime), do: %{}
-
   @spec companion_protocol_placeholder_model?(map(), map() | nil) :: boolean()
   defp companion_protocol_placeholder_model?(runtime_model, runtime) when is_map(runtime_model) do
     raw_model = debugger_raw_runtime_model(runtime)
@@ -1745,14 +1742,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       |> Enum.all?(&(&1 in @companion_protocol_runtime_keys))
   end
 
-  defp companion_protocol_placeholder_model?(_runtime_model, _runtime), do: false
-
   @spec debugger_raw_runtime_model(map() | nil) :: map()
   defp debugger_raw_runtime_model(%{} = runtime) do
     Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
   end
-
-  defp debugger_raw_runtime_model(_runtime), do: %{}
 
   @spec debugger_agent_state_clipboard_text(map()) :: String.t()
   defp debugger_agent_state_clipboard_text(%{} = assigns) do

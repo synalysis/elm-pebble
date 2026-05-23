@@ -1,7 +1,6 @@
 module Pebble.Companion.Configuration exposing
     ( onClosed
     , open
-    , part
     )
 
 {-| Open and observe the Pebble companion configuration page.
@@ -18,7 +17,7 @@ module Pebble.Companion.Configuration exposing
 
 # Subscriptions
 
-@docs onClosed, part
+@docs onClosed
 
 -}
 
@@ -53,14 +52,7 @@ Registering this subscription also tells the bridge to send configuration events
 -}
 onClosed : (Maybe String -> msg) -> Sub msg
 onClosed toMsg =
-    Platform.with [ handler (toClosedMsg toMsg) ]
-
-
-{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
--}
-part : (Maybe String -> msg) -> Platform.Part msg
-part toMsg =
-    Platform.part (handler (toClosedMsg toMsg))
+    Platform.subscribe (handler (toClosedMsg toMsg))
 
 
 toClosedMsg : (Maybe String -> msg) -> (Event -> msg)

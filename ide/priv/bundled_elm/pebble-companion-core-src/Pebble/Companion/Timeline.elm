@@ -2,8 +2,8 @@ module Pebble.Companion.Timeline exposing
     ( deletePin
     , getToken
     , insertPin
-    , partCommands
-    , partToken
+    , onCommands
+    , onToken
     )
 
 {-| Timeline commands for companion-driven pins.
@@ -12,7 +12,7 @@ module Pebble.Companion.Timeline exposing
         ( model, Timeline.getToken GotToken )
 
     subscriptions _ =
-        Timeline.partToken GotToken
+        Timeline.onToken GotToken
 
 # Commands
 
@@ -20,7 +20,7 @@ module Pebble.Companion.Timeline exposing
 
 # Subscriptions
 
-@docs partToken, partCommands
+@docs onToken, onCommands
 
 -}
 
@@ -59,18 +59,18 @@ deletePin pinId toMsg =
             decodeCommandResponse
 
 
-{-| Platform listener for `getToken` command responses.
+{-| Receive timeline token command responses on the dedicated timeline port.
 -}
-partToken : (Result String String -> msg) -> Platform.Part msg
-partToken toMsg =
-    Platform.part (handlerToken toMsg)
+onToken : (Result String String -> msg) -> Sub msg
+onToken toMsg =
+    Platform.subscribe (handlerToken toMsg)
 
 
-{-| Platform listener for insert and delete command responses.
+{-| Receive timeline command responses on the dedicated timeline port.
 -}
-partCommands : (Result String () -> msg) -> Platform.Part msg
-partCommands toMsg =
-    Platform.part (handlerCommands toMsg)
+onCommands : (Result String () -> msg) -> Sub msg
+onCommands toMsg =
+    Platform.subscribe (handlerCommands toMsg)
 
 
 handlerToken toMsg =

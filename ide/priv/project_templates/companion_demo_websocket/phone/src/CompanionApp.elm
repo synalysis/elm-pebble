@@ -1,7 +1,6 @@
 module CompanionApp exposing (main)
 
 import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
-import Pebble.Companion as Companion
 import Pebble.Companion.Phone as Phone
 import Pebble.Companion.WebSocket as WebSocket
 import Platform
@@ -92,10 +91,8 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ Phone.onWatchToPhone FromWatch
-        , Companion.batch
-            [ WebSocket.part WebSocketEvent
-            , WebSocket.partCommands WebSocketCommand
-            ]
+        , WebSocket.onWebSocket WebSocketEvent
+        , WebSocket.onCommands WebSocketCommand
         ]
 
 

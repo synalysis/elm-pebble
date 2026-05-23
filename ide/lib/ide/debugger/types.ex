@@ -197,4 +197,6 @@ defmodule Ide.Debugger.Types do
           | execution_fallback_reason()
 
   @type http_executor_error :: :invalid_http_command | protocol_error()
+
+  @type param_list :: [String.t()]
 end

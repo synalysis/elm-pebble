@@ -1891,29 +1891,6 @@ defmodule IdeWeb.WorkspaceLive do
 
   def handle_event("debugger-save-simulator-settings", _params, socket), do: {:noreply, socket}
 
-  defp handle_simulator_save_settings(socket, values) when is_map(values) do
-    case socket.assigns.project do
-      nil ->
-        {:noreply, socket}
-
-      project ->
-        existing = SimulatorSettings.raw_settings_for(project, socket.assigns[:debugger_state])
-        simulator_settings = SimulatorSettings.save_from_form(existing, values)
-        project = persist_project_debugger_simulator_settings(project, simulator_settings)
-
-        {:ok, _state} =
-          Ide.Debugger.set_simulator_settings(Projects.scope_key(project), simulator_settings)
-
-        socket =
-          socket
-          |> assign(:project, project)
-          |> push_event("simulator_settings_applied", simulator_settings)
-          |> maybe_sync_external_emulator_settings(simulator_settings)
-
-        {:noreply, socket |> DebuggerSupport.refresh()}
-    end
-  end
-
   def handle_event("debugger-tick", _params, socket) do
     case socket.assigns.project do
       nil ->
@@ -2207,6 +2184,29 @@ defmodule IdeWeb.WorkspaceLive do
                 {:noreply, put_flash(socket, :error, debugger_import_error(reason))}
             end
         end
+    end
+  end
+
+  defp handle_simulator_save_settings(socket, values) when is_map(values) do
+    case socket.assigns.project do
+      nil ->
+        {:noreply, socket}
+
+      project ->
+        existing = SimulatorSettings.raw_settings_for(project, socket.assigns[:debugger_state])
+        simulator_settings = SimulatorSettings.save_from_form(existing, values)
+        project = persist_project_debugger_simulator_settings(project, simulator_settings)
+
+        {:ok, _state} =
+          Ide.Debugger.set_simulator_settings(Projects.scope_key(project), simulator_settings)
+
+        socket =
+          socket
+          |> assign(:project, project)
+          |> push_event("simulator_settings_applied", simulator_settings)
+          |> maybe_sync_external_emulator_settings(simulator_settings)
+
+        {:noreply, socket |> DebuggerSupport.refresh()}
     end
   end
 
@@ -4363,8 +4363,6 @@ defmodule IdeWeb.WorkspaceLive do
       socket
     end
   end
-
-  defp maybe_sync_external_emulator_settings(socket, _settings), do: socket
 
   @spec persist_project_debugger_configuration_values(Project.t(), map()) :: Project.t()
   defp persist_project_debugger_configuration_values(%Project{} = project, values)

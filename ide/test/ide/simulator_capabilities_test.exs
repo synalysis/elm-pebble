@@ -28,11 +28,11 @@ defmodule Ide.SimulatorCapabilitiesTest do
   import Pebble.Companion.Geolocation as Geolocation
 
   subscriptions _ =
-      Platform.batch
+      Sub.batch
           [ Battery.onBattery GotBattery
           , Locale.onLocale GotLocale
           , Connectivity.onConnectivity GotConnectivity
-          , Notifications.onNotifications GotNotifications
+          , Notifications.onNotificationStatus GotNotifications
           , Geolocation.onCurrentPosition GotPosition
           ]
   """

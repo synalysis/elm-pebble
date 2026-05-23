@@ -886,7 +886,7 @@ defmodule Ide.ProjectsTest do
   test "companion demo templates seed watch protocol and phone companion apps" do
     demos = [
       {"companion-demo-phone-status", "companion_demo_phone_status", "watchface",
-       ["Pebble.Companion.Battery", "Companion.batch"]},
+       ["Pebble.Companion.Battery", "Sub.batch"]},
       {"companion-demo-weather-env", "companion_demo_weather_env", "watchface",
        ["Pebble.Companion.Weather", "Pebble.Companion.Environment"]},
       {"companion-demo-calendar", "companion_demo_calendar", "watchface",
@@ -898,9 +898,9 @@ defmodule Ide.ProjectsTest do
       {"companion-demo-geolocation", "companion_demo_geolocation", "watchface",
        ["Pebble.Companion.Geolocation", "ProvidePosition"]},
       {"companion-demo-websocket", "companion_demo_websocket", "app",
-       ["Pebble.Companion.WebSocket", "Companion.batch"]},
+       ["Pebble.Companion.WebSocket", "Sub.batch"]},
       {"companion-demo-timeline", "companion_demo_timeline", "app",
-       ["Pebble.Companion.Timeline", "Timeline.partToken"]}
+       ["Pebble.Companion.Timeline", "Timeline.onToken"]}
     ]
 
     for {template, _dir, target_type, snippets} <- demos do

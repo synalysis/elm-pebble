@@ -1,7 +1,6 @@
 module CompanionApp exposing (main)
 
 import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
-import Pebble.Companion as Companion
 import Pebble.Companion.Calendar as Calendar
 import Pebble.Companion.Phone as Phone
 import Platform
@@ -69,7 +68,7 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ Phone.onWatchToPhone FromWatch
-        , Companion.batch [ Calendar.part GotCalendarPush ]
+        , Calendar.onCalendar GotCalendarPush
         ]
 
 

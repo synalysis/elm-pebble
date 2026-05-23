@@ -3,8 +3,7 @@ module Pebble.Companion.WebSocket exposing
     , connect
     , disconnect
     , onWebSocket
-    , part
-    , partCommands
+    , onCommands
     , send
     )
 
@@ -26,7 +25,7 @@ module Pebble.Companion.WebSocket exposing
 
 # Subscriptions
 
-@docs onWebSocket, part, partCommands
+@docs onWebSocket, onCommands
 
 -}
 
@@ -83,21 +82,14 @@ Registering this subscription also tells the bridge to send WebSocket updates.
 -}
 onWebSocket : (Event -> msg) -> Sub msg
 onWebSocket toMsg =
-    Platform.with [ handler toMsg ]
+    Platform.subscribe (handler toMsg)
 
 
-{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
+{-| Receive WebSocket command responses on the dedicated WebSocket port.
 -}
-part : (Event -> msg) -> Platform.Part msg
-part toMsg =
-    Platform.part (handler toMsg)
-
-
-{-| Platform listener for connect, disconnect, and send command responses.
--}
-partCommands : (Result String () -> msg) -> Platform.Part msg
-partCommands toMsg =
-    Platform.part (handlerCommands toMsg)
+onCommands : (Result String () -> msg) -> Sub msg
+onCommands toMsg =
+    Platform.subscribe (handlerCommands toMsg)
 
 
 handler toMsg =

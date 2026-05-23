@@ -5,7 +5,6 @@ module Pebble.Companion.Environment exposing
     , TideInfo
     , current
     , onEnvironment
-    , part
     )
 
 {-| Sun, moon, and tide environment helpers for companion apps.
@@ -23,7 +22,7 @@ module Pebble.Companion.Environment exposing
 
 # Subscriptions
 
-@docs onEnvironment, part
+@docs onEnvironment
 
 -}
 
@@ -79,22 +78,13 @@ current toMsg =
         Phone.request "environment-current" "environment" "current" decodeResponse
 
 
-{-| Subscribe to environment updates when supported.
--}
 {-| Receive pushed environment updates from the companion bridge.
 
 Registering this subscription also tells the bridge to send environment updates.
 -}
 onEnvironment : (Result String EnvironmentInfo -> msg) -> Sub msg
 onEnvironment toMsg =
-    Platform.with [ handler toMsg ]
-
-
-{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
--}
-part : (Result String EnvironmentInfo -> msg) -> Platform.Part msg
-part toMsg =
-    Platform.part (handler toMsg)
+    Platform.subscribe (handler toMsg)
 
 
 {-| Platform router handler for environment events and responses.

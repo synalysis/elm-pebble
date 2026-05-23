@@ -222,7 +222,7 @@ defmodule Ide.Auth do
   def delete_user_data(%User{id: id} = user) when is_integer(id) do
     result =
       Repo.transaction(fn ->
-        :ok = Projects.delete_all_for_user(user)
+        :ok = Projects.delete_all_for_user(%{id: id})
 
         case Repo.delete(user) do
           {:ok, _deleted} -> :ok

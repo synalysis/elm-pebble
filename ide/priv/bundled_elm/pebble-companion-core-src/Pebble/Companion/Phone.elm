@@ -1,38 +1,46 @@
 port module Pebble.Companion.Phone exposing
     ( decodeWatchToPhone
     , onWatchToPhone
+    , platformIncomingFor
     , sendPhoneToWatch
     )
 
-{-| Watch AppMessage protocol wiring for companion apps.
+{-| Watch AppMessage protocol wiring and per-API platform incoming ports.
 
 Use the typed `Pebble.Companion.*` modules for phone platform APIs such as
-weather, storage, and battery. This module is for typed watch ↔ phone
-AppMessage traffic only.
+weather, storage, and battery. Each platform API registers its own incoming
+port so apps can compose listeners with plain `Sub.batch`.
+
+This module is for typed watch ↔ phone AppMessage traffic and platform bridge
+ports only.
 
 Message constructors such as `WatchToPhone` and `PhoneToWatch` come from your
 project's protocol definition in `protocol/src/Companion/Types.elm`.
 
     import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+    import Pebble.Companion.Battery as Battery
+    import Pebble.Companion.Locale as Locale
     import Pebble.Companion.Phone as Phone
 
     type Msg
         = FromWatch (Result String WatchToPhone)
+        | GotBattery (Result String Battery.BatteryInfo)
+        | GotLocale (Result String Locale.LocaleInfo)
 
     subscriptions _ =
-        Phone.onWatchToPhone FromWatch
-
-    update msg model =
-        case msg of
-            FromWatch (Ok RequestFigure) ->
-                ( model, Phone.sendPhoneToWatch (ProvideFigure 0) )
-
-            FromWatch (Err _) ->
-                ( model, Cmd.none )
+        Sub.batch
+            [ Phone.onWatchToPhone FromWatch
+            , Battery.onBattery GotBattery
+            , Locale.onLocale GotLocale
+            ]
 
 # Watch protocol
 
 @docs decodeWatchToPhone, onWatchToPhone, sendPhoneToWatch
+
+# Platform ports
+
+@docs platformIncomingFor
 
 -}
 
@@ -44,6 +52,7 @@ import Pebble.Companion.AppMessage as AppMessage
 import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
 import Pebble.Companion.Contract exposing (CommandEnvelope)
+import Sub
 
 
 {-| A bridge command plus a decoder for its response payload.
@@ -88,7 +97,61 @@ sendRequest envelope decodeResponse toMsg =
 port incoming : (Decode.Value -> msg) -> Sub msg
 
 
-port platformIncoming : (Decode.Value -> msg) -> Sub msg
+port batteryPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port localePlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port connectivityPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port notificationsPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port weatherPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port weatherCurrentPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port weatherForecastPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port calendarPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port calendarUpcomingPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port calendarNextPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port environmentPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port storagePlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port preferencesPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port configurationPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port webSocketPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port webSocketCommandsPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port lifecyclePlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port timelineTokenPlatformIncoming : (Decode.Value -> msg) -> Sub msg
+
+
+port timelineCommandsPlatformIncoming : (Decode.Value -> msg) -> Sub msg
 
 
 port outgoing : Encode.Value -> Cmd msg
@@ -113,6 +176,72 @@ registerHandler handlerId interest =
 subscribeBridge : CommandEnvelope -> Sub msg
 subscribeBridge envelope =
     bridgeInterest (Codec.encodeCommand envelope)
+
+
+{-| Route a platform handler id to its dedicated incoming port.
+-}
+platformIncomingFor : String -> (Decode.Value -> msg) -> Sub msg
+platformIncomingFor handlerId toMsg =
+    case handlerId of
+        "battery" ->
+            batteryPlatformIncoming toMsg
+
+        "locale" ->
+            localePlatformIncoming toMsg
+
+        "connectivity" ->
+            connectivityPlatformIncoming toMsg
+
+        "notifications" ->
+            notificationsPlatformIncoming toMsg
+
+        "weather" ->
+            weatherPlatformIncoming toMsg
+
+        "weather-current" ->
+            weatherCurrentPlatformIncoming toMsg
+
+        "weather-forecast" ->
+            weatherForecastPlatformIncoming toMsg
+
+        "calendar" ->
+            calendarPlatformIncoming toMsg
+
+        "calendar-upcoming" ->
+            calendarUpcomingPlatformIncoming toMsg
+
+        "calendar-next" ->
+            calendarNextPlatformIncoming toMsg
+
+        "environment" ->
+            environmentPlatformIncoming toMsg
+
+        "storage" ->
+            storagePlatformIncoming toMsg
+
+        "preferences" ->
+            preferencesPlatformIncoming toMsg
+
+        "configuration" ->
+            configurationPlatformIncoming toMsg
+
+        "webSocket" ->
+            webSocketPlatformIncoming toMsg
+
+        "webSocket-commands" ->
+            webSocketCommandsPlatformIncoming toMsg
+
+        "lifecycle" ->
+            lifecyclePlatformIncoming toMsg
+
+        "timeline-token" ->
+            timelineTokenPlatformIncoming toMsg
+
+        "timeline-commands" ->
+            timelineCommandsPlatformIncoming toMsg
+
+        _ ->
+            Sub.none
 
 
 {-| Decode a watch-originated request payload into a typed message. -}

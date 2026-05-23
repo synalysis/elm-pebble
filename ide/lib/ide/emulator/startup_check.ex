@@ -39,8 +39,6 @@ defmodule Ide.Emulator.StartupCheck do
     "missing dependencies for #{platform}: #{labels}"
   end
 
-  defp summary(%{platform: platform}), do: "setup needs attention for #{platform}"
-
   @spec component_status(atom()) :: String.t()
   defp component_status(:ok), do: "ok"
   defp component_status(:missing), do: "missing"
