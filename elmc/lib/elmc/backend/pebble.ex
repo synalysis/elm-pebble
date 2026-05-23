@@ -69,7 +69,13 @@ defmodule Elmc.Backend.Pebble do
     health_value: 29,
     health_sum_today: 30,
     health_sum: 31,
-    health_accessible: 32
+    health_accessible: 32,
+    vibes_custom_pattern: 33,
+    data_log_bytes: 34,
+    data_log_int32: 35,
+    compass_peek: 36,
+    dictation_start: 37,
+    dictation_stop: 38
   ]
 
   @run_modes [
@@ -148,6 +154,11 @@ defmodule Elmc.Backend.Pebble do
     feature_flags = feature_flags(ir, msg_constructors, entry_module)
     random_generate_tag = random_generate_target_tag(ir, msg_constructors)
     health_event_tag = health_event_target_tag(ir, msg_constructors)
+    app_focus_change_tag = app_focus_change_target_tag(ir, msg_constructors)
+    compass_change_tag = compass_change_target_tag(ir, msg_constructors)
+    dictation_status_tag = dictation_status_target_tag(ir, msg_constructors)
+    dictation_result_tag = dictation_result_target_tag(ir, msg_constructors)
+    accel_config = accel_config_from_ir(ir, entry_module)
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <-
@@ -158,7 +169,8 @@ defmodule Elmc.Backend.Pebble do
                msg_constructor_payload_specs,
                watch_model_tags,
                watch_color_tags,
-               feature_flags
+               feature_flags,
+               accel_config
              )
            ),
          :ok <-
@@ -170,20 +182,25 @@ defmodule Elmc.Backend.Pebble do
                has_view,
                entry_module,
                random_generate_tag,
-               health_event_tag
+               health_event_tag,
+               app_focus_change_tag,
+               compass_change_tag,
+               dictation_status_tag,
+               dictation_result_tag
              )
            ) do
       :ok
     end
   end
 
-  @spec pebble_header([map()], map(), [map()], [map()], map()) :: String.t()
+  @spec pebble_header([map()], map(), [map()], [map()], map(), map()) :: String.t()
   defp pebble_header(
          msg_constructors,
          msg_constructor_payload_specs,
          watch_model_tags,
          watch_color_tags,
-         feature_flags
+         feature_flags,
+         accel_config
        ) do
     msg_enum_members =
       msg_constructors
@@ -344,7 +361,17 @@ defmodule Elmc.Backend.Pebble do
     #define ELMC_PEBBLE_SUB_DAY (1 << 16)
     #define ELMC_PEBBLE_SUB_MONTH (1 << 17)
     #define ELMC_PEBBLE_SUB_YEAR (1 << 18)
+    #define ELMC_PEBBLE_SUB_APP_FOCUS (1 << 19)
+    #define ELMC_PEBBLE_SUB_COMPASS (1 << 20)
+    #define ELMC_PEBBLE_SUB_DICTATION (1 << 21)
     #define ELMC_PEBBLE_SUB_HEALTH (1LL << 31)
+
+    #ifndef ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE
+    #define ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE #{Map.get(accel_config, :samples_per_update, 1)}
+    #endif
+    #ifndef ELMC_PEBBLE_ACCEL_SAMPLING_HZ
+    #define ELMC_PEBBLE_ACCEL_SAMPLING_HZ #{Map.get(accel_config, :sampling_hz, 25)}
+    #endif
 
     int elmc_pebble_init(ElmcPebbleApp *app, ElmcValue *flags);
     int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mode);
@@ -377,6 +404,10 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_dispatch_battery(ElmcPebbleApp *app, int level);
     int elmc_pebble_dispatch_connection(ElmcPebbleApp *app, int connected);
     int elmc_pebble_dispatch_health(ElmcPebbleApp *app, int event);
+    int elmc_pebble_dispatch_app_focus(ElmcPebbleApp *app, int in_focus);
+    int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid);
+    int elmc_pebble_dispatch_dictation_status(ElmcPebbleApp *app, int status);
+    int elmc_pebble_dispatch_dictation_result(ElmcPebbleApp *app, int is_ok, int error_code, const char *text);
     int elmc_pebble_dispatch_frame(ElmcPebbleApp *app, int64_t dt_ms, int64_t elapsed_ms, int64_t frame);
     int elmc_pebble_dispatch_hour(ElmcPebbleApp *app, int hour);
     int elmc_pebble_dispatch_minute(ElmcPebbleApp *app, int minute);
@@ -402,14 +433,19 @@ defmodule Elmc.Backend.Pebble do
     """
   end
 
-  @spec pebble_source([map()], map(), boolean(), String.t(), integer(), integer()) :: String.t()
+  @spec pebble_source([map()], map(), boolean(), String.t(), integer(), integer(), integer(), integer(), integer(), integer()) ::
+          String.t()
   defp pebble_source(
          msg_constructors,
          msg_constructor_arities,
          has_view,
          entry_module,
          random_generate_tag,
-         health_event_tag
+         health_event_tag,
+         app_focus_change_tag,
+         compass_change_tag,
+         dictation_status_tag,
+         dictation_result_tag
        ) do
     value_decode_cases =
       msg_constructors
@@ -496,6 +532,7 @@ defmodule Elmc.Backend.Pebble do
     #include <pebble.h>
     #endif
     #include <stdlib.h>
+    #include <stdio.h>
     #include <string.h>
 
     #if defined(ELMC_PEBBLE_TRACE_FUNCTIONS) && defined(ELMC_PEBBLE_PLATFORM)
@@ -1363,6 +1400,40 @@ defmodule Elmc.Backend.Pebble do
     }
     #endif
 
+    #if ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN || ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES
+    static int elmc_serialize_int_list(
+        ElmcValue *value,
+        char *out_text,
+        size_t out_size,
+        int32_t *out_count) {
+      if (!out_text || out_size == 0 || !out_count) return -1;
+      out_text[0] = '\\0';
+      *out_count = 0;
+      if (!value) return 0;
+
+      size_t used = 0;
+      ElmcValue *cursor = value;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+        ElmcCons *node = (ElmcCons *)cursor->payload;
+        if (!node->head) break;
+        int64_t item = elmc_as_int(node->head);
+        char chunk[24];
+        int n = snprintf(
+            chunk,
+            sizeof(chunk),
+            (*out_count == 0) ? "%ld" : ",%ld",
+            (long)item);
+        if (n <= 0 || used + (size_t)n >= out_size) return -2;
+        strncat(out_text, chunk, out_size - used - 1);
+        used += (size_t)n;
+        *out_count += 1;
+        cursor = node->tail;
+        if (*out_count >= 64) break;
+      }
+      return 0;
+    }
+    #endif
+
     static int elmc_cmd_from_value(ElmcValue *value, ElmcPebbleCmd *out_cmd) {
       if (!out_cmd) return -1;
       out_cmd->kind = ELMC_PEBBLE_CMD_NONE;
@@ -1401,6 +1472,27 @@ defmodule Elmc.Backend.Pebble do
           }
           return 0;
         }
+    #if ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN
+        if (out_cmd->kind == ELMC_PEBBLE_CMD_VIBES_CUSTOM_PATTERN) {
+          int32_t count = 0;
+          if (elmc_serialize_int_list(tuple->second, out_cmd->text, sizeof(out_cmd->text), &count) != 0) return -5;
+          out_cmd->p0 = count;
+          return 0;
+        }
+    #endif
+    #if ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES
+        if (out_cmd->kind == ELMC_PEBBLE_CMD_DATA_LOG_BYTES &&
+            tuple->second->tag == ELMC_TAG_TUPLE2 &&
+            tuple->second->payload != NULL) {
+          ElmcTuple2 *payload_tuple = (ElmcTuple2 *)tuple->second->payload;
+          if (!payload_tuple->first || !payload_tuple->second) return -3;
+          out_cmd->p0 = elmc_as_int(payload_tuple->first);
+          int32_t count = 0;
+          if (elmc_serialize_int_list(payload_tuple->second, out_cmd->text, sizeof(out_cmd->text), &count) != 0) return -5;
+          out_cmd->p1 = count;
+          return 0;
+        }
+    #endif
         int64_t payload[6] = {0, 0, 0, 0, 0, 0};
         if (elmc_unpack_draw_payload(tuple->second, payload) == 0) {
           out_cmd->p0 = payload[0];
@@ -1996,6 +2088,85 @@ defmodule Elmc.Backend.Pebble do
       if (event < 0) event = 0;
       if (event > 2) event = 0;
       return elmc_pebble_dispatch_tag_value(app, #{health_event_tag}, event);
+    }
+
+    int elmc_pebble_dispatch_app_focus(ElmcPebbleApp *app, int in_focus) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_APP_FOCUS)) return -8;
+      if (#{app_focus_change_tag} <= 0) return -6;
+      return elmc_pebble_dispatch_tag_value(app, #{app_focus_change_tag}, in_focus ? 0 : 1);
+    }
+
+    int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_COMPASS)) return -8;
+      if (#{compass_change_tag} <= 0) return -6;
+
+      const char *names[] = {"degrees", "isValid"};
+      ElmcValue *values[2];
+      values[0] = elmc_new_float(degrees);
+      values[1] = elmc_new_bool(is_valid ? 1 : 0);
+      if (!values[0] || !values[1]) {
+        if (values[0]) elmc_release(values[0]);
+        if (values[1]) elmc_release(values[1]);
+        return -2;
+      }
+
+      ElmcValue *record = elmc_record_new(2, names, values);
+      elmc_release(values[0]);
+      elmc_release(values[1]);
+      if (!record) return -2;
+
+      ElmcValue *tag_value = elmc_new_int(#{compass_change_tag});
+      if (!tag_value) {
+        elmc_release(record);
+        return -2;
+      }
+
+      ElmcValue *msg = elmc_tuple2(tag_value, record);
+      elmc_release(tag_value);
+      elmc_release(record);
+      if (!msg) return -2;
+
+      elmc_pebble_prepare_dispatch(app);
+      int rc = elmc_worker_dispatch(&app->worker, msg);
+      elmc_release(msg);
+      return elmc_pebble_finish_dispatch(app, rc);
+    }
+
+    int elmc_pebble_dispatch_dictation_status(ElmcPebbleApp *app, int status) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_DICTATION)) return -8;
+      if (#{dictation_status_tag} <= 0) return -6;
+      if (status < 0) status = 0;
+      if (status > 2) status = 2;
+      return elmc_pebble_dispatch_tag_value(app, #{dictation_status_tag}, status);
+    }
+
+    int elmc_pebble_dispatch_dictation_result(ElmcPebbleApp *app, int is_ok, int error_code, const char *text) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_DICTATION)) return -8;
+      if (#{dictation_result_tag} <= 0) return -6;
+
+      ElmcValue *result_payload = NULL;
+      if (is_ok) {
+        result_payload = elmc_result_ok(elmc_new_string(text ? text : ""));
+      } else {
+        ElmcValue *error_value = NULL;
+        if (error_code == 3) {
+          error_value = elmc_tuple2(elmc_new_int(3), elmc_new_string(text ? text : ""));
+        } else {
+          error_value = elmc_new_int(error_code);
+        }
+        if (!error_value) return -2;
+        result_payload = elmc_result_err(error_value);
+        elmc_release(error_value);
+      }
+      if (!result_payload) return -2;
+
+      int rc = elmc_pebble_dispatch_tag_payload(app, #{dictation_result_tag}, result_payload);
+      elmc_release(result_payload);
+      return rc;
     }
 
     int elmc_pebble_dispatch_hour(ElmcPebbleApp *app, int hour) {
@@ -2621,6 +2792,213 @@ defmodule Elmc.Backend.Pebble do
 
   defp health_event_target_names(_), do: []
 
+  @spec app_focus_change_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
+  defp app_focus_change_target_tag(%IR{} = ir, msg_constructors) do
+    target_tag_from_subscription(
+      ir,
+      msg_constructors,
+      ["Pebble.AppFocus.onChange", "Elm.Kernel.PebbleWatch.onAppFocusChange"]
+    )
+  end
+
+  @spec compass_change_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
+  defp compass_change_target_tag(%IR{} = ir, msg_constructors) do
+    target_tag_from_subscription(
+      ir,
+      msg_constructors,
+      ["Pebble.Compass.onChange", "Elm.Kernel.PebbleWatch.onCompassChange"]
+    )
+  end
+
+  @spec dictation_status_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
+  defp dictation_status_target_tag(%IR{} = ir, msg_constructors) do
+    target_tag_from_subscription(
+      ir,
+      msg_constructors,
+      ["Pebble.Dictation.onStatus", "Elm.Kernel.PebbleWatch.onDictationStatus"]
+    )
+  end
+
+  @spec dictation_result_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
+  defp dictation_result_target_tag(%IR{} = ir, msg_constructors) do
+    target_tag_from_subscription(
+      ir,
+      msg_constructors,
+      ["Pebble.Dictation.onResult", "Elm.Kernel.PebbleWatch.onDictationResult"]
+    )
+  end
+
+  @spec target_tag_from_subscription(IR.t(), [{String.t(), non_neg_integer()}], [String.t()]) ::
+          integer()
+  defp target_tag_from_subscription(%IR{} = ir, msg_constructors, targets) do
+    ir.modules
+    |> Enum.flat_map(fn mod -> Map.get(mod, :declarations, []) end)
+    |> Enum.flat_map(fn declaration ->
+      subscription_target_names(
+        Map.get(declaration, :expr) || Map.get(declaration, :body),
+        targets
+      )
+    end)
+    |> Enum.find_value(-1, fn
+      {:tag, tag} when is_integer(tag) ->
+        tag
+
+      name ->
+        Enum.find_value(msg_constructors, fn
+          {^name, tag} -> tag
+          _ -> nil
+        end)
+    end)
+  end
+
+  defp subscription_target_names(%{op: :qualified_call, target: target, args: [to_msg]}, targets) do
+    if target in targets, do: callback_tagger_names(to_msg), else: []
+  end
+
+  defp subscription_target_names(%{} = node, targets) do
+    node
+    |> Map.values()
+    |> Enum.flat_map(&subscription_target_names(&1, targets))
+  end
+
+  defp subscription_target_names(list, targets) when is_list(list),
+    do: Enum.flat_map(list, &subscription_target_names(&1, targets))
+
+  defp subscription_target_names(_, _), do: []
+
+  @spec accel_config_from_ir(IR.t(), String.t()) :: map()
+  defp accel_config_from_ir(%IR{} = ir, _entry_module) do
+    bindings = accel_config_bindings(ir)
+
+    ir.modules
+    |> Enum.flat_map(fn mod -> Map.get(mod, :declarations, []) end)
+    |> Enum.reduce(%{samples_per_update: 1, sampling_hz: 25}, fn declaration, acc ->
+      accel_config_from_node(
+        Map.get(declaration, :expr) || Map.get(declaration, :body),
+        acc,
+        bindings
+      )
+    end)
+  end
+
+  defp accel_config_bindings(%IR{} = ir) do
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(fn decl -> Map.get(decl, :kind) in [:value, :function] end)
+      |> Enum.flat_map(fn decl ->
+        expr = Map.get(decl, :expr) || Map.get(decl, :body)
+
+        case expr do
+          %{op: :record_literal} = record ->
+            [{decl.name, record}, {"#{mod.name}.#{decl.name}", record}]
+
+          _ ->
+            []
+        end
+      end)
+    end)
+    |> Map.new()
+  end
+
+  defp accel_config_from_node(%{op: :qualified_call, target: "Pebble.Accel.onData", args: [config | _]}, acc, bindings) do
+    resolved = resolve_accel_config_expr(config, bindings)
+
+    acc
+    |> Map.put(:samples_per_update, accel_config_int(resolved, "samplesPerUpdate", acc[:samples_per_update]))
+    |> Map.put(:sampling_hz, accel_config_sampling_hz(resolved, acc[:sampling_hz]))
+  end
+
+  defp accel_config_from_node(%{op: :qualified_call, target: "Elm.Kernel.PebbleWatch.onAccelData", args: [hz | _]}, acc, _bindings)
+       when is_integer(hz) or is_map(hz) do
+    case hz do
+      %{op: :int_literal, value: value} when is_integer(value) ->
+        Map.put(acc, :sampling_hz, value)
+
+      _ ->
+        acc
+    end
+  end
+
+  defp accel_config_from_node(%{} = node, acc, bindings) do
+    node
+    |> Map.values()
+    |> Enum.reduce(acc, &accel_config_from_node(&1, &2, bindings))
+  end
+
+  defp accel_config_from_node(list, acc, bindings) when is_list(list),
+    do: Enum.reduce(list, acc, &accel_config_from_node(&1, &2, bindings))
+
+  defp accel_config_from_node(_, acc, _bindings), do: acc
+
+  defp resolve_accel_config_expr(%{op: :var, name: name}, bindings) do
+    Map.get(bindings, name, %{op: :unknown})
+  end
+
+  defp resolve_accel_config_expr(%{op: :qualified_var, target: target}, bindings) do
+    target
+    |> String.split(".")
+    |> List.last()
+    |> then(&Map.get(bindings, &1, %{op: :unknown}))
+  end
+
+  defp resolve_accel_config_expr(expr, _bindings), do: expr
+
+  defp accel_config_int(%{op: :record_literal, fields: fields}, field, default) when is_list(fields) do
+    case Enum.find(fields, &(&1.name == field)) do
+      %{expr: %{op: :int_literal, value: value}} when is_integer(value) and value > 0 -> value
+      _ -> default
+    end
+  end
+
+  defp accel_config_int(%{op: :var, name: _name}, _field, default), do: default
+
+  defp accel_config_int(_, _, default), do: default
+
+  defp accel_config_sampling_hz(%{op: :record_literal, fields: fields}, default) when is_list(fields) do
+    case Enum.find(fields, &(&1.name == "samplingRate")) do
+      %{expr: %{op: :int_literal, value: value}} when value in 1..4 ->
+        accel_sampling_hz_from_tag(value)
+
+      %{expr: %{op: :int_literal, value: value}} when value in [10, 25, 50, 100] ->
+        value
+
+      %{expr: %{op: :qualified_var, target: target}} ->
+        target |> String.split(".") |> List.last() |> accel_sampling_hz_from_name(default)
+
+      %{expr: %{op: :qualified_ref, target: target}} ->
+        target |> String.split(".") |> List.last() |> accel_sampling_hz_from_name(default)
+
+      %{expr: %{op: :qualified_call, target: target, args: []}} ->
+        target |> String.split(".") |> List.last() |> accel_sampling_hz_from_name(default)
+
+      %{expr: %{op: :constructor_call, target: target, args: []}} when is_binary(target) ->
+        target |> String.split(".") |> List.last() |> accel_sampling_hz_from_name(default)
+
+      _ ->
+        default
+    end
+  end
+
+  defp accel_config_sampling_hz(_, default), do: default
+
+  defp accel_sampling_hz_from_name("Hz10", _), do: 10
+  defp accel_sampling_hz_from_name("Hz25", _), do: 25
+  defp accel_sampling_hz_from_name("Hz50", _), do: 50
+  defp accel_sampling_hz_from_name("Hz100", _), do: 100
+  defp accel_sampling_hz_from_name("10", _), do: 10
+  defp accel_sampling_hz_from_name("25", _), do: 25
+  defp accel_sampling_hz_from_name("50", _), do: 50
+  defp accel_sampling_hz_from_name("100", _), do: 100
+  defp accel_sampling_hz_from_name(_, default), do: default
+
+  defp accel_sampling_hz_from_tag(0), do: 10
+  defp accel_sampling_hz_from_tag(1), do: 10
+  defp accel_sampling_hz_from_tag(2), do: 25
+  defp accel_sampling_hz_from_tag(3), do: 50
+  defp accel_sampling_hz_from_tag(4), do: 100
+  defp accel_sampling_hz_from_tag(_), do: 25
+
   @spec phone_to_watch_msg_target([{String.t(), non_neg_integer()}], map()) :: integer()
   defp phone_to_watch_msg_target(msg_constructors, payload_specs) do
     Enum.find_value(msg_constructors, -1, fn {name, tag} ->
@@ -2768,6 +3146,17 @@ defmodule Elmc.Backend.Pebble do
       health_events:
         uses_target?(targets, "Pebble.Health.onEvent") or
           uses_target?(targets, "Elm.Kernel.PebbleWatch.onHealthEvent"),
+      app_focus_events:
+        uses_target?(targets, "Pebble.AppFocus.onChange") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onAppFocusChange"),
+      compass_events:
+        uses_target?(targets, "Pebble.Compass.onChange") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onCompassChange"),
+      dictation_events:
+        uses_target?(targets, "Pebble.Dictation.onStatus") or
+          uses_target?(targets, "Pebble.Dictation.onResult") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onDictationStatus") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onDictationResult"),
       inbox_events: uses_target?(targets, "Companion.Watch.onPhoneToWatch"),
       msg_current_time:
         has_any_constructor?(msg_constructors, ["CurrentTime", "CurrentTimeString", "GotTime"]),
@@ -2811,6 +3200,9 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_BATTERY_EVENTS", flags[:battery_events]},
       {"ELMC_PEBBLE_FEATURE_CONNECTION_EVENTS", flags[:connection_events]},
       {"ELMC_PEBBLE_FEATURE_HEALTH_EVENTS", flags[:health_events]},
+      {"ELMC_PEBBLE_FEATURE_APP_FOCUS_EVENTS", flags[:app_focus_events]},
+      {"ELMC_PEBBLE_FEATURE_COMPASS_EVENTS", flags[:compass_events]},
+      {"ELMC_PEBBLE_FEATURE_DICTATION_EVENTS", flags[:dictation_events]},
       {"ELMC_PEBBLE_FEATURE_INBOX_EVENTS", flags[:inbox_events]},
       {"ELMC_PEBBLE_FEATURE_MSG_CURRENT_TIME", flags[:msg_current_time]},
       {"ELMC_PEBBLE_FEATURE_CMD_TIMER_AFTER_MS", flags[:cmd_timer_after_ms]},
@@ -2846,6 +3238,12 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM_TODAY", flags[:cmd_health_sum_today]},
       {"ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM", flags[:cmd_health_sum]},
       {"ELMC_PEBBLE_FEATURE_CMD_HEALTH_ACCESSIBLE", flags[:cmd_health_accessible]},
+      {"ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN", flags[:cmd_vibes_custom_pattern]},
+      {"ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES", flags[:cmd_data_log_bytes]},
+      {"ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_INT32", flags[:cmd_data_log_int32]},
+      {"ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK", flags[:cmd_compass_peek]},
+      {"ELMC_PEBBLE_FEATURE_CMD_DICTATION_START", flags[:cmd_dictation_start]},
+      {"ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP", flags[:cmd_dictation_stop]},
       {"ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT", flags[:draw_text_int]},
       {"ELMC_PEBBLE_FEATURE_DRAW_CLEAR", flags[:draw_clear]},
       {"ELMC_PEBBLE_FEATURE_DRAW_PIXEL", flags[:draw_pixel]},
@@ -3020,7 +3418,25 @@ defmodule Elmc.Backend.Pebble do
       cmd_health_value: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthValue"),
       cmd_health_sum_today: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthSumToday"),
       cmd_health_sum: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthSum"),
-      cmd_health_accessible: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthAccessible")
+      cmd_health_accessible: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthAccessible"),
+      cmd_vibes_custom_pattern:
+        uses_target?(targets, "Pebble.Vibes.pattern") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.vibesCustomPattern"),
+      cmd_data_log_bytes:
+        uses_target?(targets, "Pebble.DataLog.logBytes") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.dataLogBytes"),
+      cmd_data_log_int32:
+        uses_target?(targets, "Pebble.DataLog.logInt32") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.dataLogInt32"),
+      cmd_compass_peek:
+        uses_target?(targets, "Pebble.Compass.current") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.compassCurrent"),
+      cmd_dictation_start:
+        uses_target?(targets, "Pebble.Dictation.start") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.dictationStart"),
+      cmd_dictation_stop:
+        uses_target?(targets, "Pebble.Dictation.stop") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.dictationStop")
     }
   end
 

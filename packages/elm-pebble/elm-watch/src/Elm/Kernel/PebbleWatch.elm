@@ -2,6 +2,11 @@ module Elm.Kernel.PebbleWatch exposing
     ( backlight
     , batch
     , companionSend
+    , compassCurrent
+    , dataLogBytes
+    , dataLogInt32
+    , dictationStart
+    , dictationStop
     , getBatteryLevel
     , getClockStyle24h
     , getColor
@@ -22,6 +27,7 @@ module Elm.Kernel.PebbleWatch exposing
     , none
     , onAccelData
     , onAccelTap
+    , onAppFocusChange
     , onBatteryChange
     , onButtonDown
     , onButtonLongDown
@@ -30,8 +36,11 @@ module Elm.Kernel.PebbleWatch exposing
     , onButtonRaw
     , onButtonSelect
     , onButtonUp
+    , onCompassChange
     , onConnectionChange
     , onDayChange
+    , onDictationResult
+    , onDictationStatus
     , onFrame
     , onHealthEvent
     , onHourChange
@@ -46,6 +55,7 @@ module Elm.Kernel.PebbleWatch exposing
     , storageWriteString
     , timerAfter
     , vibesCancel
+    , vibesCustomPattern
     , vibesDoublePulse
     , vibesLongPulse
     , vibesShortPulse
@@ -319,6 +329,72 @@ vibesLongPulse =
 vibesDoublePulse : Cmd msg
 vibesDoublePulse =
     Cmd.none
+
+
+vibesCustomPattern : List Int -> Cmd msg
+vibesCustomPattern segments =
+    let
+        keep =
+            segments
+    in
+    Cmd.none
+
+
+dataLogBytes : Int -> List Int -> Cmd msg
+dataLogBytes tag bytes =
+    let
+        keep =
+            ( tag, bytes )
+    in
+    Cmd.none
+
+
+dataLogInt32 : Int -> Int -> Cmd msg
+dataLogInt32 tag value =
+    let
+        keep =
+            tag + value
+    in
+    Cmd.none
+
+
+compassCurrent : (a -> msg) -> Cmd msg
+compassCurrent toMsg =
+    let
+        keep =
+            toMsg
+    in
+    Cmd.none
+
+
+dictationStart : Cmd msg
+dictationStart =
+    Cmd.none
+
+
+dictationStop : Cmd msg
+dictationStop =
+    Cmd.none
+
+
+onAppFocusChange : (a -> msg) -> Sub msg
+onAppFocusChange _ =
+    Sub.none
+
+
+onCompassChange : (a -> msg) -> Sub msg
+onCompassChange _ =
+    Sub.none
+
+
+onDictationStatus : (a -> msg) -> Sub msg
+onDictationStatus _ =
+    Sub.none
+
+
+onDictationResult : (a -> msg) -> Sub msg
+onDictationResult _ =
+    Sub.none
 
 
 onSecondChange : (Int -> msg) -> Sub msg

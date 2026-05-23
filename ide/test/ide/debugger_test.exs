@@ -2547,6 +2547,22 @@ defmodule Ide.DebuggerTest do
     assert get_in(triggered, [:watch, :model, "runtime_last_message"]) == "AccelData"
   end
 
+  test "normalize_simulator_settings includes tier 1 watch sensor fields" do
+    settings =
+      Debugger.normalize_simulator_settings(%{
+        "compass_heading_deg" => "180",
+        "app_in_focus" => "false",
+        "dictation_transcript" => "hello",
+        "vibe_pattern_ms" => [100, 50]
+      })
+
+    assert settings["compass_heading_deg"] == 180
+    assert settings["compass_valid"] == true
+    assert settings["app_in_focus"] == false
+    assert settings["dictation_transcript"] == "hello"
+    assert settings["vibe_pattern_ms"] == [100, 50]
+  end
+
   test "frame subscription trigger auto-fire sends frame payload" do
     previous_config = Application.get_env(:ide, Debugger, [])
 

@@ -2024,6 +2024,43 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
+  def handle_event("debugger-sim-compass", _params, socket) do
+    inject_simulator_watch_trigger(socket, "compass", "Compass heading sent.")
+  end
+
+  def handle_event("debugger-sim-focus", _params, socket) do
+    inject_simulator_watch_trigger(socket, "app_focus", "App focus change sent.")
+  end
+
+  def handle_event("debugger-sim-dictation", _params, socket) do
+    with {:ok, socket} <- inject_simulator_watch_trigger(socket, "dictation_status", nil, flash: false),
+         {:ok, socket} <-
+           inject_simulator_watch_trigger(socket, "dictation_result", "Dictation simulation sent.") do
+      {:noreply, socket}
+    else
+      {:noreply, socket} -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("debugger-sim-vibes", _params, socket) do
+    case socket.assigns.project do
+      nil ->
+        {:noreply, socket}
+
+      project ->
+        settings =
+          SimulatorSettings.values_for(project, socket.assigns[:debugger_state])
+
+        segments = Map.get(settings, "vibe_pattern_ms", [])
+
+        if is_list(segments) and segments != [] do
+          {:noreply, put_flash(socket, :info, "Vibration pattern queued in simulator settings.")}
+        else
+          {:noreply, put_flash(socket, :warning, "Configure a vibration pattern in simulator settings first.")}
+        end
+    end
+  end
+
   def handle_event("debugger-continue-from-cursor", _params, socket) do
     case socket.assigns.project do
       nil ->
@@ -2204,6 +2241,10 @@ defmodule IdeWeb.WorkspaceLive do
       project ->
         existing = SimulatorSettings.raw_settings_for(project, socket.assigns[:debugger_state])
         simulator_settings = SimulatorSettings.save_from_form(existing, values)
+        focus_changed? =
+          normalize_boolean_setting(Map.get(existing, "app_in_focus", true)) !=
+            normalize_boolean_setting(Map.get(simulator_settings, "app_in_focus"))
+
         project = persist_project_debugger_simulator_settings(project, simulator_settings)
 
         {:ok, _state} =
@@ -2215,8 +2256,105 @@ defmodule IdeWeb.WorkspaceLive do
           |> push_event("simulator_settings_applied", simulator_settings)
           |> maybe_sync_external_emulator_settings(simulator_settings)
 
+        socket =
+          if focus_changed? do
+            case inject_simulator_watch_trigger(project, "app_focus") do
+              {:ok, _state} -> socket |> DebuggerSupport.refresh()
+              _ -> socket
+            end
+          else
+            socket
+          end
+
         {:noreply, socket |> DebuggerSupport.refresh()}
     end
+  end
+
+  defp normalize_boolean_setting(value) when value in [true, "true", "1", 1], do: true
+  defp normalize_boolean_setting(_value), do: false
+
+  defp inject_simulator_watch_trigger(socket, kind, flash_message, opts \\ []) do
+    flash? = Keyword.get(opts, :flash, true)
+
+    case socket.assigns.project do
+      nil ->
+        {:noreply, socket}
+
+      project ->
+        case inject_simulator_watch_trigger(project, kind) do
+          {:ok, _state} ->
+            socket =
+              socket
+              |> DebuggerSupport.refresh()
+              |> DebuggerSupport.jump_latest()
+              |> then(fn s ->
+                if flash? and is_binary(flash_message),
+                  do: put_flash(s, :info, flash_message),
+                  else: s
+              end)
+
+            {:ok, socket}
+
+          _ ->
+            {:noreply, put_flash(socket, :error, "Could not inject #{kind} simulator trigger.")}
+        end
+    end
+  end
+
+  defp inject_simulator_watch_trigger(%Project{} = project, kind) when is_binary(kind) do
+    slug = Projects.scope_key(project)
+
+    with {:ok, rows} <- Ide.Debugger.available_triggers(slug, %{"target" => "watch"}),
+         row <- find_simulator_trigger_row(rows, kind),
+         {:ok, attrs} <- simulator_trigger_attrs(row, kind) do
+      Ide.Debugger.inject_trigger(slug, attrs)
+    else
+      _ -> {:error, :trigger_not_found}
+    end
+  end
+
+  defp find_simulator_trigger_row(rows, kind) when is_list(rows) do
+    patterns =
+      case kind do
+        "compass" -> ["compass"]
+        "app_focus" -> ["app_focus", "appfocus"]
+        "dictation_status" -> ["dictation_status", "dictationstatus"]
+        "dictation_result" -> ["dictation_result", "dictationresult"]
+        _ -> [kind]
+      end
+
+    Enum.find(rows, fn row ->
+      trigger =
+        row
+        |> Map.get(:trigger, Map.get(row, "trigger", ""))
+        |> to_string()
+        |> String.downcase()
+        |> String.replace(~r/[^a-z0-9]+/, "")
+
+      Enum.any?(patterns, &String.contains?(trigger, &1))
+    end)
+  end
+
+  defp simulator_trigger_attrs(nil, kind) do
+    trigger =
+      case kind do
+        "compass" -> "on_compass_change"
+        "app_focus" -> "on_app_focus_change"
+        "dictation_status" -> "on_dictation_status"
+        "dictation_result" -> "on_dictation_result"
+        other -> other
+      end
+
+    {:ok, %{trigger: trigger, target: "watch"}}
+  end
+
+  defp simulator_trigger_attrs(row, _kind) do
+    {:ok,
+     %{
+       trigger: Map.get(row, :trigger) || Map.get(row, "trigger"),
+       target: Map.get(row, :target) || Map.get(row, "target") || "watch",
+       message: Map.get(row, :message) || Map.get(row, "message")
+     }}
   end
 
   defp submit_publish_release(params, socket) do

@@ -15,7 +15,7 @@ module Pebble.Companion.Lifecycle exposing
 
 # Subscriptions
 
-@docs onLifecycle
+@docs onLifecycle, setup
 
 -}
 
@@ -45,6 +45,8 @@ onLifecycle toMsg =
     Platform.subscribe (handler toMsg)
 
 
+{-| Register this platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup lifecycleInterest

@@ -54,7 +54,7 @@ weather query.
 
 # Commands
 
-@docs current, forecast
+@docs current, forecast, setup, setupCurrent, setupForecast
 
 # Subscriptions
 
@@ -141,16 +141,22 @@ onForecast toMsg =
     Platform.subscribe (handlerForecast toMsg)
 
 
+{-| Register the weather push platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup weatherPushInterest
 
 
+{-| Register the current-weather platform handler with the companion bridge.
+-}
 setupCurrent : Cmd msg
 setupCurrent =
     Platform.setup weatherCurrentInterest
 
 
+{-| Register the forecast platform handler with the companion bridge.
+-}
 setupForecast : Cmd msg
 setupForecast =
     Platform.setup weatherForecastInterest

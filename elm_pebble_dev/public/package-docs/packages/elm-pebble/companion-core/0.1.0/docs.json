@@ -2,7 +2,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Watch AppMessage protocol wiring and per-API platform incoming ports.\n\nUse the typed `Pebble.Companion.*` modules for phone platform APIs such as\nweather, storage, and battery. Each platform API registers its own incoming\nport so apps can compose listeners with plain `Sub.batch`.\n\nThis module is for typed watch ↔ phone AppMessage traffic and platform bridge\nports only.\n\nMessage constructors such as `WatchToPhone` and `PhoneToWatch` come from your\nproject's protocol definition in `protocol/src/Companion/Types.elm`.\n\n    import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))\n    import Pebble.Companion.Battery as Battery\n    import Pebble.Companion.Locale as Locale\n    import Pebble.Companion.Phone as Phone\n\n    type Msg\n        = FromWatch (Result String WatchToPhone)\n        | GotBattery (Result String Battery.BatteryInfo)\n        | GotLocale (Result String Locale.LocaleInfo)\n\n    subscriptions _ =\n        Sub.batch\n            [ Phone.onWatchToPhone FromWatch\n            , Battery.onBattery GotBattery\n            , Locale.onLocale GotLocale\n            ]\n\n# Watch protocol\n\n@docs decodeWatchToPhone, onWatchToPhone, sendPhoneToWatch\n\n# Platform ports\n\n@docs platformIncomingFor",
+    "comment": "Watch AppMessage protocol wiring and per-API platform incoming ports.\n\nUse the typed `Pebble.Companion.*` modules for phone platform APIs such as\nweather, storage, and battery. Each platform API registers its own incoming\nport so apps can compose listeners with plain `Sub.batch`.\n\nThis module is for typed watch ↔ phone AppMessage traffic and platform bridge\nports only.\n\nMessage constructors such as `WatchToPhone` and `PhoneToWatch` come from your\nproject's protocol definition in `protocol/src/Companion/Types.elm`.\n\n    import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))\n    import Pebble.Companion.Battery as Battery\n    import Pebble.Companion.Locale as Locale\n    import Pebble.Companion.Phone as Phone\n\n    type Msg\n        = FromWatch (Result String WatchToPhone)\n        | GotBattery (Result String Battery.BatteryInfo)\n        | GotLocale (Result String Locale.LocaleInfo)\n\n    subscriptions _ =\n        Sub.batch\n            [ Phone.onWatchToPhone FromWatch\n            , Battery.onBattery GotBattery\n            , Locale.onLocale GotLocale\n            ]\n\n# Watch protocol\n\n@docs decodeWatchToPhone, onWatchToPhone, sendPhoneToWatch\n\n# Platform bridge\n\n@docs request, requestWithPayload, send, sendBridgeCommand, registerHandler\n\n# Platform ports\n\n@docs platformIncomingFor",
     "name": "Pebble.Companion.Phone",
     "unions": [],
     "values": [
@@ -22,6 +22,31 @@
         "type": "PhoneToWatch -> Cmd msg"
       },
       {
+        "comment": "Build a typed platform bridge request from an API id, operation, and response decoder.",
+        "name": "request",
+        "type": "String -> String -> String -> (Decode.Value -> Result String a) -> Request a"
+      },
+      {
+        "comment": "Build a platform bridge request that includes a JSON payload.",
+        "name": "requestWithPayload",
+        "type": "String\n-> String\n-> String\n-> Encode.Value\n-> (Decode.Value -> Result String a)\n-> Request a"
+      },
+      {
+        "comment": "Send a typed platform bridge request and decode the response into `msg`.",
+        "name": "send",
+        "type": "(Result String a -> msg) -> Request a -> Cmd msg"
+      },
+      {
+        "comment": "Send a raw platform bridge command envelope to the companion runtime.",
+        "name": "sendBridgeCommand",
+        "type": "CommandEnvelope -> Cmd msg"
+      },
+      {
+        "comment": "Register interest in a platform handler with the companion bridge.",
+        "name": "registerHandler",
+        "type": "String -> Encode.Value -> Cmd msg"
+      },
+      {
         "comment": "Route a platform handler id to its dedicated incoming port.",
         "name": "platformIncomingFor",
         "type": "String -> (Decode.Value -> msg) -> Sub msg"
@@ -31,7 +56,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Companion platform subscription wiring.\n\nEach platform API exposes a real `Sub msg` subscription. Compose them with plain\n`Sub.batch` instead of a special batch combinator.\n\n    import Pebble.Companion.Battery as Battery\n    import Pebble.Companion.Locale as Locale\n    import Pebble.Companion.Phone as Phone\n\n    subscriptions _ =\n        Sub.batch\n            [ Phone.onWatchToPhone FromWatch\n            , Battery.onBattery GotBattery\n            , Locale.onLocale GotLocale\n            ]\n\n@docs Interest, Handler, handler, interest, subscribe, attach",
+    "comment": "Companion platform subscription wiring.\n\nEach platform API exposes a real `Sub msg` subscription. Compose them with plain\n`Sub.batch` instead of a special batch combinator.\n\n    import Pebble.Companion.Battery as Battery\n    import Pebble.Companion.Locale as Locale\n    import Pebble.Companion.Phone as Phone\n\n    init _ =\n        ( model, Cmd.batch [ Battery.setup, Battery.current GotBattery ] )\n\n    subscriptions _ =\n        Sub.batch\n            [ Phone.onWatchToPhone FromWatch\n            , Battery.onBattery GotBattery\n            , Locale.onLocale GotLocale\n            ]\n\n@docs Interest, Handler, handler, interest, subscribe, setup",
     "name": "Pebble.Companion.Platform",
     "unions": [
       {
@@ -53,7 +78,7 @@
       {
         "comment": "Build a platform handler from interest metadata and decoders.",
         "name": "handler",
-        "type": "Interest -> (Decode.Value -> Result String a) -> (a -> msg) -> Handler msg"
+        "type": "Interest -> (Decode.Value -> Result String a) -> (Result String a -> msg) -> Handler msg"
       },
       {
         "comment": "Describe a platform API bridge interest.",
@@ -61,14 +86,14 @@
         "type": "{ id : String\n, subscribeCommand : Maybe CommandEnvelope\n, eventPrefixes : List String\n, resultIdPrefixes : List String\n}\n-> Interest"
       },
       {
-        "comment": "Register bridge interest and subscribe to the API's dedicated incoming port.",
+        "comment": "Register bridge interest and subscribe to the API's dedicated incoming port.\n\nCall the matching `setup` command from `init` so the bridge can route events to\nthis handler.",
         "name": "subscribe",
         "type": "Handler msg -> Sub msg"
       },
       {
-        "comment": "Register bridge interest without subscribing to incoming events.",
-        "name": "attach",
-        "type": "Handler msg -> Sub msg"
+        "comment": "Register bridge interest with the companion bridge.\n\nPair this with the matching subscription from typed platform modules such as\n`Battery.onBattery` or `Calendar.onCalendar`.",
+        "name": "setup",
+        "type": "Interest -> Cmd msg"
       }
     ]
   },
@@ -82,7 +107,7 @@
       }
     ],
     "binops": [],
-    "comment": "Phone battery helpers for companion apps.\n\n    init _ =\n        ( model, Battery.current GotBattery )\n\n    subscriptions _ =\n        Battery.onBattery GotBattery\n\n# Types\n\n@docs BatteryInfo\n\n# Commands\n\n@docs current\n\n# Subscriptions\n\n@docs onBattery",
+    "comment": "Phone battery helpers for companion apps.\n\n    init _ =\n        ( model, Battery.current GotBattery )\n\n    subscriptions _ =\n        Battery.onBattery GotBattery\n\n# Types\n\n@docs BatteryInfo\n\n# Commands\n\n@docs current, setup\n\n# Subscriptions\n\n@docs onBattery",
     "name": "Pebble.Companion.Battery",
     "unions": [],
     "values": [
@@ -90,6 +115,11 @@
         "comment": "Request the current phone battery status.",
         "name": "current",
         "type": "(Result String BatteryInfo -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Register the battery platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
       },
       {
         "comment": "Receive pushed battery status updates from the companion bridge.\n\nRegistering this subscription also tells the bridge to send battery updates.",
@@ -108,12 +138,12 @@
       }
     ],
     "binops": [],
-    "comment": "Calendar helpers for companion apps.\n\n# Types\n\n@docs CalendarEvent\n\n# Commands\n\n@docs current, upcoming\n\n# Subscriptions\n\n@docs onCalendar, onCurrent, onUpcoming",
+    "comment": "Calendar helpers for companion apps.\n\n    import Pebble.Companion.Calendar as Calendar\n\n    type Msg\n        = GotCalendar (Result String (List Calendar.CalendarEvent))\n\n    init _ =\n        ( model, Calendar.current (GotCalendar << Result.map maybeAsList) )\n\n    subscriptions _ =\n        Calendar.onCalendar GotCalendar\n\n    maybeAsList event =\n        case event of\n            Nothing -> []\n            Just value -> [ value ]\n\n# Types\n\n@docs CalendarEvent\n\n# Commands\n\n@docs current, upcoming, setup, setupCurrent, setupUpcoming\n\n# Subscriptions\n\n@docs onCalendar, onCurrent, onUpcoming",
     "name": "Pebble.Companion.Calendar",
     "unions": [],
     "values": [
       {
-        "comment": "Request the next calendar event, if available.",
+        "comment": "Request the next calendar event, if available.\n\nThis registers the calendar bridge (via `setup`) before sending the request.\nPair it with `onCalendar` in subscriptions so responses can reach your `update`.",
         "name": "current",
         "type": "(Result String (Maybe CalendarEvent) -> msg) -> Cmd msg"
       },
@@ -121,6 +151,21 @@
         "comment": "Request a bounded list of upcoming calendar events.",
         "name": "upcoming",
         "type": "Int -> (Result String (List CalendarEvent) -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Register the calendar push platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Register the calendar current-event platform handler with the companion bridge.",
+        "name": "setupCurrent",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Register the calendar upcoming-events platform handler with the companion bridge.",
+        "name": "setupUpcoming",
+        "type": "Cmd msg"
       },
       {
         "comment": "Receive pushed calendar updates from the companion bridge.\n\nRegistering this subscription also tells the bridge to send calendar updates.",
@@ -142,7 +187,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Open and observe the Pebble companion configuration page.\n\n    init _ =\n        ( model, Configuration.open \"https://example.com/config\" )\n\n    subscriptions _ =\n        Configuration.onClosed ConfigurationClosed\n\n# Commands\n\n@docs open\n\n# Subscriptions\n\n@docs onClosed",
+    "comment": "Open and observe the Pebble companion configuration page.\n\n    init _ =\n        ( model, Configuration.open \"https://example.com/config\" )\n\n    subscriptions _ =\n        Configuration.onClosed ConfigurationClosed\n\n# Commands\n\n@docs open, setup\n\n# Subscriptions\n\n@docs onClosed",
     "name": "Pebble.Companion.Configuration",
     "unions": [],
     "values": [
@@ -150,6 +195,11 @@
         "comment": "Ask the companion bridge to open a configuration URL.",
         "name": "open",
         "type": "String -> Cmd msg"
+      },
+      {
+        "comment": "Register this platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
       },
       {
         "comment": "Receive configuration close events from the companion bridge.\n\nRegistering this subscription also tells the bridge to send configuration events.",
@@ -161,7 +211,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Phone internet connectivity exposed by the companion bridge.\n\nThis reports whether the phone companion runtime considers itself online. It\ndoes **not** describe watch-to-phone Bluetooth connection — use\n`Pebble.System.connectionStatus` on the watch for that.\n\n    init _ =\n        ( model, Connectivity.current ConnectivityChanged )\n\n    subscriptions _ =\n        Connectivity.onConnectivity ConnectivityChanged\n\n# Types\n\n@docs Connectivity\n\n# Commands\n\n@docs current\n\n# Subscriptions\n\n@docs onConnectivity",
+    "comment": "Phone internet connectivity exposed by the companion bridge.\n\nThis reports whether the phone companion runtime considers itself online. It\ndoes **not** describe watch-to-phone Bluetooth connection — use\n`Pebble.System.connectionStatus` on the watch for that.\n\n    init _ =\n        ( model, Connectivity.current ConnectivityChanged )\n\n    subscriptions _ =\n        Connectivity.onConnectivity ConnectivityChanged\n\n# Types\n\n@docs Connectivity\n\n# Commands\n\n@docs current, setup\n\n# Subscriptions\n\n@docs onConnectivity",
     "name": "Pebble.Companion.Connectivity",
     "unions": [
       {
@@ -185,6 +235,11 @@
         "comment": "Request the current phone connectivity state.",
         "name": "current",
         "type": "(Connectivity -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Register this platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
       },
       {
         "comment": "Receive pushed connectivity updates from the companion bridge.\n\nRegistering this subscription also tells the bridge to send connectivity updates.",
@@ -221,7 +276,7 @@
       }
     ],
     "binops": [],
-    "comment": "Sun, moon, and tide environment helpers for companion apps.\n\n    init _ =\n        ( model, Environment.current GotEnvironment )\n\n# Types\n\n@docs SunInfo, MoonInfo, TideInfo, EnvironmentInfo\n\n# Commands\n\n@docs current\n\n# Subscriptions\n\n@docs onEnvironment",
+    "comment": "Sun, moon, and tide environment helpers for companion apps.\n\n    init _ =\n        ( model, Environment.current GotEnvironment )\n\n# Types\n\n@docs SunInfo, MoonInfo, TideInfo, EnvironmentInfo\n\n# Commands\n\n@docs current, setup\n\n# Subscriptions\n\n@docs onEnvironment",
     "name": "Pebble.Companion.Environment",
     "unions": [],
     "values": [
@@ -229,6 +284,11 @@
         "comment": "Request the current environment snapshot.",
         "name": "current",
         "type": "(Result String EnvironmentInfo -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Register this platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
       },
       {
         "comment": "Receive pushed environment updates from the companion bridge.\n\nRegistering this subscription also tells the bridge to send environment updates.",
@@ -266,7 +326,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Observe phone companion lifecycle events.\n\n    subscriptions _ =\n        Lifecycle.onLifecycle LifecycleChanged\n\n# Events\n\n@docs Event\n\n# Subscriptions\n\n@docs onLifecycle",
+    "comment": "Observe phone companion lifecycle events.\n\n    subscriptions _ =\n        Lifecycle.onLifecycle LifecycleChanged\n\n# Events\n\n@docs Event\n\n# Subscriptions\n\n@docs onLifecycle, setup",
     "name": "Pebble.Companion.Lifecycle",
     "unions": [
       {
@@ -309,6 +369,11 @@
         "comment": "Receive pushed lifecycle events from the companion bridge.\n\nRegistering this subscription also tells the bridge to send lifecycle updates.",
         "name": "onLifecycle",
         "type": "(Event -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Register this platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
       }
     ]
   },
@@ -322,7 +387,7 @@
       }
     ],
     "binops": [],
-    "comment": "Phone locale and regional preference helpers for companion apps.\n\n    init _ =\n        ( model, Locale.current GotLocale )\n\n    subscriptions _ =\n        Locale.onLocale GotLocale\n\n# Types\n\n@docs LocaleInfo\n\n# Commands\n\n@docs current\n\n# Subscriptions\n\n@docs onLocale",
+    "comment": "Phone locale and regional preference helpers for companion apps.\n\n    init _ =\n        ( model, Locale.current GotLocale )\n\n    subscriptions _ =\n        Locale.onLocale GotLocale\n\n# Types\n\n@docs LocaleInfo\n\n# Commands\n\n@docs current, setup\n\n# Subscriptions\n\n@docs onLocale",
     "name": "Pebble.Companion.Locale",
     "unions": [],
     "values": [
@@ -330,6 +395,11 @@
         "comment": "Request the current phone locale status.",
         "name": "current",
         "type": "(Result String LocaleInfo -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Register this platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
       },
       {
         "comment": "Receive pushed locale status updates from the companion bridge.\n\nRegistering this subscription also tells the bridge to send locale updates.",
@@ -348,7 +418,7 @@
       }
     ],
     "binops": [],
-    "comment": "Phone notification status helpers for companion apps.\n\n# Types\n\n@docs NotificationStatus\n\n# Commands\n\n@docs current\n\n# Subscriptions\n\n@docs onNotificationStatus",
+    "comment": "Phone notification status helpers for companion apps.\n\n# Types\n\n@docs NotificationStatus\n\n# Commands\n\n@docs current, setup\n\n# Subscriptions\n\n@docs onNotificationStatus",
     "name": "Pebble.Companion.Notifications",
     "unions": [],
     "values": [
@@ -356,6 +426,11 @@
         "comment": "Request the current notification status.",
         "name": "current",
         "type": "(Result String NotificationStatus -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Register this platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
       },
       {
         "comment": "Receive pushed notification status updates from the companion bridge.\n\nRegistering this subscription also tells the bridge to send notification updates.",
@@ -367,7 +442,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Generic phone-side preference storage exposed by the companion bridge.\n\n# Commands\n\n@docs get, set\n\n# Subscriptions\n\n@docs onPreference",
+    "comment": "Generic phone-side preference storage exposed by the companion bridge.\n\n# Commands\n\n@docs get, set, setup\n\n# Subscriptions\n\n@docs onPreference",
     "name": "Pebble.Companion.PreferenceStore",
     "unions": [],
     "values": [
@@ -382,6 +457,11 @@
         "type": "String -> Encode.Value -> Cmd msg"
       },
       {
+        "comment": "Register this platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
+      },
+      {
         "comment": "Receive pushed preference updates from the companion bridge.\n\nRegistering this subscription also tells the bridge to send preference updates.",
         "name": "onPreference",
         "type": "(Result String ( String, Decode.Value ) -> msg) -> Sub msg"
@@ -391,7 +471,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Persistent companion storage helpers.\n\n# Values and errors\n\n@docs Value, Error\n\n# Commands\n\n@docs set, get, remove, clear\n\n# Subscriptions\n\n@docs onStorage",
+    "comment": "Persistent companion storage helpers.\n\n# Values and errors\n\n@docs Value, Error\n\n# Commands\n\n@docs set, get, remove, clear, setup\n\n# Subscriptions\n\n@docs onStorage",
     "name": "Pebble.Companion.Storage",
     "unions": [
       {
@@ -471,6 +551,11 @@
         "type": "Cmd msg"
       },
       {
+        "comment": "Register the storage platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
+      },
+      {
         "comment": "Receive storage command responses routed through the platform bridge.",
         "name": "onStorage",
         "type": "(Result Error Value -> msg) -> Sub msg"
@@ -480,7 +565,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Timeline commands for companion-driven pins.\n\n    init _ =\n        ( model, Timeline.getToken GotToken )\n\n    subscriptions _ =\n        Timeline.onToken GotToken\n\n# Commands\n\n@docs getToken, insertPin, deletePin\n\n# Subscriptions\n\n@docs onToken, onCommands",
+    "comment": "Timeline commands for companion-driven pins.\n\n    init _ =\n        ( model, Timeline.getToken GotToken )\n\n    subscriptions _ =\n        Timeline.onToken GotToken\n\n# Commands\n\n@docs getToken, insertPin, deletePin, setupToken, setupCommands\n\n# Subscriptions\n\n@docs onToken, onCommands",
     "name": "Pebble.Companion.Timeline",
     "unions": [],
     "values": [
@@ -498,6 +583,16 @@
         "comment": "Delete a timeline pin by id.",
         "name": "deletePin",
         "type": "String -> (Result String () -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Register the timeline token platform handler with the companion bridge.",
+        "name": "setupToken",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Register the timeline command platform handler with the companion bridge.",
+        "name": "setupCommands",
+        "type": "Cmd msg"
       },
       {
         "comment": "Receive timeline token command responses on the dedicated timeline port.",
@@ -521,7 +616,7 @@
       }
     ],
     "binops": [],
-    "comment": "Platform-provided weather for companion apps.\n\nWeather comes from the Pebble companion bridge (IDE simulator settings or the\nphone companion runtime). These functions do **not** take a city name or other\nweather query.\n\n    import Pebble.Companion.Weather as Weather\n\n    type Msg\n        = GotCurrent (Result String Weather.WeatherInfo)\n        | GotForecast (Result String (List Weather.WeatherInfo))\n        | GotWeatherPush (Result String Weather.WeatherUpdate)\n\n    init _ =\n        ( model, Weather.current GotCurrent )\n\n    subscriptions _ =\n        Weather.onWeather GotWeatherPush\n\n    update msg model =\n        case msg of\n            GotCurrent (Ok info) ->\n                ( { model | tempC = info.temperatureC }, Cmd.none )\n\n            GotCurrent (Err error) ->\n                ( { model | weatherError = Just error }, Cmd.none )\n\n            GotForecast _ ->\n                ( model, Cmd.none )\n\n            GotWeatherPush (Ok (Weather.Current info)) ->\n                ( { model | tempC = info.temperatureC }, Cmd.none )\n\n            GotWeatherPush _ ->\n                ( model, Cmd.none )\n\n# Types\n\n@docs Condition, WeatherInfo, WeatherUpdate\n\n# Commands\n\n@docs current, forecast\n\n# Subscriptions\n\n@docs onWeather, onCurrent, onForecast",
+    "comment": "Platform-provided weather for companion apps.\n\nWeather comes from the Pebble companion bridge (IDE simulator settings or the\nphone companion runtime). These functions do **not** take a city name or other\nweather query.\n\n    import Pebble.Companion.Weather as Weather\n\n    type Msg\n        = GotCurrent (Result String Weather.WeatherInfo)\n        | GotForecast (Result String (List Weather.WeatherInfo))\n        | GotWeatherPush (Result String Weather.WeatherUpdate)\n\n    init _ =\n        ( model, Weather.current GotCurrent )\n\n    subscriptions _ =\n        Weather.onWeather GotWeatherPush\n\n    update msg model =\n        case msg of\n            GotCurrent (Ok info) ->\n                ( { model | tempC = info.temperatureC }, Cmd.none )\n\n            GotCurrent (Err error) ->\n                ( { model | weatherError = Just error }, Cmd.none )\n\n            GotForecast _ ->\n                ( model, Cmd.none )\n\n            GotWeatherPush (Ok (Weather.Current info)) ->\n                ( { model | tempC = info.temperatureC }, Cmd.none )\n\n            GotWeatherPush _ ->\n                ( model, Cmd.none )\n\n# Types\n\n@docs Condition, WeatherInfo, WeatherUpdate\n\n# Commands\n\n@docs current, forecast, setup, setupCurrent, setupForecast\n\n# Subscriptions\n\n@docs onWeather, onCurrent, onForecast",
     "name": "Pebble.Companion.Weather",
     "unions": [
       {
@@ -600,6 +695,21 @@
         "type": "(Result String (List WeatherInfo) -> msg) -> Cmd msg"
       },
       {
+        "comment": "Register the weather push platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Register the current-weather platform handler with the companion bridge.",
+        "name": "setupCurrent",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Register the forecast platform handler with the companion bridge.",
+        "name": "setupForecast",
+        "type": "Cmd msg"
+      },
+      {
         "comment": "Receive pushed weather updates from the companion bridge.\n\nRegistering this subscription also tells the bridge to send weather updates.",
         "name": "onWeather",
         "type": "(Result String WeatherUpdate -> msg) -> Sub msg"
@@ -619,7 +729,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "WebSocket commands and events through the phone companion bridge.\n\n    init _ =\n        ( model, WebSocket.connect \"wss://example.com/live\" Connected )\n\n    subscriptions _ =\n        WebSocket.onWebSocket WebSocketChanged\n\n# Events\n\n@docs Event\n\n# Commands\n\n@docs connect, disconnect, send\n\n# Subscriptions\n\n@docs onWebSocket, onCommands",
+    "comment": "WebSocket commands and events through the phone companion bridge.\n\n    init _ =\n        ( model, WebSocket.connect \"wss://example.com/live\" Connected )\n\n    subscriptions _ =\n        WebSocket.onWebSocket WebSocketChanged\n\n# Events\n\n@docs Event\n\n# Commands\n\n@docs connect, disconnect, send, setup, setupCommands\n\n# Subscriptions\n\n@docs onWebSocket, onCommands",
     "name": "Pebble.Companion.WebSocket",
     "unions": [
       {
@@ -674,6 +784,16 @@
         "comment": "Send a string message over the active WebSocket.",
         "name": "send",
         "type": "String -> (Result String () -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Register the WebSocket event platform handler with the companion bridge.",
+        "name": "setup",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Register the WebSocket command platform handler with the companion bridge.",
+        "name": "setupCommands",
+        "type": "Cmd msg"
       },
       {
         "comment": "Receive pushed WebSocket events from the companion bridge.\n\nRegistering this subscription also tells the bridge to send WebSocket updates.",

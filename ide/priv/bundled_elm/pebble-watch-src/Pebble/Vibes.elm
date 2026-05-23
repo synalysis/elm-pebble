@@ -1,10 +1,10 @@
-module Pebble.Vibes exposing (cancel, doublePulse, longPulse, shortPulse)
+module Pebble.Vibes exposing (cancel, doublePulse, longPulse, pattern, shortPulse)
 
 import Elm.Kernel.PebbleWatch
 
 {-| Vibration motor controls.
 
-@docs cancel, shortPulse, longPulse, doublePulse
+@docs cancel, shortPulse, longPulse, doublePulse, pattern
 -}
 
 
@@ -34,3 +34,12 @@ longPulse =
 doublePulse : Cmd msg
 doublePulse =
     Elm.Kernel.PebbleWatch.vibesDoublePulse
+
+
+{-| Play a custom vibration pattern.
+
+Each value is a segment duration in milliseconds. Segments alternate ON/OFF starting with ON.
+-}
+pattern : List Int -> Cmd msg
+pattern segments =
+    Elm.Kernel.PebbleWatch.vibesCustomPattern segments

@@ -63,6 +63,36 @@
   {
     "aliases": [],
     "binops": [],
+    "comment": "Observe when the watch app gains or loses foreground focus.\n\n@docs State, onChange",
+    "name": "Pebble.AppFocus",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "InFocus",
+            []
+          ],
+          [
+            "OutOfFocus",
+            []
+          ]
+        ],
+        "comment": "Whether the app is currently in the foreground.",
+        "name": "State"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Receive focus changes from the Pebble runtime.",
+        "name": "onChange",
+        "type": "(State -> msg) -> Sub msg"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
     "comment": "Button subscriptions for Pebble watches.\n\n# Types\n@docs Button, Event\n\n# Subscriptions\n@docs on, onPress, onRelease, onLongPress",
     "name": "Pebble.Button",
     "unions": [
@@ -160,6 +190,148 @@
         "comment": "Request the current local date/time with UTC offset in minutes.",
         "name": "getCurrentDateTime",
         "type": "(CurrentDateTime -> msg) -> Cmd msg"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
+        "comment": "A compass heading in degrees (0–360) when valid.",
+        "name": "Heading",
+        "type": "    { degrees : Float\n    , isValid : Bool\n    }"
+      }
+    ],
+    "binops": [],
+    "comment": "Read compass heading from watches with a magnetometer.\n\n@docs Error, Heading, current, onChange",
+    "name": "Pebble.Compass",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Unavailable",
+            []
+          ],
+          [
+            "InvalidReading",
+            []
+          ]
+        ],
+        "comment": "Compass errors returned at the app boundary.",
+        "name": "Error"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Request the current heading once.",
+        "name": "current",
+        "type": "(Result Error Heading -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Receive heading updates when the compass service reports changes.",
+        "name": "onChange",
+        "type": "(Heading -> msg) -> Sub msg"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Log analytics bytes to the Pebble data logging service.\n\n@docs Tag, logBytes, logInt32",
+    "name": "Pebble.DataLog",
+    "unions": [
+      {
+        "args": [],
+        "cases": [],
+        "comment": "A data logging session tag (uint32 on device).",
+        "name": "Tag"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Log a list of byte values (0–255) under the given tag.",
+        "name": "logBytes",
+        "type": "Tag -> List Int -> Cmd msg"
+      },
+      {
+        "comment": "Log a single 32-bit integer under the given tag.",
+        "name": "logInt32",
+        "type": "Tag -> Int -> Cmd msg"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
+    "comment": "Voice dictation via the Pebble microphone and phone speech recognition.\n\n@docs Error, Status, start, stop, onStatus, onResult",
+    "name": "Pebble.Dictation",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "NoMicrophone",
+            []
+          ],
+          [
+            "PhoneDisconnected",
+            []
+          ],
+          [
+            "Cancelled",
+            []
+          ],
+          [
+            "Failed",
+            [
+              "String"
+            ]
+          ]
+        ],
+        "comment": "Dictation session errors.",
+        "name": "Error"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "Starting",
+            []
+          ],
+          [
+            "Recognizing",
+            []
+          ],
+          [
+            "Finished",
+            []
+          ]
+        ],
+        "comment": "Dictation session lifecycle status.",
+        "name": "Status"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Start a dictation session.",
+        "name": "start",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Stop an in-progress dictation session.",
+        "name": "stop",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Receive dictation status updates.",
+        "name": "onStatus",
+        "type": "(Status -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive the transcribed text or an error when the session completes.",
+        "name": "onResult",
+        "type": "(Result Error String -> msg) -> Sub msg"
       }
     ]
   },
@@ -460,7 +632,7 @@
       }
     ],
     "binops": [],
-    "comment": "Enhanced hardware access for Pebble watch devices.\n\n# Types\n@docs VibrationType, VibrationPattern, BacklightLevel, HardwareCmd\n\n# Vibration\n@docs vibrate, vibratePattern\n\n# Backlight\n@docs setBacklight, enableBacklight, disableBacklight, flashBacklight\n\n# System Status\n@docs getBatteryLevel, getConnectionStatus\n\n# Audio (if supported)\n@docs playTone, stopTone",
+    "comment": "Enhanced hardware access for Pebble watch devices.\n\nPrefer `Pebble.Vibes` for vibration and `Pebble.Light` / `Pebble.System` for backlight and status.\n\n# Types\n@docs VibrationType, VibrationPattern, BacklightLevel, HardwareCmd\n\n# Vibration\n@docs vibrate, vibratePattern\n\n# Backlight\n@docs setBacklight, enableBacklight, disableBacklight, flashBacklight\n\n# System Status\n@docs getBatteryLevel, getConnectionStatus\n\n# Audio (if supported)\n@docs playTone, stopTone",
     "name": "Pebble.Hardware",
     "unions": [
       {
@@ -1314,7 +1486,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Vibration motor controls.\n\n@docs cancel, shortPulse, longPulse, doublePulse",
+    "comment": "Vibration motor controls.\n\n@docs cancel, shortPulse, longPulse, doublePulse, pattern",
     "name": "Pebble.Vibes",
     "unions": [],
     "values": [
@@ -1337,6 +1509,11 @@
         "comment": "Trigger a double vibration pulse.",
         "name": "doublePulse",
         "type": "Cmd msg"
+      },
+      {
+        "comment": "Play a custom vibration pattern.\n\nEach value is a segment duration in milliseconds. Segments alternate ON/OFF starting with ON.",
+        "name": "pattern",
+        "type": "List Int -> Cmd msg"
       }
     ]
   },

@@ -11,6 +11,9 @@ defmodule Ide.Emulator.Session do
 
   @default_idle_timeout_ms 5 * 60 * 1000
 
+  @qemu_control_accel 11
+  @qemu_control_compass 12
+
   @type state :: %{
           id: String.t(),
           token: String.t(),
@@ -527,15 +530,16 @@ defmodule Ide.Emulator.Session do
 
   def handle_call({:local_port, :phone}, _from, state), do: {:reply, state.phone_ws_port, state}
 
-  def handle_call({:control, _protocol, _payload}, _from, %{protocol_router_pid: nil} = state),
-    do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
-
   def handle_call({:control, protocol, payload}, _from, state) do
-    if live_pid?(state.protocol_router_pid) do
-      {:reply, Router.send_qemu_packet(state.protocol_router_pid, protocol, payload), state}
+    with :ok <- validate_control_payload(protocol, payload) do
+      if live_pid?(state.protocol_router_pid) do
+        {:reply, Router.send_qemu_packet(state.protocol_router_pid, protocol, payload), state}
+      else
+        {:reply, {:error, :embedded_protocol_router_not_started},
+         %{state | protocol_router_pid: nil}}
+      end
     else
-      {:reply, {:error, :embedded_protocol_router_not_started},
-       %{state | protocol_router_pid: nil}}
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
@@ -1190,8 +1194,17 @@ defmodule Ide.Emulator.Session do
   end
 
   defp supported_controls do
-    ~w(button_up button_select button_down button_back tap battery bluetooth time_24h timeline_peek set_time install logs screenshot)
+    ~w(button_up button_select button_down button_back tap battery bluetooth time_24h timeline_peek accel compass set_time install logs screenshot)
   end
+
+  @spec validate_control_payload(non_neg_integer(), binary()) :: :ok | {:error, atom()}
+  defp validate_control_payload(@qemu_control_accel, payload) when byte_size(payload) == 6, do: :ok
+  defp validate_control_payload(@qemu_control_accel, _payload), do: {:error, :invalid_qemu_payload}
+
+  defp validate_control_payload(@qemu_control_compass, payload) when byte_size(payload) == 3, do: :ok
+  defp validate_control_payload(@qemu_control_compass, _payload), do: {:error, :invalid_qemu_payload}
+
+  defp validate_control_payload(_protocol, _payload), do: :ok
 
   defp allocate_ports(count) do
     ports =

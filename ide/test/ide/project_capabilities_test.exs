@@ -156,6 +156,32 @@ defmodule Ide.ProjectCapabilitiesTest do
            )
   end
 
+  @watch_tier1 """
+  module Main exposing (..)
+
+  import Pebble.Accel as Accel
+  import Pebble.Compass as Compass
+  import Pebble.Dictation as Dictation
+
+  subscriptions _ =
+      Sub.batch
+          [ Accel.onData Accel.defaultConfig AccelSample
+          , Compass.onChange CompassChanged
+          , Dictation.onResult DictationResult
+          ]
+  """
+
+  test "detects tier 1 watch project capabilities from module imports" do
+    assert {:ok, %{"elm_introspect" => introspect}} =
+             Ide.Debugger.ElmIntrospect.analyze_source(@watch_tier1, "Main.elm")
+
+    caps = ProjectCapabilities.infer_introspect(introspect, "watch")
+
+    assert MapSet.member?(caps, "watch_accel")
+    assert MapSet.member?(caps, "compass")
+    assert MapSet.member?(caps, "dictation")
+  end
+
   test "does not infer watch capabilities from phone sources" do
     assert {:ok, %{"elm_introspect" => introspect}} =
              Ide.Debugger.ElmIntrospect.analyze_source(@phone_geolocation, "CompanionApp.elm")

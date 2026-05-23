@@ -127,6 +127,33 @@ defmodule IdeWeb.EmulatorControllerTest do
     end)
   end
 
+  test "control validates accel protocol payload length", %{conn: conn} do
+    EmulatorSessionEnv.run(fn ->
+      assert {:ok, info} =
+               EmulatorLaunch.launch(project_slug: "wf", platform: "basalt", artifact_path: nil)
+
+      assert %{"error" => ":invalid_qemu_payload"} =
+               conn
+               |> post(~p"/api/emulator/#{info.id}/control", %{
+                 "protocol" => 11,
+                 "payload" => [0, 0, 0, 0, 0]
+               })
+               |> json_response(400)
+
+      assert %{"error" => error} =
+               conn
+               |> post(~p"/api/emulator/#{info.id}/control", %{
+                 "protocol" => 11,
+                 "payload" => [0, 0, 0, 0, 3, 232]
+               })
+               |> json_response(422)
+
+      assert error =~ "protocol router"
+
+      assert :ok = Emulator.kill(info.id)
+    end)
+  end
+
   test "launch reports missing emulator runtime before packaging", %{conn: conn} do
     previous_session_config = Application.get_env(:ide, Ide.Emulator.Session)
 

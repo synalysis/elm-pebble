@@ -18,7 +18,7 @@ module Pebble.Companion.Timeline exposing
 
 # Commands
 
-@docs getToken, insertPin, deletePin
+@docs getToken, insertPin, deletePin, setupToken, setupCommands
 
 # Subscriptions
 
@@ -75,11 +75,15 @@ onCommands toMsg =
     Platform.subscribe (handlerCommands toMsg)
 
 
+{-| Register the timeline token platform handler with the companion bridge.
+-}
 setupToken : Cmd msg
 setupToken =
     Platform.setup timelineTokenInterest
 
 
+{-| Register the timeline command platform handler with the companion bridge.
+-}
 setupCommands : Cmd msg
 setupCommands =
     Platform.setup timelineCommandInterest

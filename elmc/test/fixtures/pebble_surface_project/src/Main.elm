@@ -2,8 +2,12 @@ module Main exposing (coveredSurfaceFunctions, main)
 
 import Json.Decode as Decode
 import Pebble.Accel as PebbleAccel
+import Pebble.AppFocus as PebbleAppFocus
 import Pebble.Button as PebbleButton
 import Pebble.Cmd as PebbleCmd
+import Pebble.Compass as PebbleCompass
+import Pebble.DataLog as PebbleDataLog
+import Pebble.Dictation as PebbleDictation
 import Pebble.Events as PebbleEvents
 import Pebble.Frame as PebbleFrame
 import Pebble.Health as PebbleHealth
@@ -64,6 +68,11 @@ type Msg
     | GotHealthSum Int
     | GotHealthAccessible Bool
     | HealthEvent PebbleHealth.Event
+    | AppFocusChanged PebbleAppFocus.State
+    | CompassChanged PebbleCompass.Heading
+    | GotCompassHeading (Result PebbleCompass.Error PebbleCompass.Heading)
+    | DictationStatus PebbleDictation.Status
+    | DictationResult (Result PebbleDictation.Error String)
 
 
 coveredSurfaceFunctions : List String
@@ -71,6 +80,15 @@ coveredSurfaceFunctions =
     [ "Pebble.Accel.defaultConfig"
     , "Pebble.Accel.onData"
     , "Pebble.Accel.onTap"
+    , "Pebble.AppFocus.onChange"
+    , "Pebble.Compass.current"
+    , "Pebble.Compass.onChange"
+    , "Pebble.DataLog.logBytes"
+    , "Pebble.DataLog.logInt32"
+    , "Pebble.Dictation.onResult"
+    , "Pebble.Dictation.onStatus"
+    , "Pebble.Dictation.start"
+    , "Pebble.Dictation.stop"
     , "Pebble.Button.on"
     , "Pebble.Button.onLongPress"
     , "Pebble.Button.onPress"
@@ -115,6 +133,7 @@ coveredSurfaceFunctions =
     , "Pebble.Vibes.cancel"
     , "Pebble.Vibes.doublePulse"
     , "Pebble.Vibes.longPulse"
+    , "Pebble.Vibes.pattern"
     , "Pebble.Vibes.shortPulse"
     , "Pebble.Wakeup.cancel"
     , "Pebble.Wakeup.scheduleAfterSeconds"
@@ -130,6 +149,13 @@ parseHourFromTimeString value =
         |> String.left 2
         |> String.toInt
         |> Maybe.withDefault 0
+
+
+highRateAccelConfig : PebbleAccel.Config
+highRateAccelConfig =
+    { samplesPerUpdate = 2
+    , samplingRate = PebbleAccel.Hz100
+    }
 
 
 init : PebblePlatform.LaunchContext -> ( Model, Cmd Msg )
@@ -171,6 +197,12 @@ init launchContext =
         , PebbleVibes.shortPulse
         , PebbleVibes.longPulse
         , PebbleVibes.doublePulse
+        , PebbleVibes.pattern [ 100, 50, 100 ]
+        , PebbleDataLog.logBytes (PebbleDataLog.Tag 42) [ 1, 2, 3 ]
+        , PebbleDataLog.logInt32 (PebbleDataLog.Tag 43) 9001
+        , PebbleCompass.current GotCompassHeading
+        , PebbleDictation.start
+        , PebbleDictation.stop
         , PebbleWakeup.scheduleAfterSeconds 60
         , PebbleWakeup.cancel 1
         , PebbleLog.infoCode 101
@@ -299,6 +331,41 @@ update msg model =
             in
             ( model, Cmd.none )
 
+        AppFocusChanged state ->
+            let
+                _ =
+                    state
+            in
+            ( model, Cmd.none )
+
+        CompassChanged heading ->
+            let
+                _ =
+                    heading
+            in
+            ( model, Cmd.none )
+
+        GotCompassHeading result ->
+            let
+                _ =
+                    result
+            in
+            ( model, Cmd.none )
+
+        DictationStatus status ->
+            let
+                _ =
+                    status
+            in
+            ( model, Cmd.none )
+
+        DictationResult result ->
+            let
+                _ =
+                    result
+            in
+            ( model, Cmd.none )
+
         GotClockStyle24h _ ->
             ( model, Cmd.none )
 
@@ -341,7 +408,11 @@ subscriptions _ =
         , PebbleButton.on PebbleButton.Up PebbleButton.Pressed UpPressed
         , PebbleButton.on PebbleButton.Up PebbleButton.Released UpReleased
         , PebbleButton.onRelease PebbleButton.Up UpReleased
-        , PebbleAccel.onData PebbleAccel.defaultConfig AccelData
+        , PebbleAccel.onData highRateAccelConfig AccelData
+        , PebbleAppFocus.onChange AppFocusChanged
+        , PebbleCompass.onChange CompassChanged
+        , PebbleDictation.onStatus DictationStatus
+        , PebbleDictation.onResult DictationResult
         , PebbleHealth.onEvent HealthEvent
         ]
 

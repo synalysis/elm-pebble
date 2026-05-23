@@ -29,12 +29,22 @@ defmodule Ide.SimulatorCapabilities.Detect do
     getCurrentTimeString
   )
 
+  @watch_module_caps %{
+    "watch_accel" => "Accel",
+    "watch_compass" => "Compass",
+    "watch_app_focus" => "AppFocus",
+    "watch_dictation" => "Dictation",
+    "watch_data_log" => "DataLog",
+    "watch_vibes" => "Vibes"
+  }
+
   @spec watch_caps(Types.elm_introspect() | nil) :: MapSet.t(String.t())
   def watch_caps(introspect) when is_map(introspect) do
     MapSet.new()
     |> maybe_put("watch_battery", watch_battery?(introspect))
     |> maybe_put("watch_connection", watch_connection?(introspect))
     |> maybe_put("watch_time", watch_time?(introspect))
+    |> add_watch_module_caps(introspect)
   end
 
   def watch_caps(_), do: MapSet.new()
@@ -57,6 +67,45 @@ defmodule Ide.SimulatorCapabilities.Detect do
   end
 
   def companion_caps(_), do: MapSet.new()
+
+  @spec add_watch_module_caps(MapSet.t(String.t()), Types.elm_introspect()) :: MapSet.t(String.t())
+  defp add_watch_module_caps(set, introspect) do
+    Enum.reduce(@watch_module_caps, set, fn {cap, module_name}, acc ->
+      maybe_put(acc, cap, watch_module?(introspect, module_name))
+    end)
+  end
+
+  @spec watch_module?(Types.elm_introspect(), String.t()) :: boolean()
+  defp watch_module?(introspect, "Vibes" = module_name) do
+    imported_module?(introspect, "Pebble." <> module_name) or
+      imported_module?(introspect, module_name) or
+      Enum.any?(cmd_calls(introspect), &vibes_pattern_call?/1) or
+      Enum.any?(cmd_calls(introspect), &watch_module_call?(&1, module_name)) or
+      Enum.any?(subscription_calls(introspect), &watch_module_call?(&1, module_name))
+  end
+
+  defp watch_module?(introspect, module_name) do
+    imported_module?(introspect, "Pebble." <> module_name) or
+      imported_module?(introspect, module_name) or
+      Enum.any?(cmd_calls(introspect), &watch_module_call?(&1, module_name)) or
+      Enum.any?(subscription_calls(introspect), &watch_module_call?(&1, module_name))
+  end
+
+  @spec watch_module_call?(map(), String.t()) :: boolean()
+  defp watch_module_call?(row, module_name) do
+    target = call_target(row)
+    name = call_name(row)
+
+    String.contains?(target, "Pebble." <> module_name) or
+      String.contains?(target, "." <> module_name <> ".") or
+      String.starts_with?(target, module_name <> ".") or
+      (name in ["onData", "onTap"] and module_name == "Accel")
+  end
+
+  @spec vibes_pattern_call?(map()) :: boolean()
+  defp vibes_pattern_call?(row) do
+    call_name(row) == "pattern" and watch_module_call?(row, "Vibes")
+  end
 
   @spec watch_battery?(Types.elm_introspect()) :: boolean()
   defp watch_battery?(introspect) do

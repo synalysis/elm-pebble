@@ -10,7 +10,7 @@ This matrix tracks the app-focused subset for Foundation, Graphics, and User Int
 | AppMessage (phone bridge) | `Companion.Watch` | implemented (typed protocol) | command encoding + dispatch tag/value hidden behind protocol helpers |
 | Event Service (tick) | `Pebble.Events` | implemented | subscription bitmask |
 | Button input | `Pebble.Button` | implemented | subscription bitmask + typed button/event selectors |
-| Accelerometer | `Pebble.Accel` | implemented | subscription bitmask + typed sample dispatch |
+| Accelerometer | `Pebble.Accel` | implemented | subscription bitmask + typed sample dispatch; compile-time `Config` → C sampling defines |
 | Frame loop | `Pebble.Frame` | implemented | subscription bitmask + typed frame dispatch |
 | Event Service (battery/connection) | `Pebble.System` | implemented | subscription bitmask |
 | Storage (watch int/string) | `Pebble.Storage` | implemented | command encoding |
@@ -35,7 +35,11 @@ This matrix tracks the app-focused subset for Foundation, Graphics, and User Int
 | C area | Elm module(s) | Status | Interop |
 | --- | --- | --- | --- |
 | Clicks / button events | `Pebble.Events` | implemented | subscription bitmask |
-| Vibes | `Pebble.Vibes` | implemented | command encoding |
+| Vibes | `Pebble.Vibes` | implemented | command encoding (short/long/double pulse + custom patterns) |
+| Data logging | `Pebble.DataLog` | implemented | one-shot command encoding (`logBytes`, `logInt32`) |
+| App focus | `Pebble.AppFocus` | implemented | subscription bitmask + typed state dispatch |
+| Compass | `Pebble.Compass` | implemented | peek command + subscription; `LaunchContext.hasCompass` gating |
+| Dictation | `Pebble.Dictation` | implemented | start/stop commands + status/result subscriptions |
 | Light / backlight | `Pebble.Light` | implemented | command encoding |
 | Window/Layer retained model | `Pebble.Ui` | implemented | virtual top window/layer |
 

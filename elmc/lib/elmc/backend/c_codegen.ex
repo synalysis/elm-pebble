@@ -7558,6 +7558,42 @@ defmodule Elmc.Backend.CCodegen do
   defp special_value_from_target("Elm.Kernel.PebbleWatch.vibesDoublePulse", _args),
     do: %{op: :int_literal, value: command_kind(:vibes_double_pulse)}
 
+  defp special_value_from_target("Pebble.Vibes.pattern", [segments]),
+    do: encoded_cmd_expr(command_kind(:vibes_custom_pattern), [segments], 1)
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.vibesCustomPattern", [segments]),
+    do: encoded_cmd_expr(command_kind(:vibes_custom_pattern), [segments], 1)
+
+  defp special_value_from_target("Pebble.DataLog.logBytes", [tag, bytes]),
+    do: encoded_cmd_expr(command_kind(:data_log_bytes), [tag, bytes], 2)
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.dataLogBytes", [tag, bytes]),
+    do: encoded_cmd_expr(command_kind(:data_log_bytes), [tag, bytes], 2)
+
+  defp special_value_from_target("Pebble.DataLog.logInt32", [tag, value]),
+    do: encoded_cmd_expr(command_kind(:data_log_int32), [tag, value], 2)
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.dataLogInt32", [tag, value]),
+    do: encoded_cmd_expr(command_kind(:data_log_int32), [tag, value], 2)
+
+  defp special_value_from_target("Pebble.Compass.current", [to_msg]),
+    do: encoded_cmd_expr(command_kind(:compass_peek), [constructor_tag_expr(to_msg)], 1)
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.compassCurrent", [to_msg]),
+    do: encoded_cmd_expr(command_kind(:compass_peek), [constructor_tag_expr(to_msg)], 1)
+
+  defp special_value_from_target("Pebble.Dictation.start", _args),
+    do: %{op: :int_literal, value: command_kind(:dictation_start)}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.dictationStart", _args),
+    do: %{op: :int_literal, value: command_kind(:dictation_start)}
+
+  defp special_value_from_target("Pebble.Dictation.stop", _args),
+    do: %{op: :int_literal, value: command_kind(:dictation_stop)}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.dictationStop", _args),
+    do: %{op: :int_literal, value: command_kind(:dictation_stop)}
+
   defp special_value_from_target("Pebble.Events.onSecondChange", _args),
     do: %{op: :int_literal, value: 1}
 
@@ -7683,6 +7719,30 @@ defmodule Elmc.Backend.CCodegen do
 
   defp special_value_from_target("Elm.Kernel.PebbleWatch.onHealthEvent", _args),
     do: %{op: :int_literal, value: 2_147_483_648}
+
+  defp special_value_from_target("Pebble.AppFocus.onChange", _args),
+    do: %{op: :int_literal, value: 524_288}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.onAppFocusChange", _args),
+    do: %{op: :int_literal, value: 524_288}
+
+  defp special_value_from_target("Pebble.Compass.onChange", _args),
+    do: %{op: :int_literal, value: 1_048_576}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.onCompassChange", _args),
+    do: %{op: :int_literal, value: 1_048_576}
+
+  defp special_value_from_target("Pebble.Dictation.onStatus", _args),
+    do: %{op: :int_literal, value: 2_097_152}
+
+  defp special_value_from_target("Pebble.Dictation.onResult", _args),
+    do: %{op: :int_literal, value: 2_097_152}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.onDictationStatus", _args),
+    do: %{op: :int_literal, value: 2_097_152}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.onDictationResult", _args),
+    do: %{op: :int_literal, value: 2_097_152}
 
   defp special_value_from_target("Companion.Watch.onPhoneToWatch", _args),
     do: %{op: :int_literal, value: 4096}
@@ -9304,6 +9364,14 @@ defmodule Elmc.Backend.CCodegen do
       "Elm.Kernel.PebbleWatch.onBatteryChange" -> 32
       "Elm.Kernel.PebbleWatch.onConnectionChange" -> 64
       "Elm.Kernel.PebbleWatch.onHealthEvent" -> 2_147_483_648
+      "Pebble.AppFocus.onChange" -> 524_288
+      "Elm.Kernel.PebbleWatch.onAppFocusChange" -> 524_288
+      "Pebble.Compass.onChange" -> 1_048_576
+      "Elm.Kernel.PebbleWatch.onCompassChange" -> 1_048_576
+      "Pebble.Dictation.onStatus" -> 2_097_152
+      "Pebble.Dictation.onResult" -> 2_097_152
+      "Elm.Kernel.PebbleWatch.onDictationStatus" -> 2_097_152
+      "Elm.Kernel.PebbleWatch.onDictationResult" -> 2_097_152
       "Elm.Kernel.PebbleWatch.onFrame" -> 8192
       "Elm.Kernel.PebbleWatch.onButtonUp" -> 2
       "Elm.Kernel.PebbleWatch.onButtonSelect" -> 4

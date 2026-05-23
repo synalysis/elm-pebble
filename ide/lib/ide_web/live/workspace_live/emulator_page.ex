@@ -2,6 +2,8 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   @moduledoc false
   use IdeWeb, :html
 
+  import IdeWeb.WatchInteractives
+
   alias Ide.Projects.Project
   alias Ide.WatchModels
   alias Phoenix.LiveView.Rendered
@@ -173,6 +175,13 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               debugger_state={@debugger_state}
               mode={:emulator}
               group_columns={1}
+            />
+            <.watch_interactives_panel
+              id="embedded-emulator-watch-interactives"
+              project={@project}
+              debugger_state={@debugger_state}
+              mode={:emulator}
+              running={true}
             />
             <div class="rounded bg-white p-3 text-xs text-zinc-700">
               <button
@@ -388,6 +397,13 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               debugger_state={@debugger_state}
               mode={:emulator}
               group_columns={1}
+            />
+            <.watch_interactives_panel
+              id="external-emulator-watch-interactives"
+              project={@project}
+              debugger_state={@debugger_state}
+              mode={:emulator}
+              running={true}
             />
           </div>
         </div>

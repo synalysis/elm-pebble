@@ -13,7 +13,7 @@ module Pebble.Companion.Notifications exposing
 
 # Commands
 
-@docs current
+@docs current, setup
 
 # Subscriptions
 
@@ -54,6 +54,8 @@ onNotificationStatus toMsg =
     Platform.subscribe (handler toMsg)
 
 
+{-| Register this platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup notificationsInterest

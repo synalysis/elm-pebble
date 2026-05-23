@@ -5,7 +5,9 @@ const QEMU = {
   battery: 5,
   button: 8,
   timeFormat: 9,
-  timelinePeek: 10
+  timelinePeek: 10,
+  accel: 11,
+  compass: 12
 }
 const CONFIG_RETURN_PATH = "/api/emulator/config-return"
 const MAX_LOG_LINES = 300
@@ -46,6 +48,7 @@ const persistedStateFields = [
   "suppressedSystemLogFrames",
   "sessionEnded",
   "phoneBridgeActive",
+  "dataLogEntries",
   "rfb",
   "rfbCanvas",
   "vncConnecting",
@@ -76,6 +79,7 @@ function defaultEmulatorState(key) {
     suppressedSystemLogFrames: 0,
     sessionEnded: false,
     phoneBridgeActive: false,
+    dataLogEntries: [],
     rfb: null,
     rfbCanvas: null,
     vncConnecting: false,
@@ -157,6 +161,7 @@ export class EmbeddedEmulatorHost {
       if (this.status && this.currentStatus) this.status.textContent = this.currentStatus
       this.renderLog()
       this.renderStorage()
+      this.renderDataLog()
       this.updateControlButtons()
     }
     this.handlePageVisible = () => this.ensureVncAttached()
@@ -185,6 +190,7 @@ export class EmbeddedEmulatorHost {
     this.storageNewKey = this.el.querySelector("[data-emulator-storage-new-key]")
     this.storageNewType = this.el.querySelector("[data-emulator-storage-new-type]")
     this.storageNewValue = this.el.querySelector("[data-emulator-storage-new-value]")
+    this.dataLogRows = this.el.querySelector("[data-emulator-data-log-rows]")
     this.launchButton?.addEventListener("click", () => this.toggleLaunch())
     this.installButton?.addEventListener("click", () => this.install())
     this.preferencesButton?.addEventListener("click", () => this.loadCompanionPreferences())
@@ -201,6 +207,7 @@ export class EmbeddedEmulatorHost {
     this.bindEmulatorButtons()
 
     this.el.querySelector("[data-emulator-tap]")?.addEventListener("click", () => this.sendQemu(QEMU.tap, [0, 1]))
+    this.el.querySelector("[data-emulator-compass-send]")?.addEventListener("click", () => this.sendCompassSample())
     this.state.listeners.add(this.syncStateToDom)
     window.addEventListener("focus", this.handlePageVisible)
     document.addEventListener("visibilitychange", this.handlePageVisible)
@@ -228,6 +235,7 @@ export class EmbeddedEmulatorHost {
     }
     this.renderLog()
     this.renderStorage()
+    this.renderDataLog()
     this.bindEmulatorButtons()
     this.updateControlButtons()
     this.applyCanvasSize()
@@ -754,6 +762,9 @@ export class EmbeddedEmulatorHost {
           dataLogging: endpoint === ENDPOINT_DATA_LOGGING ? this.describeDataLoggingPayload(payload) : null
         })
         // #endregion
+        if (endpoint === ENDPOINT_DATA_LOGGING) {
+          this.recordDataLogEntry(this.describeDataLoggingPayload(payload))
+        }
       }
     }
   }
@@ -808,6 +819,28 @@ export class EmbeddedEmulatorHost {
     this.sendQemu(QEMU.battery, [Math.max(0, Math.min(100, percent || 0)), charging ? 1 : 0])
   }
 
+  signedInt16Bytes(value) {
+    const clamped = Math.max(-32768, Math.min(32767, value | 0))
+    const unsigned = clamped < 0 ? clamped + 65536 : clamped
+    return [(unsigned >> 8) & 0xff, unsigned & 0xff]
+  }
+
+  sendAccelSample(x, y, z) {
+    const payload = [
+      ...this.signedInt16Bytes(x),
+      ...this.signedInt16Bytes(y),
+      ...this.signedInt16Bytes(z)
+    ]
+    this.sendQemu(QEMU.accel, payload)
+  }
+
+  sendCompassSample(settings = this.simulatorSettings || {}) {
+    const degrees = Math.max(0, Math.min(360, Number(settings.compass_heading_deg ?? 0)))
+    const valid = settings.compass_valid ? 1 : 0
+    const degInt = Math.round(degrees)
+    this.sendQemu(QEMU.compass, [(degInt >> 8) & 0xff, degInt & 0xff, valid])
+  }
+
   applySimulatorSettings(settings = {}) {
     this.simulatorSettings = settings
 
@@ -825,6 +858,10 @@ export class EmbeddedEmulatorHost {
 
     if (settings.timeline_peek != null) {
       this.sendQemu(QEMU.timelinePeek, [settings.timeline_peek ? 1 : 0])
+    }
+
+    if (settings.compass_heading_deg != null || settings.compass_valid != null) {
+      this.sendCompassSample(settings)
     }
 
     this.sendSimulatorSettingsToPhoneBridge()
@@ -1358,6 +1395,40 @@ export class EmbeddedEmulatorHost {
 
     this.storageRows.replaceChildren(...entries.map(entry => this.storageRow(entry)))
     this.updateControlButtons()
+  }
+
+  recordDataLogEntry(entry) {
+    if (!entry || entry.payloadPrefix) return
+    this.dataLogEntries = [{...entry, recordedAt: Date.now()}, ...this.dataLogEntries].slice(0, 50)
+    this.renderDataLog()
+  }
+
+  renderDataLog() {
+    if (!this.dataLogRows) {
+      this.dataLogRows = this.el.querySelector("[data-emulator-data-log-rows]")
+    }
+    if (!this.dataLogRows) return
+
+    if (this.dataLogEntries.length === 0) {
+      this.dataLogRows.innerHTML = `<tr data-emulator-data-log-empty><td colspan="3" class="px-2 py-2 text-zinc-500">No data logging frames yet.</td></tr>`
+      return
+    }
+
+    this.dataLogRows.replaceChildren(...this.dataLogEntries.map(entry => this.dataLogRow(entry)))
+  }
+
+  dataLogRow(entry) {
+    const row = document.createElement("tr")
+    row.className = "border-b border-zinc-100 last:border-0"
+    row.innerHTML = `
+      <td class="px-2 py-1 font-mono text-zinc-800"></td>
+      <td class="px-2 py-1 text-zinc-700"></td>
+      <td class="px-2 py-1 text-zinc-700"></td>
+    `
+    row.children[0].textContent = entry.tagHex || "—"
+    row.children[1].textContent = String(entry.itemType ?? "—")
+    row.children[2].textContent = String(entry.itemSize ?? "—")
+    return row
   }
 
   storageRow(entry) {

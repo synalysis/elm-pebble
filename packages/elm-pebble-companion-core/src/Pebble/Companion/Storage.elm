@@ -17,7 +17,7 @@ module Pebble.Companion.Storage exposing
 
 # Commands
 
-@docs set, get, remove, clear
+@docs set, get, remove, clear, setup
 
 # Subscriptions
 
@@ -112,6 +112,8 @@ onStorage toMsg =
     Platform.subscribe (handler toMsg)
 
 
+{-| Register the storage platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup storageInterest

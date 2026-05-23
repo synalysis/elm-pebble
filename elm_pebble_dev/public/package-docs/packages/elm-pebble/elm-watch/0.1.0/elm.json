@@ -7,8 +7,12 @@
   "elm-version": "0.19.0 <= v < 0.20.0",
   "exposed-modules": [
     "Pebble.Accel",
+    "Pebble.AppFocus",
     "Pebble.Button",
     "Pebble.Cmd",
+    "Pebble.Compass",
+    "Pebble.DataLog",
+    "Pebble.Dictation",
     "Pebble.Events",
     "Pebble.Frame",
     "Pebble.Game.Collision",

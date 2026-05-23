@@ -1325,6 +1325,46 @@ defmodule Elmc.PebbleShimTest do
     assert draw_feature?(header, "FILL_RADIAL")
   end
 
+  test "accel config from Pebble.Accel.onData emits compile-time sampling defines" do
+    source_fixture = Path.expand("fixtures/pebble_surface_project", __DIR__)
+    project_dir = Path.expand("tmp/pebble_accel_config_project", __DIR__)
+    out_dir = Path.expand("tmp/pebble_accel_config_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
+    assert String.contains?(header, "#define ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE 2")
+    assert String.contains?(header, "#define ELMC_PEBBLE_ACCEL_SAMPLING_HZ 100")
+  end
+
+  test "tier 1 watch APIs enable generated command and subscription feature flags" do
+    source_fixture = Path.expand("fixtures/pebble_surface_project", __DIR__)
+    project_dir = Path.expand("tmp/pebble_tier1_feature_project", __DIR__)
+    out_dir = Path.expand("tmp/pebble_tier1_feature_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
+
+    assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN 1")
+    assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES 1")
+    assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_INT32 1")
+    assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK 1")
+    assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_CMD_DICTATION_START 1")
+    assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_APP_FOCUS_EVENTS 1")
+    assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_COMPASS_EVENTS 1")
+    assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_DICTATION_EVENTS 1")
+    assert String.contains?(header, "#define ELMC_PEBBLE_SUB_APP_FOCUS (1 << 19)")
+    assert String.contains?(header, "#define ELMC_PEBBLE_SUB_COMPASS (1 << 20)")
+    assert String.contains?(header, "#define ELMC_PEBBLE_SUB_DICTATION (1 << 21)")
+  end
+
   defp available_c_compilers do
     ["cc", "gcc", "clang"]
     |> Enum.map(fn name -> {name, System.find_executable(name)} end)

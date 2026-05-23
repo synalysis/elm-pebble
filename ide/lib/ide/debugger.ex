@@ -315,7 +315,13 @@ defmodule Ide.Debugger do
       "latitude" => 48.137154,
       "longitude" => 11.576124,
       "accuracy" => 25.0,
-      "timeline_peek" => false
+      "timeline_peek" => false,
+      "compass_heading_deg" => 0,
+      "compass_valid" => true,
+      "app_in_focus" => true,
+      "dictation_transcript" => "",
+      "dictation_error" => "",
+      "vibe_pattern_ms" => []
     }
   end
 
@@ -1031,7 +1037,11 @@ defmodule Ide.Debugger do
       contains_any?(normalized, ["on_year_change", "onyearchange"]) or
       contains_any?(normalized, ["on_battery_change", "onbatterychange"]) or
       contains_any?(normalized, ["on_connection_change", "onconnectionchange"]) or
-      contains_any?(normalized, ["on_second_change", "onsecondchange"])
+      contains_any?(normalized, ["on_second_change", "onsecondchange"]) or
+      contains_any?(normalized, ["on_compass_change", "oncompasschange"]) or
+      contains_any?(normalized, ["on_app_focus_change", "onappfocuschange"]) or
+      contains_any?(normalized, ["on_dictation_status", "ondictationstatus"]) or
+      contains_any?(normalized, ["on_dictation_result", "ondictationresult"])
   end
 
   defp debugger_subscription_simulated_payload_trigger?(_trigger), do: false
@@ -5507,6 +5517,42 @@ defmodule Ide.Debugger do
         String.contains?(t, "connectionchange") or String.contains?(t, "onconnection") ->
           "#{message_text} #{subscription_connection_status(state, target)}"
 
+        String.contains?(t, "compasschange") or String.contains?(t, "oncompass") ->
+          compass_payload = subscription_compass_heading(state, target)
+
+          if subscription_message_arity(state, target, message_text) == 1 do
+            "#{message_text} #{Jason.encode!(compass_payload)}"
+          else
+            message
+          end
+
+        String.contains?(t, "appfocuschange") or String.contains?(t, "onappfocus") ->
+          focus_state = subscription_app_focus_state(state, target)
+
+          if subscription_message_arity(state, target, message_text) == 1 do
+            "#{message_text} #{focus_state}"
+          else
+            message
+          end
+
+        String.contains?(t, "dictationstatus") or String.contains?(t, "ondictationstatus") ->
+          status = subscription_dictation_status(state, target)
+
+          if subscription_message_arity(state, target, message_text) == 1 do
+            "#{message_text} #{status}"
+          else
+            message
+          end
+
+        String.contains?(t, "dictationresult") or String.contains?(t, "ondictationresult") ->
+          result_payload = subscription_dictation_result_payload(state, target)
+
+          if subscription_message_arity(state, target, message_text) == 1 do
+            "#{message_text} #{Jason.encode!(result_payload)}"
+          else
+            message
+          end
+
         true ->
           message
       end
@@ -5516,6 +5562,53 @@ defmodule Ide.Debugger do
   defp maybe_attach_subscription_payload(_state, _target, message, _trigger_like)
        when is_binary(message),
        do: message
+
+  @spec subscription_compass_heading(runtime_state(), Types.surface_target()) :: map()
+  defp subscription_compass_heading(state, _target) when is_map(state) do
+    settings = simulator_settings_from_state(state)
+
+    %{
+      "degrees" => Map.get(settings, "compass_heading_deg", 0) / 1.0,
+      "isValid" => Map.get(settings, "compass_valid", true) == true
+    }
+  end
+
+  @spec subscription_app_focus_state(runtime_state(), Types.surface_target()) :: String.t()
+  defp subscription_app_focus_state(state, _target) when is_map(state) do
+    settings = simulator_settings_from_state(state)
+
+    if Map.get(settings, "app_in_focus", true) == true, do: "InFocus", else: "OutOfFocus"
+  end
+
+  @spec subscription_dictation_status(runtime_state(), Types.surface_target()) :: String.t()
+  defp subscription_dictation_status(state, _target) when is_map(state) do
+    settings = simulator_settings_from_state(state)
+
+    case blank_string?(Map.get(settings, "dictation_error")) do
+      true -> "Finished"
+      false -> "Recognizing"
+    end
+  end
+
+  @spec subscription_dictation_result_payload(runtime_state(), Types.surface_target()) :: map()
+  defp subscription_dictation_result_payload(state, _target) when is_map(state) do
+    settings = simulator_settings_from_state(state)
+
+    case blank_string?(Map.get(settings, "dictation_error")) do
+      true ->
+        %{"ctor" => "Ok", "args" => [Map.get(settings, "dictation_transcript", "")]}
+
+      false ->
+        %{
+          "ctor" => "Err",
+          "args" => [%{"ctor" => "Failed", "args" => [Map.get(settings, "dictation_error", "")]}]
+        }
+    end
+  end
+
+  @spec blank_string?(term()) :: boolean()
+  defp blank_string?(value) when is_binary(value), do: String.trim(value) == ""
+  defp blank_string?(_value), do: true
 
   @spec subscription_message_arity(runtime_state(), Types.surface_target(), String.t()) :: non_neg_integer()
   defp subscription_message_arity(state, target, message)
@@ -5709,7 +5802,26 @@ defmodule Ide.Debugger do
       "accuracy" =>
         normalize_float(map_value(settings, "accuracy"), defaults["accuracy"], 0.0, 100_000.0),
       "timeline_peek" =>
-        normalize_boolean(map_value(settings, "timeline_peek"), defaults["timeline_peek"])
+        normalize_boolean(map_value(settings, "timeline_peek"), defaults["timeline_peek"]),
+      "compass_heading_deg" =>
+        settings
+        |> map_value("compass_heading_deg")
+        |> normalize_integer(defaults["compass_heading_deg"])
+        |> min(360)
+        |> max(0),
+      "compass_valid" =>
+        normalize_boolean(map_value(settings, "compass_valid"), defaults["compass_valid"]),
+      "app_in_focus" =>
+        normalize_boolean(map_value(settings, "app_in_focus"), defaults["app_in_focus"]),
+      "dictation_transcript" =>
+        normalize_string(
+          map_value(settings, "dictation_transcript"),
+          defaults["dictation_transcript"]
+        ),
+      "dictation_error" =>
+        normalize_string(map_value(settings, "dictation_error"), defaults["dictation_error"]),
+      "vibe_pattern_ms" =>
+        normalize_json_list(map_value(settings, "vibe_pattern_ms"), defaults["vibe_pattern_ms"])
     }
   end
 

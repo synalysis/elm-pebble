@@ -19,7 +19,7 @@ module Pebble.Companion.Battery exposing
 
 # Commands
 
-@docs current
+@docs current, setup
 
 # Subscriptions
 
@@ -60,6 +60,8 @@ onBattery toMsg =
     Platform.subscribe (handler toMsg)
 
 
+{-| Register the battery platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup batteryInterest

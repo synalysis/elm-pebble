@@ -11,6 +11,15 @@ defmodule Ide.ProjectCapabilities.Detect do
 
   @health_api_commands ~w(value sumToday sum accessible onEvent)
 
+  @watch_module_caps %{
+    "watch_accel" => "Accel",
+    "watch_vibes" => "Vibes",
+    "dictation" => "Dictation",
+    "compass" => "Compass",
+    "data_log" => "DataLog",
+    "app_focus" => "AppFocus"
+  }
+
   @spec phone_caps(Types.elm_introspect()) :: MapSet.t(String.t())
   def phone_caps(introspect) do
     MapSet.new(cap_names(introspect))
@@ -29,7 +38,14 @@ defmodule Ide.ProjectCapabilities.Detect do
   end
 
   @spec watch_cap_names(Types.elm_introspect()) :: [String.t()]
-  defp watch_cap_names(introspect), do: cap_name_when(introspect, &health?/1, "health")
+  defp watch_cap_names(introspect) do
+    module_caps =
+      for {cap, module_name} <- @watch_module_caps,
+          watch_module?(introspect, module_name),
+          do: cap
+
+    module_caps ++ cap_name_when(introspect, &health?/1, "health")
+  end
 
   @spec location_cap_names(Types.elm_introspect()) :: [String.t()]
   defp location_cap_names(introspect), do: cap_name_when(introspect, &location?/1, "location")
@@ -55,6 +71,38 @@ defmodule Ide.ProjectCapabilities.Detect do
   def configurable?(introspect) when is_map(introspect) do
     Enum.any?(cmd_calls(introspect), &configuration_command?/1) or
       Enum.any?(subscription_calls(introspect), &configuration_subscription?/1)
+  end
+
+  @spec watch_module?(Types.elm_introspect(), String.t()) :: boolean()
+  defp watch_module?(introspect, module_name) when is_binary(module_name) do
+    imported_watch_module?(introspect, module_name) or
+      Enum.any?(cmd_calls(introspect), &watch_module_call?(&1, module_name)) or
+      Enum.any?(subscription_calls(introspect), &watch_module_call?(&1, module_name))
+  end
+
+  @spec imported_watch_module?(Types.elm_introspect(), String.t()) :: boolean()
+  defp imported_watch_module?(introspect, module_name) do
+    introspect
+    |> Map.get("imported_modules", [])
+    |> List.wrap()
+    |> Enum.any?(fn
+      imported when is_binary(imported) ->
+        imported == "Pebble." <> module_name or
+          imported == module_name or String.ends_with?(imported, "." <> module_name)
+
+      _ ->
+        false
+    end)
+  end
+
+  @spec watch_module_call?(map(), String.t()) :: boolean()
+  defp watch_module_call?(row, module_name) do
+    target = call_target(row)
+
+    String.contains?(target, "Pebble." <> module_name) or
+      String.contains?(target, "." <> module_name <> ".") or
+      String.starts_with?(target, module_name <> ".") or
+      task_source_module?(row, module_name)
   end
 
   @spec health?(Types.elm_introspect()) :: boolean()

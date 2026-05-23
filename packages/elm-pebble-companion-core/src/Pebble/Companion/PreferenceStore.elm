@@ -9,7 +9,7 @@ module Pebble.Companion.PreferenceStore exposing
 
 # Commands
 
-@docs get, set
+@docs get, set, setup
 
 # Subscriptions
 
@@ -59,6 +59,8 @@ onPreference toMsg =
     Platform.subscribe (handler toMsg)
 
 
+{-| Register this platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup preferencesInterest

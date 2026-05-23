@@ -34,7 +34,7 @@ module Pebble.Companion.Calendar exposing
 
 # Commands
 
-@docs current, upcoming
+@docs current, upcoming, setup, setupCurrent, setupUpcoming
 
 # Subscriptions
 
@@ -113,16 +113,22 @@ onUpcoming toMsg =
     Platform.subscribe (handlerUpcoming toMsg)
 
 
+{-| Register the calendar push platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup calendarPushInterest
 
 
+{-| Register the calendar current-event platform handler with the companion bridge.
+-}
 setupCurrent : Cmd msg
 setupCurrent =
     Platform.setup calendarCurrentInterest
 
 
+{-| Register the calendar upcoming-events platform handler with the companion bridge.
+-}
 setupUpcoming : Cmd msg
 setupUpcoming =
     Platform.setup calendarUpcomingInterest

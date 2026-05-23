@@ -52,6 +52,49 @@ defmodule Ide.SimulatorCapabilitiesTest do
     assert MapSet.member?(phone_caps, "geolocation")
   end
 
+  @tier1_watch """
+  module Main exposing (main)
+
+  import Pebble.Accel as Accel
+  import Pebble.AppFocus as AppFocus
+  import Pebble.Compass as Compass
+  import Pebble.DataLog as DataLog
+  import Pebble.Dictation as Dictation
+  import Pebble.Vibes as Vibes
+
+  subscriptions _ =
+      Sub.batch
+          [ Accel.onData Accel.defaultConfig AccelSample
+          , AppFocus.onChange FocusChanged
+          , Compass.onChange CompassChanged
+          , Dictation.onStatus DictationStatus
+          , Dictation.onResult DictationResult
+          ]
+  """
+
+  test "detects tier 1 watch simulator capabilities from imports" do
+    {:ok, watch} = Ide.Debugger.ElmIntrospect.analyze_source(@tier1_watch, "Main.elm")
+    caps = Detect.watch_caps(Map.fetch!(watch, "elm_introspect"))
+
+    assert MapSet.member?(caps, "watch_accel")
+    assert MapSet.member?(caps, "watch_compass")
+    assert MapSet.member?(caps, "watch_app_focus")
+    assert MapSet.member?(caps, "watch_dictation")
+    assert MapSet.member?(caps, "watch_data_log")
+    assert MapSet.member?(caps, "watch_vibes")
+  end
+
+  test "normalizes tier 1 simulator settings defaults" do
+    defaults = Ide.Debugger.default_simulator_settings()
+
+    assert defaults["compass_heading_deg"] == 0
+    assert defaults["compass_valid"] == true
+    assert defaults["app_in_focus"] == true
+    assert defaults["dictation_transcript"] == ""
+    assert defaults["dictation_error"] == ""
+    assert defaults["vibe_pattern_ms"] == []
+  end
+
   test "active groups hide unrelated companion settings for minimal watchface" do
     {:ok, watch} =
       Ide.Debugger.ElmIntrospect.analyze_source(

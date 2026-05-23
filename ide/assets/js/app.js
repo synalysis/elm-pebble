@@ -468,8 +468,9 @@ Hooks.PreserveRenderedDetails = {
   }
 }
 
-Hooks.DebuggerAccelPad = {
+Hooks.WatchAccelPad = {
   mounted() {
+    this.mode = this.el.dataset.mode || "debugger"
     this.dragging = false
     this.lastSentAt = 0
     this.svg = this.el.querySelector("svg")
@@ -477,6 +478,7 @@ Hooks.DebuggerAccelPad = {
     this.readout = this.el.closest("[data-copy-scope]")?.querySelector("[data-accel-readout]")
 
     this.onPointerDown = (event) => {
+      if (this.el.dataset.disabled === "true") return
       this.dragging = true
       this.svg?.setPointerCapture?.(event.pointerId)
       this.updateFromEvent(event, true)
@@ -531,14 +533,28 @@ Hooks.DebuggerAccelPad = {
     if (!forceSend && now - this.lastSentAt < 80) return
     this.lastSentAt = now
 
+    this.sendSample(x, y, z)
+  },
+
+  sendSample(x, y, z) {
+    if (this.mode === "emulator") {
+      const emulatorEl = this.el.closest('[phx-hook="EmbeddedEmulator"]')
+      if (emulatorEl?.__embeddedEmulatorHost?.sendAccelSample) {
+        emulatorEl.__embeddedEmulatorHost.sendAccelSample(x, y, z)
+      }
+      return
+    }
+
     this.pushEvent("debugger-inject-trigger", {
-      trigger: this.el.dataset.trigger,
-      target: this.el.dataset.target,
+      trigger: this.el.dataset.trigger || "on_accel_data",
+      target: this.el.dataset.target || "watch",
       message: this.el.dataset.message,
       message_value: {x, y, z}
     })
   }
 }
+
+Hooks.DebuggerAccelPad = Hooks.WatchAccelPad
 
 Hooks.AutoDismissFlash = {
   mounted() {
@@ -644,6 +660,7 @@ Hooks.CopyToClipboard = {
 Hooks.EmbeddedEmulator = {
   mounted() {
     this.host = new EmbeddedEmulatorHost(this)
+    this.el.__embeddedEmulatorHost = this.host
     this.host.mount()
   },
 
@@ -658,6 +675,7 @@ Hooks.EmbeddedEmulator = {
   },
 
   destroyed() {
+    if (this.el) delete this.el.__embeddedEmulatorHost
     if (this.host) this.host.destroy()
   }
 }

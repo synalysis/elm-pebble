@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include "elmc_emulator_build_flags.h"
 #include "elmc/c/elmc_pebble.h"
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 #include "generated/companion_protocol.h"
@@ -99,6 +100,39 @@ static inline void elmc_pebble_log_noop(int level, const char *format, ...) {
 }
 #undef APP_LOG
 #define APP_LOG(level, ...) elmc_pebble_log_noop(level, __VA_ARGS__)
+#endif
+
+#ifndef ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+#define ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 0
+#endif
+
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+#define ELMC_PEBBLE_STORAGE_LOG(level, fmt, ...) app_log(level, __FILE_NAME__, __LINE__, fmt, ##__VA_ARGS__)
+
+static void emulator_storage_snapshot_callback(void *data) {
+  (void)data;
+  for (uint32_t key = 0; key < 256; key++) {
+    if (!persist_exists(key)) {
+      continue;
+    }
+    int size = persist_get_size(key);
+    if (size <= 0) {
+      continue;
+    }
+    if (size == (int)sizeof(int32_t)) {
+      int32_t value = persist_read_int(key);
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read key=%lu value=%ld rc=0",
+              (unsigned long)key, (long)value);
+    } else {
+      char value[128] = "";
+      persist_read_string(key, value, sizeof(value));
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read_string key=%lu value=%s rc=0",
+              (unsigned long)key, value);
+    }
+  }
+}
+#else
+#define ELMC_PEBBLE_STORAGE_LOG(level, fmt, ...) do { } while (0)
 #endif
 
 #if defined(ELMC_PEBBLE_TRACE_FUNCTIONS)
@@ -230,11 +264,17 @@ enum {
 enum {
   ELMC_DEBUG_STORAGE_OP_WRITE = 1,
   ELMC_DEBUG_STORAGE_OP_DELETE = 2,
+  ELMC_DEBUG_STORAGE_OP_SNAPSHOT = 4,
 };
 
 enum {
   ELMC_DEBUG_STORAGE_TYPE_INT = 1,
   ELMC_DEBUG_STORAGE_TYPE_STRING = 2,
+};
+
+enum {
+  ELMC_DEBUG_SIMULATOR_KEY_COMPASS_HEADING = 0x454c4d10,
+  ELMC_DEBUG_SIMULATOR_KEY_DICTATION_TEXT = 0x454c4d11,
 };
 static int64_t s_last_render_request_ms = 0;
 static int s_render_sequence = 0;
@@ -249,6 +289,16 @@ static int32_t s_random_seed = 1722529;
 static bool s_pending_companion_request = false;
 static int s_pending_request_tag = 0;
 static int s_pending_request_value = 0;
+#endif
+#if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK
+static double s_simulator_compass_heading_degrees = 180.0;
+static bool s_simulator_compass_heading_valid = true;
+#endif
+#if ELMC_PEBBLE_FEATURE_DICTATION_EVENTS || ELMC_PEBBLE_FEATURE_CMD_DICTATION_START || ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP
+static char s_simulator_dictation_text[128] = "Hello";
+#ifdef PBL_DICTATION
+static DictationSession *s_dictation_session = NULL;
+#endif
 #endif
 // #region agent log
 static bool s_agent_after_companion_dispatch = false;
@@ -280,11 +330,38 @@ static bool send_companion_request(int request_tag, int request_value);
 static void flush_pending_companion_request(void);
 #endif
 
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && (ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS || ELMC_PEBBLE_FEATURE_DAY_EVENTS || ELMC_PEBBLE_FEATURE_MONTH_EVENTS || ELMC_PEBBLE_FEATURE_YEAR_EVENTS)
+static TimeUnits subscribed_time_units(void) {
+  TimeUnits units = 0;
+#if ELMC_PEBBLE_FEATURE_TICK_EVENTS
+  units |= SECOND_UNIT;
+#endif
+#if ELMC_PEBBLE_FEATURE_MINUTE_EVENTS
+  units |= MINUTE_UNIT;
+#endif
+#if ELMC_PEBBLE_FEATURE_HOUR_EVENTS
+  units |= HOUR_UNIT;
+#endif
+#if ELMC_PEBBLE_FEATURE_DAY_EVENTS
+  units |= DAY_UNIT;
+#endif
+#if ELMC_PEBBLE_FEATURE_MONTH_EVENTS
+  units |= MONTH_UNIT;
+#endif
+#if ELMC_PEBBLE_FEATURE_YEAR_EVENTS
+  units |= YEAR_UNIT;
+#endif
+  return units == 0 ? SECOND_UNIT : units;
+}
+#endif
+
 static GFont system_font_for_height(int64_t requested_height) {
   GFont font = NULL;
   if (requested_height <= 18) font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   if (!font && requested_height <= 28) font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   if (!font && requested_height <= 36) font = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
+  if (!font && requested_height <= 52) font = fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
+  if (!font) font = fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
   if (!font) font = s_font;
   if (!font) font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
   return font;
@@ -346,6 +423,138 @@ static HealthMetric health_metric_from_code(int64_t value) {
 static time_t health_time_from_seconds(int64_t seconds) {
   if (seconds < 0) return (time_t)0;
   return (time_t)seconds;
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK
+static double simulator_compass_heading_degrees(void) {
+  return s_simulator_compass_heading_valid ? s_simulator_compass_heading_degrees : 0.0;
+}
+
+static bool simulator_compass_heading_is_valid(void) {
+  return s_simulator_compass_heading_valid;
+}
+
+static void simulator_compass_set_heading(int32_t degrees, bool valid) {
+  if (degrees < 0) {
+    degrees = 0;
+  }
+  if (degrees >= 360) {
+    degrees = degrees % 360;
+  }
+  s_simulator_compass_heading_degrees = (double)degrees;
+  s_simulator_compass_heading_valid = valid;
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_DICTATION_EVENTS || ELMC_PEBBLE_FEATURE_CMD_DICTATION_START || ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP
+static void simulator_dictation_set_text(const char *text) {
+  if (!text) {
+    s_simulator_dictation_text[0] = '\0';
+    return;
+  }
+  strncpy(s_simulator_dictation_text, text, sizeof(s_simulator_dictation_text) - 1);
+  s_simulator_dictation_text[sizeof(s_simulator_dictation_text) - 1] = '\0';
+}
+
+static bool dictation_phone_connected(void) {
+  return connection_service_peek_pebble_app_connection();
+}
+
+static bool dictation_has_microphone(void) {
+#ifdef PBL_MICROPHONE
+  return true;
+#else
+  return false;
+#endif
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN || ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES
+static int parse_int_list(const char *text, int32_t *out_values, int max_values) {
+  if (!text || !out_values || max_values <= 0) {
+    return 0;
+  }
+
+  int count = 0;
+  const char *cursor = text;
+  while (*cursor && count < max_values) {
+    char *end = NULL;
+    long value = strtol(cursor, &end, 10);
+    if (end == cursor) {
+      break;
+    }
+    out_values[count++] = (int32_t)value;
+    if (*end == ',') {
+      cursor = end + 1;
+    } else {
+      break;
+    }
+  }
+  return count;
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_ACCEL_DATA_EVENTS
+static AccelSamplingRate accel_sampling_rate_from_hz(int hz) {
+  switch (hz) {
+    case 10:
+      return ACCEL_SAMPLING_10HZ;
+    case 50:
+      return ACCEL_SAMPLING_50HZ;
+    case 100:
+      return ACCEL_SAMPLING_100HZ;
+    case 25:
+    default:
+      return ACCEL_SAMPLING_25HZ;
+  }
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK
+static int dispatch_compass_current_result(int64_t target, double degrees, bool is_valid, int error_code) {
+  if (target <= 0) {
+    return -6;
+  }
+
+  if (is_valid) {
+    const char *names[] = {"degrees", "isValid"};
+    ElmcValue *values[2];
+    values[0] = elmc_new_float(degrees);
+    values[1] = elmc_new_bool(1);
+    if (!values[0] || !values[1]) {
+      if (values[0]) elmc_release(values[0]);
+      if (values[1]) elmc_release(values[1]);
+      return -2;
+    }
+    ElmcValue *heading = elmc_record_new(2, names, values);
+    elmc_release(values[0]);
+    elmc_release(values[1]);
+    if (!heading) {
+      return -2;
+    }
+    ElmcValue *result = elmc_result_ok(heading);
+    elmc_release(heading);
+    if (!result) {
+      return -2;
+    }
+    int rc = elmc_pebble_dispatch_tag_payload(&s_elm_app, target, result);
+    elmc_release(result);
+    return rc;
+  }
+
+  ElmcValue *error_value = elmc_new_int(error_code);
+  if (!error_value) {
+    return -2;
+  }
+  ElmcValue *result = elmc_result_err(error_value);
+  elmc_release(error_value);
+  if (!result) {
+    return -2;
+  }
+  int rc = elmc_pebble_dispatch_tag_payload(&s_elm_app, target, result);
+  elmc_release(result);
+  return rc;
 }
 #endif
 
@@ -440,7 +649,7 @@ static void apply_pending_cmd(void) {
       uint32_t key = (uint32_t)cmd.p0;
       int32_t value = (int32_t)cmd.p1;
       status_t status = persist_write_int(key, value);
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write key=%lu value=%ld status=%ld",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write key=%lu value=%ld status=%ld",
               (unsigned long)key, (long)value, (long)status);
       break;
     }
@@ -451,7 +660,7 @@ static void apply_pending_cmd(void) {
       int64_t target = cmd.p1;
       int32_t value = persist_read_int(key);
       int rc = target > 0 ? elmc_pebble_dispatch_tag_value(&s_elm_app, target, value) : -6;
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read key=%lu value=%ld rc=%d",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read key=%lu value=%ld rc=%d",
               (unsigned long)key, (long)value, rc);
       break;
     }
@@ -460,7 +669,7 @@ static void apply_pending_cmd(void) {
     case ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING: {
       uint32_t key = (uint32_t)cmd.p0;
       status_t status = persist_write_string(key, cmd.text);
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write_string key=%lu value=%s status=%ld",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_write_string key=%lu value=%s status=%ld",
               (unsigned long)key, cmd.text, (long)status);
       break;
     }
@@ -474,7 +683,7 @@ static void apply_pending_cmd(void) {
         persist_read_string(key, value, sizeof(value));
       }
       int rc = target > 0 ? elmc_pebble_dispatch_tag_string(&s_elm_app, target, value) : -6;
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read_string key=%lu value=%s rc=%d",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read_string key=%lu value=%s rc=%d",
               (unsigned long)key, value, rc);
       break;
     }
@@ -491,6 +700,7 @@ static void apply_pending_cmd(void) {
                    : elmc_pebble_dispatch_random_int(&s_elm_app, s_random_seed);
       ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "cmd random_generate target=%lld value=%ld rc=%d",
               (long long)target, (long)s_random_seed, rc);
+      (void)rc;
       break;
     }
 #endif
@@ -498,7 +708,7 @@ static void apply_pending_cmd(void) {
     case ELMC_PEBBLE_CMD_STORAGE_DELETE: {
       uint32_t key = (uint32_t)cmd.p0;
       status_t status = persist_delete(key);
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd storage_delete key=%lu status=%ld",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_delete key=%lu status=%ld",
               (unsigned long)key, (long)status);
       break;
     }
@@ -795,6 +1005,119 @@ static void apply_pending_cmd(void) {
       break;
     }
 #endif
+#if ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN
+    case ELMC_PEBBLE_CMD_VIBES_CUSTOM_PATTERN: {
+      int32_t segments[64];
+      int count = parse_int_list(cmd.text, segments, 64);
+      if (count > 0) {
+        vibes_enqueue_custom_pattern(segments, count);
+      }
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd vibes_custom_pattern count=%d", count);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES
+    case ELMC_PEBBLE_CMD_DATA_LOG_BYTES: {
+      int32_t bytes[64];
+      int count = parse_int_list(cmd.text, bytes, 64);
+      if (count > 0) {
+        uint8_t payload[64];
+        for (int i = 0; i < count; i++) {
+          int value = bytes[i];
+          if (value < 0) value = 0;
+          if (value > 255) value = 255;
+          payload[i] = (uint8_t)value;
+        }
+        DataLoggingSessionRef session =
+            data_logging_create((uint32_t)cmd.p0, DATA_LOGGING_BYTE_ARRAY, count, true);
+        if (session) {
+          data_logging_log(session, payload, count);
+          data_logging_finish(session);
+        }
+      }
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd data_log_bytes tag=%ld count=%d", (long)cmd.p0, count);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_INT32
+    case ELMC_PEBBLE_CMD_DATA_LOG_INT32: {
+      uint32_t payload = (uint32_t)cmd.p1;
+      DataLoggingSessionRef session =
+          data_logging_create((uint32_t)cmd.p0, DATA_LOGGING_UINT, 1, true);
+      if (session) {
+        data_logging_log(session, &payload, 1);
+        data_logging_finish(session);
+      }
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd data_log_int32 tag=%ld value=%ld", (long)cmd.p0, (long)cmd.p1);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK
+    case ELMC_PEBBLE_CMD_COMPASS_PEEK: {
+      double degrees = simulator_compass_heading_degrees();
+      bool is_valid = simulator_compass_heading_is_valid();
+#ifdef PBL_COMPASS
+      CompassHeadingData heading;
+      CompassStatus status = compass_service_peek(&heading);
+      if (status == CompassStatusAvailable) {
+        degrees = (double)heading.true_heading * 360.0 / TRIG_MAX_ANGLE;
+        is_valid = true;
+      } else if (status == CompassStatusDataInvalid) {
+        is_valid = false;
+      } else {
+        is_valid = false;
+      }
+#endif
+      int error_code = is_valid ? 0 : 1;
+      int rc = dispatch_compass_current_result(cmd.p0, degrees, is_valid, error_code);
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd compass_peek degrees=%ld valid=%d rc=%d",
+              (long)degrees, is_valid ? 1 : 0, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
+      }
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_DICTATION_START
+    case ELMC_PEBBLE_CMD_DICTATION_START: {
+      if (!dictation_has_microphone()) {
+        elmc_pebble_dispatch_dictation_result(&s_elm_app, 0, 0, NULL);
+      } else if (!dictation_phone_connected()) {
+        elmc_pebble_dispatch_dictation_result(&s_elm_app, 0, 1, NULL);
+      } else {
+#ifdef PBL_DICTATION
+        if (!s_dictation_session) {
+          s_dictation_session = dictation_session_create(30000, dictation_session_callback, NULL);
+        }
+        if (s_dictation_session) {
+          elmc_pebble_dispatch_dictation_status(&s_elm_app, 0);
+          dictation_session_start(s_dictation_session);
+        }
+#else
+        elmc_pebble_dispatch_dictation_status(&s_elm_app, 0);
+        elmc_pebble_dispatch_dictation_status(&s_elm_app, 1);
+        elmc_pebble_dispatch_dictation_status(&s_elm_app, 2);
+        elmc_pebble_dispatch_dictation_result(&s_elm_app, 1, 0, s_simulator_dictation_text);
+#endif
+      }
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd dictation_start");
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP
+    case ELMC_PEBBLE_CMD_DICTATION_STOP: {
+#ifdef PBL_DICTATION
+      if (s_dictation_session) {
+        dictation_session_stop(s_dictation_session);
+      }
+#else
+      elmc_pebble_dispatch_dictation_result(&s_elm_app, 0, 2, NULL);
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd dictation_stop");
+      break;
+    }
+#endif
     default:
       break;
     }
@@ -834,6 +1157,32 @@ static GColor color_from_code(int64_t value) {
   return luminance >= 128 ? GColorWhite : GColorBlack;
 #endif
 }
+
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
+static GTextAlignment text_alignment_from_options(int32_t options) {
+  switch (options & 0x3) {
+  case 0:
+    return GTextAlignmentLeft;
+  case 2:
+    return GTextAlignmentRight;
+  case 1:
+  default:
+    return GTextAlignmentCenter;
+  }
+}
+
+static GTextOverflowMode text_overflow_from_options(int32_t options) {
+  switch ((options >> 2) & 0x3) {
+  case 1:
+    return GTextOverflowModeTrailingEllipsis;
+  case 2:
+    return GTextOverflowModeFill;
+  case 0:
+  default:
+    return GTextOverflowModeWordWrap;
+  }
+}
+#endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE
 static GCompOp compositing_from_code(int64_t value) {
@@ -883,6 +1232,16 @@ static bool rect_params_are_valid(int64_t w, int64_t h) {
 static GRect rect_from_params(int64_t x, int64_t y, int64_t w, int64_t h) {
   return GRect((int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h);
 }
+
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
+static GRect text_point_rect(GRect bounds, int64_t x, int64_t y) {
+  int width = bounds.size.w - (int)x;
+  int height = bounds.size.h - (int)y;
+  if (width < 1) width = 1;
+  if (height < 1) height = 1;
+  return GRect((int16_t)x, (int16_t)y, (int16_t)width, (int16_t)height);
+}
+#endif
 
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
 static int min_int(int a, int b) {
@@ -1226,9 +1585,11 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         int16_t y1 = (int16_t)cmd->p1;
         int16_t x2 = (int16_t)cmd->p2;
         int16_t y2 = (int16_t)cmd->p3;
-        graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));
-        graphics_draw_line(ctx, GPoint(x1, y1), GPoint(x2, y2));
-        graphics_context_set_stroke_color(ctx, style_stack[style_top].stroke_color);
+        if (x1 != x2 || y1 != y2) {
+          graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));
+          graphics_draw_line(ctx, GPoint(x1, y1), GPoint(x2, y2));
+          graphics_context_set_stroke_color(ctx, style_stack[style_top].stroke_color);
+        }
         break;
       }
 #endif
@@ -1385,9 +1746,9 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         }
         snprintf(text_buf, sizeof(text_buf), "%lld", (long long)cmd->p3);
         graphics_draw_text(ctx, text_buf, font,
-                           GRect((int16_t)cmd->p1, (int16_t)cmd->p2, bounds.size.w, bounds.size.h),
+                           text_point_rect(bounds, cmd->p1, cmd->p2),
                            GTextOverflowModeWordWrap,
-                           GTextAlignmentCenter, NULL);
+                           GTextAlignmentLeft, NULL);
         if (should_unload && font) fonts_unload_custom_font(font);
         drew_text = true;
         break;
@@ -1401,13 +1762,15 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
           break;
         }
         const char *label = "Label";
-        if (cmd->p3 == 0) {
+        if (cmd->text[0] != '\0') {
+          label = cmd->text;
+        } else if (cmd->p3 == 0) {
           label = "Waiting for companion app";
         }
         graphics_draw_text(ctx, label, font,
-                           GRect((int16_t)cmd->p1, (int16_t)cmd->p2, bounds.size.w, bounds.size.h),
+                           text_point_rect(bounds, cmd->p1, cmd->p2),
                            GTextOverflowModeWordWrap,
-                           GTextAlignmentCenter, NULL);
+                           GTextAlignmentLeft, NULL);
         if (should_unload && font) fonts_unload_custom_font(font);
         drew_text = true;
         break;
@@ -1423,8 +1786,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         if (rect_params_are_valid(cmd->p3, cmd->p4)) {
           graphics_draw_text(ctx, cmd->text, font,
                              rect_from_params(cmd->p1, cmd->p2, cmd->p3, cmd->p4),
-                             GTextOverflowModeWordWrap,
-                             GTextAlignmentCenter, NULL);
+                             text_overflow_from_options(cmd->p5),
+                             text_alignment_from_options(cmd->p5), NULL);
         }
         if (should_unload && font) fonts_unload_custom_font(font);
         drew_text = true;
@@ -1528,6 +1891,38 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     }
   }
 #endif
+#if ELMC_PEBBLE_FEATURE_DAY_EVENTS
+  if ((units_changed & DAY_UNIT) != 0 && tick_time) {
+    int rc = elmc_pebble_dispatch_day(&s_elm_app, tick_time->tm_mday);
+    APP_LOG(APP_LOG_LEVEL_INFO, "day dispatch day=%d rc=%d", tick_time->tm_mday, rc);
+    if (rc == 0) {
+      apply_pending_cmd();
+      render_model();
+    }
+  }
+#endif
+#if ELMC_PEBBLE_FEATURE_MONTH_EVENTS
+  if ((units_changed & MONTH_UNIT) != 0 && tick_time) {
+    int month = tick_time->tm_mon + 1;
+    int rc = elmc_pebble_dispatch_month(&s_elm_app, month);
+    APP_LOG(APP_LOG_LEVEL_INFO, "month dispatch month=%d rc=%d", month, rc);
+    if (rc == 0) {
+      apply_pending_cmd();
+      render_model();
+    }
+  }
+#endif
+#if ELMC_PEBBLE_FEATURE_YEAR_EVENTS
+  if ((units_changed & YEAR_UNIT) != 0 && tick_time) {
+    int year = tick_time->tm_year + 1900;
+    int rc = elmc_pebble_dispatch_year(&s_elm_app, year);
+    APP_LOG(APP_LOG_LEVEL_INFO, "year dispatch year=%d rc=%d", year, rc);
+    if (rc == 0) {
+      apply_pending_cmd();
+      render_model();
+    }
+  }
+#endif
 #if ELMC_PEBBLE_FEATURE_TICK_EVENTS
   if (elmc_pebble_tick(&s_elm_app) == 0) {
     apply_pending_cmd();
@@ -1609,7 +2004,23 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
   int32_t op = 0;
   int32_t key_value = 0;
 
-  if (!debug_storage_tuple_int(op_tuple, &op) || !debug_storage_tuple_int(key_tuple, &key_value)) {
+  if (!debug_storage_tuple_int(op_tuple, &op)) {
+    // #region agent log
+    ELMC_AGENT_INIT_PROBE(0xED995101);
+    // #endregion
+    ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
+    return false;
+  }
+
+  if (op == ELMC_DEBUG_STORAGE_OP_SNAPSHOT) {
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    emulator_storage_snapshot_callback(NULL);
+#endif
+    ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
+    return true;
+  }
+
+  if (!debug_storage_tuple_int(key_tuple, &key_value)) {
     // #region agent log
     ELMC_AGENT_INIT_PROBE(0xED995101);
     // #endregion
@@ -1623,8 +2034,9 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
     ELMC_AGENT_INIT_PROBE(0xED9951D1);
     // #endregion
     status_t status = persist_delete(key);
-    APP_LOG(APP_LOG_LEVEL_INFO, "debug storage_delete key=%lu status=%ld",
+    ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "debug storage_delete key=%lu status=%ld",
             (unsigned long)key, (long)status);
+    (void)status;
     ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
     return true;
   }
@@ -1647,14 +2059,15 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
     // #endregion
     int32_t value = 0;
     if (!debug_storage_tuple_int(dict_find(iter, ELMC_DEBUG_STORAGE_KEY_INT_VALUE), &value)) {
-      APP_LOG(APP_LOG_LEVEL_WARNING, "debug storage_write missing int key=%lu",
+      ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_WARNING, "debug storage_write missing int key=%lu",
               (unsigned long)key);
       ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
       return true;
     }
     status_t status = persist_write_int(key, value);
-    APP_LOG(APP_LOG_LEVEL_INFO, "debug storage_write key=%lu value=%ld status=%ld",
+    ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "debug storage_write key=%lu value=%ld status=%ld",
             (unsigned long)key, (long)value, (long)status);
+    (void)status;
     ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
     return true;
   }
@@ -1666,8 +2079,9 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
     Tuple *value_tuple = dict_find(iter, ELMC_DEBUG_STORAGE_KEY_STRING_VALUE);
     const char *value = value_tuple && value_tuple->type == TUPLE_CSTRING ? value_tuple->value->cstring : "";
     status_t status = persist_write_string(key, value);
-    APP_LOG(APP_LOG_LEVEL_INFO, "debug storage_write_string key=%lu value=%s status=%ld",
+    ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "debug storage_write_string key=%lu value=%s status=%ld",
             (unsigned long)key, value, (long)status);
+    (void)status;
     ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
     return true;
   }
@@ -1678,6 +2092,35 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
   return true;
 }
 
+static bool handle_debug_simulator_settings(DictionaryIterator *iter) {
+#if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK || ELMC_PEBBLE_FEATURE_DICTATION_EVENTS || ELMC_PEBBLE_FEATURE_CMD_DICTATION_START || ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP
+  Tuple *tuple = dict_read_first(iter);
+  bool handled = false;
+
+  while (tuple) {
+#if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK
+    if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_COMPASS_HEADING &&
+        (tuple->type == TUPLE_INT || tuple->type == TUPLE_UINT)) {
+      simulator_compass_set_heading(tuple->value->int32, true);
+      handled = true;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_DICTATION_EVENTS || ELMC_PEBBLE_FEATURE_CMD_DICTATION_START || ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP
+    if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_DICTATION_TEXT && tuple->type == TUPLE_CSTRING) {
+      simulator_dictation_set_text((const char *)tuple->value->cstring);
+      handled = true;
+    }
+#endif
+    tuple = dict_read_next(iter);
+  }
+
+  return handled;
+#else
+  (void)iter;
+  return false;
+#endif
+}
+
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   ELMC_PEBBLE_TRACE_ENTER("inbox_received_handler");
   // #region agent log
@@ -1685,6 +2128,10 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   // #endregion
   (void)context;
   if (handle_debug_storage(iter)) {
+    ELMC_PEBBLE_TRACE_EXIT("inbox_received_handler");
+    return;
+  }
+  if (handle_debug_simulator_settings(iter)) {
     ELMC_PEBBLE_TRACE_EXIT("inbox_received_handler");
     return;
   }
@@ -1976,6 +2423,67 @@ static void health_handler(HealthEventType event, void *context) {
 #endif
 #endif
 
+#if ELMC_PEBBLE_FEATURE_APP_FOCUS_EVENTS
+static void app_focus_handler(bool in_focus) {
+  ELMC_PEBBLE_TRACE_ENTER("app_focus_handler");
+  int rc = elmc_pebble_dispatch_app_focus(&s_elm_app, in_focus ? 1 : 0);
+  APP_LOG(APP_LOG_LEVEL_INFO, "app focus in_focus=%d rc=%d", in_focus ? 1 : 0, rc);
+  if (rc == 0) {
+    apply_pending_cmd();
+    render_model();
+  }
+  ELMC_PEBBLE_TRACE_EXIT("app_focus_handler");
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS
+static void compass_handler(CompassHeadingData heading) {
+  ELMC_PEBBLE_TRACE_ENTER("compass_handler");
+  double degrees = simulator_compass_heading_degrees();
+  bool is_valid = simulator_compass_heading_is_valid();
+  if (heading.compass_status == CompassStatusAvailable) {
+    degrees = (double)heading.true_heading * 360.0 / TRIG_MAX_ANGLE;
+    is_valid = true;
+  } else if (heading.compass_status == CompassStatusDataInvalid) {
+    is_valid = false;
+  }
+  int rc = elmc_pebble_dispatch_compass_heading(&s_elm_app, degrees, is_valid ? 1 : 0);
+  APP_LOG(APP_LOG_LEVEL_INFO, "compass dispatch degrees=%ld valid=%d rc=%d",
+          (long)degrees, is_valid ? 1 : 0, rc);
+  if (rc == 0) {
+    apply_pending_cmd();
+    render_model();
+  }
+  ELMC_PEBBLE_TRACE_EXIT("compass_handler");
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_DICTATION_EVENTS || ELMC_PEBBLE_FEATURE_CMD_DICTATION_START || ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP
+#ifdef PBL_DICTATION
+static void dictation_session_callback(DictationSessionStatus status, char *transcription, void *context) {
+  ELMC_PEBBLE_TRACE_ENTER("dictation_session_callback");
+  (void)context;
+  switch (status) {
+    case DictationSessionStatusFailure:
+      elmc_pebble_dispatch_dictation_status(&s_elm_app, 2);
+      elmc_pebble_dispatch_dictation_result(&s_elm_app, 0, 3, transcription ? transcription : "");
+      break;
+    case DictationSessionStatusSuccess:
+      elmc_pebble_dispatch_dictation_status(&s_elm_app, 2);
+      elmc_pebble_dispatch_dictation_result(
+          &s_elm_app, 1, 0, transcription ? transcription : s_simulator_dictation_text);
+      break;
+    default:
+      elmc_pebble_dispatch_dictation_status(&s_elm_app, 1);
+      break;
+  }
+  apply_pending_cmd();
+  render_model();
+  ELMC_PEBBLE_TRACE_EXIT("dictation_session_callback");
+}
+#endif
+#endif
+
 static void main_window_load(Window *window) {
   ELMC_PEBBLE_TRACE_ENTER("main_window_load");
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window load");
@@ -2166,13 +2674,17 @@ static void init(void) {
     (void)app_message_rc;
     AppTimer *startup_timer = app_timer_register(1, startup_cmd_callback, NULL);
     (void)startup_timer;
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    AppTimer *storage_snapshot_timer = app_timer_register(1500, emulator_storage_snapshot_callback, NULL);
+    (void)storage_snapshot_timer;
+#endif
 #if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
     if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
       s_frame_interval_ms = frame_interval_from_subscriptions();
     }
 #endif
-#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && (ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS)
-    tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && (ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS || ELMC_PEBBLE_FEATURE_DAY_EVENTS || ELMC_PEBBLE_FEATURE_MONTH_EVENTS || ELMC_PEBBLE_FEATURE_YEAR_EVENTS)
+    tick_timer_service_subscribe(subscribed_time_units(), tick_handler);
 #endif
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_ACCEL_EVENTS
     if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
@@ -2181,8 +2693,8 @@ static void init(void) {
 #endif
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_ACCEL_DATA_EVENTS
     if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
-      accel_data_service_subscribe(1, accel_data_handler);
-      accel_service_set_sampling_rate(ACCEL_SAMPLING_25HZ);
+      accel_data_service_subscribe(ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE, accel_data_handler);
+      accel_service_set_sampling_rate(accel_sampling_rate_from_hz(ELMC_PEBBLE_ACCEL_SAMPLING_HZ));
     }
 #endif
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_BATTERY_EVENTS
@@ -2196,6 +2708,24 @@ static void init(void) {
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_HEALTH_EVENTS
 #ifdef PBL_HEALTH
     health_service_events_subscribe(health_handler, NULL);
+#endif
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_APP_FOCUS_EVENTS
+    app_focus_service_subscribe((AppFocusHandlers){
+        .did_focus = app_focus_handler,
+        .will_blur = app_focus_handler,
+    });
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_COMPASS_EVENTS
+#ifdef PBL_COMPASS
+    compass_service_subscribe(compass_handler);
+#endif
+#endif
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_DICTATION_EVENTS
+#ifdef PBL_DICTATION
+    if (!s_dictation_session) {
+      s_dictation_session = dictation_session_create(30000, dictation_session_callback, NULL);
+    }
 #endif
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
@@ -2213,7 +2743,7 @@ static void init(void) {
 static void deinit(void) {
   ELMC_PEBBLE_TRACE_ENTER("deinit");
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "app deinit start");
-#if ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS
+#if ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS || ELMC_PEBBLE_FEATURE_DAY_EVENTS || ELMC_PEBBLE_FEATURE_MONTH_EVENTS || ELMC_PEBBLE_FEATURE_YEAR_EVENTS
   tick_timer_service_unsubscribe();
 #endif
   if (s_timer) {
@@ -2243,6 +2773,22 @@ static void deinit(void) {
 #if ELMC_PEBBLE_FEATURE_HEALTH_EVENTS
 #ifdef PBL_HEALTH
   health_service_events_unsubscribe();
+#endif
+#endif
+#if ELMC_PEBBLE_FEATURE_APP_FOCUS_EVENTS
+  app_focus_service_unsubscribe();
+#endif
+#if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS
+#ifdef PBL_COMPASS
+  compass_service_unsubscribe();
+#endif
+#endif
+#if ELMC_PEBBLE_FEATURE_DICTATION_EVENTS
+#ifdef PBL_DICTATION
+  if (s_dictation_session) {
+    dictation_session_destroy(s_dictation_session);
+    s_dictation_session = NULL;
+  }
 #endif
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_BACKLIGHT

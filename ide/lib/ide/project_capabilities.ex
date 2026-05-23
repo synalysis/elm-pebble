@@ -5,7 +5,17 @@ defmodule Ide.ProjectCapabilities do
   alias Ide.PebblePreferences
   alias Ide.ProjectCapabilities.Detect
 
-  @supported ~w(location configurable health)
+  @supported ~w(
+    location
+    configurable
+    health
+    watch_accel
+    watch_vibes
+    dictation
+    compass
+    data_log
+    app_focus
+  )
 
   @doc """
   Returns true when the companion app exposes preferences or configuration UI.

@@ -35,6 +35,7 @@ defmodule Ide.SimulatorSettings do
     companion_geolocation: "Geolocation",
     companion_storage: "Storage",
     companion_preferences: "Preferences",
+    watch_sensors: "Sensors & input",
     emulator_extras: "Emulator"
   }
 
@@ -434,6 +435,84 @@ defmodule Ide.SimulatorSettings do
       options: nil,
       optional: false,
       hint: "QEMU timeline quick view (emulator only)."
+    },
+    %{
+      key: "compass_heading_deg",
+      type: :range,
+      label: "Compass heading",
+      capabilities: ["watch_compass"],
+      group: :watch_sensors,
+      min: 0,
+      max: 360,
+      step: 1,
+      options: nil,
+      optional: false,
+      hint: nil
+    },
+    %{
+      key: "compass_valid",
+      type: :checkbox,
+      label: "Compass reading valid",
+      capabilities: ["watch_compass"],
+      group: :watch_sensors,
+      min: nil,
+      max: nil,
+      step: nil,
+      options: nil,
+      optional: false,
+      hint: nil
+    },
+    %{
+      key: "app_in_focus",
+      type: :checkbox,
+      label: "App in foreground",
+      capabilities: ["watch_app_focus"],
+      group: :watch_sensors,
+      min: nil,
+      max: nil,
+      step: nil,
+      options: nil,
+      optional: false,
+      hint: "Toggle to simulate focus changes."
+    },
+    %{
+      key: "dictation_transcript",
+      type: :text,
+      label: "Dictation transcript",
+      capabilities: ["watch_dictation"],
+      group: :watch_sensors,
+      min: nil,
+      max: nil,
+      step: nil,
+      options: nil,
+      optional: true,
+      hint: "Simulated speech-to-text result."
+    },
+    %{
+      key: "dictation_error",
+      type: :text,
+      label: "Dictation error",
+      capabilities: ["watch_dictation"],
+      group: :watch_sensors,
+      min: nil,
+      max: nil,
+      step: nil,
+      options: nil,
+      optional: true,
+      hint: "When set, simulated dictation fails with this message."
+    },
+    %{
+      key: "vibe_pattern_ms",
+      type: :json,
+      label: "Vibration pattern (ms)",
+      capabilities: ["watch_vibes"],
+      group: :watch_sensors,
+      min: nil,
+      max: nil,
+      step: nil,
+      options: nil,
+      optional: true,
+      hint: "JSON array of segment durations; ON/OFF alternating from ON."
     }
   ]
 
@@ -552,17 +631,18 @@ defmodule Ide.SimulatorSettings do
   @spec group_order(atom()) :: integer()
   defp group_order(:watch_device), do: 0
   defp group_order(:watch_time), do: 1
-  defp group_order(:companion_battery), do: 2
-  defp group_order(:companion_locale), do: 3
-  defp group_order(:companion_network), do: 4
-  defp group_order(:companion_notifications), do: 5
-  defp group_order(:companion_weather), do: 6
-  defp group_order(:companion_calendar), do: 7
-  defp group_order(:companion_environment), do: 8
-  defp group_order(:companion_geolocation), do: 9
-  defp group_order(:companion_storage), do: 10
-  defp group_order(:companion_preferences), do: 11
-  defp group_order(:emulator_extras), do: 12
+  defp group_order(:watch_sensors), do: 2
+  defp group_order(:companion_battery), do: 3
+  defp group_order(:companion_locale), do: 4
+  defp group_order(:companion_network), do: 5
+  defp group_order(:companion_notifications), do: 6
+  defp group_order(:companion_weather), do: 7
+  defp group_order(:companion_calendar), do: 8
+  defp group_order(:companion_environment), do: 9
+  defp group_order(:companion_geolocation), do: 10
+  defp group_order(:companion_storage), do: 11
+  defp group_order(:companion_preferences), do: 12
+  defp group_order(:emulator_extras), do: 13
   defp group_order(_), do: 99
 
   @spec project_simulator_settings(Project.t()) :: map()

@@ -19,7 +19,7 @@ module Pebble.Companion.Locale exposing
 
 # Commands
 
-@docs current
+@docs current, setup
 
 # Subscriptions
 
@@ -62,6 +62,8 @@ onLocale toMsg =
     Platform.subscribe (handler toMsg)
 
 
+{-| Register this platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup localeInterest

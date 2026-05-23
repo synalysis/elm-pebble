@@ -2,6 +2,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   @moduledoc false
   use IdeWeb, :html
 
+  import IdeWeb.WatchInteractives
+
   alias Ide.Debugger
   alias Ide.Projects.Project
   alias Ide.Resources.ResourceStore
@@ -270,6 +272,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               project={@project}
               debugger_state={@debugger_state}
               mode={:debugger}
+            />
+            <.watch_interactives_panel
+              id="debugger-watch-interactives"
+              project={@project}
+              debugger_state={@debugger_state}
+              mode={:debugger}
+              watch_trigger_buttons={@debugger_watch_trigger_buttons}
+              disabled_subscriptions={@debugger_disabled_subscriptions}
+              running={debugger_state_running?(@debugger_state)}
             />
           </div>
         </div>
@@ -2285,10 +2296,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
           assigns.disabled_subscriptions
         )
       )
-      |> assign(
-        :accel_control,
-        debugger_accel_control(assigns.watch_trigger_buttons, assigns.disabled_subscriptions)
-      )
 
     ~H"""
     <div
@@ -2535,52 +2542,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
           {debugger_unresolved_svg_summary(@unresolved_ops)}
         </p>
       </div>
-      <.debugger_accel_control :if={@accel_control} control={@accel_control} />
-    </div>
-    """
-  end
-
-  attr(:control, :map, required: true)
-
-  @spec debugger_accel_control(assigns()) :: rendered()
-  defp debugger_accel_control(assigns) do
-    ~H"""
-    <div class="min-h-0 flex-1 rounded border border-zinc-200 bg-white p-2">
-      <div class="flex items-center justify-between gap-2">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-600">
-          Accelerometer
-        </p>
-        <p class="text-[10px] text-zinc-500" data-accel-readout>
-          x 0 · y 0 · z 1000
-        </p>
-      </div>
-      <div
-        id="debugger-accel-pad"
-        phx-hook="DebuggerAccelPad"
-        data-trigger={@control.trigger}
-        data-target={@control.target}
-        data-message={@control.message}
-        class="mt-2 flex justify-center"
-      >
-        <svg
-          viewBox="0 0 120 120"
-          role="application"
-          aria-label="Accelerometer input pad"
-          class="h-32 w-32 cursor-crosshair select-none"
-        >
-          <circle cx="60" cy="60" r="50" fill="#f8fafc" stroke="#71717a" stroke-width="1.5" />
-          <line x1="10" y1="60" x2="110" y2="60" stroke="#d4d4d8" stroke-width="1" />
-          <line x1="60" y1="10" x2="60" y2="110" stroke="#d4d4d8" stroke-width="1" />
-          <g data-accel-cross transform="translate(60 60)">
-            <line x1="-6" y1="0" x2="6" y2="0" stroke="#18181b" stroke-width="2" />
-            <line x1="0" y1="-6" x2="0" y2="6" stroke="#18181b" stroke-width="2" />
-            <circle cx="0" cy="0" r="3" fill="#18181b" />
-          </g>
-        </svg>
-      </div>
-      <p class="mt-1 text-center text-[10px] text-zinc-500">
-        Click or drag inside the circle to send an accel sample.
-      </p>
     </div>
     """
   end
@@ -2623,40 +2584,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_watch_button_controls(_rows, disabled_subscriptions),
     do: debugger_watch_button_controls([], disabled_subscriptions)
-
-  @spec debugger_accel_control([trigger_row()], list()) :: map() | nil
-  defp debugger_accel_control(rows, disabled_subscriptions) when is_list(rows) do
-    rows
-    |> Enum.find(&accel_trigger_row?/1)
-    |> case do
-      %{} = row ->
-        target = Map.get(row, :target) || Map.get(row, "target") || "watch"
-        trigger = Map.get(row, :trigger) || Map.get(row, "trigger") || "on_accel"
-        message = Map.get(row, :message) || Map.get(row, "message")
-
-        if is_binary(message) and message != "" and
-             subscription_trigger_enabled?(disabled_subscriptions, target, trigger) do
-          %{
-            trigger: trigger,
-            target: target,
-            message: message
-          }
-        end
-
-      _ ->
-        nil
-    end
-  end
-
-  defp debugger_accel_control(_rows, _disabled_subscriptions), do: nil
-
-  @spec accel_trigger_row?(trigger_row()) :: boolean()
-  defp accel_trigger_row?(row) when is_map(row) do
-    trigger = Map.get(row, :trigger) || Map.get(row, "trigger")
-    trigger in ["on_accel", "on_accel_data"]
-  end
-
-  defp accel_trigger_row?(_row), do: false
 
   @spec debugger_watch_button_control(atom(), assigns(), trigger_row()) :: map()
   defp debugger_watch_button_control(button, row, disabled_subscriptions) when is_map(row) do

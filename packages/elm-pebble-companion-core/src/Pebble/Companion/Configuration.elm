@@ -14,7 +14,7 @@ module Pebble.Companion.Configuration exposing
 
 # Commands
 
-@docs open
+@docs open, setup
 
 # Subscriptions
 
@@ -56,6 +56,8 @@ onClosed toMsg =
     Platform.subscribe (handler (toClosedMsg toMsg))
 
 
+{-| Register this platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup configurationInterest

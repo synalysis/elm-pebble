@@ -17,6 +17,8 @@ module Pebble.Hardware exposing
 
 {-| Enhanced hardware access for Pebble watch devices.
 
+Prefer `Pebble.Vibes` for vibration and `Pebble.Light` / `Pebble.System` for backlight and status.
+
 # Types
 @docs VibrationType, VibrationPattern, BacklightLevel, HardwareCmd
 
