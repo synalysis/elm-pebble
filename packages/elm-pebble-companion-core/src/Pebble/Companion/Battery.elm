@@ -2,6 +2,7 @@ module Pebble.Companion.Battery exposing
     ( BatteryInfo
     , current
     , onBattery
+    , setup
     )
 
 {-| Phone battery helpers for companion apps.
@@ -57,6 +58,11 @@ Registering this subscription also tells the bridge to send battery updates.
 onBattery : (Result String BatteryInfo -> msg) -> Sub msg
 onBattery toMsg =
     Platform.subscribe (handler toMsg)
+
+
+setup : Cmd msg
+setup =
+    Platform.setup batteryInterest
 
 
 {-| Platform router handler for battery events and responses.

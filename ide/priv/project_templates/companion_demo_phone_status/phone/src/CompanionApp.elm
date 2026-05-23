@@ -27,7 +27,7 @@ type Msg
     | GotNotifications (Result String Notifications.NotificationStatus)
 
 
-init : Platform.Flags -> ( Model, Cmd Msg )
+init : () -> ( Model, Cmd Msg )
 init _ =
     ( emptyModel, refreshAll )
 
@@ -86,7 +86,7 @@ subscriptions _ =
         ]
 
 
-main : Platform.Program Model Msg
+main : Platform.Program () Model Msg
 main =
     Platform.worker
         { init = init
@@ -109,7 +109,11 @@ emptyModel =
 refreshAll : Cmd Msg
 refreshAll =
     Cmd.batch
-        [ Battery.current GotBattery
+        [ Battery.setup
+        , Locale.setup
+        , Connectivity.setup
+        , Notifications.setup
+        , Battery.current GotBattery
         , Locale.current GotLocale
         , Connectivity.current GotConnectivity
         , Notifications.current GotNotifications

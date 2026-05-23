@@ -18,7 +18,7 @@ type Msg
     | GotPosition (Result String Geolocation.Location)
 
 
-init : Platform.Flags -> ( Model, Cmd Msg )
+init : () -> ( Model, Cmd Msg )
 init _ =
     ( emptyModel, Geolocation.currentPosition GotPosition )
 
@@ -59,7 +59,7 @@ subscriptions _ =
         ]
 
 
-main : Platform.Program Model Msg
+main : Platform.Program () Model Msg
 main =
     Platform.worker
         { init = init

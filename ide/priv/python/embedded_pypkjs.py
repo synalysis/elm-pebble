@@ -83,7 +83,16 @@ def patch_companion_cache_install():
             f.flush()
 
             try:
-                runner.load_pbws([f.name], cache=True)
+                runner.load_pbws([f.name], cache=True, start=True)
+                loaded = [
+                    str(app_uuid)
+                    for app_uuid, pbw in runner.pbws.items()
+                    if pbw.src is not None
+                ]
+                runner.log_output(
+                    "Companion cache refreshed; started JS for: %s"
+                    % (", ".join(loaded) if loaded else "none")
+                )
                 ws.send(bytearray([0x05, 0x00, 0x00, 0x00, 0x00]))
             except Exception as exc:
                 runner.log_output("Companion cache refresh failed: %s: %s" % (type(exc).__name__, exc))
@@ -132,6 +141,51 @@ def patch_debug_appmessage_send():
 
 
 patch_debug_appmessage_send()
+
+
+def patch_simulator_settings():
+    original_on_message = WebsocketRunner.on_message
+
+    def apply_settings_to_runner(runner, settings):
+        source = (
+            "typeof companionApplySimulatorSettings === 'function' && "
+            "companionApplySimulatorSettings(%s)" % json.dumps(settings)
+        )
+        js = getattr(runner, "js", None)
+        if js is None:
+            return False
+
+        context = getattr(js, "context", None)
+        if context is not None and hasattr(context, "eval"):
+            context.eval(source)
+            return True
+
+        if hasattr(js, "run"):
+            js.run(source)
+            return True
+
+        return False
+
+    def on_message(runner, ws, message):
+        if not isinstance(message, (bytearray, bytes)) or len(message) == 0 or message[0] != 0x0E:
+            return original_on_message(runner, ws, message)
+
+        if runner.requires_auth and not ws.authed:
+            return
+
+        try:
+            settings = json.loads(bytes(message[1:]).decode("utf-8"))
+            if not apply_settings_to_runner(runner, settings):
+                raise RuntimeError("phone companion JS runtime is not ready")
+            ws.send(bytearray([0x0E, 0x00]))
+        except Exception as exc:
+            runner.log_output("Simulator settings apply failed: %s: %s" % (type(exc).__name__, exc))
+            ws.send(bytearray([0x0E, 0x01]))
+
+    WebsocketRunner.on_message = on_message
+
+
+patch_simulator_settings()
 
 
 def patch_runner_lifecycle_logging():

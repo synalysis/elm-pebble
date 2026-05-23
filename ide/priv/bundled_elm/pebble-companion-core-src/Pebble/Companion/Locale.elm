@@ -2,6 +2,7 @@ module Pebble.Companion.Locale exposing
     ( LocaleInfo
     , current
     , onLocale
+    , setup
     )
 
 {-| Phone locale and regional preference helpers for companion apps.
@@ -59,6 +60,11 @@ Registering this subscription also tells the bridge to send locale updates.
 onLocale : (Result String LocaleInfo -> msg) -> Sub msg
 onLocale toMsg =
     Platform.subscribe (handler toMsg)
+
+
+setup : Cmd msg
+setup =
+    Platform.setup localeInterest
 
 
 {-| Platform router handler for locale events and responses.

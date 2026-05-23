@@ -90,6 +90,29 @@ defmodule Ide.ProjectCapabilitiesTest do
       Health.onEvent HealthEvent
   """
 
+  @phone_calendar """
+  module CompanionApp exposing (..)
+
+  import Pebble.Companion.Calendar as Calendar
+  import Pebble.Companion.Phone as Phone
+
+  type alias Model = {}
+
+  type Msg = FromWatch (Result String ())
+
+  init _ =
+      ( {}, Cmd.none )
+
+  update _ model =
+      ( model, Cmd.none )
+
+  subscriptions _ =
+      Sub.batch
+          [ Phone.onWatchToPhone FromWatch
+          , Calendar.onCalendar (\_ -> FromWatch (Ok ()))
+          ]
+  """
+
   test "detects companion geolocation commands and subscriptions" do
     assert {:ok, %{"elm_introspect" => introspect}} =
              Ide.Debugger.ElmIntrospect.analyze_source(@phone_geolocation, "CompanionApp.elm")
@@ -141,6 +164,80 @@ defmodule Ide.ProjectCapabilitiesTest do
              ProjectCapabilities.infer_introspect(introspect, "watch"),
              "location"
            )
+  end
+
+  test "companion_preferences? is false for calendar-only companion apps" do
+    refute ProjectCapabilities.companion_preferences?("/tmp/no-such-workspace")
+
+    tmp = System.tmp_dir!()
+    workspace = Path.join(tmp, "calendar-cap-#{System.unique_integer([:positive])}")
+    phone_src = Path.join(workspace, "phone/src")
+    File.mkdir_p!(phone_src)
+    File.write!(Path.join(workspace, "phone/elm.json"), "{}")
+    File.write!(Path.join(phone_src, "CompanionApp.elm"), @phone_calendar)
+
+    on_exit(fn -> File.rm_rf!(workspace) end)
+
+    refute ProjectCapabilities.companion_preferences?(workspace)
+  end
+
+  test "companion_preferences? is true when preferences schema is declared" do
+    alias Ide.InternalPackages
+
+    tmp = System.tmp_dir!()
+    workspace = Path.join(tmp, "prefs-cap-#{System.unique_integer([:positive])}")
+    phone_root = Path.join(workspace, "phone")
+    phone_src = Path.join(phone_root, "src")
+    File.mkdir_p!(phone_src)
+
+    elm_json = %{
+      "type" => "application",
+      "source-directories" => [
+        "src",
+        InternalPackages.pebble_companion_preferences_elm_src_abs()
+      ],
+      "elm-version" => "0.19.1",
+      "dependencies" => %{
+        "direct" => %{
+          "elm/core" => "1.0.5",
+          "elm/json" => "1.1.3"
+        },
+        "indirect" => %{}
+      },
+      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+    }
+
+    File.write!(Path.join(phone_root, "elm.json"), Jason.encode!(elm_json, pretty: true))
+
+    File.write!(
+      Path.join(phone_src, "CompanionPreferences.elm"),
+      """
+      module CompanionPreferences exposing (settings)
+
+      import Pebble.Companion.Preferences as Preferences
+
+      settings =
+          Preferences.schema "Demo"
+              [ Preferences.field "enabled" (Preferences.toggle "Enabled" True) ]
+      """
+    )
+
+    on_exit(fn -> File.rm_rf!(workspace) end)
+
+    assert ProjectCapabilities.companion_preferences?(workspace)
+  end
+
+  test "companion_preferences? is true when Configuration module is used" do
+    tmp = System.tmp_dir!()
+    workspace = Path.join(tmp, "config-cap-#{System.unique_integer([:positive])}")
+    phone_src = Path.join(workspace, "phone/src")
+    File.mkdir_p!(phone_src)
+    File.write!(Path.join(workspace, "phone/elm.json"), "{}")
+    File.write!(Path.join(phone_src, "CompanionApp.elm"), @phone_configuration)
+
+    on_exit(fn -> File.rm_rf!(workspace) end)
+
+    assert ProjectCapabilities.companion_preferences?(workspace)
   end
 
   test "sync_detected_capabilities merges inferred capabilities into project settings" do

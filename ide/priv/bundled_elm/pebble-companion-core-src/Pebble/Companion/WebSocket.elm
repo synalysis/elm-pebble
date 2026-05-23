@@ -5,6 +5,8 @@ module Pebble.Companion.WebSocket exposing
     , onWebSocket
     , onCommands
     , send
+    , setup
+    , setupCommands
     )
 
 {-| WebSocket commands and events through the phone companion bridge.
@@ -92,8 +94,19 @@ onCommands toMsg =
     Platform.subscribe (handlerCommands toMsg)
 
 
+setup : Cmd msg
+setup =
+    Platform.setup webSocketInterest
+
+
+setupCommands : Cmd msg
+setupCommands =
+    Platform.setup webSocketCommandInterest
+
+
 handler toMsg =
-    Platform.handler webSocketInterest decodeWebSocketEvent toMsg
+    Platform.handler webSocketInterest decodeWebSocketEvent <|
+        Result.withDefault (Unknown "webSocket decode failed") >> toMsg
 
 
 handlerCommands toMsg =

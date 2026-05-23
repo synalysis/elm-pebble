@@ -1,5 +1,6 @@
 var pendingIncoming = [];
 var pendingPlatformIncoming = {};
+var pendingUnhandledPlatformMessages = [];
 var pendingGeolocationIncoming = [];
 var incomingPort = null;
 var platformIncomingPorts = {};
@@ -14,6 +15,9 @@ var appMessageKeyIdsByName = {};
 var geolocationWatches = {};
 var companionStorage = {};
 var companionPreferences = {};
+var companionSimulatorSettings = {
+    calendar_events: []
+};
 var appMessageOutbox = [];
 var appMessageSending = false;
 
@@ -258,12 +262,66 @@ function deliverPlatformIncoming(payload) {
     var handlerIds = platformHandlerIdsForPayload(payload);
 
     if (handlerIds.length === 0) {
+        pendingUnhandledPlatformMessages.push(payload);
         return;
     }
 
     handlerIds.forEach(function (handlerId) {
         deliverPlatformIncomingToHandler(handlerId, payload);
     });
+}
+
+function flushUnhandledPlatformIncoming() {
+    if (!pendingUnhandledPlatformMessages.length) {
+        return;
+    }
+
+    var pending = pendingUnhandledPlatformMessages;
+    pendingUnhandledPlatformMessages = [];
+
+    pending.forEach(function (payload) {
+        deliverPlatformIncoming(payload);
+    });
+}
+
+function flushPendingPlatformIncomingPorts() {
+    Object.keys(platformIncomingPorts).forEach(function (handlerId) {
+        var pending = pendingPlatformIncoming[handlerId] || [];
+
+        while (pending.length > 0) {
+            platformIncomingPorts[handlerId].send(pending.shift());
+        }
+    });
+}
+
+function wireCompanionIncomingPorts(app) {
+    if (app.ports && app.ports.incoming) {
+        incomingPort = app.ports.incoming;
+        while (pendingIncoming.length > 0) {
+            incomingPort.send(pendingIncoming.shift());
+        }
+    }
+
+    if (app.ports && app.ports.geolocationIncoming) {
+        geolocationIncomingPort = app.ports.geolocationIncoming;
+        while (pendingGeolocationIncoming.length > 0) {
+            geolocationIncomingPort.send(pendingGeolocationIncoming.shift());
+        }
+    }
+
+    Object.keys(PLATFORM_INCOMING_PORT_NAMES).forEach(function (handlerId) {
+        var portName = PLATFORM_INCOMING_PORT_NAMES[handlerId];
+
+        if (app.ports && app.ports[portName]) {
+            platformIncomingPorts[handlerId] = app.ports[portName];
+        }
+    });
+}
+
+function finishCompanionBoot() {
+    flushPendingPlatformIncomingPorts();
+    flushUnhandledPlatformIncoming();
+    deliverLifecycleEvent("lifecycle.ready", {});
 }
 
 function deliverIncoming(payload) {
@@ -356,11 +414,11 @@ function deliverBridgeResult(id, ok, payload, error) {
         envelope.error = error;
     }
 
+    deliverPlatformIncoming(envelope);
+
     if (id && pendingBridgeResponseIds[id]) {
         delete pendingBridgeResponseIds[id];
     }
-
-    deliverPlatformIncoming(envelope);
 }
 
 function localePayload() {
@@ -584,8 +642,101 @@ function handleWeatherCommand(request) {
     bridgeCommandError(request, "weather", "Weather data unavailable from this Pebble companion runtime");
 }
 
+function normalizeCalendarEvent(raw) {
+    if (!raw || typeof raw !== "object") {
+        return null;
+    }
+
+    var startMillis = Number(raw.startMillis || 0);
+    var endMillis = Number(raw.endMillis || (startMillis + 3600000));
+
+    return {
+        id: String(raw.id || "event"),
+        title: String(raw.title || "Event"),
+        startMillis: startMillis,
+        endMillis: endMillis,
+        allDay: !!raw.allDay,
+        location: raw.location ? String(raw.location) : undefined
+    };
+}
+
+function calendarEventsFromSettings() {
+    var events = companionSimulatorSettings.calendar_events;
+    if (!Array.isArray(events)) {
+        return [];
+    }
+
+    return events.map(normalizeCalendarEvent).filter(function (event) {
+        return event !== null;
+    });
+}
+
+function deliverCalendarNext(requestId, event) {
+    var payload = { event: event || null };
+
+    if (requestId) {
+        deliverBridgeResult(requestId, true, payload);
+        return;
+    }
+
+    deliverPlatformIncoming({
+        event: "calendar.next",
+        payload: payload
+    });
+}
+
+function deliverCalendarUpcoming(requestId, events) {
+    var payload = { events: events || [] };
+
+    if (requestId) {
+        deliverBridgeResult(requestId, true, payload);
+        return;
+    }
+
+    deliverPlatformIncoming({
+        event: "calendar.upcoming",
+        payload: payload
+    });
+}
+
 function handleCalendarCommand(request) {
-    bridgeCommandError(request, "calendar", "Calendar data unavailable from this Pebble companion runtime");
+    var op = request && request.op;
+    var requestId = request && request.id;
+    var events = calendarEventsFromSettings();
+    var limit = 5;
+
+    if (request && request.payload && typeof request.payload.limit === "number") {
+        limit = request.payload.limit;
+    }
+
+    if (op === "nextEvent" || op === "current") {
+        deliverCalendarNext(requestId, events.length > 0 ? events[0] : null);
+        return;
+    }
+
+    if (op === "upcoming") {
+        deliverCalendarUpcoming(requestId, events.slice(0, Math.max(0, limit)));
+        return;
+    }
+
+    if (op === "subscribe") {
+        deliverCalendarUpcoming(null, events);
+        if (requestId) {
+            deliverBridgeResult(requestId, true, { events: events });
+        }
+        return;
+    }
+
+    bridgeCommandError(request, "calendar", "Unsupported calendar operation: " + op);
+}
+
+function companionApplySimulatorSettings(settings) {
+    if (!settings || typeof settings !== "object") {
+        return;
+    }
+
+    companionSimulatorSettings = settings;
+    deliverCalendarUpcoming(null, calendarEventsFromSettings());
 }
 
 function handleNotificationsCommand(request) {
@@ -621,6 +772,23 @@ function handleGeolocationCommand(payload) {
 function handleOutgoing(payload) {
     if (payload && payload.registerBridgeResponse) {
         pendingBridgeResponseIds[payload.registerBridgeResponse] = true;
+        return;
+    }
+
+    if (payload && payload.registerPlatformHandler) {
+        var registration = payload.registerPlatformHandler;
+
+        if (registration && typeof registration.handlerId === "string") {
+            var handlerId = registration.handlerId;
+            var interest = registration.interest || {};
+
+            platformHandlers[handlerId] = {
+                eventPrefixes: Array.isArray(interest.eventPrefixes) ? interest.eventPrefixes : [],
+                resultIdPrefixes: Array.isArray(interest.resultIdPrefixes) ? interest.resultIdPrefixes : []
+            };
+            flushUnhandledPlatformIncoming();
+        }
+
         return;
     }
 
@@ -814,65 +982,17 @@ Pebble.addEventListener("ready", function () {
         });
     }
 
-    if (app.ports && app.ports.bridgeInterest) {
-        app.ports.bridgeInterest.subscribe(function (payload) {
-            handleOutgoing(payload);
-        });
-    }
-
     if (app.ports && app.ports.geolocationOutgoing) {
         app.ports.geolocationOutgoing.subscribe(function (payload) {
             handleOutgoing(payload);
         });
     }
 
-    if (app.ports && app.ports.incoming) {
-        incomingPort = app.ports.incoming;
-        while (pendingIncoming.length > 0) {
-            incomingPort.send(pendingIncoming.shift());
-        }
-    }
+    wireCompanionIncomingPorts(app);
 
-    if (app.ports && app.ports.geolocationIncoming) {
-        geolocationIncomingPort = app.ports.geolocationIncoming;
-        while (pendingGeolocationIncoming.length > 0) {
-            geolocationIncomingPort.send(pendingGeolocationIncoming.shift());
-        }
-    }
-
-    Object.keys(PLATFORM_INCOMING_PORT_NAMES).forEach(function (handlerId) {
-        var portName = PLATFORM_INCOMING_PORT_NAMES[handlerId];
-
-        if (app.ports && app.ports[portName]) {
-            platformIncomingPorts[handlerId] = app.ports[portName];
-
-            var pending = pendingPlatformIncoming[handlerId] || [];
-
-            while (pending.length > 0) {
-                platformIncomingPorts[handlerId].send(pending.shift());
-            }
-        }
-    });
-
-    if (app.ports && app.ports.registerPlatformHandler) {
-        app.ports.registerPlatformHandler.subscribe(function (payload) {
-            if (!payload || typeof payload.handlerId !== "string") {
-                return function () {};
-            }
-
-            var handlerId = payload.handlerId;
-            var interest = payload.interest || {};
-
-            platformHandlers[handlerId] = {
-                eventPrefixes: Array.isArray(interest.eventPrefixes) ? interest.eventPrefixes : [],
-                resultIdPrefixes: Array.isArray(interest.resultIdPrefixes) ? interest.resultIdPrefixes : []
-            };
-
-            return function () {
-                delete platformHandlers[handlerId];
-            };
-        });
-    }
-
-    deliverLifecycleEvent("lifecycle.ready", {});
+    // Elm init commands run on the next macrotask via Process.sleep(0). Defer boot
+    // until handlers are registered and early bridge pushes can be replayed.
+    setTimeout(function () {
+        finishCompanionBoot();
+    }, 0);
 });

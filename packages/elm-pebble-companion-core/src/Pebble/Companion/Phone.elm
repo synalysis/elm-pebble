@@ -2,6 +2,11 @@ port module Pebble.Companion.Phone exposing
     ( decodeWatchToPhone
     , onWatchToPhone
     , platformIncomingFor
+    , registerHandler
+    , request
+    , requestWithPayload
+    , send
+    , sendBridgeCommand
     , sendPhoneToWatch
     )
 
@@ -52,7 +57,6 @@ import Pebble.Companion.AppMessage as AppMessage
 import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
 import Pebble.Companion.Contract exposing (CommandEnvelope)
-import Sub
 
 
 {-| A bridge command plus a decoder for its response payload.
@@ -157,25 +161,18 @@ port timelineCommandsPlatformIncoming : (Decode.Value -> msg) -> Sub msg
 port outgoing : Encode.Value -> Cmd msg
 
 
-port bridgeInterest : Encode.Value -> Sub msg
-
-
-port registerPlatformHandler : Encode.Value -> Sub msg
-
-
-registerHandler : String -> Encode.Value -> Sub msg
+registerHandler : String -> Encode.Value -> Cmd msg
 registerHandler handlerId interest =
-    registerPlatformHandler <|
+    outgoing <|
         Encode.object
-            [ ( "handlerId", Encode.string handlerId )
-            , ( "interest", interest )
-            , ( "active", Encode.bool True )
+            [ ( "registerPlatformHandler"
+              , Encode.object
+                    [ ( "handlerId", Encode.string handlerId )
+                    , ( "interest", interest )
+                    , ( "active", Encode.bool True )
+                    ]
+              )
             ]
-
-
-subscribeBridge : CommandEnvelope -> Sub msg
-subscribeBridge envelope =
-    bridgeInterest (Codec.encodeCommand envelope)
 
 
 {-| Route a platform handler id to its dedicated incoming port.

@@ -789,7 +789,8 @@ defmodule Ide.Screenshots do
              project_slug: session_key,
              platform: target,
              artifact_path: package.artifact_path,
-             has_phone_companion: Map.get(package, :has_phone_companion, false)
+             has_phone_companion: Map.get(package, :has_phone_companion, false),
+             has_companion_preferences: Map.get(package, :has_companion_preferences, false)
            ) do
       {:ok, info}
     end
@@ -798,7 +799,7 @@ defmodule Ide.Screenshots do
   defp resolve_capture_package(_project_slug, target, opts) do
     case Keyword.get(opts, :package_path) do
       path when is_binary(path) and path != "" ->
-        {:ok, %{artifact_path: Path.expand(path), has_phone_companion: false}}
+        {:ok, %{artifact_path: Path.expand(path), has_phone_companion: false, has_companion_preferences: false}}
 
       _ ->
         workspace_root = Keyword.get(opts, :workspace_root)

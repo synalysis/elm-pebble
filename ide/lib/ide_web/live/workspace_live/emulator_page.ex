@@ -117,7 +117,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             </button>
           </div>
         </div>
-        <div class="mt-4 grid gap-3 lg:grid-cols-[auto_16rem_minmax(0,1fr)] lg:items-start">
+        <div class="mt-4 grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
           <div class="w-fit rounded border border-zinc-300 bg-black p-1">
             <div class="flex items-center gap-1.5">
               <button
@@ -159,17 +159,20 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
                 </button>
               </div>
             </div>
-          </div>
-          <div class="space-y-3">
-            <p data-emulator-status class="rounded bg-white px-3 py-2 text-xs text-zinc-700">
+            <p
+              data-emulator-status
+              class="mt-2 rounded bg-white px-2 py-1.5 text-center text-[11px] text-zinc-700"
+            >
               Embedded emulator is idle.
             </p>
+          </div>
+          <div class="space-y-3">
             <.simulator_settings_form
               id="embedded-emulator-simulator-settings"
               project={@project}
               debugger_state={@debugger_state}
               mode={:emulator}
-              class="space-y-3"
+              group_columns={1}
             />
             <div class="rounded bg-white p-3 text-xs text-zinc-700">
               <button
@@ -329,7 +332,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             </.button>
           </div>
         </div>
-        <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(320px,1fr)_18rem]">
+        <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(320px,1fr)_minmax(22rem,26rem)]">
           <div class="rounded border border-zinc-300 bg-black p-3">
             <div class="mx-auto flex w-max items-center gap-4 overflow-x-auto py-4">
               <button
@@ -378,14 +381,14 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               >
                 Tap
               </button>
-              <.simulator_settings_form
-                id="external-emulator-simulator-settings"
-                project={@project}
-                debugger_state={@debugger_state}
-                mode={:emulator}
-                class="mt-3 border-0 bg-transparent p-0 shadow-none"
-              />
             </div>
+            <.simulator_settings_form
+              id="external-emulator-simulator-settings"
+              project={@project}
+              debugger_state={@debugger_state}
+              mode={:emulator}
+              group_columns={1}
+            />
           </div>
         </div>
         <pre

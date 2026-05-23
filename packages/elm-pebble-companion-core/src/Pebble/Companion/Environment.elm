@@ -5,6 +5,7 @@ module Pebble.Companion.Environment exposing
     , TideInfo
     , current
     , onEnvironment
+    , setup
     )
 
 {-| Sun, moon, and tide environment helpers for companion apps.
@@ -85,6 +86,11 @@ Registering this subscription also tells the bridge to send environment updates.
 onEnvironment : (Result String EnvironmentInfo -> msg) -> Sub msg
 onEnvironment toMsg =
     Platform.subscribe (handler toMsg)
+
+
+setup : Cmd msg
+setup =
+    Platform.setup environmentInterest
 
 
 {-| Platform router handler for environment events and responses.

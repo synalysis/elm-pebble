@@ -486,6 +486,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
                 phx-value-trigger={row.trigger}
                 phx-value-target={row.target}
                 phx-value-message={row.message}
+                phx-value-trigger-display={row.trigger_display}
                 disabled={not subscription_trigger_injection_supported?(row)}
                 title={subscription_trigger_button_title(row)}
                 class="rounded bg-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-800 hover:bg-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1909,7 +1910,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         <p class="mt-1 text-xs text-zinc-500">
           Review the message payload before injecting it into the debugger.
         </p>
-        <.form for={@form} phx-submit="debugger-submit-trigger" class="mt-3 space-y-3">
+        <.form
+          for={@form}
+          phx-change="debugger-trigger-form-change"
+          phx-submit="debugger-submit-trigger"
+          class="mt-3 space-y-3"
+        >
           <input type="hidden" name="debugger_trigger[target]" value={@form[:target].value} />
           <input type="hidden" name="debugger_trigger[trigger]" value={@form[:trigger].value} />
           <input
@@ -1922,11 +1928,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             name="debugger_trigger[message_constructor]"
             value={@form[:message_constructor].value}
           />
+          <input
+            :if={@form[:payload_kind].value == "companion_bridge"}
+            type="hidden"
+            name="debugger_trigger[companion_contract]"
+            value={@form[:companion_contract].value}
+          />
           <label class="flex flex-col gap-1 text-xs text-zinc-600">
             <span>Trigger</span>
             <input
               type="text"
-              value={@form[:trigger].value}
+              value={@form[:trigger_display].value || @form[:trigger].value}
               readonly
               class="rounded border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[11px]"
             />
@@ -1937,6 +1949,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             type="text"
             label="Message"
             placeholder="Tick"
+          />
+          <.companion_bridge_trigger_fields
+            :if={@form[:payload_kind].value == "companion_bridge"}
+            form={@form}
           />
           <.input
             :if={@form[:payload_kind].value == "integer"}
@@ -1984,6 +2000,72 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         </.form>
       </div>
     </div>
+    """
+  end
+
+  attr(:form, :any, required: true)
+
+  defp companion_bridge_trigger_fields(assigns) do
+    plain_result? = assigns.form[:companion_plain_result].value in [true, "true"]
+    json_payload? = assigns.form[:companion_json_payload].value in [true, "true"]
+    fields = List.wrap(assigns.form[:companion_fields].value)
+
+    assigns =
+      assigns
+      |> assign(:plain_result?, plain_result?)
+      |> assign(:json_payload?, json_payload?)
+      |> assign(:fields, fields)
+
+    ~H"""
+    <.input
+      :if={not @plain_result?}
+      field={@form[:result]}
+      type="select"
+      label="Result"
+      options={[{"Ok", "Ok"}, {"Err", "Err"}]}
+    />
+    <.input
+      :if={not @plain_result? and @form[:result].value == "Err"}
+      field={@form[:error_message]}
+      type="text"
+      label="Error message"
+      placeholder="Unavailable"
+    />
+    <div :if={not @json_payload? and @form[:result].value != "Err"} class="space-y-2">
+      <label :for={field <- @fields} class="flex flex-col gap-1 text-xs text-zinc-600">
+        <span>{field["label"] || field[:label]}</span>
+        <input
+          :if={(field["type"] || field[:type]) == "string"}
+          type="text"
+          name={"debugger_trigger[companion_field_#{field["key"] || field[:key]}]"}
+          value={field["value"] || field[:value]}
+          class="rounded border border-zinc-200 px-2 py-1 font-mono text-[11px]"
+        />
+        <input
+          :if={(field["type"] || field[:type]) == "integer"}
+          type="number"
+          name={"debugger_trigger[companion_field_#{field["key"] || field[:key]}]"}
+          value={field["value"] || field[:value]}
+          class="rounded border border-zinc-200 px-2 py-1 font-mono text-[11px]"
+        />
+        <select
+          :if={(field["type"] || field[:type]) == "boolean"}
+          name={"debugger_trigger[companion_field_#{field["key"] || field[:key]}]"}
+          class="rounded border border-zinc-200 px-2 py-1 text-[11px]"
+        >
+          <option value="true" selected={(field["value"] || field[:value]) == "true"}>True</option>
+          <option value="false" selected={(field["value"] || field[:value]) == "false"}>False</option>
+        </select>
+      </label>
+    </div>
+    <label :if={@json_payload? and @form[:result].value != "Err"} class="flex flex-col gap-1 text-xs text-zinc-600">
+      <span>Payload (JSON)</span>
+      <textarea
+        name="debugger_trigger[payload_json]"
+        rows="6"
+        class="rounded border border-zinc-200 px-2 py-1 font-mono text-[11px]"
+      >{@form[:payload_json].value}</textarea>
+    </label>
     """
   end
 
@@ -2047,6 +2129,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             phx-value-trigger={row.trigger}
             phx-value-target={row.target}
             phx-value-message={row.message}
+            phx-value-trigger-display={row.trigger_display}
             disabled={
               not subscription_trigger_enabled?(@disabled_subscriptions, @target, row.trigger) or
                 not subscription_trigger_injection_supported?(row) or

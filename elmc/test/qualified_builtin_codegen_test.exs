@@ -1152,6 +1152,32 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute use_body =~ "elmc_new_int((screenH - 36))"
   end
 
+  test "curried let-bound Ui.text helpers keep string args boxed in lambdas" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/calendar_label_helper_project", __DIR__)
+    out_dir = Path.expand("tmp/calendar_label_helper_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> calendar_label_helper_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    refute generated_c =~ "const elmc_int_t text_ = (argc > 0 && args[0]) ? elmc_as_int(args[0]) : 0;"
+    assert generated_c =~ "ElmcValue *text_ = (argc > 0) ? args[0] : NULL;"
+    assert generated_c =~ "elmc_new_string(\"Next event\")"
+  end
+
   test "record helper inlining does not recursively substitute self-referential offsets" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/self_referential_substitution_project", __DIR__)
@@ -2773,6 +2799,36 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
                 screenH - 36
         in
         [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = x, y = y, w = 60, h = 18 } "Alt" ]
+    """
+  end
+
+  defp calendar_label_helper_source do
+    """
+
+
+    calendarLabelView : Int -> String -> String -> PebbleUi.UiNode
+    calendarLabelView screenW timeString eventLine =
+        let
+            lineH =
+                18
+
+            startY =
+                36
+
+            label x y text_ =
+                PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = x, y = y, w = screenW - 16, h = lineH } text_
+
+        in
+        PebbleUi.windowStack
+            [ PebbleUi.window 1
+                [ PebbleUi.canvasLayer 1
+                    [ PebbleUi.clear PebbleColor.white
+                    , label 8 startY timeString
+                    , label 8 (startY + lineH) "Next event"
+                    , label 8 (startY + lineH * 2) eventLine
+                    ]
+                ]
+            ]
     """
   end
 

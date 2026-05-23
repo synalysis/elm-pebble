@@ -23,7 +23,7 @@ type Msg
     | StoredUnits (Result String ( String, Encode.Value ))
 
 
-init : Platform.Flags -> ( Model, Cmd Msg )
+init : () -> ( Model, Cmd Msg )
 init _ =
     ( { theme = "dark", units = "metric" }, requestValues )
 
@@ -111,7 +111,7 @@ subscriptions _ =
         ]
 
 
-main : Platform.Program Model Msg
+main : Platform.Program () Model Msg
 main =
     Platform.worker
         { init = init
@@ -123,7 +123,9 @@ main =
 requestValues : Cmd Msg
 requestValues =
     Cmd.batch
-        [ Storage.get "theme" GotStorage
+        [ Storage.setup
+        , PreferenceStore.setup
+        , Storage.get "theme" GotStorage
         , PreferenceStore.get "units" GotPreference
         ]
 

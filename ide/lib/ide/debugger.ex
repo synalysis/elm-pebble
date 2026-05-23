@@ -958,6 +958,9 @@ defmodule Ide.Debugger do
       debugger_subscription_simulated_payload_trigger?(trigger) ->
         true
 
+      Ide.Debugger.CompanionSubscriptionTrigger.companion_trigger?(trigger) ->
+        true
+
       true ->
         case trigger_row_constructor_message(message) do
           nil ->
@@ -1798,7 +1801,8 @@ defmodule Ide.Debugger do
                             "companion_bridge",
                             "companion_bridge_command",
                             "init_companion_bridge",
-                            "simulator_settings"
+                            "simulator_settings",
+                            "subscription_trigger"
                           ] ++
                             companion_bridge_sources()) do
       state
@@ -5020,6 +5024,7 @@ defmodule Ide.Debugger do
           id: "#{target_name}:#{trigger_id}:#{normalize_trigger_id(message)}",
           label: normalize_trigger_label(label),
           trigger: trigger_row.trigger,
+          trigger_display: subscription_trigger_display(op, trigger),
           target: target_name,
           message: message,
           source: "subscription",
@@ -5040,6 +5045,7 @@ defmodule Ide.Debugger do
           id: "#{target_name}:#{normalize_trigger_id(op)}",
           label: normalize_trigger_label(op),
           trigger: op,
+          trigger_display: camel_case_trigger_id(op),
           target: target_name,
           message: message,
           source: "subscription"
@@ -5055,6 +5061,7 @@ defmodule Ide.Debugger do
           id: "#{target_name}:#{normalize_trigger_id(trigger)}",
           label: label,
           trigger: trigger,
+          trigger_display: camel_case_trigger_id(trigger),
           target: target_name,
           message: message,
           source: "fallback"
@@ -5467,6 +5474,9 @@ defmodule Ide.Debugger do
         |> String.replace(~r/[^a-z0-9]/, "")
 
       cond do
+        Ide.Debugger.CompanionSubscriptionTrigger.companion_trigger?(trigger_like) ->
+          message
+
         frame_subscription_trigger?(trigger_like) and
             subscription_message_arity(state, target, message_text) == 1 ->
           "#{message_text} #{Jason.encode!(subscription_frame_payload(state, target))}"
@@ -5938,6 +5948,93 @@ defmodule Ide.Debugger do
   end
 
   defp normalize_trigger_label(_), do: "Trigger"
+
+  @doc false
+  @spec subscription_trigger_display(map() | nil, String.t() | nil) :: String.t()
+  def subscription_trigger_display(%{} = op, trigger) do
+    case Map.get(op, "target") do
+      target when is_binary(target) and target != "" ->
+        target
+
+      _ ->
+        case subscription_label_name(Map.get(op, "label")) do
+          name when is_binary(name) and name != "" -> name
+          _ -> camel_case_trigger_id(trigger)
+        end
+    end
+  end
+
+  def subscription_trigger_display(_op, trigger), do: camel_case_trigger_id(trigger)
+
+  @doc false
+  @spec subscription_trigger_display_for(runtime_state() | map(), String.t(), String.t()) :: String.t()
+  def subscription_trigger_display_for(state, trigger, target_name)
+      when is_map(state) and is_binary(trigger) and is_binary(target_name) do
+    target_atom = normalize_step_target(target_name)
+    ei = get_in(state, [target_atom, :model, "elm_introspect"])
+
+    case introspect_cmd_calls(ei, "subscription_calls") do
+      calls when is_list(calls) ->
+        Enum.find_value(calls, fn op ->
+          if subscription_trigger_for_call(op) |> to_string() == trigger do
+            subscription_trigger_display(op, trigger)
+          end
+        end) || camel_case_trigger_id(trigger)
+
+      _ ->
+        camel_case_trigger_id(trigger)
+    end
+  end
+
+  def subscription_trigger_display_for(_state, trigger, _target_name) when is_binary(trigger),
+    do: camel_case_trigger_id(trigger)
+
+  def subscription_trigger_display_for(_state, _trigger, _target_name), do: "Trigger"
+
+  @spec subscription_label_name(String.t() | nil) :: String.t() | nil
+  defp subscription_label_name(label) when is_binary(label) do
+    case String.split(label, "(", parts: 2) do
+      [name, _] ->
+        name |> String.trim() |> then(fn value -> if value == "", do: nil, else: value end)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp subscription_label_name(_label), do: nil
+
+  @spec camel_case_trigger_id(String.t() | nil) :: String.t()
+  defp camel_case_trigger_id(trigger) when is_binary(trigger) do
+    trigger = String.trim(trigger)
+
+    cond do
+      trigger == "" ->
+        "Trigger"
+
+      String.contains?(trigger, ".") ->
+        trigger
+
+      not String.contains?(trigger, "_") ->
+        trigger
+
+      true ->
+        trigger
+        |> String.split("_", trim: true)
+        |> case do
+          [] ->
+            trigger
+
+          [single] ->
+            single
+
+          [first | rest] ->
+            first <> Enum.map_join(rest, "", &Macro.camelize/1)
+        end
+    end
+  end
+
+  defp camel_case_trigger_id(_trigger), do: "Trigger"
 
   @spec fallback_trigger_seed_rows(String.t()) :: [map()]
   defp fallback_trigger_seed_rows(target_name) when is_binary(target_name) do

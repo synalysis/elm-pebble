@@ -19,6 +19,7 @@ defmodule Ide.Emulator.Session do
           artifact_path: String.t() | nil,
           app_uuid: String.t() | nil,
           has_phone_companion: boolean(),
+          has_companion_preferences: boolean(),
           console_port: pos_integer(),
           bt_port: pos_integer(),
           protocol_proxy_port: pos_integer(),
@@ -92,7 +93,9 @@ defmodule Ide.Emulator.Session do
   end
 
   @spec local_port(pid(), :vnc | :phone) :: pos_integer()
-  def local_port(pid, kind), do: GenServer.call(pid, {:local_port, kind})
+  def local_port(pid, kind) do
+    GenServer.call(pid, {:local_port, kind}, local_port_call_timeout(kind))
+  end
 
   @spec control(pid(), non_neg_integer(), binary()) :: :ok | {:error, Types.session_error()}
   def control(pid, protocol, payload)
@@ -104,7 +107,7 @@ defmodule Ide.Emulator.Session do
 
   @spec ping(pid()) :: {:ok, map()} | {:error, Types.session_atom_error()}
   def ping(pid) do
-    GenServer.call(pid, :ping, 1_000)
+    GenServer.call(pid, :ping, config(:ping_timeout_ms, 5_000))
   catch
     :exit, {:timeout, _} -> {:error, :emulator_session_unresponsive}
     :exit, _ -> {:error, :emulator_session_unavailable}
@@ -377,7 +380,8 @@ defmodule Ide.Emulator.Session do
     with :ok <- validate_runtime_requirements(platform),
          {:ok, state} <- build_state(Keyword.put(opts, :platform, platform)),
          {:ok, state} <- maybe_start_qemu(state),
-         {:ok, state} <- maybe_start_protocol_router(state) do
+         {:ok, state} <- maybe_start_protocol_router(state),
+         {:ok, state} <- maybe_start_pypkjs_if_needed(state) do
       schedule_idle_check(state)
       # region agent log
       Ide.AgentDebugLog.log(
@@ -433,7 +437,13 @@ defmodule Ide.Emulator.Session do
     do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
 
   def handle_call(:install_context, _from, state) do
-    cleanup_process(state.pypkjs_pid)
+    state =
+      if Map.get(state, :has_phone_companion, false) do
+        state
+      else
+        cleanup_process(state.pypkjs_pid)
+        %{state | pypkjs_pid: nil}
+      end
 
     {:reply,
      {:ok,
@@ -442,7 +452,7 @@ defmodule Ide.Emulator.Session do
         artifact_path: state.artifact_path,
         platform: state.platform,
         console_port: state.console_port
-      }}, %{state | pypkjs_pid: nil}}
+      }}, state}
   end
 
   def handle_call(:direct_install_context, _from, %{qemu_pid: nil} = state),
@@ -549,7 +559,10 @@ defmodule Ide.Emulator.Session do
       if reuse? do
         prepare_running_session_for_install(state)
       else
-        reset_for_install(state)
+        with {:ok, state} <- reset_for_install(state),
+             {:ok, state} <- maybe_start_pypkjs_if_needed(state) do
+          {:ok, state}
+        end
       end
 
     case result do
@@ -562,7 +575,19 @@ defmodule Ide.Emulator.Session do
   end
 
   def handle_call(:install_finished, _from, state) do
-    {:reply, :ok, %{state | installing?: false}}
+    state = %{state | installing?: false, last_ping_ms: now_ms()}
+
+    state =
+      if Map.get(state, :has_phone_companion, false) and not live_pid?(state.pypkjs_pid) do
+        case maybe_start_pypkjs(state) do
+          {:ok, state} -> state
+          {:error, _reason} -> state
+        end
+      else
+        state
+      end
+
+    {:reply, :ok, state}
   end
 
   def handle_call(:reset_for_install, _from, state) do
@@ -597,6 +622,10 @@ defmodule Ide.Emulator.Session do
 
   def handle_call(:health_check, _from, state) do
     {:reply, session_health(state), state}
+  end
+
+  def handle_call(:ping, _from, %{installing?: true} = state) do
+    {:reply, {:ok, public_info(state)}, %{state | last_ping_ms: now_ms()}}
   end
 
   def handle_call(:ping, _from, state) do
@@ -846,6 +875,7 @@ defmodule Ide.Emulator.Session do
          artifact_path: artifact_path,
          app_uuid: app_uuid(artifact_path, platform),
          has_phone_companion: Keyword.get(opts, :has_phone_companion, false),
+         has_companion_preferences: Keyword.get(opts, :has_companion_preferences, false),
          console_port: console_port,
          bt_port: bt_port,
          protocol_proxy_port: protocol_proxy_port,
@@ -913,6 +943,18 @@ defmodule Ide.Emulator.Session do
     end
   end
 
+  defp maybe_start_pypkjs_if_needed(%{has_phone_companion: true} = state),
+    do: maybe_start_pypkjs(state)
+
+  defp maybe_start_pypkjs_if_needed(%{pypkjs_pid: pid} = state) when is_pid(pid),
+    do: {:ok, state}
+
+  defp maybe_start_pypkjs_if_needed(state), do: {:ok, state}
+
+  defp maybe_start_pypkjs(%{pypkjs_pid: pid} = state) when is_pid(pid) do
+    if live_pid?(pid), do: {:ok, state}, else: maybe_start_pypkjs(%{state | pypkjs_pid: nil})
+  end
+
   defp maybe_start_pypkjs(state) do
     if start_processes?() do
       with {:ok, pypkjs_bin} <- pypkjs_bin(),
@@ -927,6 +969,12 @@ defmodule Ide.Emulator.Session do
       {:ok, state}
     end
   end
+
+  defp local_port_call_timeout(:phone) do
+    config(:phone_local_port_timeout_ms, config(:pypkjs_ready_timeout_ms, 30_000) + 5_000)
+  end
+
+  defp local_port_call_timeout(_kind), do: 5_000
 
   defp start_daemon(command, args, prefix) do
     case MuonTrap.Daemon.start_link(command, args,
@@ -1128,6 +1176,7 @@ defmodule Ide.Emulator.Session do
       artifact_path: "/api/emulator/#{state.id}/artifact",
       app_uuid: state.app_uuid,
       has_phone_companion: state.has_phone_companion,
+      has_companion_preferences: state.has_companion_preferences,
       install_path: "/api/emulator/#{state.id}/install",
       vnc_path: "/api/emulator/#{state.id}/ws/vnc",
       phone_path: "/api/emulator/#{state.id}/ws/phone",

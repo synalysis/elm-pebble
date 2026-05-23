@@ -20,10 +20,14 @@ type Msg
     | Connected (Result String ())
 
 
-init : Platform.Flags -> ( Model, Cmd Msg )
+init : () -> ( Model, Cmd Msg )
 init _ =
     ( { statusCode = 0, statusText = "connecting", connected = False }
-    , WebSocket.connect "wss://echo.websocket.events" Connected
+    , Cmd.batch
+        [ WebSocket.setup
+        , WebSocket.setupCommands
+        , WebSocket.connect "wss://echo.websocket.events" Connected
+        ]
     )
 
 
@@ -96,7 +100,7 @@ subscriptions _ =
         ]
 
 
-main : Platform.Program Model Msg
+main : Platform.Program () Model Msg
 main =
     Platform.worker
         { init = init

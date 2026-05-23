@@ -3979,6 +3979,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       id: Map.get(row, :id) || Map.get(row, "id"),
       label: Map.get(row, :label) || Map.get(row, "label"),
       trigger: Map.get(row, :trigger) || Map.get(row, "trigger"),
+      trigger_display: Map.get(row, :trigger_display) || Map.get(row, "trigger_display"),
       target: Map.get(row, :target) || Map.get(row, "target"),
       message: Map.get(row, :message) || Map.get(row, "message"),
       source: Map.get(row, :source) || Map.get(row, "source"),

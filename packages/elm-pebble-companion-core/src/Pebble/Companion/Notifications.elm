@@ -2,6 +2,7 @@ module Pebble.Companion.Notifications exposing
     ( NotificationStatus
     , current
     , onNotificationStatus
+    , setup
     )
 
 {-| Phone notification status helpers for companion apps.
@@ -51,6 +52,11 @@ Registering this subscription also tells the bridge to send notification updates
 onNotificationStatus : (Result String NotificationStatus -> msg) -> Sub msg
 onNotificationStatus toMsg =
     Platform.subscribe (handler toMsg)
+
+
+setup : Cmd msg
+setup =
+    Platform.setup notificationsInterest
 
 
 {-| Platform router handler for notification events and responses.

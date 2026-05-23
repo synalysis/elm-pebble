@@ -13,40 +13,26 @@ type alias Model =
 
 type Msg
     = FromWatch (Result String WatchToPhone)
-    | GotNext (Result String (Maybe Calendar.CalendarEvent))
-    | GotCalendarPush (Result String (List Calendar.CalendarEvent))
+    | GotCalendar (Result String (List Calendar.CalendarEvent))
 
 
 init : Platform.Flags -> ( Model, Cmd Msg )
 init _ =
-    ( { lastTitle = "" }, Calendar.current GotNext )
+    ( { lastTitle = "" }
+    , Calendar.current (GotCalendar << Result.map maybeAsList)
+    )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         FromWatch (Ok RequestCalendar) ->
-            ( model, Calendar.current GotNext )
+            ( model, Calendar.current (GotCalendar << Result.map maybeAsList) )
 
         FromWatch (Err _) ->
             ( model, Cmd.none )
 
-        GotNext (Ok (Just event)) ->
-            let
-                ( hour, minute ) =
-                    eventTime event.startMillis
-            in
-            ( { model | lastTitle = event.title }
-            , Phone.sendPhoneToWatch (ProvideNextEvent event.title hour minute)
-            )
-
-        GotNext (Ok Nothing) ->
-            ( model, Phone.sendPhoneToWatch NoUpcomingEvents )
-
-        GotNext (Err _) ->
-            ( model, Cmd.none )
-
-        GotCalendarPush (Ok events) ->
+        GotCalendar (Ok events) ->
             case events of
                 event :: _ ->
                     let
@@ -60,7 +46,7 @@ update msg model =
                 [] ->
                     ( model, Phone.sendPhoneToWatch NoUpcomingEvents )
 
-        GotCalendarPush (Err _) ->
+        GotCalendar (Err _) ->
             ( model, Cmd.none )
 
 
@@ -68,7 +54,7 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ Phone.onWatchToPhone FromWatch
-        , Calendar.onCalendar GotCalendarPush
+        , Calendar.onCalendar GotCalendar
         ]
 
 
@@ -79,6 +65,16 @@ main =
         , update = update
         , subscriptions = subscriptions
         }
+
+
+maybeAsList : Maybe Calendar.CalendarEvent -> List Calendar.CalendarEvent
+maybeAsList event =
+    case event of
+        Nothing ->
+            []
+
+        Just value ->
+            [ value ]
 
 
 eventTime : Int -> ( Int, Int )

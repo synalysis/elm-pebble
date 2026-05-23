@@ -17,6 +17,7 @@ defmodule IdeWeb.SimulatorSettingsForm do
   attr :change_event, :string, default: "simulator-save-settings"
   attr :class, :string, default: nil
   attr :description, :string, default: nil
+  attr :group_columns, :integer, default: 2
 
   @spec simulator_settings_form(assigns()) :: rendered()
   def simulator_settings_form(assigns) do
@@ -52,7 +53,14 @@ defmodule IdeWeb.SimulatorSettingsForm do
         No simulator controls apply to this project yet. Add watch or companion API usage in Elm to enable settings here.
       </p>
 
-      <div :if={!@empty?} class="mt-3 grid min-w-0 gap-3 md:grid-cols-2">
+      <div
+        :if={!@empty?}
+        class={[
+          "mt-3 grid min-w-0 gap-3",
+          @group_columns == 1 && "grid-cols-1",
+          @group_columns != 1 && "md:grid-cols-2"
+        ]}
+      >
         <div :for={{_group_id, title, fields} <- @groups} class="min-w-0 rounded border border-zinc-100 bg-zinc-50 p-2">
           <h4 class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{title}</h4>
           <div class="mt-2 space-y-2">

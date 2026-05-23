@@ -8,6 +8,7 @@ defmodule Ide.PebbleToolchain do
   alias Ide.Compiler
   alias Ide.Paths
   alias Ide.PebblePreferences
+  alias Ide.ProjectCapabilities
   alias Ide.Resources.ResourceStore
   alias Ide.WatchModels
   alias ElmEx.Frontend.Bridge
@@ -35,7 +36,8 @@ defmodule Ide.PebbleToolchain do
           artifact_path: String.t(),
           build_result: command_result(),
           app_root: String.t(),
-          has_phone_companion: boolean()
+          has_phone_companion: boolean(),
+          has_companion_preferences: boolean()
         }
 
   @type pebble_opts :: [
@@ -106,13 +108,17 @@ defmodule Ide.PebbleToolchain do
          {:ok, artifact_path} <- latest_pbw(app_root),
          {:ok, artifact_path} <- Ide.Emulator.PBW.prune_empty_media_resources(artifact_path),
          {:ok, artifact_path} <- Ide.Emulator.PBW.prune_development_artifacts(artifact_path) do
+      has_phone_companion = package_has_phone_companion?(app_root)
+
       {:ok,
        %{
          status: build_result.status,
          artifact_path: artifact_path,
          build_result: build_result,
          app_root: app_root,
-         has_phone_companion: package_has_phone_companion?(app_root)
+         has_phone_companion: has_phone_companion,
+         has_companion_preferences:
+           has_phone_companion and ProjectCapabilities.companion_preferences?(workspace_root)
        }}
     end
   end
@@ -866,24 +872,12 @@ defmodule Ide.PebbleToolchain do
   end
 
   @spec copy_pebble_template(String.t(), String.t(), boolean()) :: :ok | {:error, toolchain_error()}
-  defp copy_pebble_template(template_root, app_root, has_phone_companion) do
-    mappings =
-      [
-        {Path.join(template_root, "wscript"), Path.join(app_root, "wscript")},
-        {Path.join(template_root, "src/c/pebble_app_template.c"),
-         Path.join(app_root, "src/c/pebble_app_template.c")}
-      ]
-      |> then(fn mappings ->
-        if has_phone_companion do
-          mappings ++
-            [
-              {Path.join(template_root, "src/pkjs/index.js"),
-               Path.join(app_root, "src/pkjs/index.js")}
-            ]
-        else
-          mappings
-        end
-      end)
+  defp copy_pebble_template(template_root, app_root, _has_phone_companion) do
+    mappings = [
+      {Path.join(template_root, "wscript"), Path.join(app_root, "wscript")},
+      {Path.join(template_root, "src/c/pebble_app_template.c"),
+       Path.join(app_root, "src/c/pebble_app_template.c")}
+    ]
 
     Enum.reduce_while(mappings, :ok, fn {source, target}, _acc ->
       case copy_file(source, target) do
@@ -1614,303 +1608,47 @@ defmodule Ide.PebbleToolchain do
       _phone_app ->
         index_path = Path.join(app_root, "src/pkjs/index.js")
 
-        with :ok <- File.mkdir_p(Path.dirname(index_path)) do
-          File.write(index_path, elm_companion_index_js(preferences_schema))
+        with :ok <- File.mkdir_p(Path.dirname(index_path)),
+             {:ok, content} <- companion_index_content(preferences_schema),
+             :ok <- File.write(index_path, content) do
+          :ok
         end
     end
   end
 
-  @spec elm_companion_index_js(map() | nil) :: String.t()
-  defp elm_companion_index_js(preferences_schema) do
-    preferences_url =
-      if is_map(preferences_schema) do
-        PebblePreferences.data_url(preferences_schema)
+  @doc false
+  def companion_index_js_for_preferences(preferences_schema) do
+    case companion_index_content(preferences_schema) do
+      {:ok, content} -> content
+      {:error, reason} -> raise "companion_index_content failed: #{inspect(reason)}"
+    end
+  end
+
+  @spec companion_index_content(map() | nil) :: {:ok, String.t()} | {:error, toolchain_error()}
+  defp companion_index_content(preferences_schema) do
+    with {:ok, template_root} <- template_app_root() do
+      template_path = Path.join(template_root, "src/pkjs/index.js")
+
+      case File.read(template_path) do
+        {:ok, source} ->
+          preferences_url =
+            if is_map(preferences_schema) do
+              PebblePreferences.data_url(preferences_schema)
+            end
+
+          patched =
+            String.replace(
+              source,
+              "var generatedConfigurationUrl = null;",
+              "var generatedConfigurationUrl = #{Jason.encode!(preferences_url)};"
+            )
+
+          {:ok, patched}
+
+        {:error, reason} ->
+          {:error, {:read_companion_index_template_failed, reason}}
       end
-
-    """
-    var pendingIncoming = [];
-    var incomingPort = null;
-    var protocol = require("./companion-protocol.js");
-    var generatedConfigurationUrl = #{Jason.encode!(preferences_url)};
-    var configurationStorageKey = "elm-pebble.configuration.response";
-    var appMessageKeyNamesById = {};
-    var appMessageKeyIdsByName = {};
-    var appMessageOutbox = [];
-    var appMessageSending = false;
-
-    function readStoredConfigurationResponse() {
-        if (typeof localStorage === "undefined" || !localStorage) {
-            return null;
-        }
-
-        try {
-            var response = localStorage.getItem(configurationStorageKey);
-            return typeof response === "string" ? response : null;
-        } catch (_error) {
-            return null;
-        }
-    }
-
-    function writeStoredConfigurationResponse(response) {
-        if (typeof localStorage === "undefined" || !localStorage || typeof response !== "string") {
-            return;
-        }
-
-        try {
-            localStorage.setItem(configurationStorageKey, response);
-        } catch (_error) {
-        }
-    }
-
-    function companionFlags() {
-        return {
-            configurationResponse: readStoredConfigurationResponse()
-        };
-    }
-
-    Object.keys(protocol).forEach(function (key) {
-        if (key.indexOf("KEY_") !== 0 || typeof protocol[key] !== "number") {
-            return;
-        }
-
-        var name = key.substring(4).toLowerCase();
-        appMessageKeyNamesById[protocol[key]] = name;
-        appMessageKeyIdsByName[name] = protocol[key];
-    });
-
-    function appMessageValue(payload, name) {
-        if (!payload) {
-            return undefined;
-        }
-
-        var id = appMessageKeyIdsByName[name];
-        if (Object.prototype.hasOwnProperty.call(payload, name)) {
-            return payload[name];
-        }
-        if (Object.prototype.hasOwnProperty.call(payload, String(id))) {
-            return payload[String(id)];
-        }
-        if (Object.prototype.hasOwnProperty.call(payload, id)) {
-            return payload[id];
-        }
-        return undefined;
-    }
-
-    function normalizeIncomingAppMessage(payload) {
-        if (!payload) {
-            return payload;
-        }
-
-        var normalized = {};
-        Object.keys(payload).forEach(function (key) {
-            var name = appMessageKeyNamesById[key] || key;
-            normalized[name] = payload[key];
-        });
-
-        Object.keys(appMessageKeyIdsByName).forEach(function (name) {
-            var value = appMessageValue(payload, name);
-            if (typeof value !== "undefined") {
-                normalized[name] = value;
-            }
-        });
-
-        return normalized;
-    }
-
-    function normalizeOutgoingAppMessage(payload) {
-        if (!payload) {
-            return payload;
-        }
-
-        var normalized = {};
-        Object.keys(payload).forEach(function (key) {
-            var id = appMessageKeyIdsByName[key];
-            normalized[typeof id === "number" ? id : key] = payload[key];
-        });
-
-        return normalized;
-    }
-
-    function sendQueuedAppMessage(payload) {
-        appMessageOutbox.push(normalizeOutgoingAppMessage(payload || {}));
-        drainAppMessageOutbox();
-    }
-
-    function drainAppMessageOutbox() {
-        if (appMessageSending || appMessageOutbox.length === 0) {
-            return;
-        }
-
-        var payload = appMessageOutbox[0];
-        appMessageSending = true;
-
-        Pebble.sendAppMessage(
-            payload,
-            function () {
-                appMessageOutbox.shift();
-                appMessageSending = false;
-                drainAppMessageOutbox();
-            },
-            function (error) {
-                console.log("Elm companion sendAppMessage failed", JSON.stringify(error || {}));
-                appMessageSending = false;
-                setTimeout(drainAppMessageOutbox, 50);
-            }
-        );
-    }
-
-    function deliverIncoming(payload) {
-        console.log("bridge -> Elm companion", JSON.stringify(payload));
-        if (incomingPort) {
-            incomingPort.send(payload);
-        } else {
-            console.log("bridge queued incoming for Elm companion");
-            pendingIncoming.push(payload);
-        }
-    }
-
-    function openConfigurationUrl(url) {
-        if (url && typeof Pebble.openURL === "function") {
-            console.log("opening companion configuration", url);
-            Pebble.openURL(url);
-        }
-    }
-
-    function handleOutgoing(payload) {
-        if (payload && payload.api === "configuration") {
-            if (payload.op === "open") {
-                console.log("Elm companion requested configuration", JSON.stringify(payload.payload || {}));
-                openConfigurationUrl((payload.payload && payload.payload.url) || generatedConfigurationUrl);
-            }
-            return;
-        }
-
-        if (payload && payload.api === "appMessage" && payload.op === "send") {
-            console.log("Elm companion sendAppMessage payload", JSON.stringify(payload.payload || {}));
-            sendQueuedAppMessage(payload.payload || {});
-            return;
-        }
-
-        console.log("Elm companion sendAppMessage payload", JSON.stringify(payload));
-        sendQueuedAppMessage(payload);
-    }
-
-    function installXmlHttpRequestCompatibility() {
-        if (typeof XMLHttpRequest === "undefined") {
-            return;
-        }
-
-        var proto = XMLHttpRequest.prototype;
-        if (!proto) {
-            return;
-        }
-
-        if (typeof proto.getAllResponseHeaders !== "function") {
-            proto.getAllResponseHeaders = function () {
-                return "";
-            };
-        }
-
-        if (typeof proto.addEventListener !== "function") {
-            proto.addEventListener = function (name, callback) {
-                if (typeof callback !== "function") {
-                    return;
-                }
-
-                var property = "on" + name;
-                var previous = this[property];
-                this[property] = function (event) {
-                    if (
-                        name === "load" &&
-                        typeof this.responseText !== "undefined" &&
-                        (typeof this.response === "undefined" || this.response === null || this.response === "")
-                    ) {
-                        try {
-                            this.response = this.responseText;
-                        } catch (_error) {
-                        }
-                    }
-                    if (typeof previous === "function") {
-                        previous.call(this, event);
-                    }
-                    callback.call(this, event);
-                };
-            };
-        }
-    }
-
-    installXmlHttpRequestCompatibility();
-
-    Pebble.addEventListener("appmessage", function (event) {
-        if (!event || !event.payload) {
-            return;
-        }
-
-        console.log("watch -> Elm companion", JSON.stringify(event.payload));
-        deliverIncoming(normalizeIncomingAppMessage(event.payload));
-    });
-
-    if (generatedConfigurationUrl) {
-        Pebble.addEventListener("showConfiguration", function () {
-            console.log("Pebble showConfiguration event");
-            openConfigurationUrl(generatedConfigurationUrl);
-        });
-
-        Pebble.addEventListener("webviewclosed", function (event) {
-            var response = event && typeof event.response === "string" ? event.response : null;
-            console.log("Pebble webviewclosed response", response);
-            writeStoredConfigurationResponse(response);
-
-            deliverIncoming({
-                event: "configuration.closed",
-                payload: {
-                    response: response
-                }
-            });
-        });
-    }
-
-    var elmModule = require("./elm-companion.js");
-
-    function bootElmCompanion() {
-        var elmRoot = elmModule.Elm || (typeof Elm !== "undefined" ? Elm : null);
-        var app;
-
-        if (!elmRoot || !elmRoot.CompanionApp) {
-            throw new Error("Elm.CompanionApp is not available");
-        }
-
-        try {
-            app = elmRoot.CompanionApp.init({ flags: companionFlags() });
-        } catch (_error) {
-            app = elmRoot.CompanionApp.init();
-        }
-
-        if (app.ports && app.ports.outgoing) {
-            app.ports.outgoing.subscribe(function (payload) {
-                handleOutgoing(payload);
-            });
-        }
-
-        if (app.ports && app.ports.bridgeInterest) {
-            app.ports.bridgeInterest.subscribe(function (payload) {
-                handleOutgoing(payload);
-            });
-        }
-
-        if (app.ports && app.ports.incoming) {
-            incomingPort = app.ports.incoming;
-            while (pendingIncoming.length > 0) {
-                incomingPort.send(pendingIncoming.shift());
-            }
-        }
-    }
-
-    Pebble.addEventListener("ready", function () {
-        console.log("PKJS ready; booting Elm companion");
-        bootElmCompanion();
-    });
-    """
+    end
   end
 
   @spec copy_file(String.t(), String.t()) :: :ok | {:error, toolchain_error()}

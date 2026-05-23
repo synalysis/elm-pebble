@@ -18,9 +18,15 @@ type Msg
     | PinInserted (Result String ())
 
 
-init : Platform.Flags -> ( Model, Cmd Msg )
+init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { token = "" }, Timeline.getToken GotToken )
+    ( { token = "" }
+    , Cmd.batch
+        [ Timeline.setupToken
+        , Timeline.setupCommands
+        , Timeline.getToken GotToken
+        ]
+    )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -59,7 +65,7 @@ subscriptions _ =
         ]
 
 
-main : Platform.Program Model Msg
+main : Platform.Program () Model Msg
 main =
     Platform.worker
         { init = init

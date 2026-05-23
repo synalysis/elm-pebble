@@ -1776,6 +1776,7 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
     status_t status = persist_delete(key);
     ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "debug storage_delete key=%lu status=%ld",
             (unsigned long)key, (long)status);
+    (void)status;
     ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
     return true;
   }
@@ -1806,6 +1807,7 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
     status_t status = persist_write_int(key, value);
     ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "debug storage_write key=%lu value=%ld status=%ld",
             (unsigned long)key, (long)value, (long)status);
+    (void)status;
     ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
     return true;
   }
@@ -1819,6 +1821,7 @@ static bool handle_debug_storage(DictionaryIterator *iter) {
     status_t status = persist_write_string(key, value);
     ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "debug storage_write_string key=%lu value=%s status=%ld",
             (unsigned long)key, value, (long)status);
+    (void)status;
     ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
     return true;
   }

@@ -35,7 +35,8 @@ defmodule IdeWeb.EmulatorController do
              project_slug: Projects.scope_key(project),
              platform: launch_platform,
              artifact_path: package_result.artifact_path,
-             has_phone_companion: package_result.has_phone_companion
+             has_phone_companion: package_result.has_phone_companion,
+             has_companion_preferences: package_result.has_companion_preferences
            ) do
       # region agent log
       Ide.AgentDebugLog.log(

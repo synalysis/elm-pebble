@@ -6,6 +6,7 @@ module Pebble.Companion.Storage exposing
     , onStorage
     , remove
     , set
+    , setup
     )
 
 {-| Persistent companion storage helpers.
@@ -111,10 +112,17 @@ onStorage toMsg =
     Platform.subscribe (handler toMsg)
 
 
+setup : Cmd msg
+setup =
+    Platform.setup storageInterest
+
+
 {-| Platform router handler for storage command responses.
 -}
 handler toMsg =
-    Platform.handler storageInterest (decodeStorage >> Result.mapError errorToString) toMsg
+    Platform.handler storageInterest
+        (decodeStorage >> Result.mapError errorToString)
+        (Result.mapError DecodeFailure >> toMsg)
 
 
 storageInterest =

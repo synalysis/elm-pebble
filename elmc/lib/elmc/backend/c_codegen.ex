@@ -1738,23 +1738,31 @@ defmodule Elmc.Backend.CCodegen do
          %{op: :qualified_call, target: target, args: args} = expr,
          context
        ) do
-    case special_value_from_target(target, args) do
-      nil ->
-        if qualified_builtin_operator_name(target) in [
-             "__add__",
-             "__sub__",
-             "__mul__",
-             "__idiv__",
-             "modBy",
-             "remainderBy"
-           ] do
-          Enum.flat_map(args, &collect_var_contexts(name, &1, :native))
-        else
-          collect_var_contexts_from_map(name, expr, context)
+    normalized = normalize_special_target(target)
+
+    case text_command_var_contexts(name, normalized, args, context) do
+      :skip ->
+        case special_value_from_target(target, args) do
+          nil ->
+            if qualified_builtin_operator_name(target) in [
+                 "__add__",
+                 "__sub__",
+                 "__mul__",
+                 "__idiv__",
+                 "modBy",
+                 "remainderBy"
+               ] do
+              Enum.flat_map(args, &collect_var_contexts(name, &1, :native))
+            else
+              collect_var_contexts_from_map(name, expr, context)
+            end
+
+          rewritten ->
+            collect_var_contexts(name, rewritten, context)
         end
 
-      rewritten ->
-        collect_var_contexts(name, rewritten, context)
+      contexts ->
+        contexts
     end
   end
 
@@ -1860,6 +1868,35 @@ defmodule Elmc.Backend.CCodegen do
     do: Enum.flat_map(exprs, &collect_var_contexts(name, &1, context))
 
   defp collect_var_contexts(_name, _expr, _context), do: []
+
+  defp text_command_var_contexts(name, "Pebble.Ui.text", args, context) when length(args) == 4 do
+    collect_var_contexts_for_function_args(name, args, [:boxed, :boxed, :boxed, :boxed], context)
+  end
+
+  defp text_command_var_contexts(name, "Pebble.Ui.textLabel", args, context) when length(args) == 3 do
+    collect_var_contexts_for_function_args(name, args, [:boxed, :boxed, :boxed], context)
+  end
+
+  defp text_command_var_contexts(name, "Pebble.Ui.textInt", args, context) when length(args) == 3 do
+    collect_var_contexts_for_function_args(name, args, [:boxed, :boxed, :native], context)
+  end
+
+  defp text_command_var_contexts(_name, _target, _args, _context), do: :skip
+
+  defp collect_var_contexts_for_function_args(name, args, kinds, default_context) do
+    args
+    |> Enum.zip(kinds)
+    |> Enum.flat_map(fn {arg, kind} ->
+      arg_context =
+        case kind do
+          :native -> :native
+          :boxed -> :boxed
+          _ -> default_context
+        end
+
+      collect_var_contexts(name, arg, arg_context)
+    end)
+  end
 
   defp collect_var_contexts_from_map(name, expr, context) do
     expr
@@ -2136,6 +2173,33 @@ defmodule Elmc.Backend.CCodegen do
     else
       compile_boxed_function_call(module_name, name, args, env, counter, arity, c_name)
     end
+  end
+
+  defp compile_closure_call(closure_var, args, env, counter) do
+    {arg_code, arg_vars, counter} =
+      Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
+        {code, var, c2} = compile_expr(arg_expr, env, c)
+        {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
+      end)
+
+    next = counter + 1
+    out = "tmp_#{next}"
+    argc = length(arg_vars)
+    args_array = "call_args_#{next}"
+    arg_list = Enum.join(arg_vars, ", ")
+
+    releases =
+      arg_vars
+      |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+
+    code = """
+    #{arg_code}
+      ElmcValue *#{args_array}[#{max(argc, 1)}] = { #{arg_list} };
+      ElmcValue *#{out} = elmc_closure_call(#{closure_var}, #{args_array}, #{argc});
+      #{releases}
+    """
+
+    {code, out, next}
   end
 
   defp compile_boxed_function_call(module_name, name, args, env, counter, arity, c_name) do
@@ -2640,8 +2704,14 @@ defmodule Elmc.Backend.CCodegen do
   defp compile_expr(%{op: :call, name: name, args: args}, env, counter) do
     case compile_builtin_operator_call(name, args, env, counter) do
       nil ->
-        module_name = Map.get(env, :__module__, "Main")
-        compile_function_call(module_name, name, args, env, counter)
+        case Map.fetch(env, name) do
+          {:ok, closure_var} when is_binary(closure_var) ->
+            compile_closure_call(closure_var, args, env, counter)
+
+          :error ->
+            module_name = Map.get(env, :__module__, "Main")
+            compile_function_call(module_name, name, args, env, counter)
+        end
 
       result ->
         result
@@ -3582,7 +3652,7 @@ defmodule Elmc.Backend.CCodegen do
     # Only capture variables that are actually resolvable in the current env.
     # Variables from case-branch bindings or other scopes that aren't in env
     # would generate undefined C identifiers, so we filter them out.
-    env_keys = env |> Map.keys() |> Enum.filter(&is_binary/1) |> MapSet.new()
+    env_keys = env_resolvable_binding_keys(env)
 
     free_vars =
       body_vars
@@ -3714,7 +3784,7 @@ defmodule Elmc.Backend.CCodegen do
 
     capture_refs =
       free_vars
-      |> Enum.map(fn var_name -> Map.get(env, var_name, var_name) end)
+      |> Enum.map(&capture_ref(env, &1))
 
     capture_list = Enum.join(capture_refs, ", ")
     out = "tmp_#{next}"
@@ -7861,6 +7931,9 @@ defmodule Elmc.Backend.CCodegen do
 
   defp special_value_from_target("Cmd.batch", [commands]), do: commands
 
+  defp special_value_from_target("Pebble.Cmd.batch", args),
+    do: special_value_from_target("Cmd.batch", args)
+
   defp special_value_from_target("Sub.none", _args), do: %{op: :int_literal, value: 0}
   defp special_value_from_target("Sub.batch", args), do: subscription_batch_expr(args)
 
@@ -9726,6 +9799,37 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp native_int_binding(_env, _name), do: nil
+
+  defp env_resolvable_binding_keys(env) do
+    map_keys = env |> Map.keys() |> Enum.filter(&is_binary/1)
+
+    native_keys =
+      [:__native_int_bindings__, :__native_bool_bindings__, :__native_float_bindings__]
+      |> Enum.flat_map(fn key ->
+        env |> Map.get(key, %{}) |> Map.keys()
+      end)
+
+    MapSet.new(map_keys ++ native_keys)
+  end
+
+  defp capture_ref(env, var_name) do
+    cond do
+      is_binary(ref = native_int_binding(env, var_name)) ->
+        "elmc_new_int(#{ref})"
+
+      is_binary(ref = native_bool_binding(env, var_name)) ->
+        "elmc_new_bool(#{ref})"
+
+      is_binary(ref = native_float_binding(env, var_name)) ->
+        "elmc_new_float(#{ref})"
+
+      Map.has_key?(env, var_name) ->
+        "elmc_retain(#{Map.get(env, var_name)})"
+
+      true ->
+        var_name
+    end
+  end
 
   defp native_int_binding?(env, name) when is_binary(name) or is_atom(name),
     do: is_binary(native_int_binding(env, name))

@@ -4,10 +4,29 @@ module Pebble.Companion.Calendar exposing
     , onCalendar
     , onCurrent
     , onUpcoming
+    , setup
+    , setupCurrent
+    , setupUpcoming
     , upcoming
     )
 
 {-| Calendar helpers for companion apps.
+
+    import Pebble.Companion.Calendar as Calendar
+
+    type Msg
+        = GotCalendar (Result String (List Calendar.CalendarEvent))
+
+    init _ =
+        ( model, Calendar.current (GotCalendar << Result.map maybeAsList) )
+
+    subscriptions _ =
+        Calendar.onCalendar GotCalendar
+
+    maybeAsList event =
+        case event of
+            Nothing -> []
+            Just value -> [ value ]
 
 # Types
 
@@ -45,21 +64,30 @@ type alias CalendarEvent =
 
 
 {-| Request the next calendar event, if available.
+
+This registers the calendar bridge (via `setup`) before sending the request.
+Pair it with `onCalendar` in subscriptions so responses can reach your `update`.
 -}
 current : (Result String (Maybe CalendarEvent) -> msg) -> Cmd msg
 current toMsg =
-    Phone.send toMsg <|
-        Phone.request "calendar-next" "calendar" "nextEvent" decodeCurrentResponse
+    Cmd.batch
+        [ setup
+        , Phone.send toMsg <|
+            Phone.request "calendar-next" "calendar" "nextEvent" decodeCurrentResponse
+        ]
 
 
 {-| Request a bounded list of upcoming calendar events.
 -}
 upcoming : Int -> (Result String (List CalendarEvent) -> msg) -> Cmd msg
 upcoming limit toMsg =
-    Phone.send toMsg <|
-        Phone.requestWithPayload "calendar-upcoming" "calendar" "upcoming"
-            (Encode.object [ ( "limit", Encode.int limit ) ])
-            decodeUpcomingResponse
+    Cmd.batch
+        [ setup
+        , Phone.send toMsg <|
+            Phone.requestWithPayload "calendar-upcoming" "calendar" "upcoming"
+                (Encode.object [ ( "limit", Encode.int limit ) ])
+                decodeUpcomingResponse
+        ]
 
 
 {-| Receive pushed calendar updates from the companion bridge.
@@ -85,6 +113,21 @@ onUpcoming toMsg =
     Platform.subscribe (handlerUpcoming toMsg)
 
 
+setup : Cmd msg
+setup =
+    Platform.setup calendarPushInterest
+
+
+setupCurrent : Cmd msg
+setupCurrent =
+    Platform.setup calendarCurrentInterest
+
+
+setupUpcoming : Cmd msg
+setupUpcoming =
+    Platform.setup calendarUpcomingInterest
+
+
 handler toMsg =
     Platform.handler calendarPushInterest decodeCalendar toMsg
 
@@ -104,7 +147,7 @@ calendarPushInterest =
             Just <|
                 Command.command "calendar-subscribe" "calendar" "subscribe"
         , eventPrefixes = [ "calendar." ]
-        , resultIdPrefixes = []
+        , resultIdPrefixes = [ "calendar-" ]
         }
 
 
@@ -166,7 +209,20 @@ decodeBridgeResult value =
                         Ok []
 
                     Just payload ->
-                        decodeBridgeEvent { event = "calendar.upcoming", payload = payload }
+                        if String.startsWith "calendar-next" envelope.id then
+                            decodeNextBridgeEvent { event = "calendar.next", payload = payload }
+                                |> Result.map
+                                    (\maybeEvent ->
+                                        case maybeEvent of
+                                            Just event ->
+                                                [ event ]
+
+                                            Nothing ->
+                                                []
+                                    )
+
+                        else
+                            decodeBridgeEvent { event = "calendar.upcoming", payload = payload }
 
             else
                 Err (decodeBridgeError envelope)

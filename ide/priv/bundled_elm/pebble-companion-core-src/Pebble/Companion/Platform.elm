@@ -1,9 +1,9 @@
 module Pebble.Companion.Platform exposing
     ( Handler
     , Interest
-    , attach
     , handler
     , interest
+    , setup
     , subscribe
     )
 
@@ -16,6 +16,9 @@ Each platform API exposes a real `Sub msg` subscription. Compose them with plain
     import Pebble.Companion.Locale as Locale
     import Pebble.Companion.Phone as Phone
 
+    init _ =
+        ( model, Cmd.batch [ Battery.setup, Battery.current GotBattery ] )
+
     subscriptions _ =
         Sub.batch
             [ Phone.onWatchToPhone FromWatch
@@ -23,7 +26,7 @@ Each platform API exposes a real `Sub msg` subscription. Compose them with plain
             , Locale.onLocale GotLocale
             ]
 
-@docs Interest, Handler, handler, interest, subscribe, attach
+@docs Interest, Handler, handler, interest, subscribe, setup
 
 -}
 
@@ -31,7 +34,6 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Pebble.Companion.Contract exposing (CommandEnvelope)
 import Pebble.Companion.Phone as Phone
-import Sub
 
 
 {-| Bridge interest metadata for a platform API incoming stream.
@@ -48,14 +50,14 @@ type Interest
 {-| Incoming platform event handler for a dedicated port subscription.
 -}
 type Handler msg
-    = Handler Interest (Decode.Value -> Result String msg)
+    = Handler Interest (Decode.Value -> msg)
 
 
 {-| Build a platform handler from interest metadata and decoders.
 -}
-handler : Interest -> (Decode.Value -> Result String a) -> (a -> msg) -> Handler msg
-handler interest decode toMsg =
-    Handler interest (decode >> Result.map toMsg)
+handler : Interest -> (Decode.Value -> Result String a) -> (Result String a -> msg) -> Handler msg
+handler interest_ decode toMsg =
+    Handler interest_ (\value -> toMsg (decode value))
 
 
 {-| Describe a platform API bridge interest.
@@ -67,28 +69,31 @@ interest :
     , resultIdPrefixes : List String
     }
     -> Interest
-interest =
-    Interest
+interest config =
+    Interest config
 
 
 {-| Register bridge interest and subscribe to the API's dedicated incoming port.
+
+Call the matching `setup` command from `init` so the bridge can route events to
+this handler.
 -}
 subscribe : Handler msg -> Sub msg
-subscribe (Handler (Interest interest_) decode) =
-    Sub.batch
-        [ Phone.platformIncomingFor interest_.id (decodeIncoming decode)
-        , attach (Handler (Interest interest_) decode)
-        ]
+subscribe (Handler (Interest interest_) deliver) =
+    Phone.platformIncomingFor interest_.id deliver
 
 
-{-| Register bridge interest without subscribing to incoming events.
+{-| Register bridge interest with the companion bridge.
+
+Pair this with the matching subscription from typed platform modules such as
+`Battery.onBattery` or `Calendar.onCalendar`.
 -}
-attach : Handler msg -> Sub msg
-attach (Handler (Interest interest_) _) =
-    Sub.batch <|
+setup : Interest -> Cmd msg
+setup (Interest interest_) =
+    Cmd.batch <|
         List.filterMap identity
-            [ Maybe.map Phone.subscribeBridge interest_.subscribeCommand
-            , Just (Phone.registerHandler interest_.id (encodeInterest (Interest interest_)))
+            [ Just (Phone.registerHandler interest_.id (encodeInterest (Interest interest_)))
+            , Maybe.map Phone.sendBridgeCommand interest_.subscribeCommand
             ]
 
 
@@ -99,13 +104,3 @@ encodeInterest (Interest interest_) =
         , ( "eventPrefixes", Encode.list Encode.string interest_.eventPrefixes )
         , ( "resultIdPrefixes", Encode.list Encode.string interest_.resultIdPrefixes )
         ]
-
-
-decodeIncoming : (Decode.Value -> Result String msg) -> Decode.Value -> msg
-decodeIncoming decode raw =
-    case decode raw of
-        Ok msg ->
-            msg
-
-        Err _ ->
-            Debug.todo "Unexpected platform payload on dedicated incoming port"

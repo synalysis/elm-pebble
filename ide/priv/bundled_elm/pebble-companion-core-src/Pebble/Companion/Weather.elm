@@ -7,6 +7,9 @@ module Pebble.Companion.Weather exposing
     , onWeather
     , onCurrent
     , onForecast
+    , setup
+    , setupCurrent
+    , setupForecast
     )
 
 {-| Platform-provided weather for companion apps.
@@ -136,6 +139,21 @@ onCurrent toMsg =
 onForecast : (Result String (List WeatherInfo) -> msg) -> Sub msg
 onForecast toMsg =
     Platform.subscribe (handlerForecast toMsg)
+
+
+setup : Cmd msg
+setup =
+    Platform.setup weatherPushInterest
+
+
+setupCurrent : Cmd msg
+setupCurrent =
+    Platform.setup weatherCurrentInterest
+
+
+setupForecast : Cmd msg
+setupForecast =
+    Platform.setup weatherForecastInterest
 
 
 handler toMsg =

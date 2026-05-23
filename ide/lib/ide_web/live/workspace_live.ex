@@ -1966,6 +1966,13 @@ defmodule IdeWeb.WorkspaceLive do
     {:noreply, close_debugger_trigger_modal(socket)}
   end
 
+  def handle_event("debugger-trigger-form-change", %{"debugger_trigger" => params}, socket) do
+    merged = merge_debugger_trigger_form(socket, params)
+
+    {:noreply,
+     assign(socket, debugger_trigger_form: to_form(merged, as: :debugger_trigger))}
+  end
+
   def handle_event("debugger-submit-trigger", %{"debugger_trigger" => params}, socket) do
     case socket.assigns.project do
       nil ->
@@ -1974,11 +1981,13 @@ defmodule IdeWeb.WorkspaceLive do
       project ->
         trigger = Map.get(params, "trigger")
 
-        attrs = %{
-          trigger: trigger,
-          target: Map.get(params, "target"),
-          message: debugger_trigger_submit_message(params)
-        }
+        attrs =
+          %{
+            trigger: trigger,
+            target: Map.get(params, "target"),
+            message: debugger_trigger_submit_message(params)
+          }
+          |> maybe_put_trigger_message_value(params)
 
         {:ok, _state} = Ide.Debugger.inject_trigger(Projects.scope_key(project), attrs)
 
@@ -4484,7 +4493,21 @@ defmodule IdeWeb.WorkspaceLive do
     trigger = Map.get(params, "trigger") || ""
     target = Map.get(params, "target") || "watch"
     message = Map.get(params, "message") || ""
-    form_data = default_debugger_trigger_form(trigger, target, message)
+    debugger_state = socket.assigns[:debugger_state]
+
+    trigger_display =
+      Map.get(params, "trigger_display") ||
+        Ide.Debugger.subscription_trigger_display_for(debugger_state, trigger, target)
+
+    form_data =
+      case Ide.Debugger.CompanionSubscriptionTrigger.form_data(debugger_state, trigger, message) do
+        %{} = companion_form ->
+          companion_form
+          |> Map.merge(%{"target" => target, "trigger" => trigger, "trigger_display" => trigger_display})
+
+        _ ->
+          default_debugger_trigger_form(trigger, target, message, trigger_display)
+      end
 
     assign(socket,
       debugger_trigger_modal_open: true,
@@ -4513,12 +4536,66 @@ defmodule IdeWeb.WorkspaceLive do
     )
   end
 
-  @spec default_debugger_trigger_form(String.t(), String.t(), String.t()) :: map()
-  defp default_debugger_trigger_form(trigger, target, message) do
+  @spec merge_debugger_trigger_form(socket(), map()) :: map()
+  defp merge_debugger_trigger_form(socket, params) when is_map(params) do
+    previous =
+      case socket.assigns[:debugger_trigger_form] do
+        %Phoenix.HTML.Form{source: source} when is_map(source) -> source
+        _ -> %{}
+      end
+
+    previous
+    |> Map.merge(params)
+    |> sync_debugger_trigger_companion_fields(params)
+    |> ensure_debugger_trigger_error_message()
+  end
+
+  @spec sync_debugger_trigger_companion_fields(map(), map()) :: map()
+  defp sync_debugger_trigger_companion_fields(%{"companion_fields" => fields} = merged, params)
+       when is_list(fields) and is_map(params) do
+    updated_fields =
+      Enum.map(fields, fn field ->
+        key = field["key"] || field[:key]
+
+        case Map.get(params, "companion_field_#{key}") do
+          nil ->
+            field
+
+          value ->
+            Map.put(field, "value", to_string(value))
+        end
+      end)
+
+    Map.put(merged, "companion_fields", updated_fields)
+  end
+
+  defp sync_debugger_trigger_companion_fields(merged, _params), do: merged
+
+  @spec ensure_debugger_trigger_error_message(map()) :: map()
+  defp ensure_debugger_trigger_error_message(%{"result" => "Err"} = params) do
+    case Map.get(params, "error_message") do
+      msg when is_binary(msg) ->
+        if String.trim(msg) != "", do: params, else: Map.put(params, "error_message", "Unavailable")
+
+      _ ->
+        Map.put(params, "error_message", "Unavailable")
+    end
+  end
+
+  defp ensure_debugger_trigger_error_message(params), do: params
+
+  @spec default_debugger_trigger_form(String.t(), String.t(), String.t(), String.t()) :: map()
+  defp default_debugger_trigger_form(trigger, target, message, trigger_display) do
     constructor =
       case message do
         value when is_binary(value) and value != "" -> value
         _ -> default_debugger_message_for_trigger(trigger)
+      end
+
+    display =
+      case trigger_display do
+        value when is_binary(value) and value != "" -> value
+        _ -> Ide.Debugger.subscription_trigger_display_for(%{}, trigger, target)
       end
 
     normalized_trigger = trigger |> to_string() |> String.downcase()
@@ -4559,6 +4636,7 @@ defmodule IdeWeb.WorkspaceLive do
     %{
       "target" => target,
       "trigger" => trigger,
+      "trigger_display" => display,
       "message_constructor" => constructor,
       "payload_kind" => payload_kind,
       "payload" => payload,
@@ -4594,6 +4672,9 @@ defmodule IdeWeb.WorkspaceLive do
   @spec debugger_trigger_submit_message(map()) :: String.t()
   defp debugger_trigger_submit_message(params) when is_map(params) do
     case Map.get(params, "payload_kind") do
+      "companion_bridge" ->
+        Map.get(params, "message_constructor") || Map.get(params, "message") || "Msg"
+
       "integer" ->
         constructor =
           Map.get(params, "message_constructor") || Map.get(params, "message") || "Tick"
@@ -4615,6 +4696,16 @@ defmodule IdeWeb.WorkspaceLive do
         Map.get(params, "message") || Map.get(params, "message_constructor") || "Tick"
     end
   end
+
+  @spec maybe_put_trigger_message_value(map(), map()) :: map()
+  defp maybe_put_trigger_message_value(attrs, %{"payload_kind" => "companion_bridge"} = params) do
+    case Ide.Debugger.CompanionSubscriptionTrigger.message_value(params) do
+      %{} = message_value -> Map.put(attrs, :message_value, message_value)
+      _ -> attrs
+    end
+  end
+
+  defp maybe_put_trigger_message_value(attrs, _params), do: attrs
 
   defp contains_any?(text, needles) when is_binary(text) and is_list(needles) do
     Enum.any?(needles, &String.contains?(text, &1))

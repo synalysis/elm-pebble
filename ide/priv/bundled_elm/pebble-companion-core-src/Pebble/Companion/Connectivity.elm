@@ -2,6 +2,7 @@ module Pebble.Companion.Connectivity exposing
     ( Connectivity(..)
     , current
     , onConnectivity
+    , setup
     )
 
 {-| Phone internet connectivity exposed by the companion bridge.
@@ -62,10 +63,15 @@ onConnectivity toMsg =
     Platform.subscribe (handler toMsg)
 
 
+setup : Cmd msg
+setup =
+    Platform.setup connectivityInterest
+
+
 {-| Platform router handler for connectivity events and responses.
 -}
 handler toMsg =
-    Platform.handler connectivityInterest decodeConnectivityMsg toMsg
+    Platform.handler connectivityInterest decodeConnectivityMsg (Result.withDefault Offline >> toMsg)
 
 
 connectivityInterest =

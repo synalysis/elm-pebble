@@ -2,9 +2,28 @@ defmodule Ide.ProjectCapabilities do
   @moduledoc false
 
   alias Ide.Debugger.ElmIntrospect
+  alias Ide.PebblePreferences
   alias Ide.ProjectCapabilities.Detect
 
   @supported ~w(location configurable health)
+
+  @doc """
+  Returns true when the companion app exposes preferences or configuration UI.
+  """
+  @spec companion_preferences?(String.t()) :: boolean()
+  def companion_preferences?(workspace_root) when is_binary(workspace_root) do
+    phone_root = Path.join(workspace_root, "phone")
+
+    with true <- File.exists?(Path.join(phone_root, "elm.json")),
+         false <- preferences_schema?(phone_root) do
+      workspace_root
+      |> infer_workspace()
+      |> MapSet.member?("configurable")
+    else
+      true -> true
+      _ -> false
+    end
+  end
 
   @doc """
   Scans watch and phone Elm sources and returns declared Pebble capabilities.
@@ -54,6 +73,14 @@ defmodule Ide.ProjectCapabilities do
 
       _ ->
         MapSet.new()
+    end
+  end
+
+  @spec preferences_schema?(String.t()) :: boolean()
+  defp preferences_schema?(phone_root) do
+    case PebblePreferences.extract(phone_root) do
+      {:ok, schema} when is_map(schema) -> true
+      _ -> false
     end
   end
 

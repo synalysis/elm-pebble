@@ -1024,7 +1024,7 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp c_decode_tuple_field(%{wire_type: :string}, index) do
     """
-      if (tuple->type == TUPLE_CSTRING && tuple->value->cstring) {
+      if (tuple->type == TUPLE_CSTRING) {
         strncpy(decoder->message.string_fields[#{index}], tuple->value->cstring, 63);
         decoder->message.string_fields[#{index}][63] = '\\0';
       }

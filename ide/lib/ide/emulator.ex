@@ -9,7 +9,8 @@ defmodule Ide.Emulator do
           project_slug: String.t(),
           platform: String.t(),
           artifact_path: String.t() | nil,
-          has_phone_companion: boolean()
+          has_phone_companion: boolean(),
+          has_companion_preferences: boolean()
         ]
 
   @spec launch(launch_opts()) :: {:ok, map()} | {:error, Types.emulator_error()}

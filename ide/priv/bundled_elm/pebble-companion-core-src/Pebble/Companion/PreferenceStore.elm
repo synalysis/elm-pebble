@@ -2,6 +2,7 @@ module Pebble.Companion.PreferenceStore exposing
     ( get
     , onPreference
     , set
+    , setup
     )
 
 {-| Generic phone-side preference storage exposed by the companion bridge.
@@ -56,6 +57,11 @@ Registering this subscription also tells the bridge to send preference updates.
 onPreference : (Result String ( String, Decode.Value ) -> msg) -> Sub msg
 onPreference toMsg =
     Platform.subscribe (handler toMsg)
+
+
+setup : Cmd msg
+setup =
+    Platform.setup preferencesInterest
 
 
 {-| Platform router handler for preference events and responses.

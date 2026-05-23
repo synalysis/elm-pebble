@@ -57,6 +57,7 @@ defmodule Ide.CompanionPebbleApisTest do
 
     platform = File.read!(Path.join(@core_src, "Platform.elm"))
     assert String.contains?(platform, "subscribe : Handler msg -> Sub msg")
+    assert String.contains?(platform, "setup : Interest -> Cmd msg")
     assert String.contains?(platform, "@docs Interest, Handler")
     assert String.contains?(platform, "handler,")
 
@@ -86,8 +87,8 @@ defmodule Ide.CompanionPebbleApisTest do
     refute MapSet.member?(documented, "Pebble.Companion")
 
     phone = File.read!(Path.join(@core_src, "Phone.elm"))
-    refute String.contains?(phone, ", request\n")
     refute String.contains?(phone, "@docs Request")
+    refute String.contains?(phone, "@docs send")
     assert String.contains?(phone, "onWatchToPhone")
     assert String.contains?(phone, "sendPhoneToWatch")
     assert String.contains?(phone, "platformIncomingFor")
@@ -386,6 +387,75 @@ defmodule Ide.CompanionPebbleApisTest do
                Map.get(event.payload, :response_message) == "GotBattery" and
                get_in(event.payload, [:response_value, "percent"]) == 42
            end)
+  end
+
+  test "subscription trigger rows expose documentation-style display ids" do
+    slug = "companion-trigger-display-#{System.unique_integer([:positive])}"
+
+    template_root =
+      Path.expand(
+        "../../priv/project_templates/companion_demo_phone_status",
+        __DIR__
+      )
+
+    source = File.read!(Path.join(template_root, "phone/src/CompanionApp.elm"))
+
+    {:ok, _state} = Debugger.start_session(slug)
+
+    {:ok, state} =
+      Debugger.reload(slug, %{
+        rel_path: "phone/src/CompanionApp.elm",
+        source_root: "phone",
+        source: source,
+        reason: "companion_trigger_display"
+      })
+
+    assert {:ok, rows} = Debugger.available_triggers(slug, %{"target" => "phone"})
+    battery = Enum.find(rows, &(&1.trigger == "on_battery"))
+    assert battery.trigger_display == "Battery.onBattery"
+    assert Debugger.subscription_trigger_display_for(state, "on_battery", "phone") == "Battery.onBattery"
+  end
+
+  test "inject_trigger applies companion onBattery payload from structured message_value" do
+    slug = "companion-phone-status-inject-#{System.unique_integer([:positive])}"
+
+    template_root =
+      Path.expand(
+        "../../priv/project_templates/companion_demo_phone_status",
+        __DIR__
+      )
+
+    source = File.read!(Path.join(template_root, "phone/src/CompanionApp.elm"))
+
+    {:ok, _state} = Debugger.start_session(slug)
+
+    {:ok, _state} =
+      Debugger.reload(slug, %{
+        rel_path: "phone/src/CompanionApp.elm",
+        source_root: "phone",
+        source: source,
+        reason: "companion_phone_status_inject"
+      })
+
+    assert {:ok, triggered} =
+             Debugger.inject_trigger(slug, %{
+               target: "phone",
+               trigger: "Battery.onBattery",
+               message: "GotBattery",
+               message_value: %{
+                 "ctor" => "GotBattery",
+                 "args" => [
+                   %{
+                     "ctor" => "Ok",
+                     "args" => [%{"percent" => 55, "charging" => true}]
+                   }
+                 ]
+               }
+             })
+
+    runtime_model = get_in(triggered, [:companion, :model, "runtime_model"]) || %{}
+    assert runtime_model["batteryPercent"] == 55
+    assert runtime_model["charging"] == true
   end
 
   test "debugger forwards phone status protocol values to the watch surface" do

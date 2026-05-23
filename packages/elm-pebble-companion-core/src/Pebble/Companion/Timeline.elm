@@ -4,6 +4,8 @@ module Pebble.Companion.Timeline exposing
     , insertPin
     , onCommands
     , onToken
+    , setupCommands
+    , setupToken
     )
 
 {-| Timeline commands for companion-driven pins.
@@ -71,6 +73,16 @@ onToken toMsg =
 onCommands : (Result String () -> msg) -> Sub msg
 onCommands toMsg =
     Platform.subscribe (handlerCommands toMsg)
+
+
+setupToken : Cmd msg
+setupToken =
+    Platform.setup timelineTokenInterest
+
+
+setupCommands : Cmd msg
+setupCommands =
+    Platform.setup timelineCommandInterest
 
 
 handlerToken toMsg =

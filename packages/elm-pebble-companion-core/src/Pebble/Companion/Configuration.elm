@@ -1,6 +1,7 @@
 module Pebble.Companion.Configuration exposing
     ( onClosed
     , open
+    , setup
     )
 
 {-| Open and observe the Pebble companion configuration page.
@@ -55,6 +56,11 @@ onClosed toMsg =
     Platform.subscribe (handler (toClosedMsg toMsg))
 
 
+setup : Cmd msg
+setup =
+    Platform.setup configurationInterest
+
+
 toClosedMsg : (Maybe String -> msg) -> (Event -> msg)
 toClosedMsg toMsg event =
     case event of
@@ -68,7 +74,8 @@ toClosedMsg toMsg event =
 {-| Platform router handler for configuration close events.
 -}
 handler toMsg =
-    Platform.handler configurationInterest decodeConfigurationEvent toMsg
+    Platform.handler configurationInterest decodeConfigurationEvent <|
+        Result.withDefault (Closed Nothing) >> toClosedMsg toMsg
 
 
 configurationInterest =

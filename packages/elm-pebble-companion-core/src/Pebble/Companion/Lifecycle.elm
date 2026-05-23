@@ -1,6 +1,7 @@
 module Pebble.Companion.Lifecycle exposing
     ( Event(..)
     , onLifecycle
+    , setup
     )
 
 {-| Observe phone companion lifecycle events.
@@ -44,10 +45,16 @@ onLifecycle toMsg =
     Platform.subscribe (handler toMsg)
 
 
+setup : Cmd msg
+setup =
+    Platform.setup lifecycleInterest
+
+
 {-| Platform router handler for lifecycle events.
 -}
 handler toMsg =
-    Platform.handler lifecycleInterest decodeLifecycleEvent toMsg
+    Platform.handler lifecycleInterest decodeLifecycleEvent <|
+        Result.withDefault (Unknown "lifecycle decode failed") >> toMsg
 
 
 lifecycleInterest =

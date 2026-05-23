@@ -157,82 +157,121 @@ defmodule Ide.PebbleToolchainTest do
   end
 
   test "Elm companion index queues early appmessages until incoming port is ready" do
-    generated_source = File.read!("lib/ide/pebble_toolchain.ex")
-    template_source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
 
-    for source <- [generated_source, template_source] do
-      assert source =~ "var pendingIncoming = [];"
-      assert source =~ "function deliverIncoming(payload)"
-      assert source =~ "deliverIncoming(normalizeIncomingAppMessage(event.payload));"
-      assert source =~ "while (pendingIncoming.length > 0)"
-      assert source =~ "incomingPort.send(pendingIncoming.shift());"
-      assert source =~ "normalizeIncomingAppMessage(event.payload)"
-    end
+    assert source =~ "var pendingIncoming = [];"
+    assert source =~ "function deliverIncoming(payload)"
+    assert source =~ "deliverIncoming(normalizeIncomingAppMessage(event.payload));"
+    assert source =~ "while (pendingIncoming.length > 0)"
+    assert source =~ "incomingPort.send(pendingIncoming.shift());"
+    assert source =~ "normalizeIncomingAppMessage(event.payload)"
   end
 
   test "Elm companion index supports generated configuration pages" do
-    generated_source = File.read!("lib/ide/pebble_toolchain.ex")
-    template_source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
 
-    for source <- [generated_source, template_source] do
-      assert source =~ "generatedConfigurationUrl"
-      assert source =~ "showConfiguration"
-      assert source =~ "webviewclosed"
-      assert source =~ "configuration.closed"
-      assert source =~ "openConfigurationUrl"
-      assert source =~ "configurationStorageKey"
-      assert source =~ "readStoredConfigurationResponse"
-      assert source =~ "writeStoredConfigurationResponse"
-      assert source =~ "configurationResponse: readStoredConfigurationResponse()"
-      assert source =~ "elmRoot.CompanionApp.init({ flags: companionFlags() })"
-    end
+    assert source =~ "generatedConfigurationUrl"
+    assert source =~ "showConfiguration"
+    assert source =~ "webviewclosed"
+    assert source =~ "configuration.closed"
+    assert source =~ "openConfigurationUrl"
+    assert source =~ "configurationStorageKey"
+    assert source =~ "readStoredConfigurationResponse"
+    assert source =~ "writeStoredConfigurationResponse"
+    assert source =~ "configurationResponse: readStoredConfigurationResponse()"
+    assert source =~ "elmRoot.CompanionApp.init({ flags: companionFlags() })"
   end
 
   test "Elm companion index shims PebbleKit XMLHttpRequest for elm/http" do
-    generated_source = File.read!("lib/ide/pebble_toolchain.ex")
-    template_source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
 
-    for source <- [generated_source, template_source] do
-      assert source =~ "installXmlHttpRequestCompatibility"
-      assert source =~ "proto.addEventListener"
-      assert source =~ "this.response = this.responseText"
-      assert source =~ "this.response === null"
-      assert source =~ "proto.getAllResponseHeaders"
-    end
+    assert source =~ "installXmlHttpRequestCompatibility"
+    assert source =~ "proto.addEventListener"
+    assert source =~ "this.response = this.responseText"
+    assert source =~ "this.response === null"
+    assert source =~ "proto.getAllResponseHeaders"
   end
 
   test "Elm companion index normalizes AppMessage keys in both directions" do
-    generated_source = File.read!("lib/ide/pebble_toolchain.ex")
-    template_source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
 
-    for source <- [generated_source, template_source] do
-      assert source =~ "require(\"./companion-protocol.js\")"
-      assert source =~ "appMessageKeyNamesById"
-      assert source =~ "normalizeIncomingAppMessage"
-      assert source =~ "normalizeOutgoingAppMessage"
-    end
+    assert source =~ "require(\"./companion-protocol.js\")"
+    assert source =~ "appMessageKeyNamesById"
+    assert source =~ "normalizeIncomingAppMessage"
+    assert source =~ "normalizeOutgoingAppMessage"
   end
 
   test "Elm companion index serializes outgoing AppMessages" do
-    generated_source = File.read!("lib/ide/pebble_toolchain.ex")
-    template_source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
 
-    for source <- [generated_source, template_source] do
-      assert source =~ "appMessageOutbox"
-      assert source =~ "appMessageSending"
-      assert source =~ "sendQueuedAppMessage"
-      assert source =~ "drainAppMessageOutbox"
-      assert source =~ "Pebble.sendAppMessage("
-      assert source =~ "setTimeout(drainAppMessageOutbox, 50)"
-      refute source =~ "Pebble.sendAppMessage(normalizeOutgoingAppMessage"
-    end
+    assert source =~ "appMessageOutbox"
+    assert source =~ "appMessageSending"
+    assert source =~ "sendQueuedAppMessage"
+    assert source =~ "drainAppMessageOutbox"
+    assert source =~ "Pebble.sendAppMessage("
+    assert source =~ "setTimeout(drainAppMessageOutbox, 50)"
+    refute source =~ "Pebble.sendAppMessage(normalizeOutgoingAppMessage"
   end
 
-  test "Elm companion index emits JavaScript null for absent preferences URL" do
-    source = File.read!("lib/ide/pebble_toolchain.ex")
+  test "Elm companion index serves calendar bridge data from simulator settings" do
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
 
-    assert source =~ "Jason.encode!(preferences_url)"
-    refute source =~ "generatedConfigurationUrl = \#{inspect(preferences_url)}"
+    assert source =~ "companionSimulatorSettings"
+    assert source =~ "function companionApplySimulatorSettings(settings)"
+    assert source =~ "function handleCalendarCommand(request)"
+    assert source =~ ~S/deliverCalendarNext(requestId, events.length > 0 ? events[0] : null)/
+    refute source =~ "Calendar data unavailable from this Pebble companion runtime"
+  end
+
+  test "companion build copies full pkjs template with calendar support" do
+    source = Ide.PebbleToolchain.companion_index_js_for_preferences(nil)
+
+    assert source =~ "function handleCalendarCommand(request)"
+    assert source =~ "function companionApplySimulatorSettings(settings)"
+    assert source =~ "var generatedConfigurationUrl = null;"
+  end
+
+  test "companion index emits JavaScript null for absent preferences URL" do
+    source = Ide.PebbleToolchain.companion_index_js_for_preferences(nil)
+
+    assert source =~ "var generatedConfigurationUrl = null;"
+    refute source =~ "generatedConfigurationUrl = undefined"
+  end
+
+  test "Platform.setup registers bridge handlers before subscribe commands" do
+    source = File.read!("priv/bundled_elm/pebble-companion-core-src/Pebble/Companion/Platform.elm")
+
+    {register_at, _} = :binary.match(source, "Phone.registerHandler")
+    {subscribe_at, _} = :binary.match(source, "Phone.sendBridgeCommand")
+    assert register_at < subscribe_at
+  end
+
+  test "companion pkjs routes bridge results before clearing pending ids" do
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+
+    {deliver_at, _} = :binary.match(source, "deliverPlatformIncoming(envelope);")
+    {delete_at, _} = :binary.match(source, "delete pendingBridgeResponseIds[id];")
+    assert deliver_at < delete_at
+  end
+
+  test "companion pkjs queues platform bridge messages until handlers register" do
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+
+    assert source =~ "pendingUnhandledPlatformMessages"
+    assert source =~ "function flushUnhandledPlatformIncoming()"
+    assert source =~ "flushUnhandledPlatformIncoming();"
+    assert source =~ "function finishCompanionBoot()"
+    assert source =~ "setTimeout(function () {"
+    assert source =~ "finishCompanionBoot();"
+  end
+
+  test "Calendar bridge routes one-shot responses through onCalendar" do
+    source = File.read!("priv/bundled_elm/pebble-companion-core-src/Pebble/Companion/Calendar.elm")
+
+    assert source =~ ~s/resultIdPrefixes = [ "calendar-" ]/
+    assert source =~ ~s/String.startsWith "calendar-next" envelope.id/
+    assert source =~ "Cmd.batch"
+    assert source =~ "setup"
   end
 
   test "Pebble bundle includes JavaScript only when PKJS exists" do

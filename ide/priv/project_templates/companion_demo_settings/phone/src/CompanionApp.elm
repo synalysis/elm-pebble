@@ -20,9 +20,11 @@ type Msg
     | ConfigurationClosed (Maybe String)
 
 
-init : Platform.Flags -> ( Model, Cmd Msg )
+init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { ready = False, visible = True, configClosed = False }, Cmd.none )
+    ( { ready = False, visible = True, configClosed = False }
+    , Cmd.batch [ Lifecycle.setup, Configuration.setup ]
+    )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -70,7 +72,7 @@ subscriptions _ =
         ]
 
 
-main : Platform.Program Model Msg
+main : Platform.Program () Model Msg
 main =
     Platform.worker
         { init = init

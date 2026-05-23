@@ -22,7 +22,7 @@ type Msg
     | GotEnvironment (Result String Environment.EnvironmentInfo)
 
 
-init : Platform.Flags -> ( Model, Cmd Msg )
+init : () -> ( Model, Cmd Msg )
 init _ =
     ( emptyModel, refreshAll )
 
@@ -78,7 +78,7 @@ subscriptions _ =
         ]
 
 
-main : Platform.Program Model Msg
+main : Platform.Program () Model Msg
 main =
     Platform.worker
         { init = init
@@ -100,7 +100,9 @@ emptyModel =
 refreshAll : Cmd Msg
 refreshAll =
     Cmd.batch
-        [ Weather.current (GotWeather << Result.map Weather.Current)
+        [ Weather.setup
+        , Environment.setup
+        , Weather.current (GotWeather << Result.map Weather.Current)
         , Environment.current GotEnvironment
         ]
 

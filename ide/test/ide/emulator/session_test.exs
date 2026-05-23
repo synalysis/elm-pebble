@@ -143,7 +143,7 @@ defmodule Ide.Emulator.SessionTest do
 
       started_at = System.monotonic_time(:millisecond)
       assert {:error, :emulator_session_unresponsive} = Emulator.ping(info.id)
-      assert System.monotonic_time(:millisecond) - started_at < 2_000
+      assert System.monotonic_time(:millisecond) - started_at < 6_000
 
       assert :ok = Emulator.kill(info.id)
       assert wait_until(fn -> not Process.alive?(session_pid) end)
@@ -250,6 +250,27 @@ defmodule Ide.Emulator.SessionTest do
     assert String.ends_with?(wrapper, "priv/python/embedded_pypkjs.py")
 
     File.rm(script)
+  end
+
+  test "embedded pypkjs companion cache refresh starts phone JS" do
+    source = File.read!("priv/python/embedded_pypkjs.py")
+
+    assert source =~ "runner.load_pbws([f.name], cache=True, start=True)"
+  end
+
+  test "phone websocket proxy waits long enough for pypkjs cold start" do
+    source = File.read!("lib/ide/emulator/session.ex")
+
+    assert source =~ "local_port_call_timeout(:phone)"
+    assert source =~ "pypkjs_ready_timeout_ms"
+    assert source =~ "maybe_start_pypkjs_if_needed"
+  end
+
+  test "companion installs keep pypkjs alive for phone bridge" do
+    source = File.read!("lib/ide/emulator/session.ex")
+
+    assert source =~ ~S/if Map.get(state, :has_phone_companion, false) do/
+    assert source =~ "def handle_call(:install_context, _from, state)"
   end
 
   test "runtime status reports disabled embedded emulator before launch" do

@@ -150,6 +150,7 @@ export class EmbeddedEmulatorHost {
     this.phoneOpenedAt = 0
     this.logFlushScheduled = false
     this.destroyed = false
+    this.simulatorSettings = null
     this.boundEmulatorButtons = new WeakSet()
     this.syncStateToDom = () => {
       if (this.destroyed) return
@@ -554,7 +555,9 @@ export class EmbeddedEmulatorHost {
       if (this.destroyed || socket !== this.phoneSocket) return
       this.appendLog("phone websocket closed")
       this.phoneBridgeActive = false
-      if (this.session && !this.stopping) this.endSession("Embedded emulator phone bridge disconnected")
+      if (this.session && !this.stopping && !this.installing) {
+        this.endSession("Embedded emulator phone bridge disconnected")
+      }
     })
   }
 
@@ -647,9 +650,8 @@ export class EmbeddedEmulatorHost {
   }
 
   async loadCompanionPreferences() {
-    if (!this.session) return
-    if (!this.session?.backend_enabled) {
-      this.setStatus("Launch the embedded emulator before opening companion preferences.")
+    if (!this.companionPreferencesReady()) {
+      this.setStatus("This companion app does not declare preferences or configuration.")
       return
     }
     if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) {
@@ -690,12 +692,18 @@ export class EmbeddedEmulatorHost {
       case 0x09:
         this.appendLog(data[1] === 0 ? "phone bridge authenticated" : "phone bridge authentication failed")
         if (data[1] === 0 && this.appInstalled) this.enableAppLogs()
+        if (data[1] === 0) this.sendSimulatorSettingsToPhoneBridge()
         break
       case 0x0a:
         this.handleConfigFrame(data)
         break
       case 0x0d:
         this.appendLog(data[1] === 0 ? "debug storage command sent" : "debug storage command failed")
+        break
+      case 0x0e:
+        if (data[1] !== 0) {
+          this.appendLog("simulator settings sync failed")
+        }
         break
       default:
         this.appendLog(`phone frame ${data.byteLength} bytes`)
@@ -801,6 +809,8 @@ export class EmbeddedEmulatorHost {
   }
 
   applySimulatorSettings(settings = {}) {
+    this.simulatorSettings = settings
+
     if (settings.battery_percent != null || settings.charging != null) {
       this.setBattery(settings.battery_percent ?? 88, !!settings.charging)
     }
@@ -816,6 +826,20 @@ export class EmbeddedEmulatorHost {
     if (settings.timeline_peek != null) {
       this.sendQemu(QEMU.timelinePeek, [settings.timeline_peek ? 1 : 0])
     }
+
+    this.sendSimulatorSettingsToPhoneBridge()
+  }
+
+  sendSimulatorSettingsToPhoneBridge() {
+    if (!this.simulatorSettings) return false
+    if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) return false
+
+    const payload = new TextEncoder().encode(JSON.stringify(this.simulatorSettings))
+    const out = new Uint8Array(1 + payload.length)
+    out[0] = 0x0e
+    out.set(payload, 1)
+    this.phoneSocket.send(out)
+    return true
   }
 
   sendQemu(protocol, payload) {
@@ -874,6 +898,7 @@ export class EmbeddedEmulatorHost {
     this.appendLog(`sent PBW to phone bridge companion cache (${pbw.length} bytes)`)
     await result
     this.appendLog("phone bridge companion cache refresh complete")
+    this.sendSimulatorSettingsToPhoneBridge()
   }
 
   waitForPypkjsInstall() {
@@ -1418,9 +1443,11 @@ export class EmbeddedEmulatorHost {
     try {
       const response = await postJSON(session.ping_path)
       if (this.session?.id !== session.id || this.destroyed) return
-      if (response?.alive === false) this.endSession("Embedded emulator is no longer running")
+      if (response?.alive === false && !this.installing) {
+        this.endSession("Embedded emulator is no longer running")
+      }
     } catch (_error) {
-      if (this.session?.id === session.id && !this.destroyed) {
+      if (this.session?.id === session.id && !this.destroyed && !this.installing) {
         this.endSession("Embedded emulator is no longer reachable")
       }
     }
@@ -1525,7 +1552,7 @@ export class EmbeddedEmulatorHost {
     const hasSession = !!this.session
     this.setButtonDisabled(this.launchButton, this.launching || this.stopping)
     this.setButtonDisabled(this.installButton, this.launching || this.installing || this.stopping || !this.installReady())
-    this.setButtonDisabled(this.preferencesButton, this.launching || this.stopping || !hasSession)
+    this.setButtonDisabled(this.preferencesButton, this.launching || this.stopping || !this.companionPreferencesReady())
     this.setButtonDisabled(this.screenshotButton, this.launching || this.stopping || !this.canCaptureScreenshot())
     this.setButtonDisabled(this.storageAddButton, this.launching || this.stopping || !hasSession)
     this.setButtonDisabled(this.storageResetButton, this.launching || this.stopping || !hasSession || this.storageEntries.size === 0)
@@ -1542,6 +1569,10 @@ export class EmbeddedEmulatorHost {
 
   installReady() {
     return !!(this.session?.backend_enabled && this.session?.install_path && !this.sessionEnded)
+  }
+
+  companionPreferencesReady() {
+    return !!(this.session?.has_companion_preferences && this.session?.backend_enabled)
   }
 
   canCaptureScreenshot() {
