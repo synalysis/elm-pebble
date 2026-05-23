@@ -2,6 +2,9 @@ module Pebble.Companion.Calendar exposing
     ( CalendarEvent
     , current
     , onCalendar
+    , part
+    , partCurrent
+    , partUpcoming
     , upcoming
     )
 
@@ -17,7 +20,7 @@ module Pebble.Companion.Calendar exposing
 
 # Subscriptions
 
-@docs onCalendar
+@docs onCalendar, part, partCurrent, partUpcoming
 
 -}
 
@@ -27,7 +30,7 @@ import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
 import Pebble.Companion.Contract exposing (BridgeEvent)
 import Pebble.Companion.Phone as Phone
-import Sub
+import Pebble.Companion.Platform as Platform
 
 
 {-| A calendar entry normalized for companion apps.
@@ -44,10 +47,10 @@ type alias CalendarEvent =
 
 {-| Request the next calendar event, if available.
 -}
-current : (Result String (List CalendarEvent) -> msg) -> Cmd msg
+current : (Result String (Maybe CalendarEvent) -> msg) -> Cmd msg
 current toMsg =
     Phone.send toMsg <|
-        Phone.request "calendar-next" "calendar" "nextEvent" decodeResponse
+        Phone.request "calendar-next" "calendar" "nextEvent" decodeCurrentResponse
 
 
 {-| Request a bounded list of upcoming calendar events.
@@ -57,7 +60,7 @@ upcoming limit toMsg =
     Phone.send toMsg <|
         Phone.requestWithPayload "calendar-upcoming" "calendar" "upcoming"
             (Encode.object [ ( "limit", Encode.int limit ) ])
-            decodeResponse
+            decodeUpcomingResponse
 
 
 {-| Receive pushed calendar updates from the companion bridge.
@@ -66,15 +69,78 @@ Registering this subscription also tells the bridge to send calendar updates.
 -}
 onCalendar : (Result String (List CalendarEvent) -> msg) -> Sub msg
 onCalendar toMsg =
-    Sub.batch
-        [ Phone.subscribeBridge <|
-            Command.command "calendar-subscribe" "calendar" "subscribe"
-        , Phone.onRawMessage (decodeCalendar >> toMsg)
-        ]
+    Platform.with [ handler toMsg ]
 
 
-decodeResponse : Decode.Value -> Result String (List CalendarEvent)
-decodeResponse value =
+{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
+-}
+part : (Result String (List CalendarEvent) -> msg) -> Platform.Part msg
+part toMsg =
+    Platform.part (handler toMsg)
+
+
+{-| Platform listener for `current` command responses.
+-}
+partCurrent : (Result String (Maybe CalendarEvent) -> msg) -> Platform.Part msg
+partCurrent toMsg =
+    Platform.part (handlerCurrent toMsg)
+
+
+{-| Platform listener for `upcoming` command responses.
+-}
+partUpcoming : (Result String (List CalendarEvent) -> msg) -> Platform.Part msg
+partUpcoming toMsg =
+    Platform.part (handlerUpcoming toMsg)
+
+
+handler toMsg =
+    Platform.handler calendarPushInterest decodeCalendar toMsg
+
+
+handlerCurrent toMsg =
+    Platform.handler calendarCurrentInterest decodeCurrentResponse toMsg
+
+
+handlerUpcoming toMsg =
+    Platform.handler calendarUpcomingInterest decodeUpcomingResponse toMsg
+
+
+calendarPushInterest =
+    Platform.interest
+        { id = "calendar"
+        , subscribeCommand =
+            Just <|
+                Command.command "calendar-subscribe" "calendar" "subscribe"
+        , eventPrefixes = [ "calendar." ]
+        , resultIdPrefixes = []
+        }
+
+
+calendarUpcomingInterest =
+    Platform.interest
+        { id = "calendar-upcoming"
+        , subscribeCommand = Nothing
+        , eventPrefixes = []
+        , resultIdPrefixes = [ "calendar-upcoming" ]
+        }
+
+
+calendarCurrentInterest =
+    Platform.interest
+        { id = "calendar-next"
+        , subscribeCommand = Nothing
+        , eventPrefixes = []
+        , resultIdPrefixes = [ "calendar-next" ]
+        }
+
+
+decodeCurrentResponse : Decode.Value -> Result String (Maybe CalendarEvent)
+decodeCurrentResponse value =
+    decodeCalendarEventResponse value
+
+
+decodeUpcomingResponse : Decode.Value -> Result String (List CalendarEvent)
+decodeUpcomingResponse value =
     decodeCalendar value
 
 
@@ -86,6 +152,16 @@ decodeCalendar value =
 
         Err _ ->
             decodeBridgeResult value
+
+
+decodeCalendarEventResponse : Decode.Value -> Result String (Maybe CalendarEvent)
+decodeCalendarEventResponse value =
+    case Decode.decodeValue Codec.decodeEvent value of
+        Ok event ->
+            decodeNextBridgeEvent event
+
+        Err _ ->
+            decodeNextBridgeResult value
 
 
 decodeBridgeResult : Decode.Value -> Result String (List CalendarEvent)
@@ -107,16 +183,48 @@ decodeBridgeResult value =
             Err (Decode.errorToString error)
 
 
+decodeNextBridgeResult : Decode.Value -> Result String (Maybe CalendarEvent)
+decodeNextBridgeResult value =
+    case Decode.decodeValue Codec.decodeResult value of
+        Ok envelope ->
+            if envelope.ok then
+                case envelope.payload of
+                    Nothing ->
+                        Ok Nothing
+
+                    Just payload ->
+                        decodeNextBridgeEvent { event = "calendar.next", payload = payload }
+
+            else
+                Err (decodeBridgeError envelope)
+
+        Err error ->
+            Err (Decode.errorToString error)
+
+
 decodeBridgeEvent : BridgeEvent -> Result String (List CalendarEvent)
 decodeBridgeEvent bridgeEvent =
     case bridgeEvent.event of
         "calendar.next" ->
-            Decode.decodeValue (Decode.field "event" (Decode.nullable decodeCalendarEvent)) bridgeEvent.payload
-                |> Result.map (Maybe.withDefault [] << Maybe.map List.singleton)
-                |> Result.mapError Decode.errorToString
+            decodeNextBridgeEvent bridgeEvent
+                |> Result.map (Maybe.map List.singleton >> Maybe.withDefault [])
 
         "calendar.upcoming" ->
             Decode.decodeValue (Decode.field "events" (Decode.list decodeCalendarEvent)) bridgeEvent.payload
+                |> Result.mapError Decode.errorToString
+
+        "calendar.error" ->
+            Err (decodeErrorMessage bridgeEvent.payload "Calendar unavailable")
+
+        other ->
+            Err ("Unexpected calendar event: " ++ other)
+
+
+decodeNextBridgeEvent : BridgeEvent -> Result String (Maybe CalendarEvent)
+decodeNextBridgeEvent bridgeEvent =
+    case bridgeEvent.event of
+        "calendar.next" ->
+            Decode.decodeValue (Decode.field "event" (Decode.nullable decodeCalendarEvent)) bridgeEvent.payload
                 |> Result.mapError Decode.errorToString
 
         "calendar.error" ->

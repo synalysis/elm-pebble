@@ -29,21 +29,20 @@ defmodule Ide.ProjectCapabilitiesTest do
   @phone_configuration """
   module CompanionApp exposing (..)
 
-  import Pebble.Companion.Phone as Phone
   import Pebble.Companion.Configuration as Configuration
 
   type alias Model = {}
 
-  type Msg = Closed
+  type Msg = Closed (Maybe String)
 
   init _ =
-      ( {}, Phone.sendBridgeCommand (Configuration.open "settings" "https://example.com/config") )
+      ( {}, Configuration.open "https://example.com/config" )
 
   update _ model =
       ( model, Cmd.none )
 
   subscriptions _ =
-      Phone.onRawMessage (\_ -> Closed)
+      Configuration.onClosed Closed
   """
 
   @phone_configuration_subscription """

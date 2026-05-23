@@ -1,7 +1,11 @@
 var pendingIncoming = [];
+var pendingPlatformIncoming = [];
 var pendingGeolocationIncoming = [];
 var incomingPort = null;
+var platformIncomingPort = null;
 var geolocationIncomingPort = null;
+var platformHandlers = {};
+var pendingBridgeResponseIds = {};
 var protocol = require("./companion-protocol.js");
 var generatedConfigurationUrl = null;
 var configurationStorageKey = "elm-pebble.configuration.response";
@@ -134,12 +138,88 @@ function drainAppMessageOutbox() {
     );
 }
 
+function isPlatformEnvelope(payload) {
+    if (!payload || typeof payload !== "object") {
+        return false;
+    }
+
+    if (typeof payload.event === "string") {
+        return true;
+    }
+
+    return typeof payload.id === "string" && typeof payload.ok === "boolean";
+}
+
+function matchesHandlerInterest(interest, payload) {
+    if (!interest) {
+        return false;
+    }
+
+    if (typeof payload.event === "string") {
+        if (!interest.eventPrefixes.length) {
+            return false;
+        }
+
+        return interest.eventPrefixes.some(function (prefix) {
+            return payload.event.indexOf(prefix) === 0;
+        });
+    }
+
+    if (typeof payload.id === "string" && typeof payload.ok === "boolean") {
+        if (!interest.resultIdPrefixes.length) {
+            return false;
+        }
+
+        return interest.resultIdPrefixes.some(function (prefix) {
+            return payload.id.indexOf(prefix) === 0;
+        });
+    }
+
+    return false;
+}
+
+function matchingPlatformHandlers(payload) {
+    return Object.keys(platformHandlers).filter(function (handlerId) {
+        return matchesHandlerInterest(platformHandlers[handlerId], payload);
+    });
+}
+
+function matchesPlatformInterest(payload) {
+    if (typeof payload.id === "string" && typeof payload.ok === "boolean") {
+        if (pendingBridgeResponseIds[payload.id]) {
+            return true;
+        }
+    }
+
+    return matchingPlatformHandlers(payload).length > 0;
+}
+
+function deliverPlatformIncoming(payload) {
+    console.log("platform bridge -> Elm companion", JSON.stringify(payload));
+
+    if (!matchesPlatformInterest(payload)) {
+        return;
+    }
+
+    if (platformIncomingPort) {
+        platformIncomingPort.send(payload);
+    } else {
+        console.log("platform bridge queued incoming for Elm companion");
+        pendingPlatformIncoming.push(payload);
+    }
+}
+
 function deliverIncoming(payload) {
-    console.log("bridge -> Elm companion", JSON.stringify(payload));
+    if (isPlatformEnvelope(payload)) {
+        deliverPlatformIncoming(payload);
+        return;
+    }
+
+    console.log("watch -> Elm companion", JSON.stringify(payload));
     if (incomingPort) {
         incomingPort.send(payload);
     } else {
-        console.log("bridge queued incoming for Elm companion");
+        console.log("watch queued incoming for Elm companion");
         pendingIncoming.push(payload);
     }
 }
@@ -174,7 +254,6 @@ function deliverGeolocationPosition(position) {
             accuracy: Number(coords.accuracy || 0)
         }
     };
-    deliverIncoming(payload);
     deliverGeolocationIncoming(payload);
 }
 
@@ -185,12 +264,19 @@ function deliverGeolocationError(error) {
             message: error && error.message ? String(error.message) : "Geolocation unavailable"
         }
     };
-    deliverIncoming(payload);
     deliverGeolocationIncoming(payload);
 }
 
+
+function deliverLifecycleEvent(event, payload) {
+    deliverPlatformIncoming({
+        event: event,
+        payload: payload || {}
+    });
+}
+
 function deliverBridgeError(api, message) {
-    deliverIncoming({
+    deliverPlatformIncoming({
         event: api + ".error",
         payload: {
             message: message,
@@ -213,7 +299,11 @@ function deliverBridgeResult(id, ok, payload, error) {
         envelope.error = error;
     }
 
-    deliverIncoming(envelope);
+    if (id && pendingBridgeResponseIds[id]) {
+        delete pendingBridgeResponseIds[id];
+    }
+
+    deliverPlatformIncoming(envelope);
 }
 
 function localePayload() {
@@ -249,7 +339,7 @@ function deliverLocaleStatus(request) {
     if (requestId) {
         deliverBridgeResult(requestId, true, payload);
     } else {
-        deliverIncoming({
+        deliverPlatformIncoming({
             event: "locale.status",
             payload: payload
         });
@@ -265,7 +355,7 @@ function deliverNetworkStatus(request) {
     if (requestId) {
         deliverBridgeResult(requestId, true, payload);
     } else {
-        deliverIncoming({
+        deliverPlatformIncoming({
             event: "network.status",
             payload: payload
         });
@@ -279,7 +369,7 @@ function deliverBatteryStatus(request) {
         if (requestId) {
             deliverBridgeResult(requestId, true, payload);
         } else {
-            deliverIncoming({
+            deliverPlatformIncoming({
                 event: "battery.status",
                 payload: payload
             });
@@ -379,7 +469,7 @@ function handlePreferencesCommand(payload) {
 
     if (payload.op === "set") {
         companionPreferences[key] = body.value;
-        deliverIncoming({
+        deliverPlatformIncoming({
             event: "preferences.saved",
             payload: { key: key }
         });
@@ -396,7 +486,7 @@ function handlePreferencesCommand(payload) {
         if (payload.id) {
             deliverBridgeResult(payload.id, true, responsePayload);
         } else {
-            deliverIncoming({
+            deliverPlatformIncoming({
                 event: "preferences.value",
                 payload: responsePayload
             });
@@ -406,7 +496,7 @@ function handlePreferencesCommand(payload) {
 
     if (payload.op === "subscribe") {
         Object.keys(companionPreferences).forEach(function (storedKey) {
-            deliverIncoming({
+            deliverPlatformIncoming({
                 event: "preferences.value",
                 payload: {
                     key: storedKey,
@@ -473,7 +563,7 @@ function handleGeolocationCommand(payload) {
 
 function handleOutgoing(payload) {
     if (payload && payload.registerBridgeResponse) {
-        console.log("Elm companion registered bridge response handler", payload.registerBridgeResponse);
+        pendingBridgeResponseIds[payload.registerBridgeResponse] = true;
         return;
     }
 
@@ -482,6 +572,11 @@ function handleOutgoing(payload) {
             console.log("Elm companion requested configuration", JSON.stringify(payload.payload || {}));
             openConfigurationUrl((payload.payload && payload.payload.url) || generatedConfigurationUrl);
         }
+        return;
+    }
+
+    if (payload && payload.api === "lifecycle" && payload.op === "subscribe") {
+        deliverLifecycleEvent("lifecycle.ready", {});
         return;
     }
 
@@ -533,6 +628,20 @@ function handleOutgoing(payload) {
 
     if (payload && payload.api === "notifications") {
         handleNotificationsCommand(payload);
+        return;
+    }
+
+    if (payload && payload.api === "webSocket") {
+        bridgeCommandError(payload, "webSocket", "WebSocket unavailable from this Pebble companion runtime");
+        return;
+    }
+
+    if (payload && payload.api === "timeline") {
+        bridgeCommandError(payload, "timeline", "Timeline unavailable from this Pebble companion runtime");
+        return;
+    }
+
+    if (payload && payload.api === "lifecycle") {
         return;
     }
 
@@ -604,6 +713,7 @@ Pebble.addEventListener("appmessage", function (event) {
 if (generatedConfigurationUrl) {
     Pebble.addEventListener("showConfiguration", function () {
         console.log("Pebble showConfiguration event");
+        deliverLifecycleEvent("lifecycle.showConfiguration", {});
         openConfigurationUrl(generatedConfigurationUrl);
     });
 
@@ -612,11 +722,15 @@ if (generatedConfigurationUrl) {
         console.log("Pebble webviewclosed response", response);
         writeStoredConfigurationResponse(response);
 
-        deliverIncoming({
+        deliverPlatformIncoming({
             event: "configuration.closed",
             payload: {
                 response: response
             }
+        });
+
+        deliverLifecycleEvent("lifecycle.webviewclosed", {
+            response: response
         });
     });
 }
@@ -668,4 +782,33 @@ Pebble.addEventListener("ready", function () {
             geolocationIncomingPort.send(pendingGeolocationIncoming.shift());
         }
     }
+
+    if (app.ports && app.ports.platformIncoming) {
+        platformIncomingPort = app.ports.platformIncoming;
+        while (pendingPlatformIncoming.length > 0) {
+            platformIncomingPort.send(pendingPlatformIncoming.shift());
+        }
+    }
+
+    if (app.ports && app.ports.registerPlatformHandler) {
+        app.ports.registerPlatformHandler.subscribe(function (payload) {
+            if (!payload || typeof payload.handlerId !== "string") {
+                return function () {};
+            }
+
+            var handlerId = payload.handlerId;
+            var interest = payload.interest || {};
+
+            platformHandlers[handlerId] = {
+                eventPrefixes: Array.isArray(interest.eventPrefixes) ? interest.eventPrefixes : [],
+                resultIdPrefixes: Array.isArray(interest.resultIdPrefixes) ? interest.resultIdPrefixes : []
+            };
+
+            return function () {
+                delete platformHandlers[handlerId];
+            };
+        });
+    }
+
+    deliverLifecycleEvent("lifecycle.ready", {});
 });

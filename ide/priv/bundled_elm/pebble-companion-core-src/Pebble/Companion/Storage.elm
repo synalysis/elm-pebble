@@ -4,6 +4,7 @@ module Pebble.Companion.Storage exposing
     , clear
     , get
     , onStorage
+    , part
     , remove
     , set
     )
@@ -20,7 +21,7 @@ module Pebble.Companion.Storage exposing
 
 # Subscriptions
 
-@docs onStorage
+@docs onStorage, part
 
 -}
 
@@ -30,6 +31,7 @@ import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
 import Pebble.Companion.Contract exposing (BridgeError, ResultEnvelope)
 import Pebble.Companion.Phone as Phone
+import Pebble.Companion.Platform as Platform
 
 
 {-| A stored companion value.
@@ -67,10 +69,23 @@ set key value =
 -}
 get : String -> (Result Error Value -> msg) -> Cmd msg
 get key toMsg =
-    Phone.send toMsg <|
+    Phone.send (Result.mapError DecodeFailure >> toMsg) <|
         Phone.requestWithPayload ("storage-get-" ++ key) "storage" "get"
             (Encode.object [ ( "key", Encode.string key ) ])
-            decodeGetResponse
+            (decodeGetResponse >> Result.mapError errorToString)
+
+
+errorToString : Error -> String
+errorToString error =
+    case error of
+        BridgeFailure bridgeError ->
+            bridgeError.message
+
+        MissingPayload ->
+            "Storage response missing payload"
+
+        DecodeFailure message ->
+            message
 
 
 {-| Remove a stored key.
@@ -90,11 +105,33 @@ clear =
         Command.command "storage-clear" "storage" "clear"
 
 
-{-| Receive pushed storage responses from the companion bridge.
+{-| Receive storage command responses routed through the platform bridge.
 -}
 onStorage : (Result Error Value -> msg) -> Sub msg
 onStorage toMsg =
-    Phone.onRawMessage (decodeStorage >> toMsg)
+    Platform.with [ handler toMsg ]
+
+
+{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
+-}
+part : (Result Error Value -> msg) -> Platform.Part msg
+part toMsg =
+    Platform.part (handler toMsg)
+
+
+{-| Platform router handler for storage command responses.
+-}
+handler toMsg =
+    Platform.handler storageInterest (decodeStorage >> Result.mapError errorToString) toMsg
+
+
+storageInterest =
+    Platform.interest
+        { id = "storage"
+        , subscribeCommand = Nothing
+        , eventPrefixes = []
+        , resultIdPrefixes = [ "storage-" ]
+        }
 
 
 decodeGetResponse : Decode.Value -> Result Error Value

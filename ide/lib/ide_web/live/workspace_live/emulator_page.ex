@@ -164,41 +164,21 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             <p data-emulator-status class="rounded bg-white px-3 py-2 text-xs text-zinc-700">
               Embedded emulator is idle.
             </p>
-            <div class="space-y-3 rounded bg-white p-3 text-xs text-zinc-700">
-              <label class="block font-medium">
-                Battery
-                <input
-                  data-emulator-battery
-                  type="range"
-                  min="0"
-                  max="100"
-                  value="80"
-                  class="mt-2 w-full"
-                />
-              </label>
-              <div class="space-y-2.5">
-                <label class="flex items-center gap-2">
-                  <input data-emulator-charging type="checkbox" /> Charging
-                </label>
-                <label class="flex items-center gap-2">
-                  <input data-emulator-bluetooth type="checkbox" checked /> Bluetooth connected
-                </label>
-                <label class="flex items-center gap-2">
-                  <input data-emulator-24h type="checkbox" /> 24h time
-                </label>
-                <label class="flex items-center gap-2">
-                  <input data-emulator-peek type="checkbox" /> Timeline peek
-                </label>
-              </div>
-              <div>
-                <button
-                  type="button"
-                  data-emulator-tap
-                  class="rounded bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 shadow-sm hover:bg-zinc-200"
-                >
-                  Tap
-                </button>
-              </div>
+            <.simulator_settings_form
+              id="embedded-emulator-simulator-settings"
+              project={@project}
+              debugger_state={@debugger_state}
+              mode={:emulator}
+              class="space-y-3"
+            />
+            <div class="rounded bg-white p-3 text-xs text-zinc-700">
+              <button
+                type="button"
+                data-emulator-tap
+                class="rounded bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 shadow-sm hover:bg-zinc-200"
+              >
+                Tap
+              </button>
             </div>
           </div>
           <div class="flex min-h-0 flex-col rounded border border-zinc-200 bg-white p-3">
@@ -398,38 +378,13 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               >
                 Tap
               </button>
-              <form phx-change="external-emulator-control" class="mt-3">
-                <input type="hidden" name="control" value="battery" />
-                <input type="hidden" name="charging" value="false" />
-                <label class="block font-medium">
-                  Battery
-                  <input name="percent" type="range" min="0" max="100" value="80" class="mt-1 w-full" />
-                </label>
-                <label class="mt-2 flex items-center gap-2">
-                  <input name="charging" type="checkbox" value="true" /> Charging
-                </label>
-              </form>
-              <form phx-change="external-emulator-control" class="mt-3 space-y-2">
-                <label class="flex items-center gap-2">
-                  <input type="hidden" name="control" value="bluetooth" />
-                  <input type="hidden" name="connected" value="false" />
-                  <input name="connected" type="checkbox" value="true" checked /> Bluetooth connected
-                </label>
-              </form>
-              <form phx-change="external-emulator-control" class="mt-2 space-y-2">
-                <label class="flex items-center gap-2">
-                  <input type="hidden" name="control" value="time_format" />
-                  <input type="hidden" name="enabled" value="false" />
-                  <input name="enabled" type="checkbox" value="true" /> 24h time
-                </label>
-              </form>
-              <form phx-change="external-emulator-control" class="mt-2 space-y-2">
-                <label class="flex items-center gap-2">
-                  <input type="hidden" name="control" value="timeline_quick_view" />
-                  <input type="hidden" name="enabled" value="false" />
-                  <input name="enabled" type="checkbox" value="true" /> Timeline peek
-                </label>
-              </form>
+              <.simulator_settings_form
+                id="external-emulator-simulator-settings"
+                project={@project}
+                debugger_state={@debugger_state}
+                mode={:emulator}
+                class="mt-3 border-0 bg-transparent p-0 shadow-none"
+              />
             </div>
           </div>
         </div>

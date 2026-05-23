@@ -5,6 +5,7 @@ module Pebble.Companion.Environment exposing
     , TideInfo
     , current
     , onEnvironment
+    , part
     )
 
 {-| Sun, moon, and tide environment helpers for companion apps.
@@ -22,7 +23,7 @@ module Pebble.Companion.Environment exposing
 
 # Subscriptions
 
-@docs onEnvironment
+@docs onEnvironment, part
 
 -}
 
@@ -31,7 +32,7 @@ import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
 import Pebble.Companion.Contract exposing (BridgeEvent)
 import Pebble.Companion.Phone as Phone
-import Sub
+import Pebble.Companion.Platform as Platform
 
 
 {-| Sunrise, sunset, and polar-day information.
@@ -86,11 +87,31 @@ Registering this subscription also tells the bridge to send environment updates.
 -}
 onEnvironment : (Result String EnvironmentInfo -> msg) -> Sub msg
 onEnvironment toMsg =
-    Sub.batch
-        [ Phone.subscribeBridge <|
-            Command.command "environment-subscribe" "environment" "subscribe"
-        , Phone.onRawMessage (decodeEnvironment >> toMsg)
-        ]
+    Platform.with [ handler toMsg ]
+
+
+{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
+-}
+part : (Result String EnvironmentInfo -> msg) -> Platform.Part msg
+part toMsg =
+    Platform.part (handler toMsg)
+
+
+{-| Platform router handler for environment events and responses.
+-}
+handler toMsg =
+    Platform.handler environmentInterest decodeEnvironment toMsg
+
+
+environmentInterest =
+    Platform.interest
+        { id = "environment"
+        , subscribeCommand =
+            Just <|
+                Command.command "environment-subscribe" "environment" "subscribe"
+        , eventPrefixes = [ "environment." ]
+        , resultIdPrefixes = [ "environment-" ]
+        }
 
 
 decodeResponse : Decode.Value -> Result String EnvironmentInfo

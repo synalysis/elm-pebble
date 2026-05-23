@@ -1,34 +1,38 @@
 port module Pebble.Companion.Phone exposing
-    ( Request(..)
-    , decodeWatchToPhone
-    , onRawMessage
+    ( decodeWatchToPhone
     , onWatchToPhone
-    , request
-    , requestWithPayload
-    , send
-    , sendBridgeCommand
     , sendPhoneToWatch
-    , sendRequest
-    , subscribeBridge
     )
 
-{-| Companion-side bridge for watch protocol messages and platform APIs.
+{-| Watch AppMessage protocol wiring for companion apps.
 
-Use the typed `Pebble.Companion.*` modules for weather, storage, and other
-platform capabilities. This module handles the JavaScript bridge ports and
-watch AppMessage protocol wiring.
+Use the typed `Pebble.Companion.*` modules for phone platform APIs such as
+weather, storage, and battery. This module is for typed watch ↔ phone
+AppMessage traffic only.
+
+Message constructors such as `WatchToPhone` and `PhoneToWatch` come from your
+project's protocol definition in `protocol/src/Companion/Types.elm`.
+
+    import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+    import Pebble.Companion.Phone as Phone
+
+    type Msg
+        = FromWatch (Result String WatchToPhone)
+
+    subscriptions _ =
+        Phone.onWatchToPhone FromWatch
+
+    update msg model =
+        case msg of
+            FromWatch (Ok RequestFigure) ->
+                ( model, Phone.sendPhoneToWatch (ProvideFigure 0) )
+
+            FromWatch (Err _) ->
+                ( model, Cmd.none )
 
 # Watch protocol
 
 @docs decodeWatchToPhone, onWatchToPhone, sendPhoneToWatch
-
-# Platform requests
-
-@docs Request(..), request, requestWithPayload, send, sendRequest
-
-# Low-level bridge
-
-@docs sendBridgeCommand, subscribeBridge, onRawMessage
 
 -}
 
@@ -48,15 +52,11 @@ type Request a
     = Request CommandEnvelope (Decode.Value -> Result String a)
 
 
-{-| Build a request for a bridge command.
--}
 request : String -> String -> String -> (Decode.Value -> Result String a) -> Request a
 request id api op decodeResponse =
     Request (Command.command id api op) decodeResponse
 
 
-{-| Build a request for a bridge command with a JSON payload.
--}
 requestWithPayload :
     String
     -> String
@@ -68,18 +68,11 @@ requestWithPayload id api op payload decodeResponse =
     Request (Command.command id api op |> Command.withPayload payload) decodeResponse
 
 
-{-| Send a bridge request and deliver the decoded response to `toMsg`.
--}
 send : (Result String a -> msg) -> Request a -> Cmd msg
 send toMsg (Request envelope decodeResponse) =
     sendRequest envelope decodeResponse toMsg
 
 
-{-| Send a bridge request and deliver the decoded response to `toMsg`.
-
-The JavaScript bridge stores `decodeResponse` and `toMsg` until the matching
-response arrives, then enqueues the resulting message in the Elm runtime.
--}
 sendRequest :
     CommandEnvelope
     -> (Decode.Value -> Result String a)
@@ -87,12 +80,15 @@ sendRequest :
     -> Cmd msg
 sendRequest envelope decodeResponse toMsg =
     Cmd.batch
-        [ registerResponseHandler envelope.id decodeResponse toMsg
+        [ registerResponseHandler envelope.id
         , sendBridgeCommand envelope
         ]
 
 
 port incoming : (Decode.Value -> msg) -> Sub msg
+
+
+port platformIncoming : (Decode.Value -> msg) -> Sub msg
 
 
 port outgoing : Encode.Value -> Cmd msg
@@ -101,8 +97,19 @@ port outgoing : Encode.Value -> Cmd msg
 port bridgeInterest : Encode.Value -> Sub msg
 
 
-{-| Tell the bridge to push updates while this subscription is active.
--}
+port registerPlatformHandler : Encode.Value -> Sub msg
+
+
+registerHandler : String -> Encode.Value -> Sub msg
+registerHandler handlerId interest =
+    registerPlatformHandler <|
+        Encode.object
+            [ ( "handlerId", Encode.string handlerId )
+            , ( "interest", interest )
+            , ( "active", Encode.bool True )
+            ]
+
+
 subscribeBridge : CommandEnvelope -> Sub msg
 subscribeBridge envelope =
     bridgeInterest (Codec.encodeCommand envelope)
@@ -120,7 +127,6 @@ onWatchToPhone toMsg =
     incoming (decodeIncomingPayload >> Result.andThen decodeWatchToPhone >> toMsg)
 
 
-{-| Subscribe to raw bridge messages from the JavaScript companion bridge. -}
 onRawMessage : (Decode.Value -> msg) -> Sub msg
 onRawMessage =
     incoming
@@ -134,23 +140,14 @@ sendPhoneToWatch message =
         |> outgoing
 
 
-{-| Send a command envelope to the JavaScript companion bridge. -}
 sendBridgeCommand : CommandEnvelope -> Cmd msg
 sendBridgeCommand command =
     Codec.encodeCommand command
         |> outgoing
 
 
-registerResponseHandler :
-    String
-    -> (Decode.Value -> Result String a)
-    -> (Result String a -> msg)
-    -> Cmd msg
-registerResponseHandler id decodeResponse toMsg =
-    let
-        _ =
-            ( id, decodeResponse, toMsg )
-    in
+registerResponseHandler : String -> Cmd msg
+registerResponseHandler id =
     outgoing <|
         Encode.object
             [ ( "registerBridgeResponse", Encode.string id )

@@ -1,6 +1,7 @@
 module Pebble.Companion.PreferenceStore exposing
     ( get
     , onPreference
+    , part
     , set
     )
 
@@ -12,7 +13,7 @@ module Pebble.Companion.PreferenceStore exposing
 
 # Subscriptions
 
-@docs onPreference
+@docs onPreference, part
 
 -}
 
@@ -22,7 +23,7 @@ import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
 import Pebble.Companion.Contract exposing (BridgeEvent)
 import Pebble.Companion.Phone as Phone
-import Sub
+import Pebble.Companion.Platform as Platform
 
 
 {-| Read a preference value and deliver it to `toMsg`.
@@ -55,11 +56,31 @@ Registering this subscription also tells the bridge to send preference updates.
 -}
 onPreference : (Result String ( String, Decode.Value ) -> msg) -> Sub msg
 onPreference toMsg =
-    Sub.batch
-        [ Phone.subscribeBridge <|
-            Command.command "preferences-subscribe" "preferences" "subscribe"
-        , Phone.onRawMessage (decodePreference >> toMsg)
-        ]
+    Platform.with [ handler toMsg ]
+
+
+{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
+-}
+part : (Result String ( String, Decode.Value ) -> msg) -> Platform.Part msg
+part toMsg =
+    Platform.part (handler toMsg)
+
+
+{-| Platform router handler for preference events and responses.
+-}
+handler toMsg =
+    Platform.handler preferencesInterest decodePreference toMsg
+
+
+preferencesInterest =
+    Platform.interest
+        { id = "preferences"
+        , subscribeCommand =
+            Just <|
+                Command.command "preferences-subscribe" "preferences" "subscribe"
+        , eventPrefixes = [ "preferences." ]
+        , resultIdPrefixes = [ "preferences-" ]
+        }
 
 
 decodeResponse : Decode.Value -> Result String ( String, Decode.Value )
@@ -103,13 +124,20 @@ decodeBridgeEvent bridgeEvent =
             decodeValue bridgeEvent.payload
 
         "preferences.saved" ->
-            Ok ( decodeStringField "key" bridgeEvent.payload "", Encode.object [] )
+            decodeSavedKey bridgeEvent.payload
 
         "preferences.error" ->
             Err (decodeStringField "message" bridgeEvent.payload "Preferences unavailable")
 
         other ->
             Err ("Unexpected preferences event: " ++ other)
+
+
+decodeSavedKey : Decode.Value -> Result String ( String, Decode.Value )
+decodeSavedKey payload =
+    Decode.decodeValue (Decode.field "key" Decode.string) payload
+        |> Result.map (\key -> ( key, Encode.null ))
+        |> Result.mapError Decode.errorToString
 
 
 decodeValue : Decode.Value -> Result String ( String, Decode.Value )

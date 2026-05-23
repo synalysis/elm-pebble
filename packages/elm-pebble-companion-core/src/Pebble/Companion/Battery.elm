@@ -2,12 +2,16 @@ module Pebble.Companion.Battery exposing
     ( BatteryInfo
     , current
     , onBattery
+    , part
     )
 
 {-| Phone battery helpers for companion apps.
 
     init _ =
         ( model, Battery.current GotBattery )
+
+    subscriptions _ =
+        Battery.onBattery GotBattery
 
 # Types
 
@@ -19,7 +23,7 @@ module Pebble.Companion.Battery exposing
 
 # Subscriptions
 
-@docs onBattery
+@docs onBattery, part
 
 -}
 
@@ -28,7 +32,7 @@ import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
 import Pebble.Companion.Contract exposing (BridgeEvent)
 import Pebble.Companion.Phone as Phone
-import Sub
+import Pebble.Companion.Platform as Platform
 
 
 {-| Current phone battery charge and charging state.
@@ -53,11 +57,31 @@ Registering this subscription also tells the bridge to send battery updates.
 -}
 onBattery : (Result String BatteryInfo -> msg) -> Sub msg
 onBattery toMsg =
-    Sub.batch
-        [ Phone.subscribeBridge <|
-            Command.command "battery-subscribe" "battery" "subscribe"
-        , Phone.onRawMessage (decodeBattery >> toMsg)
-        ]
+    Platform.with [ handler toMsg ]
+
+
+{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
+-}
+part : (Result String BatteryInfo -> msg) -> Platform.Part msg
+part toMsg =
+    Platform.part (handler toMsg)
+
+
+{-| Platform router handler for battery events and responses.
+-}
+handler toMsg =
+    Platform.handler batteryInterest decodeBattery toMsg
+
+
+batteryInterest =
+    Platform.interest
+        { id = "battery"
+        , subscribeCommand =
+            Just <|
+                Command.command "battery-subscribe" "battery" "subscribe"
+        , eventPrefixes = [ "battery." ]
+        , resultIdPrefixes = [ "battery-" ]
+        }
 
 
 decodeResponse : Decode.Value -> Result String BatteryInfo

@@ -2,6 +2,7 @@ module Pebble.Companion.Connectivity exposing
     ( Connectivity(..)
     , current
     , onConnectivity
+    , part
     )
 
 {-| Phone internet connectivity exposed by the companion bridge.
@@ -13,6 +14,9 @@ does **not** describe watch-to-phone Bluetooth connection — use
     init _ =
         ( model, Connectivity.current ConnectivityChanged )
 
+    subscriptions _ =
+        Connectivity.onConnectivity ConnectivityChanged
+
 # Types
 
 @docs Connectivity
@@ -23,7 +27,7 @@ does **not** describe watch-to-phone Bluetooth connection — use
 
 # Subscriptions
 
-@docs onConnectivity
+@docs onConnectivity, part
 
 -}
 
@@ -32,7 +36,7 @@ import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
 import Pebble.Companion.Contract exposing (BridgeEvent)
 import Pebble.Companion.Phone as Phone
-import Sub
+import Pebble.Companion.Platform as Platform
 
 
 {-| Phone connectivity state reported by the companion bridge.
@@ -56,11 +60,38 @@ Registering this subscription also tells the bridge to send connectivity updates
 -}
 onConnectivity : (Connectivity -> msg) -> Sub msg
 onConnectivity toMsg =
-    Sub.batch
-        [ Phone.subscribeBridge <|
-            Command.command "connectivity-subscribe" "network" "subscribe"
-        , Phone.onRawMessage (decodeConnectivity >> Result.withDefault Offline >> toMsg)
-        ]
+    Platform.with [ handler toMsg ]
+
+
+{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
+-}
+part : (Connectivity -> msg) -> Platform.Part msg
+part toMsg =
+    Platform.part (handler toMsg)
+
+
+{-| Platform router handler for connectivity events and responses.
+-}
+handler toMsg =
+    Platform.handler connectivityInterest decodeConnectivityMsg toMsg
+
+
+connectivityInterest =
+    Platform.interest
+        { id = "connectivity"
+        , subscribeCommand =
+            Just <|
+                Command.command "connectivity-subscribe" "network" "subscribe"
+        , eventPrefixes = [ "network." ]
+        , resultIdPrefixes = [ "connectivity-" ]
+        }
+
+
+decodeConnectivityMsg : Decode.Value -> Result String Connectivity
+decodeConnectivityMsg value =
+    decodeConnectivity value
+        |> Result.withDefault Offline
+        |> Ok
 
 
 decodeResponse : Decode.Value -> Result String Connectivity

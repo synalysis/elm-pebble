@@ -651,6 +651,12 @@ Hooks.EmbeddedEmulator = {
     if (this.host) this.host.updated()
   },
 
+  handleEvent(event, payload) {
+    if (this.host && event === "simulator_settings_applied") {
+      this.host.applySimulatorSettings(payload)
+    }
+  },
+
   destroyed() {
     if (this.host) this.host.destroy()
   }

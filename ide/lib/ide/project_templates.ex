@@ -21,7 +21,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time game-basic game-tiny-bird game-jump-n-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline game-basic game-tiny-bird game-jump-n-run game-2048)
 
   @template_dirs %{
     "starter" => "starter",
@@ -30,6 +30,14 @@ defmodule Ide.ProjectTemplates do
     "watchface-tutorial-complete" => "watchface_tutorial_complete",
     "watchface-yes" => "watchface_yes",
     "watchface-tangram-time" => "watchface_tangram_time",
+    "companion-demo-phone-status" => "companion_demo_phone_status",
+    "companion-demo-weather-env" => "companion_demo_weather_env",
+    "companion-demo-calendar" => "companion_demo_calendar",
+    "companion-demo-geolocation" => "companion_demo_geolocation",
+    "companion-demo-storage" => "companion_demo_storage",
+    "companion-demo-settings" => "companion_demo_settings",
+    "companion-demo-websocket" => "companion_demo_websocket",
+    "companion-demo-timeline" => "companion_demo_timeline",
     "game-basic" => "game_basic",
     "game-tiny-bird" => "game_tiny_bird",
     "game-jump-n-run" => "game_jump_n_run",
@@ -52,7 +60,11 @@ defmodule Ide.ProjectTemplates do
              "watchface-analog",
              "watchface-tutorial-complete",
              "watchface-yes",
-             "watchface-tangram-time"
+             "watchface-tangram-time",
+             "companion-demo-phone-status",
+             "companion-demo-weather-env",
+             "companion-demo-calendar",
+             "companion-demo-geolocation"
            ],
       do: "watchface"
 
@@ -97,6 +109,14 @@ defmodule Ide.ProjectTemplates do
       {"Watchface tutorial: Complete", "watchface-tutorial-complete"},
       {"Watchface: YES (watch, protocol, phone)", "watchface-yes"},
       {"Watchface: Tangram Time (watch, protocol, phone)", "watchface-tangram-time"},
+      {"Companion demo: Phone status (battery, locale, network, notifications)", "companion-demo-phone-status"},
+      {"Companion demo: Weather & environment", "companion-demo-weather-env"},
+      {"Companion demo: Calendar", "companion-demo-calendar"},
+      {"Companion demo: Geolocation (lat/long watchface)", "companion-demo-geolocation"},
+      {"Companion demo: Storage & preferences (app)", "companion-demo-storage"},
+      {"Companion demo: Settings & lifecycle (app)", "companion-demo-settings"},
+      {"Companion demo: WebSocket (app)", "companion-demo-websocket"},
+      {"Companion demo: Timeline (app)", "companion-demo-timeline"},
       {"Game: Basic", "game-basic"},
       {"Game: Tiny Bird", "game-tiny-bird"},
       {"Game: Jump'n Run", "game-jump-n-run"},
@@ -127,6 +147,30 @@ defmodule Ide.ProjectTemplates do
 
       "watchface-tangram-time" ->
         seed_tangram_time_watchface_workspace(workspace_path)
+
+      "companion-demo-phone-status" ->
+        seed_companion_demo_workspace(workspace_path, "companion_demo_phone_status")
+
+      "companion-demo-weather-env" ->
+        seed_companion_demo_workspace(workspace_path, "companion_demo_weather_env")
+
+      "companion-demo-calendar" ->
+        seed_companion_demo_workspace(workspace_path, "companion_demo_calendar")
+
+      "companion-demo-storage" ->
+        seed_companion_demo_workspace(workspace_path, "companion_demo_storage")
+
+      "companion-demo-settings" ->
+        seed_companion_demo_workspace(workspace_path, "companion_demo_settings")
+
+      "companion-demo-websocket" ->
+        seed_companion_demo_workspace(workspace_path, "companion_demo_websocket")
+
+      "companion-demo-timeline" ->
+        seed_companion_demo_workspace(workspace_path, "companion_demo_timeline")
+
+      "companion-demo-geolocation" ->
+        seed_companion_demo_workspace(workspace_path, "companion_demo_geolocation")
 
       "game-basic" ->
         seed_watch_only_workspace(workspace_path, "game_basic")
@@ -388,6 +432,24 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
+  @spec seed_companion_demo_workspace(workspace_path(), template_dir_name()) :: seed_result()
+  defp seed_companion_demo_workspace(workspace_path, template_dir) do
+    with :ok <- seed_template_protocol(workspace_path, template_dir),
+         :ok <- seed_phone_companion(workspace_path),
+         :ok <- seed_companion_demo_phone(workspace_path, template_dir),
+         :ok <- seed_watch_only_workspace(workspace_path, template_dir) do
+      :ok
+    end
+  end
+
+  @spec seed_companion_demo_phone(workspace_path(), template_dir_name()) :: seed_result()
+  defp seed_companion_demo_phone(workspace_path, template_dir) do
+    source = Paths.priv_path("project_templates/#{template_dir}/phone/src")
+    target = Path.join(workspace_path, "phone/src")
+
+    copy_file(Path.join(source, "CompanionApp.elm"), Path.join(target, "CompanionApp.elm"))
+  end
+
   @spec seed_yes_protocol(workspace_path()) :: seed_result()
   defp seed_yes_protocol(workspace_path) do
     source_dir = Paths.priv_path("project_templates/watchface_yes/protocol/src")
@@ -557,7 +619,15 @@ defmodule Ide.ProjectTemplates do
        when template_dir in [
               "watchface_tutorial_complete",
               "watchface_yes",
-              "watchface_tangram_time"
+              "watchface_tangram_time",
+              "companion_demo_phone_status",
+              "companion_demo_weather_env",
+              "companion_demo_calendar",
+              "companion_demo_geolocation",
+              "companion_demo_storage",
+              "companion_demo_settings",
+              "companion_demo_websocket",
+              "companion_demo_timeline"
             ] do
     [
       "src",

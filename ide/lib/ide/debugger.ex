@@ -21,8 +21,8 @@ defmodule Ide.Debugger do
   @min_auto_fire_interval_ms 100
   @agent_call_timeout_ms 30_000
   @configuration_subscription_contract %{
-    names: ["onConfiguration"],
-    target_suffixes: [".onConfiguration"]
+    names: ["onConfiguration", "onClosed", "part"],
+    target_suffixes: [".onConfiguration", ".onClosed", ".Configuration.onClosed", ".part", ".Configuration.part"]
   }
   @geolocation_subscription_contract %{
     names: ["onCurrentPosition"],
@@ -31,54 +31,78 @@ defmodule Ide.Debugger do
   @companion_bridge_subscription_contracts [
     %{
       source: "battery",
-      names: ["onBattery"],
-      target_suffixes: [".onBattery"],
+      names: ["onBattery", "part"],
+      target_suffixes: [".onBattery", ".Battery.onBattery", ".part", ".Battery.part"],
       payload: :battery
     },
     %{
       source: "locale",
-      names: ["onLocale"],
-      target_suffixes: [".onLocale"],
+      names: ["onLocale", "part"],
+      target_suffixes: [".onLocale", ".Locale.onLocale", ".part", ".Locale.part"],
       payload: :locale
     },
     %{
       source: "network",
-      names: ["onConnectivity"],
-      target_suffixes: [".onConnectivity"],
-      payload: :network
+      names: ["onConnectivity", "part"],
+      target_suffixes: [".onConnectivity", ".Connectivity.onConnectivity", ".part", ".Connectivity.part"],
+      payload: :network,
+      plain_result: true
     },
     %{
       source: "notifications",
-      names: ["onNotifications"],
-      target_suffixes: [".onNotifications"],
+      names: ["onNotifications", "part"],
+      target_suffixes: [".onNotifications", ".Notifications.onNotifications", ".part", ".Notifications.part"],
       payload: :notifications
     },
     %{
       source: "weather",
-      names: ["onWeather"],
-      target_suffixes: [".onWeather"],
+      names: ["onWeather", "part", "partCurrent", "partForecast"],
+      target_suffixes: [
+        ".onWeather",
+        ".Weather.onWeather",
+        ".part",
+        ".Weather.part",
+        ".partCurrent",
+        ".Weather.partCurrent",
+        ".partForecast",
+        ".Weather.partForecast"
+      ],
       payload: :weather
     },
     %{
       source: "calendar",
-      names: ["onCalendar"],
-      target_suffixes: [".onCalendar"],
+      names: ["onCalendar", "part", "partCurrent", "partUpcoming"],
+      target_suffixes: [
+        ".onCalendar",
+        ".Calendar.onCalendar",
+        ".part",
+        ".Calendar.part",
+        ".partCurrent",
+        ".Calendar.partCurrent",
+        ".partUpcoming",
+        ".Calendar.partUpcoming"
+      ],
       payload: :calendar
     },
     %{
       source: "environment",
-      names: ["onEnvironment"],
-      target_suffixes: [".onEnvironment"],
+      names: ["onEnvironment", "part"],
+      target_suffixes: [".onEnvironment", ".Environment.onEnvironment", ".part", ".Environment.part"],
       payload: :environment
     }
   ]
   @storage_result_contract %{
-    names: ["onStorage"],
-    target_suffixes: [".onStorage"]
+    names: ["onStorage", "part"],
+    target_suffixes: [".onStorage", ".Storage.onStorage", ".part", ".Storage.part"]
   }
   @preferences_result_contract %{
-    names: ["onPreference"],
-    target_suffixes: [".onPreference", ".PreferenceStore.onPreference"]
+    names: ["onPreference", "part"],
+    target_suffixes: [
+      ".onPreference",
+      ".PreferenceStore.onPreference",
+      ".part",
+      ".PreferenceStore.part"
+    ]
   }
 
   @type runtime_event :: %{
@@ -296,7 +320,8 @@ defmodule Ide.Debugger do
       },
       "latitude" => 48.137154,
       "longitude" => 11.576124,
-      "accuracy" => 25.0
+      "accuracy" => 25.0,
+      "timeline_peek" => false
     }
   end
 
@@ -345,6 +370,7 @@ defmodule Ide.Debugger do
       })
       |> maybe_apply_simulator_settings_geolocation_response()
       |> maybe_apply_simulator_settings_companion_bridge_responses()
+      |> maybe_apply_init_companion_bridge_commands(:companion)
     end)
   end
 
@@ -592,14 +618,14 @@ defmodule Ide.Debugger do
       seq_before_configuration_update = Map.get(state, :seq, 0)
 
       state =
-        state
-        |> apply_step_once(
-          :companion,
+      state
+      |> apply_step_once(
+        :companion,
           configuration_message,
           configuration_message_value,
-          "configuration",
-          "configuration"
-        )
+        "configuration",
+        "configuration"
+      )
 
       state
       |> maybe_apply_configuration_protocol_messages(
@@ -881,14 +907,14 @@ defmodule Ide.Debugger do
           }
 
           if subscription_model_active?(state, target, row) do
-            apply_step_once(
-              state,
-              target,
-              resolved_message,
-              resolved_message_value,
-              "subscription_trigger",
-              "subscription_trigger"
-            )
+          apply_step_once(
+            state,
+            target,
+            resolved_message,
+            resolved_message_value,
+            "subscription_trigger",
+            "subscription_trigger"
+          )
           else
             append_event(state, "debugger.subscription_toggle", %{
               action: "blocked_inactive",
@@ -1273,13 +1299,13 @@ defmodule Ide.Debugger do
       Agent.get_and_update(
         __MODULE__,
         fn store ->
-          current =
-            store
-            |> get_or_default_state(project_slug)
-            |> ensure_phone_state()
+        current =
+          store
+          |> get_or_default_state(project_slug)
+          |> ensure_phone_state()
 
-          next = updater.(current)
-          {next, Map.put(store, project_slug, next)}
+        next = updater.(current)
+        {next, Map.put(store, project_slug, next)}
         end,
         @agent_call_timeout_ms
       )
@@ -1434,10 +1460,21 @@ defmodule Ide.Debugger do
 
     runtime_protocol_events = Map.get(runtime_result, :protocol_events, [])
 
+    model_for_protocol =
+      model
+      |> Map.merge(runtime_patch)
+      |> hydrate_runtime_model_for_message(message)
+
     command_protocol_events =
       cond do
         runtime_protocol_events == [] ->
-          protocol_events_for_model_commands(state, model, target, message)
+          protocol_events_for_model_commands(
+            state,
+            model_for_protocol,
+            target,
+            message,
+            message_value
+          )
 
         true ->
           []
@@ -1794,7 +1831,7 @@ defmodule Ide.Debugger do
             response_message: callback,
             response_value: payload
           })
-          |> apply_subscription_ok_response(target, callback, payload, source, trigger)
+          |> apply_companion_subscription_response(target, callback, payload, source, trigger, contract)
 
         _ ->
           acc
@@ -1810,6 +1847,17 @@ defmodule Ide.Debugger do
 
   @spec companion_bridge_payload(map(), atom(), map()) :: term()
   defp companion_bridge_payload(state, kind, request)
+
+  defp companion_bridge_payload(state, :calendar, request) when is_map(state) and is_map(request) do
+    settings = simulator_settings_from_state(state)
+    events = settings["calendar_events"]
+
+    case Map.get(request, :op) do
+      "nextEvent" -> List.first(events)
+      "subscribe" -> events
+      _ -> events
+    end
+  end
 
   defp companion_bridge_payload(state, :weather, request) when is_map(state) and is_map(request) do
     settings = simulator_settings_from_state(state)
@@ -1845,9 +1893,6 @@ defmodule Ide.Debugger do
           "quietHours" => settings["quiet_hours"],
           "notificationsEnabled" => settings["notifications_enabled"]
         }
-
-      :calendar ->
-        settings["calendar_events"]
 
       :environment ->
         settings["environment"]
@@ -2444,6 +2489,48 @@ defmodule Ide.Debugger do
   defp debugger_geolocation_location(_state),
     do: debugger_geolocation_location(%{simulator_settings: default_simulator_settings()})
 
+  @spec apply_companion_subscription_response(
+          map(),
+          :watch | :companion | :phone,
+          String.t(),
+          term(),
+          String.t(),
+          String.t(),
+          map()
+        ) :: map()
+  defp apply_companion_subscription_response(
+         state,
+         target,
+         callback,
+         payload,
+         source,
+         trigger,
+         contract
+       )
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(callback) and
+              is_binary(source) and is_binary(trigger) and is_map(contract) do
+    if Map.get(contract, :plain_result) == true do
+      connectivity =
+        case payload do
+          true -> %{"ctor" => "Online", "args" => []}
+          false -> %{"ctor" => "Offline", "args" => []}
+          value when is_map(value) -> value
+          _ -> %{"ctor" => "Offline", "args" => []}
+        end
+
+      apply_step_once(
+        state,
+        target,
+        callback,
+        %{"ctor" => callback, "args" => [connectivity]},
+        source,
+        trigger
+      )
+    else
+      apply_subscription_ok_response(state, target, callback, payload, source, trigger)
+    end
+  end
+
   @spec subscription_ok_message_value(String.t(), Types.subscription_payload()) :: map()
   defp subscription_ok_message_value(callback, payload) when is_binary(callback) do
     subscription_result_message_value(callback, "Ok", payload)
@@ -2521,39 +2608,48 @@ defmodule Ide.Debugger do
 
   defp subscription_call_matches?(_row, _names, _target_suffixes), do: false
 
-  defp protocol_events_from_cmd_call(state, :watch, cmd_call, model) when is_map(cmd_call) do
+  defp protocol_events_from_cmd_call(state, target_surface, cmd_call, model, message_value \\ nil)
+
+  defp protocol_events_from_cmd_call(state, :watch, cmd_call, model, message_value)
+       when is_map(cmd_call) do
     name = (Map.get(cmd_call, "name") || Map.get(cmd_call, :name) || "") |> to_string()
     target = (Map.get(cmd_call, "target") || Map.get(cmd_call, :target) || "") |> to_string()
 
-    {message, message_value} =
-      protocol_message_payload_for_cmd_call(state, cmd_call, model, :watch_to_phone)
+    {message, protocol_value} =
+      protocol_message_payload_for_cmd_call(state, cmd_call, model, :watch_to_phone, message_value)
 
     if name == "sendWatchToPhone" or String.ends_with?(target, ".sendWatchToPhone") do
-      protocol_tx_rx_events("watch", "companion", message, "init_cmd", message_value)
+      protocol_tx_rx_events("watch", "companion", message, "init_cmd", protocol_value)
     else
       []
     end
   end
 
-  defp protocol_events_from_cmd_call(state, target_surface, cmd_call, model)
+  defp protocol_events_from_cmd_call(state, target_surface, cmd_call, model, message_value)
        when target_surface in [:companion, :phone] and is_map(cmd_call) do
     name = (Map.get(cmd_call, "name") || Map.get(cmd_call, :name) || "") |> to_string()
     target = (Map.get(cmd_call, "target") || Map.get(cmd_call, :target) || "") |> to_string()
 
-    {message, message_value} =
-      protocol_message_payload_for_cmd_call(state, cmd_call, model, :phone_to_watch)
+    {message, protocol_value} =
+      protocol_message_payload_for_cmd_call(state, cmd_call, model, :phone_to_watch, message_value)
 
     if name == "sendPhoneToWatch" or String.ends_with?(target, ".sendPhoneToWatch") do
-      protocol_tx_rx_events("companion", "watch", message, "protocol_cmd", message_value)
+      protocol_tx_rx_events("companion", "watch", message, "protocol_cmd", protocol_value)
     else
       []
     end
   end
 
-  defp protocol_events_from_cmd_call(_state, _surface, _cmd_call, _model), do: []
+  defp protocol_events_from_cmd_call(_state, _surface, _cmd_call, _model, _message_value), do: []
 
-  @spec protocol_events_for_model_commands(runtime_state(), map(), Types.surface_target(), String.t()) :: [map()]
-  defp protocol_events_for_model_commands(state, model, target, message)
+  @spec protocol_events_for_model_commands(
+          runtime_state(),
+          map(),
+          Types.surface_target(),
+          String.t(),
+          Types.subscription_payload()
+        ) :: [map()]
+  defp protocol_events_for_model_commands(state, model, target, message, message_value \\ nil)
        when is_map(model) and target in [:watch, :companion, :phone] and is_binary(message) do
     current_ctor = message_constructor(message)
 
@@ -2563,10 +2659,13 @@ defmodule Ide.Debugger do
     |> introspect_cmd_calls("update_cmd_calls")
     |> update_cmd_calls_for_message(current_ctor)
     |> expand_helper_cmd_calls(ei)
-    |> Enum.flat_map(&protocol_events_from_cmd_call(state, target, &1, model))
+    |> Enum.flat_map(
+      &protocol_events_from_cmd_call(state, target, &1, model, message_value)
+    )
   end
 
-  defp protocol_events_for_model_commands(_state, _model, _target, _message), do: []
+  defp protocol_events_for_model_commands(_state, _model, _target, _message, _message_value),
+    do: []
 
   @spec expand_helper_cmd_calls([map()], map()) :: [map()]
   defp expand_helper_cmd_calls(calls, ei) when is_list(calls) and is_map(ei) do
@@ -2593,28 +2692,319 @@ defmodule Ide.Debugger do
           term(),
           map(),
           term(),
-          :watch_to_phone | :phone_to_watch
+          :watch_to_phone | :phone_to_watch,
+          Types.subscription_payload()
         ) ::
           {String.t() | nil, term()}
-  defp protocol_message_payload_for_cmd_call(state, cmd_call, model, direction)
+  defp protocol_message_payload_for_cmd_call(state, cmd_call, model, direction, message_value \\ nil)
        when is_map(cmd_call) and direction in [:watch_to_phone, :phone_to_watch] do
     callback =
       Map.get(cmd_call, "callback_constructor") || Map.get(cmd_call, :callback_constructor)
 
     case protocol_schema_from_state_or_model(state, model) do
       {:ok, schema} ->
+        ctx = %{
+          message_value: message_value,
+          runtime_model: Map.get(model, "runtime_model") || %{},
+          simulator_settings: simulator_settings_from_state(state),
+          protocol_ctor: protocol_message_ctor_name(cmd_call)
+        }
+
+        case resolve_protocol_message_from_cmd_call(cmd_call, schema, direction, ctx) do
+          {message, protocol_value} when is_binary(message) and is_map(protocol_value) ->
+            {message, protocol_value}
+
+          _ ->
         {
           protocol_message_from_schema(schema, direction, callback),
           protocol_message_value_from_schema(schema, direction, callback)
         }
+        end
 
       {:error, _} ->
         {if(is_binary(callback) and callback != "", do: callback, else: nil), nil}
     end
   end
 
-  defp protocol_message_payload_for_cmd_call(_state, _cmd_call, _model, _direction),
+  defp protocol_message_payload_for_cmd_call(_state, _cmd_call, _model, _direction, _message_value),
     do: {nil, nil}
+
+  @spec protocol_message_ctor_name(map()) :: String.t() | nil
+  defp protocol_message_ctor_name(cmd_call) when is_map(cmd_call) do
+    case protocol_ctor_from_cmd_call(cmd_call) do
+      {:ok, ctor, _} when is_binary(ctor) -> ctor
+      _ -> Map.get(cmd_call, "callback_constructor") || Map.get(cmd_call, :callback_constructor)
+    end
+  end
+
+  defp protocol_message_ctor_name(_cmd_call), do: nil
+
+  @spec resolve_protocol_message_from_cmd_call(map(), map(), :watch_to_phone | :phone_to_watch, map()) ::
+          {String.t(), map()} | :error
+  defp resolve_protocol_message_from_cmd_call(cmd_call, schema, direction, ctx)
+       when is_map(cmd_call) and is_map(schema) and is_map(ctx) and
+              direction in [:watch_to_phone, :phone_to_watch] do
+    with {:ok, ctor, inner_args} <- protocol_ctor_from_cmd_call(cmd_call),
+         %{fields: fields} <- protocol_schema_message(schema, direction, ctor),
+         {:ok, resolved_args} <- resolve_protocol_ctor_args(inner_args, fields, schema, ctx) do
+      message_value = %{"ctor" => ctor, "args" => resolved_args}
+      {protocol_message_display(ctor, resolved_args), message_value}
+    else
+      _ -> :error
+    end
+  end
+
+  defp resolve_protocol_message_from_cmd_call(_cmd_call, _schema, _direction, _ctx), do: :error
+
+  @spec protocol_ctor_from_cmd_call(map()) :: {:ok, String.t(), list()} | :error
+  defp protocol_ctor_from_cmd_call(%{"arg_values" => [first | _]}) when is_map(first) do
+    ctor = Map.get(first, "$ctor") || Map.get(first, "ctor")
+    args = Map.get(first, "$args") || Map.get(first, "args") || []
+
+    if is_binary(ctor) and ctor != "" do
+      {:ok, ctor, List.wrap(args)}
+    else
+      :error
+    end
+  end
+
+  defp protocol_ctor_from_cmd_call(%{arg_values: [first | _]}) when is_map(first) do
+    protocol_ctor_from_cmd_call(%{"arg_values" => [first]})
+  end
+
+  defp protocol_ctor_from_cmd_call(_cmd_call), do: :error
+
+  @spec resolve_protocol_ctor_args(list(), list(), map(), map()) :: {:ok, list()} | :error
+  defp resolve_protocol_ctor_args(inner_args, fields, schema, ctx)
+       when is_list(inner_args) and is_list(fields) and is_map(schema) and is_map(ctx) do
+    resolved =
+      inner_args
+      |> Enum.with_index()
+      |> Enum.map(fn {arg, index} ->
+        field = Enum.at(fields, index) || %{}
+        wire_type = Map.get(field, :wire_type)
+
+        resolve_protocol_ctor_arg(arg, wire_type, schema, ctx)
+      end)
+
+    if Enum.any?(resolved, &(not is_nil(&1))) do
+      {:ok, resolved}
+    else
+      :error
+    end
+  end
+
+  defp resolve_protocol_ctor_args(_inner_args, _fields, _schema, _ctx), do: :error
+
+  @spec resolve_protocol_ctor_arg(term(), Types.protocol_wire_type(), map(), map()) :: term() | nil
+  defp resolve_protocol_ctor_arg(arg, wire_type, schema, ctx) do
+    resolve_protocol_arg_expr(arg, ctx) ||
+      resolve_protocol_arg_fallback(wire_type, schema, ctx) ||
+      simulator_settings_wire_value(wire_type, ctx)
+  end
+
+  @spec resolve_protocol_arg_expr(term(), map()) :: term() | nil
+  defp resolve_protocol_arg_expr(%{"$field" => field, "$on" => on_expr}, ctx)
+       when is_binary(field) and is_map(on_expr) and is_map(ctx) do
+    case resolve_protocol_binding_record(on_expr, ctx) do
+      record when is_map(record) -> Map.get(record, field)
+      _ -> nil
+    end
+  end
+
+  defp resolve_protocol_arg_expr(%{"$var" => name}, ctx) when is_binary(name) and is_map(ctx) do
+    runtime_model = Map.get(ctx, :runtime_model) || %{}
+
+    cond do
+      Map.has_key?(runtime_model, name) ->
+        Map.get(runtime_model, name)
+
+      true ->
+        case resolve_protocol_binding_record(%{"$var" => name}, ctx) do
+          record when is_map(record) -> record
+          value -> value
+        end
+    end
+  end
+
+  defp resolve_protocol_arg_expr(value, _ctx) when is_integer(value) or is_boolean(value) or is_binary(value),
+    do: value
+
+  defp resolve_protocol_arg_expr(%{"$ctor" => ctor, "$args" => args}, ctx)
+       when is_binary(ctor) and is_list(args) and is_map(ctx) do
+    %{
+      "ctor" => ctor,
+      "args" =>
+        args
+        |> Enum.map(&resolve_protocol_arg_expr(&1, ctx))
+        |> Enum.reject(&is_nil/1)
+    }
+  end
+
+  defp resolve_protocol_arg_expr(%{"$opaque" => true, "op" => "field_access"}, _ctx), do: nil
+  defp resolve_protocol_arg_expr(_arg, _ctx), do: nil
+
+  @spec resolve_protocol_binding_record(map(), map()) :: term() | nil
+  defp resolve_protocol_binding_record(%{"$var" => _name}, ctx) when is_map(ctx) do
+    case protocol_update_payload_record(Map.get(ctx, :message_value)) do
+      %{} = record ->
+        record
+
+      _ ->
+        protocol_binding_record_from_runtime_model(Map.get(ctx, :runtime_model))
+    end
+  end
+
+  defp resolve_protocol_binding_record(_expr, _ctx), do: nil
+
+  @spec protocol_binding_record_from_runtime_model(map() | nil) :: map() | nil
+  defp protocol_binding_record_from_runtime_model(%{} = runtime_model) do
+    %{
+      "percent" => Map.get(runtime_model, "batteryPercent"),
+      "charging" => Map.get(runtime_model, "charging"),
+      "online" => Map.get(runtime_model, "online"),
+      "locale" => Map.get(runtime_model, "locale"),
+      "notificationsEnabled" => Map.get(runtime_model, "notificationsEnabled"),
+      "quietHours" => Map.get(runtime_model, "quietHours")
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+    |> case do
+      %{} = empty when map_size(empty) == 0 -> nil
+      record -> record
+    end
+  end
+
+  defp protocol_binding_record_from_runtime_model(_runtime_model), do: nil
+
+  defp protocol_update_payload_record(%{"ctor" => _ctor, "args" => [inner | _]}) when is_map(inner) do
+    case protocol_ok_inner_record(inner) do
+      %{} = record -> record
+      _ -> protocol_connectivity_record(inner)
+    end
+  end
+
+  defp protocol_update_payload_record(%{ctor: ctor, args: [inner | _]}) when is_map(inner) do
+    protocol_update_payload_record(%{"ctor" => ctor, "args" => [inner]})
+  end
+
+  defp protocol_update_payload_record(_message_value), do: nil
+
+  @spec protocol_connectivity_record(map()) :: map() | nil
+  defp protocol_connectivity_record(%{"ctor" => "Online"}), do: %{"online" => true}
+  defp protocol_connectivity_record(%{"ctor" => "Offline"}), do: %{"online" => false}
+  defp protocol_connectivity_record(%{ctor: "Online"}), do: %{"online" => true}
+  defp protocol_connectivity_record(%{ctor: "Offline"}), do: %{"online" => false}
+  defp protocol_connectivity_record(_inner), do: nil
+
+  @spec protocol_ok_inner_record(map()) :: map() | nil
+  defp protocol_ok_inner_record(%{"ctor" => "Ok", "args" => [value | _]}) when is_map(value), do: value
+
+  defp protocol_ok_inner_record(%{ctor: "Ok", args: [value | _]}) when is_map(value), do: value
+
+  defp protocol_ok_inner_record(%{"ctor" => ctor, "args" => _}) when ctor in ["Online", "Offline"],
+    do: nil
+
+  defp protocol_ok_inner_record(%{ctor: ctor, args: _}) when ctor in ["Online", "Offline"], do: nil
+  defp protocol_ok_inner_record(value) when is_map(value), do: value
+  defp protocol_ok_inner_record(_value), do: nil
+
+  @spec resolve_protocol_arg_fallback(Types.protocol_wire_type(), map(), map()) :: term() | nil
+  defp resolve_protocol_arg_fallback(wire_type, schema, ctx) when is_map(schema) and is_map(ctx) do
+    record =
+      protocol_update_payload_record(Map.get(ctx, :message_value)) ||
+        protocol_binding_record_from_runtime_model(Map.get(ctx, :runtime_model)) ||
+        %{}
+
+    value =
+      case wire_type do
+        :int ->
+          Enum.find_value(
+            ["percent", "batteryPercent", "battery_percent"],
+            &Map.get(record, &1)
+          )
+
+        :bool ->
+          protocol_bool_fallback_value(ctx, record)
+
+        :string ->
+          Map.get(record, "locale")
+
+        {:enum, type} ->
+          protocol_default_value_term(schema, {:enum, type})
+
+        {:union, type} ->
+          protocol_default_value_term(schema, {:union, type})
+
+        _ ->
+          nil
+      end
+
+    value || runtime_model_wire_value(wire_type, ctx)
+  end
+
+  defp resolve_protocol_arg_fallback(_wire_type, _schema, _ctx), do: nil
+
+  @spec runtime_model_wire_value(Types.protocol_wire_type(), map()) :: term() | nil
+  defp runtime_model_wire_value(:int, %{runtime_model: %{} = runtime_model}) do
+    Enum.find_value(
+      ["batteryPercent", "percent", "battery_percent"],
+      &Map.get(runtime_model, &1)
+    )
+  end
+
+  defp runtime_model_wire_value(:bool, ctx) do
+    protocol_bool_fallback_value(ctx, Map.get(ctx, :runtime_model) || %{})
+  end
+
+  defp runtime_model_wire_value(:string, %{runtime_model: %{} = runtime_model}) do
+    Map.get(runtime_model, "locale")
+  end
+
+  defp runtime_model_wire_value(_wire_type, _ctx), do: nil
+
+  @spec simulator_settings_wire_value(Types.protocol_wire_type(), map()) :: term() | nil
+  defp simulator_settings_wire_value(:int, %{simulator_settings: %{} = settings}) do
+    Map.get(settings, "battery_percent")
+  end
+
+  defp simulator_settings_wire_value(:bool, ctx) do
+    protocol_bool_simulator_value(ctx)
+  end
+
+  defp simulator_settings_wire_value(:string, %{simulator_settings: %{} = settings}) do
+    Map.get(settings, "locale")
+  end
+
+  defp simulator_settings_wire_value(_wire_type, _ctx), do: nil
+
+  @spec protocol_bool_fallback_value(map(), map()) :: boolean() | nil
+  defp protocol_bool_fallback_value(ctx, record) when is_map(ctx) and is_map(record) do
+    ctor = Map.get(ctx, :protocol_ctor)
+
+    keys =
+      case ctor do
+        "ProvideConnectivity" -> ["online"]
+        "ProvideBattery" -> ["charging"]
+        "ProvideNotifications" -> ["notificationsEnabled", "quietHours"]
+        _ -> ["online", "charging", "notificationsEnabled", "quietHours"]
+      end
+
+    Enum.find_value(keys, &Map.get(record, &1))
+  end
+
+  defp protocol_bool_fallback_value(_ctx, _record), do: nil
+
+  @spec protocol_bool_simulator_value(map()) :: boolean() | nil
+  defp protocol_bool_simulator_value(%{protocol_ctor: "ProvideConnectivity", simulator_settings: settings})
+       when is_map(settings),
+       do: Map.get(settings, "network_online")
+
+  defp protocol_bool_simulator_value(%{protocol_ctor: "ProvideBattery", simulator_settings: settings})
+       when is_map(settings),
+       do: Map.get(settings, "charging")
+
+  defp protocol_bool_simulator_value(_ctx), do: nil
 
   @spec protocol_schema_from_state_or_model(runtime_state(), map()) :: {:ok, map()} | {:error, Types.protocol_error()}
   defp protocol_schema_from_state_or_model(state, model) do
@@ -2895,7 +3285,7 @@ defmodule Ide.Debugger do
           normalize_protocol_wire_value(schema, value, Map.get(field, :wire_type))
         end)
 
-      normalized_value = %{"ctor" => ctor, "args" => protocol_constructor_args(normalized_args)}
+      normalized_value = %{"ctor" => ctor, "args" => normalized_args}
       {protocol_message_display(ctor, normalized_args), normalized_value}
     else
       _ -> :error
@@ -3537,6 +3927,25 @@ defmodule Ide.Debugger do
 
   defp init_device_request_already_satisfied?(_model, _req), do: false
 
+  @device_kind_runtime_fields %{
+    "current_time_string" => ["timeString"],
+    "current_date_time" => ["currentDateTime"],
+    "battery_level" => ["batteryLevel", "batteryPercent"],
+    "connection_status" => ["connected", "online"],
+    "timezone" => ["timezone"],
+    "watch_model" => ["watchModel", "model"],
+    "watch_color" => ["watchColor", "color"],
+    "firmware_version" => ["firmwareVersion"]
+  }
+
+  @message_constructor_runtime_fields %{
+    "CurrentTimeString" => ["timeString"],
+    "CurrentTime" => ["timeString"],
+    "CurrentDateTime" => ["currentDateTime"],
+    "BatteryLevelChanged" => ["batteryLevel", "batteryPercent"],
+    "ConnectionStatusChanged" => ["connected", "online"]
+  }
+
   @spec device_request_from_cmd_call(Types.cmd_call()) :: [Types.device_request()]
   defp device_request_from_cmd_call(cmd_call) when is_map(cmd_call) do
     name = (Map.get(cmd_call, "name") || Map.get(cmd_call, :name) || "") |> to_string()
@@ -3779,7 +4188,7 @@ defmodule Ide.Debugger do
        when is_map(runtime_model) and is_map(model) and is_map(req) and
               kind in [:string, :integer, :boolean] do
     with true <- device_response_constructor_declared?(model, Map.get(req, :response_message)),
-         {:ok, key} <- unique_scalar_runtime_model_key(model, runtime_model, kind) do
+         {:ok, key} <- scalar_runtime_model_key_for_device_response(model, runtime_model, req, kind) do
       Map.put(runtime_model, key, value)
     else
       _ -> runtime_model
@@ -3788,6 +4197,47 @@ defmodule Ide.Debugger do
 
   defp merge_declared_scalar_device_response(runtime_model, _model, _req, _value, _kind),
     do: runtime_model
+
+  @spec scalar_runtime_model_key_for_device_response(
+          Types.runtime_model(),
+          map(),
+          Types.device_request(),
+          :string | :integer | :boolean
+        ) :: {:ok, String.t()} | :error
+  defp scalar_runtime_model_key_for_device_response(model, runtime_model, req, kind)
+       when is_map(model) and is_map(runtime_model) and is_map(req) and
+              kind in [:string, :integer, :boolean] do
+    case unique_scalar_runtime_model_key(model, runtime_model, kind) do
+      {:ok, key} ->
+        {:ok, key}
+
+      :error ->
+        device_kind_runtime_model_key(model, runtime_model, Map.get(req, :kind), kind)
+    end
+  end
+
+  @spec device_kind_runtime_model_key(
+          Types.runtime_model(),
+          map(),
+          String.t() | nil,
+          :string | :integer | :boolean
+        ) :: {:ok, String.t()} | :error
+  defp device_kind_runtime_model_key(model, runtime_model, device_kind, kind)
+       when is_map(model) and is_map(runtime_model) and kind in [:string, :integer, :boolean] do
+    init_model = introspect_init_model(model)
+
+    device_kind
+    |> then(fn kind -> if is_binary(kind), do: Map.get(@device_kind_runtime_fields, kind, []), else: [] end)
+    |> Enum.filter(fn key ->
+      Map.has_key?(runtime_model, key) and scalar_kind?(Map.get(init_model, key), kind)
+    end)
+    |> case do
+      [key] -> {:ok, key}
+      _ -> :error
+    end
+  end
+
+  defp device_kind_runtime_model_key(_model, _runtime_model, _device_kind, _kind), do: :error
 
   @spec device_response_constructor_declared?(Types.runtime_model(), String.t() | nil) :: boolean()
   defp device_response_constructor_declared?(model, constructor)
@@ -4179,6 +4629,7 @@ defmodule Ide.Debugger do
           _ -> 1
         end)
         |> update_recipient_runtime_model_from_protocol(recipient, row)
+        |> patch_watch_runtime_from_protocol_message(recipient, message_value)
         |> update_recipient_protocol_view_tree(recipient, row)
         |> refresh_runtime_surface_fingerprints(recipient)
 
@@ -4475,6 +4926,41 @@ defmodule Ide.Debugger do
        when recipient in [:watch, :companion, :phone] and is_map(row) do
     put_in(state, [recipient, :model, "protocol_last_view_message"], row["message"])
   end
+
+  @spec patch_watch_runtime_from_protocol_message(runtime_state(), Types.surface_target(), term()) ::
+          runtime_state()
+  defp patch_watch_runtime_from_protocol_message(state, :watch, message_value) do
+    case protocol_watch_online_from_message_value(message_value) do
+      online when is_boolean(online) ->
+        update_in(state, [:watch, :model, "runtime_model"], fn runtime_model ->
+          runtime_model = if is_map(runtime_model), do: runtime_model, else: %{}
+          Map.put(runtime_model, "online", online)
+        end)
+
+      _ ->
+        state
+    end
+  end
+
+  defp patch_watch_runtime_from_protocol_message(state, _recipient, _message_value), do: state
+
+  @spec protocol_watch_online_from_message_value(term()) :: boolean() | nil
+  defp protocol_watch_online_from_message_value(%{"ctor" => "FromPhone", "args" => [inner | _]})
+       when is_map(inner),
+       do: protocol_watch_online_from_message_value(inner)
+
+  defp protocol_watch_online_from_message_value(%{"ctor" => "ProvideConnectivity", "args" => [online | _]})
+       when is_boolean(online),
+       do: online
+
+  defp protocol_watch_online_from_message_value(%{ctor: "FromPhone", args: [inner | _]}) when is_map(inner),
+       do: protocol_watch_online_from_message_value(inner)
+
+  defp protocol_watch_online_from_message_value(%{ctor: "ProvideConnectivity", args: [online | _]})
+       when is_boolean(online),
+       do: online
+
+  defp protocol_watch_online_from_message_value(_message_value), do: nil
 
   @spec refresh_runtime_surface_fingerprints(runtime_state(), Types.surface_target()) :: runtime_state()
   defp refresh_runtime_surface_fingerprints(state, recipient)
@@ -5156,8 +5642,11 @@ defmodule Ide.Debugger do
   defp normalize_boolean("false", _default), do: false
   defp normalize_boolean(_value, default) when is_boolean(default), do: default
 
+  @doc """
+  Normalizes simulator settings form or persisted values to the canonical debugger shape.
+  """
   @spec normalize_simulator_settings(map()) :: map()
-  defp normalize_simulator_settings(settings) when is_map(settings) do
+  def normalize_simulator_settings(settings) when is_map(settings) do
     defaults = default_simulator_settings()
 
     %{
@@ -5217,11 +5706,13 @@ defmodule Ide.Debugger do
       "longitude" =>
         normalize_float(map_value(settings, "longitude"), defaults["longitude"], -180.0, 180.0),
       "accuracy" =>
-        normalize_float(map_value(settings, "accuracy"), defaults["accuracy"], 0.0, 100_000.0)
+        normalize_float(map_value(settings, "accuracy"), defaults["accuracy"], 0.0, 100_000.0),
+      "timeline_peek" =>
+        normalize_boolean(map_value(settings, "timeline_peek"), defaults["timeline_peek"])
     }
   end
 
-  defp normalize_simulator_settings(_settings), do: default_simulator_settings()
+  def normalize_simulator_settings(_settings), do: default_simulator_settings()
 
   defp normalize_string(value, _default) when is_binary(value) and value != "", do: value
   defp normalize_string(_value, default) when is_binary(default), do: default
@@ -5998,10 +6489,46 @@ defmodule Ide.Debugger do
 
   @spec canonicalize_known_message(String.t(), [String.t()]) :: String.t()
   defp canonicalize_known_message(message, known_messages) when is_binary(message) do
-    needle = String.downcase(message)
+    trimmed = String.trim(message)
 
-    Enum.find(known_messages, message, fn known ->
-      is_binary(known) and String.downcase(known) == needle
+    case String.split(trimmed, ~r/\s+/, parts: 2) do
+      [constructor, payload] when is_binary(payload) and payload != "" ->
+        canonical_constructor = canonicalize_message_constructor(constructor, known_messages)
+        "#{canonical_constructor} #{payload}"
+
+      _ ->
+        needle = String.downcase(trimmed)
+
+        Enum.find(known_messages, trimmed, fn known ->
+          if is_binary(known) do
+            known_down = String.downcase(known)
+
+            known_down == needle or
+              String.starts_with?(needle, known_down <> " ") or
+              String.starts_with?(needle, known_down <> "(")
+          else
+            false
+          end
+        end)
+    end
+  end
+
+  @spec canonicalize_message_constructor(String.t(), [String.t()]) :: String.t()
+  defp canonicalize_message_constructor(constructor, known_messages) when is_binary(constructor) do
+    ctor_down = String.downcase(constructor)
+
+    Enum.find_value(known_messages, constructor, fn known ->
+      if is_binary(known) do
+        known_ctor =
+          known
+          |> String.trim()
+          |> String.split(~r/\s+/, parts: 2)
+          |> List.first()
+
+        if is_binary(known_ctor) and String.downcase(known_ctor) == ctor_down do
+          known_ctor
+        end
+      end
     end)
   end
 
@@ -7953,7 +8480,7 @@ defmodule Ide.Debugger do
   @spec maybe_put_message_payload_field(map(), String.t(), Types.protocol_wire_arg()) :: map()
   defp maybe_put_message_payload_field(runtime_model, constructor, payload)
        when is_map(runtime_model) and is_binary(constructor) do
-    case model_field_for_message_constructor(constructor) do
+    case model_field_for_message_constructor(constructor, runtime_model) do
       field when is_binary(field) ->
         if Map.has_key?(runtime_model, field) do
           put_payload_value_if_needed(runtime_model, field, payload, constructor)
@@ -7968,9 +8495,35 @@ defmodule Ide.Debugger do
 
   defp maybe_put_message_payload_field(runtime_model, _constructor, _payload), do: runtime_model
 
-  @spec model_field_for_message_constructor(String.t()) :: String.t() | nil
-  defp model_field_for_message_constructor("Got" <> rest), do: lower_camel_name(rest)
-  defp model_field_for_message_constructor(_constructor), do: nil
+  @spec model_field_for_message_constructor(String.t(), map() | nil) :: String.t() | nil
+  defp model_field_for_message_constructor(constructor, runtime_model \\ nil)
+
+  defp model_field_for_message_constructor("Got" <> rest, _runtime_model),
+    do: lower_camel_name(rest)
+
+  defp model_field_for_message_constructor(constructor, runtime_model)
+       when is_binary(constructor) do
+    case Map.get(@message_constructor_runtime_fields, constructor, []) do
+      [] ->
+        nil
+
+      candidates ->
+        pick_existing_runtime_field(candidates, runtime_model)
+    end
+  end
+
+  defp model_field_for_message_constructor(_constructor, _runtime_model), do: nil
+
+  @spec pick_existing_runtime_field([String.t()], map() | nil) :: String.t() | nil
+  defp pick_existing_runtime_field(candidates, runtime_model) when is_list(candidates) do
+    case runtime_model do
+      model when is_map(model) ->
+        Enum.find(candidates, &Map.has_key?(model, &1))
+
+      _ ->
+        List.first(candidates)
+    end
+  end
 
   @spec put_payload_value_if_needed(map(), String.t(), Types.protocol_wire_arg(), String.t()) ::
           map()

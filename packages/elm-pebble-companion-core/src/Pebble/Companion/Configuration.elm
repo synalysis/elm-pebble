@@ -1,21 +1,34 @@
-module Pebble.Companion.Configuration exposing (Event(..), open, subscribe, decode)
+module Pebble.Companion.Configuration exposing
+    ( onClosed
+    , open
+    , part
+    )
 
 {-| Open and observe the Pebble companion configuration page.
 
-    Pebble.Companion.Configuration.open "settings" "https://example.com/config"
+    init _ =
+        ( model, Configuration.open "https://example.com/config" )
 
-# Events
-@docs Event, decode
+    subscriptions _ =
+        Configuration.onClosed ConfigurationClosed
 
 # Commands
-@docs open, subscribe
+
+@docs open
+
+# Subscriptions
+
+@docs onClosed, part
 
 -}
 
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
-import Pebble.Companion.Contract exposing (BridgeEvent, CommandEnvelope)
+import Pebble.Companion.Contract exposing (BridgeEvent)
+import Pebble.Companion.Phone as Phone
+import Pebble.Companion.Platform as Platform
 
 
 {-| Configuration lifecycle events reported by the bridge.
@@ -27,23 +40,68 @@ type Event
 
 {-| Ask the companion bridge to open a configuration URL.
 -}
-open : String -> String -> CommandEnvelope
-open id url =
-    Command.command id "configuration" "open"
-        |> Command.withPayload (Encode.object [ ( "url", Encode.string url ) ])
+open : String -> Cmd msg
+open url =
+    Phone.sendBridgeCommand <|
+        Command.command "configuration-open" "configuration" "open"
+            |> Command.withPayload (Encode.object [ ( "url", Encode.string url ) ])
 
 
-{-| Subscribe to configuration close events.
+{-| Receive configuration close events from the companion bridge.
+
+Registering this subscription also tells the bridge to send configuration events.
 -}
-subscribe : String -> CommandEnvelope
-subscribe id =
-    Command.command id "configuration" "subscribe"
+onClosed : (Maybe String -> msg) -> Sub msg
+onClosed toMsg =
+    Platform.with [ handler (toClosedMsg toMsg) ]
 
 
-{-| Decode a bridge event into a configuration event.
+{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
 -}
-decode : BridgeEvent -> Event
-decode bridgeEvent =
+part : (Maybe String -> msg) -> Platform.Part msg
+part toMsg =
+    Platform.part (handler (toClosedMsg toMsg))
+
+
+toClosedMsg : (Maybe String -> msg) -> (Event -> msg)
+toClosedMsg toMsg event =
+    case event of
+        Closed response ->
+            toMsg response
+
+        Unknown _ ->
+            toMsg Nothing
+
+
+{-| Platform router handler for configuration close events.
+-}
+handler toMsg =
+    Platform.handler configurationInterest decodeConfigurationEvent toMsg
+
+
+configurationInterest =
+    Platform.interest
+        { id = "configuration"
+        , subscribeCommand =
+            Just <|
+                Command.command "configuration-subscribe" "configuration" "subscribe"
+        , eventPrefixes = [ "configuration." ]
+        , resultIdPrefixes = []
+        }
+
+
+decodeConfigurationEvent : Decode.Value -> Result String Event
+decodeConfigurationEvent value =
+    case Decode.decodeValue Codec.decodeEvent value of
+        Ok event ->
+            Ok (decodeBridgeEvent event)
+
+        Err error ->
+            Err (Decode.errorToString error)
+
+
+decodeBridgeEvent : BridgeEvent -> Event
+decodeBridgeEvent bridgeEvent =
     case bridgeEvent.event of
         "configuration.closed" ->
             Closed

@@ -120,24 +120,25 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
              Projects.create_project(%{
                "name" => "WorkspaceDebuggerSimulatorSettings",
                "slug" => slug,
-               "target_type" => "app"
+               "target_type" => "watchface",
+               "template" => "companion-demo-phone-status"
              })
 
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/debugger")
 
     view
-    |> form("form[phx-change='debugger-save-simulator-settings']", %{
-      "debugger_simulator" => %{
+    |> form("form#debugger-simulator-settings", %{
+      "simulator" => %{
         "battery_percent" => "42",
         "charging" => "true",
-        "connected" => "false",
         "clock_24h" => "false",
         "use_simulated_time" => "true",
         "simulated_date" => "2026-05-19",
         "simulated_time" => "07:08:09",
-        "latitude" => "48.2",
-        "longitude" => "11.7",
-        "accuracy" => "12.5"
+        "locale" => "de-DE",
+        "network_online" => "false",
+        "notifications_enabled" => "true",
+        "quiet_hours" => "false"
       }
     })
     |> render_change()
@@ -147,34 +148,34 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
 
     assert simulator["battery_percent"] == 42
     assert simulator["charging"] == true
-    assert simulator["connected"] == false
     assert simulator["clock_24h"] == false
     assert simulator["use_simulated_time"] == true
     assert simulator["simulated_date"] == "2026-05-19"
     assert simulator["simulated_time"] == "07:08:09"
-    assert simulator["latitude"] == 48.2
-    assert simulator["longitude"] == 11.7
-    assert simulator["accuracy"] == 12.5
+    assert simulator["locale"] == "de-DE"
+    assert simulator["network_online"] == false
+    assert simulator["notifications_enabled"] == true
+    assert simulator["quiet_hours"] == false
 
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/debugger")
-    assert has_element?(view, "input[name='debugger_simulator[battery_percent]'][value='42']")
+    assert has_element?(view, "input[name='simulator[battery_percent]'][value='42']")
 
     assert has_element?(
              view,
-             "input[name='debugger_simulator[use_simulated_time]'][checked]"
+             "input[name='simulator[use_simulated_time]'][checked]"
            )
 
     assert has_element?(
              view,
-             "input[name='debugger_simulator[simulated_date]'][value='2026-05-19']"
+             "input[name='simulator[simulated_date]'][value='2026-05-19']"
            )
 
     assert has_element?(
              view,
-             "input[name='debugger_simulator[simulated_time]'][value='07:08:09']"
+             "input[name='simulator[simulated_time]'][value='07:08:09']"
            )
 
-    assert has_element?(view, "input[name='debugger_simulator[latitude]'][value='48.2']")
+    assert has_element?(view, "input[name='simulator[locale]'][value='de-DE']")
   end
 
   test "project settings pane saves release metadata and github config", %{conn: conn} do

@@ -5,6 +5,9 @@ module Pebble.Companion.Weather exposing
     , current
     , forecast
     , onWeather
+    , part
+    , partCurrent
+    , partForecast
     )
 
 {-| Platform-provided weather for companion apps.
@@ -53,7 +56,7 @@ weather query.
 
 # Subscriptions
 
-@docs onWeather
+@docs onWeather, part, partCurrent, partForecast
 
 -}
 
@@ -62,7 +65,7 @@ import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
 import Pebble.Companion.Contract exposing (BridgeEvent)
 import Pebble.Companion.Phone as Phone
-import Sub
+import Pebble.Companion.Platform as Platform
 
 
 {-| Platform-normalized weather condition.
@@ -119,11 +122,69 @@ Registering this subscription also tells the bridge to send weather updates.
 -}
 onWeather : (Result String WeatherUpdate -> msg) -> Sub msg
 onWeather toMsg =
-    Sub.batch
-        [ Phone.subscribeBridge <|
-            Command.command "weather-subscribe" "weather" "subscribe"
-        , Phone.onRawMessage (decodeWeatherUpdate >> toMsg)
-        ]
+    Platform.with [ handler toMsg ]
+
+
+{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
+-}
+part : (Result String WeatherUpdate -> msg) -> Platform.Part msg
+part toMsg =
+    Platform.part (handler toMsg)
+
+
+{-| Platform listener for `current` command responses.
+-}
+partCurrent : (Result String WeatherInfo -> msg) -> Platform.Part msg
+partCurrent toMsg =
+    Platform.part (handlerCurrent toMsg)
+
+
+{-| Platform listener for `forecast` command responses.
+-}
+partForecast : (Result String (List WeatherInfo) -> msg) -> Platform.Part msg
+partForecast toMsg =
+    Platform.part (handlerForecast toMsg)
+
+
+handler toMsg =
+    Platform.handler weatherPushInterest decodeWeatherUpdate toMsg
+
+
+handlerCurrent toMsg =
+    Platform.handler weatherCurrentInterest decodeCurrentResponse toMsg
+
+
+handlerForecast toMsg =
+    Platform.handler weatherForecastInterest decodeForecastResponse toMsg
+
+
+weatherPushInterest =
+    Platform.interest
+        { id = "weather"
+        , subscribeCommand =
+            Just <|
+                Command.command "weather-subscribe" "weather" "subscribe"
+        , eventPrefixes = [ "weather." ]
+        , resultIdPrefixes = []
+        }
+
+
+weatherCurrentInterest =
+    Platform.interest
+        { id = "weather-current"
+        , subscribeCommand = Nothing
+        , eventPrefixes = []
+        , resultIdPrefixes = [ "weather-current" ]
+        }
+
+
+weatherForecastInterest =
+    Platform.interest
+        { id = "weather-forecast"
+        , subscribeCommand = Nothing
+        , eventPrefixes = []
+        , resultIdPrefixes = [ "weather-forecast" ]
+        }
 
 
 decodeCurrentResponse : Decode.Value -> Result String WeatherInfo

@@ -5,7 +5,9 @@
     "license": "MIT",
     "version": "0.1.0",
     "exposed-modules": [
+        "Pebble.Companion",
         "Pebble.Companion.Phone",
+        "Pebble.Companion.Platform",
         "Pebble.Companion.Battery",
         "Pebble.Companion.Calendar",
         "Pebble.Companion.Configuration",

@@ -39,16 +39,35 @@ defmodule Ide.CompanionPebbleApisTest do
       |> Map.fetch!("exposed-modules")
 
     for module <-
-          ~w(Battery Calendar Connectivity Environment Geolocation Locale Notifications PreferenceStore Storage Weather Phone) do
+          ~w(Battery Calendar Connectivity Environment Geolocation Locale Notifications PreferenceStore Storage Weather Phone Platform) do
       assert "Pebble.Companion.#{module}" in exposed
       assert File.exists?(Path.join(@core_src, "#{module}.elm"))
     end
 
+    assert "Pebble.Companion" in exposed
+
+    lifecycle = File.read!(Path.join(@core_src, "Lifecycle.elm"))
+    assert String.contains?(lifecycle, "onLifecycle : (Event -> msg) -> Sub msg")
+    refute String.contains?(lifecycle, "decode : BridgeEvent")
+
+    configuration = File.read!(Path.join(@core_src, "Configuration.elm"))
+    assert String.contains?(configuration, "open : String -> Cmd msg")
+    assert String.contains?(configuration, "onClosed : (Maybe String -> msg) -> Sub msg")
+
+    platform = File.read!(Path.join(@core_src, "Platform.elm"))
+    assert String.contains?(platform, "batch : List (Part msg) -> Sub msg")
+    refute String.contains?(platform, "@docs Handler")
+    refute String.contains?(platform, "handler,")
+
+    companion = File.read!(Path.join(@root, "packages/elm-pebble-companion-core/src/Pebble/Companion.elm"))
+    assert String.contains?(companion, "batch : List (Platform.Part msg) -> Sub msg")
+
     weather = File.read!(Path.join(@core_src, "Weather.elm"))
     assert String.contains?(weather, "(Result String WeatherInfo -> msg) -> Cmd msg")
     assert String.contains?(weather, "type WeatherUpdate")
-    assert String.contains?(weather, "Phone.send toMsg")
+    assert String.contains?(weather, "Platform.with")
     assert String.contains?(weather, "onWeather")
+    assert String.contains?(weather, "part :")
 
     connectivity = File.read!(Path.join(@core_src, "Connectivity.elm"))
     assert String.contains?(connectivity, "type Connectivity")
@@ -60,9 +79,19 @@ defmodule Ide.CompanionPebbleApisTest do
     documented = MapSet.new(docs, &Map.fetch!(&1, "name"))
 
     for module <-
-          ~w(Battery Calendar Connectivity Environment Locale Notifications PreferenceStore Weather) do
+          ~w(Battery Calendar Connectivity Environment Geolocation Locale Notifications PreferenceStore Storage Weather) do
       assert MapSet.member?(documented, "Pebble.Companion.#{module}")
     end
+
+    phone = File.read!(Path.join(@core_src, "Phone.elm"))
+    refute String.contains?(phone, ", request\n")
+    refute String.contains?(phone, "@docs Request")
+    assert String.contains?(phone, "onWatchToPhone")
+    assert String.contains?(phone, "sendPhoneToWatch")
+
+    battery = File.read!(Path.join(@core_src, "Battery.elm"))
+    refute String.contains?(battery, ", handler")
+    assert String.contains?(battery, "part :")
   end
 
   test "debugger simulator settings persist typed phone context fields" do
@@ -310,4 +339,234 @@ defmodule Ide.CompanionPebbleApisTest do
 
     assert get_in(state, [:simulator_settings, "preferences", "units"]) == "imperial"
   end
+
+  test "debugger simulates phone status demo battery from init helper and simulator settings" do
+    slug = "companion-phone-status-#{System.unique_integer([:positive])}"
+
+    template_root =
+      Path.expand(
+        "../../priv/project_templates/companion_demo_phone_status",
+        __DIR__
+      )
+
+    source = File.read!(Path.join(template_root, "phone/src/CompanionApp.elm"))
+
+    {:ok, _state} = Debugger.start_session(slug)
+
+    {:ok, state} =
+      Debugger.reload(slug, %{
+        rel_path: "phone/src/CompanionApp.elm",
+        source_root: "phone",
+        source: source,
+        reason: "companion_phone_status_init"
+      })
+
+    assert Enum.any?(state.events, fn event ->
+             event.type == "debugger.companion_bridge" and
+               Map.get(event.payload, :api) == "battery" and
+               Map.get(event.payload, :response_message) == "GotBattery" and
+               get_in(event.payload, [:response_value, "percent"]) == 88
+           end)
+
+    {:ok, updated} =
+      Debugger.set_simulator_settings(slug, %{
+        "battery_percent" => 42,
+        "charging" => true,
+        "locale" => "de-DE"
+      })
+
+    assert Enum.any?(updated.events, fn event ->
+             event.type == "debugger.companion_bridge" and
+               Map.get(event.payload, :api) == "battery" and
+               Map.get(event.payload, :response_message) == "GotBattery" and
+               get_in(event.payload, [:response_value, "percent"]) == 42
+           end)
+  end
+
+  test "debugger forwards phone status protocol values to the watch surface" do
+    slug = "companion-phone-status-watch-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Ide.Projects.create_project(%{
+               "name" => "Phone Status Demo",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "companion-demo-phone-status"
+             })
+
+    workspace = Ide.Projects.project_workspace_path(project)
+
+    phone_source = File.read!(Path.join(workspace, "phone/src/CompanionApp.elm"))
+    watch_source = File.read!(Path.join(workspace, "watch/src/Main.elm"))
+
+    {:ok, _state} = Debugger.start_session(slug)
+
+    {:ok, _state} =
+      Debugger.set_simulator_settings(slug, %{
+        "battery_percent" => 42,
+        "charging" => true,
+        "locale" => "de-DE"
+      })
+
+    {:ok, _state} =
+      Debugger.reload(slug, %{
+        rel_path: "phone/src/CompanionApp.elm",
+        source_root: "phone",
+        source: phone_source,
+        reason: "companion_phone_status_phone"
+      })
+
+    {:ok, watch_state} =
+      Debugger.reload(slug, %{
+        rel_path: "watch/src/Main.elm",
+        source_root: "watch",
+        source: watch_source,
+        reason: "companion_phone_status_watch"
+      })
+
+    watch_model = get_in(watch_state, [:watch, :model, "runtime_model"])
+
+    assert watch_model["locale"] == "de-DE"
+    refute watch_model["locale"] == "debugger response"
+
+    assert Enum.any?(watch_state.events, fn event ->
+             event.type in ["debugger.protocol_tx", "debugger.protocol_rx"] and
+               match?(
+                 "ProvideBattery 42" <> _,
+                 to_string(Map.get(event.payload, :message) || "")
+               )
+           end)
+
+    assert get_in(watch_state, [:watch, :model, "runtime_model", "charging"]) == true
+  end
+
+  test "debugger forwards phone status connectivity from simulator settings to watch" do
+    slug = "companion-phone-status-network-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Ide.Projects.create_project(%{
+               "name" => "Phone Status Network",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "companion-demo-phone-status"
+             })
+
+    workspace = Ide.Projects.project_workspace_path(project)
+    phone_source = File.read!(Path.join(workspace, "phone/src/CompanionApp.elm"))
+    watch_source = File.read!(Path.join(workspace, "watch/src/Main.elm"))
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    {:ok, _} =
+      Debugger.set_simulator_settings(slug, %{
+        "network_online" => false,
+        "battery_percent" => 42,
+        "charging" => false
+      })
+
+    {:ok, _} =
+      Debugger.reload(slug, %{
+        rel_path: "phone/src/CompanionApp.elm",
+        source_root: "phone",
+        source: phone_source,
+        reason: "companion_phone_status_phone_network"
+      })
+
+    {:ok, watch_state} =
+      Debugger.reload(slug, %{
+        rel_path: "watch/src/Main.elm",
+        source_root: "watch",
+        source: watch_source,
+        reason: "companion_phone_status_watch_network"
+      })
+
+    watch_model = get_in(watch_state, [:watch, :model, "runtime_model"])
+    assert watch_model["online"] == false
+
+    assert Enum.any?(watch_state.events, fn event ->
+             event.type in ["debugger.protocol_tx", "debugger.protocol_rx"] and
+               match?(
+                 "ProvideConnectivity false" <> _,
+                 to_string(Map.get(event.payload, :message) || "")
+               )
+           end)
+
+    {:ok, updated} = Debugger.set_simulator_settings(slug, %{"network_online" => true})
+
+    assert Enum.any?(updated.events, fn event ->
+             event.type in ["debugger.protocol_tx", "debugger.protocol_rx"] and
+               match?(
+                 "ProvideConnectivity true" <> _,
+                 to_string(Map.get(event.payload, :message) || "")
+               )
+           end)
+  end
+
+  test "debugger resolves phone status watch time string when model has multiple string fields" do
+    slug = "companion-phone-status-time-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Ide.Projects.create_project(%{
+               "name" => "Phone Status Time",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "companion-demo-phone-status"
+             })
+
+    workspace = Ide.Projects.project_workspace_path(project)
+    watch_source = File.read!(Path.join(workspace, "watch/src/Main.elm"))
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    {:ok, watch_state} =
+      Debugger.reload(slug, %{
+        rel_path: "watch/src/Main.elm",
+        source_root: "watch",
+        source: watch_source,
+        reason: "companion_phone_status_watch_time"
+      })
+
+    preview = get_in(watch_state, [:watch, :model, "debugger_device_current_time_string"]) || %{}
+    time_string = get_in(watch_state, [:watch, :model, "runtime_model", "timeString"])
+
+    assert is_binary(preview["string"])
+    assert time_string == preview["string"]
+    refute is_map(time_string)
+
+    assert Enum.any?(watch_state.events, fn event ->
+             event.type == "debugger.update_in" and
+               match?(
+                 "CurrentTimeString \"" <> _,
+                 to_string(Map.get(event.payload, :message) || Map.get(event.payload, "message") || "")
+               )
+           end)
+
+    assert watch_state.watch.view_tree
+           |> collect_view_nodes()
+           |> Enum.any?(fn node ->
+             node["type"] == "text" and node["text"] == preview["string"]
+           end)
+  end
+
+  defp collect_view_nodes(%{"children" => children}) when is_list(children) do
+    Enum.flat_map(children, fn child ->
+      if is_map(child) do
+        [child | collect_view_nodes(child)]
+      else
+        []
+      end
+    end)
+  end
+
+  defp collect_view_nodes(%{children: children}) when is_list(children) do
+    Enum.flat_map(children, fn child ->
+      if is_map(child) do
+        [child | collect_view_nodes(child)]
+      else
+        []
+      end
+    end)
+  end
+
+  defp collect_view_nodes(_node), do: []
 end

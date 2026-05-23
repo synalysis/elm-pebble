@@ -22,6 +22,7 @@ defmodule IdeWeb.WorkspaceLive do
   alias Ide.Resources.ResourceStore
   alias Ide.Settings
   alias Ide.Screenshots
+  alias Ide.SimulatorSettings
   alias Ide.EditorCompletion
   alias Ide.EditorDocLinks
   alias Ide.Markdown
@@ -1871,25 +1872,47 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
+  def handle_event("simulator-save-settings", %{"simulator" => values}, socket)
+      when is_map(values) do
+    handle_simulator_save_settings(socket, values)
+  end
+
+  def handle_event("simulator-save-settings", _params, socket), do: {:noreply, socket}
+
   def handle_event("debugger-save-simulator-settings", %{"debugger_simulator" => values}, socket)
       when is_map(values) do
+    handle_simulator_save_settings(socket, values)
+  end
+
+  def handle_event("debugger-save-simulator-settings", %{"simulator" => values}, socket)
+      when is_map(values) do
+    handle_simulator_save_settings(socket, values)
+  end
+
+  def handle_event("debugger-save-simulator-settings", _params, socket), do: {:noreply, socket}
+
+  defp handle_simulator_save_settings(socket, values) when is_map(values) do
     case socket.assigns.project do
       nil ->
         {:noreply, socket}
 
       project ->
-        simulator_settings = normalize_debugger_simulator_settings(values)
+        existing = SimulatorSettings.raw_settings_for(project, socket.assigns[:debugger_state])
+        simulator_settings = SimulatorSettings.save_from_form(existing, values)
         project = persist_project_debugger_simulator_settings(project, simulator_settings)
-        {:ok, _state} = Ide.Debugger.set_simulator_settings(Projects.scope_key(project), simulator_settings)
 
-        {:noreply,
-         socket
-         |> assign(:project, project)
-         |> DebuggerSupport.refresh()}
+        {:ok, _state} =
+          Ide.Debugger.set_simulator_settings(Projects.scope_key(project), simulator_settings)
+
+        socket =
+          socket
+          |> assign(:project, project)
+          |> push_event("simulator_settings_applied", simulator_settings)
+          |> maybe_sync_external_emulator_settings(simulator_settings)
+
+        {:noreply, socket |> DebuggerSupport.refresh()}
     end
   end
-
-  def handle_event("debugger-save-simulator-settings", _params, socket), do: {:noreply, socket}
 
   def handle_event("debugger-tick", _params, socket) do
     case socket.assigns.project do
@@ -4294,7 +4317,7 @@ defmodule IdeWeb.WorkspaceLive do
     current_settings = project.debugger_settings || %{}
 
     updated_settings =
-      Map.put(current_settings, "simulator", normalize_debugger_simulator_settings(settings))
+      Map.put(current_settings, "simulator", settings)
 
     case Projects.update_project(project, %{"debugger_settings" => updated_settings}) do
       {:ok, updated} -> updated
@@ -4304,123 +4327,44 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp persist_project_debugger_simulator_settings(project, _settings), do: project
 
-  @spec normalize_debugger_simulator_settings(map()) :: map()
-  defp normalize_debugger_simulator_settings(settings) when is_map(settings) do
-    defaults = Ide.Debugger.default_simulator_settings()
+  defp maybe_sync_external_emulator_settings(socket, settings) when is_map(settings) do
+    if socket.assigns[:emulator_mode] == "external" and not external_emulator_blocked?(socket) do
+      project = socket.assigns.project
+      emulator_target = socket.assigns.selected_emulator_target
 
-    %{
-      "battery_percent" =>
-        settings
-        |> map_get_string("battery_percent")
-        |> normalize_debugger_integer(defaults["battery_percent"], 0, 100),
-      "charging" =>
-        settings
-        |> map_get_string("charging")
-        |> normalize_debugger_boolean(defaults["charging"]),
-      "connected" =>
-        settings
-        |> map_get_string("connected")
-        |> normalize_debugger_boolean(defaults["connected"]),
-      "clock_24h" =>
-        settings
-        |> map_get_string("clock_24h")
-        |> normalize_debugger_boolean(defaults["clock_24h"]),
-      "use_simulated_time" =>
-        settings
-        |> map_get_string("use_simulated_time")
-        |> normalize_debugger_boolean(defaults["use_simulated_time"]),
-      "simulated_time" =>
-        settings
-        |> map_get_string("simulated_time")
-        |> normalize_debugger_optional_string(defaults["simulated_time"]),
-      "simulated_date" =>
-        settings
-        |> map_get_string("simulated_date")
-        |> normalize_debugger_optional_string(defaults["simulated_date"]),
-      "latitude" =>
-        settings
-        |> map_get_string("latitude")
-        |> normalize_debugger_float(defaults["latitude"], -90.0, 90.0),
-      "longitude" =>
-        settings
-        |> map_get_string("longitude")
-        |> normalize_debugger_float(defaults["longitude"], -180.0, 180.0),
-      "accuracy" =>
-        settings
-        |> map_get_string("accuracy")
-        |> normalize_debugger_float(defaults["accuracy"], 0.0, 100_000.0)
-    }
-  end
+      controls = [
+        %{
+          "control" => "battery",
+          "percent" => to_string(settings["battery_percent"] || 0),
+          "charging" => if(settings["charging"], do: "true", else: "false")
+        },
+        %{
+          "control" => "bluetooth",
+          "connected" => if(settings["connected"], do: "true", else: "false")
+        },
+        %{
+          "control" => "time_format",
+          "enabled" => if(settings["clock_24h"], do: "true", else: "false")
+        },
+        %{
+          "control" => "timeline_quick_view",
+          "enabled" => if(settings["timeline_peek"], do: "true", else: "false")
+        }
+      ]
 
-  @spec map_get_string(map(), String.t()) :: wire_input()
-  defp map_get_string(map, key) when is_map(map) and is_binary(key) do
-    case Map.fetch(map, key) do
-      {:ok, value} ->
-        value
-
-      :error ->
-        Enum.find_value(map, fn
-          {atom_key, value} when is_atom(atom_key) ->
-            if Atom.to_string(atom_key) == key, do: value, else: nil
-
-          _ ->
-            nil
+      start_async(socket, :external_emulator_control, fn ->
+        Enum.each(controls, fn params ->
+          PebbleToolchain.run_emulator_control(project.slug, emulator_target, params)
         end)
+
+        {:ok, :synced}
+      end)
+    else
+      socket
     end
   end
 
-  @spec normalize_debugger_integer(wire_input(), integer(), integer(), integer()) :: integer()
-  defp normalize_debugger_integer(value, _default, min_value, max_value) when is_integer(value),
-    do: value |> min(max_value) |> max(min_value)
-
-  defp normalize_debugger_integer(value, default, min_value, max_value) when is_binary(value) do
-    case Integer.parse(String.trim(value)) do
-      {parsed, ""} -> parsed |> min(max_value) |> max(min_value)
-      _ -> default
-    end
-  end
-
-  defp normalize_debugger_integer(_value, default, _min_value, _max_value), do: default
-
-  @spec normalize_debugger_float(wire_input(), float(), float(), float()) :: float()
-  defp normalize_debugger_float(value, _default, min_value, max_value) when is_float(value),
-    do: value |> min(max_value) |> max(min_value)
-
-  defp normalize_debugger_float(value, _default, min_value, max_value) when is_integer(value),
-    do: (value * 1.0) |> min(max_value) |> max(min_value)
-
-  defp normalize_debugger_float(value, default, min_value, max_value) when is_binary(value) do
-    case Float.parse(String.trim(value)) do
-      {parsed, ""} -> parsed |> min(max_value) |> max(min_value)
-      _ -> default
-    end
-  end
-
-  defp normalize_debugger_float(_value, default, _min_value, _max_value), do: default
-
-  @spec normalize_debugger_optional_string(wire_input(), String.t() | nil) :: String.t() | nil
-  defp normalize_debugger_optional_string(value, _default) when is_binary(value) do
-    case String.trim(value) do
-      "" -> nil
-      trimmed -> trimmed
-    end
-  end
-
-  defp normalize_debugger_optional_string(_value, default), do: default
-
-  @spec normalize_debugger_boolean(wire_input(), boolean()) :: boolean()
-  defp normalize_debugger_boolean(values, default) when is_list(values),
-    do: Enum.any?(values, &normalize_debugger_boolean(&1, default))
-
-  defp normalize_debugger_boolean(value, _default)
-       when value in [true, "true", "True", "on", "1", 1],
-       do: true
-
-  defp normalize_debugger_boolean(value, _default)
-       when value in [false, "false", "False", "off", "0", 0],
-       do: false
-
-  defp normalize_debugger_boolean(_value, default), do: default
+  defp maybe_sync_external_emulator_settings(socket, _settings), do: socket
 
   @spec persist_project_debugger_configuration_values(Project.t(), map()) :: Project.t()
   defp persist_project_debugger_configuration_values(%Project{} = project, values)

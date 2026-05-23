@@ -993,8 +993,11 @@ defmodule Ide.Debugger.ElmIntrospect do
   defp extract_cmd_calls(%{op: :var, name: name}, bindings)
        when is_binary(name) and is_map(bindings) do
     case Map.get(bindings, name) do
-      nil -> []
-      expr -> extract_cmd_calls(expr, bindings)
+      nil ->
+        [%{"target" => name, "name" => name}]
+
+      expr ->
+        extract_cmd_calls(expr, bindings)
     end
   end
 
@@ -1648,6 +1651,18 @@ defmodule Ide.Debugger.ElmIntrospect do
   end
 
   defp expr_to_json_value(%{op: :var, name: n}, _, _), do: %{"$var" => n}
+
+  defp expr_to_json_value(%{op: :field_access, arg: arg, field: field}, depth, max)
+       when is_binary(field) and depth < max do
+    on_expr =
+      cond do
+        is_binary(arg) -> %{"$var" => arg}
+        is_map(arg) -> expr_to_json_value(arg, depth + 1, max)
+        true -> %{"$opaque" => true}
+      end
+
+    %{"$field" => field, "$on" => on_expr}
+  end
 
   defp expr_to_json_value(%{op: :cmd_none}, _, _), do: %{"$ctor" => "Cmd.none", "$args" => []}
 

@@ -199,16 +199,6 @@ export class EmbeddedEmulatorHost {
 
     this.bindEmulatorButtons()
 
-    this.el.querySelector("[data-emulator-battery]")?.addEventListener("input", event => {
-      this.setBattery(parseInt(event.target.value || "80", 10), this.el.querySelector("[data-emulator-charging]")?.checked)
-    })
-    this.el.querySelector("[data-emulator-charging]")?.addEventListener("change", event => {
-      const battery = parseInt(this.el.querySelector("[data-emulator-battery]")?.value || "80", 10)
-      this.setBattery(battery, event.target.checked)
-    })
-    this.el.querySelector("[data-emulator-bluetooth]")?.addEventListener("change", event => this.sendQemu(QEMU.bluetooth, [event.target.checked ? 1 : 0]))
-    this.el.querySelector("[data-emulator-24h]")?.addEventListener("change", event => this.sendQemu(QEMU.timeFormat, [event.target.checked ? 1 : 0]))
-    this.el.querySelector("[data-emulator-peek]")?.addEventListener("change", event => this.sendQemu(QEMU.timelinePeek, [event.target.checked ? 1 : 0]))
     this.el.querySelector("[data-emulator-tap]")?.addEventListener("click", () => this.sendQemu(QEMU.tap, [0, 1]))
     this.state.listeners.add(this.syncStateToDom)
     window.addEventListener("focus", this.handlePageVisible)
@@ -808,6 +798,24 @@ export class EmbeddedEmulatorHost {
 
   setBattery(percent, charging) {
     this.sendQemu(QEMU.battery, [Math.max(0, Math.min(100, percent || 0)), charging ? 1 : 0])
+  }
+
+  applySimulatorSettings(settings = {}) {
+    if (settings.battery_percent != null || settings.charging != null) {
+      this.setBattery(settings.battery_percent ?? 88, !!settings.charging)
+    }
+
+    if (settings.connected != null) {
+      this.sendQemu(QEMU.bluetooth, [settings.connected ? 1 : 0])
+    }
+
+    if (settings.clock_24h != null) {
+      this.sendQemu(QEMU.timeFormat, [settings.clock_24h ? 1 : 0])
+    }
+
+    if (settings.timeline_peek != null) {
+      this.sendQemu(QEMU.timelinePeek, [settings.timeline_peek ? 1 : 0])
+    }
   }
 
   sendQemu(protocol, payload) {

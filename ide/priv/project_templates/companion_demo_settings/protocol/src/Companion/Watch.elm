@@ -1,0 +1,17 @@
+module Companion.Watch exposing (onPhoneToWatch, sendWatchToPhone)
+
+import Companion.Internal as Internal
+import Companion.Types exposing (PhoneToWatch, WatchToPhone)
+import Pebble.Internal.Companion as Companion
+
+
+onPhoneToWatch : (PhoneToWatch -> msg) -> Sub msg
+onPhoneToWatch _ =
+    Sub.none
+
+
+sendWatchToPhone : WatchToPhone -> Cmd msg
+sendWatchToPhone message =
+    Companion.companionSend
+        (Internal.watchToPhoneTag message)
+        (Internal.watchToPhoneValue message)

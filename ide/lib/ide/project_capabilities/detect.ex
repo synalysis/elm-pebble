@@ -7,7 +7,7 @@ defmodule Ide.ProjectCapabilities.Detect do
   @geolocation_subscriptions ~w(onCurrentPosition onWatchPosition)
 
   @configuration_commands ~w(open subscribe)
-  @configuration_subscriptions ~w(onConfiguration)
+  @configuration_subscriptions ~w(onConfiguration onClosed)
 
   @health_api_commands ~w(value sumToday sum accessible onEvent)
 
@@ -85,7 +85,8 @@ defmodule Ide.ProjectCapabilities.Detect do
   @spec configuration_subscription?(map()) :: boolean()
   defp configuration_subscription?(row) do
     call_name(row) in @configuration_subscriptions or
-      String.ends_with?(call_target(row), ".onConfiguration")
+      String.ends_with?(call_target(row), ".onConfiguration") or
+        String.ends_with?(call_target(row), ".onClosed")
   end
 
   @spec health_command?(map()) :: boolean()

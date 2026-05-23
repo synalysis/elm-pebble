@@ -2,12 +2,16 @@ module Pebble.Companion.Locale exposing
     ( LocaleInfo
     , current
     , onLocale
+    , part
     )
 
 {-| Phone locale and regional preference helpers for companion apps.
 
     init _ =
         ( model, Locale.current GotLocale )
+
+    subscriptions _ =
+        Locale.onLocale GotLocale
 
 # Types
 
@@ -19,7 +23,7 @@ module Pebble.Companion.Locale exposing
 
 # Subscriptions
 
-@docs onLocale
+@docs onLocale, part
 
 -}
 
@@ -28,7 +32,7 @@ import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
 import Pebble.Companion.Contract exposing (BridgeEvent)
 import Pebble.Companion.Phone as Phone
-import Sub
+import Pebble.Companion.Platform as Platform
 
 
 {-| Phone locale, language, region, and clock-format preferences.
@@ -55,11 +59,31 @@ Registering this subscription also tells the bridge to send locale updates.
 -}
 onLocale : (Result String LocaleInfo -> msg) -> Sub msg
 onLocale toMsg =
-    Sub.batch
-        [ Phone.subscribeBridge <|
-            Command.command "locale-subscribe" "locale" "subscribe"
-        , Phone.onRawMessage (decodeLocale >> toMsg)
-        ]
+    Platform.with [ handler toMsg ]
+
+
+{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
+-}
+part : (Result String LocaleInfo -> msg) -> Platform.Part msg
+part toMsg =
+    Platform.part (handler toMsg)
+
+
+{-| Platform router handler for locale events and responses.
+-}
+handler toMsg =
+    Platform.handler localeInterest decodeLocale toMsg
+
+
+localeInterest =
+    Platform.interest
+        { id = "locale"
+        , subscribeCommand =
+            Just <|
+                Command.command "locale-subscribe" "locale" "subscribe"
+        , eventPrefixes = [ "locale." ]
+        , resultIdPrefixes = [ "locale-" ]
+        }
 
 
 decodeResponse : Decode.Value -> Result String LocaleInfo

@@ -1,28 +1,42 @@
 module Pebble.Companion.WebSocket exposing
     ( Event(..)
     , connect
-    , decode
     , disconnect
+    , onWebSocket
+    , part
+    , partCommands
     , send
-    , subscribe
     )
 
 {-| WebSocket commands and events through the phone companion bridge.
 
-    Pebble.Companion.WebSocket.connect "socket-connect" "wss://example.com/live"
+    init _ =
+        ( model, WebSocket.connect "wss://example.com/live" Connected )
+
+    subscriptions _ =
+        WebSocket.onWebSocket WebSocketChanged
 
 # Events
-@docs Event, decode
+
+@docs Event
 
 # Commands
-@docs connect, disconnect, send, subscribe
+
+@docs connect, disconnect, send
+
+# Subscriptions
+
+@docs onWebSocket, part, partCommands
 
 -}
 
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
-import Pebble.Companion.Contract exposing (BridgeEvent, CommandEnvelope)
+import Pebble.Companion.Contract exposing (BridgeEvent)
+import Pebble.Companion.Phone as Phone
+import Pebble.Companion.Platform as Platform
 
 
 {-| WebSocket events emitted by the companion bridge.
@@ -37,38 +51,109 @@ type Event
 
 {-| Open a WebSocket connection.
 -}
-connect : String -> String -> CommandEnvelope
-connect id url =
-    Command.command id "webSocket" "connect"
-        |> Command.withPayload (Encode.object [ ( "url", Encode.string url ) ])
+connect : String -> (Result String () -> msg) -> Cmd msg
+connect url toMsg =
+    Phone.send toMsg <|
+        Phone.requestWithPayload "webSocket-connect" "webSocket" "connect"
+            (Encode.object [ ( "url", Encode.string url ) ])
+            decodeCommandResponse
 
 
 {-| Close the active WebSocket connection.
 -}
-disconnect : String -> CommandEnvelope
-disconnect id =
-    Command.command id "webSocket" "disconnect"
+disconnect : (Result String () -> msg) -> Cmd msg
+disconnect toMsg =
+    Phone.send toMsg <|
+        Phone.request "webSocket-disconnect" "webSocket" "disconnect" decodeCommandResponse
 
 
 {-| Send a string message over the active WebSocket.
 -}
-send : String -> String -> CommandEnvelope
-send id message =
-    Command.command id "webSocket" "send"
-        |> Command.withPayload (Encode.object [ ( "message", Encode.string message ) ])
+send : String -> (Result String () -> msg) -> Cmd msg
+send message toMsg =
+    Phone.send toMsg <|
+        Phone.requestWithPayload "webSocket-send" "webSocket" "send"
+            (Encode.object [ ( "message", Encode.string message ) ])
+            decodeCommandResponse
 
 
-{-| Subscribe to WebSocket events.
+{-| Receive pushed WebSocket events from the companion bridge.
+
+Registering this subscription also tells the bridge to send WebSocket updates.
 -}
-subscribe : String -> CommandEnvelope
-subscribe id =
-    Command.command id "webSocket" "subscribe"
+onWebSocket : (Event -> msg) -> Sub msg
+onWebSocket toMsg =
+    Platform.with [ handler toMsg ]
 
 
-{-| Decode a bridge WebSocket event.
+{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
 -}
-decode : BridgeEvent -> Event
-decode bridgeEvent =
+part : (Event -> msg) -> Platform.Part msg
+part toMsg =
+    Platform.part (handler toMsg)
+
+
+{-| Platform listener for connect, disconnect, and send command responses.
+-}
+partCommands : (Result String () -> msg) -> Platform.Part msg
+partCommands toMsg =
+    Platform.part (handlerCommands toMsg)
+
+
+handler toMsg =
+    Platform.handler webSocketInterest decodeWebSocketEvent toMsg
+
+
+handlerCommands toMsg =
+    Platform.handler webSocketCommandInterest decodeCommandResponse toMsg
+
+
+webSocketCommandInterest =
+    Platform.interest
+        { id = "webSocket-commands"
+        , subscribeCommand = Nothing
+        , eventPrefixes = []
+        , resultIdPrefixes = [ "webSocket-" ]
+        }
+
+
+webSocketInterest =
+    Platform.interest
+        { id = "webSocket"
+        , subscribeCommand =
+            Just <|
+                Command.command "webSocket-subscribe" "webSocket" "subscribe"
+        , eventPrefixes = [ "webSocket." ]
+        , resultIdPrefixes = []
+        }
+
+
+decodeCommandResponse : Decode.Value -> Result String ()
+decodeCommandResponse value =
+    case Decode.decodeValue Codec.decodeResult value of
+        Ok envelope ->
+            if envelope.ok then
+                Ok ()
+
+            else
+                Err (decodeBridgeError envelope)
+
+        Err error ->
+            Err (Decode.errorToString error)
+
+
+decodeWebSocketEvent : Decode.Value -> Result String Event
+decodeWebSocketEvent value =
+    case Decode.decodeValue Codec.decodeEvent value of
+        Ok event ->
+            Ok (decodeBridgeEvent event)
+
+        Err error ->
+            Err (Decode.errorToString error)
+
+
+decodeBridgeEvent : BridgeEvent -> Event
+decodeBridgeEvent bridgeEvent =
     case bridgeEvent.event of
         "webSocket.open" ->
             Opened
@@ -93,3 +178,13 @@ decode bridgeEvent =
 
         other ->
             Unknown other
+
+
+decodeBridgeError : Pebble.Companion.Contract.ResultEnvelope -> String
+decodeBridgeError envelope =
+    case envelope.error of
+        Just error ->
+            error.message
+
+        Nothing ->
+            "WebSocket command failed"

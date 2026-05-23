@@ -883,6 +883,57 @@ defmodule Ide.ProjectsTest do
     assert get_in(phone_decoded, ["dependencies", "direct", "elm/http"]) == "2.0.0"
   end
 
+  test "companion demo templates seed watch protocol and phone companion apps" do
+    demos = [
+      {"companion-demo-phone-status", "companion_demo_phone_status", "watchface",
+       ["Pebble.Companion.Battery", "Companion.batch"]},
+      {"companion-demo-weather-env", "companion_demo_weather_env", "watchface",
+       ["Pebble.Companion.Weather", "Pebble.Companion.Environment"]},
+      {"companion-demo-calendar", "companion_demo_calendar", "watchface",
+       ["Pebble.Companion.Calendar", "ProvideNextEvent"]},
+      {"companion-demo-storage", "companion_demo_storage", "app",
+       ["Pebble.Companion.Storage", "Pebble.Companion.PreferenceStore"]},
+      {"companion-demo-settings", "companion_demo_settings", "app",
+       ["Pebble.Companion.Configuration", "Pebble.Companion.Lifecycle"]},
+      {"companion-demo-geolocation", "companion_demo_geolocation", "watchface",
+       ["Pebble.Companion.Geolocation", "ProvidePosition"]},
+      {"companion-demo-websocket", "companion_demo_websocket", "app",
+       ["Pebble.Companion.WebSocket", "Companion.batch"]},
+      {"companion-demo-timeline", "companion_demo_timeline", "app",
+       ["Pebble.Companion.Timeline", "Timeline.partToken"]}
+    ]
+
+    for {template, _dir, target_type, snippets} <- demos do
+      slug = "#{template}-#{System.unique_integer([:positive])}"
+
+      assert {:ok, project} =
+               Projects.create_project(%{
+                 "name" => "Demo #{template}",
+                 "slug" => slug,
+                 "target_type" => target_type,
+                 "template" => template
+               })
+
+      base = Projects.project_workspace_path(project)
+      assert project.target_type == target_type
+      assert File.exists?(Path.join(base, "watch/src/Main.elm"))
+      assert File.exists?(Path.join(base, "protocol/src/Companion/Types.elm"))
+      assert File.exists?(Path.join(base, "protocol/src/Companion/Internal.elm"))
+      assert File.exists?(Path.join(base, "phone/src/CompanionApp.elm"))
+
+      assert {:ok, companion_app} =
+               Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
+
+      for snippet <- snippets do
+        assert String.contains?(companion_app, snippet)
+      end
+
+      assert {:ok, watch_elm_json_raw} = File.read(Path.join(base, "watch/elm.json"))
+      assert {:ok, watch_decoded} = Jason.decode(watch_elm_json_raw)
+      assert "../protocol/src" in Map.fetch!(watch_decoded, "source-directories")
+    end
+  end
+
   test "import project maps watch/protocol/phone directories" do
     source_root =
       Path.join(System.tmp_dir!(), "ide_import_test_#{System.unique_integer([:positive])}")

@@ -1,21 +1,29 @@
-module Pebble.Companion.Lifecycle exposing (Event(..), decode, subscribe)
+module Pebble.Companion.Lifecycle exposing
+    ( Event(..)
+    , onLifecycle
+    , part
+    )
 
 {-| Observe phone companion lifecycle events.
 
-Subscribe once during companion startup and route pushed bridge events through
-`decode`.
+    subscriptions _ =
+        Lifecycle.onLifecycle LifecycleChanged
 
 # Events
-@docs Event, decode
 
-# Commands
-@docs subscribe
+@docs Event
+
+# Subscriptions
+
+@docs onLifecycle, part
 
 -}
 
 import Json.Decode as Decode
+import Pebble.Companion.Codec as Codec
 import Pebble.Companion.Command as Command
-import Pebble.Companion.Contract exposing (BridgeEvent, CommandEnvelope)
+import Pebble.Companion.Contract exposing (BridgeEvent)
+import Pebble.Companion.Platform as Platform
 
 
 {-| Lifecycle events emitted by the companion bridge.
@@ -28,17 +36,51 @@ type Event
     | Unknown String
 
 
-{-| Subscribe to lifecycle events.
+{-| Receive pushed lifecycle events from the companion bridge.
+
+Registering this subscription also tells the bridge to send lifecycle updates.
 -}
-subscribe : String -> CommandEnvelope
-subscribe id =
-    Command.command id "lifecycle" "subscribe"
+onLifecycle : (Event -> msg) -> Sub msg
+onLifecycle toMsg =
+    Platform.with [ handler toMsg ]
 
 
-{-| Decode a bridge lifecycle event.
+{-| Platform listener for use with `Platform.batch` or `Pebble.Companion.batch`.
 -}
-decode : BridgeEvent -> Event
-decode bridgeEvent =
+part : (Event -> msg) -> Platform.Part msg
+part toMsg =
+    Platform.part (handler toMsg)
+
+
+{-| Platform router handler for lifecycle events.
+-}
+handler toMsg =
+    Platform.handler lifecycleInterest decodeLifecycleEvent toMsg
+
+
+lifecycleInterest =
+    Platform.interest
+        { id = "lifecycle"
+        , subscribeCommand =
+            Just <|
+                Command.command "lifecycle-subscribe" "lifecycle" "subscribe"
+        , eventPrefixes = [ "lifecycle." ]
+        , resultIdPrefixes = []
+        }
+
+
+decodeLifecycleEvent : Decode.Value -> Result String Event
+decodeLifecycleEvent value =
+    case Decode.decodeValue Codec.decodeEvent value of
+        Ok event ->
+            Ok (decodeBridgeEvent event)
+
+        Err error ->
+            Err (Decode.errorToString error)
+
+
+decodeBridgeEvent : BridgeEvent -> Event
+decodeBridgeEvent bridgeEvent =
     case bridgeEvent.event of
         "lifecycle.ready" ->
             Ready

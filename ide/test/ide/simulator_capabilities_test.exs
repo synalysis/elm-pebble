@@ -1,0 +1,92 @@
+defmodule Ide.SimulatorCapabilitiesTest do
+  use ExUnit.Case, async: true
+
+  alias Ide.SimulatorCapabilities
+  alias Ide.SimulatorCapabilities.Detect
+  alias Ide.SimulatorSettings
+
+  @phone_status_watch """
+  module Main exposing (main)
+
+  import Pebble.Events as Events
+  import Pebble.Companion.Battery as Battery
+
+  subscriptions _ =
+      Events.batch
+          [ Events.onMinuteChange MinuteChanged
+          , Battery.onBattery part
+          ]
+  """
+
+  @phone_status_phone """
+  module CompanionApp exposing (main)
+
+  import Pebble.Companion.Battery as Battery
+  import Pebble.Companion.Locale as Locale
+  import Pebble.Companion.Connectivity as Connectivity
+  import Pebble.Companion.Notifications as Notifications
+  import Pebble.Companion.Geolocation as Geolocation
+
+  subscriptions _ =
+      Platform.batch
+          [ Battery.onBattery GotBattery
+          , Locale.onLocale GotLocale
+          , Connectivity.onConnectivity GotConnectivity
+          , Notifications.onNotifications GotNotifications
+          , Geolocation.onCurrentPosition GotPosition
+          ]
+  """
+
+  test "detects watch and companion simulator capabilities from Elm source" do
+    {:ok, watch} = Ide.Debugger.ElmIntrospect.analyze_source(@phone_status_watch, "Main.elm")
+    {:ok, phone} = Ide.Debugger.ElmIntrospect.analyze_source(@phone_status_phone, "CompanionApp.elm")
+
+    watch_caps = Detect.watch_caps(Map.fetch!(watch, "elm_introspect"))
+    phone_caps = Detect.phone_caps(Map.fetch!(phone, "elm_introspect"))
+
+    assert MapSet.member?(watch_caps, "watch_time")
+    assert MapSet.member?(phone_caps, "battery")
+    assert MapSet.member?(phone_caps, "locale")
+    assert MapSet.member?(phone_caps, "network")
+    assert MapSet.member?(phone_caps, "notifications")
+    assert MapSet.member?(phone_caps, "geolocation")
+  end
+
+  test "active groups hide unrelated companion settings for minimal watchface" do
+    {:ok, watch} =
+      Ide.Debugger.ElmIntrospect.analyze_source(
+        """
+        module Main exposing (main)
+
+        import Pebble.Events as Events
+
+        subscriptions _ =
+            Events.onMinuteChange MinuteChanged
+        """,
+        "Main.elm"
+      )
+
+    introspect = Map.fetch!(watch, "elm_introspect")
+    caps = Detect.watch_caps(introspect)
+
+    groups =
+      SimulatorSettings.active_groups(nil, %{watch: %{model: %{"elm_introspect" => introspect}}}, :debugger)
+
+    titles = Enum.map(groups, fn {_id, title, _fields} -> title end)
+
+    assert "Watch time" in titles
+    refute "Notifications" in titles
+    refute "Geolocation" in titles
+    assert MapSet.member?(caps, "watch_time")
+    refute MapSet.member?(caps, "notifications")
+  end
+
+  test "emulator mode adds timeline peek capability" do
+    caps = SimulatorSettings.capabilities_for(nil, nil, :emulator)
+    assert MapSet.member?(caps, "emulator_timeline_peek")
+  end
+
+  test "infer returns empty set for missing project" do
+    assert SimulatorCapabilities.infer(nil, nil) == MapSet.new()
+  end
+end
