@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+import Companion.Types exposing (PhoneToWatch(..), Theme(..), Units(..), WatchToPhone(..))
 import Companion.Watch as CompanionWatch
 import Json.Decode as Decode
 import Pebble.Button as Button
@@ -11,8 +11,8 @@ import Pebble.Ui.Resources as Resources
 
 
 type alias Model =
-    { theme : String
-    , units : String
+    { theme : Maybe Theme
+    , units : Maybe Units
     , screenW : Int
     , screenH : Int
     }
@@ -25,8 +25,8 @@ type Msg
 
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
 init context =
-    ( { theme = "--"
-      , units = "--"
+    ( { theme = Nothing
+      , units = Nothing
       , screenW = context.screen.width
       , screenH = context.screen.height
       }
@@ -41,7 +41,7 @@ update msg model =
             ( model, CompanionWatch.sendWatchToPhone CycleTheme )
 
         FromPhone (ProvideTheme theme units) ->
-            ( { model | theme = theme, units = units }, Cmd.none )
+            ( { model | theme = Just theme, units = Just units }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -69,12 +69,38 @@ view model =
             [ Ui.canvasLayer 1
                 [ Ui.clear Color.white
                 , label 8 startY "Storage demo"
-                , label 8 (startY + lineH) ("Theme " ++ model.theme)
-                , label 8 (startY + lineH * 2) ("Units " ++ model.units)
+                , label 8 (startY + lineH) ("Theme " ++ themeLabel model.theme)
+                , label 8 (startY + lineH * 2) ("Units " ++ unitsLabel model.units)
                 , label 8 (startY + lineH * 3) "Select = cycle"
                 ]
             ]
         ]
+
+
+themeLabel : Maybe Theme -> String
+themeLabel maybeTheme =
+    case maybeTheme of
+        Nothing ->
+            "--"
+
+        Just Dark ->
+            "dark"
+
+        Just Light ->
+            "light"
+
+
+unitsLabel : Maybe Units -> String
+unitsLabel maybeUnits =
+    case maybeUnits of
+        Nothing ->
+            "--"
+
+        Just Metric ->
+            "metric"
+
+        Just Imperial ->
+            "imperial"
 
 
 main : Program Decode.Value Model Msg

@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+import Companion.Types exposing (ConfigurationOutcome(..), PhoneToWatch(..), WatchToPhone(..))
 import Companion.Watch as CompanionWatch
 import Json.Decode as Decode
 import Pebble.Button as Button
@@ -12,7 +12,7 @@ import Pebble.Ui.Resources as Resources
 
 type alias Model =
     { ready : Bool
-    , configClosed : Bool
+    , configOutcome : Maybe ConfigurationOutcome
     , screenW : Int
     , screenH : Int
     }
@@ -26,7 +26,7 @@ type Msg
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
 init context =
     ( { ready = False
-      , configClosed = False
+      , configOutcome = Nothing
       , screenW = context.screen.width
       , screenH = context.screen.height
       }
@@ -43,8 +43,8 @@ update msg model =
         FromPhone SettingsReady ->
             ( { model | ready = True }, Cmd.none )
 
-        FromPhone (SettingsClosed closed) ->
-            ( { model | configClosed = closed }, Cmd.none )
+        FromPhone (SettingsClosed outcome) ->
+            ( { model | configOutcome = Just outcome }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -75,11 +75,15 @@ view model =
                 "waiting"
 
         configLabel =
-            if model.configClosed then
-                "saved"
+            case model.configOutcome of
+                Nothing ->
+                    "none"
 
-            else
-                "none"
+                Just Saved ->
+                    "saved"
+
+                Just Dismissed ->
+                    "dismissed"
     in
     Ui.windowStack
         [ Ui.window 1

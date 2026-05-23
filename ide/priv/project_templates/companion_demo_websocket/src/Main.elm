@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..), WebSocketStatus(..))
 import Companion.Watch as CompanionWatch
 import Json.Decode as Decode
 import Pebble.Button as Button
@@ -11,8 +11,8 @@ import Pebble.Ui.Resources as Resources
 
 
 type alias Model =
-    { statusCode : Int
-    , statusText : String
+    { status : WebSocketStatus
+    , statusDetail : String
     , screenW : Int
     , screenH : Int
     }
@@ -25,8 +25,8 @@ type Msg
 
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
 init context =
-    ( { statusCode = 0
-      , statusText = "waiting"
+    ( { status = Closed
+      , statusDetail = "waiting"
       , screenW = context.screen.width
       , screenH = context.screen.height
       }
@@ -40,8 +40,8 @@ update msg model =
         SelectPressed ->
             ( model, CompanionWatch.sendWatchToPhone PingWebSocket )
 
-        FromPhone (ProvideWebSocketStatus code text) ->
-            ( { model | statusCode = code, statusText = text }, Cmd.none )
+        FromPhone (ProvideWebSocketStatus status detail) ->
+            ( { model | status = status, statusDetail = detail }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -69,25 +69,25 @@ view model =
             [ Ui.canvasLayer 1
                 [ Ui.clear Color.white
                 , label 8 startY "WebSocket demo"
-                , label 8 (startY + lineH) (statusLabel model.statusCode)
-                , label 8 (startY + lineH * 2) model.statusText
+                , label 8 (startY + lineH) (statusLabel model.status)
+                , label 8 (startY + lineH * 2) model.statusDetail
                 , label 8 (startY + lineH * 3) "Select = ping"
                 ]
             ]
         ]
 
 
-statusLabel : Int -> String
-statusLabel code =
-    case code of
-        1 ->
+statusLabel : WebSocketStatus -> String
+statusLabel status =
+    case status of
+        Closed ->
+            "closed"
+
+        Open ->
             "open"
 
-        2 ->
+        Error ->
             "error"
-
-        _ ->
-            "closed"
 
 
 main : Program Decode.Value Model Msg

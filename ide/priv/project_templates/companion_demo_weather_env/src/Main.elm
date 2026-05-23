@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..), WeatherCondition(..))
 import Companion.Watch as CompanionWatch
 import Json.Decode as Decode
 import Pebble.Cmd as Cmd
@@ -14,7 +14,7 @@ import Pebble.Ui.Resources as Resources
 type alias Model =
     { timeString : String
     , temperatureC : Int
-    , conditionCode : Int
+    , condition : WeatherCondition
     , sunriseMin : Int
     , sunsetMin : Int
     , moonPhaseE6 : Int
@@ -33,7 +33,7 @@ init : Platform.LaunchContext -> ( Model, Cmd Msg )
 init context =
     ( { timeString = "--:--"
       , temperatureC = 0
-      , conditionCode = 0
+      , condition = UnknownWeather
       , sunriseMin = 0
       , sunsetMin = 0
       , moonPhaseE6 = 0
@@ -61,8 +61,8 @@ update msg model =
         CurrentTimeString value ->
             ( { model | timeString = value }, Cmd.none )
 
-        FromPhone (ProvideWeather tempC conditionCode) ->
-            ( { model | temperatureC = tempC, conditionCode = conditionCode }, Cmd.none )
+        FromPhone (ProvideWeather tempC condition) ->
+            ( { model | temperatureC = tempC, condition = condition }, Cmd.none )
 
         FromPhone (ProvideEnvironment sunriseMin sunsetMin moonPhaseE6) ->
             ( { model | sunriseMin = sunriseMin, sunsetMin = sunsetMin, moonPhaseE6 = moonPhaseE6 }, Cmd.none )
@@ -93,7 +93,7 @@ view model =
             [ Ui.canvasLayer 1
                 [ Ui.clear Color.white
                 , label 8 startY model.timeString
-                , label 8 (startY + lineH) (String.fromInt model.temperatureC ++ "C " ++ conditionLabel model.conditionCode)
+                , label 8 (startY + lineH) (String.fromInt model.temperatureC ++ "C " ++ conditionLabel model.condition)
                 , label 8 (startY + lineH * 2) ("Sun " ++ formatMinutes model.sunriseMin ++ "-" ++ formatMinutes model.sunsetMin)
                 , label 8 (startY + lineH * 3) ("Moon " ++ String.fromInt (model.moonPhaseE6 // 10000) ++ "%")
                 ]
@@ -101,34 +101,34 @@ view model =
         ]
 
 
-conditionLabel : Int -> String
-conditionLabel code =
-    case code of
-        0 ->
+conditionLabel : WeatherCondition -> String
+conditionLabel condition =
+    case condition of
+        Clear ->
             "clear"
 
-        1 ->
+        Cloudy ->
             "cloudy"
 
-        2 ->
+        Fog ->
             "fog"
 
-        3 ->
+        Drizzle ->
             "drizzle"
 
-        4 ->
+        Rain ->
             "rain"
 
-        5 ->
+        Snow ->
             "snow"
 
-        6 ->
+        Showers ->
             "showers"
 
-        7 ->
+        Storm ->
             "storm"
 
-        _ ->
+        UnknownWeather ->
             "?"
 
 

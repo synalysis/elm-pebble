@@ -1,6 +1,6 @@
 module CompanionApp exposing (main)
 
-import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..), WeatherCondition(..))
 import Pebble.Companion.Environment as Environment
 import Pebble.Companion.Phone as Phone
 import Pebble.Companion.Weather as Weather
@@ -9,7 +9,7 @@ import Platform
 
 type alias Model =
     { temperatureC : Int
-    , conditionCode : Int
+    , condition : WeatherCondition
     , sunriseMin : Int
     , sunsetMin : Int
     , moonPhaseE6 : Int
@@ -37,8 +37,12 @@ update msg model =
             ( model, Cmd.none )
 
         GotWeather (Ok (Weather.Current info)) ->
-            ( { model | temperatureC = info.temperatureC, conditionCode = conditionCode info.condition }
-            , Phone.sendPhoneToWatch (ProvideWeather info.temperatureC (conditionCode info.condition))
+            let
+                condition =
+                    toProtocolCondition info.condition
+            in
+            ( { model | temperatureC = info.temperatureC, condition = condition }
+            , Phone.sendPhoneToWatch (ProvideWeather info.temperatureC condition)
             )
 
         GotWeather _ ->
@@ -90,7 +94,7 @@ main =
 emptyModel : Model
 emptyModel =
     { temperatureC = 0
-    , conditionCode = 0
+    , condition = UnknownWeather
     , sunriseMin = 0
     , sunsetMin = 0
     , moonPhaseE6 = 0
@@ -107,32 +111,32 @@ refreshAll =
         ]
 
 
-conditionCode : Weather.Condition -> Int
-conditionCode condition =
+toProtocolCondition : Weather.Condition -> WeatherCondition
+toProtocolCondition condition =
     case condition of
         Weather.Clear ->
-            0
+            Clear
 
         Weather.Cloudy ->
-            1
+            Cloudy
 
         Weather.Fog ->
-            2
+            Fog
 
         Weather.Drizzle ->
-            3
+            Drizzle
 
         Weather.Rain ->
-            4
+            Rain
 
         Weather.Snow ->
-            5
+            Snow
 
         Weather.Showers ->
-            6
+            Showers
 
         Weather.Storm ->
-            7
+            Storm
 
         Weather.UnknownWeather ->
-            8
+            UnknownWeather

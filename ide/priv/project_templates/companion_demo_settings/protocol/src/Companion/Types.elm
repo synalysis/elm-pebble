@@ -1,4 +1,4 @@
-module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+module Companion.Types exposing (ConfigurationOutcome(..), PhoneToWatch(..), WatchToPhone(..))
 
 {-| Demo protocol for configuration and lifecycle companion APIs.
 
@@ -10,6 +10,11 @@ type WatchToPhone
     = OpenSettings
 
 
+type ConfigurationOutcome
+    = Saved
+    | Dismissed
+
+
 type PhoneToWatch
     = SettingsReady
-    | SettingsClosed Bool
+    | SettingsClosed ConfigurationOutcome

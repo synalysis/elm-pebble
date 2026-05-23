@@ -1,4 +1,4 @@
-module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..), WeatherCondition(..))
 
 {-| Demo protocol for weather and environment companion APIs.
 
@@ -10,6 +10,18 @@ type WatchToPhone
     = RequestWeatherEnv
 
 
+type WeatherCondition
+    = Clear
+    | Cloudy
+    | Fog
+    | Drizzle
+    | Rain
+    | Snow
+    | Showers
+    | Storm
+    | UnknownWeather
+
+
 type PhoneToWatch
-    = ProvideWeather Int Int
+    = ProvideWeather Int WeatherCondition
     | ProvideEnvironment Int Int Int

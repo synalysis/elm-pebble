@@ -26,6 +26,14 @@ defmodule Ide.ProjectTemplatesTest do
     assert platforms == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
   end
 
+  test "watch demo templates with metadata restrict target platforms" do
+    compass = ProjectTemplates.target_platforms_for_template("watch-demo-compass")
+    dictation = ProjectTemplates.target_platforms_for_template("watch-demo-dictation")
+
+    assert compass == ["aplite"]
+    assert dictation == ["diorite", "emery", "flint"]
+  end
+
   test "create_project applies template target platform defaults" do
     slug = "tangram-platforms-#{System.unique_integer([:positive])}"
 

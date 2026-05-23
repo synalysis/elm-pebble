@@ -1,15 +1,14 @@
 module CompanionApp exposing (main)
 
-import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..), WebSocketStatus(..))
 import Pebble.Companion.Phone as Phone
 import Pebble.Companion.WebSocket as WebSocket
 import Platform
 
 
 type alias Model =
-    { statusCode : Int
-    , statusText : String
-    , connected : Bool
+    { status : WebSocketStatus
+    , statusDetail : String
     }
 
 
@@ -22,7 +21,7 @@ type Msg
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { statusCode = 0, statusText = "connecting", connected = False }
+    ( { status = Closed, statusDetail = "connecting" }
     , Cmd.batch
         [ WebSocket.setup
         , WebSocket.setupCommands
@@ -38,7 +37,7 @@ update msg model =
             ( model, pushStatus model )
 
         FromWatch (Ok PingWebSocket) ->
-            if model.connected then
+            if model.status == Open then
                 ( model, WebSocket.send "ping" WebSocketCommand )
 
             else
@@ -48,36 +47,48 @@ update msg model =
             ( model, Cmd.none )
 
         Connected (Ok ()) ->
-            ( { model | connected = True, statusCode = 1, statusText = "connected" }
-            , pushStatus { model | connected = True, statusCode = 1, statusText = "connected" }
-            )
+            let
+                next =
+                    { status = Open, statusDetail = "connected" }
+            in
+            ( next, pushStatus next )
 
         Connected (Err error) ->
-            ( { model | connected = False, statusCode = 2, statusText = error }
-            , pushStatus { model | connected = False, statusCode = 2, statusText = error }
-            )
+            let
+                next =
+                    { status = Error, statusDetail = error }
+            in
+            ( next, pushStatus next )
 
         WebSocketEvent event ->
             case event of
                 WebSocket.Opened ->
-                    ( { model | connected = True, statusCode = 1, statusText = "open" }
-                    , pushStatus { model | connected = True, statusCode = 1, statusText = "open" }
-                    )
+                    let
+                        next =
+                            { status = Open, statusDetail = "open" }
+                    in
+                    ( next, pushStatus next )
 
                 WebSocket.Closed _ ->
-                    ( { model | connected = False, statusCode = 0, statusText = "closed" }
-                    , pushStatus { model | connected = False, statusCode = 0, statusText = "closed" }
-                    )
+                    let
+                        next =
+                            { status = Closed, statusDetail = "closed" }
+                    in
+                    ( next, pushStatus next )
 
                 WebSocket.Message text ->
-                    ( { model | statusCode = 1, statusText = truncate text 24 }
-                    , pushStatus { model | statusCode = 1, statusText = truncate text 24 }
-                    )
+                    let
+                        next =
+                            { status = Open, statusDetail = truncate text 24 }
+                    in
+                    ( next, pushStatus next )
 
                 WebSocket.Error error ->
-                    ( { model | connected = False, statusCode = 2, statusText = error }
-                    , pushStatus { model | connected = False, statusCode = 2, statusText = error }
-                    )
+                    let
+                        next =
+                            { status = Error, statusDetail = error }
+                    in
+                    ( next, pushStatus next )
 
                 WebSocket.Unknown _ ->
                     ( model, Cmd.none )
@@ -86,9 +97,11 @@ update msg model =
             ( model, Cmd.none )
 
         WebSocketCommand (Err error) ->
-            ( { model | statusCode = 2, statusText = error }
-            , pushStatus { model | statusCode = 2, statusText = error }
-            )
+            let
+                next =
+                    { status = Error, statusDetail = error }
+            in
+            ( next, pushStatus next )
 
 
 subscriptions : Model -> Sub Msg
@@ -111,7 +124,7 @@ main =
 
 pushStatus : Model -> Cmd Msg
 pushStatus model =
-    Phone.sendPhoneToWatch (ProvideWebSocketStatus model.statusCode model.statusText)
+    Phone.sendPhoneToWatch (ProvideWebSocketStatus model.status model.statusDetail)
 
 
 truncate : String -> Int -> String

@@ -1,4 +1,4 @@
-module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..), WebSocketStatus(..))
 
 {-| Demo protocol for WebSocket companion APIs.
 
@@ -11,5 +11,11 @@ type WatchToPhone
     | PingWebSocket
 
 
+type WebSocketStatus
+    = Closed
+    | Open
+    | Error
+
+
 type PhoneToWatch
-    = ProvideWebSocketStatus Int String
+    = ProvideWebSocketStatus WebSocketStatus String

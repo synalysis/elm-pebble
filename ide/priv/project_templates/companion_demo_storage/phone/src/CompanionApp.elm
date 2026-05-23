@@ -1,6 +1,6 @@
 module CompanionApp exposing (main)
 
-import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+import Companion.Types exposing (PhoneToWatch(..), Theme(..), Units(..), WatchToPhone(..))
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Pebble.Companion.Phone as Phone
@@ -10,8 +10,8 @@ import Platform
 
 
 type alias Model =
-    { theme : String
-    , units : String
+    { theme : Theme
+    , units : Units
     }
 
 
@@ -25,7 +25,7 @@ type Msg
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { theme = "dark", units = "metric" }, requestValues )
+    ( { theme = Dark, units = Metric }, requestValues )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -37,22 +37,25 @@ update msg model =
         FromWatch (Ok CycleTheme) ->
             let
                 nextTheme =
-                    if model.theme == "dark" then
-                        "light"
+                    case model.theme of
+                        Dark ->
+                            Light
 
-                    else
-                        "dark"
+                        Light ->
+                            Dark
+
+                nextUnits =
+                    case model.units of
+                        Metric ->
+                            Imperial
+
+                        Imperial ->
+                            Metric
             in
             ( model
             , Cmd.batch
-                [ Storage.set "theme" (Storage.StringValue nextTheme)
-                , PreferenceStore.set "units"
-                    (if model.units == "metric" then
-                        Encode.string "imperial"
-
-                     else
-                        Encode.string "metric"
-                    )
+                [ Storage.set "theme" (Storage.StringValue (themeToString nextTheme))
+                , PreferenceStore.set "units" (Encode.string (unitsToString nextUnits))
                 , Storage.get "theme" StoredTheme
                 , PreferenceStore.get "units" StoredUnits
                 ]
@@ -61,16 +64,21 @@ update msg model =
         FromWatch (Err _) ->
             ( model, Cmd.none )
 
-        GotStorage (Ok (Storage.StringValue theme)) ->
-            ( { model | theme = theme }
-            , Cmd.none
-            )
+        GotStorage (Ok (Storage.StringValue themeText)) ->
+            case themeFromString themeText of
+                Just theme ->
+                    ( { model | theme = theme }
+                    , pushValues theme model.units
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         GotStorage _ ->
             ( model, Cmd.none )
 
         GotPreference (Ok ( "units", value )) ->
-            case Decode.decodeValue Decode.string value of
+            case Decode.decodeValue Decode.string value |> Result.andThen unitsFromString of
                 Ok units ->
                     ( { model | units = units }
                     , pushValues model.theme units
@@ -82,18 +90,21 @@ update msg model =
         GotPreference _ ->
             ( model, Cmd.none )
 
-        StoredTheme (Ok (Storage.StringValue theme)) ->
-            ( { model | theme = theme }, Cmd.none )
+        StoredTheme (Ok (Storage.StringValue themeText)) ->
+            case themeFromString themeText of
+                Just theme ->
+                    ( { model | theme = theme }, pushValues theme model.units )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         StoredTheme _ ->
             ( model, Cmd.none )
 
         StoredUnits (Ok ( "units", value )) ->
-            case Decode.decodeValue Decode.string value of
+            case Decode.decodeValue Decode.string value |> Result.andThen unitsFromString of
                 Ok units ->
-                    ( { model | units = units }
-                    , pushValues model.theme units
-                    )
+                    ( { model | units = units }, pushValues model.theme units )
 
                 Err _ ->
                     ( model, Cmd.none )
@@ -130,6 +141,52 @@ requestValues =
         ]
 
 
-pushValues : String -> String -> Cmd Msg
+pushValues : Theme -> Units -> Cmd Msg
 pushValues theme units =
     Phone.sendPhoneToWatch (ProvideTheme theme units)
+
+
+themeToString : Theme -> String
+themeToString theme =
+    case theme of
+        Dark ->
+            "dark"
+
+        Light ->
+            "light"
+
+
+themeFromString : String -> Maybe Theme
+themeFromString text =
+    case text of
+        "dark" ->
+            Just Dark
+
+        "light" ->
+            Just Light
+
+        _ ->
+            Nothing
+
+
+unitsToString : Units -> String
+unitsToString units =
+    case units of
+        Metric ->
+            "metric"
+
+        Imperial ->
+            "imperial"
+
+
+unitsFromString : String -> Result String Units
+unitsFromString text =
+    case text of
+        "metric" ->
+            Ok Metric
+
+        "imperial" ->
+            Ok Imperial
+
+        _ ->
+            Err "unknown units"

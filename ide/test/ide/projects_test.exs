@@ -388,6 +388,37 @@ defmodule Ide.ProjectsTest do
     end
   end
 
+  test "watch demo templates seed watch-only apps for Tier 1 Pebble APIs" do
+    demos = [
+      {"watch-demo-accel", "Pebble.Accel", "app"},
+      {"watch-demo-vibes", "Vibes.pattern", "app"},
+      {"watch-demo-data-log", "Pebble.DataLog", "app"},
+      {"watch-demo-app-focus", "Pebble.AppFocus", "app"},
+      {"watch-demo-compass", "Pebble.Compass", "app"},
+      {"watch-demo-dictation", "Pebble.Dictation", "app"}
+    ]
+
+    for {template, snippet, target_type} <- demos do
+      slug = "#{template}-#{System.unique_integer([:positive])}"
+
+      assert {:ok, project} =
+               Projects.create_project(%{
+                 "name" => "Demo #{template}",
+                 "slug" => slug,
+                 "target_type" => target_type,
+                 "template" => template
+               })
+
+      base = Projects.project_workspace_path(project)
+      assert project.target_type == target_type
+      assert File.exists?(Path.join(base, "watch/src/Main.elm"))
+      refute File.exists?(Path.join(base, "phone/src/CompanionApp.elm"))
+
+      assert {:ok, main} = File.read(Path.join(base, "watch/src/Main.elm"))
+      assert String.contains?(main, snippet)
+    end
+  end
+
   test "starter watch template only places user sources under watch/src" do
     slug = "starter-clean-#{System.unique_integer([:positive])}"
 

@@ -1,6 +1,6 @@
 module CompanionApp exposing (main)
 
-import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+import Companion.Types exposing (ConfigurationOutcome(..), PhoneToWatch(..), WatchToPhone(..))
 import Pebble.Companion.Configuration as Configuration
 import Pebble.Companion.Lifecycle as Lifecycle
 import Pebble.Companion.Phone as Phone
@@ -10,7 +10,7 @@ import Platform
 type alias Model =
     { ready : Bool
     , visible : Bool
-    , configClosed : Bool
+    , configOutcome : Maybe ConfigurationOutcome
     }
 
 
@@ -22,7 +22,7 @@ type Msg
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { ready = False, visible = True, configClosed = False }
+    ( { ready = False, visible = True, configOutcome = Nothing }
     , Cmd.batch [ Lifecycle.setup, Configuration.setup ]
     )
 
@@ -47,8 +47,8 @@ update msg model =
                     ( model, Cmd.none )
 
                 Lifecycle.WebViewClosed _ ->
-                    ( { model | configClosed = True }
-                    , Phone.sendPhoneToWatch (SettingsClosed True)
+                    ( { model | configOutcome = Just Dismissed }
+                    , Phone.sendPhoneToWatch (SettingsClosed Dismissed)
                     )
 
                 Lifecycle.VisibilityChanged visible ->
@@ -58,8 +58,16 @@ update msg model =
                     ( model, Cmd.none )
 
         ConfigurationClosed maybeResponse ->
-            ( { model | configClosed = maybeResponse /= Nothing }
-            , Phone.sendPhoneToWatch (SettingsClosed (maybeResponse /= Nothing))
+            let
+                outcome =
+                    if maybeResponse == Nothing then
+                        Dismissed
+
+                    else
+                        Saved
+            in
+            ( { model | configOutcome = Just outcome }
+            , Phone.sendPhoneToWatch (SettingsClosed outcome)
             )
 
 

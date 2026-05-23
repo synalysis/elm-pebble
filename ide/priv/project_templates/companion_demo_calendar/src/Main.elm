@@ -11,12 +11,16 @@ import Pebble.Ui.Color as Color
 import Pebble.Ui.Resources as Resources
 
 
+type alias CalendarEvent =
+    { title : String
+    , hour : Int
+    , minute : Int
+    }
+
+
 type alias Model =
     { timeString : String
-    , eventTitle : String
-    , eventHour : Int
-    , eventMinute : Int
-    , hasEvent : Bool
+    , nextEvent : Maybe CalendarEvent
     , screenW : Int
     , screenH : Int
     }
@@ -31,10 +35,7 @@ type Msg
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
 init context =
     ( { timeString = "--:--"
-      , eventTitle = ""
-      , eventHour = 0
-      , eventMinute = 0
-      , hasEvent = False
+      , nextEvent = Nothing
       , screenW = context.screen.width
       , screenH = context.screen.height
       }
@@ -60,10 +61,10 @@ update msg model =
             ( { model | timeString = value }, Cmd.none )
 
         FromPhone (ProvideNextEvent title hour minute) ->
-            ( { model | eventTitle = title, eventHour = hour, eventMinute = minute, hasEvent = True }, Cmd.none )
+            ( { model | nextEvent = Just { title = title, hour = hour, minute = minute } }, Cmd.none )
 
         FromPhone NoUpcomingEvents ->
-            ( { model | eventTitle = "No events", hasEvent = False }, Cmd.none )
+            ( { model | nextEvent = Nothing }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -87,13 +88,14 @@ view model =
             Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = y, w = model.screenW - 16, h = lineH } text_
 
         eventLine =
-            if model.hasEvent then
-                truncateTitle model.eventTitle 18
-                    ++ " @ "
-                    ++ formatClock model.eventHour model.eventMinute
+            case model.nextEvent of
+                Nothing ->
+                    "No events"
 
-            else
-                model.eventTitle
+                Just event ->
+                    truncateTitle event.title 18
+                        ++ " @ "
+                        ++ formatClock event.hour event.minute
     in
     Ui.windowStack
         [ Ui.window 1

@@ -1,4 +1,4 @@
-module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+module Companion.Types exposing (PhoneToWatch(..), Theme(..), Units(..), WatchToPhone(..))
 
 {-| Demo protocol for storage and preference companion APIs.
 
@@ -11,5 +11,15 @@ type WatchToPhone
     | CycleTheme
 
 
+type Theme
+    = Dark
+    | Light
+
+
+type Units
+    = Metric
+    | Imperial
+
+
 type PhoneToWatch
-    = ProvideTheme String String
+    = ProvideTheme Theme Units

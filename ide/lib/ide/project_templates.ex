@@ -21,7 +21,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline game-basic game-tiny-bird game-jump-n-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation game-basic game-tiny-bird game-jump-n-run game-2048)
 
   @template_dirs %{
     "starter" => "starter",
@@ -38,6 +38,12 @@ defmodule Ide.ProjectTemplates do
     "companion-demo-settings" => "companion_demo_settings",
     "companion-demo-websocket" => "companion_demo_websocket",
     "companion-demo-timeline" => "companion_demo_timeline",
+    "watch-demo-accel" => "watch_demo_accel",
+    "watch-demo-vibes" => "watch_demo_vibes",
+    "watch-demo-data-log" => "watch_demo_data_log",
+    "watch-demo-app-focus" => "watch_demo_app_focus",
+    "watch-demo-compass" => "watch_demo_compass",
+    "watch-demo-dictation" => "watch_demo_dictation",
     "game-basic" => "game_basic",
     "game-tiny-bird" => "game_tiny_bird",
     "game-jump-n-run" => "game_jump_n_run",
@@ -117,6 +123,12 @@ defmodule Ide.ProjectTemplates do
       {"Companion demo: Settings & lifecycle (app)", "companion-demo-settings"},
       {"Companion demo: WebSocket (app)", "companion-demo-websocket"},
       {"Companion demo: Timeline (app)", "companion-demo-timeline"},
+      {"Watch demo: Accelerometer (app)", "watch-demo-accel"},
+      {"Watch demo: Custom vibes (app)", "watch-demo-vibes"},
+      {"Watch demo: Data logging (app)", "watch-demo-data-log"},
+      {"Watch demo: App focus (app)", "watch-demo-app-focus"},
+      {"Watch demo: Compass (app, aplite)", "watch-demo-compass"},
+      {"Watch demo: Dictation (app, mic models)", "watch-demo-dictation"},
       {"Game: Basic", "game-basic"},
       {"Game: Tiny Bird", "game-tiny-bird"},
       {"Game: Jump'n Run", "game-jump-n-run"},
@@ -171,6 +183,24 @@ defmodule Ide.ProjectTemplates do
 
       "companion-demo-geolocation" ->
         seed_companion_demo_workspace(workspace_path, "companion_demo_geolocation")
+
+      "watch-demo-accel" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_accel")
+
+      "watch-demo-vibes" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_vibes")
+
+      "watch-demo-data-log" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_data_log")
+
+      "watch-demo-app-focus" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_app_focus")
+
+      "watch-demo-compass" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_compass")
+
+      "watch-demo-dictation" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_dictation")
 
       "game-basic" ->
         seed_watch_only_workspace(workspace_path, "game_basic")

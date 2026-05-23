@@ -1,6 +1,6 @@
 module CompanionApp exposing (main)
 
-import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+import Companion.Types exposing (PhoneToWatch(..), TimelinePinStatus(..), WatchToPhone(..))
 import Json.Encode as Encode
 import Pebble.Companion.Phone as Phone
 import Pebble.Companion.Timeline as Timeline
@@ -47,13 +47,13 @@ update msg model =
             )
 
         GotToken (Err _) ->
-            ( model, Phone.sendPhoneToWatch (ProvideTimelineStatus 1) )
+            ( model, Phone.sendPhoneToWatch (ProvideTimelineStatus PinFailed) )
 
         PinInserted (Ok ()) ->
-            ( model, Phone.sendPhoneToWatch (ProvideTimelineStatus 0) )
+            ( model, Phone.sendPhoneToWatch (ProvideTimelineStatus PinOk) )
 
         PinInserted (Err _) ->
-            ( model, Phone.sendPhoneToWatch (ProvideTimelineStatus 1) )
+            ( model, Phone.sendPhoneToWatch (ProvideTimelineStatus PinFailed) )
 
 
 subscriptions : Model -> Sub Msg

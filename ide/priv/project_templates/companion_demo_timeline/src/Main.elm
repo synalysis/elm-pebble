@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+import Companion.Types exposing (PhoneToWatch(..), TimelinePinStatus(..), WatchToPhone(..))
 import Companion.Watch as CompanionWatch
 import Json.Decode as Decode
 import Pebble.Button as Button
@@ -12,7 +12,7 @@ import Pebble.Ui.Resources as Resources
 
 type alias Model =
     { tokenPreview : String
-    , statusCode : Int
+    , pinStatus : Maybe TimelinePinStatus
     , screenW : Int
     , screenH : Int
     }
@@ -26,7 +26,7 @@ type Msg
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
 init context =
     ( { tokenPreview = "loading"
-      , statusCode = 0
+      , pinStatus = Nothing
       , screenW = context.screen.width
       , screenH = context.screen.height
       }
@@ -41,10 +41,10 @@ update msg model =
             ( model, CompanionWatch.sendWatchToPhone InsertDemoPin )
 
         FromPhone (ProvideTimelineToken token) ->
-            ( { model | tokenPreview = truncate token 20, statusCode = 0 }, Cmd.none )
+            ( { model | tokenPreview = truncate token 20, pinStatus = Nothing }, Cmd.none )
 
-        FromPhone (ProvideTimelineStatus code) ->
-            ( { model | statusCode = code }, Cmd.none )
+        FromPhone (ProvideTimelineStatus status) ->
+            ( { model | pinStatus = Just status }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -66,13 +66,6 @@ view model =
 
         label x y text_ =
             Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = y, w = model.screenW - 16, h = lineH } text_
-
-        statusText =
-            if model.statusCode == 0 then
-                "ok"
-
-            else
-                "error"
     in
     Ui.windowStack
         [ Ui.window 1
@@ -80,11 +73,24 @@ view model =
                 [ Ui.clear Color.white
                 , label 8 startY "Timeline demo"
                 , label 8 (startY + lineH) ("Token " ++ model.tokenPreview)
-                , label 8 (startY + lineH * 2) ("Pin " ++ statusText)
+                , label 8 (startY + lineH * 2) ("Pin " ++ pinStatusLabel model.pinStatus)
                 , label 8 (startY + lineH * 3) "Select = insert"
                 ]
             ]
         ]
+
+
+pinStatusLabel : Maybe TimelinePinStatus -> String
+pinStatusLabel maybeStatus =
+    case maybeStatus of
+        Nothing ->
+            "pending"
+
+        Just PinOk ->
+            "ok"
+
+        Just PinFailed ->
+            "error"
 
 
 truncate : String -> Int -> String

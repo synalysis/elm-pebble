@@ -1,4 +1,4 @@
-module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+module Companion.Types exposing (PhoneToWatch(..), TimelinePinStatus(..), WatchToPhone(..))
 
 {-| Demo protocol for timeline companion APIs.
 
@@ -11,6 +11,11 @@ type WatchToPhone
     | InsertDemoPin
 
 
+type TimelinePinStatus
+    = PinOk
+    | PinFailed
+
+
 type PhoneToWatch
     = ProvideTimelineToken String
-    | ProvideTimelineStatus Int
+    | ProvideTimelineStatus TimelinePinStatus

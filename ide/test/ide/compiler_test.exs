@@ -37,7 +37,9 @@ defmodule Ide.CompilerTest do
   end
 
   test "watch app templates produce strict CoreIR artifacts" do
-    templates = ["game-2048", "game-basic", "starter", "watchface-digital"]
+    templates =
+      ["game-2048", "game-basic", "starter", "watchface-digital"] ++
+        ~w(watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation)
 
     for template <- templates do
       workspace_root = tmp_workspace_path("strict-coreir-#{template}")
