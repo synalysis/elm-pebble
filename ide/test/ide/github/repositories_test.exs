@@ -1,8 +1,32 @@
 defmodule Ide.GitHub.RepositoriesTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Ide.GitHub.Repositories
   alias Ide.Projects.Project
+
+  setup do
+    credentials_path =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_github_repositories_test_#{System.unique_integer([:positive])}.json"
+      )
+
+    original_github = Application.get_env(:ide, Ide.GitHub, [])
+
+    File.write!(
+      credentials_path,
+      Jason.encode!(%{"access_token" => "test-token", "user_login" => "pebbledev"})
+    )
+
+    Application.put_env(:ide, Ide.GitHub, Keyword.put(original_github, :credentials_path, credentials_path))
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.GitHub, original_github)
+      File.rm(credentials_path)
+    end)
+
+    :ok
+  end
 
   test "lookup_status returns not_found for missing repository" do
     request_fun = fn method, url, _headers, _body, _timeout ->

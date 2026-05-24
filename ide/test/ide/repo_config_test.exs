@@ -1,7 +1,21 @@
 defmodule Ide.RepoConfigTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Ide.RepoConfig
+
+  setup do
+    original_repos = Application.get_env(:ide, :ecto_repos)
+    original_repo_module = Application.get_env(:ide, :repo_module)
+    original_adapter = Application.get_env(:ide, :ecto_adapter)
+
+    on_exit(fn ->
+      Application.put_env(:ide, :ecto_repos, original_repos)
+      Application.put_env(:ide, :repo_module, original_repo_module)
+      Application.put_env(:ide, :ecto_adapter, original_adapter)
+    end)
+
+    :ok
+  end
 
   test "storage_config expands DATABASE_URL fields" do
     Application.put_env(:ide, Ide.Repo.Postgres,

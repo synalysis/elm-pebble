@@ -3487,6 +3487,12 @@ defmodule Ide.Debugger do
   rescue
     DBConnection.OwnershipError ->
       {:error, :repo_unavailable}
+
+    error in [RuntimeError] ->
+      case Exception.message(error) do
+        "could not lookup Ecto repo " <> _ -> {:error, :repo_unavailable}
+        _ -> reraise error, __STACKTRACE__
+      end
   end
 
   defp project_protocol_schema(_state), do: {:error, :missing_project_protocol}
@@ -5346,25 +5352,25 @@ defmodule Ide.Debugger do
           {String.t(), term()} | String.t() | nil
   defp protocol_rx_subscription_message(state, recipient, meta)
        when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(meta) do
-    trigger = Map.get(meta, :trigger)
     from = Map.get(meta, :from)
     message = Map.get(meta, :message)
     message_value = Map.get(meta, :message_value)
 
     cond do
-      not is_binary(trigger) or trigger == "" ->
-        nil
-
       not is_binary(message) or message == "" ->
         nil
 
       recipient == :watch and from in ["companion", "phone"] ->
-        protocol_rx_subscription_callback(state, recipient, "on_phone_to_watch")
-        |> protocol_callback_message(message, message_value, false)
+        callback =
+          protocol_rx_subscription_callback(state, recipient, "on_phone_to_watch") || "FromPhone"
+
+        protocol_callback_message(callback, message, message_value, false)
 
       recipient in [:companion, :phone] and from == "watch" ->
-        protocol_rx_subscription_callback(state, recipient, "on_watch_to_phone")
-        |> protocol_callback_message(message, message_value, true)
+        callback =
+          protocol_rx_subscription_callback(state, recipient, "on_watch_to_phone") || "FromWatch"
+
+        protocol_callback_message(callback, message, message_value, true)
 
       true ->
         nil

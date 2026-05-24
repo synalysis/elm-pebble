@@ -452,11 +452,8 @@ defmodule Ide.Debugger.ElmIntrospect do
     {peeled, bindings} = peel_lets_with_bindings(expr)
 
     case peeled do
-      %{op: :case, subject: subj, branches: branches}
-      when is_binary(subj) and is_list(branches) ->
-        resolved_subj = resolve_case_subject(subj, bindings)
-
-        if init_case_subject_allowed?(resolved_subj, allowed, init_params) do
+      %{op: :case, subject: subj, branches: branches} when is_list(branches) ->
+        if init_case_subject_allowed?(subj, allowed, init_params, bindings) do
           Enum.flat_map(branches, fn
             %{expr: e} -> cmd_ops_from_case_branch_expr(e)
             _ -> []
@@ -466,7 +463,7 @@ defmodule Ide.Debugger.ElmIntrospect do
         end
 
       %{op: :tuple2, right: right} ->
-        right |> peel_lets() |> extract_subscription_items()
+        right |> peel_lets() |> extract_cmd_op_items()
 
       _ ->
         []
@@ -485,11 +482,8 @@ defmodule Ide.Debugger.ElmIntrospect do
 
     calls =
       case peeled do
-        %{op: :case, subject: subj, branches: branches}
-        when is_binary(subj) and is_list(branches) ->
-          resolved_subj = resolve_case_subject(subj, bindings)
-
-          if init_case_subject_allowed?(resolved_subj, allowed, init_params) do
+        %{op: :case, subject: subj, branches: branches} when is_list(branches) ->
+          if init_case_subject_allowed?(subj, allowed, init_params, bindings) do
             Enum.flat_map(branches, fn
               %{expr: e} -> cmd_calls_from_case_branch_expr(e)
               _ -> []
@@ -519,9 +513,8 @@ defmodule Ide.Debugger.ElmIntrospect do
     expr
     |> peel_update_outer()
     |> case do
-      %{op: :case, subject: subj, branches: branches}
-      when is_binary(subj) and is_list(branches) ->
-        if update_case_subject_allowed?(subj, allowed, update_params) do
+      %{op: :case, subject: subj, branches: branches} when is_list(branches) ->
+        if update_case_subject_allowed?(subj, allowed, update_params, %{}) do
           Enum.flat_map(branches, fn
             %{expr: e} -> cmd_ops_from_case_branch_expr(e)
             _ -> []
@@ -531,7 +524,7 @@ defmodule Ide.Debugger.ElmIntrospect do
         end
 
       %{op: :tuple2, right: right} ->
-        right |> peel_lets() |> extract_subscription_items()
+        right |> peel_lets() |> extract_cmd_op_items()
 
       _ ->
         []
@@ -550,9 +543,8 @@ defmodule Ide.Debugger.ElmIntrospect do
       expr
       |> peel_update_outer()
       |> case do
-        %{op: :case, subject: subj, branches: branches}
-        when is_binary(subj) and is_list(branches) ->
-          if update_case_subject_allowed?(subj, allowed, update_params) do
+        %{op: :case, subject: subj, branches: branches} when is_list(branches) ->
+          if update_case_subject_allowed?(subj, allowed, update_params, %{}) do
             Enum.flat_map(branches, fn
               %{pattern: p, expr: e} ->
                 branch_label = pattern_branch_label(p)
@@ -597,7 +589,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     |> peel_lets()
     |> case do
       %{op: :tuple2, right: right} ->
-        right |> peel_lets() |> extract_subscription_items()
+        right |> peel_lets() |> extract_cmd_op_items()
 
       _ ->
         []
@@ -625,11 +617,8 @@ defmodule Ide.Debugger.ElmIntrospect do
     {peeled, bindings} = peel_lets_with_bindings(expr)
 
     case peeled do
-      %{op: :case, subject: subj, branches: branches}
-      when is_binary(subj) and is_list(branches) ->
-        resolved_subj = resolve_case_subject(subj, bindings)
-
-        if init_case_subject_allowed?(resolved_subj, allowed, subscriptions_params) do
+      %{op: :case, subject: subj, branches: branches} when is_list(branches) ->
+        if init_case_subject_allowed?(subj, allowed, subscriptions_params, bindings) do
           Enum.flat_map(branches, fn
             %{expr: e} -> e |> peel_lets() |> extract_subscription_items()
             _ -> []
@@ -683,6 +672,48 @@ defmodule Ide.Debugger.ElmIntrospect do
   end
 
   defp extract_subscription_items(expr) do
+    case subscription_item_label(expr) do
+      nil -> []
+      s -> [s]
+    end
+  end
+
+  @spec extract_cmd_op_items(Types.ast_expr()) :: Types.string_list()
+  defp extract_cmd_op_items(%{
+         op: :qualified_call,
+         args: [%{op: :list_literal, items: items}]
+       })
+       when is_list(items) do
+    Enum.flat_map(items, &extract_cmd_op_items/1)
+  end
+
+  defp extract_cmd_op_items(%{op: :qualified_call} = qc) do
+    case subscription_item_label(qc) do
+      nil -> []
+      s -> [s]
+    end
+  end
+
+  defp extract_cmd_op_items(%{
+         op: :call,
+         name: name,
+         args: [%{op: :list_literal, items: items}]
+       })
+       when is_list(items) and is_binary(name) do
+    items
+    |> Enum.flat_map(&extract_cmd_op_items/1)
+    |> then(fn xs -> if xs != [], do: xs, else: [name <> "(…)"] end)
+  end
+
+  defp extract_cmd_op_items(%{op: :list_literal, items: items}) when is_list(items) do
+    Enum.flat_map(items, &extract_cmd_op_items/1)
+  end
+
+  defp extract_cmd_op_items(%{op: :if, then_expr: then_expr, else_expr: else_expr}) do
+    extract_cmd_op_items(then_expr) ++ extract_cmd_op_items(else_expr)
+  end
+
+  defp extract_cmd_op_items(expr) do
     case subscription_item_label(expr) do
       nil -> []
       s -> [s]
@@ -768,13 +799,13 @@ defmodule Ide.Debugger.ElmIntrospect do
        )
        when is_list(branches) and is_map(bindings) and is_list(guards) and is_list(subscriptions_params) do
     allowed = init_case_subjects(subscriptions_params)
-    resolved_subj = resolve_case_subject(subj, bindings)
 
     Enum.flat_map(branches, fn
       %{pattern: pattern, expr: expr} ->
         branch_guards =
-          if init_case_subject_allowed?(resolved_subj, allowed, subscriptions_params) do
-            guards ++ maybe_case_branch_guards(resolved_subj, pattern)
+          if init_case_subject_allowed?(subj, allowed, subscriptions_params, bindings) do
+            subject_text = case_subject_text(subj, bindings)
+            guards ++ maybe_case_branch_guards(subject_text, pattern)
           else
             guards
           end
@@ -882,7 +913,7 @@ defmodule Ide.Debugger.ElmIntrospect do
               branch in [:then, :else] do
     with subject when is_binary(subject) and subject != "" <-
            subscription_guard_subject(cond, bindings),
-         true <- init_case_subject_allowed?(subject, allowed, subscriptions_params) do
+         true <- init_case_subject_allowed?(subject, allowed, subscriptions_params, bindings) do
       %{
         "kind" => if(branch == :then, do: "field_truthy", else: "field_falsy"),
         "subject" => subject
@@ -1300,13 +1331,20 @@ defmodule Ide.Debugger.ElmIntrospect do
     |> Enum.uniq()
   end
 
-  @spec init_case_subject_allowed?(String.t(), Types.param_list(), Types.param_list()) :: boolean()
-  defp init_case_subject_allowed?(subj, allowed, init_params)
-       when is_binary(subj) and is_list(allowed) and is_list(init_params) do
-    subj in allowed or
-      Enum.any?(init_params, fn p ->
-        is_binary(p) and p != "_" and p != "" and String.starts_with?(subj, p <> ".")
-      end)
+  @spec init_case_subject_allowed?(term(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
+          boolean()
+  defp init_case_subject_allowed?(subj, allowed, init_params, bindings)
+       when is_list(allowed) and is_list(init_params) and is_map(bindings) do
+    case case_subject_text(subj, bindings) do
+      text when is_binary(text) and text != "" ->
+        text in allowed or
+          Enum.any?(init_params, fn p ->
+            is_binary(p) and p != "_" and p != "" and String.starts_with?(text, p <> ".")
+          end)
+
+      _ ->
+        false
+    end
   end
 
   @spec scrutinee_case_analysis(Types.ast_expr() | nil, Types.param_list()) :: Types.case_branch_labels()
@@ -1318,18 +1356,17 @@ defmodule Ide.Debugger.ElmIntrospect do
     {peeled, bindings} = peel_lets_with_bindings(expr)
 
     case peeled do
-      %{op: :case, subject: subj, branches: branches}
-      when is_binary(subj) and is_list(branches) ->
-        resolved_subj = resolve_case_subject(subj, bindings)
+      %{op: :case, subject: subj, branches: branches} when is_list(branches) ->
+        if init_case_subject_allowed?(subj, allowed, params, bindings) do
+          subject_text = case_subject_text(subj, bindings)
 
-        if init_case_subject_allowed?(resolved_subj, allowed, params) do
           labels =
             Enum.map(branches, fn
               %{pattern: p} -> pattern_branch_label(p)
               _ -> "?"
             end)
 
-          {labels, resolved_subj}
+          {labels, subject_text}
         else
           {[], nil}
         end
@@ -1350,18 +1387,17 @@ defmodule Ide.Debugger.ElmIntrospect do
     {peeled, bindings} = peel_lets_with_bindings(expr)
 
     case peeled do
-      %{op: :case, subject: subj, branches: branches}
-      when is_binary(subj) and is_list(branches) ->
-        resolved_subj = resolve_case_subject(subj, bindings)
+      %{op: :case, subject: subj, branches: branches} when is_list(branches) ->
+        if update_case_subject_allowed?(subj, allowed, update_params, bindings) do
+          subject_text = case_subject_text(subj, bindings)
 
-        if update_case_subject_allowed?(resolved_subj, allowed, update_params) do
           labels =
             Enum.map(branches, fn
               %{pattern: p} -> pattern_branch_label(p)
               _ -> "?"
             end)
 
-          {labels, resolved_subj}
+          {labels, subject_text}
         else
           {[], nil}
         end
@@ -1373,13 +1409,20 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp update_case_analysis(_, _), do: {[], nil}
 
-  @spec update_case_subject_allowed?(String.t(), Types.param_list(), Types.param_list()) :: boolean()
-  defp update_case_subject_allowed?(subj, allowed, update_params)
-       when is_binary(subj) and is_list(allowed) and is_list(update_params) do
-    subj in allowed or
-      Enum.any?(update_params, fn p ->
-        is_binary(p) and p != "_" and p != "" and String.starts_with?(subj, p <> ".")
-      end)
+  @spec update_case_subject_allowed?(term(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
+          boolean()
+  defp update_case_subject_allowed?(subj, allowed, update_params, bindings \\ %{})
+       when is_list(allowed) and is_list(update_params) and is_map(bindings) do
+    case case_subject_text(subj, bindings) do
+      "" ->
+        false
+
+      text ->
+        text in allowed or
+          Enum.any?(update_params, fn p ->
+            is_binary(p) and p != "_" and p != "" and String.starts_with?(text, p <> ".")
+          end)
+    end
   end
 
   @spec update_case_subjects(Types.param_list()) :: Types.param_list()
@@ -1404,18 +1447,17 @@ defmodule Ide.Debugger.ElmIntrospect do
     {peeled, bindings} = peel_lets_with_bindings(expr)
 
     case peeled do
-      %{op: :case, subject: subj, branches: branches}
-      when is_binary(subj) and is_list(branches) ->
-        resolved_subj = resolve_case_subject(subj, bindings)
+      %{op: :case, subject: subj, branches: branches} when is_list(branches) ->
+        if view_case_subject_allowed?(subj, allowed, view_params, bindings) do
+          subject_text = case_subject_text(subj, bindings)
 
-        if view_case_subject_allowed?(resolved_subj, allowed, view_params) do
           labels =
             Enum.map(branches, fn
               %{pattern: p} -> pattern_branch_label(p)
               _ -> "?"
             end)
 
-          {labels, resolved_subj}
+          {labels, subject_text}
         else
           {[], nil}
         end
@@ -1440,10 +1482,17 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec view_case_subject_allowed?(String.t(), Types.param_list(), Types.param_list()) :: boolean()
-  defp view_case_subject_allowed?(subj, allowed, view_params)
-       when is_binary(subj) and is_list(allowed) and is_list(view_params) do
-    Enum.member?(allowed, subj) or view_case_param_prefix?(subj, List.first(view_params))
+  @spec view_case_subject_allowed?(term(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
+          boolean()
+  defp view_case_subject_allowed?(subj, allowed, view_params, bindings \\ %{})
+       when is_list(allowed) and is_list(view_params) and is_map(bindings) do
+    case case_subject_text(subj, bindings) do
+      "" ->
+        false
+
+      text ->
+        Enum.member?(allowed, text) or view_case_param_prefix?(text, List.first(view_params))
+    end
   end
 
   @spec view_case_param_prefix?(String.t(), Types.ast_expr()) :: boolean()
@@ -1476,10 +1525,22 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   @spec resolve_case_subject(String.t(), Types.binding_map()) :: String.t()
   defp resolve_case_subject(subj, bindings) when is_binary(subj) and is_map(bindings) do
-    Map.get(bindings, subj, subj)
+    case Map.get(bindings, subj, subj) do
+      value when is_binary(value) -> value
+      _ -> subj
+    end
   end
 
-  defp resolve_case_subject(subj, _), do: subj
+  defp resolve_case_subject(subj, _) when is_binary(subj), do: subj
+  defp resolve_case_subject(_, _), do: ""
+
+  @spec case_subject_text(term(), Types.binding_map()) :: String.t()
+  defp case_subject_text(subj, bindings) when is_binary(subj), do: resolve_case_subject(subj, bindings)
+
+  defp case_subject_text(subj, bindings) when is_map(subj),
+    do: resolve_case_subject_expr(subj, bindings)
+
+  defp case_subject_text(_, _), do: ""
 
   @spec resolve_case_subject_expr(Types.ast_expr(), Types.binding_map()) :: String.t()
   defp resolve_case_subject_expr(%{op: :field_access, arg: arg, field: field}, bindings)

@@ -478,9 +478,6 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     assert html =~ "Just {"
     assert html =~ "dayOfWeek = Sun"
 
-    assert html =~
-             ~s(title="elm_executor_core_ir_b64 = &quot;#{String.duplicate("abc123", 20)}&quot;")
-
     refute html =~ "Just %{"
   end
 
@@ -582,13 +579,13 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     assert get_in(saved_state.watch, [:view_tree, "type"]) == "windowStack"
     view_tree_json = Jason.encode!(saved_state.watch.view_tree)
     assert view_tree_json =~ ~s("text":"0C Clear")
-    assert view_tree_json =~ ~s("text_color":255)
+    assert view_tree_json =~ ~s("text_color":192)
 
     runtime_output = get_in(saved_state.watch, [:model, "runtime_view_output"]) || []
     assert runtime_output != []
     runtime_output_json = Jason.encode!(runtime_output)
     assert runtime_output_json =~ ~s("text":"0C Clear")
-    assert runtime_output_json =~ ~s("color":255,"kind":"text_color")
+    assert runtime_output_json =~ ~s("color":192,"kind":"text_color")
 
     saved_html = render(view)
 

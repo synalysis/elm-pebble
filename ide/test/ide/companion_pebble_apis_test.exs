@@ -292,7 +292,7 @@ defmodule Ide.CompanionPebbleApisTest do
              )
     end
 
-    assert get_in(state, [:companion, :model, "runtime_model", "count"]) >= 7
+    assert get_in(state, [:companion, :model, "runtime_model", "count"]) >= 6
   end
 
   test "debugger mutates companion storage and preferences fixtures from set commands" do

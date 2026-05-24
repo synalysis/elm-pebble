@@ -243,12 +243,27 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
   end
 
   test "project settings shows App Store metadata sync control", %{conn: conn} do
+    original_auth = Application.get_env(:ide, Ide.Auth, [])
+    Application.put_env(:ide, Ide.Auth, Keyword.put(original_auth, :mode, :public_pebble))
+
+    on_exit(fn -> Application.put_env(:ide, Ide.Auth, original_auth) end)
+
+    {:ok, user} =
+      %Ide.Auth.User{}
+      |> Ide.Auth.User.changeset(%{firebase_uid: "store-listing-sync", email: "store@example.test"})
+      |> Ide.Repo.insert()
+
+    conn = Plug.Test.init_test_session(conn, user_id: user.id)
+
     assert {:ok, project} =
-             Projects.create_project(%{
-               "name" => "WorkspaceStoreListingSync",
-               "slug" => "workspace-store-listing-sync",
-               "target_type" => "app"
-             })
+             Projects.create_project(
+               %{
+                 "name" => "WorkspaceStoreListingSync",
+                 "slug" => "workspace-store-listing-sync",
+                 "target_type" => "app"
+               },
+               user
+             )
 
     assert {:ok, view, html} = live(conn, ~p"/projects/#{project.slug}/settings")
 

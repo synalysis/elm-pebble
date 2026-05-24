@@ -702,20 +702,36 @@ defmodule Ide.Packages do
   end
 
   defp fallback_builtin_source_modules("elm-pebble/companion-core") do
-    case exposed_modules_from_source_root(
-           Ide.InternalPackages.pebble_companion_core_elm_src_abs()
+    case read_exposed_modules_from_elm_json_path(
+           Path.join(Ide.Paths.repo_root(), "packages/elm-pebble-companion-core/elm.json")
          ) do
-      {:ok, modules} -> modules
-      _ -> []
+      {:ok, modules} ->
+        modules
+
+      _ ->
+        case exposed_modules_from_source_root(
+               Ide.InternalPackages.pebble_companion_core_elm_src_abs()
+             ) do
+          {:ok, modules} -> modules
+          _ -> []
+        end
     end
   end
 
   defp fallback_builtin_source_modules("elm-pebble/companion-preferences") do
-    case exposed_modules_from_source_root(
-           Ide.InternalPackages.pebble_companion_preferences_elm_src_abs()
+    case read_exposed_modules_from_elm_json_path(
+           Path.join(Ide.Paths.repo_root(), "packages/elm-pebble-companion-preferences/elm.json")
          ) do
-      {:ok, modules} -> modules
-      _ -> []
+      {:ok, modules} ->
+        modules
+
+      _ ->
+        case exposed_modules_from_source_root(
+               Ide.InternalPackages.pebble_companion_preferences_elm_src_abs()
+             ) do
+          {:ok, modules} -> modules
+          _ -> []
+        end
     end
   end
 
@@ -819,11 +835,15 @@ defmodule Ide.Packages do
 
   @spec exposed_modules_from_source_root(String.t()) :: {:ok, [String.t()]} | {:error, Types.package_error()}
   defp exposed_modules_from_source_root(source_root) when is_binary(source_root) do
-    elm_json_path =
-      source_root
-      |> Path.dirname()
-      |> Path.join("elm.json")
+    source_root
+    |> Path.dirname()
+    |> Path.join("elm.json")
+    |> read_exposed_modules_from_elm_json_path()
+  end
 
+  @spec read_exposed_modules_from_elm_json_path(String.t()) ::
+          {:ok, [String.t()]} | {:error, Types.package_error()}
+  defp read_exposed_modules_from_elm_json_path(elm_json_path) when is_binary(elm_json_path) do
     with {:ok, content} <- File.read(elm_json_path),
          {:ok, decoded} <- Jason.decode(content),
          modules <- Map.get(decoded, "exposed-modules"),

@@ -469,7 +469,7 @@ defmodule Ide.Debugger.ElmIntrospectTest do
              celsius_arg
            )
 
-    assert get_in(temperature_call, ["callback_constructor"]) == "GotWeather"
+    assert get_in(temperature_call, ["branch_constructor"]) == "WeatherReceived"
   end
 
   @with_block_comment """

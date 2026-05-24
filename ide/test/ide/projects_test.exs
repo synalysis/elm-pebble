@@ -7,8 +7,11 @@ defmodule Ide.ProjectsTest do
   alias Ide.Projects.Project
 
   setup do
+    import Ecto.Query
+
     root = Path.join(System.tmp_dir!(), "ide_projects_test_#{System.unique_integer([:positive])}")
     Application.put_env(:ide, Ide.Projects, projects_root: root)
+    Ide.Repo.delete_all(Project)
     on_exit(fn -> File.rm_rf(root) end)
     :ok
   end
@@ -478,7 +481,7 @@ defmodule Ide.ProjectsTest do
     dirs = Map.fetch!(decoded, "source-directories")
     direct = get_in(decoded, ["dependencies", "direct"]) || %{}
     assert "src" in dirs
-    assert Enum.any?(dirs, &String.ends_with?(&1, "packages/elm-pebble/elm-watch/src"))
+    assert Enum.any?(dirs, &(&1 == Ide.InternalPackages.pebble_elm_src_abs()))
 
     assert "../protocol/src" in dirs
 
@@ -503,11 +506,11 @@ defmodule Ide.ProjectsTest do
     assert "../protocol/src" in phone_dirs
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "phone-pebble-stubs/src"))
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "shared/elm-companion"))
-    assert Enum.any?(phone_dirs, &String.ends_with?(&1, "packages/elm-pebble-companion-core/src"))
+    assert Enum.any?(phone_dirs, &(&1 == Ide.InternalPackages.pebble_companion_core_elm_src_abs()))
 
     assert Enum.any?(
              phone_dirs,
-             &String.ends_with?(&1, "packages/elm-pebble-companion-preferences/src")
+             &(&1 == Ide.InternalPackages.pebble_companion_preferences_elm_src_abs())
            )
 
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "internal_packages/elm-random/src"))
@@ -660,11 +663,11 @@ defmodule Ide.ProjectsTest do
     phone_dirs = Map.fetch!(phone_decoded, "source-directories")
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "phone-pebble-stubs/src"))
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "shared/elm-companion"))
-    assert Enum.any?(phone_dirs, &String.ends_with?(&1, "packages/elm-pebble-companion-core/src"))
+    assert Enum.any?(phone_dirs, &(&1 == Ide.InternalPackages.pebble_companion_core_elm_src_abs()))
 
     assert Enum.any?(
              phone_dirs,
-             &String.ends_with?(&1, "packages/elm-pebble-companion-preferences/src")
+             &(&1 == Ide.InternalPackages.pebble_companion_preferences_elm_src_abs())
            )
 
     refute Enum.any?(phone_dirs, &String.ends_with?(&1, "internal_packages/elm-random/src"))

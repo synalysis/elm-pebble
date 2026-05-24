@@ -327,3 +327,7 @@ if config_env() == :prod do
     """
   end
 end
+
+if config_env() == :test do
+  config :ide, Ide.Auth, mode: :local
+end

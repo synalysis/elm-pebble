@@ -1,5 +1,16 @@
 defmodule IdeWeb.TokenizerControllerTest do
-  use IdeWeb.ConnCase, async: true
+  use IdeWeb.ConnCase, async: false
+
+  setup do
+    original_auth = Application.get_env(:ide, Ide.Auth, [])
+    Application.put_env(:ide, Ide.Auth, Keyword.put(original_auth, :mode, :local))
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.Auth, original_auth)
+    end)
+
+    :ok
+  end
 
   test "POST /api/tokenize returns token payload", %{conn: conn} do
     conn =

@@ -14,6 +14,7 @@ module Pebble.Ui exposing
     , TextOptions
     , TextOverflow(..)
     , UiNode
+    , VectorGraphic
     , WindowNode
     , alignCenter
     , alignLeft

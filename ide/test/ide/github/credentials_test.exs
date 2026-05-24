@@ -1,5 +1,5 @@
 defmodule Ide.GitHub.CredentialsTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Ide.GitHub.Credentials
 

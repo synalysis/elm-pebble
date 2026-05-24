@@ -2479,6 +2479,7 @@ static bool companion_simulator_weather_tuple(const Tuple *tuple) {
 #endif
 }
 
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static bool companion_decode_and_dispatch_snapshots(const ElmcInboxTupleSnapshot *snapshots, uint8_t wire[][ELMC_INBOX_TUPLE_WIRE_BYTES], int tuple_count) {
   CompanionProtocolPhoneToWatchDecoder decoder;
   companion_protocol_phone_to_watch_decoder_init(&decoder);
@@ -2535,6 +2536,7 @@ static bool companion_decode_and_dispatch_snapshots(const ElmcInboxTupleSnapshot
   }
   return false;
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 #define COMPANION_PENDING_FLUSH_MS 250

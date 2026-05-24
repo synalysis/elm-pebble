@@ -210,8 +210,8 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "appMessageSending"
     assert source =~ "sendQueuedAppMessage"
     assert source =~ "drainAppMessageOutbox"
-    assert source =~ "Pebble.sendAppMessage("
-    assert source =~ "setTimeout(drainAppMessageOutbox, 50)"
+    assert source =~ "Pebble.sendAppMessage = function"
+    assert source =~ "setTimeout(drainAppMessageOutbox, 250)"
     refute source =~ "Pebble.sendAppMessage(normalizeOutgoingAppMessage"
   end
 

@@ -2,6 +2,7 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
   use IdeWeb.ConnCase, async: false
 
   alias Ide.Auth.User
+  alias Ide.Png
   alias Ide.Projects
   alias Ide.Repo
 
@@ -260,7 +261,7 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
                "target_type" => "app"
              })
 
-    image = "data:image/png;base64," <> Base.encode64(minimal_png())
+    image = "data:image/png;base64," <> Base.encode64(valid_rgba_png())
 
     conn =
       post(conn, ~p"/api/wasm-emulator/projects/#{project.slug}/screenshot", %{
@@ -277,6 +278,11 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
 
   defp restore_env(key, nil), do: Application.delete_env(:ide, key)
   defp restore_env(key, value), do: Application.put_env(:ide, key, value)
+
+  defp valid_rgba_png do
+    {:ok, png} = Png.encode_rgba(<<255, 255, 255, 255>>, 1, 1)
+    png
+  end
 
   defp minimal_png do
     Base.decode64!(

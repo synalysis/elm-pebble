@@ -61,6 +61,10 @@ defmodule Ide.SettingsTest do
   end
 
   test "persists MCP and ACP access settings" do
+    original_auth = Application.get_env(:ide, Ide.Auth, [])
+    Application.put_env(:ide, Ide.Auth, Keyword.put(original_auth, :mode, :local))
+    on_exit(fn -> Application.put_env(:ide, Ide.Auth, original_auth) end)
+
     temp_path =
       Path.join(System.tmp_dir!(), "ide_settings_test_#{System.unique_integer([:positive])}.json")
 
@@ -159,6 +163,10 @@ defmodule Ide.SettingsTest do
   end
 
   test "rejects invalid MCP HTTP ports" do
+    original_auth = Application.get_env(:ide, Ide.Auth, [])
+    Application.put_env(:ide, Ide.Auth, Keyword.put(original_auth, :mode, :local))
+    on_exit(fn -> Application.put_env(:ide, Ide.Auth, original_auth) end)
+
     temp_path =
       Path.join(System.tmp_dir!(), "ide_settings_test_#{System.unique_integer([:positive])}.json")
 
