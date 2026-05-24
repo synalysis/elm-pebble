@@ -30,6 +30,27 @@ const DEBUG_STORAGE = {
   typeInt: 1,
   typeString: 2
 }
+const DEBUG_SIMULATOR = {
+  compassHeading: 0x454c4d10,
+  dictationText: 0x454c4d11,
+  weatherTemperatureC: 0x454c4d12,
+  weatherConditionWire: 0x454c4d13
+}
+const DEFAULT_SIMULATOR_WEATHER = {
+  temperatureC: 21,
+  condition: "clear"
+}
+const WEATHER_CONDITION_WIRE_CODES = {
+  clear: 1,
+  cloudy: 2,
+  fog: 3,
+  drizzle: 4,
+  rain: 5,
+  snow: 6,
+  showers: 7,
+  storm: 8,
+  unknownweather: 9
+}
 
 const csrfToken = () => document.querySelector("meta[name='csrf-token']")?.getAttribute("content") || ""
 let rfbModulePromise = null
@@ -155,6 +176,19 @@ export class EmbeddedEmulatorHost {
     this.logFlushScheduled = false
     this.destroyed = false
     this.simulatorSettings = null
+    this.lastAppliedSimulatorSettingsJson = null
+    this.simulatorSettingsSource = null
+    this.simulatorSettingsAppliedAt = 0
+    this.weatherInjectTimers = []
+    this.weatherPushTimer = null
+    this.weatherPushRetryTimers = []
+    this.weatherDebugQueue = []
+    this.weatherDebugInFlight = false
+    this.weatherDebugInFlightAt = 0
+    this.weatherDebugAckTimer = null
+    this.weatherDebugFallbackTimer = null
+    this.pendingWeatherRetry = null
+    this.lastSentWeatherJson = null
     this.boundEmulatorButtons = new WeakSet()
     this.syncStateToDom = () => {
       if (this.destroyed) return
@@ -211,6 +245,7 @@ export class EmbeddedEmulatorHost {
     this.state.listeners.add(this.syncStateToDom)
     window.addEventListener("focus", this.handlePageVisible)
     document.addEventListener("visibilitychange", this.handlePageVisible)
+    this.applyInitialSimulatorSettings()
     this.resumeExistingSession()
     this.applyCanvasSize()
     this.syncStateToDom()
@@ -239,6 +274,7 @@ export class EmbeddedEmulatorHost {
     this.bindEmulatorButtons()
     this.updateControlButtons()
     this.applyCanvasSize()
+    this.syncSimulatorSettingsFromDataset()
     if (this.session?.backend_enabled && this.rfb && previousCanvas && previousCanvas !== this.canvas) {
       // #region agent log
       agentDebugLog("initial", "H19", "embedded_emulator.js:updated:canvas_replaced", "emulator canvas replaced during liveview update", {
@@ -275,6 +311,25 @@ export class EmbeddedEmulatorHost {
     this.stopPing()
     this.stopVncReconnect()
     this.stopConfigPopupPolling()
+    this.weatherInjectTimers.forEach(timerId => window.clearTimeout(timerId))
+    this.weatherInjectTimers = []
+    this.weatherPushRetryTimers.forEach(timerId => window.clearTimeout(timerId))
+    this.weatherPushRetryTimers = []
+    if (this.weatherDebugFallbackTimer != null) {
+      window.clearTimeout(this.weatherDebugFallbackTimer)
+      this.weatherDebugFallbackTimer = null
+    }
+    if (this.weatherDebugAckTimer != null) {
+      window.clearTimeout(this.weatherDebugAckTimer)
+      this.weatherDebugAckTimer = null
+    }
+    this.weatherDebugQueue = []
+    this.weatherDebugInFlight = false
+    this.pendingWeatherRetry = null
+    if (this.weatherPushTimer != null) {
+      window.clearTimeout(this.weatherPushTimer)
+      this.weatherPushTimer = null
+    }
     window.removeEventListener("focus", this.handlePageVisible)
     document.removeEventListener("visibilitychange", this.handlePageVisible)
     if (removeListeners) document.removeEventListener("keydown", this.handleConfigKeyDown)
@@ -623,6 +678,7 @@ export class EmbeddedEmulatorHost {
     if (this.session?.id !== installSessionId) return
     const parts = response.result?.parts?.map(part => part.kind).join(", ")
     this.appInstalled = true
+    this.lastSentWeatherJson = null
     this.setStatus(parts ? `PBW installed on embedded emulator (${parts})` : "PBW installed on embedded emulator")
     this.appendLog("native PBW install complete")
   }
@@ -706,12 +762,53 @@ export class EmbeddedEmulatorHost {
         this.handleConfigFrame(data)
         break
       case 0x0d:
-        this.appendLog(data[1] === 0 ? "debug storage command sent" : "debug storage command failed")
+        if (this.weatherDebugAckTimer != null) {
+          window.clearTimeout(this.weatherDebugAckTimer)
+          this.weatherDebugAckTimer = null
+        }
+        if (data[1] === 0) {
+          if (this.pendingWeatherRetry) {
+            const weather = this.pendingWeatherRetry
+            this.appendLog(
+              `weather trace [browser_inject_ack]: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
+            )
+            this.lastSentWeatherJson = JSON.stringify({
+              temperatureC: this.parseSimulatorTemperatureC(weather.temperatureC),
+              condition: weather.condition || "clear"
+            })
+            this.pendingWeatherRetry = null
+          }
+          this.weatherDebugInFlight = false
+          this.drainWeatherDebugQueue()
+        } else {
+          this.appendLog("debug AppMessage to watch failed; retrying weather push")
+          this.lastSentWeatherJson = null
+          this.weatherDebugInFlight = false
+          if (this.pendingWeatherRetry) {
+            const weather = this.pendingWeatherRetry
+            const timerId = window.setTimeout(() => {
+              this.weatherPushRetryTimers = this.weatherPushRetryTimers.filter(id => id !== timerId)
+              this.enqueueWeatherDebugPush(weather, {quiet: true, force: true})
+            }, 800)
+            this.weatherPushRetryTimers.push(timerId)
+          } else {
+            this.drainWeatherDebugQueue()
+          }
+        }
         break
       case 0x0e:
-        if (data[1] !== 0) {
+        if (data[1] === 0) {
+          const weather = this.resolveWeatherSimulatorSettings()
+          this.appendLog(
+            `weather trace [browser_ack]: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
+          )
+        } else {
           this.appendLog("simulator settings sync failed")
+          this.scheduleWeatherPush({quiet: true})
         }
+        break
+      case 0x0f:
+        this.logWeatherTrace(data.slice(1))
         break
       default:
         this.appendLog(`phone frame ${data.byteLength} bytes`)
@@ -745,6 +842,7 @@ export class EmbeddedEmulatorHost {
         if (endpoint === 0x0034 && opcode === 0x00 && payload[0] === 0x01) {
           this.scheduleVncCanvasSample("after_app_start_250ms", 250)
           this.scheduleVncCanvasSample("after_app_start_1500ms", 1500)
+          this.scheduleWeatherSimulatorInject("after_app_start")
         }
         if (endpoint === 0x0030 && opcode === 0x01) {
           this.scheduleVncCanvasSample("after_phone_appmessage_250ms", 250)
@@ -841,8 +939,65 @@ export class EmbeddedEmulatorHost {
     this.sendQemu(QEMU.compass, [(degInt >> 8) & 0xff, degInt & 0xff, valid])
   }
 
-  applySimulatorSettings(settings = {}) {
+  applyInitialSimulatorSettings() {
+    const raw = this.el.dataset.emulatorSimulatorSettings
+    if (!raw) return
+
+    try {
+      this.applySimulatorSettings(JSON.parse(raw), {source: "dataset"})
+      this.lastAppliedSimulatorSettingsJson = raw
+    } catch (_error) {
+      this.appendLog("Could not parse initial simulator settings from page")
+    }
+  }
+
+  simulatorSettingsWeatherKey(settings = this.simulatorSettings) {
+    return this.weatherDebugQueueKey(this.resolveWeatherSimulatorSettings(settings))
+  }
+
+  syncSimulatorSettingsFromDataset() {
+    const raw = this.el.dataset.emulatorSimulatorSettings
+    if (!raw || raw === this.lastAppliedSimulatorSettingsJson) return
+
+    let incoming
+    try {
+      incoming = JSON.parse(raw)
+    } catch (_error) {
+      this.appendLog("Could not parse updated simulator settings from page")
+      return
+    }
+
+    const incomingWeatherKey = this.simulatorSettingsWeatherKey(incoming)
+    const currentWeatherKey = this.simulatorSettingsWeatherKey()
+
+    // LiveView DOM patches can lag behind push_event; don't revert fresher settings.
+    if (
+      this.simulatorSettingsSource === "push_event" &&
+      currentWeatherKey &&
+      incomingWeatherKey !== currentWeatherKey
+    ) {
+      return
+    }
+
+    this.applySimulatorSettings(incoming, {source: "dataset"})
+    this.lastAppliedSimulatorSettingsJson = raw
+  }
+
+  refreshSimulatorSettingsFromDataset() {
+    const raw = this.el.dataset.emulatorSimulatorSettings
+    if (!raw) return
+
+    try {
+      this.simulatorSettings = JSON.parse(raw)
+    } catch (_error) {
+      this.appendLog("Could not parse simulator settings from page dataset")
+    }
+  }
+
+  applySimulatorSettings(settings = {}, options = {}) {
     this.simulatorSettings = settings
+    this.simulatorSettingsSource = options.source || "push_event"
+    this.simulatorSettingsAppliedAt = Date.now()
 
     if (settings.battery_percent != null || settings.charging != null) {
       this.setBattery(settings.battery_percent ?? 88, !!settings.charging)
@@ -864,17 +1019,272 @@ export class EmbeddedEmulatorHost {
       this.sendCompassSample(settings)
     }
 
-    this.sendSimulatorSettingsToPhoneBridge()
+    // Push settings to pypkjs immediately; debounced inject covers watch-side delivery.
+    this.pushSimulatorSettingsToPhoneBridgeNow()
+    this.scheduleWeatherPush({quiet: false})
+
+    this.lastAppliedSimulatorSettingsJson = JSON.stringify(this.simulatorSettingsPayload(settings))
   }
 
-  sendSimulatorSettingsToPhoneBridge() {
-    if (!this.simulatorSettings) return false
+  simulatorSettingsPayload(settings = this.simulatorSettings) {
+    if (!settings || typeof settings !== "object") {
+      return {weather: {...DEFAULT_SIMULATOR_WEATHER}}
+    }
+
+    const weather = this.resolveWeatherSimulatorSettings(settings)
+    return {...settings, weather}
+  }
+
+  pushSimulatorSettingsToPhoneBridgeNow() {
+    const payload = this.simulatorSettingsPayload()
+    const weather = this.resolveWeatherSimulatorSettings(payload)
+    this.appendLog(
+      `weather trace [browser_send]: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
+    )
+    return this.sendSimulatorSettingsToPhoneBridge(payload)
+  }
+
+  scheduleWeatherPush(options = {}) {
+    this.resetWeatherDebugQueueIfStuck("new settings push")
+    this.weatherDebugInFlight = false
+    this.pendingWeatherRetry = null
+    if (this.weatherDebugAckTimer != null) {
+      window.clearTimeout(this.weatherDebugAckTimer)
+      this.weatherDebugAckTimer = null
+    }
+
+    if (this.weatherPushTimer != null) {
+      window.clearTimeout(this.weatherPushTimer)
+    }
+    if (this.weatherDebugFallbackTimer != null) {
+      window.clearTimeout(this.weatherDebugFallbackTimer)
+      this.weatherDebugFallbackTimer = null
+    }
+
+    this.weatherPushTimer = window.setTimeout(() => {
+      this.weatherPushTimer = null
+      const weather = this.resolveWeatherSimulatorSettings()
+      const bridgeSent = this.pushSimulatorSettingsToPhoneBridgeNow()
+      const injectTimerId = window.setTimeout(() => {
+        this.weatherPushRetryTimers = this.weatherPushRetryTimers.filter(id => id !== injectTimerId)
+        const injected = this.enqueueWeatherDebugPush(weather, {quiet: true, force: true})
+        if (!injected) {
+          this.appendLog(
+            `weather trace [browser_inject_skipped]: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"} (queue busy=${this.weatherDebugInFlight})`
+          )
+        }
+      }, 400)
+      this.weatherPushRetryTimers.push(injectTimerId)
+      this.scheduleWeatherDebugFallback(weather, {quiet: options.quiet !== false})
+      if (options.quiet === false) {
+        if (bridgeSent) {
+          this.appendLog(
+            `synced simulator weather via phone bridge: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
+          )
+        } else {
+          this.appendLog("skipped simulator weather sync: phone bridge is not connected")
+        }
+      }
+    }, 150)
+  }
+
+  scheduleWeatherDebugFallback(weather, options = {}) {
+    if (this.weatherDebugFallbackTimer != null) {
+      window.clearTimeout(this.weatherDebugFallbackTimer)
+    }
+
+    this.weatherDebugFallbackTimer = window.setTimeout(() => {
+      this.weatherDebugFallbackTimer = null
+      const sent = this.enqueueWeatherDebugPush(weather, {quiet: true, force: true})
+      if (sent && options.quiet === false) {
+        this.appendLog(
+          `pushed simulator weather to watch: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
+        )
+      }
+    }, 1500)
+  }
+
+  scheduleWeatherDebugAckTimeout() {
+    if (this.weatherDebugAckTimer != null) {
+      window.clearTimeout(this.weatherDebugAckTimer)
+    }
+
+    this.weatherDebugAckTimer = window.setTimeout(() => {
+      this.weatherDebugAckTimer = null
+      if (!this.weatherDebugInFlight) return
+      this.weatherDebugInFlight = false
+      this.drainWeatherDebugQueue()
+    }, 2500)
+  }
+
+  weatherDebugQueueKey(weather) {
+    return JSON.stringify({
+      temperatureC: this.parseSimulatorTemperatureC(weather?.temperatureC),
+      condition: weather?.condition || "clear"
+    })
+  }
+
+  enqueueWeatherDebugPush(weather, options = {}) {
+    if (!this.session?.app_uuid) {
+      if (options.quiet === false) {
+        this.appendLog("skipped simulator weather: install a PBW on the emulator first")
+      }
+      return false
+    }
+    if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) {
+      if (options.quiet === false) {
+        this.appendLog("skipped simulator weather: phone bridge is not connected")
+      }
+      return false
+    }
+
+    const resolved = weather && typeof weather === "object" ? weather : DEFAULT_SIMULATOR_WEATHER
+    const queueKey = this.weatherDebugQueueKey(resolved)
+    if (!options.force && queueKey === this.lastSentWeatherJson) {
+      return false
+    }
+
+    this.weatherDebugQueue = this.weatherDebugQueue.filter(item => item.queueKey !== queueKey)
+    this.weatherDebugQueue.push({weather: resolved, options, queueKey})
+    return this.drainWeatherDebugQueue()
+  }
+
+  drainWeatherDebugQueue() {
+    if (this.weatherDebugInFlight || this.weatherDebugQueue.length === 0) {
+      return false
+    }
+
+    const item = this.weatherDebugQueue.shift()
+    this.weatherDebugInFlight = true
+    this.weatherDebugInFlightAt = Date.now()
+    this.pendingWeatherRetry = item.weather
+    const sent = this.pushWeatherDebugAppMessage(item.weather, {quiet: true})
+    if (!sent) {
+      this.weatherDebugInFlight = false
+      this.weatherDebugQueue.unshift(item)
+      return false
+    }
+
+    this.scheduleWeatherDebugAckTimeout()
+    return true
+  }
+
+  logWeatherTrace(bytes) {
+    try {
+      const trace = JSON.parse(new TextDecoder().decode(bytes))
+      const temp = trace.temperatureC ?? trace.weather?.temperatureC ?? "?"
+      const condition = trace.condition ?? trace.weather?.condition ?? "clear"
+      const detail = trace.detail ? ` (${trace.detail})` : ""
+      this.appendLog(`weather trace [${trace.stage}]: ${temp}°C ${condition}${detail}`)
+    } catch (_error) {
+      this.appendLog("weather trace: could not decode trace frame")
+    }
+  }
+
+  resetWeatherDebugQueueIfStuck(reason) {
+    if (!this.weatherDebugInFlight) return false
+    const ageMs = Date.now() - this.weatherDebugInFlightAt
+    if (ageMs < 2500) return false
+    this.weatherDebugInFlight = false
+    this.pendingWeatherRetry = null
+    if (this.weatherDebugAckTimer != null) {
+      window.clearTimeout(this.weatherDebugAckTimer)
+      this.weatherDebugAckTimer = null
+    }
+    this.appendLog(`weather trace [queue_reset]: prior inject ack timed out (${reason}, ${ageMs}ms)`)
+    return true
+  }
+
+  weatherConditionWireCode(condition) {
+    const normalized = String(condition || "clear").toLowerCase().replace(/[^a-z0-9]+/g, "")
+    return WEATHER_CONDITION_WIRE_CODES[normalized] || WEATHER_CONDITION_WIRE_CODES.clear
+  }
+
+  parseSimulatorTemperatureC(value) {
+    if (value === null || value === undefined || value === "") return null
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? Math.round(parsed) : null
+  }
+
+  resolveWeatherSimulatorSettings(settings = this.simulatorSettings) {
+    if (!settings || typeof settings !== "object") return DEFAULT_SIMULATOR_WEATHER
+
+    const nested = settings.weather
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      return {
+        temperatureC: nested.temperatureC ?? settings.weather_temperatureC ?? DEFAULT_SIMULATOR_WEATHER.temperatureC,
+        condition: nested.condition ?? settings.weather_condition ?? DEFAULT_SIMULATOR_WEATHER.condition,
+        humidityPercent: nested.humidityPercent ?? settings.weather_humidityPercent ?? DEFAULT_SIMULATOR_WEATHER.humidityPercent,
+        pressureHpa: nested.pressureHpa ?? settings.weather_pressureHpa ?? DEFAULT_SIMULATOR_WEATHER.pressureHpa,
+        windKph: nested.windKph ?? settings.weather_windKph ?? DEFAULT_SIMULATOR_WEATHER.windKph
+      }
+    }
+
+    if (
+      settings.weather_temperatureC != null ||
+      settings.weather_condition != null ||
+      settings.weather_humidityPercent != null ||
+      settings.weather_pressureHpa != null ||
+      settings.weather_windKph != null
+    ) {
+      return {
+        temperatureC: settings.weather_temperatureC ?? DEFAULT_SIMULATOR_WEATHER.temperatureC,
+        condition: settings.weather_condition || DEFAULT_SIMULATOR_WEATHER.condition,
+        humidityPercent: settings.weather_humidityPercent ?? DEFAULT_SIMULATOR_WEATHER.humidityPercent,
+        pressureHpa: settings.weather_pressureHpa ?? DEFAULT_SIMULATOR_WEATHER.pressureHpa,
+        windKph: settings.weather_windKph ?? DEFAULT_SIMULATOR_WEATHER.windKph
+      }
+    }
+
+    return DEFAULT_SIMULATOR_WEATHER
+  }
+
+  scheduleWeatherSimulatorInject(reason) {
+    this.weatherInjectTimers.forEach(timerId => window.clearTimeout(timerId))
+    const timerId = window.setTimeout(() => {
+      this.weatherInjectTimers = this.weatherInjectTimers.filter(id => id !== timerId)
+      this.injectWeatherSimulatorSettings(reason)
+    }, 2000)
+    this.weatherInjectTimers = [timerId]
+  }
+
+  injectWeatherSimulatorSettings(reason) {
+    const weather = this.resolveWeatherSimulatorSettings()
+    const sent = this.pushWeatherDebugAppMessage(weather, {quiet: true})
+    if (sent) {
+      this.appendLog(
+        `injected simulator weather (${reason}): ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
+      )
+    }
+  }
+
+  pushWeatherDebugAppMessage(weather, options = {}) {
+    const resolved = weather && typeof weather === "object" ? weather : DEFAULT_SIMULATOR_WEATHER
+    const temperatureC = this.parseSimulatorTemperatureC(resolved.temperatureC)
+    const conditionWire = this.weatherConditionWireCode(resolved.condition)
+    const entries = []
+
+    if (temperatureC != null) {
+      entries.push({key: DEBUG_SIMULATOR.weatherTemperatureC, type: "int", value: temperatureC})
+    }
+    entries.push({key: DEBUG_SIMULATOR.weatherConditionWire, type: "int", value: conditionWire})
+
+    return this.sendDebugAppMessage(entries, options)
+  }
+
+  sendWeatherSimulatorSettings(weather, options = {}) {
+    return this.enqueueWeatherDebugPush(weather, options)
+  }
+
+  sendSimulatorSettingsToPhoneBridge(settings = null) {
+    const payload = settings ?? this.simulatorSettingsPayload()
+    if (!payload) return false
     if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) return false
 
-    const payload = new TextEncoder().encode(JSON.stringify(this.simulatorSettings))
-    const out = new Uint8Array(1 + payload.length)
+    const encoded = new TextEncoder().encode(JSON.stringify(payload))
+    const out = new Uint8Array(1 + encoded.length)
     out[0] = 0x0e
-    out.set(payload, 1)
+    out.set(encoded, 1)
     this.phoneSocket.send(out)
     return true
   }
@@ -914,6 +1324,10 @@ export class EmbeddedEmulatorHost {
     this.appendLog("requested watch storage snapshot")
   }
 
+  phoneBridgeSimulatorSettings() {
+    return this.simulatorSettingsPayload()
+  }
+
   async installPbwViaPhoneBridge() {
     if (!this.session?.artifact_path) return
     if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) {
@@ -922,17 +1336,23 @@ export class EmbeddedEmulatorHost {
     }
 
     this.setStatus("Refreshing phone companion from PBW...")
+    this.refreshSimulatorSettingsFromDataset()
     const response = await fetch(this.session.artifact_path)
     if (!response.ok) throw new Error(`Could not fetch PBW for phone bridge: ${response.statusText}`)
 
     const pbw = new Uint8Array(await response.arrayBuffer())
-    const payload = new Uint8Array(1 + pbw.length)
+    const settingsJson = new TextEncoder().encode(JSON.stringify(this.phoneBridgeSimulatorSettings()))
+    const payload = new Uint8Array(1 + 1 + 4 + settingsJson.length + pbw.length)
+    const view = new DataView(payload.buffer)
     payload[0] = 0x04
-    payload.set(pbw, 1)
+    payload[1] = 0x01
+    view.setUint32(2, settingsJson.length, false)
+    payload.set(settingsJson, 6)
+    payload.set(pbw, 6 + settingsJson.length)
 
     const result = this.waitForPypkjsInstall()
     this.phoneSocket.send(payload)
-    this.appendLog(`sent PBW to phone bridge companion cache (${pbw.length} bytes)`)
+    this.appendLog(`sent PBW to phone bridge companion cache (${pbw.length} bytes, settings ${settingsJson.length} bytes)`)
     await result
     this.appendLog("phone bridge companion cache refresh complete")
     this.sendSimulatorSettingsToPhoneBridge()

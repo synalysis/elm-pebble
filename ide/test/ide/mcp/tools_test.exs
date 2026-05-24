@@ -3199,4 +3199,79 @@ defmodule Ide.Mcp.ToolsTest do
     assert telemetry.drift_seq == expected_seq
     assert telemetry.drift_band == expected_band
   end
+
+  test "vector resource tools convert, import, list, preview, and delete" do
+    slug = "mcp-vectors-#{System.unique_integer([:positive])}"
+
+    assert {:ok, _} =
+             Tools.call(
+               "projects.create",
+               %{"name" => "Vectors", "slug" => slug, "target_type" => "watchface", "template" => "starter"},
+               [:edit]
+             )
+
+    svg = ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><rect x="2" y="2" width="16" height="16" fill="black"/></svg>)
+
+    assert {:ok, converted} =
+             Tools.call("resources.vectors.convert", %{"svg" => svg, "color_mode" => "truncate"}, [:read])
+
+    assert converted["magic"] == "PDCI"
+    assert is_binary(converted["bytes_base64"])
+    assert converted["report"]["stats"]["commands"] == 1
+
+    frame_a = ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="1" y="1" width="4" height="4" fill="black"/></svg>)
+    frame_b = ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="5" y="5" width="4" height="4" fill="black"/></svg>)
+
+    assert {:ok, sequence} =
+             Tools.call(
+               "resources.vectors.convert_sequence",
+               %{"frames" => [frame_a, frame_b], "frame_duration_ms" => 80},
+               [:read]
+             )
+
+    assert sequence["magic"] == "PDCS"
+    assert sequence["frame_count"] == 2
+
+    assert {:ok, imported} =
+             Tools.call(
+               "resources.vectors.import",
+               %{"slug" => slug, "svg" => svg, "name" => "Square.svg"},
+               [:edit]
+             )
+
+    assert imported["entry"]["ctor"] == "Square"
+    assert is_binary(imported["preview_svg"])
+
+    assert {:ok, imported_sequence} =
+             Tools.call(
+               "resources.vectors.import_sequence",
+               %{
+                 "slug" => slug,
+                 "frames" => [frame_a, frame_b],
+                 "name" => "Anim.pdc",
+                 "frame_duration_ms" => 80
+               },
+               [:edit]
+             )
+
+    assert imported_sequence["entry"]["kind"] == "sequence"
+    assert imported_sequence["entry"]["frames"] == 2
+
+    assert {:ok, listed} = Tools.call("resources.vectors.list", %{"slug" => slug}, [:read])
+    ctors = Enum.map(listed["entries"], & &1["ctor"])
+    assert "Square" in ctors
+    assert "Anim" in ctors
+
+    assert {:ok, preview} =
+             Tools.call("resources.vectors.preview", %{"slug" => slug, "ctor" => "Square"}, [:read])
+
+    assert preview["kind"] == "image"
+    assert String.contains?(preview["svg"], "<svg")
+
+    assert {:ok, deleted} =
+             Tools.call("resources.vectors.delete", %{"slug" => slug, "ctor" => "Square"}, [:edit])
+
+    assert deleted["deleted"] == "Square"
+    refute Enum.any?(deleted["entries"], &(&1["ctor"] == "Square"))
+  end
 end

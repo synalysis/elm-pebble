@@ -3,10 +3,14 @@ module Pebble.Ui.Resources exposing
     , BitmapInfo
     , Font(..)
     , FontInfo
+    , VectorGraphic(..)
+    , VectorGraphicInfo
     , allBitmaps
     , allFonts
+    , allVectorGraphics
     , bitmapInfo
     , fontInfo
+    , vectorInfo
     )
 
 
@@ -55,3 +59,25 @@ fontInfo font =
     case font of
         DefaultFont ->
             { font = DefaultFont, name = "DefaultFont", height = 0 }
+
+
+type VectorGraphic
+    = NoVectorGraphic
+
+
+type alias VectorGraphicInfo =
+    { vector : VectorGraphic
+    , name : String
+    }
+
+
+allVectorGraphics : List VectorGraphic
+allVectorGraphics =
+    [ NoVectorGraphic ]
+
+
+vectorInfo : VectorGraphic -> VectorGraphicInfo
+vectorInfo vector =
+    case vector of
+        NoVectorGraphic ->
+            { vector = NoVectorGraphic, name = "NoVectorGraphic" }

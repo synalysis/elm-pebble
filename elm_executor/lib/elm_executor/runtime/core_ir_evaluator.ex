@@ -723,8 +723,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec eval_ui_builtin(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
-  defp eval_ui_builtin(name, values) when is_binary(name) and is_list(values) do
+  @spec eval_ui_builtin(String.t(), EvalTypes.runtime_values(), map()) :: EvalTypes.builtin_eval_result()
+  defp eval_ui_builtin(name, values, context) when is_binary(name) and is_list(values) do
     normalized = normalize_builtin_name(name)
 
     case {normalized, values} do
@@ -959,6 +959,42 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
                &expr_node/1
              )
            )}
+        else
+          _ -> :no_builtin
+        end
+
+      {"pebble.ui.drawvectorat", [vector, origin]} ->
+        with {:ok, normalized_vector_id} <- normalize_vector_id(vector, context),
+             {:ok, {x, y}} <- normalize_point(origin) do
+          {:ok,
+           ui_node("drawVectorAt", Enum.map([normalized_vector_id, x, y], &expr_node/1))}
+        else
+          _ -> :no_builtin
+        end
+
+      {"pebble.ui.drawvectorat", [vector, x, y]} ->
+        with {:ok, normalized_vector_id} <- normalize_vector_id(vector, context),
+             true <- is_integer(x) and is_integer(y) do
+          {:ok,
+           ui_node("drawVectorAt", Enum.map([normalized_vector_id, x, y], &expr_node/1))}
+        else
+          _ -> :no_builtin
+        end
+
+      {"pebble.ui.drawvectorsequenceat", [vector, origin]} ->
+        with {:ok, normalized_vector_id} <- normalize_vector_id(vector, context),
+             {:ok, {x, y}} <- normalize_point(origin) do
+          {:ok,
+           ui_node("drawVectorSequenceAt", Enum.map([normalized_vector_id, x, y], &expr_node/1))}
+        else
+          _ -> :no_builtin
+        end
+
+      {"pebble.ui.drawvectorsequenceat", [vector, x, y]} ->
+        with {:ok, normalized_vector_id} <- normalize_vector_id(vector, context),
+             true <- is_integer(x) and is_integer(y) do
+          {:ok,
+           ui_node("drawVectorSequenceAt", Enum.map([normalized_vector_id, x, y], &expr_node/1))}
         else
           _ -> :no_builtin
         end
@@ -1401,7 +1437,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
              indexed_function_defined?(context, "Pebble.Ui", function_name, length(values)) do
           :no_builtin
         else
-          eval_ui_builtin(normalized_full, values)
+          eval_ui_builtin(normalized_full, values, context)
         end
 
       "pebble.ui.color" ->
@@ -2189,7 +2225,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         map2_dispatch(a, b, c, env, context, stack)
 
       _ ->
-        eval_ui_builtin(name, values)
+        eval_ui_builtin(name, values, context)
     end
   end
 
@@ -2688,7 +2724,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       {:function_ref, name} when is_binary(name) ->
         case call_function(name, Enum.map(args, &literal_or_expr/1), env, context, stack) do
           {:error, {:unknown_function, _}} = error ->
-            if constructor_name?(name), do: {:ok, constructor_value(name, args)}, else: error
+            if constructor_name?(name),
+              do: {:ok, constructor_value(name, args, constructor_tag_for_ctor(name, context))},
+              else: error
 
           other ->
             other
@@ -2697,7 +2735,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       name when is_binary(name) ->
         case call_function(name, Enum.map(args, &literal_or_expr/1), env, context, stack) do
           {:error, {:unknown_function, _}} = error ->
-            if constructor_name?(name), do: {:ok, constructor_value(name, args)}, else: error
+            if constructor_name?(name),
+              do: {:ok, constructor_value(name, args, constructor_tag_for_ctor(name, context))},
+              else: error
 
           other ->
             other
@@ -2718,8 +2758,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     |> String.match?(~r/^[A-Z]/)
   end
 
-  @spec constructor_value(String.t(), list()) :: map()
-  defp constructor_value(name, args) when is_list(args) do
+  @spec constructor_value(String.t(), list(), integer() | nil) :: map()
+  defp constructor_value(name, args, tag \\ nil) when is_list(args) do
     ctor_label =
       cond do
         is_binary(name) ->
@@ -2732,14 +2772,16 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           inspect(name)
       end
 
-    %{"ctor" => ctor_label, "args" => args}
+    value = %{"ctor" => ctor_label, "args" => args}
+
+    if is_integer(tag), do: Map.put(value, "tag", tag), else: value
   end
 
   @spec tagged_constructor_value(integer(), EvalTypes.runtime_values(), map()) :: EvalTypes.runtime_value()
   defp tagged_constructor_value(tag, args, context)
        when is_integer(tag) and is_list(args) and is_map(context) do
     case constructor_name_for_tag(tag, context) do
-      name when is_binary(name) -> constructor_value(name, args)
+      name when is_binary(name) -> constructor_value(name, args, tag)
       _ -> {tag, constructor_payload(args)}
     end
   end
@@ -2748,7 +2790,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
        when is_integer(tag) and is_list(args) and is_map(context) do
     case constructor_name_for_tag(tag, context) do
       name when is_binary(name) ->
-        constructor_value(name, [payload | args])
+        constructor_value(name, [payload | args], tag)
 
       _ ->
         {tag, constructor_payload([payload | args])}
@@ -2799,7 +2841,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
             value -> [value]
           end
 
-        %{"ctor" => ctor, "args" => args}
+        %{"ctor" => ctor, "args" => args, "tag" => tag}
 
       _ ->
         {tag, payload}
@@ -2809,7 +2851,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp normalize_union_value(tag, union, context)
        when is_integer(tag) and is_binary(union) and is_map(context) do
     case constructor_entry_for_union_tag(union, tag, context) do
-      %{ctor: ctor} -> %{"ctor" => ctor, "args" => []}
+      %{ctor: ctor} -> %{"ctor" => ctor, "args" => [], "tag" => tag}
       _ -> tag
     end
   end
@@ -3368,6 +3410,68 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   end
 
   defp normalize_bitmap_id(_), do: :error
+
+  @spec vector_resource_id_from_value(EvalTypes.runtime_value(), map()) ::
+          {:ok, non_neg_integer()} | :error
+  def vector_resource_id_from_value(value, context \\ %{}), do: normalize_vector_id(value, context)
+
+  @spec normalize_vector_id(EvalTypes.runtime_value(), map()) :: {:ok, non_neg_integer()} | :error
+  defp normalize_vector_id(value, context)
+
+  defp normalize_vector_id(value, _context) when is_integer(value), do: {:ok, max(value, 0)}
+
+  defp normalize_vector_id(%{"ctor" => ctor, "args" => args} = value, context)
+       when is_map(value) and is_list(args) do
+    vector_resource_id_from_ctor(ctor, Map.get(value, "tag"), context)
+  end
+
+  defp normalize_vector_id(%{ctor: ctor, args: args} = value, context)
+       when is_map(value) and is_list(args) do
+    vector_resource_id_from_ctor(ctor, Map.get(value, :tag), context)
+  end
+
+  defp normalize_vector_id(%{"tag" => tag}, _context) when is_integer(tag),
+    do: {:ok, max(tag, 0)}
+
+  defp normalize_vector_id(%{tag: tag}, _context) when is_integer(tag), do: {:ok, max(tag, 0)}
+
+  defp normalize_vector_id(_, _context), do: :error
+
+  @spec vector_resource_id_from_ctor(String.t() | atom(), integer() | nil, map()) ::
+          {:ok, non_neg_integer()} | :error
+  defp vector_resource_id_from_ctor(ctor, tag, context) do
+    ctor = to_string(ctor)
+
+    cond do
+      ctor in ["NoVectorGraphic"] ->
+        {:ok, 0}
+
+      is_integer(tag) ->
+        {:ok, tag + 1}
+
+      true ->
+        case constructor_tag_for_ctor(ctor, context) do
+          tag when is_integer(tag) -> {:ok, tag + 1}
+          _ -> :error
+        end
+    end
+  end
+
+  @spec constructor_tag_for_ctor(String.t() | atom(), map()) :: integer() | nil
+  defp constructor_tag_for_ctor(ctor, context) when is_map(context) do
+    ctor = to_string(ctor)
+
+    context
+    |> Map.get(:constructor_tags, [])
+    |> Enum.filter(fn entry -> to_string(Map.get(entry, :ctor) || "") == ctor end)
+    |> case do
+      [%{tag: tag}] -> tag
+      entries when is_list(entries) and entries != [] -> Map.get(List.first(entries), :tag)
+      _ -> nil
+    end
+  end
+
+  defp constructor_tag_for_ctor(_ctor, _context), do: nil
 
   @spec normalize_font_id(EvalTypes.runtime_value()) :: {:ok, non_neg_integer()} | :error
   defp normalize_font_id(value) when is_integer(value), do: {:ok, value}

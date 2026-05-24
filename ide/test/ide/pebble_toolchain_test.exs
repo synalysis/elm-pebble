@@ -91,8 +91,10 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "write_emulator_build_flags"
     assert source =~ "elmc_emulator_build_flags.h"
     assert source =~ "ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1"
+    assert source =~ "ELMC_PEBBLE_RUNTIME_LOGS 1"
     assert template =~ ~s(#include "elmc_emulator_build_flags.h")
     assert template =~ "emulator_storage_snapshot_callback"
+    assert template =~ "companion_inbox_log"
     assert template =~ "ELMC_DEBUG_STORAGE_OP_SNAPSHOT"
   end
 
@@ -221,6 +223,35 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "function handleCalendarCommand(request)"
     assert source =~ ~S/deliverCalendarNext(requestId, events.length > 0 ? events[0] : null)/
     refute source =~ "Calendar data unavailable from this Pebble companion runtime"
+  end
+
+  test "Elm companion index serves weather bridge and Http simulator data from settings" do
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+
+    assert source =~ "function handleWeatherCommand(request)"
+    assert source =~ "function weatherFromSettings()"
+    assert source =~ "function normalizeCompanionSimulatorSettings("
+    assert source =~ "function deliverWeatherToWatch()"
+    assert source =~ "function simulatedHttpResponse(method"
+    assert source =~ "deliverWeatherCurrent"
+    assert source =~ "applyPendingCompanionSimulatorSettings();"
+    refute source =~ "deliverWeatherToWatchWithRetry();"
+    refute source =~ "if (!applyPendingCompanionSimulatorSettings())"
+    assert source =~ "function syncCompanionSimulatorSettingsFromGlobal()"
+    assert source =~ "function currentCompanionSimulatorSettings()"
+    assert source =~ "__elmPebbleCompanionSimulatorSettings"
+    assert source =~ "function applyPendingCompanionSimulatorSettings()"
+    assert source =~ "function companionGlobalRoot()"
+    assert source =~ "companionGlobalRoot().companionApplySimulatorSettings = companionApplySimulatorSettings"
+    assert source =~ "companionSimulatorSettingsReady"
+    assert source =~ "function bootElmCompanionWhenReady"
+    assert source =~ "lastDeliveredCompanionWeatherSignature"
+    assert source =~ "function deliverWeatherToWatch()"
+    assert source =~ "function sendImmediateAppMessage"
+    assert source =~ "deliverWeatherToWatch = deliverWeatherToWatch"
+    refute source =~ "deliverWeatherToWatch();\n        lastDeliveredCompanionWeatherSignature"
+    refute source =~ "requestCompanionWeatherRefresh();"
+    refute source =~ "Weather data unavailable from this Pebble companion runtime"
   end
 
   test "companion build copies full pkjs template with calendar support" do
@@ -540,5 +571,18 @@ defmodule Ide.PebbleToolchainTest do
 
     generated_h = File.read!(Path.join(package.app_root, "src/c/elmc/c/elmc_generated.h"))
     refute generated_h =~ "ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW"
+  end
+
+  test "vector resource staging preserves manifest order for elm constructor tags" do
+    source = File.read!("lib/ide/pebble_toolchain.ex")
+
+    vector_section =
+      source
+      |> String.split("defp stage_vector_resources")
+      |> Enum.at(1)
+      |> String.split("defp stage_")
+      |> hd()
+
+    refute vector_section =~ ~s/Enum.sort_by(&to_string(Map.get(&1, "ctor", "")))/
   end
 end

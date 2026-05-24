@@ -198,8 +198,8 @@ init launchContext =
         , PebbleVibes.longPulse
         , PebbleVibes.doublePulse
         , PebbleVibes.pattern [ 100, 50, 100 ]
-        , PebbleDataLog.logBytes (PebbleDataLog.Tag 42) [ 1, 2, 3 ]
-        , PebbleDataLog.logInt32 (PebbleDataLog.Tag 43) 9001
+        , PebbleDataLog.logBytes (PebbleDataLog.tag 42) [ 1, 2, 3 ]
+        , PebbleDataLog.logInt32 (PebbleDataLog.tag 43) 9001
         , PebbleCompass.current GotCompassHeading
         , PebbleDictation.start
         , PebbleDictation.stop

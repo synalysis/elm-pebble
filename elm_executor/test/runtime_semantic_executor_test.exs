@@ -2032,6 +2032,120 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
            end)
   end
 
+  test "view_output includes drawVectorAt primitive" do
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: "module Main exposing (main)\n",
+      introspect: %{
+        "view_tree" => %{
+          "type" => "root",
+          "children" => [
+            %{
+              "type" => "drawVectorAt",
+              "children" => [
+                %{"type" => "expr", "value" => 1},
+                %{"type" => "expr", "value" => 8},
+                %{"type" => "expr", "value" => 16}
+              ]
+            }
+          ]
+        }
+      },
+      current_model: %{"runtime_model" => %{}},
+      current_view_tree: %{},
+      message: "Tick",
+      update_branches: ["Tick"]
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert result.view_output == [
+             %{"kind" => "vector_at", "vector_id" => 1, "x" => 8, "y" => 16}
+           ]
+  end
+
+  test "view_output resolves drawVectorAt vector constructor without explicit tag field" do
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: "module Main exposing (main)\n",
+      elm_executor_core_ir: %{
+        "modules" => [
+          %{
+            "name" => "Pebble.Ui.Resources",
+            "unions" => %{
+              "VectorGraphic" => %{
+                "tags" => %{
+                  "TangramBird" => 0,
+                  "TangramComet" => 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      introspect: %{
+        "view_tree" => %{
+          "type" => "root",
+          "children" => [
+            %{
+              "type" => "drawVectorAt",
+              "children" => [
+                %{"type" => "expr", "value" => %{"ctor" => "TangramBird", "args" => []}},
+                %{"type" => "expr", "value" => 8},
+                %{"type" => "expr", "value" => 16}
+              ]
+            }
+          ]
+        }
+      },
+      current_model: %{"runtime_model" => %{}},
+      current_view_tree: %{},
+      message: "Tick",
+      update_branches: ["Tick"]
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert result.view_output == [
+             %{"kind" => "vector_at", "vector_id" => 1, "x" => 8, "y" => 16}
+           ]
+  end
+
+  test "view_output includes drawVectorSequenceAt primitive" do
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: "module Main exposing (main)\n",
+      introspect: %{
+        "view_tree" => %{
+          "type" => "root",
+          "children" => [
+            %{
+              "type" => "drawVectorSequenceAt",
+              "children" => [
+                %{"type" => "expr", "value" => 2},
+                %{"type" => "expr", "value" => 12},
+                %{"type" => "expr", "value" => 24}
+              ]
+            }
+          ]
+        }
+      },
+      current_model: %{"runtime_model" => %{}},
+      current_view_tree: %{},
+      message: "Tick",
+      update_branches: ["Tick"]
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert result.view_output == [
+             %{"kind" => "vector_sequence_at", "vector_id" => 2, "x" => 12, "y" => 24}
+           ]
+  end
+
   test "runtime view_tree is evaluated from core_ir view function when available" do
     core_ir = %{
       "modules" => [

@@ -1,0 +1,152 @@
+defmodule Ide.Debugger.HttpSimulator do
+  @moduledoc false
+
+  @spec simulated_response(map(), map() | nil) :: {:ok, map()} | :skip
+  def simulated_response(%{"expect" => %{"kind" => "json", "decoder" => decoder}} = _command, weather)
+      when is_map(weather) and map_size(weather) > 0 and not is_nil(decoder) do
+    case build_json_body(decoder, weather) do
+      body when is_map(body) and map_size(body) > 0 ->
+        {:ok, %{"status" => 200, "body" => Jason.encode!(body)}}
+
+      _ ->
+        :skip
+    end
+  end
+
+  def simulated_response(_command, _weather), do: :skip
+
+  @spec build_json_body(term(), map()) :: map()
+  def build_json_body(decoder, weather) when is_map(weather) do
+    decoder_object(decoder, weather)
+  end
+
+  def build_json_body(_decoder, _weather), do: %{}
+
+  @leaf_types [:float, :int, :string, :bool, :value]
+
+  defp decoder_object({:json_decoder, {:field, field, inner}}, weather) when is_binary(field) do
+    case decoder_object(inner, weather) do
+      %{} = nested when map_size(nested) == 0 -> %{}
+      value when is_map(value) -> %{field => value}
+      value -> %{field => value}
+    end
+  end
+
+  defp decoder_object({:json_decoder, {:map, _fun, decoders}}, weather) when is_list(decoders) do
+    results = Enum.map(decoders, &decoder_object(&1, weather))
+    merged = merge_objects(results)
+
+    case {merged, results} do
+      {%{} = empty, [single]} when map_size(empty) == 0 and not is_map(single) ->
+        single
+
+      _ ->
+        merged
+    end
+  end
+
+  defp decoder_object({:json_decoder, {:and_then, _fun, inner}}, weather),
+    do: decoder_object(inner, weather)
+
+  defp decoder_object({:json_decoder, {:list, inner}}, weather) do
+    [decoder_object(inner, weather)]
+  end
+
+  defp decoder_object({:json_decoder, {:array, inner}}, weather) do
+    [decoder_object(inner, weather)]
+  end
+
+  defp decoder_object({:json_decoder, {:index, _index, inner}}, weather),
+    do: decoder_object(inner, weather)
+
+  defp decoder_object({:json_decoder, {:succeed, value}}, _weather), do: value
+
+  defp decoder_object({:json_decoder, type}, weather) when type in @leaf_types,
+    do: leaf_value(nil, type, weather)
+
+  defp decoder_object(_decoder, _weather), do: %{}
+
+  defp merge_objects(objects) when is_list(objects) do
+    Enum.reduce(objects, %{}, fn
+      object, acc when is_map(object) -> Map.merge(acc, object)
+      _other, acc -> acc
+    end)
+  end
+
+  @spec leaf_value(String.t() | nil, atom(), map()) :: term()
+  defp leaf_value(field, :float, weather), do: float_value(field, weather)
+  defp leaf_value(field, :int, weather), do: int_value(field, weather)
+  defp leaf_value(_field, :string, weather), do: to_string(Map.get(weather, "condition") || "clear")
+  defp leaf_value(_field, :bool, _weather), do: true
+  defp leaf_value(_field, :value, weather), do: weather
+
+  defp float_value(field, weather) do
+    value =
+      cond do
+        field in ["temperature_2m", "temperature", "temperatureC"] ->
+          Map.get(weather, "temperatureC") || 0
+
+        field in ["relative_humidity_2m", "humidity", "humidityPercent"] ->
+          Map.get(weather, "humidityPercent") || 0
+
+        field in ["surface_pressure", "pressure", "pressureHpa"] ->
+          Map.get(weather, "pressureHpa") || 0
+
+        field in ["wind_speed_10m", "wind", "windKph"] ->
+          Map.get(weather, "windKph") || 0
+
+        true ->
+          Map.get(weather, "temperatureC") || 0
+      end
+
+    to_float(value)
+  end
+
+  defp int_value(field, weather) do
+    cond do
+      field in ["weather_code", "condition_code", "condition"] ->
+        condition_weather_code(Map.get(weather, "condition"))
+
+      field in ["relative_humidity_2m", "humidity", "humidityPercent"] ->
+        Map.get(weather, "humidityPercent") || 0
+
+      field in ["surface_pressure", "pressure", "pressureHpa"] ->
+        Map.get(weather, "pressureHpa") || 0
+
+      field in ["wind_speed_10m", "wind", "windKph"] ->
+        Map.get(weather, "windKph") || 0
+
+      true ->
+        condition_weather_code(Map.get(weather, "condition"))
+    end
+  end
+
+  @spec condition_weather_code(term()) :: integer()
+  def condition_weather_code(condition) do
+    # Open-Meteo WMO weather_code values for simulated HTTP JSON bodies.
+    # Companion apps decode these with openMeteoConditionFromCode, not protocol wire codes.
+    case to_string(condition || "clear") |> String.downcase() do
+      "clear" -> 0
+      "cloudy" -> 2
+      "fog" -> 45
+      "drizzle" -> 51
+      "rain" -> 61
+      "snow" -> 71
+      "showers" -> 80
+      "storm" -> 95
+      _ -> 0
+    end
+  end
+
+  defp to_float(value) when is_float(value), do: value
+  defp to_float(value) when is_integer(value), do: value * 1.0
+
+  defp to_float(value) when is_binary(value) do
+    case Float.parse(String.trim(value)) do
+      {float, _} -> float
+      :error -> 0.0
+    end
+  end
+
+  defp to_float(_value), do: 0.0
+end

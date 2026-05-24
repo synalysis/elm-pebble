@@ -38,6 +38,7 @@ This matrix tracks the app-focused subset for Foundation, Graphics, and User Int
 | Vibes | `Pebble.Vibes` | implemented | command encoding (short/long/double pulse + custom patterns) |
 | Data logging | `Pebble.DataLog` | implemented | one-shot command encoding (`logBytes`, `logInt32`) |
 | App focus | `Pebble.AppFocus` | implemented | subscription bitmask + typed state dispatch |
+| Unobstructed area | `Pebble.UnobstructedArea` | implemented | timeline peek subscriptions + `currentBounds` cmd |
 | Compass | `Pebble.Compass` | implemented | peek command + subscription; `LaunchContext.hasCompass` gating |
 | Dictation | `Pebble.Dictation` | implemented | start/stop commands + status/result subscriptions |
 | Light / backlight | `Pebble.Light` | implemented | command encoding |

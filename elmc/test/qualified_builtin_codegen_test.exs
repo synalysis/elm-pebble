@@ -1492,6 +1492,39 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert generated_c =~ "elmc_fn_Main_nativeOnlyHelper_native(7)"
   end
 
+  test "native callees forward-declare non-native top-level constants in stripped builds" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/native_constant_forward_decl_project", __DIR__)
+    out_dir = Path.expand("tmp/native_constant_forward_decl_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), native_constant_forward_decl_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_native_wrappers: true
+             })
+
+    generated_h = File.read!(Path.join(out_dir, "c/elmc_generated.h"))
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_h =~ "elmc_fn_Main_figureOriginOffsetX("
+    assert generated_h =~ "elmc_fn_Main_figureOriginOffsetY("
+    refute generated_h =~ "elmc_fn_Main_vectorDrawOrigin("
+
+    native_pos = :binary.match(generated_c, "elmc_fn_Main_vectorDrawOrigin_native")
+    offset_x_pos = :binary.match(generated_c, "ElmcValue *elmc_fn_Main_figureOriginOffsetX(")
+
+    assert native_pos != :nomatch
+    assert offset_x_pos != :nomatch
+    assert elem(native_pos, 0) < elem(offset_x_pos, 0)
+  end
+
   test "unreachable direct command helpers are not emitted in stripped builds" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/unreachable_direct_command_project", __DIR__)
@@ -3035,6 +3068,81 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     """
   end
 
+  defp native_constant_forward_decl_source do
+    """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Ui as PebbleUi
+    import Pebble.Ui.Color as PebbleColor
+    import Pebble.Ui.Resources as UiResources
+
+
+    type alias Model =
+        { scale : Int }
+
+
+    type Msg
+        = NoOp
+
+
+    init : PebblePlatform.LaunchContext -> ( Model, Cmd Msg )
+    init _ =
+        ( { scale = 100 }, Cmd.none )
+
+
+    update : Msg -> Model -> ( Model, Cmd Msg )
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions : Model -> Sub Msg
+    subscriptions _ =
+        Sub.none
+
+
+    scaled : Int -> Int -> Int
+    scaled scale value =
+        (value * scale) // 100
+
+
+    figureOriginOffsetX : Int
+    figureOriginOffsetX =
+        66
+
+
+    figureOriginOffsetY : Int
+    figureOriginOffsetY =
+        58
+
+
+    vectorDrawOrigin : Int -> Int
+    vectorDrawOrigin scale =
+        scaled scale figureOriginOffsetX + scaled scale figureOriginOffsetY
+
+
+    view : Model -> PebbleUi.UiNode
+    view model =
+        PebbleUi.windowStack
+            [ PebbleUi.window 1
+                [ PebbleUi.canvasLayer 1
+                    [ PebbleUi.textInt UiResources.DefaultFont { x = 0, y = 0 } (vectorDrawOrigin model.scale) ]
+                ]
+            ]
+
+
+    main : Program Decode.Value Model Msg
+    main =
+        PebblePlatform.watchface
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+  end
+
   defp native_only_wrapper_source do
     """
     module Main exposing (main)
@@ -3087,6 +3195,88 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     main : Program Decode.Value Model Msg
     main =
         PebblePlatform.watchface
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+  end
+
+  test "maybe record fields in tuple case patterns use boxed tuple access" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/maybe_tuple_case_project", __DIR__)
+    out_dir = Path.expand("tmp/maybe_tuple_case_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), maybe_tuple_case_source())
+
+    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    weather_string_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_weatherString")
+      |> List.last()
+      |> String.split("ElmcValue *elmc_fn_", parts: 2)
+      |> hd()
+
+    refute weather_string_body =~ "elmc_tuple2_ints(ELMC_RECORD_GET_INDEX_INT"
+    assert weather_string_body =~ "elmc_record_get_index"
+  end
+
+  defp maybe_tuple_case_source do
+    """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+
+
+    type alias Model =
+        { temperature : Maybe Int
+        , condition : Maybe Int
+        }
+
+
+    type Msg
+        = Tick
+
+
+    init _ =
+        ( { temperature = Nothing, condition = Nothing }, Cmd.none )
+
+
+    update msg model =
+        case msg of
+            Tick ->
+                ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    weatherString : Model -> String
+    weatherString model =
+        case ( model.temperature, model.condition ) of
+            ( Just _, Just _ ) ->
+                "Ready"
+
+            _ ->
+                "Loading..."
+
+
+    view model =
+        Ui.root [ Ui.text 0 { x = 0, y = 0 } (weatherString model) ]
+
+
+    main =
+        Platform.watchProgram
             { init = init
             , update = update
             , view = view

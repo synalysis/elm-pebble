@@ -294,8 +294,6 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
       end)
   end
 
-  defp trigger_matches_contract?(_normalized, _contract), do: false
-
   @spec normalize_trigger(String.t()) :: String.t()
   defp normalize_trigger(trigger) when is_binary(trigger) do
     trigger

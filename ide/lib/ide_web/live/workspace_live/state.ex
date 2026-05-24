@@ -16,6 +16,7 @@ defmodule IdeWeb.WorkspaceLive.State do
   @type project_assign_data :: %{
           required(:tree) => list(),
           required(:bitmap_resources) => list(),
+          optional(:vector_resources) => list(),
           required(:font_sources) => list(),
           required(:font_resources) => list(),
           required(:screenshots) => list(),
@@ -188,6 +189,8 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:auto_format_last_result, nil)
     |> assign(:bitmap_resources, [])
     |> assign(:bitmap_upload_output, nil)
+    |> assign(:vector_resources, [])
+    |> assign(:vector_upload_output, nil)
     |> assign(:font_sources, [])
     |> assign(:font_resources, [])
     |> assign(:font_upload_output, nil)
@@ -199,6 +202,11 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:diagnostics, [])
     |> allow_upload(:bitmap,
       accept: ~w(.png .bmp .jpg .jpeg .gif .webp),
+      max_entries: 10,
+      max_file_size: 2_500_000
+    )
+    |> allow_upload(:vector,
+      accept: ~w(.pdc .svg),
       max_entries: 10,
       max_file_size: 2_500_000
     )
@@ -238,6 +246,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:tree, Map.fetch!(data, :tree))
     |> assign(:companion_app_present, Map.get(data, :companion_app_present, false))
     |> assign(:bitmap_resources, Map.fetch!(data, :bitmap_resources))
+    |> assign(:vector_resources, Map.get(data, :vector_resources, []))
     |> assign(:font_sources, Map.fetch!(data, :font_sources))
     |> assign(:font_resources, Map.fetch!(data, :font_resources))
     |> assign(:screenshots, Map.fetch!(data, :screenshots))

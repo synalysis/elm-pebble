@@ -33,7 +33,9 @@ defmodule Elmc.Backend.Pebble do
     rotated_bitmap: 26,
     text_int_with_font: 27,
     text_label_with_font: 28,
-    text: 29
+    text: 29,
+    vector_at: 30,
+    vector_sequence_at: 31
   ]
 
   @command_kinds [
@@ -75,7 +77,8 @@ defmodule Elmc.Backend.Pebble do
     data_log_int32: 35,
     compass_peek: 36,
     dictation_start: 37,
-    dictation_stop: 38
+    dictation_stop: 38,
+    unobstructed_bounds_peek: 39
   ]
 
   @run_modes [
@@ -158,6 +161,10 @@ defmodule Elmc.Backend.Pebble do
     compass_change_tag = compass_change_target_tag(ir, msg_constructors)
     dictation_status_tag = dictation_status_target_tag(ir, msg_constructors)
     dictation_result_tag = dictation_result_target_tag(ir, msg_constructors)
+    unobstructed_will_change_tag = unobstructed_will_change_target_tag(ir, msg_constructors)
+    unobstructed_changing_tag = unobstructed_changing_target_tag(ir, msg_constructors)
+    unobstructed_did_change_tag = unobstructed_did_change_target_tag(ir, msg_constructors)
+    unobstructed_bounds_tag = unobstructed_bounds_target_tag(ir, msg_constructors)
     accel_config = accel_config_from_ir(ir, entry_module)
 
     with :ok <- File.mkdir_p(c_dir),
@@ -186,7 +193,11 @@ defmodule Elmc.Backend.Pebble do
                app_focus_change_tag,
                compass_change_tag,
                dictation_status_tag,
-               dictation_result_tag
+               dictation_result_tag,
+               unobstructed_will_change_tag,
+               unobstructed_changing_tag,
+               unobstructed_did_change_tag,
+               unobstructed_bounds_tag
              )
            ) do
       :ok
@@ -364,6 +375,7 @@ defmodule Elmc.Backend.Pebble do
     #define ELMC_PEBBLE_SUB_APP_FOCUS (1 << 19)
     #define ELMC_PEBBLE_SUB_COMPASS (1 << 20)
     #define ELMC_PEBBLE_SUB_DICTATION (1 << 21)
+    #define ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA (1 << 22)
     #define ELMC_PEBBLE_SUB_HEALTH (1LL << 31)
 
     #ifndef ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE
@@ -408,6 +420,9 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_dispatch_compass_heading(ElmcPebbleApp *app, double degrees, int is_valid);
     int elmc_pebble_dispatch_dictation_status(ElmcPebbleApp *app, int status);
     int elmc_pebble_dispatch_dictation_result(ElmcPebbleApp *app, int is_ok, int error_code, const char *text);
+    int elmc_pebble_dispatch_unobstructed_will_change(ElmcPebbleApp *app, int x, int y, int w, int h);
+    int elmc_pebble_dispatch_unobstructed_changing(ElmcPebbleApp *app, int progress);
+    int elmc_pebble_dispatch_unobstructed_did_change(ElmcPebbleApp *app);
     int elmc_pebble_dispatch_frame(ElmcPebbleApp *app, int64_t dt_ms, int64_t elapsed_ms, int64_t frame);
     int elmc_pebble_dispatch_hour(ElmcPebbleApp *app, int hour);
     int elmc_pebble_dispatch_minute(ElmcPebbleApp *app, int minute);
@@ -433,7 +448,7 @@ defmodule Elmc.Backend.Pebble do
     """
   end
 
-  @spec pebble_source([map()], map(), boolean(), String.t(), integer(), integer(), integer(), integer(), integer(), integer()) ::
+  @spec pebble_source([map()], map(), boolean(), String.t(), integer(), integer(), integer(), integer(), integer(), integer(), integer(), integer(), integer(), integer()) ::
           String.t()
   defp pebble_source(
          msg_constructors,
@@ -445,7 +460,11 @@ defmodule Elmc.Backend.Pebble do
          app_focus_change_tag,
          compass_change_tag,
          dictation_status_tag,
-         dictation_result_tag
+         dictation_result_tag,
+         unobstructed_will_change_tag,
+         unobstructed_changing_tag,
+         unobstructed_did_change_tag,
+         _unobstructed_bounds_tag
        ) do
     value_decode_cases =
       msg_constructors
@@ -1227,6 +1246,8 @@ defmodule Elmc.Backend.Pebble do
         case ELMC_PEBBLE_DRAW_TEXT:
         case ELMC_PEBBLE_DRAW_BITMAP_IN_RECT:
         case ELMC_PEBBLE_DRAW_ROTATED_BITMAP:
+        case ELMC_PEBBLE_DRAW_VECTOR_AT:
+        case ELMC_PEBBLE_DRAW_VECTOR_SEQUENCE_AT:
       #if ELMC_PEBBLE_FEATURE_DRAW_PATH
         case ELMC_PEBBLE_DRAW_PATH_FILLED:
         case ELMC_PEBBLE_DRAW_PATH_OUTLINE:
@@ -1254,6 +1275,8 @@ defmodule Elmc.Backend.Pebble do
         case ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT:
         case ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT:
         case ELMC_PEBBLE_DRAW_ROTATED_BITMAP:
+        case ELMC_PEBBLE_DRAW_VECTOR_AT:
+        case ELMC_PEBBLE_DRAW_VECTOR_SEQUENCE_AT:
       #if ELMC_PEBBLE_FEATURE_DRAW_PATH
         case ELMC_PEBBLE_DRAW_PATH_FILLED:
         case ELMC_PEBBLE_DRAW_PATH_OUTLINE:
@@ -1689,6 +1712,8 @@ defmodule Elmc.Backend.Pebble do
 
     static int elmc_pebble_finish_dispatch(ElmcPebbleApp *app, int rc) {
       if (rc == 0) {
+        app->has_prev_ui = 0;
+        app->prev_ops_hash = 0;
         elmc_pebble_mark_scene_dirty(app);
       }
       elmc_pebble_heap_log("dispatch:after");
@@ -2167,6 +2192,33 @@ defmodule Elmc.Backend.Pebble do
       int rc = elmc_pebble_dispatch_tag_payload(app, #{dictation_result_tag}, result_payload);
       elmc_release(result_payload);
       return rc;
+    }
+
+    int elmc_pebble_dispatch_unobstructed_will_change(ElmcPebbleApp *app, int x, int y, int w, int h) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA)) return -8;
+      if (#{unobstructed_will_change_tag} <= 0) return -6;
+
+      const char *names[] = {"x", "y", "w", "h"};
+      int64_t values[] = {x, y, w, h};
+      return elmc_pebble_dispatch_tag_record_int_fields(
+          app, #{unobstructed_will_change_tag}, 4, names, values);
+    }
+
+    int elmc_pebble_dispatch_unobstructed_changing(ElmcPebbleApp *app, int progress) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA)) return -8;
+      if (#{unobstructed_changing_tag} <= 0) return -6;
+      if (progress < 0) progress = 0;
+      if (progress > 255) progress = 255;
+      return elmc_pebble_dispatch_tag_value(app, #{unobstructed_changing_tag}, progress);
+    }
+
+    int elmc_pebble_dispatch_unobstructed_did_change(ElmcPebbleApp *app) {
+      if (!app || !app->initialized) return -1;
+      if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA)) return -8;
+      if (#{unobstructed_did_change_tag} <= 0) return -6;
+      return elmc_pebble_dispatch_int(app, #{unobstructed_did_change_tag});
     }
 
     int elmc_pebble_dispatch_hour(ElmcPebbleApp *app, int hour) {
@@ -2828,6 +2880,80 @@ defmodule Elmc.Backend.Pebble do
     )
   end
 
+  @spec unobstructed_will_change_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
+  defp unobstructed_will_change_target_tag(%IR{} = ir, msg_constructors) do
+    target_tag_from_subscription(
+      ir,
+      msg_constructors,
+      [
+        "Pebble.UnobstructedArea.onWillChange",
+        "Elm.Kernel.PebbleWatch.onUnobstructedWillChange"
+      ]
+    )
+  end
+
+  @spec unobstructed_changing_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
+  defp unobstructed_changing_target_tag(%IR{} = ir, msg_constructors) do
+    target_tag_from_subscription(
+      ir,
+      msg_constructors,
+      [
+        "Pebble.UnobstructedArea.onChanging",
+        "Elm.Kernel.PebbleWatch.onUnobstructedChanging"
+      ]
+    )
+  end
+
+  @spec unobstructed_did_change_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
+  defp unobstructed_did_change_target_tag(%IR{} = ir, msg_constructors) do
+    target_tag_from_subscription(
+      ir,
+      msg_constructors,
+      [
+        "Pebble.UnobstructedArea.onDidChange",
+        "Elm.Kernel.PebbleWatch.onUnobstructedDidChange"
+      ]
+    )
+  end
+
+  @spec unobstructed_bounds_target_tag(IR.t(), [{String.t(), non_neg_integer()}]) :: integer()
+  defp unobstructed_bounds_target_tag(%IR{} = ir, msg_constructors) do
+    target_tag_from_cmd(
+      ir,
+      msg_constructors,
+      [
+        "Pebble.UnobstructedArea.currentBounds",
+        "Elm.Kernel.PebbleWatch.unobstructedCurrentBounds"
+      ]
+    )
+  end
+
+  @spec target_tag_from_cmd(IR.t(), [{String.t(), non_neg_integer()}], [String.t()]) :: integer()
+  defp target_tag_from_cmd(%IR{} = ir, msg_constructors, targets) do
+    ir.modules
+    |> Enum.flat_map(fn mod -> Map.get(mod, :declarations, []) end)
+    |> Enum.flat_map(fn declaration ->
+      cmd_target_names(Map.get(declaration, :expr) || Map.get(declaration, :body), targets)
+    end)
+    |> Enum.find_value(-1, fn
+      {:tag, tag} when is_integer(tag) -> tag
+      name -> Enum.find_value(msg_constructors, fn {^name, tag} -> tag end)
+    end)
+  end
+
+  defp cmd_target_names(%{op: :qualified_call, target: target, args: [to_msg]}, targets) do
+    if target in targets, do: callback_tagger_names(to_msg), else: []
+  end
+
+  defp cmd_target_names(%{} = node, targets) do
+    node |> Map.values() |> Enum.flat_map(&cmd_target_names(&1, targets))
+  end
+
+  defp cmd_target_names(list, targets) when is_list(list),
+    do: Enum.flat_map(list, &cmd_target_names(&1, targets))
+
+  defp cmd_target_names(_, _), do: []
+
   @spec target_tag_from_subscription(IR.t(), [{String.t(), non_neg_integer()}], [String.t()]) ::
           integer()
   defp target_tag_from_subscription(%IR{} = ir, msg_constructors, targets) do
@@ -3157,6 +3283,13 @@ defmodule Elmc.Backend.Pebble do
           uses_target?(targets, "Pebble.Dictation.onResult") or
           uses_target?(targets, "Elm.Kernel.PebbleWatch.onDictationStatus") or
           uses_target?(targets, "Elm.Kernel.PebbleWatch.onDictationResult"),
+      unobstructed_area_events:
+        uses_target?(targets, "Pebble.UnobstructedArea.onWillChange") or
+          uses_target?(targets, "Pebble.UnobstructedArea.onChanging") or
+          uses_target?(targets, "Pebble.UnobstructedArea.onDidChange") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onUnobstructedWillChange") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onUnobstructedChanging") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.onUnobstructedDidChange"),
       inbox_events: uses_target?(targets, "Companion.Watch.onPhoneToWatch"),
       msg_current_time:
         has_any_constructor?(msg_constructors, ["CurrentTime", "CurrentTimeString", "GotTime"]),
@@ -3203,6 +3336,7 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_APP_FOCUS_EVENTS", flags[:app_focus_events]},
       {"ELMC_PEBBLE_FEATURE_COMPASS_EVENTS", flags[:compass_events]},
       {"ELMC_PEBBLE_FEATURE_DICTATION_EVENTS", flags[:dictation_events]},
+      {"ELMC_PEBBLE_FEATURE_UNOBSTRUCTED_AREA_EVENTS", flags[:unobstructed_area_events]},
       {"ELMC_PEBBLE_FEATURE_INBOX_EVENTS", flags[:inbox_events]},
       {"ELMC_PEBBLE_FEATURE_MSG_CURRENT_TIME", flags[:msg_current_time]},
       {"ELMC_PEBBLE_FEATURE_CMD_TIMER_AFTER_MS", flags[:cmd_timer_after_ms]},
@@ -3244,6 +3378,7 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK", flags[:cmd_compass_peek]},
       {"ELMC_PEBBLE_FEATURE_CMD_DICTATION_START", flags[:cmd_dictation_start]},
       {"ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP", flags[:cmd_dictation_stop]},
+      {"ELMC_PEBBLE_FEATURE_CMD_UNOBSTRUCTED_BOUNDS_PEEK", flags[:cmd_unobstructed_bounds_peek]},
       {"ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT", flags[:draw_text_int]},
       {"ELMC_PEBBLE_FEATURE_DRAW_CLEAR", flags[:draw_clear]},
       {"ELMC_PEBBLE_FEATURE_DRAW_PIXEL", flags[:draw_pixel]},
@@ -3265,6 +3400,8 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL", flags[:draw_fill_radial]},
       {"ELMC_PEBBLE_FEATURE_DRAW_COMPOSITING_MODE", flags[:draw_compositing_mode]},
       {"ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT", flags[:draw_bitmap_in_rect]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT", flags[:draw_vector_at]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT", flags[:draw_vector_sequence_at]},
       {"ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP", flags[:draw_rotated_bitmap]},
       {"ELMC_PEBBLE_FEATURE_DRAW_TEXT", flags[:draw_text]}
     ]
@@ -3436,7 +3573,10 @@ defmodule Elmc.Backend.Pebble do
           uses_target?(targets, "Elm.Kernel.PebbleWatch.dictationStart"),
       cmd_dictation_stop:
         uses_target?(targets, "Pebble.Dictation.stop") or
-          uses_target?(targets, "Elm.Kernel.PebbleWatch.dictationStop")
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.dictationStop"),
+      cmd_unobstructed_bounds_peek:
+        uses_target?(targets, "Pebble.UnobstructedArea.currentBounds") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.unobstructedCurrentBounds")
     }
   end
 
@@ -3473,6 +3613,8 @@ defmodule Elmc.Backend.Pebble do
       draw_fill_radial: uses_target?(targets, "Pebble.Ui.fillRadial"),
       draw_compositing_mode: context and uses_target?(targets, "Pebble.Ui.compositingMode"),
       draw_bitmap_in_rect: uses_target?(targets, "Pebble.Ui.drawBitmapInRect"),
+      draw_vector_at: uses_target?(targets, "Pebble.Ui.drawVectorAt"),
+      draw_vector_sequence_at: uses_target?(targets, "Pebble.Ui.drawVectorSequenceAt"),
       draw_rotated_bitmap: uses_target?(targets, "Pebble.Ui.drawRotatedBitmap"),
       draw_text: uses_target?(targets, "Pebble.Ui.text"),
       draw_text_any: text_int or text_label or uses_target?(targets, "Pebble.Ui.text")

@@ -7,6 +7,7 @@ defmodule Ide.ProjectTemplates do
   alias Ide.InternalPackages
   alias Ide.Paths
   alias Ide.PebbleToolchain
+  alias Ide.Resources.ResourceStore
 
   @type workspace_path :: String.t()
   @type template_dir_name :: String.t()
@@ -21,7 +22,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation game-basic game-tiny-bird game-jump-n-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation game-basic game-tiny-bird game-jump-n-run game-2048)
 
   @template_dirs %{
     "starter" => "starter",
@@ -30,6 +31,7 @@ defmodule Ide.ProjectTemplates do
     "watchface-tutorial-complete" => "watchface_tutorial_complete",
     "watchface-yes" => "watchface_yes",
     "watchface-tangram-time" => "watchface_tangram_time",
+    "watchface-weather-animated" => "watchface_weather_animated",
     "companion-demo-phone-status" => "companion_demo_phone_status",
     "companion-demo-weather-env" => "companion_demo_weather_env",
     "companion-demo-calendar" => "companion_demo_calendar",
@@ -67,6 +69,7 @@ defmodule Ide.ProjectTemplates do
              "watchface-tutorial-complete",
              "watchface-yes",
              "watchface-tangram-time",
+             "watchface-weather-animated",
              "companion-demo-phone-status",
              "companion-demo-weather-env",
              "companion-demo-calendar",
@@ -115,6 +118,7 @@ defmodule Ide.ProjectTemplates do
       {"Watchface tutorial: Complete", "watchface-tutorial-complete"},
       {"Watchface: YES (watch, protocol, phone)", "watchface-yes"},
       {"Watchface: Tangram Time (watch, protocol, phone)", "watchface-tangram-time"},
+      {"Watchface: Weather Animated (watch, protocol, phone, vectors)", "watchface-weather-animated"},
       {"Companion demo: Phone status (battery, locale, network, notifications)", "companion-demo-phone-status"},
       {"Companion demo: Weather & environment", "companion-demo-weather-env"},
       {"Companion demo: Calendar", "companion-demo-calendar"},
@@ -159,6 +163,9 @@ defmodule Ide.ProjectTemplates do
 
       "watchface-tangram-time" ->
         seed_tangram_time_watchface_workspace(workspace_path)
+
+      "watchface-weather-animated" ->
+        seed_weather_animated_watchface_workspace(workspace_path)
 
       "companion-demo-phone-status" ->
         seed_companion_demo_workspace(workspace_path, "companion_demo_phone_status")
@@ -462,6 +469,16 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
+  @spec seed_weather_animated_watchface_workspace(workspace_path()) :: seed_result()
+  defp seed_weather_animated_watchface_workspace(workspace_path) do
+    with :ok <- seed_weather_animated_protocol(workspace_path),
+         :ok <- seed_phone_companion(workspace_path),
+         :ok <- seed_weather_animated_phone(workspace_path),
+         :ok <- seed_watch_only_workspace(workspace_path, "watchface_weather_animated") do
+      :ok
+    end
+  end
+
   @spec seed_companion_demo_workspace(workspace_path(), template_dir_name()) :: seed_result()
   defp seed_companion_demo_workspace(workspace_path, template_dir) do
     with :ok <- seed_template_protocol(workspace_path, template_dir),
@@ -514,6 +531,11 @@ defmodule Ide.ProjectTemplates do
     seed_template_protocol(workspace_path, "watchface_tangram_time")
   end
 
+  @spec seed_weather_animated_protocol(workspace_path()) :: seed_result()
+  defp seed_weather_animated_protocol(workspace_path) do
+    seed_template_protocol(workspace_path, "watchface_weather_animated")
+  end
+
   @spec seed_template_protocol(workspace_path(), template_dir_name()) :: seed_result()
   defp seed_template_protocol(workspace_path, template_dir) do
     source_dir = Paths.priv_path("project_templates/#{template_dir}/protocol/src")
@@ -563,6 +585,14 @@ defmodule Ide.ProjectTemplates do
   @spec seed_tangram_time_phone(workspace_path()) :: seed_result()
   defp seed_tangram_time_phone(workspace_path) do
     source = Paths.priv_path("project_templates/watchface_tangram_time/phone/src")
+    target = Path.join(workspace_path, "phone/src")
+
+    copy_file(Path.join(source, "CompanionApp.elm"), Path.join(target, "CompanionApp.elm"))
+  end
+
+  @spec seed_weather_animated_phone(workspace_path()) :: seed_result()
+  defp seed_weather_animated_phone(workspace_path) do
+    source = Paths.priv_path("project_templates/watchface_weather_animated/phone/src")
     target = Path.join(workspace_path, "phone/src")
 
     copy_file(Path.join(source, "CompanionApp.elm"), Path.join(target, "CompanionApp.elm"))
@@ -629,6 +659,25 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
+  @doc """
+  Replaces bundled watch resources in an existing workspace from a template key
+  and regenerates `Pebble.Ui.Resources`.
+  """
+  @spec sync_bundled_resources(workspace_path(), String.t()) :: seed_result()
+  def sync_bundled_resources(workspace_path, template_key)
+      when is_binary(workspace_path) and is_binary(template_key) do
+    case Map.fetch(@template_dirs, template_key) do
+      {:ok, template_dir} ->
+        with :ok <- maybe_copy_template_resources(workspace_path, template_dir),
+             :ok <- ResourceStore.ensure_generated_workspace(workspace_path) do
+          :ok
+        end
+
+      :error ->
+        {:error, {:unknown_template, template_key}}
+    end
+  end
+
   @spec watch_direct_dependencies(String.t()) :: map()
   defp watch_direct_dependencies(template_dir) do
     deps = %{
@@ -650,6 +699,7 @@ defmodule Ide.ProjectTemplates do
               "watchface_tutorial_complete",
               "watchface_yes",
               "watchface_tangram_time",
+              "watchface_weather_animated",
               "companion_demo_phone_status",
               "companion_demo_weather_env",
               "companion_demo_calendar",

@@ -200,6 +200,14 @@ defmodule Ide.Emulator.SessionTest do
     refute "-audio" in args
   end
 
+  test "companion launches wait for bluetooth ready console marker" do
+    source = File.read!("lib/ide/emulator/session.ex")
+
+    assert source =~ ~S/qemu_boot_markers(%{has_phone_companion: true})/
+    assert source =~ ~S/qemu_boot_markers(_state)/
+    assert source =~ ~S/"Ready for communication"/
+  end
+
   test "pypkjs arguments include qemu bridge, websocket port, and persist dir" do
     args =
       Session.pypkjs_args(%{
@@ -256,6 +264,28 @@ defmodule Ide.Emulator.SessionTest do
     source = File.read!("priv/python/embedded_pypkjs.py")
 
     assert source =~ "runner.load_pbws([f.name], cache=True, start=True)"
+    assert source =~ "patch_pebble_send_appmessage()"
+    assert source =~ "detect_appmessage_key_shift_corruption"
+    assert source =~ "JSON.stringify(m)"
+    assert source =~ "send_simulator_weather_to_watch"
+    assert source =~ "simulator_settings_update"
+    assert source =~ "schedule_simulator_weather_to_watch"
+    assert source =~ "weather_temperatureC"
+    assert source =~ "send_simulator_weather_to_watch(runner, \"simulator_settings_update\", ws=ws)"
+    assert source =~ "simulator_settings_update_retry"
+    assert source =~ "normalize_ws_message"
+    assert source =~ "gevent.spawn(go_apply)"
+    assert source =~ "gevent.spawn(go_install)"
+    refute source =~ "deliverWeatherToWatch()  # removed"
+    assert source =~ "applied = apply_settings_to_runner(runner, settings)"
+    assert source =~ "weather trace"
+    assert source =~ "0x0F"
+    assert source =~ "__elmPebbleCompanionSimulatorSettings"
+    assert source =~ "g.companionApplySimulatorSettings"
+    assert source =~ "simulator_temperature_c"
+    assert source =~ "packetHex"
+    assert source =~ "send_single_appmessage_packet"
+    assert source =~ ~s/"split": False/
   end
 
   test "phone websocket proxy waits long enough for pypkjs cold start" do

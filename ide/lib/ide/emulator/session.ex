@@ -909,7 +909,7 @@ defmodule Ide.Emulator.Session do
     if start_processes?() do
       with {:ok, qemu_bin} <- qemu_bin(),
            {:ok, pid} <- start_daemon(qemu_bin, qemu_args(state), "qemu:#{state.id}") do
-        case wait_for_qemu_boot(pid, state.console_port, 60_000) do
+        case wait_for_qemu_boot(pid, state, 60_000) do
           :ok ->
             with :ok <- maybe_wait_for_install_ready(state, pid, state.console_port) do
               {:ok, %{state | qemu_pid: pid, last_boot_ms: now_ms()}}
@@ -996,13 +996,19 @@ defmodule Ide.Emulator.Session do
     wait_for_daemon(pid, port, deadline, nil)
   end
 
-  defp wait_for_qemu_boot(pid, console_port, timeout_ms) do
+  defp wait_for_qemu_boot(pid, %{console_port: console_port} = state, timeout_ms) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms
+    markers = qemu_boot_markers(state)
 
     with {:ok, socket} <- wait_for_tcp_socket(pid, console_port, deadline) do
-      wait_for_qemu_boot_marker(pid, socket, deadline, <<>>)
+      wait_for_qemu_boot_marker(pid, socket, deadline, <<>>, markers)
     end
   end
+
+  defp qemu_boot_markers(%{has_phone_companion: true}), do: ["Ready for communication"]
+
+  defp qemu_boot_markers(_state),
+    do: ["<SDK Home>", "<Launcher>", "Ready for communication"]
 
   defp wait_for_tcp_socket(pid, port, deadline) do
     cond do
@@ -1024,9 +1030,9 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  defp wait_for_qemu_boot_marker(pid, socket, deadline, received) do
+  defp wait_for_qemu_boot_marker(pid, socket, deadline, received, markers) do
     cond do
-      boot_marker?(received) ->
+      boot_marker?(received, markers) ->
         :gen_tcp.close(socket)
         :ok
 
@@ -1049,10 +1055,10 @@ defmodule Ide.Emulator.Session do
       true ->
         case :gen_tcp.recv(socket, 0, 250) do
           {:ok, data} ->
-            wait_for_qemu_boot_marker(pid, socket, deadline, received <> data)
+            wait_for_qemu_boot_marker(pid, socket, deadline, received <> data, markers)
 
           {:error, :timeout} ->
-            wait_for_qemu_boot_marker(pid, socket, deadline, received)
+            wait_for_qemu_boot_marker(pid, socket, deadline, received, markers)
 
           {:error, reason} ->
             :gen_tcp.close(socket)
@@ -1061,8 +1067,8 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  defp boot_marker?(data) do
-    Enum.any?(["<SDK Home>", "<Launcher>", "Ready for communication"], fn marker ->
+  defp boot_marker?(data, markers) do
+    Enum.any?(markers, fn marker ->
       :binary.match(data, marker) != :nomatch
     end)
   end

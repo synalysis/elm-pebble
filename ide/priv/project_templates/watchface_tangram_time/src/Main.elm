@@ -156,7 +156,7 @@ view model =
         , hourMarkers cx cy markerRadius (foregroundColor model)
         , case model.downloadedPieces of
             [] ->
-                timeTangram model.colorMode scale cx cy hour minute figure
+                [ builtInFigure scale cx cy hour minute figure ]
 
             pieces ->
                 downloadedTangram model.colorMode scale cx cy hour minute figure pieces
@@ -168,128 +168,55 @@ view model =
         |> Ui.toUiNode
 
 
-timeTangram : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-timeTangram colorMode scale cx cy hour minute figure =
+figureVector : Int -> Resources.VectorGraphic
+figureVector figure =
     case modBy figureCount figure of
         0 ->
-            birdForm colorMode scale cx cy hour minute figure
+            Resources.TangramBird
 
         1 ->
-            cometForm colorMode scale cx cy hour minute figure
+            Resources.TangramComet
 
         2 ->
-            crownForm colorMode scale cx cy hour minute figure
+            Resources.TangramCrown
 
         3 ->
-            boatForm colorMode scale cx cy hour minute figure
+            Resources.TangramBoat
 
         4 ->
-            flowerForm colorMode scale cx cy hour minute figure
+            Resources.TangramFlower
 
         _ ->
-            kiteForm colorMode scale cx cy hour minute figure
+            Resources.TangramKite
 
 
-birdForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-birdForm colorMode scale cx cy hour minute figure =
+figureOriginOffsetX : Int
+figureOriginOffsetX =
+    66
+
+
+figureOriginOffsetY : Int
+figureOriginOffsetY =
+    58
+
+
+vectorDrawOrigin : Int -> Ui.Point -> Ui.Point
+vectorDrawOrigin scale base =
+    { x = base.x - scaled scale figureOriginOffsetX
+    , y = base.y - scaled scale figureOriginOffsetY
+    }
+
+
+builtInFigure : Int -> Int -> Int -> Int -> Int -> Int -> Ui.RenderOp
+builtInFigure scale cx cy hour minute figure =
     let
         base =
             formOrigin scale cx cy hour minute figure
+
+        origin =
+            vectorDrawOrigin scale base
     in
-    List.concat
-        [ tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o -8 -6, o -42 -30, o -52 10 ])
-        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o 8 -6, o 42 -30, o 52 10 ])
-        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -18 2, o 0 -12, o 18 2, o 0 18 ])
-        , tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o 18 -4, o 36 -12, o 32 8 ])
-        , tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o -18 8, o -40 0, o -46 16, o -24 24 ])
-        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o -5 18, o -28 34, o 4 32 ])
-        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o 6 18, o 34 32, o 12 36 ])
-        ]
-
-
-cometForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-cometForm colorMode scale cx cy hour minute figure =
-    let
-        base =
-            formOrigin scale cx cy hour minute figure
-    in
-    List.concat
-        [ tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o 24 -4, o 42 -22, o 60 -4, o 42 14 ])
-        , tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o 8 -12, o 32 -4, o 8 14 ])
-        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o -10 -18, o 12 -8, o -12 2 ])
-        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -26 -20, o -4 -8, o -28 4 ])
-        , tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o -48 -18, o -18 -8, o -8 8, o -38 -2 ])
-        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o -52 4, o -16 8, o -44 24 ])
-        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o -36 -36, o -8 -16, o -48 -16 ])
-        ]
-
-
-crownForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-crownForm colorMode scale cx cy hour minute figure =
-    let
-        base =
-            formOrigin scale cx cy hour minute figure
-    in
-    List.concat
-        [ tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o -48 12, o 38 12, o 48 30, o -38 30 ])
-        , tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o -48 12, o -30 -28, o -8 12 ])
-        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o -16 12, o 0 -36, o 16 12 ])
-        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o 8 12, o 30 -28, o 48 12 ])
-        , tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o -8 2, o 0 -10, o 8 2, o 0 14 ])
-        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -36 10, o -24 -8, o -12 10 ])
-        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o 12 10, o 24 -8, o 36 10 ])
-        ]
-
-
-boatForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-boatForm colorMode scale cx cy hour minute figure =
-    let
-        base =
-            formOrigin scale cx cy hour minute figure
-    in
-    List.concat
-        [ tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o -54 18, o 44 18, o 32 38, o -34 38 ])
-        , tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o -8 14, o -8 -34, o -44 14 ])
-        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o -4 14, o 28 -26, o 36 14 ])
-        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -8 -34, o 2 -8, o -8 14, o -20 -8 ])
-        , tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o -34 28, o -14 16, o 4 28, o -14 40 ])
-        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o 10 20, o 30 20, o 20 34 ])
-        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o -48 18, o -30 8, o -24 18 ])
-        ]
-
-
-flowerForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-flowerForm colorMode scale cx cy hour minute figure =
-    let
-        base =
-            formOrigin scale cx cy hour minute figure
-    in
-    List.concat
-        [ tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o -12 0, o 0 -12, o 12 0, o 0 12 ])
-        , tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o -16 -10, o 0 -44, o 16 -10 ])
-        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o 10 -16, o 44 0, o 10 16 ])
-        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -16 10, o 0 44, o 16 10 ])
-        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o -10 -16, o -44 0, o -10 16 ])
-        , tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o 10 10, o 34 16, o 16 34, o 0 20 ])
-        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o -10 10, o -34 16, o -16 34 ])
-        ]
-
-
-kiteForm : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp
-kiteForm colorMode scale cx cy hour minute figure =
-    let
-        base =
-            formOrigin scale cx cy hour minute figure
-    in
-    List.concat
-        [ tangramPiece (displayColor colorMode Color.cyan) (shapeAt scale base [ o 0 -48, o 28 -10, o 0 12, o -28 -10 ])
-        , tangramPiece (displayColor colorMode Color.vividCerulean) (shapeAt scale base [ o 0 -48, o 28 -10, o 0 -10 ])
-        , tangramPiece (displayColor colorMode Color.pictonBlue) (shapeAt scale base [ o 0 -48, o 0 -10, o -28 -10 ])
-        , tangramPiece (displayColor colorMode Color.blueMoon) (shapeAt scale base [ o -28 -10, o 0 12, o 28 -10, o 0 34 ])
-        , tangramPiece (displayColor colorMode Color.tiffanyBlue) (shapeAt scale base [ o -12 30, o 0 42, o 12 30 ])
-        , tangramPiece (displayColor colorMode Color.electricBlue) (shapeAt scale base [ o 0 42, o -16 50, o 2 52 ])
-        , tangramPiece (displayColor colorMode Color.veryLightBlue) (shapeAt scale base [ o 2 52, o 18 58, o 8 64 ])
-        ]
+    Ui.drawVectorAt (figureVector figure) origin
 
 
 downloadedTangram : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List DownloadedPiece -> List Ui.RenderOp
@@ -801,10 +728,10 @@ rectOverlapPenalty ax ay aw ah bx by bw bh =
 
 tangramBounds : Int -> Ui.Point -> Rect
 tangramBounds scale origin =
-    { x = origin.x - scaled scale 66
-    , y = origin.y - scaled scale 58
-    , w = scaled scale 132
-    , h = scaled scale 126
+    { x = origin.x - scaled scale figureOriginOffsetX
+    , y = origin.y - scaled scale figureOriginOffsetY
+    , w = scaled scale (figureOriginOffsetX * 2)
+    , h = scaled scale (figureOriginOffsetY + 68)
     }
 
 

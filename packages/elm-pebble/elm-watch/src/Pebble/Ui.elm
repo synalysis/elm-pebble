@@ -28,6 +28,8 @@ module Pebble.Ui exposing
     , defaultTextOptions
     , drawBitmapInRect
     , drawRotatedBitmap
+    , drawVectorAt
+    , drawVectorSequenceAt
     , fillCircle
     , fillColor
     , fillOverflow
@@ -81,12 +83,12 @@ render bridge to keep view logic in pure Elm.
 
 # Drawing operations
 
-@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawRotatedBitmap, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial
+@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawRotatedBitmap, drawVectorAt, drawVectorSequenceAt, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial
 
 
 # Resources, labels and path/context helpers
 
-@docs Label, Context, Bitmap, Font, Path, Point, Rect, Rotation, TextAlignment, TextOverflow, TextOptions, defaultTextOptions, alignLeft, alignCenter, alignRight, wordWrap, trailingEllipsis, fillOverflow, context, path, rotationFromPebbleAngle, rotationFromDegrees
+@docs Label, Context, Bitmap, Font, VectorGraphic, Path, Point, Rect, Rotation, TextAlignment, TextOverflow, TextOptions, defaultTextOptions, alignLeft, alignCenter, alignRight, wordWrap, trailingEllipsis, fillOverflow, context, path, rotationFromPebbleAngle, rotationFromDegrees
 
 
 # Drawing settings
@@ -132,6 +134,8 @@ type RenderOp
     | Group Context
     | BitmapInRect Bitmap Int Int Int Int
     | RotatedBitmap Bitmap Int Int Int Int Int
+    | VectorAt VectorGraphic Int Int
+    | VectorSequenceAt VectorGraphic Int Int
     | PathFilled Path
     | PathOutline Path
     | PathOutlineOpen Path
@@ -162,6 +166,12 @@ type alias Bitmap =
 -}
 type alias Font =
     UiResources.Font
+
+
+{-| Vector graphic resource handle from `Pebble.Ui.Resources`.
+-}
+type alias VectorGraphic =
+    UiResources.VectorGraphic
 
 
 {-| Path geometry for path draw operations.
@@ -413,6 +423,20 @@ drawBitmapInRect bitmap bounds =
 drawRotatedBitmap : Bitmap -> Rect -> Rotation -> Point -> RenderOp
 drawRotatedBitmap bitmap srcRect rotation center =
     RotatedBitmap bitmap srcRect.w srcRect.h (rotationToPebbleAngle rotation) center.x center.y
+
+
+{-| Draw a Pebble Draw Command vector resource at the given origin.
+-}
+drawVectorAt : VectorGraphic -> Point -> RenderOp
+drawVectorAt vector origin =
+    VectorAt vector origin.x origin.y
+
+
+{-| Draw a Pebble Draw Command sequence resource at the given origin.
+-}
+drawVectorSequenceAt : VectorGraphic -> Point -> RenderOp
+drawVectorSequenceAt vector origin =
+    VectorSequenceAt vector origin.x origin.y
 
 
 {-| Group operations under a temporary style context.

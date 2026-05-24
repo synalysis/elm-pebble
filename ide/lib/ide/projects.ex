@@ -769,6 +769,32 @@ defmodule Ide.Projects do
   end
 
   @doc """
+  Lists vector graphic resources for a project.
+  """
+  @spec list_vector_resources(Project.t()) ::
+          {:ok, [ResourceStore.vector_entry()]} | {:error, Types.project_error()}
+  def list_vector_resources(%Project{} = project) do
+    ResourceStore.list_vectors(project)
+  end
+
+  @doc """
+  Imports a vector graphic resource (PDC or SVG) and regenerates the resources module.
+  """
+  @spec import_vector_resource(Project.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.project_error()}
+  def import_vector_resource(%Project{} = project, upload_path, original_name) do
+    ResourceStore.import_vector(project, upload_path, original_name)
+  end
+
+  @doc """
+  Deletes one vector graphic resource and regenerates the generated resources Elm module.
+  """
+  @spec delete_vector_resource(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.project_error()}
+  def delete_vector_resource(%Project{} = project, ctor) do
+    ResourceStore.delete_vector(project, ctor)
+  end
+
+  @doc """
   Ensures the generated resources module exists and is up to date.
   """
   @spec ensure_bitmap_generated(Project.t()) :: :ok | {:error, Types.project_error()}

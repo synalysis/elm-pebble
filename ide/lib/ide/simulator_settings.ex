@@ -260,9 +260,12 @@ defmodule Ide.SimulatorSettings do
       options: [
         {"clear", "Clear"},
         {"cloudy", "Cloudy"},
+        {"fog", "Fog"},
+        {"drizzle", "Drizzle"},
         {"rain", "Rain"},
         {"snow", "Snow"},
-        {"fog", "Fog"}
+        {"showers", "Showers"},
+        {"storm", "Storm"}
       ],
       optional: false,
       hint: nil

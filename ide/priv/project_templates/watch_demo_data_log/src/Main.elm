@@ -24,7 +24,7 @@ type Msg
 
 logTag : DataLog.Tag
 logTag =
-    DataLog.Tag 9001
+    DataLog.tag 9001
 
 
 init : Platform.LaunchContext -> ( Model, Cmd Msg )

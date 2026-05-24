@@ -20,7 +20,8 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
         <.settings_nav pane={@pane} project={@project} class="mb-4" />
         <h2 class="text-base font-semibold">Resources</h2>
         <p class="mt-1 text-sm text-zinc-600">
-          Upload bitmap and font assets used by the watch app. A generated
+          Upload bitmap, vector, and font assets used by the watch app. SVG files are converted to
+          Pebble Draw Command (PDC) resources automatically. A generated
           <span class="font-mono">Pebble.Ui.Resources</span>
           module is refreshed automatically.
         </p>
@@ -39,6 +40,27 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
             </.form>
             <p :if={@bitmap_upload_output} class="mt-2 text-xs text-zinc-600">
               {@bitmap_upload_output}
+            </p>
+          </div>
+
+          <div class="rounded border border-zinc-200 bg-zinc-50 p-3">
+            <h3 class="text-sm font-semibold text-zinc-700">Vector uploads</h3>
+            <p class="mt-1 text-xs text-zinc-500">
+              Upload `.pdc` files or compatible `.svg` assets. SVG supports hex colors (`#RRGGBB`),
+              CSS color names, and Pebble palette names (`vividCerulean`, `black`, etc.), plus
+              supported elements (`path`, `polygon`, `circle`, etc.).
+            </p>
+            <.form
+              for={%{}}
+              phx-change="validate-resource-upload"
+              phx-submit="upload-vector-resource"
+              class="mt-2 space-y-2"
+            >
+              <.live_file_input upload={@uploads.vector} class="block w-full text-sm text-zinc-800" />
+              <.button type="submit" disabled={@uploads.vector.entries == []}>Upload vector</.button>
+            </.form>
+            <p :if={@vector_upload_output} class="mt-2 text-xs text-zinc-600">
+              {@vector_upload_output}
             </p>
           </div>
 
@@ -99,6 +121,49 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
               <p class="truncate font-mono text-zinc-700">{bmp.filename}</p>
               <p class="text-zinc-500">{bmp.mime} · {bmp.bytes} bytes</p>
               <p class="text-zinc-500">resource id: {bmp.resource_id}</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+          <h3 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+            Vector graphics
+          </h3>
+          <div
+            :if={@vector_resources == []}
+            class="mt-3 rounded border border-dashed border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-600"
+          >
+            No vector resources uploaded yet.
+          </div>
+          <div
+            :if={@vector_resources != []}
+            class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"
+          >
+            <article
+              :for={vector <- @vector_resources}
+              class="rounded border border-zinc-200 bg-zinc-50 p-3 text-xs"
+            >
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <p class="font-mono font-semibold text-zinc-900">{vector.ctor}</p>
+                <button
+                  type="button"
+                  phx-click="delete-vector-resource"
+                  phx-value-ctor={vector.ctor}
+                  class="rounded bg-rose-100 px-2 py-1 text-[11px] font-medium text-rose-800 hover:bg-rose-200"
+                >
+                  Delete
+                </button>
+              </div>
+              <div
+                :if={vector.preview_svg}
+                class="mx-auto mb-2 flex max-h-24 items-center justify-center rounded border border-zinc-200 bg-white p-2"
+              >
+                {raw(vector.preview_svg)}
+              </div>
+              <p class="truncate font-mono text-zinc-700">{vector.filename}</p>
+              <p class="text-zinc-500">{vector.kind_label} · {vector.bytes} bytes</p>
+              <p :if={vector.sequence_label} class="text-zinc-500">{vector.sequence_label}</p>
+              <p class="text-zinc-500">resource id: {vector.resource_id}</p>
             </article>
           </div>
         </section>

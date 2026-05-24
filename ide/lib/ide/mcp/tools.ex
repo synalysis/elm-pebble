@@ -9,6 +9,7 @@ defmodule Ide.Mcp.Tools do
   alias Ide.AppStore.Publisher, as: AppStorePublisher
   alias Ide.Compiler.ManifestCache
   alias Ide.Mcp.Audit
+  alias Ide.Mcp.{ConversionOpts, VectorResources}
   alias Ide.Mcp.CheckCache
   alias Ide.Mcp.JsonSchema
   alias Ide.Mcp.ToolTypes
@@ -60,7 +61,21 @@ defmodule Ide.Mcp.Tools do
       },
       latitude: %{type: "number", minimum: -90, maximum: 90},
       longitude: %{type: "number", minimum: -180, maximum: 180},
-      accuracy: %{type: "number", minimum: 0, maximum: 100_000}
+      accuracy: %{type: "number", minimum: 0, maximum: 100_000},
+      weather: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        properties: %{
+          condition: %{
+            type: "string",
+            enum: ["clear", "cloudy", "fog", "drizzle", "rain", "snow", "showers", "storm"]
+          },
+          temperatureC: %{type: "number"},
+          humidityPercent: %{type: "number"},
+          pressureHpa: %{type: "number"},
+          windKph: %{type: "number"}
+        }
+      }
     }
   }
 
@@ -85,6 +100,8 @@ defmodule Ide.Mcp.Tools do
       capabilities: %{type: "array", items: %{type: "string"}}
     }
   }
+
+  @vector_conversion_opts ConversionOpts.input_schema_properties()
 
   @read_tools [
     %{
@@ -747,6 +764,54 @@ defmodule Ide.Mcp.Tools do
       name: "debugger.watch_profiles",
       description: "List watch profiles available to debugger launch contexts.",
       inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
+    },
+    %{
+      name: "resources.vectors.list",
+      description: "List vector graphic manifest entries for a project.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["slug"],
+        properties: %{slug: %{type: "string"}}
+      }
+    },
+    %{
+      name: "resources.vectors.convert",
+      description: "Convert an SVG string to PDCI bytes with a structured conversion report.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["svg"],
+        properties: Map.merge(%{svg: %{type: "string"}}, @vector_conversion_opts)
+      }
+    },
+    %{
+      name: "resources.vectors.convert_sequence",
+      description: "Convert a list of SVG frame strings to PDCS bytes.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["frames"],
+        properties:
+          Map.merge(
+            %{frames: %{type: "array", items: %{type: "string"}, minItems: 1}},
+            @vector_conversion_opts
+          )
+      }
+    },
+    %{
+      name: "resources.vectors.preview",
+      description: "Render a PDC asset or project constructor to SVG preview text.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        properties: %{
+          slug: %{type: "string"},
+          ctor: %{type: "string"},
+          bytes_base64: %{type: "string"},
+          frame: %{type: "integer", minimum: 0, default: 0}
+        }
+      }
     }
   ]
 
@@ -771,6 +836,7 @@ defmodule Ide.Mcp.Tools do
               "watchface-tutorial-complete",
               "watchface-yes",
               "watchface-tangram-time",
+              "watchface-weather-animated",
               "game-basic",
               "game-tiny-bird",
               "game-jump-n-run",
@@ -1189,6 +1255,55 @@ defmodule Ide.Mcp.Tools do
           }
         }
       }
+    },
+    %{
+      name: "resources.vectors.import",
+      description: "Convert an SVG string and import it as a project vector resource.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["slug", "svg"],
+        properties:
+          Map.merge(
+            %{
+              slug: %{type: "string"},
+              svg: %{type: "string"},
+              name: %{type: "string", description: "Optional original filename hint."}
+            },
+            @vector_conversion_opts
+          )
+      }
+    },
+    %{
+      name: "resources.vectors.import_sequence",
+      description: "Convert SVG frames and import a PDCS sequence resource.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["slug", "frames"],
+        properties:
+          Map.merge(
+            %{
+              slug: %{type: "string"},
+              frames: %{type: "array", items: %{type: "string"}, minItems: 1},
+              name: %{type: "string", description: "Optional sequence filename hint."}
+            },
+            @vector_conversion_opts
+          )
+      }
+    },
+    %{
+      name: "resources.vectors.delete",
+      description: "Delete a vector resource constructor and regenerate Resources module.",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["slug", "ctor"],
+        properties: %{
+          slug: %{type: "string"},
+          ctor: %{type: "string"}
+        }
+      }
     }
   ]
 
@@ -1421,6 +1536,40 @@ defmodule Ide.Mcp.Tools do
     |> Map.drop(["source"])
     |> Map.put("source_redacted", true)
     |> Map.put("source_bytes", byte_size(source))
+  end
+
+  defp do_audit_arguments("resources.vectors.convert", %{"svg" => svg} = args)
+       when is_binary(svg) do
+    args
+    |> Map.drop(["svg"])
+    |> Map.put("svg_redacted", true)
+    |> Map.put("svg_bytes", byte_size(svg))
+  end
+
+  defp do_audit_arguments("resources.vectors.import", %{"svg" => svg} = args)
+       when is_binary(svg) do
+    args
+    |> Map.drop(["svg"])
+    |> Map.put("svg_redacted", true)
+    |> Map.put("svg_bytes", byte_size(svg))
+  end
+
+  defp do_audit_arguments("resources.vectors.convert_sequence", %{"frames" => frames} = args)
+       when is_list(frames) do
+    args
+    |> Map.put("frame_count", length(frames))
+    |> Map.put("frames_redacted", true)
+  end
+
+  defp do_audit_arguments("resources.vectors.import_sequence", %{"frames" => frames} = args)
+       when is_list(frames) do
+    args
+    |> Map.put("frame_count", length(frames))
+    |> Map.put("frames_redacted", true)
+  end
+
+  defp do_audit_arguments("resources.vectors.preview", %{"bytes_base64" => _} = args) do
+    Map.put(args, "bytes_base64_redacted", true)
   end
 
   defp do_audit_arguments(_name, args) when is_map(args), do: args
@@ -1787,7 +1936,7 @@ defmodule Ide.Mcp.Tools do
            ) do
       {:ok, pebble_package_payload(slug, result)}
     else
-      {:error, reason} -> {:error, "pebble package failed: #{inspect(reason)}"}
+      {:error, reason} -> {:error, format_pebble_package_failure(reason)}
     end
   end
 
@@ -2407,6 +2556,14 @@ defmodule Ide.Mcp.Tools do
     {:ok, debugger_watch_profiles_payload()}
   end
 
+  defp do_call("resources.vectors.list", %{"slug" => slug}), do: VectorResources.list(slug)
+  defp do_call("resources.vectors.convert", args), do: VectorResources.convert(args)
+  defp do_call("resources.vectors.convert_sequence", args), do: VectorResources.convert_sequence(args)
+  defp do_call("resources.vectors.import", args), do: VectorResources.import(args)
+  defp do_call("resources.vectors.import_sequence", args), do: VectorResources.import_sequence(args)
+  defp do_call("resources.vectors.preview", args), do: VectorResources.preview(args)
+  defp do_call("resources.vectors.delete", args), do: VectorResources.delete(args)
+
   defp do_call("debugger.simulator_settings", %{"slug" => slug}) do
     with {:ok, project} <- fetch_project(slug),
          {:ok, state} <- Debugger.snapshot(project_session_key(slug), event_limit: 1) do
@@ -2500,7 +2657,7 @@ defmodule Ide.Mcp.Tools do
        when is_map(settings) do
     with {:ok, project} <- fetch_project(slug),
          normalized <- normalize_mcp_simulator_settings(settings),
-         {:ok, _project} <- persist_project_debugger_setting(project, "simulator", normalized),
+         :ok <- maybe_persist_project_debugger_setting(project, "simulator", normalized),
          {:ok, state} <- Debugger.set_simulator_settings(project_session_key(slug), normalized) do
       {:ok, debugger_simulator_settings_state_payload(slug, normalized, state)}
     else
@@ -3868,53 +4025,21 @@ defmodule Ide.Mcp.Tools do
 
   @spec normalize_mcp_simulator_settings(map()) :: map()
   defp normalize_mcp_simulator_settings(settings) when is_map(settings) do
-    defaults = Debugger.default_simulator_settings()
-
-    %{
-      "battery_percent" =>
-        settings
-        |> map_value("battery_percent")
-        |> normalize_mcp_integer(defaults["battery_percent"], 0, 100),
-      "charging" =>
-        settings
-        |> map_value("charging")
-        |> normalize_mcp_boolean(defaults["charging"]),
-      "connected" =>
-        settings
-        |> map_value("connected")
-        |> normalize_mcp_boolean(defaults["connected"]),
-      "clock_24h" =>
-        settings
-        |> map_value("clock_24h")
-        |> normalize_mcp_boolean(defaults["clock_24h"]),
-      "use_simulated_time" =>
-        settings
-        |> map_value("use_simulated_time")
-        |> normalize_mcp_boolean(defaults["use_simulated_time"]),
-      "simulated_time" =>
-        settings
-        |> map_value("simulated_time")
-        |> normalize_mcp_optional_string(defaults["simulated_time"]),
-      "simulated_date" =>
-        settings
-        |> map_value("simulated_date")
-        |> normalize_mcp_optional_string(defaults["simulated_date"]),
-      "latitude" =>
-        settings
-        |> map_value("latitude")
-        |> normalize_mcp_float(defaults["latitude"], -90.0, 90.0),
-      "longitude" =>
-        settings
-        |> map_value("longitude")
-        |> normalize_mcp_float(defaults["longitude"], -180.0, 180.0),
-      "accuracy" =>
-        settings
-        |> map_value("accuracy")
-        |> normalize_mcp_float(defaults["accuracy"], 0.0, 100_000.0)
-    }
+    Debugger.normalize_simulator_settings(settings)
   end
 
   defp normalize_mcp_simulator_settings(_settings), do: Debugger.default_simulator_settings()
+
+  @spec maybe_persist_project_debugger_setting(map(), String.t(), WireTypes.debugger_setting_value()) ::
+          :ok
+  defp maybe_persist_project_debugger_setting(project, key, value)
+       when is_map(project) and is_binary(key) do
+    case persist_project_debugger_setting(project, key, value) do
+      {:ok, _project} -> :ok
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   @spec normalize_configuration_values(map()) :: map()
   defp normalize_configuration_values(values) when is_map(values) do
@@ -4173,10 +4298,30 @@ defmodule Ide.Mcp.Tools do
 
   @spec fetch_project(String.t()) :: {:ok, map()} | {:error, :project_not_found}
   defp fetch_project(slug) do
-    case Projects.get_project_by_slug(slug) do
+    case Projects.get_project_by_scope_key(slug) do
       nil -> {:error, :project_not_found}
       project -> {:ok, project}
     end
+  end
+
+  @spec format_pebble_package_failure(term()) :: String.t()
+  defp format_pebble_package_failure({:pebble_build_failed, %{output: output} = result})
+       when is_binary(output) do
+    tail =
+      output
+      |> String.split("\n", trim: false)
+      |> Enum.take(-50)
+      |> Enum.join("\n")
+      |> String.trim()
+
+    command = Map.get(result, :command, "pebble build")
+    exit_code = Map.get(result, :exit_code, "?")
+
+    "pebble package failed (#{command}, exit #{exit_code}):\n\n#{tail}"
+  end
+
+  defp format_pebble_package_failure(reason) do
+    "pebble package failed: #{inspect(reason)}"
   end
 
   @spec project_session_key(String.t() | map()) :: String.t()
@@ -4235,6 +4380,10 @@ defmodule Ide.Mcp.Tools do
   defp authorized?("debugger.auto_fire", capabilities), do: :read in capabilities
   defp authorized?("debugger.disabled_subscriptions", capabilities), do: :read in capabilities
   defp authorized?("debugger.watch_profiles", capabilities), do: :read in capabilities
+  defp authorized?("resources.vectors.list", capabilities), do: :read in capabilities
+  defp authorized?("resources.vectors.convert", capabilities), do: :read in capabilities
+  defp authorized?("resources.vectors.convert_sequence", capabilities), do: :read in capabilities
+  defp authorized?("resources.vectors.preview", capabilities), do: :read in capabilities
   defp authorized?("projects.create", capabilities), do: :edit in capabilities
   defp authorized?("projects.delete", capabilities), do: :edit in capabilities
   defp authorized?("projects.update_settings", capabilities), do: :edit in capabilities
@@ -4260,6 +4409,9 @@ defmodule Ide.Mcp.Tools do
   defp authorized?("debugger.replay_recent", capabilities), do: :edit in capabilities
   defp authorized?("debugger.continue_from_snapshot", capabilities), do: :edit in capabilities
   defp authorized?("debugger.import_trace", capabilities), do: :edit in capabilities
+  defp authorized?("resources.vectors.import", capabilities), do: :edit in capabilities
+  defp authorized?("resources.vectors.import_sequence", capabilities), do: :edit in capabilities
+  defp authorized?("resources.vectors.delete", capabilities), do: :edit in capabilities
   defp authorized?("pebble.package", capabilities), do: :build in capabilities
   defp authorized?("pebble.install", capabilities), do: :build in capabilities
   defp authorized?("screenshots.capture", capabilities), do: :build in capabilities
@@ -4391,45 +4543,6 @@ defmodule Ide.Mcp.Tools do
         acc
     end
   end
-
-  @spec normalize_mcp_integer(WireTypes.integer_input(), integer(), integer(), integer()) :: integer()
-  defp normalize_mcp_integer(value, _default, min, max) when is_integer(value),
-    do: value |> Kernel.max(min) |> Kernel.min(max)
-
-  defp normalize_mcp_integer(value, default, min, max) when is_binary(value) do
-    case Integer.parse(value) do
-      {parsed, _} -> normalize_mcp_integer(parsed, default, min, max)
-      :error -> default
-    end
-  end
-
-  defp normalize_mcp_integer(_value, default, _min, _max), do: default
-
-  @spec normalize_mcp_float(WireTypes.float_input(), float(), float(), float()) :: float()
-  defp normalize_mcp_float(value, _default, min, max) when is_float(value),
-    do: value |> Kernel.max(min) |> Kernel.min(max)
-
-  defp normalize_mcp_float(value, _default, min, max) when is_integer(value),
-    do: (value * 1.0) |> Kernel.max(min) |> Kernel.min(max)
-
-  defp normalize_mcp_float(value, default, min, max) when is_binary(value) do
-    case Float.parse(value) do
-      {parsed, _} -> normalize_mcp_float(parsed, default, min, max)
-      :error -> default
-    end
-  end
-
-  defp normalize_mcp_float(_value, default, _min, _max), do: default
-
-  @spec normalize_mcp_optional_string(WireTypes.optional_string(), String.t() | nil) :: String.t() | nil
-  defp normalize_mcp_optional_string(value, _default) when is_binary(value) do
-    case String.trim(value) do
-      "" -> nil
-      trimmed -> trimmed
-    end
-  end
-
-  defp normalize_mcp_optional_string(_value, default), do: default
 
   @spec normalize_mcp_boolean(WireTypes.boolean_input(), boolean()) :: boolean()
   defp normalize_mcp_boolean(value, default) do

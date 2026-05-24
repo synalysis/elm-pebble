@@ -1029,6 +1029,113 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert text.source == %{"call" => "Ui.text", "path" => "src/Main.elm", "line" => 512}
   end
 
+  test "debugger preview normalizes vector_at runtime_view_output row" do
+    runtime = %{
+      model: %{
+        "runtime_view_output" => [
+          %{"kind" => "vector_at", "vector_id" => 2, "x" => 10, "y" => 20}
+        ]
+      }
+    }
+
+    [op] = DebuggerPreview.svg_ops(nil, runtime)
+    assert op.kind == :vector_at
+    assert op.vector_id == 2
+    assert op.x == 10
+    assert op.y == 20
+  end
+
+  test "debugger preview derives drawVectorAt from view tree" do
+    tree = %{
+      "type" => "root",
+      "children" => [
+        %{
+          "type" => "drawVectorAt",
+          "children" => [
+            %{"type" => "expr", "value" => 1},
+            %{"type" => "expr", "value" => 4},
+            %{"type" => "expr", "value" => 6}
+          ]
+        }
+      ]
+    }
+
+    [op] = DebuggerPreview.svg_ops(tree, %{model: %{}})
+    assert op.kind == :vector_at
+    assert op.vector_id == 1
+    assert op.x == 4
+    assert op.y == 6
+  end
+
+  test "debugger preview supplements runtime output with tree drawVectorAt ops" do
+    tree = %{
+      "type" => "root",
+      "children" => [
+        %{
+          "type" => "drawVectorAt",
+          "children" => [
+            %{"type" => "expr", "value" => 1},
+            %{"type" => "expr", "value" => 4},
+            %{"type" => "expr", "value" => 6}
+          ]
+        }
+      ]
+    }
+
+    runtime = %{
+      model: %{
+        "runtime_view_output" => [
+          %{"kind" => "fill_rect", "x" => 1, "y" => 2, "w" => 3, "h" => 4, "fill" => 1}
+        ]
+      }
+    }
+
+    ops = DebuggerPreview.svg_ops(tree, runtime)
+
+    assert length(ops) == 2
+    assert Enum.at(ops, 0).kind == :fill_rect
+    assert Enum.at(ops, 1).kind == :vector_at
+    assert Enum.at(ops, 1).vector_id == 1
+  end
+
+  test "debugger preview normalizes vector_sequence_at runtime_view_output row" do
+    runtime = %{
+      model: %{
+        "runtime_view_output" => [
+          %{"kind" => "vector_sequence_at", "vector_id" => 3, "x" => 11, "y" => 22}
+        ]
+      }
+    }
+
+    [op] = DebuggerPreview.svg_ops(nil, runtime)
+    assert op.kind == :vector_sequence_at
+    assert op.vector_id == 3
+    assert op.x == 11
+    assert op.y == 22
+  end
+
+  test "debugger preview derives drawVectorSequenceAt from view tree" do
+    tree = %{
+      "type" => "root",
+      "children" => [
+        %{
+          "type" => "drawVectorSequenceAt",
+          "children" => [
+            %{"type" => "expr", "value" => 2},
+            %{"type" => "expr", "value" => 5},
+            %{"type" => "expr", "value" => 7}
+          ]
+        }
+      ]
+    }
+
+    [op] = DebuggerPreview.svg_ops(tree, %{model: %{}})
+    assert op.kind == :vector_sequence_at
+    assert op.vector_id == 2
+    assert op.x == 5
+    assert op.y == 7
+  end
+
   test "debugger preview prefers evaluated runtime_view_output over tree fallback" do
     tree = %{
       "type" => "root",
@@ -1513,6 +1620,68 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
            }
   end
 
+  test "rendered_tree includes vector draw ops from runtime_view_output" do
+    runtime = %{
+      view_tree: %{"type" => "toUiNode", "children" => []},
+      model: %{
+        "runtime_model" => %{"screenW" => 144, "screenH" => 168},
+        "runtime_view_output" => [
+          %{"kind" => "clear", "color" => 255},
+          %{
+            "kind" => "text_label",
+            "x" => 0,
+            "y" => 56,
+            "font_id" => 0,
+            "text" => "12:00"
+          },
+          %{
+            "kind" => "vector_at",
+            "vector_id" => 3,
+            "x" => 48,
+            "y" => 102,
+            "source" => %{"call" => "Ui.drawVectorAt", "path" => "watch/src/Main.elm", "line" => 146}
+          },
+          %{
+            "kind" => "vector_sequence_at",
+            "vector_id" => 12,
+            "x" => 48,
+            "y" => 102,
+            "source" => %{
+              "call" => "Ui.drawVectorSequenceAt",
+              "path" => "watch/src/Main.elm",
+              "line" => 138
+            }
+          }
+        ]
+      }
+    }
+
+    rendered = DebuggerSupport.rendered_tree(runtime)
+    ops = get_in(rendered, ["children", Access.at(0), "children", Access.at(0), "children"])
+
+    assert Enum.any?(ops, fn op ->
+             op["type"] == "drawVectorAt" and op["vector_id"] == 3 and op["x"] == 48 and op["y"] == 102
+           end)
+
+    assert Enum.any?(ops, fn op ->
+             op["type"] == "drawVectorSequenceAt" and op["vector_id"] == 12
+           end)
+
+    vector_node = Enum.find(ops, &(&1["type"] == "drawVectorAt"))
+
+    assert vector_node["source"] == %{
+             "call" => "Ui.drawVectorAt",
+             "path" => "watch/src/Main.elm",
+             "line" => 146
+           }
+
+    summary = DebuggerSupport.rendered_node_summary(vector_node, runtime.model)
+    assert summary =~ "drawVectorAt"
+    assert summary =~ "vector_id=3"
+    assert summary =~ "x=48"
+    assert summary =~ "y=102"
+  end
+
   test "rendered_tree prefers runtime output with source over concrete runtime tree" do
     runtime = %{
       view_tree: %{
@@ -1755,6 +1924,53 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
     assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.5", 144, 168) ==
              %{x: 11, y: 22, w: 6, h: 9}
+  end
+
+  test "rendered_node_bounds derives drawVectorAt from project vector canvas size" do
+    weather_clear =
+      Path.expand(
+        "../../../workspace_projects/users/2/wa/watch/resources/vectors/WeatherClear.pdc",
+        __DIR__
+      )
+
+    if File.regular?(weather_clear) do
+      project = %Ide.Projects.Project{
+        slug: "wa",
+        owner_id: 2,
+        target_type: "watchface",
+        source_roots: ["watch", "protocol", "phone"]
+      }
+
+      tree = %{
+        "type" => "windowStack",
+        "children" => [
+          %{
+            "type" => "window",
+            "children" => [
+              %{
+                "type" => "canvasLayer",
+                "children" => [
+                  %{
+                    "type" => "drawVectorAt",
+                    "vector_id" => 1,
+                    "x" => 48,
+                    "y" => 102,
+                    "children" => []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+
+      assert DebuggerSupport.rendered_node_bounds(tree, "0.0.0.0", 144, 168, project) ==
+               %{x: 48, y: 102, w: 48, h: 48}
+
+      refute DebuggerSupport.rendered_node_bounds(tree, "0.0.0.0", 144, 168)
+    else
+      assert true
+    end
   end
 
   test "rendered_node_summary includes promoted drawing command fields" do

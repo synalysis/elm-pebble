@@ -84,6 +84,26 @@ defmodule Ide.SimulatorCapabilitiesTest do
     assert MapSet.member?(caps, "watch_vibes")
   end
 
+  test "detects unobstructed area capability from UnobstructedArea subscriptions" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.UnobstructedArea as UnobstructedArea
+
+    subscriptions _ =
+        Sub.batch
+            [ UnobstructedArea.onWillChange WillChange
+            , UnobstructedArea.onChanging Changing
+            , UnobstructedArea.onDidChange DidChange
+            ]
+    """
+
+    {:ok, watch} = Ide.Debugger.ElmIntrospect.analyze_source(source, "Main.elm")
+    caps = Detect.watch_caps(Map.fetch!(watch, "elm_introspect"))
+
+    assert MapSet.member?(caps, "watch_unobstructed_area")
+  end
+
   test "normalizes tier 1 simulator settings defaults" do
     defaults = Ide.Debugger.default_simulator_settings()
 
@@ -127,6 +147,32 @@ defmodule Ide.SimulatorCapabilitiesTest do
   test "emulator mode adds timeline peek capability" do
     caps = SimulatorSettings.capabilities_for(nil, nil, :emulator)
     assert MapSet.member?(caps, "emulator_timeline_peek")
+  end
+
+  test "detects weather capability from companion Http commands" do
+    {:ok, phone} =
+      Ide.Debugger.ElmIntrospect.analyze_source(
+        """
+        module CompanionApp exposing (main)
+
+        import Http
+        import Json.Decode as Decode
+        import Platform
+
+        type Msg
+            = WeatherReceived (Result Http.Error Int)
+
+        fetch _ =
+            Http.get
+                { url = "https://example.test/weather"
+                , expect = Http.expectJson WeatherReceived Decode.int
+                }
+        """,
+        "CompanionApp.elm"
+      )
+
+    caps = Detect.companion_caps(Map.fetch!(phone, "elm_introspect"))
+    assert MapSet.member?(caps, "weather")
   end
 
   test "infer returns empty set for missing project" do

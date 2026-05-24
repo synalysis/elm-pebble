@@ -4034,6 +4034,179 @@ defmodule Ide.DebuggerTest do
     assert telemetry.used_frozen_preview == expected.used_frozen_preview
   end
 
+  test "protocol rx normalizes temperature union wire tag one into watch model updates" do
+    slug = "sim-weather-temp-wire-code-#{System.unique_integer([:positive])}"
+    template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
+
+    watch_source = File.read!(Path.join([template_root, "src", "Main.elm"]))
+    phone_source = File.read!(Path.join([template_root, "phone", "src", "CompanionApp.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_temperature_companion"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_temperature_watch"
+             })
+
+    assert {:ok, warmed} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "phone_to_watch",
+               message: "FromPhone (ProvideTemperature (Celsius 28))",
+               message_value: %{
+                 "ctor" => "FromPhone",
+                 "args" => [
+                   %{
+                     "ctor" => "ProvideTemperature",
+                     "args" => [%{"ctor" => "Celsius", "args" => [28]}]
+                   }
+                 ]
+               }
+             })
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Celsius", "args" => [28]}]},
+             get_in(warmed, [:watch, :model, "runtime_model", "temperature"])
+           )
+  end
+
+  test "protocol rx normalizes clear weather condition wire code one into watch model updates" do
+    slug = "sim-weather-clear-wire-code-#{System.unique_integer([:positive])}"
+    template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
+
+    watch_source = File.read!(Path.join([template_root, "src", "Main.elm"]))
+    phone_source = File.read!(Path.join([template_root, "phone", "src", "CompanionApp.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_condition_companion"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_condition_watch"
+             })
+
+    assert {:ok, cleared} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "phone_to_watch",
+               message: "FromPhone (ProvideCondition Clear)",
+               message_value: %{
+                 "ctor" => "FromPhone",
+                 "args" => [%{"ctor" => "ProvideCondition", "args" => [1]}]
+               }
+             })
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Clear", "args" => []}]},
+             get_in(cleared, [:watch, :model, "runtime_model", "condition"])
+           )
+  end
+
+  test "protocol rx normalizes weather condition enum wire codes into watch model updates" do
+    slug = "sim-weather-condition-wire-code-#{System.unique_integer([:positive])}"
+    template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
+
+    watch_source = File.read!(Path.join([template_root, "src", "Main.elm"]))
+    phone_source = File.read!(Path.join([template_root, "phone", "src", "CompanionApp.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_condition_companion"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_condition_watch"
+             })
+
+    assert {:ok, cloudy} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "phone_to_watch",
+               message: "FromPhone (ProvideCondition Cloudy)",
+               message_value: %{
+                 "ctor" => "FromPhone",
+                 "args" => [%{"ctor" => "ProvideCondition", "args" => [2]}]
+               }
+             })
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Cloudy", "args" => []}]},
+             get_in(cloudy, [:watch, :model, "runtime_model", "condition"])
+           )
+  end
+
+  test "protocol rx normalizes rain weather condition wire code into watch model updates" do
+    slug = "sim-weather-rain-wire-code-#{System.unique_integer([:positive])}"
+    template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
+
+    watch_source = File.read!(Path.join([template_root, "src", "Main.elm"]))
+    phone_source = File.read!(Path.join([template_root, "phone", "src", "CompanionApp.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_condition_companion"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_condition_watch"
+             })
+
+    assert {:ok, rained} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "phone_to_watch",
+               message: "FromPhone (ProvideCondition Rain)",
+               message_value: %{
+                 "ctor" => "FromPhone",
+                 "args" => [%{"ctor" => "ProvideCondition", "args" => [5]}]
+               }
+             })
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Rain", "args" => []}]},
+             get_in(rained, [:watch, :model, "runtime_model", "condition"])
+           )
+  end
+
   defp wait_until_stable_minute do
     if NaiveDateTime.local_now().second > 50 do
       Process.sleep(1_000)

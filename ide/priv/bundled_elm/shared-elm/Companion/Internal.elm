@@ -20,73 +20,32 @@ encodeLocationCode : Location -> Int
 encodeLocationCode value =
     case value of
         CurrentLocation ->
-            0
-
-        Berlin ->
             1
 
-        Zurich ->
+        Berlin ->
             2
 
-        NewYork ->
+        Zurich ->
             3
+
+        NewYork ->
+            4
 
 
 decodeLocationCode : Int -> Maybe Location
 decodeLocationCode value =
     case value of
-        0 ->
+        1 ->
             Just CurrentLocation
 
-        1 ->
+        2 ->
             Just Berlin
 
-        2 ->
+        3 ->
             Just Zurich
 
-        3 ->
-            Just NewYork
-
-        _ ->
-            Nothing
-
-
-encodeTutorialColorCode : TutorialColor -> Int
-encodeTutorialColorCode value =
-    case value of
-        Black ->
-            0
-
-        White ->
-            1
-
-        Green ->
-            2
-
-        Blue ->
-            3
-
-        Yellow ->
-            4
-
-
-decodeTutorialColorCode : Int -> Maybe TutorialColor
-decodeTutorialColorCode value =
-    case value of
-        0 ->
-            Just Black
-
-        1 ->
-            Just White
-
-        2 ->
-            Just Green
-
-        3 ->
-            Just Blue
-
         4 ->
-            Just Yellow
+            Just NewYork
 
         _ ->
             Nothing
@@ -96,61 +55,61 @@ encodeWeatherConditionCode : WeatherCondition -> Int
 encodeWeatherConditionCode value =
     case value of
         Clear ->
-            0
-
-        Cloudy ->
             1
 
-        Fog ->
+        Cloudy ->
             2
 
-        Drizzle ->
+        Fog ->
             3
 
-        Rain ->
+        Drizzle ->
             4
 
-        Snow ->
+        Rain ->
             5
 
-        Showers ->
+        Snow ->
             6
 
-        Storm ->
+        Showers ->
             7
 
-        UnknownWeather ->
+        Storm ->
             8
+
+        UnknownWeather ->
+            9
 
 
 decodeWeatherConditionCode : Int -> Maybe WeatherCondition
 decodeWeatherConditionCode value =
     case value of
-        0 ->
+        1 ->
             Just Clear
 
-        1 ->
+        2 ->
             Just Cloudy
 
-        2 ->
+        3 ->
             Just Fog
 
-        3 ->
+        4 ->
             Just Drizzle
 
-        4 ->
+        5 ->
             Just Rain
 
-        5 ->
+        6 ->
             Just Snow
 
-        6 ->
+        7 ->
             Just Showers
 
-        7 ->
+        8 ->
             Just Storm
 
-        8 ->
+        9 ->
             Just UnknownWeather
 
         _ ->
@@ -161,10 +120,10 @@ encodeTemperatureTag : Temperature -> Int
 encodeTemperatureTag value =
     case value of
         Celsius field1 ->
-            0
+            1
 
         Fahrenheit field1 ->
-            1
+            2
 
 
 encodeTemperatureValue : Temperature -> Int
@@ -180,10 +139,10 @@ encodeTemperatureValue value =
 decodeTemperature : Int -> Int -> Maybe Temperature
 decodeTemperature tag value =
     case tag of
-        0 ->
+        1 ->
             Just (Celsius value)
 
-        1 ->
+        2 ->
             Just (Fahrenheit value)
 
         _ ->
@@ -230,24 +189,6 @@ encodePhoneToWatch msg =
             Encode.object
                 [ ( "message_tag", Encode.int 202 )
                 , ( "provide_condition_field1", Encode.int (encodeWeatherConditionCode field1) )
-                ]
-
-        SetBackgroundColor field1 ->
-            Encode.object
-                [ ( "message_tag", Encode.int 203 )
-                , ( "set_background_color_field1", Encode.int (encodeTutorialColorCode field1) )
-                ]
-
-        SetTextColor field1 ->
-            Encode.object
-                [ ( "message_tag", Encode.int 204 )
-                , ( "set_text_color_field1", Encode.int (encodeTutorialColorCode field1) )
-                ]
-
-        SetShowDate field1 ->
-            Encode.object
-                [ ( "message_tag", Encode.int 205 )
-                , ( "set_show_date_field1", Encode.int (if field1 then 1 else 0) )
                 ]
 
 

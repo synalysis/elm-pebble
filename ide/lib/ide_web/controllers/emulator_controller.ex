@@ -396,6 +396,15 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
+  defp launch_error_message({:daemon_exited_before_ready, _port}) do
+    "The phone bridge (pypkjs) exited before it could connect to the watch emulator. " <>
+      "Try launching again; if it keeps failing, restart the IDE server to clear stale emulator processes."
+  end
+
+  defp launch_error_message({:qemu_boot_timeout, _tail}) do
+    "The watch emulator did not finish booting in time. Try launching again."
+  end
+
   defp launch_error_message(:compile_project_root_not_found) do
     "Could not find Elm project files (elm.json) in this workspace. Restore your project sources from backup or re-import the project, then try again."
   end

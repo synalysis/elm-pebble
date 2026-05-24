@@ -238,7 +238,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Log analytics bytes to the Pebble data logging service.\n\n@docs Tag, logBytes, logInt32",
+    "comment": "Log analytics bytes to the Pebble data logging service.\n\nEach log session is identified by a numeric tag (uint32 on device). Create tags\nwith `tag` and pass them to `logBytes` or `logInt32`.\n\n@docs Tag, tag, logBytes, logInt32",
     "name": "Pebble.DataLog",
     "unions": [
       {
@@ -249,6 +249,11 @@
       }
     ],
     "values": [
+      {
+        "comment": "Create a data logging tag from a uint32 session id.",
+        "name": "tag",
+        "type": "Int -> Tag"
+      },
       {
         "comment": "Log a list of byte values (0–255) under the given tag.",
         "name": "logBytes",

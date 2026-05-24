@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "vector_tangrambird",
+      "ctor": "TangramBird",
+      "filename": "TangramBird.pdc",
+      "mime": "application/octet-stream",
+      "bytes": 171,
+      "source": "pdc"
+    },
+    {
+      "id": "vector_tangramcomet",
+      "ctor": "TangramComet",
+      "filename": "TangramComet.pdc",
+      "mime": "application/octet-stream",
+      "bytes": 171,
+      "source": "pdc"
+    },
+    {
+      "id": "vector_tangramcrown",
+      "ctor": "TangramCrown",
+      "filename": "TangramCrown.pdc",
+      "mime": "application/octet-stream",
+      "bytes": 171,
+      "source": "pdc"
+    },
+    {
+      "id": "vector_tangramboat",
+      "ctor": "TangramBoat",
+      "filename": "TangramBoat.pdc",
+      "mime": "application/octet-stream",
+      "bytes": 175,
+      "source": "pdc"
+    },
+    {
+      "id": "vector_tangramflower",
+      "ctor": "TangramFlower",
+      "filename": "TangramFlower.pdc",
+      "mime": "application/octet-stream",
+      "bytes": 171,
+      "source": "pdc"
+    },
+    {
+      "id": "vector_tangramkite",
+      "ctor": "TangramKite",
+      "filename": "TangramKite.pdc",
+      "mime": "application/octet-stream",
+      "bytes": 171,
+      "source": "pdc"
+    }
+  ]
+}

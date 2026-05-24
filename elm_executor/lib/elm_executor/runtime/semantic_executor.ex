@@ -1171,6 +1171,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       "fillRadial" -> ["x", "y", "w", "h", "start_angle", "end_angle"]
       "bitmapInRect" -> ["bitmap_id", "x", "y", "w", "h"]
       "rotatedBitmap" -> ["bitmap_id", "src_w", "src_h", "angle", "center_x", "center_y"]
+      "drawVectorAt" -> ["vector_id", "x", "y"]
+      "vectorAt" -> ["vector_id", "x", "y"]
+      "drawVectorSequenceAt" -> ["vector_id", "x", "y"]
+      "vectorSequenceAt" -> ["vector_id", "x", "y"]
       "textInt" -> ["font_id", "x", "y", "value"]
       "textLabel" -> ["font_id", "x", "y", "text"]
       "text" -> ["font_id", "x", "y", "w", "h", "text_align", "text_overflow", "text"]
@@ -1950,6 +1954,26 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
               [unresolved_view_output_row(node, type, ints, 6)]
           end
 
+        type when type in ["drawVectorAt", "vectorAt"] ->
+          case vector_at_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [vector_id, x, y]} ->
+              [%{"kind" => "vector_at", "vector_id" => vector_id, "x" => x, "y" => y}]
+
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 3)]
+          end
+
+        type when type in ["drawVectorSequenceAt", "vectorSequenceAt"] ->
+          case vector_at_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [vector_id, x, y]} ->
+              [
+                %{"kind" => "vector_sequence_at", "vector_id" => vector_id, "x" => x, "y" => y}
+              ]
+
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 3)]
+          end
+
         "pixel" ->
           case require_ints(ints, 3) do
             {:ok, [x, y, color]} ->
@@ -2155,6 +2179,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       "fillCircle" -> 4
       "bitmapInRect" -> 5
       "rotatedBitmap" -> 6
+      "drawVectorAt" -> 3
+      "vectorAt" -> 3
+      "drawVectorSequenceAt" -> 3
+      "vectorSequenceAt" -> 3
       "pixel" -> 3
       "textInt" -> 4
       "textLabel" -> 3
@@ -2185,6 +2213,58 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       "provided_int_count" => length(ints),
       "required_int_count" => required_arity
     }
+  end
+
+  @spec vector_at_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args()
+  defp vector_at_args_from_node(node, ints, runtime_model, eval_context)
+       when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
+    case require_ints(ints, 3) do
+      {:ok, [vector_id, x, y]} ->
+        {:ok, [vector_id, x, y]}
+
+      :error ->
+        case node_children(node) do
+          [vector_node, x_node, y_node | _] ->
+            with vector_id when is_integer(vector_id) <-
+                   eval_view_vector_id(vector_node, eval_context),
+                 x when is_integer(x) <- eval_view_int(x_node, runtime_model, eval_context),
+                 y when is_integer(y) <- eval_view_int(y_node, runtime_model, eval_context) do
+              {:ok, [vector_id, x, y]}
+            else
+              _ -> :error
+            end
+
+          [vector_node, point_node | _] ->
+            with vector_id when is_integer(vector_id) <-
+                   eval_view_vector_id(vector_node, eval_context),
+                 {:ok, [x, y]} <- point_pair_from_node(point_node, runtime_model, eval_context) do
+              {:ok, [vector_id, x, y]}
+            else
+              _ -> :error
+            end
+
+          _ ->
+            :error
+        end
+    end
+  end
+
+  defp vector_at_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
+
+  @spec eval_view_vector_id(map() | EvalTypes.runtime_value(), map()) :: integer() | nil
+  defp eval_view_vector_id(value, context)
+
+  defp eval_view_vector_id(%{"type" => "expr", "value" => value}, context),
+    do: eval_view_vector_id(value, context)
+
+  defp eval_view_vector_id(%{type: "expr", value: value}, context),
+    do: eval_view_vector_id(value, context)
+
+  defp eval_view_vector_id(value, context) do
+    case CoreIREvaluator.vector_resource_id_from_value(value, context) do
+      {:ok, id} -> id
+      :error -> nil
+    end
   end
 
   @spec clear_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args()

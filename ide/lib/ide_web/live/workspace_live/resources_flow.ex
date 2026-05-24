@@ -3,6 +3,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias Ide.Resources.PdcDecoder
   alias Ide.Resources.ResourceStore
   alias Ide.Resources.Types, as: ResourceTypes
   alias Ide.Screenshots
@@ -11,6 +12,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
   @type bitmap_resource_row :: ResourceTypes.bitmap_entry() | map()
   @type font_resource_row :: ResourceTypes.font_entry() | map()
   @type font_source_row :: ResourceTypes.font_source() | map()
+  @type vector_resource_row :: ResourceTypes.vector_entry() | map()
 
   @spec bitmap_upload_output([upload_result_row()]) :: String.t()
   def bitmap_upload_output([]), do: "No file uploaded."
@@ -24,6 +26,13 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   def font_upload_output(results) when is_list(results) do
     upload_summary(results, "source font", "source fonts")
+  end
+
+  @spec vector_upload_output([upload_result_row()]) :: String.t()
+  def vector_upload_output([]), do: "No file uploaded."
+
+  def vector_upload_output(results) when is_list(results) do
+    upload_summary(results, "vector graphic", "vector graphics")
   end
 
   defp upload_summary(results, singular, plural) do
@@ -88,6 +97,52 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
       _ ->
         []
+    end
+  end
+
+  @spec load_vector_resources(Project.t()) :: [vector_resource_row()]
+  def load_vector_resources(%Project{} = project) do
+    case Projects.list_vector_resources(project) do
+      {:ok, entries} ->
+        Enum.with_index(entries, 1)
+        |> Enum.map(fn {entry, idx} ->
+          preview_svg =
+            case ResourceStore.vector_file_path(project, entry.ctor) do
+              {:ok, path} -> vector_preview_svg(path)
+              _ -> nil
+            end
+
+          entry
+          |> Map.put(:resource_id, idx)
+          |> Map.put(:kind_label, vector_kind_label(entry))
+          |> Map.put(:preview_svg, preview_svg)
+          |> Map.put(:sequence_label, vector_sequence_label(entry))
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp vector_kind_label(%{kind: "sequence"}), do: "PDC sequence"
+  defp vector_kind_label(%{source: "svg"}), do: "SVG → PDC"
+  defp vector_kind_label(%{source: "pdc"}), do: "PDC"
+  defp vector_kind_label(_), do: "vector"
+
+  defp vector_sequence_label(%{kind: "sequence", frames: frames, frame_duration_ms: ms})
+       when is_integer(frames) and is_integer(ms) do
+    "#{frames} frames · #{ms}ms"
+  end
+
+  defp vector_sequence_label(_), do: nil
+
+  @spec vector_preview_svg(String.t()) :: String.t() | nil
+  defp vector_preview_svg(path) when is_binary(path) do
+    with {:ok, bytes} <- File.read(path),
+         {:ok, svg} <- PdcDecoder.preview_svg(bytes) do
+      svg
+    else
+      _ -> nil
     end
   end
 

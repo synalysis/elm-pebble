@@ -361,6 +361,8 @@ defmodule Ide.Debugger do
     settings = normalize_simulator_settings(attrs)
 
     update(project_slug, fn state ->
+      previous_settings = Map.get(state, :simulator_settings) || %{}
+
       state
       |> ensure_phone_state()
       |> Map.put(:simulator_settings, settings)
@@ -370,7 +372,10 @@ defmodule Ide.Debugger do
       })
       |> maybe_apply_simulator_settings_geolocation_response()
       |> maybe_apply_simulator_settings_companion_bridge_responses()
+      |> maybe_reapply_companion_http_commands()
       |> maybe_apply_init_companion_bridge_commands(:companion)
+      |> maybe_inject_unobstructed_area_triggers(previous_settings, settings)
+      |> maybe_inject_watch_weather_from_simulator_settings(previous_settings, settings)
     end)
   end
 
@@ -1040,6 +1045,9 @@ defmodule Ide.Debugger do
       contains_any?(normalized, ["on_second_change", "onsecondchange"]) or
       contains_any?(normalized, ["on_compass_change", "oncompasschange"]) or
       contains_any?(normalized, ["on_app_focus_change", "onappfocuschange"]) or
+      contains_any?(normalized, ["on_unobstructed_will_change", "onunobstructedwillchange"]) or
+      contains_any?(normalized, ["on_unobstructed_changing", "onunobstructedchanging"]) or
+      contains_any?(normalized, ["on_unobstructed_did_change", "onunobstructeddidchange"]) or
       contains_any?(normalized, ["on_dictation_status", "ondictationstatus"]) or
       contains_any?(normalized, ["on_dictation_result", "ondictationresult"])
   end
@@ -1451,6 +1459,13 @@ defmodule Ide.Debugger do
     {message, msg_source, known_messages, update_branches, next_cursor} =
       resolve_step_message(model, requested_message)
 
+    message_value =
+      if is_map(message_value) do
+        normalize_protocol_subscription_message_value(state, target, message_value)
+      else
+        message_value
+      end
+
     runtime_result =
       step_runtime_result(model, view_tree, target, message, message_value, update_branches)
 
@@ -1720,6 +1735,54 @@ defmodule Ide.Debugger do
   end
 
   defp maybe_apply_simulator_settings_companion_bridge_responses(state), do: state
+
+  @spec maybe_reapply_companion_http_commands(runtime_state()) :: runtime_state()
+  defp maybe_reapply_companion_http_commands(state) when is_map(state) do
+    weather = simulator_settings_from_state(state)["weather"]
+
+    if is_map(weather) and map_size(weather) > 0 do
+      state
+      |> companion_tracked_http_commands()
+      |> Enum.reduce(state, fn command, acc ->
+        apply_runtime_http_followup(
+          acc,
+          :companion,
+          "companion",
+          "elm/http",
+          command,
+          nil
+        )
+      end)
+    else
+      state
+    end
+  end
+
+  defp maybe_reapply_companion_http_commands(state), do: state
+
+  @spec companion_tracked_http_commands(runtime_state()) :: [map()]
+  defp companion_tracked_http_commands(state) when is_map(state) do
+    case get_in(state, [:companion, :tracked_http_commands]) do
+      commands when is_list(commands) -> commands
+      _ -> []
+    end
+  end
+
+  @spec track_companion_http_command(runtime_state(), map()) :: runtime_state()
+  defp track_companion_http_command(state, %{"kind" => "http"} = command) when is_map(state) do
+    key = {Map.get(command, "method"), Map.get(command, "url")}
+
+    tracked =
+      state
+      |> companion_tracked_http_commands()
+      |> Enum.reject(fn existing -> {Map.get(existing, "method"), Map.get(existing, "url")} == key end)
+
+    update_in(state, [:companion, :tracked_http_commands], fn _ ->
+      [command | tracked] |> Enum.take(8)
+    end)
+  end
+
+  defp track_companion_http_command(state, _command), do: state
 
   @spec maybe_apply_init_companion_bridge_commands(runtime_state(), Types.surface_target()) :: runtime_state()
   defp maybe_apply_init_companion_bridge_commands(state, :companion = target)
@@ -2812,10 +2875,80 @@ defmodule Ide.Debugger do
 
   @spec resolve_protocol_ctor_arg(term(), Types.protocol_wire_type(), map(), map()) :: term() | nil
   defp resolve_protocol_ctor_arg(arg, wire_type, schema, ctx) do
-    resolve_protocol_arg_expr(arg, ctx) ||
-      resolve_protocol_arg_fallback(wire_type, schema, ctx) ||
-      simulator_settings_wire_value(wire_type, ctx)
+    value =
+      resolve_protocol_arg_expr(arg, ctx) ||
+        resolve_protocol_arg_fallback(wire_type, schema, ctx) ||
+        simulator_settings_wire_value(wire_type, ctx)
+
+    normalize_protocol_resolved_value(wire_type, schema, value)
   end
+
+  @spec normalize_protocol_resolved_value(Types.protocol_wire_type(), map(), term()) :: term() | nil
+  defp normalize_protocol_resolved_value({:union, "Temperature"} = wire_type, schema, value) do
+    normalize_temperature_value(value, schema, wire_type)
+  end
+
+  defp normalize_protocol_resolved_value({:enum, type} = wire_type, schema, value)
+       when is_map(schema) and is_binary(type) do
+    normalize_protocol_wire_value(schema, value, wire_type)
+  end
+
+  defp normalize_protocol_resolved_value({:union, type}, schema, value)
+       when is_binary(type) and is_map(value) do
+    case value do
+      %{"ctor" => ctor, "args" => args} when is_binary(ctor) and is_list(args) ->
+        %{
+          "ctor" => ctor,
+          "args" => Enum.map(args, &normalize_protocol_resolved_value({:union, type}, schema, &1))
+        }
+
+      _ ->
+        value
+    end
+  end
+
+  defp normalize_protocol_resolved_value(_wire_type, _schema, value), do: value
+
+  @spec normalize_temperature_value(term(), map(), Types.protocol_wire_type()) :: term() | nil
+  defp normalize_temperature_value(%{"ctor" => "Celsius", "args" => [arg | _]}, _schema, _wire_type) do
+    case normalize_temperature_scalar(arg) do
+      nil -> %{"ctor" => "Celsius", "args" => [0]}
+      int -> %{"ctor" => "Celsius", "args" => [int]}
+    end
+  end
+
+  defp normalize_temperature_value(%{"ctor" => "Fahrenheit", "args" => [arg | _]}, _schema, _wire_type) do
+    case normalize_temperature_scalar(arg) do
+      nil -> %{"ctor" => "Fahrenheit", "args" => [0]}
+      int -> %{"ctor" => "Fahrenheit", "args" => [int]}
+    end
+  end
+
+  defp normalize_temperature_value(value, _schema, _wire_type)
+       when is_integer(value) or is_float(value) do
+    %{"ctor" => "Celsius", "args" => [normalize_temperature_scalar(value)]}
+  end
+
+  defp normalize_temperature_value(%{} = record, schema, wire_type) do
+    case Map.get(record, "temperature") do
+      temp when is_integer(temp) or is_float(temp) ->
+        normalize_temperature_value(temp, schema, wire_type)
+
+      _ ->
+        record
+    end
+  end
+
+  defp normalize_temperature_value(value, _schema, _wire_type), do: value
+
+  @spec normalize_temperature_scalar(term()) :: integer() | nil
+  defp normalize_temperature_scalar(value) when is_integer(value), do: value
+
+  defp normalize_temperature_scalar(value) when is_float(value),
+    do: value |> Float.round() |> trunc()
+
+  defp normalize_temperature_scalar(%{"temperature" => temp}), do: normalize_temperature_scalar(temp)
+  defp normalize_temperature_scalar(_value), do: nil
 
   @spec resolve_protocol_arg_expr(term(), map()) :: term() | nil
   defp resolve_protocol_arg_expr(%{"$field" => field, "$on" => on_expr}, ctx)
@@ -2834,10 +2967,31 @@ defmodule Ide.Debugger do
         Map.get(runtime_model, name)
 
       true ->
-        case resolve_protocol_binding_record(%{"$var" => name}, ctx) do
-          record when is_map(record) -> record
-          value -> value
+        case Map.get(protocol_message_var_bindings(ctx), name) do
+          %{} = record ->
+            record
+
+          value when not is_nil(value) ->
+            value
+
+          _ ->
+            nil
         end
+    end
+  end
+
+  defp resolve_protocol_arg_expr(%{"$call" => call, "$args" => args}, ctx)
+       when is_binary(call) and is_list(args) and is_map(ctx) do
+    resolved_args = Enum.map(args, &resolve_protocol_arg_expr(&1, ctx))
+
+    if round_call?(call) do
+      case resolved_args do
+        [num | _] when is_integer(num) -> num
+        [num | _] when is_float(num) -> normalize_temperature_scalar(num)
+        _ -> nil
+      end
+    else
+      nil
     end
   end
 
@@ -2859,10 +3013,14 @@ defmodule Ide.Debugger do
   defp resolve_protocol_arg_expr(_arg, _ctx), do: nil
 
   @spec resolve_protocol_binding_record(map(), map()) :: term() | nil
-  defp resolve_protocol_binding_record(%{"$var" => _name}, ctx) when is_map(ctx) do
-    case protocol_update_payload_record(Map.get(ctx, :message_value)) do
+  defp resolve_protocol_binding_record(%{"$var" => name}, ctx)
+       when is_binary(name) and is_map(ctx) do
+    case Map.get(protocol_message_var_bindings(ctx), name) do
       %{} = record ->
         record
+
+      value when not is_nil(value) ->
+        value
 
       _ ->
         protocol_binding_record_from_runtime_model(Map.get(ctx, :runtime_model))
@@ -2870,6 +3028,55 @@ defmodule Ide.Debugger do
   end
 
   defp resolve_protocol_binding_record(_expr, _ctx), do: nil
+
+  @spec protocol_message_var_bindings(map()) :: map()
+  defp protocol_message_var_bindings(ctx) when is_map(ctx) do
+    case Map.get(ctx, :message_value) do
+      %{"ctor" => ctor, "args" => [inner | _]} when is_binary(ctor) and is_map(inner) ->
+        case protocol_ok_inner_record(inner) do
+          %{} = record ->
+            binding_name = protocol_ok_payload_binding_name(ctor)
+
+            if is_binary(binding_name) and binding_name != "" do
+              %{binding_name => record}
+            else
+              %{}
+            end
+
+          _ ->
+            protocol_connectivity_record(inner)
+            |> case do
+              %{} = record -> %{"connectivity" => record}
+              _ -> %{}
+            end
+        end
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp protocol_message_var_bindings(_ctx), do: %{}
+
+  @spec protocol_ok_payload_binding_name(String.t()) :: String.t() | nil
+  defp protocol_ok_payload_binding_name(ctor) when is_binary(ctor) do
+    case String.replace_suffix(ctor, "Received", "") do
+      "" ->
+        nil
+
+      <<first::utf8, rest::binary>> ->
+        String.downcase(<<first::utf8>>) <> rest
+    end
+  end
+
+  defp protocol_ok_payload_binding_name(_ctor), do: nil
+
+  @spec round_call?(String.t()) :: boolean()
+  defp round_call?(call) when is_binary(call) do
+    String.ends_with?(call, ".round") or call == "round" or call == "Basics.round"
+  end
+
+  defp round_call?(_call), do: false
 
   @spec protocol_binding_record_from_runtime_model(map() | nil) :: map() | nil
   defp protocol_binding_record_from_runtime_model(%{} = runtime_model) do
@@ -3410,12 +3617,13 @@ defmodule Ide.Debugger do
 
       is_integer(value) ->
         enum_values = Map.get(schema, :enums, %{}) |> Map.get(type, [])
-        ctor = Enum.at(enum_values, value - 1) || Enum.at(enum_values, value)
 
-        if is_binary(ctor) and ctor != "" do
-          %{"ctor" => ctor, "args" => []}
-        else
-          value
+        case Enum.at(enum_values, value - Ide.CompanionProtocolGenerator.wire_code_base()) do
+          ctor when is_binary(ctor) and ctor != "" ->
+            %{"ctor" => ctor, "args" => []}
+
+          _ ->
+            value
         end
 
       true ->
@@ -3424,6 +3632,67 @@ defmodule Ide.Debugger do
   end
 
   defp normalize_protocol_wire_value(_schema, value, _wire_type), do: value
+
+  @spec normalize_protocol_subscription_message_value(runtime_state(), Types.surface_target(), map()) :: map()
+  defp normalize_protocol_subscription_message_value(state, recipient, message_value)
+       when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(message_value) do
+    model = get_in(state, [recipient, :model]) || %{}
+
+    direction =
+      case recipient do
+        :watch -> :phone_to_watch
+        _ -> :watch_to_phone
+      end
+
+    case protocol_schema_from_state_or_model(state, model) do
+      {:ok, schema} ->
+        normalize_protocol_subscription_callback_value(schema, direction, message_value)
+
+      _ ->
+        message_value
+    end
+  end
+
+  defp normalize_protocol_subscription_message_value(_state, _recipient, message_value),
+    do: message_value
+
+  @spec normalize_protocol_subscription_callback_value(map(), :watch_to_phone | :phone_to_watch, map()) :: map()
+  defp normalize_protocol_subscription_callback_value(schema, direction, %{"ctor" => callback, "args" => [inner | _]} = wrapped)
+       when is_binary(callback) and is_map(schema) and direction in [:watch_to_phone, :phone_to_watch] do
+    normalized_inner = normalize_protocol_subscription_payload(schema, direction, inner)
+
+    if normalized_inner == inner do
+      wrapped
+    else
+      %{"ctor" => callback, "args" => [normalized_inner]}
+    end
+  end
+
+  defp normalize_protocol_subscription_callback_value(_schema, _direction, message_value),
+    do: message_value
+
+  @spec normalize_protocol_subscription_payload(map(), :watch_to_phone | :phone_to_watch, term()) :: term()
+  defp normalize_protocol_subscription_payload(schema, direction, %{"ctor" => "Ok", "args" => [inner | _]} = value)
+       when is_map(schema) and is_map(inner) do
+    normalized_inner = normalize_protocol_subscription_payload(schema, direction, inner)
+
+    if normalized_inner == inner do
+      value
+    else
+      %{"ctor" => "Ok", "args" => [normalized_inner]}
+    end
+  end
+
+  defp normalize_protocol_subscription_payload(schema, direction, inner) when is_map(inner) do
+    ctor = protocol_message_ctor(inner) || ""
+
+    case normalize_protocol_message_value_from_schema(schema, direction, inner, ctor) do
+      {_message, normalized_inner} -> normalized_inner
+      :error -> inner
+    end
+  end
+
+  defp normalize_protocol_subscription_payload(_schema, _direction, value), do: value
 
   @spec protocol_constructor_value?(Types.protocol_ctor_value()) :: boolean()
   defp protocol_constructor_value?(%{"ctor" => ctor}) when is_binary(ctor), do: true
@@ -3798,7 +4067,14 @@ defmodule Ide.Debugger do
   @spec apply_runtime_http_followup(runtime_state(), Types.surface_target(), String.t(), String.t(), map(), String.t() | nil) :: runtime_state()
   defp apply_runtime_http_followup(state, target, target_name, package, command, followup_message)
        when target in [:watch, :companion, :phone] and is_map(command) do
-    eval_context = http_eval_context(get_in(state, [target, :model]) || %{})
+    eval_context =
+      state
+      |> get_in([target, :model])
+      |> case do
+        %{} = model -> model
+        _ -> %{}
+      end
+      |> http_eval_context(simulator_settings_from_state(state))
 
     case HttpExecutor.execute(command, eval_context) do
       {:ok, result} when is_map(result) ->
@@ -3806,12 +4082,14 @@ defmodule Ide.Debugger do
         message_value = Map.get(result, "message_value")
 
         state
+        |> track_companion_http_command(command)
         |> append_event("debugger.package_cmd", %{
           target: target_name,
           package: package,
           response_message: response_message,
           command: http_command_event(command),
-          response: Map.get(result, "response")
+          response: Map.get(result, "response"),
+          simulated: simulated_http_response?(Map.get(result, "response"))
         })
         |> apply_step_once(
           target,
@@ -4662,12 +4940,14 @@ defmodule Ide.Debugger do
       if Map.get(meta, :trigger) == "configuration", do: "configuration", else: "protocol_rx"
 
     case protocol_rx_subscription_message(state, recipient, meta) do
-      {message, message_value} when is_binary(message) and message != "" ->
+      {message, message_value} when is_binary(message) and message != "" and is_map(message_value) ->
+        message_value = normalize_protocol_subscription_message_value(state, recipient, message_value)
+
         state
         |> apply_step_once(recipient, message, message_value, source_override, "protocol_rx")
         |> restore_protocol_rx_metadata(recipient, meta)
 
-      message when is_binary(message) and message != "" ->
+      {message, _message_value} when is_binary(message) and message != "" ->
         state
         |> apply_step_once(recipient, message, source_override, "protocol_rx")
         |> restore_protocol_rx_metadata(recipient, meta)
@@ -5535,6 +5815,24 @@ defmodule Ide.Debugger do
             message
           end
 
+        String.contains?(t, "unobstructedwillchange") or String.contains?(t, "onunobstructedwill") ->
+          rect = subscription_unobstructed_rect(state, target)
+
+          if subscription_message_arity(state, target, message_text) == 1 do
+            "#{message_text} #{Jason.encode!(rect)}"
+          else
+            message
+          end
+
+        String.contains?(t, "unobstructedchanging") or String.contains?(t, "onunobstructedchang") ->
+          progress = subscription_unobstructed_progress(state)
+
+          if subscription_message_arity(state, target, message_text) == 1 do
+            "#{message_text} #{progress}"
+          else
+            message
+          end
+
         String.contains?(t, "dictationstatus") or String.contains?(t, "ondictationstatus") ->
           status = subscription_dictation_status(state, target)
 
@@ -5579,6 +5877,168 @@ defmodule Ide.Debugger do
 
     if Map.get(settings, "app_in_focus", true) == true, do: "InFocus", else: "OutOfFocus"
   end
+
+  @spec subscription_unobstructed_rect(runtime_state(), Types.surface_target()) :: map()
+  defp subscription_unobstructed_rect(state, _target) when is_map(state) do
+    settings = simulator_settings_from_state(state)
+
+    launch_context =
+      get_in(state, [:watch, :model, "launch_context"]) ||
+        get_in(state, [:watch, :model, "runtime_model", "launch_context"]) ||
+        %{}
+
+    width = get_in(launch_context, ["screen", "width"]) || 144
+    height = get_in(launch_context, ["screen", "height"]) || 168
+    peek? = Map.get(settings, "timeline_peek", false) == true
+    inset = min(32, div(height, 4))
+
+    if peek? do
+      %{"x" => 0, "y" => inset, "w" => width, "h" => height - inset}
+    else
+      %{"x" => 0, "y" => 0, "w" => width, "h" => height}
+    end
+  end
+
+  @spec subscription_unobstructed_progress(runtime_state()) :: integer()
+  defp subscription_unobstructed_progress(_state), do: 255
+
+  @spec maybe_inject_unobstructed_area_triggers(runtime_state(), map(), map()) :: runtime_state()
+  defp maybe_inject_unobstructed_area_triggers(state, previous_settings, new_settings)
+       when is_map(state) and is_map(previous_settings) and is_map(new_settings) do
+    previous_peek = Map.get(previous_settings, "timeline_peek")
+    next_peek = Map.get(new_settings, "timeline_peek")
+
+    if previous_peek != next_peek do
+      Enum.reduce(
+        ["on_unobstructed_will_change", "on_unobstructed_changing", "on_unobstructed_did_change"],
+        state,
+        fn trigger, acc ->
+          maybe_inject_watch_subscription_trigger(acc, trigger)
+        end
+      )
+    else
+      state
+    end
+  end
+
+  defp maybe_inject_unobstructed_area_triggers(state, _previous_settings, _new_settings),
+    do: state
+
+  @weather_condition_wire_codes %{
+    "clear" => 1,
+    "cloudy" => 2,
+    "fog" => 3,
+    "drizzle" => 4,
+    "rain" => 5,
+    "snow" => 6,
+    "showers" => 7,
+    "storm" => 8,
+    "unknownweather" => 9
+  }
+
+  @spec maybe_inject_watch_weather_from_simulator_settings(runtime_state(), map(), map()) ::
+          runtime_state()
+  defp maybe_inject_watch_weather_from_simulator_settings(state, previous_settings, new_settings)
+       when is_map(state) and is_map(previous_settings) and is_map(new_settings) do
+    previous_weather = Map.get(previous_settings, "weather") || %{}
+    new_weather = Map.get(new_settings, "weather") || %{}
+
+    if new_weather == %{} or new_weather == previous_weather do
+      state
+    else
+      row =
+        state
+        |> trigger_candidates(:watch)
+        |> Enum.find(fn candidate ->
+          trigger = Map.get(candidate, :trigger) || Map.get(candidate, "trigger")
+          trigger in ["phone_to_watch", "on_phone_to_watch"]
+        end)
+
+      if is_map(row) and subscription_model_active?(state, :watch, row) do
+        state
+        |> maybe_apply_watch_weather_step(new_weather, "ProvideTemperature", fn weather ->
+          temp = Map.get(weather, "temperatureC") || Map.get(weather, :temperatureC)
+
+          if is_integer(temp) or is_float(temp) do
+            %{
+              "ctor" => "FromPhone",
+              "args" => [
+                %{
+                  "ctor" => "ProvideTemperature",
+                  "args" => [%{"ctor" => "Celsius", "args" => [round(temp)]}]
+                }
+              ]
+            }
+          end
+        end)
+        |> maybe_apply_watch_weather_step(new_weather, "ProvideCondition", fn weather ->
+          condition = Map.get(weather, "condition") || Map.get(weather, :condition) || "clear"
+
+          wire_code =
+            @weather_condition_wire_codes[
+              condition |> to_string() |> String.downcase() |> String.replace(~r/[^a-z0-9]+/, "")
+            ] || 1
+
+          %{
+            "ctor" => "FromPhone",
+            "args" => [
+              %{
+                "ctor" => "ProvideCondition",
+                "args" => [wire_code]
+              }
+            ]
+          }
+        end)
+      else
+        state
+      end
+    end
+  end
+
+  defp maybe_inject_watch_weather_from_simulator_settings(state, _previous_settings, _new_settings),
+    do: state
+
+  defp maybe_apply_watch_weather_step(state, weather, message_name, value_builder)
+       when is_map(state) and is_map(weather) and is_function(value_builder, 1) do
+    case value_builder.(weather) do
+      %{} = message_value ->
+        message = "FromPhone (#{message_name} ...)"
+
+        apply_step_once(
+          state,
+          :watch,
+          message,
+          message_value,
+          "simulator_settings",
+          "simulator_settings"
+        )
+
+      _ ->
+        state
+    end
+  end
+
+  @spec maybe_inject_watch_subscription_trigger(runtime_state(), String.t()) :: runtime_state()
+  defp maybe_inject_watch_subscription_trigger(state, trigger) when is_map(state) and is_binary(trigger) do
+    row =
+      state
+      |> trigger_candidates(:watch)
+      |> Enum.find(fn candidate ->
+        candidate_trigger = Map.get(candidate, :trigger) || Map.get(candidate, "trigger")
+        candidate_trigger == trigger
+      end)
+
+    if is_map(row) and subscription_model_active?(state, :watch, row) do
+      message = Map.get(row, :message) || Map.get(row, "message")
+      resolved_message = trigger_message_for_surface(state, :watch, trigger, message)
+
+      apply_step_once(state, :watch, resolved_message, nil, "simulator_settings", "simulator_settings")
+    else
+      state
+    end
+  end
+
+  defp maybe_inject_watch_subscription_trigger(state, _trigger), do: state
 
   @spec subscription_dictation_status(runtime_state(), Types.surface_target()) :: String.t()
   defp subscription_dictation_status(state, _target) when is_map(state) do
@@ -7189,6 +7649,28 @@ defmodule Ide.Debugger do
           "y" => integer_or_zero(map_value(row, "y")),
           "font_id" => integer_or_zero(map_value(row, "font_id")),
           "text" => to_string(map_value(row, "text") || "")
+        }
+        |> maybe_put_rendered_source(row)
+
+      "vector_at" ->
+        %{
+          "type" => "drawVectorAt",
+          "label" => "",
+          "children" => [],
+          "vector_id" => integer_or_zero(map_value(row, "vector_id")),
+          "x" => integer_or_zero(map_value(row, "x")),
+          "y" => integer_or_zero(map_value(row, "y"))
+        }
+        |> maybe_put_rendered_source(row)
+
+      "vector_sequence_at" ->
+        %{
+          "type" => "drawVectorSequenceAt",
+          "label" => "",
+          "children" => [],
+          "vector_id" => integer_or_zero(map_value(row, "vector_id")),
+          "x" => integer_or_zero(map_value(row, "x")),
+          "y" => integer_or_zero(map_value(row, "y"))
         }
         |> maybe_put_rendered_source(row)
 
@@ -9238,12 +9720,25 @@ defmodule Ide.Debugger do
           next_state = put_in(state, [target, :model], next_model)
 
           runtime_view_tree =
-            choose_runtime_preview_view_tree(
-              Map.get(payload, :view_tree),
-              view_tree,
-              view_tree,
-              runtime_view_output
-            )
+            case runtime_view_output_tree(next_model, target) do
+              %{} = output_tree ->
+                if introspect_view_usable?(output_tree), do: output_tree, else: nil
+
+              _ ->
+                nil
+            end
+            |> case do
+              %{} = tree ->
+                tree
+
+              _ ->
+                choose_runtime_preview_view_tree(
+                  Map.get(payload, :view_tree),
+                  view_tree,
+                  view_tree,
+                  runtime_view_output
+                )
+            end
 
           if introspect_view_usable?(runtime_view_tree) do
             put_in(next_state, [target, :view_tree], runtime_view_tree)
@@ -9300,14 +9795,11 @@ defmodule Ide.Debugger do
          runtime_view_tree,
          latest_view_tree,
          snapshot_view_tree,
-         view_output
+         _view_output
        ) do
     cond do
       concrete_runtime_view_tree?(runtime_view_tree) ->
         runtime_view_tree
-
-      has_runtime_view_output?(view_output) and concrete_runtime_view_tree?(latest_view_tree) ->
-        latest_view_tree
 
       concrete_runtime_view_tree?(latest_view_tree) and
           parser_expression_view_tree?(runtime_view_tree) ->
@@ -9317,10 +9809,6 @@ defmodule Ide.Debugger do
         if concrete_runtime_view_tree?(snapshot_view_tree), do: snapshot_view_tree, else: nil
     end
   end
-
-  @spec has_runtime_view_output?(list()) :: boolean()
-  defp has_runtime_view_output?(value) when is_list(value), do: value != []
-  defp has_runtime_view_output?(_value), do: false
 
   @spec concrete_runtime_view_tree?(map()) :: boolean()
   defp concrete_runtime_view_tree?(%{"type" => type} = tree) when is_binary(type) do
@@ -10027,24 +10515,53 @@ defmodule Ide.Debugger do
 
   defp runtime_execution_artifacts(_model), do: %{}
 
-  @spec http_eval_context(Types.runtime_model()) :: map()
-  defp http_eval_context(model) when is_map(model) do
-    case decode_core_ir_artifact(model) do
-      core_ir when is_map(core_ir) ->
-        %{
-          functions: ElmExecutor.Runtime.CoreIREvaluator.index_functions(core_ir),
-          record_aliases: ElmExecutor.Runtime.CoreIREvaluator.index_record_aliases(core_ir),
-          constructor_tags: ElmExecutor.Runtime.CoreIREvaluator.index_constructor_tags(core_ir),
-          module: "Main",
-          source_module: "Main"
-        }
+  @spec http_eval_context(Types.runtime_model(), map()) :: map()
+  defp http_eval_context(model, settings) when is_map(model) and is_map(settings) do
+    module =
+      model
+      |> Map.get("elm_introspect", %{})
+      |> Map.get("module")
+      |> case do
+        name when is_binary(name) and name != "" -> name
+        _ -> "Main"
+      end
 
-      _ ->
-        %{}
+    base =
+      case decode_core_ir_artifact(model) do
+        core_ir when is_map(core_ir) ->
+          %{
+            functions: ElmExecutor.Runtime.CoreIREvaluator.index_functions(core_ir),
+            record_aliases: ElmExecutor.Runtime.CoreIREvaluator.index_record_aliases(core_ir),
+            constructor_tags: ElmExecutor.Runtime.CoreIREvaluator.index_constructor_tags(core_ir),
+            module: module,
+            source_module: module
+          }
+
+        _ ->
+          %{}
+      end
+
+    weather = Map.get(settings, "weather")
+
+    if is_map(weather) and map_size(weather) > 0 do
+      Map.put(base, :simulator_weather, weather)
+    else
+      base
     end
   end
 
-  defp http_eval_context(_model), do: %{}
+  defp http_eval_context(_model, _settings), do: %{}
+
+  @spec simulated_http_response?(map() | nil) :: boolean()
+  defp simulated_http_response?(%{"status" => 200, "body" => body}) when is_binary(body) do
+    case Jason.decode(body) do
+      {:ok, %{"current" => _}} -> true
+      {:ok, %{"temperature" => _}} -> true
+      _ -> false
+    end
+  end
+
+  defp simulated_http_response?(_response), do: false
 
   @spec http_command_event(Types.cmd_call()) :: map()
   defp http_command_event(command) when is_map(command) do

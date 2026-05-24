@@ -5,6 +5,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   import IdeWeb.WatchInteractives
 
   alias Ide.Projects.Project
+  alias Ide.SimulatorSettings
   alias Ide.WatchModels
   alias Phoenix.LiveView.Rendered
 
@@ -76,6 +77,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
         data-emulator-target={@selected_emulator_target}
         data-emulator-screen-width={elem(emulator_screen_size(@selected_emulator_target), 0)}
         data-emulator-screen-height={elem(emulator_screen_size(@selected_emulator_target), 1)}
+        data-emulator-simulator-settings={emulator_simulator_settings_json(@project, @debugger_state)}
         class="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4"
       >
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -781,4 +783,17 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   end
 
   defp emulator_settings_path(_), do: "/settings"
+
+  @emulator_simulator_setting_keys ~w(
+    battery_percent charging connected clock_24h timeline_peek
+    compass_heading_deg compass_valid weather
+  )
+
+  @spec emulator_simulator_settings_json(Project.t() | map() | nil, map() | nil) :: String.t()
+  defp emulator_simulator_settings_json(project, debugger_state) do
+    project
+    |> SimulatorSettings.values_for(debugger_state)
+    |> Map.take(@emulator_simulator_setting_keys)
+    |> Jason.encode!()
+  end
 end

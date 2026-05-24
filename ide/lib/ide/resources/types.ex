@@ -8,6 +8,7 @@ defmodule Ide.Resources.Types do
   @type bitmap_entry :: ResourceStore.bitmap_entry()
   @type font_entry :: ResourceStore.font_entry()
   @type font_source :: ResourceStore.font_source()
+  @type vector_entry :: ResourceStore.vector_entry()
 
   @type manifest_entry :: map()
   @type manifest :: %{
@@ -22,11 +23,20 @@ defmodule Ide.Resources.Types do
 
   @type font_lookup_error :: :font_source_not_found
 
-  @type asset_lookup_error ::
-          :bitmap_not_found | :font_not_found | :font_variant_not_found | font_lookup_error()
-
   @type asset_type_error ::
-          :unsupported_bitmap_type | :unsupported_font_type | :invalid_font_height
+          :unsupported_bitmap_type
+          | :unsupported_font_type
+          | :unsupported_vector_type
+          | :invalid_font_height
+          | :svg_conversion_failed
+          | :invalid_pdc_output
+
+  @type asset_lookup_error ::
+          :bitmap_not_found
+          | :font_not_found
+          | :font_variant_not_found
+          | :vector_not_found
+          | font_lookup_error()
 
   @type manifest_io_error :: File.posix() | Jason.EncodeError.t()
 

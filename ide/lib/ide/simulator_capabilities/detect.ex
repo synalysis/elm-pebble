@@ -33,6 +33,7 @@ defmodule Ide.SimulatorCapabilities.Detect do
     "watch_accel" => "Accel",
     "watch_compass" => "Compass",
     "watch_app_focus" => "AppFocus",
+    "watch_unobstructed_area" => "UnobstructedArea",
     "watch_dictation" => "Dictation",
     "watch_data_log" => "DataLog",
     "watch_vibes" => "Vibes"
@@ -60,13 +61,38 @@ defmodule Ide.SimulatorCapabilities.Detect do
 
   @spec companion_caps(Types.elm_introspect() | nil) :: MapSet.t(String.t())
   def companion_caps(introspect) when is_map(introspect) do
-    for {cap, module_name} <- @companion_modules,
-        companion_module?(introspect, module_name),
-        into: MapSet.new(),
-        do: cap
+    caps =
+      for {cap, module_name} <- @companion_modules,
+          companion_module?(introspect, module_name),
+          into: MapSet.new(),
+          do: cap
+
+    if companion_http_cmds?(introspect) do
+      MapSet.put(caps, "weather")
+    else
+      caps
+    end
   end
 
   def companion_caps(_), do: MapSet.new()
+
+  @spec companion_http_cmds?(Types.elm_introspect()) :: boolean()
+  defp companion_http_cmds?(introspect) when is_map(introspect) do
+    introspect
+    |> cmd_calls()
+    |> Enum.any?(&http_cmd_call?/1)
+  end
+
+  @spec http_cmd_call?(map()) :: boolean()
+  defp http_cmd_call?(row) when is_map(row) do
+    target = call_target(row) |> String.downcase()
+    name = call_name(row) |> String.downcase()
+
+    String.starts_with?(target, "http.") or target in ["http.get", "http.post", "http.request"] or
+      name in ["get", "post", "request"] and String.contains?(target, "http")
+  end
+
+  defp http_cmd_call?(_row), do: false
 
   @spec add_watch_module_caps(MapSet.t(String.t()), Types.elm_introspect()) :: MapSet.t(String.t())
   defp add_watch_module_caps(set, introspect) do

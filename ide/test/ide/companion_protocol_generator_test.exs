@@ -78,19 +78,29 @@ defmodule Ide.CompanionProtocolGeneratorTest do
                  }
                )
 
-      assert File.read!(header) =~ "COMPANION_PROTOCOL_ENUM_LOCATION_CURRENT_LOCATION 0"
+      assert File.read!(header) =~ "COMPANION_PROTOCOL_ENUM_LOCATION_CURRENT_LOCATION 1"
       assert File.read!(header) =~ "COMPANION_PROTOCOL_TAG_REQUEST_WEATHER 2"
       assert File.read!(source) =~ "companion_protocol_dispatch_phone_to_watch"
       assert File.read!(source) =~ "ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET"
       assert File.read!(source) =~ "companion_protocol_new_union_value"
       assert File.read!(source) =~ "companion_protocol_new_phone_to_watch_message"
-      assert File.read!(source) =~ "case 0: return 41;"
-      assert File.read!(source) =~ "case 1: return 52;"
+      assert File.read!(source) =~ "*out = decoder->message;"
+      assert File.read!(source) =~
+               "out->kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE"
+      refute File.read!(source) =~
+               "out->kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE;\n      *out = decoder->message;"
+      assert File.read!(source) =~ "case 1: return 41;"
+      assert File.read!(source) =~ "case 2: return 52;"
       refute File.read!(source) =~ "tag + 1"
+      assert File.read!(source) =~ "decoder->message.int_fields[0] = 1;"
+      assert File.read!(source) =~ "decoder->message.union_value_fields[0] = 0;"
+      assert File.read!(source) =~ "CompanionProtocolPhoneToWatchDecoder *decoder, CompanionProtocolPhoneToWatchMessage *out)"
+      refute File.read!(source) =~ "const CompanionProtocolPhoneToWatchDecoder *decoder"
       assert File.read!(header) =~ "COMPANION_PROTOCOL_KEY_PROVIDE_TEMPERATURE_FIELD1_TAG"
       assert File.read!(header) =~ "COMPANION_PROTOCOL_KEY_PROVIDE_TEMPERATURE_FIELD1_VALUE"
       assert File.read!(js) =~ "decodeWatchToPhonePayload"
       assert File.read!(js) =~ "locationNameForCode"
+      assert File.read!(js) =~ ~s/payload[String(constants.KEY_MESSAGE_TAG)] = 201/
     after
       File.rm_rf(tmp)
     end
@@ -161,7 +171,7 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated =~ "encodeTemperatureValue : Temperature -> Int"
       assert generated =~ "decodeTemperature : Int -> Int -> Maybe Temperature"
       assert generated =~ "encodeTutorialColorCode : TutorialColor -> Int"
-      assert generated =~ "( \"set_show_date_field1\", Encode.int (if field1 then 1 else 0) )"
+      assert generated =~ "( \"set_show_date_field1\", Encode.int (if field1 then 1 else 2) )"
       assert generated =~ "                    3 ->\n                        Ok RequestUpdate"
       assert generated =~ "watchToPhoneTag : WatchToPhone -> Int"
       refute generated =~ "locationWeatherQuery"

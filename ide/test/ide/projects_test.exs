@@ -284,6 +284,18 @@ defmodule Ide.ProjectsTest do
     File.write!(tmp_ttf, <<0, 1, 0, 0, 0, 14, 0, 128>>)
     on_exit(fn -> File.rm(tmp_ttf) end)
 
+    tmp_pdc =
+      Path.join(System.tmp_dir!(), "vector_upload_#{System.unique_integer([:positive])}.pdc")
+
+    File.write!(
+      tmp_pdc,
+      <<0x50, 0x44, 0x43, 0x49, 0x1D, 0x00, 0x00, 0x00, 0x01, 0x00, 0x14, 0x00, 0x14, 0x00,
+        0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x03, 0x00, 0x02, 0x00, 0x12,
+        0x00, 0x0A, 0x00, 0x02, 0x00, 0x12, 0x00, 0x02, 0x00>>
+    )
+
+    on_exit(fn -> File.rm(tmp_pdc) end)
+
     assert {:ok, _} = Projects.import_bitmap_resource(project, tmp_png, "logo.png")
     assert {:ok, _} = Projects.import_font_resource(project, tmp_ttf, "menu.ttf")
 
@@ -358,6 +370,30 @@ defmodule Ide.ProjectsTest do
 
     assert {:ok, _} = Projects.delete_bitmap_resource(project, "Logo")
     assert {:ok, []} = Projects.list_bitmap_resources(project)
+
+    assert {:ok, _} =
+             Projects.import_vector_resource(project, tmp_pdc, "piece.pdc")
+
+    assert {:ok, vector_entries} = Projects.list_vector_resources(project)
+    assert [%{ctor: "Piece"}] = vector_entries
+
+    svg_path = Path.join(System.tmp_dir!(), "vector_upload_#{System.unique_integer([:positive])}.svg")
+
+    File.write!(
+      svg_path,
+      ~s(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><polygon points="2,18 10,2 18,18" fill="#000000"/></svg>)
+    )
+
+    on_exit(fn -> File.rm(svg_path) end)
+
+    assert {:ok, _} = Projects.import_vector_resource(project, svg_path, "tri.svg")
+    assert {:ok, vector_entries} = Projects.list_vector_resources(project)
+    assert Enum.any?(vector_entries, &(&1.ctor == "Tri"))
+
+    assert String.contains?(File.read!(generated), "type VectorGraphic")
+    assert String.contains?(File.read!(generated), "drawVectorAt") == false
+
+    assert {:ok, _} = Projects.delete_vector_resource(project, "Piece")
     assert {:ok, _} = Projects.delete_font_resource(project, "MenuDigits28")
     assert File.exists?(source_font_path)
     assert {:ok, remaining_fonts} = Projects.list_font_resources(project)
@@ -872,7 +908,13 @@ defmodule Ide.ProjectsTest do
     assert File.exists?(Path.join(base, "phone/src/CompanionApp.elm"))
     refute File.exists?(Path.join(base, "phone/src/CompanionPreferences.elm"))
 
+    assert File.exists?(Path.join(base, "watch/resources/vectors.json"))
+    assert File.exists?(Path.join(base, "watch/resources/vectors/TangramBird.pdc"))
+
     assert {:ok, watch_main} = Projects.read_source_file(project, "watch", "src/Main.elm")
+    assert String.contains?(watch_main, "Ui.drawVectorAt")
+    assert String.contains?(watch_main, "Resources.TangramBird")
+    refute String.contains?(watch_main, "birdForm")
     assert String.contains?(watch_main, "CompanionWatch.sendWatchToPhone RequestFigure")
     assert String.contains?(watch_main, "BeginFigure figureId")
     assert String.contains?(watch_main, "downloadedTangram")

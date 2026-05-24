@@ -6,6 +6,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   alias Ide.Debugger.ElmIntrospect
   alias Ide.Debugger.RuntimeFingerprintDrift
   alias Ide.Projects
+  alias Ide.Projects.Project
+  alias Ide.Resources.PdcDecoder
+  alias Ide.Resources.ResourceStore
   alias Phoenix.Component
 
   @default_event_limit 500
@@ -1084,6 +1087,28 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         }
         |> maybe_put_rendered_source(row)
 
+      "vector_at" ->
+        %{
+          "type" => "drawVectorAt",
+          "label" => "",
+          "children" => [],
+          "vector_id" => map_integer_value(row, "vector_id", 0),
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
+      "vector_sequence_at" ->
+        %{
+          "type" => "drawVectorSequenceAt",
+          "label" => "",
+          "children" => [],
+          "vector_id" => map_integer_value(row, "vector_id", 0),
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
       _ ->
         nil
     end
@@ -1097,15 +1122,23 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec rendered_node_bounds(rendered_node() | map(), String.t(), integer(), integer()) :: map() | nil
-  def rendered_node_bounds(tree, path, screen_w, screen_h)
+  @spec rendered_node_bounds(
+          rendered_node() | map(),
+          String.t(),
+          integer(),
+          integer(),
+          Project.t() | nil
+        ) :: map() | nil
+  def rendered_node_bounds(tree, path, screen_w, screen_h, project \\ nil)
+
+  def rendered_node_bounds(tree, path, screen_w, screen_h, project)
       when is_map(tree) and is_binary(path) do
     tree
     |> rendered_node_at_path(path)
-    |> rendered_bounds_for_node(screen_w, screen_h)
+    |> rendered_bounds_for_node(screen_w, screen_h, project)
   end
 
-  def rendered_node_bounds(_tree, _path, _screen_w, _screen_h), do: nil
+  def rendered_node_bounds(_tree, _path, _screen_w, _screen_h, _project), do: nil
 
   @spec rendered_node_at_path(map(), String.t()) :: map() | nil
   defp rendered_node_at_path(tree, path) when is_map(tree) and is_binary(path) do
@@ -1135,8 +1168,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp rendered_node_at_indexes(_node, _indexes), do: nil
 
-  @spec rendered_bounds_for_node(rendered_node(), integer(), integer()) :: map() | nil
-  defp rendered_bounds_for_node(node, screen_w, screen_h) when is_map(node) do
+  @spec rendered_bounds_for_node(rendered_node(), integer(), integer(), Project.t() | nil) ::
+          map() | nil
+  defp rendered_bounds_for_node(node, screen_w, screen_h, project) when is_map(node) do
     type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
 
     case type do
@@ -1201,12 +1235,44 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       "rotatedBitmap" ->
         rotated_bitmap_bounds(node)
 
+      "drawVectorAt" ->
+        vector_at_bounds(node, project, :image)
+
+      "drawVectorSequenceAt" ->
+        vector_at_bounds(node, project, :sequence)
+
       _ ->
-        aggregate_child_bounds(node, screen_w, screen_h)
+        aggregate_child_bounds(node, screen_w, screen_h, project)
     end
   end
 
-  defp rendered_bounds_for_node(_node, _screen_w, _screen_h), do: nil
+  defp rendered_bounds_for_node(_node, _screen_w, _screen_h, _project), do: nil
+
+  @spec vector_at_bounds(map(), Project.t() | nil, :image | :sequence) :: map() | nil
+  defp vector_at_bounds(node, project, kind) when is_map(node) and kind in [:image, :sequence] do
+    with x when is_integer(x) <- map_integer(node, :x),
+         y when is_integer(y) <- map_integer(node, :y),
+         {:ok, {w, h}} <- vector_canvas_size(node, project, kind) do
+      %{x: x, y: y, w: max(w, 1), h: max(h, 1)}
+    else
+      _ -> nil
+    end
+  end
+
+  @spec vector_canvas_size(map(), Project.t() | nil, :image | :sequence) ::
+          {:ok, {integer(), integer()}} | :error
+  defp vector_canvas_size(node, %Project{} = project, kind) when is_map(node) do
+    with vector_id when is_integer(vector_id) and vector_id >= 1 <- map_integer(node, :vector_id),
+         {:ok, path} <- ResourceStore.vector_file_path_by_id(project, vector_id),
+         {:ok, bytes} <- File.read(path),
+         {:ok, {w, h}} <- PdcDecoder.decode_canvas_size(bytes, kind) do
+      {:ok, {w, h}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp vector_canvas_size(_node, _project, _kind), do: :error
 
   @spec rect_bounds(map()) :: map() | nil
   defp rect_bounds(node) when is_map(node) do
@@ -1426,12 +1492,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp normalize_path_point(_point), do: nil
 
-  @spec aggregate_child_bounds(map(), [rendered_node()], integer()) :: map() | nil
-  defp aggregate_child_bounds(node, screen_w, screen_h) when is_map(node) do
+  @spec aggregate_child_bounds(map(), integer(), integer(), Project.t() | nil) :: map() | nil
+  defp aggregate_child_bounds(node, screen_w, screen_h, project) when is_map(node) do
     node
     |> Map.get("children", Map.get(node, :children, []))
     |> Enum.filter(&is_map/1)
-    |> Enum.map(&rendered_bounds_for_node(&1, screen_w, screen_h))
+    |> Enum.map(&rendered_bounds_for_node(&1, screen_w, screen_h, project))
     |> Enum.reject(&is_nil/1)
     |> union_bounds()
   end
@@ -1663,6 +1729,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       "fillRadial" -> ["x", "y", "w", "h", "start_angle", "end_angle"]
       "bitmapInRect" -> ["bitmap_id", "x", "y", "w", "h"]
       "rotatedBitmap" -> ["bitmap_id", "src_w", "src_h", "angle", "center_x", "center_y"]
+      "drawVectorAt" -> ["vector_id", "x", "y"]
+      "drawVectorSequenceAt" -> ["vector_id", "x", "y"]
       "textInt" -> ["font_id", "x", "y", "value"]
       "textLabel" -> ["font_id", "x", "y", "text"]
       "text" -> ["font_id", "x", "y", "w", "h", "text_align", "text_overflow", "text"]
@@ -4649,6 +4717,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         "color" -> :color
         "font_id" -> :font_id
         "bitmap_id" -> :bitmap_id
+        "vector_id" -> :vector_id
         "src_w" -> :src_w
         "src_h" -> :src_h
         "angle" -> :angle

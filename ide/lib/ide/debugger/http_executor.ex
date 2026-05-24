@@ -4,6 +4,7 @@ defmodule Ide.Debugger.HttpExecutor do
   """
 
   alias ElmExecutor.Runtime.CoreIREvaluator
+  alias Ide.Debugger.HttpSimulator
   alias Ide.Debugger.Types
 
   @default_timeout_ms 10_000
@@ -15,7 +16,7 @@ defmodule Ide.Debugger.HttpExecutor do
   def execute(command, eval_context \\ %{})
 
   def execute(command, eval_context) when is_map(command) and is_map(eval_context) do
-    with {:ok, response} <- request(command),
+    with {:ok, response} <- request(command, eval_context),
          {:ok, message_value} <-
            CoreIREvaluator.decode_http_response(command, response, eval_context) do
       {:ok,
@@ -29,8 +30,21 @@ defmodule Ide.Debugger.HttpExecutor do
 
   def execute(_command, _eval_context), do: {:error, :invalid_http_command}
 
-  @spec request(command()) :: {:ok, map()} | {:error, Types.http_executor_error()}
-  defp request(command) do
+  @spec request(command(), map()) :: {:ok, map()} | {:error, Types.http_executor_error()}
+  defp request(command, eval_context) when is_map(eval_context) do
+    weather = Map.get(eval_context, :simulator_weather) || Map.get(eval_context, "simulator_weather")
+
+    case HttpSimulator.simulated_response(command, weather) do
+      {:ok, response} ->
+        {:ok, response}
+
+      :skip ->
+        configured_request(command)
+    end
+  end
+
+  @spec configured_request(command()) :: {:ok, map()} | {:error, Types.http_executor_error()}
+  defp configured_request(command) do
     request_fun = Application.get_env(:ide, __MODULE__, []) |> Keyword.get(:request_fun)
 
     if is_function(request_fun, 1) do

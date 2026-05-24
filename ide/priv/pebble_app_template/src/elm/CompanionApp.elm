@@ -137,8 +137,8 @@ weatherReportDecoder =
         )
 
 
-conditionFromCode : Int -> WeatherCondition
-conditionFromCode code =
+openMeteoConditionFromCode : Int -> WeatherCondition
+openMeteoConditionFromCode code =
     if code == 0 then
         Clear
 
@@ -165,6 +165,11 @@ conditionFromCode code =
 
     else
         UnknownWeather
+
+
+conditionFromCode : Int -> WeatherCondition
+conditionFromCode =
+    openMeteoConditionFromCode
 
 
 subscriptions : Model -> Sub Msg

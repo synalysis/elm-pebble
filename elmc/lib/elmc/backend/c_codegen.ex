@@ -109,15 +109,22 @@ defmodule Elmc.Backend.CCodegen do
   @spec header(ElmEx.IR.t(), map()) :: String.t()
   defp header(ir, opts) do
     direct_cmd_decls = direct_command_decls(ir, opts)
+    decl_map = function_decl_map(ir)
+    generic_targets = generic_function_targets(ir, opts)
     wrapper_targets = generic_wrapper_targets(ir, opts)
 
     function_decls =
       ir.modules
       |> Enum.flat_map(fn mod ->
         mod.declarations
-        |> Enum.filter(
-          &(&1.kind == :function && MapSet.member?(wrapper_targets, {mod.name, &1.name}))
-        )
+        |> Enum.filter(fn decl ->
+          target = {mod.name, decl.name}
+
+          decl.kind == :function &&
+            MapSet.member?(generic_targets, target) &&
+            (MapSet.member?(wrapper_targets, target) ||
+               not native_function_args?(decl, mod.name, decl_map))
+        end)
         |> Enum.map(fn decl ->
           c_name = module_fn_name(mod.name, decl.name)
           "ElmcValue *#{c_name}(ElmcValue ** const args, const int argc);"
@@ -159,6 +166,7 @@ defmodule Elmc.Backend.CCodegen do
     Process.put(:elmc_constructor_tags, constructor_tags)
     Process.put(:elmc_enum_types, enum_type_set(ir))
     Process.put(:elmc_record_alias_shapes, record_alias_shape_map(ir))
+    Process.put(:elmc_record_field_types, record_alias_field_types_map(ir))
     decl_map = function_decl_map(ir)
     generic_targets = generic_function_targets(ir, opts)
 
@@ -1072,15 +1080,24 @@ defmodule Elmc.Backend.CCodegen do
     arg_bindings
     |> Enum.zip(arg_types)
     |> Enum.reduce(env, fn {{arg, _c_arg, _index}, arg_type}, acc ->
+      normalized_type = normalize_type_name(arg_type)
+
       acc =
-        case normalize_type_name(arg_type) do
+        case normalized_type do
           "Int" -> put_boxed_int_binding(acc, arg, true)
           "Bool" -> put_boxed_bool_binding(acc, arg, true)
           _other -> if enum_type?(arg_type), do: put_boxed_int_binding(acc, arg, true), else: acc
         end
 
-      put_record_shape(acc, arg, record_shape_for_type(arg_type, acc))
+      acc
+      |> put_record_shape(arg, record_shape_for_type(arg_type, acc))
+      |> put_var_type(arg, normalized_type)
     end)
+  end
+
+  defp put_var_type(env, name, type) when is_binary(name) and is_binary(type) do
+    types = Map.get(env, :__var_types__, %{})
+    Map.put(env, :__var_types__, Map.put(types, name, type))
   end
 
   defp put_typed_arg_bindings(env, _arg_bindings, _type), do: env
@@ -2669,32 +2686,36 @@ defmodule Elmc.Backend.CCodegen do
   defp compile_expr(%{op: :constructor_call, target: target, args: args}, env, counter) do
     case special_value_from_target(target, args) do
       nil ->
-        c_name = qualified_to_c_name(target)
+        if resource_union_constructor?(target, args) do
+          compile_expr(resource_union_index_expr(target), env, counter)
+        else
+          c_name = qualified_to_c_name(target)
 
-        {arg_code, arg_vars, counter} =
-          Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
-            {code, var, c2} = compile_expr(arg_expr, env, c)
-            {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
-          end)
+          {arg_code, arg_vars, counter} =
+            Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
+              {code, var, c2} = compile_expr(arg_expr, env, c)
+              {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
+            end)
 
-        next = counter + 1
-        out = "tmp_#{next}"
-        args_var = "call_args_#{next}"
-        argc = length(arg_vars)
-        arg_list = Enum.join(arg_vars, ", ")
+          next = counter + 1
+          out = "tmp_#{next}"
+          args_var = "call_args_#{next}"
+          argc = length(arg_vars)
+          arg_list = Enum.join(arg_vars, ", ")
 
-        releases =
-          arg_vars
-          |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
+          releases =
+            arg_vars
+            |> Enum.map_join("\n  ", fn var -> "elmc_release(#{var});" end)
 
-        code = """
-        #{arg_code}
-          ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
-          ElmcValue *#{out} = #{c_name}(#{args_var}, #{argc});
-          #{releases}
-        """
+          code = """
+          #{arg_code}
+            ElmcValue *#{args_var}[#{max(argc, 1)}] = { #{arg_list} };
+            ElmcValue *#{out} = #{c_name}(#{args_var}, #{argc});
+            #{releases}
+          """
 
-        {code, out, counter}
+          {code, out, counter}
+        end
 
       expr ->
         compile_expr(expr, env, counter)
@@ -3882,6 +3903,24 @@ defmodule Elmc.Backend.CCodegen do
           %{op: :record_alias, fields: fields} when is_list(fields) ->
             shape = Enum.sort(Enum.map(fields, &to_string/1))
             [{{mod.name, decl.name}, shape}]
+
+          _ ->
+            []
+        end
+      end)
+    end)
+    |> Map.new()
+  end
+
+  defp record_alias_field_types_map(ir) do
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(&(&1.kind == :type_alias))
+      |> Enum.flat_map(fn decl ->
+        case Map.get(decl, :expr) do
+          %{op: :record_alias, field_types: field_types} when is_map(field_types) ->
+            [{{mod.name, decl.name}, field_types}]
 
           _ ->
             []
@@ -5813,6 +5852,32 @@ defmodule Elmc.Backend.CCodegen do
         counter
       )
 
+  defp direct_emit_qualified("Pebble.Ui.drawVectorAt", [vector, origin], env, counter),
+    do:
+      direct_append_command(
+        draw_kind(:vector_at),
+        [
+          vector,
+          field_access_expr(origin, "x"),
+          field_access_expr(origin, "y")
+        ],
+        env,
+        counter
+      )
+
+  defp direct_emit_qualified("Pebble.Ui.drawVectorSequenceAt", [vector, origin], env, counter),
+    do:
+      direct_append_command(
+        draw_kind(:vector_sequence_at),
+        [
+          vector,
+          field_access_expr(origin, "x"),
+          field_access_expr(origin, "y")
+        ],
+        env,
+        counter
+      )
+
   defp direct_emit_qualified("Pebble.Ui.drawRotatedBitmap", args, env, counter),
     do: direct_append_command(draw_kind(:rotated_bitmap), args, env, counter)
 
@@ -7283,6 +7348,30 @@ defmodule Elmc.Backend.CCodegen do
         5
       )
 
+  defp special_value_from_target("Pebble.Ui.drawVectorAt", [vector, origin]),
+    do:
+      encoded_cmd_expr(
+        draw_kind(:vector_at),
+        [
+          vector,
+          field_access_expr(origin, "x"),
+          field_access_expr(origin, "y")
+        ],
+        3
+      )
+
+  defp special_value_from_target("Pebble.Ui.drawVectorSequenceAt", [vector, origin]),
+    do:
+      encoded_cmd_expr(
+        draw_kind(:vector_sequence_at),
+        [
+          vector,
+          field_access_expr(origin, "x"),
+          field_access_expr(origin, "y")
+        ],
+        3
+      )
+
   defp special_value_from_target("Pebble.Ui.drawBitmapInRect", args),
     do: encoded_draw_cmd_expr(draw_kind(:bitmap_in_rect), args, 5)
 
@@ -7743,6 +7832,30 @@ defmodule Elmc.Backend.CCodegen do
 
   defp special_value_from_target("Elm.Kernel.PebbleWatch.onDictationResult", _args),
     do: %{op: :int_literal, value: 2_097_152}
+
+  defp special_value_from_target("Pebble.UnobstructedArea.onWillChange", _args),
+    do: %{op: :int_literal, value: 4_194_304}
+
+  defp special_value_from_target("Pebble.UnobstructedArea.onChanging", _args),
+    do: %{op: :int_literal, value: 4_194_304}
+
+  defp special_value_from_target("Pebble.UnobstructedArea.onDidChange", _args),
+    do: %{op: :int_literal, value: 4_194_304}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.onUnobstructedWillChange", _args),
+    do: %{op: :int_literal, value: 4_194_304}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.onUnobstructedChanging", _args),
+    do: %{op: :int_literal, value: 4_194_304}
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.onUnobstructedDidChange", _args),
+    do: %{op: :int_literal, value: 4_194_304}
+
+  defp special_value_from_target("Pebble.UnobstructedArea.currentBounds", [to_msg]),
+    do: encoded_cmd_expr(command_kind(:unobstructed_bounds_peek), [constructor_tag_expr(to_msg)], 1)
+
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.unobstructedCurrentBounds", [to_msg]),
+    do: encoded_cmd_expr(command_kind(:unobstructed_bounds_peek), [constructor_tag_expr(to_msg)], 1)
 
   defp special_value_from_target("Companion.Watch.onPhoneToWatch", _args),
     do: %{op: :int_literal, value: 4096}
@@ -9219,6 +9332,8 @@ defmodule Elmc.Backend.CCodegen do
       "FillRadial" -> "Pebble.Ui.fillRadial"
       "BitmapInRect" -> "Pebble.Ui.drawBitmapInRect"
       "RotatedBitmap" -> "Pebble.Ui.drawRotatedBitmap"
+      "VectorAt" -> "Pebble.Ui.drawVectorAt"
+      "VectorSequenceAt" -> "Pebble.Ui.drawVectorSequenceAt"
       other -> other
     end
   end
@@ -9372,6 +9487,12 @@ defmodule Elmc.Backend.CCodegen do
       "Pebble.Dictation.onResult" -> 2_097_152
       "Elm.Kernel.PebbleWatch.onDictationStatus" -> 2_097_152
       "Elm.Kernel.PebbleWatch.onDictationResult" -> 2_097_152
+      "Pebble.UnobstructedArea.onWillChange" -> 4_194_304
+      "Pebble.UnobstructedArea.onChanging" -> 4_194_304
+      "Pebble.UnobstructedArea.onDidChange" -> 4_194_304
+      "Elm.Kernel.PebbleWatch.onUnobstructedWillChange" -> 4_194_304
+      "Elm.Kernel.PebbleWatch.onUnobstructedChanging" -> 4_194_304
+      "Elm.Kernel.PebbleWatch.onUnobstructedDidChange" -> 4_194_304
       "Elm.Kernel.PebbleWatch.onFrame" -> 8192
       "Elm.Kernel.PebbleWatch.onButtonUp" -> 2
       "Elm.Kernel.PebbleWatch.onButtonSelect" -> 4
@@ -9463,6 +9584,16 @@ defmodule Elmc.Backend.CCodegen do
       |> List.last()
       |> then(&Map.get(tags, &1, 0))
     end)
+  end
+
+  defp resource_union_constructor?(target, args) when is_binary(target) and is_list(args) do
+    args == [] and String.starts_with?(target, "Pebble.Ui.Resources.")
+  end
+
+  defp resource_union_constructor?(_, _), do: false
+
+  defp resource_union_index_expr(target) when is_binary(target) do
+    %{op: :int_literal, value: constructor_tag(target) + 1}
   end
 
   @spec field_access_expr(map(), String.t()) :: map()
@@ -10094,6 +10225,45 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp record_shape_for_type(_type, _env), do: nil
+
+  defp lookup_record_field_type(type_name, field, env) when is_binary(type_name) and is_binary(field) do
+    types_map = Process.get(:elmc_record_field_types, %{})
+    current_module = Map.get(env, :__module__, "Main")
+    normalized = normalize_type_name(type_name)
+
+    cond do
+      Map.has_key?(types_map, {current_module, normalized}) ->
+        Map.get(types_map[{current_module, normalized}], field)
+
+      String.contains?(normalized, ".") ->
+        case split_qualified_type_name(normalized) do
+          {mod, name} -> Map.get(types_map[{mod, name}] || %{}, field)
+          _ -> nil
+        end
+
+      true ->
+        nil
+    end
+  end
+
+  defp record_field_type(env, arg, field) when is_binary(arg) and is_binary(field) do
+    case Map.get(env, :__var_types__, %{}) |> Map.get(arg) do
+      type when is_binary(type) -> lookup_record_field_type(type, field, env)
+      _ -> nil
+    end
+  end
+
+  defp record_field_type(env, %{op: :var, name: name}, field) when is_binary(field),
+    do: record_field_type(env, name, field)
+
+  defp record_field_type(_env, _arg, _field), do: nil
+
+  defp native_int_record_field?(env, arg, field) do
+    case record_field_type(env, arg, field) do
+      "Int" -> true
+      _ -> false
+    end
+  end
 
   defp split_qualified_type_name(type_name) when is_binary(type_name) do
     case String.split(type_name, ".") do
@@ -11889,7 +12059,8 @@ defmodule Elmc.Backend.CCodegen do
   defp native_int_expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name),
     do: boxed_int_binding?(env, name) or is_binary(native_int_binding(env, name))
 
-  defp native_int_expr?(%{op: :field_access}, _env), do: true
+  defp native_int_expr?(%{op: :field_access, arg: arg, field: field}, env),
+    do: native_int_record_field?(env, arg, field)
 
   defp native_int_expr?(%{op: :c_int_expr}, _env), do: true
 

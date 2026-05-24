@@ -47,6 +47,9 @@ module Elm.Kernel.PebbleWatch exposing
     , onMinuteChange
     , onMonthChange
     , onSecondChange
+    , onUnobstructedChanging
+    , onUnobstructedDidChange
+    , onUnobstructedWillChange
     , onYearChange
     , storageDelete
     , storageReadInt
@@ -54,6 +57,7 @@ module Elm.Kernel.PebbleWatch exposing
     , storageWriteInt
     , storageWriteString
     , timerAfter
+    , unobstructedCurrentBounds
     , vibesCancel
     , vibesCustomPattern
     , vibesDoublePulse
@@ -380,6 +384,30 @@ dictationStop =
 onAppFocusChange : (a -> msg) -> Sub msg
 onAppFocusChange _ =
     Sub.none
+
+
+onUnobstructedWillChange : (a -> msg) -> Sub msg
+onUnobstructedWillChange _ =
+    Sub.none
+
+
+onUnobstructedChanging : (Int -> msg) -> Sub msg
+onUnobstructedChanging _ =
+    Sub.none
+
+
+onUnobstructedDidChange : msg -> Sub msg
+onUnobstructedDidChange _ =
+    Sub.none
+
+
+unobstructedCurrentBounds : (a -> msg) -> Cmd msg
+unobstructedCurrentBounds toMsg =
+    let
+        keep =
+            toMsg
+    in
+    Cmd.none
 
 
 onCompassChange : (a -> msg) -> Sub msg

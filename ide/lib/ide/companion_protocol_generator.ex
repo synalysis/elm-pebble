@@ -26,6 +26,17 @@ defmodule Ide.CompanionProtocolGenerator do
 
   @type generator_error :: {:missing_union, String.t()} | File.posix()
 
+  # Pebble AppMessage commonly drops dictionary entries whose value is zero.
+  # Enum and union-tag wire codes therefore start at 1; bool uses 1=true, 2=false.
+  @wire_code_base 1
+  @wire_true_code 1
+  @wire_false_code 2
+
+  @spec wire_code_base() :: pos_integer()
+  def wire_code_base, do: @wire_code_base
+
+  defp wire_code(index) when is_integer(index), do: index + @wire_code_base
+
   @spec generate(String.t(), String.t(), String.t(), String.t(), keyword()) ::
           :ok | {:error, generator_error()}
   def generate(types_elm, out_h, out_c, out_js, opts \\ []) do
@@ -184,8 +195,8 @@ defmodule Ide.CompanionProtocolGenerator do
       |> Enum.flat_map(fn {type, ctors} ->
         ctors
         |> Enum.with_index()
-        |> Enum.map(fn {ctor, id} ->
-          "#define COMPANION_PROTOCOL_ENUM_#{macro_name(type)}_#{macro_name(ctor)} #{id}"
+        |> Enum.map(fn {ctor, index} ->
+          "#define COMPANION_PROTOCOL_ENUM_#{macro_name(type)}_#{macro_name(ctor)} #{wire_code(index)}"
         end)
       end)
       |> Enum.join("\n")
@@ -275,7 +286,7 @@ defmodule Ide.CompanionProtocolGenerator do
     void companion_protocol_phone_to_watch_decoder_push_tuple(
         CompanionProtocolPhoneToWatchDecoder *decoder, const Tuple *tuple);
     bool companion_protocol_phone_to_watch_decoder_finish(
-        const CompanionProtocolPhoneToWatchDecoder *decoder, CompanionProtocolPhoneToWatchMessage *out);
+        CompanionProtocolPhoneToWatchDecoder *decoder, CompanionProtocolPhoneToWatchMessage *out);
     int companion_protocol_dispatch_phone_to_watch(
         ElmcPebbleApp *app, const CompanionProtocolPhoneToWatchMessage *message);
 
@@ -312,6 +323,8 @@ defmodule Ide.CompanionProtocolGenerator do
     finish_cases =
       schema.phone_to_watch
       |> Enum.map_join("\n", fn msg ->
+        missing_field_defaults = c_missing_field_defaults(msg)
+
         required =
           msg.fields
           |> Enum.with_index()
@@ -321,7 +334,8 @@ defmodule Ide.CompanionProtocolGenerator do
 
         """
             case COMPANION_PROTOCOL_TAG_#{macro_name(msg.name)}:
-              if (!(#{required})) return false;
+      #{missing_field_defaults}      if (!(#{required})) return false;
+              *out = decoder->message;
               out->kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_#{macro_name(msg.name)};
               return true;
         """
@@ -416,9 +430,8 @@ defmodule Ide.CompanionProtocolGenerator do
     }
 
     bool companion_protocol_phone_to_watch_decoder_finish(
-        const CompanionProtocolPhoneToWatchDecoder *decoder, CompanionProtocolPhoneToWatchMessage *out) {
+        CompanionProtocolPhoneToWatchDecoder *decoder, CompanionProtocolPhoneToWatchMessage *out) {
       if (!decoder || !out || !decoder->saw_tag) return false;
-      *out = decoder->message;
 
       switch (decoder->tag) {
     #{finish_cases}
@@ -524,6 +537,8 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp c_native_int_value_expr(_field, index), do: "message->int_fields[#{index}]"
 
+  defp js_payload_key(name), do: "String(constants.KEY_#{macro_name(name)})"
+
   defp js(schema) do
     constants =
       schema.key_ids
@@ -536,7 +551,7 @@ defmodule Ide.CompanionProtocolGenerator do
         entries =
           ctors
           |> Enum.with_index()
-          |> Enum.map_join("\n", fn {ctor, id} -> "  #{id}: \"#{ctor}\"," end)
+          |> Enum.map_join("\n", fn {ctor, index} -> "  #{wire_code(index)}: \"#{ctor}\"," end)
 
         "var #{macro_name(type)}_BY_CODE = {\n#{entries}\n};"
       end)
@@ -584,7 +599,7 @@ defmodule Ide.CompanionProtocolGenerator do
 
         """
             case "#{msg.name}":
-              payload[constants.KEY_MESSAGE_TAG] = #{msg.tag};
+              payload[#{js_payload_key("message_tag")}] = #{msg.tag};
         #{writes}
               return payload;
         """
@@ -611,7 +626,7 @@ defmodule Ide.CompanionProtocolGenerator do
         return null;
       }
 
-      var tag = payload[constants.KEY_MESSAGE_TAG];
+      var tag = payload[#{js_payload_key("message_tag")}];
       if (typeof tag !== "number") {
         return null;
       }
@@ -836,7 +851,8 @@ defmodule Ide.CompanionProtocolGenerator do
     "\n                , ( \"#{field.key}\", #{elm_encoder(schema, field, value)} )"
   end
 
-  defp elm_decoder(%{wire_type: :bool}), do: "(Decode.map ((/=) 0) Decode.int)"
+  defp elm_decoder(%{wire_type: :bool}),
+    do: "(Decode.andThen (\\value -> if value == #{@wire_true_code} then Decode.succeed True else if value == #{@wire_false_code} then Decode.succeed False else Decode.fail \"Invalid bool wire code\") Decode.int)"
   defp elm_decoder(%{wire_type: :string}), do: "Decode.string"
   defp elm_decoder(_field), do: "Decode.int"
 
@@ -854,7 +870,7 @@ defmodule Ide.CompanionProtocolGenerator do
   defp elm_encoder(_schema, _field, value), do: "Encode.int #{value}"
 
   defp elm_encode_value(_schema, %{wire_type: :bool}, value),
-    do: "if #{value} then 1 else 0"
+    do: "if #{value} then #{@wire_true_code} else #{@wire_false_code}"
 
   defp elm_encode_value(_schema, %{wire_type: {:enum, _type}, type: type}, value),
     do: "#{elm_enum_encode_name(type)} #{value}"
@@ -916,7 +932,7 @@ defmodule Ide.CompanionProtocolGenerator do
     ctors
     |> Enum.with_index()
     |> Enum.map_join("\n\n", fn {ctor, index} ->
-      "        #{ctor.name}#{elm_union_pattern_args(ctor.args)} ->\n            #{index}"
+      "        #{ctor.name}#{elm_union_pattern_args(ctor.args)} ->\n            #{wire_code(index)}"
     end)
   end
 
@@ -932,7 +948,7 @@ defmodule Ide.CompanionProtocolGenerator do
       ctors
       |> Enum.with_index()
       |> Enum.map_join("\n\n", fn {ctor, index} ->
-        "        #{index} ->\n            #{elm_union_decode_expr(ctor)}"
+        "        #{wire_code(index)} ->\n            #{elm_union_decode_expr(ctor)}"
       end)
 
     known <> "\n\n        _ ->\n            Nothing"
@@ -955,7 +971,7 @@ defmodule Ide.CompanionProtocolGenerator do
     |> Map.fetch!(type)
     |> Enum.with_index()
     |> Enum.map_join("\n\n", fn {ctor, index} ->
-      "        #{ctor} ->\n            #{index}"
+      "        #{ctor} ->\n            #{wire_code(index)}"
     end)
   end
 
@@ -965,7 +981,7 @@ defmodule Ide.CompanionProtocolGenerator do
       |> Map.fetch!(type)
       |> Enum.with_index()
       |> Enum.map_join("\n\n", fn {ctor, index} ->
-        "        #{index} ->\n            Just #{ctor}"
+        "        #{wire_code(index)} ->\n            Just #{ctor}"
       end)
 
     known <> "\n\n        _ ->\n            Nothing"
@@ -986,6 +1002,65 @@ defmodule Ide.CompanionProtocolGenerator do
     do: "decoder->saw_fields[#{index}] && decoder->saw_union_value_fields[#{index}]"
 
   defp c_required_field_expr(_field, index), do: "decoder->saw_fields[#{index}]"
+
+  # Treat missing enum/union tag fields as the first 1-based wire code when AppMessage omits keys.
+  defp c_missing_field_defaults(%{fields: fields}) do
+    fields
+    |> Enum.with_index()
+    |> Enum.map_join("\n", fn {field, index} ->
+      c_missing_field_default(field, index)
+    end)
+  end
+
+  defp c_missing_field_default(%{wire_type: {:union, _type}}, index) do
+    """
+          if (!decoder->saw_fields[#{index}]) {
+            decoder->saw_fields[#{index}] = true;
+            decoder->message.int_fields[#{index}] = #{@wire_code_base};
+          }
+          if (!decoder->saw_union_value_fields[#{index}]) {
+            decoder->saw_union_value_fields[#{index}] = true;
+            decoder->message.union_value_fields[#{index}] = 0;
+          }
+    """
+  end
+
+  defp c_missing_field_default(%{wire_type: :bool}, index) do
+    """
+          if (!decoder->saw_fields[#{index}]) {
+            decoder->saw_fields[#{index}] = true;
+            decoder->message.bool_fields[#{index}] = false;
+          }
+    """
+  end
+
+  defp c_missing_field_default(%{wire_type: :int}, index) do
+    c_missing_int_field_default(index)
+  end
+
+  defp c_missing_field_default(%{wire_type: {:enum, _type}}, index) do
+    c_missing_tag_field_default(index)
+  end
+
+  defp c_missing_field_default(_field, _index), do: ""
+
+  defp c_missing_tag_field_default(index) do
+    """
+          if (!decoder->saw_fields[#{index}]) {
+            decoder->saw_fields[#{index}] = true;
+            decoder->message.int_fields[#{index}] = #{@wire_code_base};
+          }
+    """
+  end
+
+  defp c_missing_int_field_default(index) do
+    """
+          if (!decoder->saw_fields[#{index}]) {
+            decoder->saw_fields[#{index}] = true;
+            decoder->message.int_fields[#{index}] = 0;
+          }
+    """
+  end
 
   defp c_decode_tuple_cases(%{wire_type: {:union, _type}} = field, index) do
     tag_macro = "COMPANION_PROTOCOL_KEY_#{macro_name(field.key <> "_tag")}"
@@ -1034,7 +1109,7 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_decode_tuple_field(%{wire_type: :bool}, index) do
     """
       if (tuple->type == TUPLE_INT || tuple->type == TUPLE_UINT) {
-        decoder->message.bool_fields[#{index}] = tuple->value->int32 != 0;
+        decoder->message.bool_fields[#{index}] = tuple->value->int32 == #{@wire_true_code};
       }
     """
   end
@@ -1098,14 +1173,14 @@ defmodule Ide.CompanionProtocolGenerator do
     |> Enum.map_join("\n\n", fn {type, ctors} ->
       cases =
         ctors
-        |> Enum.with_index()
-        |> Enum.map_join("\n", fn {ctor, code} ->
+        |> Enum.with_index(1)
+        |> Enum.map_join("\n", fn {ctor, wire_code} ->
           runtime_tag =
             runtime_tags
             |> Map.get(type, %{})
-            |> Map.get(ctor, code + 1)
+            |> Map.get(ctor, wire_code)
 
-          "    case #{code}: return #{runtime_tag};"
+          "    case #{wire_code}: return #{runtime_tag};"
         end)
 
       """
@@ -1120,10 +1195,25 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   defp c_runtime_tag_types(schema) do
-    enum_types = schema.enums
+    used_types =
+      schema.phone_to_watch
+      |> Enum.flat_map(& &1.fields)
+      |> Enum.flat_map(fn
+        %{wire_type: {:enum, type}} -> [{:enum, type}]
+        %{wire_type: {:union, type}} -> [{:union, type}]
+        _ -> []
+      end)
+      |> Enum.uniq()
+
+    enum_type_names = for {:enum, type} <- used_types, do: type
+
+    union_type_names = for {:union, type} <- used_types, do: type
+
+    enum_types = Map.take(schema.enums, enum_type_names)
 
     payload_union_types =
       schema.payload_unions
+      |> Map.take(union_type_names)
       |> Map.new(fn {type, ctors} -> {type, Enum.map(ctors, & &1.name)} end)
 
     Map.merge(enum_types, payload_union_types)
@@ -1136,25 +1226,25 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_tuple_chain([head | rest]), do: "elmc_tuple2(#{head}, #{c_tuple_chain(rest)})"
 
   defp js_field_prop(%{wire_type: {:enum, type}, key: key, name: name}, _index) do
-    code = "payload[constants.KEY_#{macro_name(key)}]"
+    code = "payload[#{js_payload_key(key)}]"
 
     "    #{name}Code: #{code},\n    #{camel_lower(type)}Name: #{camel_lower(type)}NameForCode(#{code})"
   end
 
   defp js_field_prop(%{wire_type: {:union, _type}, key: key, name: name}, _index) do
-    tag = "payload[constants.KEY_#{macro_name(key <> "_tag")}]"
-    value = "payload[constants.KEY_#{macro_name(key <> "_value")}]"
+    tag = "payload[#{js_payload_key(key <> "_tag")}]"
+    value = "payload[#{js_payload_key(key <> "_value")}]"
 
     "    #{name}: { tag: #{tag}, value: #{value} }"
   end
 
   defp js_field_prop(%{key: key, name: name}, _index) do
-    "    #{name}: payload[constants.KEY_#{macro_name(key)}]"
+    "    #{name}: payload[#{js_payload_key(key)}]"
   end
 
   defp js_encode_field_writes(%{wire_type: {:union, _type}} = field, source) do
-    tag_key = "constants.KEY_#{macro_name(field.key <> "_tag")}"
-    value_key = "constants.KEY_#{macro_name(field.key <> "_value")}"
+    tag_key = js_payload_key(field.key <> "_tag")
+    value_key = js_payload_key(field.key <> "_value")
 
     """
           payload[#{tag_key}] = #{source} && #{source}.tag;
@@ -1163,11 +1253,11 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   defp js_encode_field_writes(field, source) do
-    "      payload[constants.KEY_#{macro_name(field.key)}] = #{js_encode_field_value(field, source)};"
+    "      payload[#{js_payload_key(field.key)}] = #{js_encode_field_value(field, source)};"
   end
 
   defp js_encode_field_value(%{wire_type: :bool}, source),
-    do: "(#{source} ? 1 : 0)"
+    do: "(#{source} ? #{@wire_true_code} : #{@wire_false_code})"
 
   defp js_encode_field_value(_field, source), do: source
 

@@ -75,16 +75,30 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   def svg_ops(tree, runtime) when is_map(tree) do
     runtime_ops = runtime_compact_scene_output(runtime)
 
-    if runtime_ops != [] do
-      runtime_ops
-    else
-      model = runtime_model(runtime)
-      primary_int = primary_int_model_value(model)
+    model = runtime_model(runtime)
+    primary_int = primary_int_model_value(model)
 
+    tree_ops =
       tree
       |> collect_view_nodes()
       |> Enum.flat_map(&svg_op_from_node(&1, primary_int, model))
       |> apply_svg_style_state()
+
+    tree_vector_ops =
+      Enum.filter(tree_ops, &(&1.kind in [:vector_at, :vector_sequence_at]))
+
+    runtime_has_vectors? =
+      Enum.any?(runtime_ops, &(&1.kind in [:vector_at, :vector_sequence_at]))
+
+    cond do
+      runtime_ops == [] ->
+        tree_ops
+
+      not runtime_has_vectors? and tree_vector_ops != [] ->
+        runtime_ops ++ tree_vector_ops
+
+      true ->
+        runtime_ops
     end
   end
 
@@ -603,6 +617,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
       "pixel" -> :pixel
       "bitmap_in_rect" -> :bitmap_in_rect
       "rotated_bitmap" -> :rotated_bitmap
+      "vector_at" -> :vector_at
+      "vector_sequence_at" -> :vector_sequence_at
       "text_int" -> :text_int
       "text_label" -> :text_label
       "text" -> :text
@@ -916,6 +932,24 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
                 ["bitmap_id", "src_w", "src_h", "angle", "center_x", "center_y"],
                 op
               )
+          end
+
+        "vector_at" ->
+          case map_integers_required(op, ["vector_id", "x", "y"]) do
+            {:ok, [vector_id, x, y]} ->
+              %{kind: :vector_at, vector_id: vector_id, x: x, y: y}
+
+            :error ->
+              unresolved_svg_op("vector_at", ["vector_id", "x", "y"], op)
+          end
+
+        "vector_sequence_at" ->
+          case map_integers_required(op, ["vector_id", "x", "y"]) do
+            {:ok, [vector_id, x, y]} ->
+              %{kind: :vector_sequence_at, vector_id: vector_id, x: x, y: y}
+
+            :error ->
+              unresolved_svg_op("vector_sequence_at", ["vector_id", "x", "y"], op)
           end
 
         "text_int" ->
@@ -1892,6 +1926,80 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
             unresolved_node("bitmapInRect", length(ints), 5)
         end
 
+      kind when kind in ["drawVectorAt", "vectorAt"] ->
+        case require_ints(ints, 3) do
+          {:ok, [vector_id, x, y]} ->
+            if vector_id == 0 do
+              []
+            else
+              [%{kind: :vector_at, vector_id: vector_id, x: x, y: y}]
+            end
+
+          :error ->
+            case node_children(node) do
+              [vector_node, x_node, y_node | _] ->
+                with vector_id when is_integer(vector_id) <- vector_node_id(vector_node, model),
+                     x when is_integer(x) <- node_int_value(x_node, model),
+                     y when is_integer(y) <- node_int_value(y_node, model),
+                     true <- vector_id != 0 do
+                  [%{kind: :vector_at, vector_id: vector_id, x: x, y: y}]
+                else
+                  _ ->
+                    unresolved_node("drawVectorAt", length(ints), 3)
+                end
+
+              [vector_node, point_node | _] ->
+                with vector_id when is_integer(vector_id) <- vector_node_id(vector_node, model),
+                     {:ok, [x, y]} <- point_pair_from_point_node(point_node),
+                     true <- vector_id != 0 do
+                  [%{kind: :vector_at, vector_id: vector_id, x: x, y: y}]
+                else
+                  _ ->
+                    unresolved_node("drawVectorAt", length(ints), 3)
+                end
+
+              _ ->
+                unresolved_node("drawVectorAt", length(ints), 3)
+            end
+        end
+
+      kind when kind in ["drawVectorSequenceAt", "vectorSequenceAt"] ->
+        case require_ints(ints, 3) do
+          {:ok, [vector_id, x, y]} ->
+            if vector_id == 0 do
+              []
+            else
+              [%{kind: :vector_sequence_at, vector_id: vector_id, x: x, y: y}]
+            end
+
+          :error ->
+            case node_children(node) do
+              [vector_node, x_node, y_node | _] ->
+                with vector_id when is_integer(vector_id) <- vector_node_id(vector_node, model),
+                     x when is_integer(x) <- node_int_value(x_node, model),
+                     y when is_integer(y) <- node_int_value(y_node, model),
+                     true <- vector_id != 0 do
+                  [%{kind: :vector_sequence_at, vector_id: vector_id, x: x, y: y}]
+                else
+                  _ ->
+                    unresolved_node("drawVectorSequenceAt", length(ints), 3)
+                end
+
+              [vector_node, point_node | _] ->
+                with vector_id when is_integer(vector_id) <- vector_node_id(vector_node, model),
+                     {:ok, [x, y]} <- point_pair_from_point_node(point_node),
+                     true <- vector_id != 0 do
+                  [%{kind: :vector_sequence_at, vector_id: vector_id, x: x, y: y}]
+                else
+                  _ ->
+                    unresolved_node("drawVectorSequenceAt", length(ints), 3)
+                end
+
+              _ ->
+                unresolved_node("drawVectorSequenceAt", length(ints), 3)
+            end
+        end
+
       "text" ->
         case node_children(node) do
           [_font_node, x_node, y_node, w_node, h_node, value_node | _] ->
@@ -2202,6 +2310,37 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
       target in ["Resources.NoBitmap", "Pebble.Ui.Resources.NoBitmap"] or type == "NoBitmap" ->
         0
+
+      true ->
+        nil
+    end
+  end
+
+  @spec vector_node_id(map(), model_map()) :: integer() | nil
+  defp vector_node_id(node, model) when is_map(node) do
+    evaluated = evaluated_node_value(node, model)
+
+    target =
+      to_string(Map.get(node, "qualified_target") || Map.get(node, :qualified_target) || "")
+
+    type = to_string(Map.get(node, "type") || Map.get(node, :type) || "")
+
+    cond do
+      is_integer(evaluated) ->
+        evaluated
+
+      is_map(evaluated) ->
+        case ElmExecutor.Runtime.CoreIREvaluator.vector_resource_id_from_value(evaluated, %{}) do
+          {:ok, id} -> id
+          :error -> nil
+        end
+
+      target in ["Resources.NoVectorGraphic", "Pebble.Ui.Resources.NoVectorGraphic"] or
+          type == "NoVectorGraphic" ->
+        0
+
+      is_integer(Map.get(node, "tag") || Map.get(node, :tag)) ->
+        (Map.get(node, "tag") || Map.get(node, :tag)) + 1
 
       true ->
         nil

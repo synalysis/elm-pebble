@@ -85,6 +85,7 @@ defmodule IdeWeb.WorkspaceLive do
         _ = Projects.ensure_bitmap_generated(project)
         tree = Projects.list_source_tree(project)
         bitmap_resources = load_bitmap_resources(project)
+        vector_resources = load_vector_resources(project)
         font_sources = load_font_sources(project)
         font_resources = load_font_resources(project)
         screenshots = load_screenshots(project)
@@ -98,6 +99,7 @@ defmodule IdeWeb.WorkspaceLive do
         project_data = %{
           tree: tree,
           bitmap_resources: bitmap_resources,
+          vector_resources: vector_resources,
           font_sources: font_sources,
           font_resources: font_resources,
           screenshots: screenshots,
@@ -2260,7 +2262,7 @@ defmodule IdeWeb.WorkspaceLive do
           if focus_changed? do
             case inject_simulator_watch_trigger(project, "app_focus") do
               {:ok, _state} -> socket |> DebuggerSupport.refresh()
-              _ -> socket
+              {:error, _} -> socket
             end
           else
             socket
@@ -2295,7 +2297,7 @@ defmodule IdeWeb.WorkspaceLive do
 
             {:ok, socket}
 
-          _ ->
+          {:error, _} ->
             {:noreply, put_flash(socket, :error, "Could not inject #{kind} simulator trigger.")}
         end
     end
@@ -2318,6 +2320,7 @@ defmodule IdeWeb.WorkspaceLive do
       case kind do
         "compass" -> ["compass"]
         "app_focus" -> ["app_focus", "appfocus"]
+        "unobstructed_area" -> ["unobstructed", "timeline_peek"]
         "dictation_status" -> ["dictation_status", "dictationstatus"]
         "dictation_result" -> ["dictation_result", "dictationresult"]
         _ -> [kind]
@@ -2340,6 +2343,7 @@ defmodule IdeWeb.WorkspaceLive do
       case kind do
         "compass" -> "on_compass_change"
         "app_focus" -> "on_app_focus_change"
+        "unobstructed_area" -> "on_unobstructed_will_change"
         "dictation_status" -> "on_dictation_status"
         "dictation_result" -> "on_dictation_result"
         other -> other
@@ -4380,6 +4384,7 @@ defmodule IdeWeb.WorkspaceLive do
   defdelegate bitmap_upload_output(results), to: ResourcesFlow
   defdelegate font_upload_output(results), to: ResourcesFlow
   defdelegate load_bitmap_resources(project), to: ResourcesFlow
+  defdelegate load_vector_resources(project), to: ResourcesFlow
   defdelegate load_font_sources(project), to: ResourcesFlow
   defdelegate load_font_resources(project), to: ResourcesFlow
   defdelegate load_screenshots(project), to: ResourcesFlow

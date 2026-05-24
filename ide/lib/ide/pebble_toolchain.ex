@@ -610,7 +610,10 @@ defmodule Ide.PebbleToolchain do
   @spec build_env(keyword()) :: [{String.t(), String.t()}]
   defp build_env(opts) do
     if Keyword.get(opts, :emulator_storage_logs, false) do
-      [{"ELMC_PEBBLE_EMULATOR_STORAGE_LOGS", "1"}]
+      [
+        {"ELMC_PEBBLE_EMULATOR_STORAGE_LOGS", "1"},
+        {"ELMC_PEBBLE_RUNTIME_LOGS", "1"}
+      ]
     else
       []
     end
@@ -898,6 +901,7 @@ defmodule Ide.PebbleToolchain do
         #ifndef ELMC_EMULATOR_BUILD_FLAGS_H
         #define ELMC_EMULATOR_BUILD_FLAGS_H
         #define ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1
+        #define ELMC_PEBBLE_RUNTIME_LOGS 1
         #endif
         """
       else
@@ -1048,13 +1052,15 @@ defmodule Ide.PebbleToolchain do
   defp stage_project_resources(workspace_root, app_root) do
     with {:ok, bitmap_entries} <- stage_bitmap_resources(workspace_root, app_root),
          {:ok, font_entries} <- stage_font_resources(workspace_root, app_root),
-         :ok <- write_resource_id_header(app_root, bitmap_entries, font_entries) do
-      {:ok, bitmap_entries ++ font_entries}
+         {:ok, vector_entries} <- stage_vector_resources(workspace_root, app_root),
+         :ok <- write_resource_id_header(app_root, bitmap_entries, font_entries, vector_entries) do
+      {:ok, bitmap_entries ++ font_entries ++ vector_entries}
     end
   end
 
-  @spec write_resource_id_header(String.t(), [map()], [map()]) :: :ok | {:error, toolchain_error()}
-  defp write_resource_id_header(app_root, bitmap_entries, font_entries) do
+  @spec write_resource_id_header(String.t(), [map()], [map()], [map()]) ::
+          :ok | {:error, toolchain_error()}
+  defp write_resource_id_header(app_root, bitmap_entries, font_entries, vector_entries) do
     header_path = Path.join(app_root, "src/c/generated/resource_ids.h")
 
     bitmap_cases =
@@ -1076,6 +1082,13 @@ defmodule Ide.PebbleToolchain do
       |> Enum.with_index(1)
       |> Enum.map_join("\n", fn {entry, index} ->
         "    case #{index}: return #{Map.get(entry, "height", 0)};"
+      end)
+
+    vector_cases =
+      vector_entries
+      |> Enum.with_index(1)
+      |> Enum.map_join("\n", fn {entry, index} ->
+        "    case #{index}: return RESOURCE_ID_#{Map.fetch!(entry, "name")};"
       end)
 
     source = """
@@ -1104,6 +1117,13 @@ defmodule Ide.PebbleToolchain do
       switch (font_id) {
     #{font_height_cases}
         default: return 0;
+      }
+    }
+
+    static inline uint32_t elm_pebble_vector_resource_id(int64_t vector_id) {
+      switch (vector_id) {
+    #{vector_cases}
+        default: return ELM_PEBBLE_RESOURCE_ID_MISSING;
       }
     }
 
@@ -1214,6 +1234,55 @@ defmodule Ide.PebbleToolchain do
               |> maybe_put_nonempty_list("targetPlatforms", target_platforms)
             end)
             |> Enum.filter(fn row -> String.trim(to_string(Map.get(row, "file", ""))) != "" end)
+
+          {:ok, media_entries}
+        else
+          _ -> {:ok, []}
+        end
+
+      {:error, :enoent} ->
+        {:ok, []}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @spec stage_vector_resources(String.t(), String.t()) :: {:ok, [map()]} | {:error, toolchain_error()}
+  defp stage_vector_resources(workspace_root, app_root) do
+    manifest_path = Path.join(workspace_root, "watch/resources/vectors.json")
+    assets_root = Path.join(workspace_root, "watch/resources/vectors")
+
+    case File.read(manifest_path) do
+      {:ok, json} ->
+        with {:ok, decoded} <- Jason.decode(json),
+             entries when is_list(entries) <- Map.get(decoded, "entries", []) do
+          media_entries =
+            entries
+            |> Enum.filter(&is_map/1)
+            |> Enum.flat_map(fn row ->
+              ctor = to_string(Map.get(row, "ctor", "Vector"))
+              filename = to_string(Map.get(row, "filename", ""))
+              source_path = Path.join(assets_root, filename)
+              package_rel = Path.join("vectors", filename)
+              target_rel = Path.join("resources", package_rel)
+              target_path = Path.join(app_root, target_rel)
+
+              if filename != "" and File.exists?(source_path) do
+                :ok = File.mkdir_p(Path.dirname(target_path))
+                :ok = File.cp(source_path, target_path)
+
+                [
+                  %{
+                    "type" => "raw",
+                    "name" => "VECTOR_" <> macro_name(ctor),
+                    "file" => package_rel
+                  }
+                ]
+              else
+                []
+              end
+            end)
 
           {:ok, media_entries}
         else
@@ -1447,8 +1516,6 @@ defmodule Ide.PebbleToolchain do
   defp companion_protocol_runtime_tags(project_root) when is_binary(project_root) do
     with {:ok, project} <- Bridge.load_project(project_root),
          {:ok, ir} <- Lowerer.lower_project(project) do
-      constructor_lookup = unqualified_constructor_runtime_tags(project)
-
       ir.modules
       |> Enum.find(&(&1.name == "Companion.Types"))
       |> case do
@@ -1458,35 +1525,13 @@ defmodule Ide.PebbleToolchain do
         mod ->
           mod.unions
           |> Enum.map(fn {type, union} ->
-            tags =
-              union
-              |> Map.get(:tags, %{})
-              |> Map.new(fn {constructor, local_tag} ->
-                {constructor, Map.get(constructor_lookup, constructor, local_tag)}
-              end)
-
-            {type, tags}
+            {type, Map.get(union, :tags, %{})}
           end)
           |> Map.new()
       end
     else
       _ -> %{}
     end
-  end
-
-  defp unqualified_constructor_runtime_tags(project) do
-    project.modules
-    |> Enum.flat_map(fn frontend_module ->
-      frontend_module.declarations
-      |> Enum.filter(&(&1.kind == :union))
-      |> Enum.flat_map(fn union ->
-        union
-        |> Map.get(:constructors, [])
-        |> Enum.with_index(1)
-        |> Enum.map(fn {constructor, index} -> {constructor.name, index} end)
-      end)
-    end)
-    |> Map.new()
   end
 
   @spec generate_companion_protocol_elm_internal(String.t() | nil) :: :ok | {:error, toolchain_error()}

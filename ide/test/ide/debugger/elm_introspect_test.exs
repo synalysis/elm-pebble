@@ -95,6 +95,38 @@ defmodule Ide.Debugger.ElmIntrospectTest do
               ( model, Cmd.none )
   """
 
+  @weather_cmd_calls_elm """
+  module WeatherCmd exposing (..)
+
+  import Companion.Phone as CompanionPhone
+  import Companion.Types exposing (PhoneToWatch(..), Temperature(..), WeatherCondition(..))
+
+  type alias WeatherReport =
+      { temperature : Float
+      , condition : WeatherCondition
+      }
+
+  type Msg
+      = WeatherReceived (Result String WeatherReport)
+
+  update msg model =
+      case msg of
+          WeatherReceived (Ok weather) ->
+              let
+                  rounded =
+                      round weather.temperature
+              in
+              ( model
+              , Cmd.batch
+                  [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius rounded))
+                  , CompanionPhone.sendPhoneToWatch (ProvideCondition weather.condition)
+                  ]
+              )
+
+          WeatherReceived _ ->
+              ( model, Cmd.none )
+  """
+
   @http_cmd_calls_elm """
   module CmdCallsHttp exposing (..)
 
@@ -412,6 +444,30 @@ defmodule Ide.Debugger.ElmIntrospectTest do
                (row["callback_constructor"] == "WeatherReceived" ||
                   row[:callback_constructor] == "WeatherReceived")
            end)
+  end
+
+  test "analyze_source inlines let-bound weather temperature for protocol cmd arg_values" do
+    assert {:ok, %{"elm_introspect" => ei}} =
+             ElmIntrospect.analyze_source(@weather_cmd_calls_elm, "WeatherCmd.elm")
+
+    calls = ei["update_cmd_calls"]
+    assert is_list(calls)
+
+    temperature_call =
+      Enum.find(calls, fn row ->
+        row["name"] == "sendPhoneToWatch" and
+          get_in(row, ["arg_values", Access.at(0), "$ctor"]) == "ProvideTemperature"
+      end)
+
+    assert temperature_call
+
+    celsius_arg = get_in(temperature_call, ["arg_values", Access.at(0), "$args", Access.at(0)])
+
+    assert match?(
+             %{"$ctor" => "Celsius", "$args" => [%{"$call" => call, "$args" => [%{"$field" => "temperature"}]}]}
+             when call in ["round", "Basics.round"],
+             celsius_arg
+           )
   end
 
   @with_block_comment """

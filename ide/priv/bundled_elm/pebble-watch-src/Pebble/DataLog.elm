@@ -1,8 +1,11 @@
-module Pebble.DataLog exposing (Tag, logBytes, logInt32)
+module Pebble.DataLog exposing (Tag, tag, logBytes, logInt32)
 
 {-| Log analytics bytes to the Pebble data logging service.
 
-@docs Tag, logBytes, logInt32
+Each log session is identified by a numeric tag (uint32 on device). Create tags
+with `tag` and pass them to `logBytes` or `logInt32`.
+
+@docs Tag, tag, logBytes, logInt32
 
 -}
 
@@ -13,6 +16,13 @@ import Elm.Kernel.PebbleWatch
 -}
 type Tag
     = Tag Int
+
+
+{-| Create a data logging tag from a uint32 session id.
+-}
+tag : Int -> Tag
+tag =
+    Tag
 
 
 {-| Log a list of byte values (0–255) under the given tag.

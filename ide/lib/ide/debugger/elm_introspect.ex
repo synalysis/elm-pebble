@@ -946,7 +946,12 @@ defmodule Ide.Debugger.ElmIntrospect do
         "callback_arg_count" => callback_arg_count_from_args(args, bindings),
         "arg_kinds" => Enum.map(args, &expr_arg_kind/1),
         "arg_snippets" => Enum.map(args, &subscription_arg_snippet/1),
-        "arg_values" => Enum.map(args, &expr_to_json_value(&1, 0, 4)),
+        "arg_values" =>
+          Enum.map(args, fn arg ->
+            arg
+            |> inline_let_bindings(bindings, MapSet.new(), 0)
+            |> expr_to_json_value(0, 4)
+          end),
         "task_sources" => task_sources_from_args(args)
       }
     ]
@@ -969,7 +974,12 @@ defmodule Ide.Debugger.ElmIntrospect do
         "callback_arg_count" => callback_arg_count_from_args(args, bindings),
         "arg_kinds" => Enum.map(args, &expr_arg_kind/1),
         "arg_snippets" => Enum.map(args, &subscription_arg_snippet/1),
-        "arg_values" => Enum.map(args, &expr_to_json_value(&1, 0, 4)),
+        "arg_values" =>
+          Enum.map(args, fn arg ->
+            arg
+            |> inline_let_bindings(bindings, MapSet.new(), 0)
+            |> expr_to_json_value(0, 4)
+          end),
         "task_sources" => task_sources_from_args(args)
       }
     ]
@@ -1624,6 +1634,77 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp msg_union(_), do: nil
 
+  @spec inline_let_bindings(Types.ast_expr(), Types.binding_map(), MapSet.t(), non_neg_integer()) ::
+          Types.ast_expr()
+  defp inline_let_bindings(expr, _bindings, _seen, depth) when depth > 12, do: expr
+
+  defp inline_let_bindings(%{op: :var, name: name}, bindings, seen, depth)
+       when is_binary(name) and is_map(bindings) do
+    if MapSet.member?(seen, name) do
+      %{op: :var, name: name}
+    else
+      case Map.get(bindings, name) do
+        nil ->
+          %{op: :var, name: name}
+
+        expr ->
+          expr
+          |> inline_let_bindings(bindings, MapSet.put(seen, name), depth + 1)
+      end
+    end
+  end
+
+  defp inline_let_bindings(%{op: :constructor_call} = expr, bindings, seen, depth) do
+    Map.update!(expr, :args, fn args ->
+      Enum.map(args, &inline_let_bindings(&1, bindings, seen, depth + 1))
+    end)
+  end
+
+  defp inline_let_bindings(%{op: :qualified_call} = expr, bindings, seen, depth) do
+    Map.update!(expr, :args, fn args ->
+      Enum.map(args, &inline_let_bindings(&1, bindings, seen, depth + 1))
+    end)
+  end
+
+  defp inline_let_bindings(%{op: :call} = expr, bindings, seen, depth) do
+    Map.update!(expr, :args, fn args ->
+      Enum.map(args, &inline_let_bindings(&1, bindings, seen, depth + 1))
+    end)
+  end
+
+  defp inline_let_bindings(%{op: :field_access, arg: arg} = expr, bindings, seen, depth) do
+    Map.put(
+      expr,
+      :arg,
+      cond do
+        is_binary(arg) ->
+          inline_let_bindings(%{op: :var, name: arg}, bindings, seen, depth + 1)
+
+        is_map(arg) ->
+          inline_let_bindings(arg, bindings, seen, depth + 1)
+
+        true ->
+          arg
+      end
+    )
+  end
+
+  defp inline_let_bindings(%{op: :list_literal} = expr, bindings, seen, depth) do
+    Map.update!(expr, :items, fn xs ->
+      Enum.map(xs, &inline_let_bindings(&1, bindings, seen, depth + 1))
+    end)
+  end
+
+  defp inline_let_bindings(%{op: :tuple2, left: left, right: right}, bindings, seen, depth) do
+    %{
+      op: :tuple2,
+      left: inline_let_bindings(left, bindings, seen, depth + 1),
+      right: inline_let_bindings(right, bindings, seen, depth + 1)
+    }
+  end
+
+  defp inline_let_bindings(expr, _bindings, _seen, _depth), do: expr
+
   @spec expr_to_json_value(Types.ast_expr(), non_neg_integer(), non_neg_integer()) :: Types.json_value()
   defp expr_to_json_value(%{op: :record_literal, fields: fields}, depth, max) when depth < max do
     Enum.into(fields, %{}, fn %{name: n, expr: e} ->
@@ -1648,6 +1729,11 @@ defmodule Ide.Debugger.ElmIntrospect do
   defp expr_to_json_value(%{op: :qualified_call, target: t, args: args}, depth, max)
        when depth < max do
     %{"$call" => t, "$args" => Enum.map(args, &expr_to_json_value(&1, depth + 1, max))}
+  end
+
+  defp expr_to_json_value(%{op: :call, name: name, args: args}, depth, max)
+       when is_binary(name) and depth < max do
+    %{"$call" => name, "$args" => Enum.map(args, &expr_to_json_value(&1, depth + 1, max))}
   end
 
   defp expr_to_json_value(%{op: :var, name: n}, _, _), do: %{"$var" => n}
@@ -2099,6 +2185,8 @@ defmodule Ide.Debugger.ElmIntrospect do
       "text_label" => ["Pebble.Ui.textLabel", "Pebble.Ui.textLabelWithFont"],
       "bitmap_in_rect" => ["Pebble.Ui.bitmapInRect", "Pebble.Ui.drawBitmapInRect"],
       "rotated_bitmap" => ["Pebble.Ui.rotatedBitmap"],
+      "vector_at" => ["Pebble.Ui.drawVectorAt"],
+      "vector_sequence_at" => ["Pebble.Ui.drawVectorSequenceAt"],
       "arc" => ["Pebble.Ui.arc"],
       "fill_radial" => ["Pebble.Ui.fillRadial"],
       "path_filled" => ["Pebble.Ui.pathFilled"],
