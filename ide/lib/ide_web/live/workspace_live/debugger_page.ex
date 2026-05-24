@@ -6,7 +6,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   alias Ide.Debugger
   alias Ide.Projects.Project
-  alias Ide.Resources.PdcDecoder
   alias Ide.Resources.ResourceStore
   alias IdeWeb.WorkspaceLive.DebuggerPreview
   alias IdeWeb.WorkspaceLive.DebuggerSupport
@@ -2259,7 +2258,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       tree
       |> debugger_watch_svg_ops(assigns.runtime)
       |> hydrate_bitmap_svg_ops(assigns.project)
-      |> hydrate_vector_svg_ops(assigns.project)
+      |> DebuggerPreview.hydrate_vector_svg_ops(assigns.project)
 
     unresolved_ops = Enum.filter(svg_ops, &(&1.kind == :unresolved))
 
@@ -2340,7 +2339,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             <g clip-path={if @screen_round?, do: "url(##{@clip_id})", else: nil}>
               <rect x="0" y="0" width={@screen_w} height={@screen_h} fill="white" />
               <%= for op <- @svg_ops do %>
-                <g>
+                <.debugger_vector_sequence_anim :if={op.kind == :vector_sequence_anim} op={op} />
+                <g :if={op.kind != :vector_sequence_anim}>
                   <title :if={debugger_svg_op_tooltip(op) != nil}>
                     {debugger_svg_op_tooltip(op)}
                   </title>
@@ -2896,70 +2896,47 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp hydrate_bitmap_svg_ops(rows, _project), do: rows
 
-  @spec hydrate_vector_svg_ops([svg_op()], map()) :: [svg_op()]
-  defp hydrate_vector_svg_ops(rows, %Project{} = project) when is_list(rows) do
-    Enum.flat_map(rows, fn
-      %{kind: kind, vector_id: vector_id, x: x, y: y}
-      when kind in [:vector_at, :vector_sequence_at] and vector_id >= 1 ->
-        node_type = if kind == :vector_at, do: "vector_at", else: "vector_sequence_at"
+  attr(:op, :map, required: true)
 
-        case ResourceStore.vector_file_path_by_id(project, vector_id) do
-          {:ok, path} ->
-            case File.read(path) do
-              {:ok, bytes} ->
-                decode_result =
-                  if kind == :vector_sequence_at do
-                    PdcDecoder.decode_sequence_frame(bytes, 0)
-                  else
-                    PdcDecoder.decode(bytes)
-                  end
+  @spec debugger_vector_sequence_anim(assigns()) :: rendered()
+  defp debugger_vector_sequence_anim(assigns) do
+    op = assigns.op
+    frame_count = length(Map.get(op, :frame_elements, []))
 
-                case decode_result do
-                  {:ok, image} ->
-                    PdcDecoder.to_debugger_ops(image, x, y)
+    assigns =
+      assigns
+      |> assign(:frame_count, frame_count)
+      |> assign(:frame_durations_json, Jason.encode!(Map.get(op, :durations, [])))
+      |> assign(:play_count, Map.get(op, :play_count, 1))
 
-                  _ ->
-                    [
-                      %{
-                        kind: :unresolved,
-                        node_type: node_type,
-                        provided_int_count: 3,
-                        required_int_count: 3
-                      }
-                    ]
-                end
-
-              _ ->
-                [
-                  %{
-                    kind: :unresolved,
-                    node_type: node_type,
-                    provided_int_count: 3,
-                    required_int_count: 3
-                  }
-                ]
-            end
-
-          _ ->
-            [
-              %{
-                kind: :unresolved,
-                node_type: node_type,
-                provided_int_count: 3,
-                required_int_count: 3
-              }
-            ]
-        end
-
-      %{kind: kind, vector_id: 0} when kind in [:vector_at, :vector_sequence_at] ->
-        []
-
-      other ->
-        [other]
-    end)
+    ~H"""
+    <svg
+      x={@op.x}
+      y={@op.y}
+      width={@op.width}
+      height={@op.height}
+      viewBox={"0 0 #{@op.width} #{@op.height}"}
+      overflow="visible"
+      id={@op.anim_id}
+      phx-hook="VectorSequenceAnimation"
+      phx-update="ignore"
+      data-frame-durations={@frame_durations_json}
+      data-play-count={@play_count}
+      data-frame-count={@frame_count}
+      aria-hidden="true"
+    >
+      <%= for {elements, index} <- Enum.with_index(@op.frame_elements) do %>
+        <g
+          class="debugger-vector-seq-frame"
+          data-frame={index}
+          style={if index == 0, do: "opacity:1", else: "opacity:0"}
+        >
+          {raw(elements)}
+        </g>
+      <% end %>
+    </svg>
+    """
   end
-
-  defp hydrate_vector_svg_ops(rows, _project), do: rows
 
   @spec bitmap_href_for(map(), assigns()) :: String.t() | nil
   defp bitmap_href_for(%Project{} = project, bitmap_id) when is_integer(bitmap_id) do

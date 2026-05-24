@@ -59,6 +59,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
       "none" ->
         Cmd.eval("none", values)
 
+      "timerafter" ->
+        Cmd.eval("timerAfter", values)
+
       "getcurrenttimestring" ->
         device_command("current_time_string", values, "12:00", ops)
 
@@ -114,6 +117,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
     case function_name do
       "none" ->
         Cmd.eval("none", values)
+
+      "timerafter" ->
+        Cmd.eval("timerAfter", values)
 
       "currenttimestring" ->
         device_command("current_time_string", values, "12:00", ops)

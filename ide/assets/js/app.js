@@ -590,6 +590,56 @@ Hooks.AutoDismissFlash = {
   }
 }
 
+Hooks.VectorSequenceAnimation = {
+  mounted() {
+    this.frames = [...this.el.querySelectorAll(".debugger-vector-seq-frame")]
+    this.durations = JSON.parse(this.el.dataset.frameDurations || "[]")
+    this.playCount = Number.parseInt(this.el.dataset.playCount || "1", 10)
+    this.loopCount = 0
+    this.frameIndex = 0
+    this.timer = null
+    this.showFrame(0)
+    this.scheduleNext()
+  },
+
+  destroyed() {
+    if (this.timer != null) window.clearTimeout(this.timer)
+  },
+
+  showFrame(index) {
+    this.frames.forEach((frame, frameIndex) => {
+      frame.style.opacity = frameIndex === index ? "1" : "0"
+    })
+    this.frameIndex = index
+  },
+
+  scheduleNext() {
+    if (this.timer != null) window.clearTimeout(this.timer)
+    if (this.frames.length <= 1) return
+
+    const duration = this.durations[this.frameIndex] || 100
+
+    this.timer = window.setTimeout(() => {
+      const nextIndex = this.frameIndex + 1
+
+      if (nextIndex >= this.frames.length) {
+        this.loopCount += 1
+
+        if (this.playCount !== 0xffff && this.loopCount >= Math.max(this.playCount, 1)) {
+          this.showFrame(this.frames.length - 1)
+          return
+        }
+
+        this.showFrame(0)
+      } else {
+        this.showFrame(nextIndex)
+      }
+
+      this.scheduleNext()
+    }, duration)
+  }
+}
+
 Hooks.CopyToClipboard = {
   mounted() {
     this.defaultLabel = this.el.textContent

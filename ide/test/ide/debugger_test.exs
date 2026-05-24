@@ -4207,6 +4207,272 @@ defmodule Ide.DebuggerTest do
            )
   end
 
+  test "weather animated watchface receives drizzle temperature from simulator settings via companion bridge" do
+    slug = "sim-weather-bridge-drizzle-#{System.unique_integer([:positive])}"
+    template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
+
+    watch_source = File.read!(Path.join([template_root, "src", "Main.elm"]))
+    phone_source = File.read!(Path.join([template_root, "phone", "src", "CompanionApp.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 26, "condition" => "drizzle"}
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_bridge_companion"
+             })
+
+    assert {:ok, state} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_bridge_watch"
+             })
+
+    runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Celsius", "args" => [26]}]},
+             runtime_model["temperature"]
+           )
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Drizzle", "args" => []}]},
+             runtime_model["condition"]
+           )
+
+    view_tree = get_in(state, [:watch, :view_tree]) || %{}
+    text_nodes = collect_view_text(view_tree)
+    assert Enum.any?(text_nodes, &String.contains?(&1, "26C Drizzle"))
+    refute Enum.any?(text_nodes, &String.contains?(&1, "Loading..."))
+  end
+
+  test "weather bridge delivers simulator settings without stepping companion GotWeather" do
+    slug = "sim-weather-bridge-direct-#{System.unique_integer([:positive])}"
+    template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
+
+    watch_source = File.read!(Path.join([template_root, "src", "Main.elm"]))
+    phone_source = File.read!(Path.join([template_root, "phone", "src", "CompanionApp.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_bridge_companion"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_bridge_watch"
+             })
+
+    assert {:ok, state} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 26, "condition" => "drizzle"}
+             })
+
+    assert {:ok, state} = Debugger.tick(slug)
+
+    runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Celsius", "args" => [26]}]},
+             runtime_model["temperature"]
+           )
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Drizzle", "args" => []}]},
+             runtime_model["condition"]
+           )
+
+    companion_got_weather_updates =
+      (state.events || [])
+      |> Enum.count(fn event ->
+        event.type == "update" and
+          get_in(event, [:payload, :target]) == "companion" and
+          String.starts_with?(get_in(event, [:payload, :message]) || "", "GotWeather")
+      end)
+
+    assert companion_got_weather_updates == 0
+  end
+
+  test "weather settings with string temperatureC deliver Celsius temperature to watch model" do
+    slug = "sim-weather-string-temp-#{System.unique_integer([:positive])}"
+    template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
+
+    watch_source = File.read!(Path.join([template_root, "src", "Main.elm"]))
+    phone_source = File.read!(Path.join([template_root, "phone", "src", "CompanionApp.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_string_temp_companion"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_string_temp_watch"
+             })
+
+    assert {:ok, state} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => "26", "condition" => "fog"}
+             })
+
+    runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Celsius", "args" => [26]}]},
+             runtime_model["temperature"]
+           )
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Fog", "args" => []}]},
+             runtime_model["condition"]
+           )
+  end
+
+  test "weather condition updates apply after weather transitions are enabled" do
+    slug = "sim-weather-transitions-#{System.unique_integer([:positive])}"
+    template_root = Path.join(["priv", "project_templates", "watchface_weather_animated"])
+
+    watch_source = File.read!(Path.join([template_root, "src", "Main.elm"]))
+    phone_source = File.read!(Path.join([template_root, "phone", "src", "CompanionApp.elm"]))
+
+    snow_value = %{
+      "ctor" => "FromPhone",
+      "args" => [
+        %{"ctor" => "ProvideCondition", "args" => [%{"ctor" => "Snow", "args" => []}]}
+      ]
+    }
+
+    drizzle_value = %{
+      "ctor" => "FromPhone",
+      "args" => [
+        %{"ctor" => "ProvideCondition", "args" => [%{"ctor" => "Drizzle", "args" => []}]}
+      ]
+    }
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_transitions_companion"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_transitions_watch"
+             })
+
+    assert {:ok, state} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 23, "condition" => "fog"}
+             })
+
+    assert {:ok, _state} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "timer",
+               message: "EnableWeatherTransitions"
+             })
+
+    assert {:ok, state} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "phone_to_watch",
+               message: "FromPhone (ProvideCondition Snow)",
+               message_value: snow_value
+             })
+
+    runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Snow", "args" => []}]},
+             runtime_model["condition"]
+           )
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Snow", "args" => []}]},
+             runtime_model["displayedCondition"]
+           )
+
+    assert {:ok, state} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "phone_to_watch",
+               message: "FromPhone (ProvideCondition Drizzle)",
+               message_value: drizzle_value
+             })
+
+    runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Drizzle", "args" => []}]},
+             runtime_model["condition"]
+           )
+
+    assert match?(
+             %{"ctor" => "Just", "args" => [%{"ctor" => "Drizzle", "args" => []}]},
+             runtime_model["displayedCondition"]
+           )
+
+    newyork_watch_updates =
+      (state.events || [])
+      |> Enum.count(fn event ->
+        event.type == "update" and
+          get_in(event, [:payload, :target]) == "watch" and
+          get_in(event, [:payload, :message]) == "NewYork"
+      end)
+
+    assert newyork_watch_updates == 0
+  end
+
+  defp collect_view_text(node) when is_map(node) do
+    own =
+      case node["text"] || node[:text] do
+        text when is_binary(text) -> [text]
+        _ -> []
+      end
+
+    children =
+      case node["children"] || node[:children] do
+        list when is_list(list) -> Enum.flat_map(list, &collect_view_text/1)
+        _ -> []
+      end
+
+    own ++ children
+  end
+
+  defp collect_view_text(_), do: []
+
   defp wait_until_stable_minute do
     if NaiveDateTime.local_now().second > 50 do
       Process.sleep(1_000)

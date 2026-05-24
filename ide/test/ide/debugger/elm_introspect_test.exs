@@ -468,6 +468,8 @@ defmodule Ide.Debugger.ElmIntrospectTest do
              when call in ["round", "Basics.round"],
              celsius_arg
            )
+
+    assert get_in(temperature_call, ["callback_constructor"]) == "GotWeather"
   end
 
   @with_block_comment """

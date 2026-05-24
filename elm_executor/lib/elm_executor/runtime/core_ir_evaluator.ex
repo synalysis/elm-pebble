@@ -2901,14 +2901,38 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
        when is_binary(union) and is_integer(tag) and is_map(context) do
     context
     |> Map.get(:constructor_tags, [])
-    |> Enum.find(&(Map.get(&1, :union) == union and Map.get(&1, :tag) == tag))
+    |> Enum.find(fn entry ->
+      entry_union = Map.get(entry, :union) || Map.get(entry, "union")
+      entry_tag = Map.get(entry, :tag) || Map.get(entry, "tag")
+      entry_tag == tag and union_names_match?(entry_union, union)
+    end)
   end
 
   @spec union_known?(String.t(), map()) :: boolean()
   defp union_known?(union, context) when is_binary(union) and is_map(context) do
     context
     |> Map.get(:constructor_tags, [])
-    |> Enum.any?(&(Map.get(&1, :union) == union))
+    |> Enum.any?(fn entry ->
+      entry_union = Map.get(entry, :union) || Map.get(entry, "union")
+      union_names_match?(entry_union, union)
+    end)
+  end
+
+  @spec union_names_match?(String.t() | nil, String.t()) :: boolean()
+  defp union_names_match?(entry_union, type_name)
+       when is_binary(entry_union) and is_binary(type_name) do
+    entry_union == type_name or
+      union_short_name(entry_union) == union_short_name(type_name)
+  end
+
+  defp union_names_match?(_entry_union, _type_name), do: false
+
+  @spec union_short_name(String.t()) :: String.t()
+  defp union_short_name(name) when is_binary(name) do
+    name
+    |> String.split(".")
+    |> List.last()
+    |> Kernel.||(name)
   end
 
   @spec record_alias_fields(map(), String.t()) :: [String.t()] | nil
@@ -3450,9 +3474,15 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         {:ok, tag + 1}
 
       true ->
-        case constructor_tag_for_ctor(ctor, context) do
-          tag when is_integer(tag) -> {:ok, tag + 1}
-          _ -> :error
+        cond do
+          is_integer(tag = constructor_tag_for_ctor(ctor, context)) ->
+            {:ok, tag + 1}
+
+          is_integer(id = vector_resource_index_for_ctor(ctor, context)) and id >= 1 ->
+            {:ok, id}
+
+          true ->
+            :error
         end
     end
   end
@@ -3464,14 +3494,43 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     context
     |> Map.get(:constructor_tags, [])
     |> Enum.filter(fn entry -> to_string(Map.get(entry, :ctor) || "") == ctor end)
+    |> prefer_resource_constructor_entry()
     |> case do
-      [%{tag: tag}] -> tag
-      entries when is_list(entries) and entries != [] -> Map.get(List.first(entries), :tag)
+      %{tag: tag} when is_integer(tag) -> tag
+      %{"tag" => tag} when is_integer(tag) -> tag
       _ -> nil
     end
   end
 
   defp constructor_tag_for_ctor(_ctor, _context), do: nil
+
+  @spec prefer_resource_constructor_entry([map()]) :: map() | nil
+  defp prefer_resource_constructor_entry([entry]), do: entry
+
+  defp prefer_resource_constructor_entry(entries) when is_list(entries) and entries != [] do
+    Enum.find(entries, fn entry ->
+      union = to_string(Map.get(entry, :union) || Map.get(entry, "union") || "")
+      union in ["VectorGraphic", "Bitmap", "Font"]
+    end) || List.first(entries)
+  end
+
+  defp prefer_resource_constructor_entry(_entries), do: nil
+
+  @spec vector_resource_index_for_ctor(String.t() | atom(), map()) :: integer() | nil
+  defp vector_resource_index_for_ctor(ctor, context) when is_map(context) do
+    ctor =
+      case ctor do
+        value when is_binary(value) -> value
+        value when is_atom(value) -> Atom.to_string(value)
+        _ -> ""
+      end
+
+    context
+    |> Map.get(:vector_resource_indices, %{})
+    |> Map.get(ctor)
+  end
+
+  defp vector_resource_index_for_ctor(_ctor, _context), do: nil
 
   @spec normalize_font_id(EvalTypes.runtime_value()) :: {:ok, non_neg_integer()} | :error
   defp normalize_font_id(value) when is_integer(value), do: {:ok, value}

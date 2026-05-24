@@ -1118,4 +1118,53 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
   defp literal(value) when is_float(value), do: float(value)
   defp literal(value) when is_binary(value), do: string(value)
   defp literal(value), do: value
+
+  test "timerAfter partial application produces timer command with followup message" do
+    alias ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd
+
+    assert {:ok, partial} = Cmd.eval("timerAfter", [500])
+    assert {:ok, command} = Cmd.eval("timerAfter", [500, %{"ctor" => "TransitionFinished", "args" => []}])
+
+    assert partial == {:builtin_partial, "timerAfter", [500]}
+
+    assert command == %{
+             "kind" => "cmd.timer.after",
+             "package" => "pebble/cmd",
+             "delay_ms" => 500,
+             "message" => "TransitionFinished",
+             "message_value" => %{"ctor" => "TransitionFinished", "args" => []}
+           }
+  end
+
+  test "vector_resource_id_from_value resolves ctor via vector_resource_indices manifest map" do
+    context = %{
+      vector_resource_indices: %{
+        "WeatherClear" => 1,
+        "WeatherCloudy" => 2,
+        "WeatherFog" => 3
+      }
+    }
+
+    assert {:ok, 3} =
+             CoreIREvaluator.vector_resource_id_from_value(
+               %{"ctor" => "WeatherFog", "args" => []},
+               context
+             )
+  end
+
+  test "normalize_value_by_type resolves qualified Resources.VectorGraphic maybe payloads" do
+    context = %{
+      constructor_tags: [
+        %{union: "VectorGraphic", ctor: "WeatherFog", tag: 2},
+        %{union: "VectorGraphic", ctor: "TransitionClearToFog", tag: 10}
+      ]
+    }
+
+    assert %{"ctor" => "Just", "args" => [%{"ctor" => "WeatherFog", "args" => [], "tag" => 2}]} =
+             CoreIREvaluator.normalize_value_by_type(
+               %{"ctor" => "Just", "args" => [2]},
+               "Maybe Resources.VectorGraphic",
+               context
+             )
+  end
 end

@@ -1,6 +1,10 @@
 defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   @moduledoc false
 
+  alias Ide.Projects.Project
+  alias Ide.Resources.PdcDecoder
+  alias Ide.Resources.ResourceStore
+
   @default_screen_w 144
   @default_screen_h 168
 
@@ -103,6 +107,106 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   end
 
   def svg_ops(_tree, runtime), do: runtime_compact_scene_output(runtime)
+
+  @spec hydrate_vector_svg_ops([svg_op()], Project.t() | map() | nil) :: [svg_op()]
+  def hydrate_vector_svg_ops(rows, %Project{} = project) when is_list(rows) do
+    Enum.flat_map(rows, fn
+      %{kind: :vector_at, vector_id: vector_id, x: x, y: y} when vector_id >= 1 ->
+        hydrate_static_vector(project, vector_id, x, y)
+
+      %{kind: :vector_sequence_at, vector_id: vector_id, x: x, y: y} when vector_id >= 1 ->
+        hydrate_vector_sequence(project, vector_id, x, y)
+
+      %{kind: kind, vector_id: 0} when kind in [:vector_at, :vector_sequence_at] ->
+        []
+
+      other ->
+        [other]
+    end)
+  end
+
+  def hydrate_vector_svg_ops(rows, _project) when is_list(rows), do: rows
+
+  @spec hydrate_static_vector(Project.t(), pos_integer(), integer(), integer()) :: [svg_op()]
+  defp hydrate_static_vector(project, vector_id, x, y) do
+    case read_vector_bytes(project, vector_id) do
+      {:ok, bytes} ->
+        case PdcDecoder.decode(bytes) do
+          {:ok, image} ->
+            PdcDecoder.to_debugger_ops(image, x, y)
+
+          _ ->
+            [unresolved_vector_op("vector_at", vector_id)]
+        end
+
+      _ ->
+        [unresolved_vector_op("vector_at", vector_id)]
+    end
+  end
+
+  @spec hydrate_vector_sequence(Project.t(), pos_integer(), integer(), integer()) :: [svg_op()]
+  defp hydrate_vector_sequence(project, vector_id, x, y) do
+    case read_vector_bytes(project, vector_id) do
+      {:ok, bytes} ->
+        case PdcDecoder.decode_sequence(bytes) do
+          {:ok, sequence} when sequence.frames != [] ->
+            [
+              %{
+                kind: :vector_sequence_anim,
+                anim_id: vector_sequence_anim_id(vector_id, x, y),
+                vector_id: vector_id,
+                x: x,
+                y: y,
+                width: abs(sequence.width),
+                height: abs(sequence.height),
+                play_count: sequence.play_count,
+                durations: Enum.map(sequence.frames, & &1.duration_ms),
+                frame_elements:
+                  Enum.map(sequence.frames, fn %{image: image} ->
+                    PdcDecoder.to_svg_elements(image)
+                  end)
+              }
+            ]
+
+          {:ok, _sequence} ->
+            hydrate_static_vector(project, vector_id, x, y)
+
+          _ ->
+            case PdcDecoder.decode_sequence_frame(bytes, 0) do
+              {:ok, image} ->
+                PdcDecoder.to_debugger_ops(image, x, y)
+
+              _ ->
+                [unresolved_vector_op("vector_sequence_at", vector_id)]
+            end
+        end
+
+      _ ->
+        [unresolved_vector_op("vector_sequence_at", vector_id)]
+    end
+  end
+
+  @spec read_vector_bytes(Project.t(), pos_integer()) :: {:ok, binary()} | {:error, term()}
+  defp read_vector_bytes(project, vector_id) do
+    with {:ok, path} <- ResourceStore.vector_file_path_by_id(project, vector_id),
+         {:ok, bytes} <- File.read(path) do
+      {:ok, bytes}
+    end
+  end
+
+  @spec unresolved_vector_op(String.t(), pos_integer()) :: svg_op()
+  defp unresolved_vector_op(node_type, vector_id) do
+    %{
+      kind: :unresolved,
+      node_type: node_type,
+      vector_id: vector_id,
+      provided_int_count: 3,
+      required_int_count: 3
+    }
+  end
+
+  @spec vector_sequence_anim_id(pos_integer(), integer(), integer()) :: String.t()
+  defp vector_sequence_anim_id(vector_id, x, y), do: "debugger-vseq-#{vector_id}-#{x}-#{y}"
 
   @spec compact_scene(runtime_input()) :: map()
   def compact_scene(runtime) when is_map(runtime) do
@@ -220,8 +324,37 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   def runtime_model(runtime) when is_map(runtime) do
     model = raw_runtime_model(runtime)
     runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model)
-    if is_map(runtime_model), do: runtime_model, else: model
+
+    base =
+      if is_map(runtime_model) and map_size(runtime_model) > 0 do
+        runtime_model
+      else
+        model
+      end
+
+    merge_preview_artifacts(base, model)
   end
+
+  @spec merge_preview_artifacts(model_map(), model_map()) :: model_map()
+  defp merge_preview_artifacts(base, shell) when is_map(base) and is_map(shell) do
+    Enum.reduce(
+      [
+        "vector_resource_indices",
+        "elm_introspect",
+        "elm_executor_core_ir",
+        "elm_executor_core_ir_b64"
+      ],
+      base,
+      fn key, acc ->
+        case Map.get(shell, key) do
+          value when not is_nil(value) -> Map.put(acc, key, value)
+          _ -> acc
+        end
+      end
+    )
+  end
+
+  defp merge_preview_artifacts(base, _shell), do: base
 
   def runtime_model(_runtime), do: %{}
 
@@ -2282,7 +2415,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
   @spec evaluated_node_value(view_node(), model_map()) :: wire_value()
   defp evaluated_node_value(node, model) when is_map(node) and is_map(model) do
-    ElmExecutor.Runtime.SemanticExecutor.evaluate_view_tree_value(node, model, %{})
+    ElmExecutor.Runtime.SemanticExecutor.evaluate_view_tree_value(
+      node,
+      model,
+      vector_eval_context(model)
+    )
   end
 
   defp evaluated_node_value(_node, _model), do: nil
@@ -2330,7 +2467,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
         evaluated
 
       is_map(evaluated) ->
-        case ElmExecutor.Runtime.CoreIREvaluator.vector_resource_id_from_value(evaluated, %{}) do
+        case ElmExecutor.Runtime.CoreIREvaluator.vector_resource_id_from_value(
+               evaluated,
+               vector_eval_context(model)
+             ) do
           {:ok, id} -> id
           :error -> nil
         end
@@ -2344,6 +2484,69 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
       true ->
         nil
+    end
+  end
+
+  @spec vector_eval_context(model_map()) :: map()
+  defp vector_eval_context(model) when is_map(model) do
+    module =
+      model
+      |> Map.get("elm_introspect", %{})
+      |> Map.get("module")
+      |> case do
+        name when is_binary(name) and name != "" -> name
+        _ -> "Main"
+      end
+
+    indices =
+      Map.get(model, "vector_resource_indices") ||
+        get_in(model, ["runtime_model", "vector_resource_indices"]) ||
+        %{}
+
+    base =
+      case decode_core_ir_artifact(model) do
+        core_ir when is_map(core_ir) ->
+          %{
+            functions: ElmExecutor.Runtime.CoreIREvaluator.index_functions(core_ir),
+            record_aliases: ElmExecutor.Runtime.CoreIREvaluator.index_record_aliases(core_ir),
+            constructor_tags: ElmExecutor.Runtime.CoreIREvaluator.index_constructor_tags(core_ir),
+            module: module,
+            source_module: module
+          }
+
+        _ ->
+          %{module: module, source_module: module}
+      end
+
+    if is_map(indices) and map_size(indices) > 0 do
+      Map.put(base, :vector_resource_indices, indices)
+    else
+      base
+    end
+  end
+
+  defp vector_eval_context(_model), do: %{}
+
+  @spec decode_core_ir_artifact(model_map()) :: map() | nil
+  defp decode_core_ir_artifact(model) when is_map(model) do
+    case Map.get(model, "elm_executor_core_ir") do
+      value when is_map(value) ->
+        value
+
+      _ ->
+        case Map.get(model, "elm_executor_core_ir_b64") do
+          encoded when is_binary(encoded) and encoded != "" ->
+            with {:ok, binary} <- Base.decode64(encoded),
+                 value <- :erlang.binary_to_term(binary, [:safe]),
+                 true <- is_map(value) do
+              value
+            else
+              _ -> nil
+            end
+
+          _ ->
+            nil
+        end
     end
   end
 

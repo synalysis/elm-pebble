@@ -22,6 +22,16 @@ defmodule Ide.Resources.PdcDecoder do
           height: integer(),
           commands: [command()]
         }
+  @type sequence_frame :: %{
+          duration_ms: non_neg_integer(),
+          image: image()
+        }
+  @type sequence :: %{
+          width: integer(),
+          height: integer(),
+          play_count: non_neg_integer(),
+          frames: [sequence_frame()]
+        }
   @type decode_error :: :invalid_pdc | :unsupported_pdc_format
 
   @command_type_path 1
@@ -41,7 +51,7 @@ defmodule Ide.Resources.PdcDecoder do
   def decode_sequence_frame(bytes, frame_index \\ 0)
       when is_binary(bytes) and is_integer(frame_index) and frame_index >= 0 do
     with {:ok, payload} <- strip_file_header(bytes),
-         {:ok, width, height, rest} <- sequence_header(payload),
+         {:ok, width, height, _play_count, _frame_count, rest} <- sequence_header(payload),
          {:ok, frame_payload, _rest} <- nth_sequence_frame(rest, frame_index),
          {:ok, commands, _rest} <- decode_commands(frame_payload) do
       {:ok, %{width: width, height: height, commands: commands}}
@@ -50,17 +60,31 @@ defmodule Ide.Resources.PdcDecoder do
     end
   end
 
+  @spec decode_sequence(binary()) :: {:ok, sequence()} | {:error, decode_error()}
+  def decode_sequence(bytes) when is_binary(bytes) do
+    with "PDCS" <- pdc_magic(bytes),
+         {:ok, payload} <- strip_file_header(bytes),
+         {:ok, width, height, play_count, frame_count, rest} <- sequence_header(payload),
+         {:ok, frames, _rest} <- decode_sequence_frames(frame_count, rest, width, height, []) do
+      {:ok,
+       %{
+         width: width,
+         height: height,
+         play_count: play_count,
+         frames: frames
+       }}
+    else
+      nil -> {:error, :unsupported_pdc_format}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @spec to_svg(image(), keyword()) :: String.t()
-  def to_svg(%{width: width, height: height, commands: commands}, opts \\ []) do
+  def to_svg(%{width: width, height: height} = image, opts \\ []) do
     scale = Keyword.get(opts, :scale, 1.0)
     w = max(round(width * scale), 1)
     h = max(round(height * scale), 1)
-
-    body =
-      commands
-      |> Enum.map(&command_to_svg(&1, scale))
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.join("\n")
+    body = to_svg_elements(image, opts)
 
     """
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 #{width} #{height}" width="#{w}" height="#{h}" role="img">
@@ -68,6 +92,16 @@ defmodule Ide.Resources.PdcDecoder do
     </svg>
     """
     |> String.trim()
+  end
+
+  @spec to_svg_elements(image(), keyword()) :: String.t()
+  def to_svg_elements(%{commands: commands}, opts \\ []) do
+    scale = Keyword.get(opts, :scale, 1.0)
+
+    commands
+    |> Enum.map(&command_to_svg(&1, scale))
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
   end
 
   @spec to_debugger_ops(image(), integer(), integer()) :: [map()]
@@ -140,13 +174,29 @@ defmodule Ide.Resources.PdcDecoder do
 
   defp sequence_header(
          <<_version, _reserved, width::16-little-signed, height::16-little-signed,
-           _play_count::16-little, frame_count::16-little, rest::binary>>
+           play_count::16-little, frame_count::16-little, rest::binary>>
        )
        when frame_count > 0 do
-    {:ok, width, height, rest}
+    {:ok, width, height, play_count, frame_count, rest}
   end
 
   defp sequence_header(_), do: {:error, :unsupported_pdc_format}
+
+  defp decode_sequence_frames(0, rest, _width, _height, acc), do: {:ok, Enum.reverse(acc), rest}
+
+  defp decode_sequence_frames(count, rest, width, height, acc) when count > 0 do
+    with <<duration_ms::16-little, frame_rest::binary>> <- rest,
+         {:ok, commands, trailing} <- decode_commands(frame_rest) do
+      frame = %{
+        duration_ms: duration_ms,
+        image: %{width: width, height: height, commands: commands}
+      }
+
+      decode_sequence_frames(count - 1, trailing, width, height, [frame | acc])
+    else
+      _ -> {:error, :invalid_pdc}
+    end
+  end
 
   defp nth_sequence_frame(rest, 0) do
     with <<_duration::16-little, frame_rest::binary>> <- rest,

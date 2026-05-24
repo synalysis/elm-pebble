@@ -48,7 +48,11 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
     artifact_core_ir = map_value(request, :elm_executor_core_ir)
     core_ir = source_core_ir_fallback(artifact_core_ir, source, rel_path)
-    eval_context = evaluator_context(core_ir, source_module)
+
+    eval_context =
+      core_ir
+      |> evaluator_context(source_module)
+      |> Map.merge(vector_resource_indices_context(request, current_model))
     static_init_model = map_value(introspect, :init_model)
 
     base_runtime_model =
@@ -127,7 +131,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
         eval_context
       )
 
-    followup_messages = package_followup_messages(runtime_commands, source_root)
+    followup_messages =
+      runtime_commands
+      |> package_followup_messages(source_root)
+      |> resolve_timer_followup_messages(eval_context)
 
     view_output =
       runtime_view_tree
@@ -705,6 +712,11 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp flatten_runtime_commands(%{"kind" => "cmd.task." <> _rest} = command), do: [command]
 
   defp flatten_runtime_commands(%{kind: "cmd.task." <> _rest} = command),
+    do: [stringify_command_keys(command)]
+
+  defp flatten_runtime_commands(%{"kind" => "cmd.timer.after"} = command), do: [command]
+
+  defp flatten_runtime_commands(%{kind: "cmd.timer.after"} = command),
     do: [stringify_command_keys(command)]
 
   defp flatten_runtime_commands(%{"kind" => "cmd.unsupported"} = command), do: [command]
@@ -1490,11 +1502,12 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
         _ -> "Main.elm"
       end
 
-    with {:ok, module} <- GeneratedParser.parse_source(path, source),
+    with {:ok, main_module} <- GeneratedParser.parse_source(path, source),
+         extra_modules <- load_resource_modules_for_path(path),
          project <- %Project{
            project_dir: path |> Path.dirname() |> Path.expand(),
            elm_json: %{},
-           modules: [module],
+           modules: [main_module | extra_modules],
            diagnostics: []
          },
          {:ok, ir} <- Lowerer.lower_project(project),
@@ -1508,6 +1521,60 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   end
 
   defp source_core_ir_fallback(_core_ir, _source, _rel_path), do: nil
+
+  @spec load_resource_modules_for_path(String.t()) :: [map()]
+  defp load_resource_modules_for_path(main_path) when is_binary(main_path) do
+    resources_path =
+      main_path
+      |> Path.dirname()
+      |> Path.join("Pebble/Ui/Resources.elm")
+
+    case File.read(resources_path) do
+      {:ok, source} ->
+        case GeneratedParser.parse_source(resources_path, source) do
+          {:ok, module} -> [module]
+          _ -> []
+        end
+
+      _ ->
+        []
+    end
+  end
+
+  @spec vector_resource_indices_context(map(), map()) :: map()
+  defp vector_resource_indices_context(request, current_model)
+       when is_map(request) and is_map(current_model) do
+    indices =
+      map_value(request, :vector_resource_indices) ||
+        Map.get(current_model, "vector_resource_indices") ||
+        Map.get(current_model, :vector_resource_indices)
+
+    case normalize_vector_resource_indices(indices) do
+      %{} = normalized when map_size(normalized) > 0 ->
+        %{vector_resource_indices: normalized}
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp vector_resource_indices_context(_request, _current_model), do: %{}
+
+  @spec normalize_vector_resource_indices(map() | nil) :: map()
+  defp normalize_vector_resource_indices(indices) when is_map(indices) do
+    Enum.reduce(indices, %{}, fn
+      {ctor, id}, acc when is_binary(ctor) and is_integer(id) and id >= 1 ->
+        Map.put(acc, ctor, id)
+
+      {ctor, id}, acc when is_atom(ctor) and is_integer(id) and id >= 1 ->
+        Map.put(acc, Atom.to_string(ctor), id)
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp normalize_vector_resource_indices(_indices), do: %{}
 
   @spec normalize_launch_context(SemTypes.launch_context()) :: SemTypes.launch_context()
   defp normalize_launch_context(context) when is_map(context) do
@@ -3376,6 +3443,18 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
             }
           ]
 
+        timer_command?(command) ->
+          [
+            %{
+              "message" => map_value(command, :message) || "TimerFired",
+              "message_value" => map_value(command, :message_value),
+              "source_root" => source_root,
+              "source" => "timer_command",
+              "package" => map_value(command, :package) || "pebble/cmd",
+              "command" => command
+            }
+          ]
+
         unsupported_command?(command) ->
           [
             %{
@@ -3394,6 +3473,113 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   end
 
   defp package_followup_messages(_commands, _source_root), do: []
+
+  @spec resolve_timer_followup_messages([map()], map()) :: [map()]
+  defp resolve_timer_followup_messages(followups, eval_context)
+       when is_list(followups) and is_map(eval_context) do
+    Enum.map(followups, &resolve_timer_followup_message(&1, eval_context))
+  end
+
+  defp resolve_timer_followup_messages(followups, _eval_context) when is_list(followups),
+    do: followups
+
+  defp resolve_timer_followup_messages(_followups, _eval_context), do: []
+
+  @spec resolve_timer_followup_message(map(), map()) :: map()
+  defp resolve_timer_followup_message(%{"source" => "timer_command"} = row, eval_context) do
+    message_value = Map.get(row, "message_value")
+
+    case resolve_followup_message_value(message_value, eval_context) do
+      {message, resolved_value} ->
+        row
+        |> Map.put("message", message)
+        |> Map.put("message_value", resolved_value)
+
+      _ ->
+        row
+    end
+  end
+
+  defp resolve_timer_followup_message(row, _eval_context) when is_map(row), do: row
+  defp resolve_timer_followup_message(row, _eval_context), do: row
+
+  @spec resolve_followup_message_value(term(), map()) :: {String.t(), term()} | nil
+  defp resolve_followup_message_value(%{"ctor" => ctor, "args" => args}, _eval_context)
+       when is_binary(ctor) do
+    {ctor, %{"ctor" => ctor, "args" => args || []}}
+  end
+
+  defp resolve_followup_message_value(%{ctor: ctor, args: args}, _eval_context)
+       when is_binary(ctor) do
+    {ctor, %{ctor: ctor, args: args || []}}
+  end
+
+  defp resolve_followup_message_value({tag, payload}, eval_context) when is_integer(tag) do
+    case constructor_name_for_tag(tag, eval_context) do
+      ctor when is_binary(ctor) ->
+        {ctor, %{"ctor" => ctor, "args" => if(is_list(payload), do: payload, else: [])}}
+
+      _ ->
+        {"tag:#{tag}", {tag, payload}}
+    end
+  end
+
+  defp resolve_followup_message_value(tag, eval_context) when is_integer(tag) do
+    case constructor_name_for_tag(tag, eval_context) do
+      ctor when is_binary(ctor) -> {ctor, %{"ctor" => ctor, "args" => []}}
+      _ -> {"tag:#{tag}", tag}
+    end
+  end
+
+  defp resolve_followup_message_value(_message_value, _eval_context), do: nil
+
+  @spec constructor_name_for_tag(integer(), map()) :: String.t() | nil
+  defp constructor_name_for_tag(tag, eval_context) when is_integer(tag) and is_map(eval_context) do
+    candidates =
+      eval_context
+      |> Map.get(:constructor_tags, [])
+      |> Enum.filter(fn entry ->
+        entry_tag = Map.get(entry, :tag) || Map.get(entry, "tag")
+        entry_tag == tag
+      end)
+
+    entry_module = Map.get(eval_context, :module) || Map.get(eval_context, "module")
+
+    candidates
+    |> Enum.find(fn entry ->
+      union = Map.get(entry, :union) || Map.get(entry, "union")
+      module = Map.get(entry, :module) || Map.get(entry, "module")
+      update_module? = Map.get(entry, :update_module?) || Map.get(entry, "update_module?")
+
+      update_module? == true and union == "Msg" and
+        (not is_binary(entry_module) or module == entry_module)
+    end)
+    |> case do
+      %{ctor: ctor} ->
+        ctor
+
+      %{"ctor" => ctor} ->
+        ctor
+
+      _ ->
+        candidates
+        |> Enum.find(fn entry ->
+          Map.get(entry, :update_module?) || Map.get(entry, "update_module?") == true
+        end)
+        |> case do
+          %{ctor: ctor} -> ctor
+          %{"ctor" => ctor} -> ctor
+          _ -> sole_constructor_name(candidates)
+        end
+    end
+  end
+
+  defp constructor_name_for_tag(_tag, _eval_context), do: nil
+
+  @spec sole_constructor_name([map()]) :: String.t() | nil
+  defp sole_constructor_name([%{ctor: ctor}]), do: ctor
+  defp sole_constructor_name([%{"ctor" => ctor}]), do: ctor
+  defp sole_constructor_name(_candidates), do: nil
 
   @spec http_command?(SemTypes.command_map()) :: boolean()
   defp http_command?(%{"kind" => "http"}), do: true
@@ -3429,6 +3615,11 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp task_command?(%{"kind" => "cmd.task." <> _rest}), do: true
   defp task_command?(%{kind: "cmd.task." <> _rest}), do: true
   defp task_command?(_), do: false
+
+  @spec timer_command?(SemTypes.command_map()) :: boolean()
+  defp timer_command?(%{"kind" => "cmd.timer.after"}), do: true
+  defp timer_command?(%{kind: "cmd.timer.after"}), do: true
+  defp timer_command?(_), do: false
 
   @spec unsupported_command?(SemTypes.command_map()) :: boolean()
   defp unsupported_command?(%{"kind" => "cmd.unsupported"}), do: true

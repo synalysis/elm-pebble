@@ -13,6 +13,7 @@ defmodule Ide.Debugger do
   alias Ide.Compiler.Diagnostics
   alias Ide.PebblePreferences
   alias Ide.Projects
+  alias Ide.Resources.ResourceStore
   alias Ide.WatchModels
 
   @dialyzer :no_match
@@ -65,7 +66,8 @@ defmodule Ide.Debugger do
         ".onForecast",
         ".Weather.onForecast"
       ],
-      payload: :weather
+      payload: :weather,
+      ok_result_variant: "Current"
     },
     %{
       source: "calendar",
@@ -191,6 +193,7 @@ defmodule Ide.Debugger do
           seq: 0
       }
       |> attach_companion_configuration(project_slug)
+      |> attach_vector_resource_indices(project_slug)
       |> apply_launch_context_to_surfaces(launch_reason)
       |> apply_simulator_settings_to_surfaces()
       |> append_event("debugger.start", %{
@@ -510,6 +513,7 @@ defmodule Ide.Debugger do
           current_view_tree: view_tree
         }
         |> Map.merge(artifacts)
+        |> maybe_put_vector_resource_indices(model)
 
       case runtime_executor_module().execute(request) do
         {:ok, payload} when is_map(payload) ->
@@ -565,6 +569,7 @@ defmodule Ide.Debugger do
       |> ensure_phone_state()
       |> apply_hot_reload(rel_path, source, reason, source_root)
       |> attach_companion_configuration(project_slug)
+      |> attach_vector_resource_indices(project_slug)
     end)
   end
 
@@ -1444,9 +1449,18 @@ defmodule Ide.Debugger do
     apply_step_once(state, target, requested_message, nil, source_override, trigger)
   end
 
-  @spec apply_step_once(runtime_state(), Types.surface_target(), String.t(), Types.subscription_payload(), String.t() | nil, String.t()) :: runtime_state()
-  defp apply_step_once(state, target, requested_message, message_value, source_override, trigger)
-       when target in [:watch, :companion, :phone] do
+  @spec apply_step_once(
+          runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          Types.subscription_payload(),
+          String.t() | nil,
+          String.t(),
+          keyword()
+        ) :: runtime_state()
+  defp apply_step_once(state, target, requested_message, message_value, source_override, trigger, opts \\ [])
+       when target in [:watch, :companion, :phone] and is_list(opts) do
+    suppress_protocol_events? = Keyword.get(opts, :suppress_protocol_events, false)
     surface = Map.get(state, target) || %{}
 
     model =
@@ -1564,8 +1578,7 @@ defmodule Ide.Debugger do
       })
       |> append_debugger_event("update", target, message, message_source)
       |> maybe_append_runtime_status_debugger_event(target)
-      |> append_protocol_events(protocol_events)
-      |> apply_protocol_state_effects(protocol_events)
+      |> maybe_apply_protocol_side_effects(protocol_events, suppress_protocol_events?)
       |> append_event("debugger.view_render", %{target: target_name, root: root})
 
     updated_state =
@@ -1934,7 +1947,7 @@ defmodule Ide.Debugger do
 
   defp companion_bridge_payload(state, :weather, request) when is_map(state) and is_map(request) do
     settings = simulator_settings_from_state(state)
-    weather = settings["weather"]
+    weather = companion_bridge_weather_info(settings["weather"])
 
     case Map.get(request, :op) do
       "forecast" -> [weather]
@@ -1942,6 +1955,39 @@ defmodule Ide.Debugger do
       _ -> weather
     end
   end
+
+  @spec companion_bridge_weather_info(map() | nil) :: map()
+  defp companion_bridge_weather_info(weather) when is_map(weather) do
+    weather
+    |> Map.take(["temperatureC", "condition", "humidityPercent", "pressureHpa", "windKph"])
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp companion_bridge_weather_info(_weather), do: %{}
+
+  @spec companion_bridge_subscription_message_value(String.t(), String.t(), String.t(), term()) ::
+          map()
+  defp companion_bridge_subscription_message_value("weather", callback, result_ctor, payload) do
+    wrapped_payload = wrap_weather_bridge_ok_payload(result_ctor, payload, "Current")
+    subscription_result_message_value(callback, result_ctor, wrapped_payload)
+  end
+
+  defp companion_bridge_subscription_message_value(_api, callback, result_ctor, payload) do
+    subscription_result_message_value(callback, result_ctor, payload)
+  end
+
+  @spec wrap_weather_bridge_ok_payload(String.t(), term(), String.t()) :: term()
+  defp wrap_weather_bridge_ok_payload("Ok", %{"ctor" => variant, "args" => [info | _]}, _default_variant)
+       when is_binary(variant) and is_map(info) do
+    %{"ctor" => variant, "args" => [companion_bridge_weather_info(info)]}
+  end
+
+  defp wrap_weather_bridge_ok_payload("Ok", info, default_variant) when is_map(info) do
+    %{"ctor" => default_variant, "args" => [companion_bridge_weather_info(info)]}
+  end
+
+  defp wrap_weather_bridge_ok_payload(_result_ctor, payload, _default_variant), do: payload
 
   defp companion_bridge_payload(state, kind, _request) when is_map(state) do
     settings = simulator_settings_from_state(state)
@@ -2216,8 +2262,31 @@ defmodule Ide.Debugger do
     end
   end
 
+  defp apply_companion_bridge_request(state, target, %{api: "weather"} = request, source) do
+    contract =
+      Enum.find(@companion_bridge_subscription_contracts, &(Map.fetch!(&1, :source) == "weather"))
+
+    callback =
+      if contract,
+        do: companion_bridge_callback(request, state, target, contract),
+        else: nil
+
+    payload = companion_bridge_payload(state, :weather, request)
+
+    state
+    |> append_event("debugger.companion_bridge", %{
+      target: source_root_for_target(target),
+      api: "weather",
+      op: Map.get(request, :op),
+      response_message: callback,
+      response_value: payload,
+      result: "Ok"
+    })
+    |> deliver_simulator_weather_to_watch()
+  end
+
   defp apply_companion_bridge_request(state, target, %{api: api} = request, source)
-       when is_binary(api) do
+       when is_binary(api) and api != "weather" do
     contract =
       Enum.find(@companion_bridge_subscription_contracts, &(Map.fetch!(&1, :source) == api))
 
@@ -2287,7 +2356,10 @@ defmodule Ide.Debugger do
             {:error, message} -> {"Err", message}
           end
 
-        {result_ctor, payload, subscription_result_message_value(callback, result_ctor, payload)}
+        message_value =
+          companion_bridge_subscription_message_value(api, callback, result_ctor, payload)
+
+        {result_ctor, payload, message_value}
       end
 
     state
@@ -2571,6 +2643,28 @@ defmodule Ide.Debugger do
           String.t(),
           map()
         ) :: map()
+  defp apply_companion_subscription_response(
+         state,
+         :companion = _target,
+         callback,
+         payload,
+         source,
+         "weather" = _trigger,
+         _contract
+       )
+       when is_map(state) and is_binary(callback) and is_binary(source) do
+    state
+    |> append_event("debugger.companion_bridge", %{
+      target: source_root_for_target(:companion),
+      api: "weather",
+      op: "subscribe",
+      response_message: callback,
+      response_value: payload,
+      result: "Ok"
+    })
+    |> deliver_simulator_weather_to_watch()
+  end
+
   defp apply_companion_subscription_response(
          state,
          target,
@@ -2947,6 +3041,27 @@ defmodule Ide.Debugger do
   defp normalize_temperature_scalar(value) when is_float(value),
     do: value |> Float.round() |> trunc()
 
+  defp normalize_temperature_scalar(value) when is_binary(value) do
+    trimmed = String.trim(value)
+
+    cond do
+      trimmed == "" ->
+        nil
+
+      String.contains?(trimmed, ".") ->
+        case Float.parse(trimmed) do
+          {parsed, ""} -> parsed |> Float.round() |> trunc()
+          _ -> nil
+        end
+
+      true ->
+        case Integer.parse(trimmed) do
+          {parsed, ""} -> parsed
+          _ -> nil
+        end
+    end
+  end
+
   defp normalize_temperature_scalar(%{"temperature" => temp}), do: normalize_temperature_scalar(temp)
   defp normalize_temperature_scalar(_value), do: nil
 
@@ -3034,6 +3149,9 @@ defmodule Ide.Debugger do
     case Map.get(ctx, :message_value) do
       %{"ctor" => ctor, "args" => [inner | _]} when is_binary(ctor) and is_map(inner) ->
         case protocol_ok_inner_record(inner) do
+          %{"ctor" => "Current", "args" => [info | _]} = current when is_map(info) ->
+            %{"info" => companion_bridge_weather_info(info), "current" => current}
+
           %{} = record ->
             binding_name = protocol_ok_payload_binding_name(ctor)
 
@@ -3197,7 +3315,46 @@ defmodule Ide.Debugger do
     Map.get(settings, "locale")
   end
 
+  defp simulator_settings_wire_value({:union, "Temperature"}, %{simulator_settings: settings})
+       when is_map(settings) do
+    case weather_temperature_celsius(settings["weather"] || %{}) do
+      nil -> nil
+      temp -> %{"ctor" => "Celsius", "args" => [temp]}
+    end
+  end
+
+  defp simulator_settings_wire_value({:enum, "WeatherCondition"}, %{simulator_settings: settings})
+       when is_map(settings) do
+    weather_condition_term_from_settings(settings)
+  end
+
   defp simulator_settings_wire_value(_wire_type, _ctx), do: nil
+
+  @spec weather_condition_term_from_settings(map()) :: map()
+  defp weather_condition_term_from_settings(settings) when is_map(settings) do
+    weather = settings["weather"] || %{}
+
+    key =
+      (Map.get(weather, "condition") || Map.get(weather, :condition) || "clear")
+      |> to_string()
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]+/, "")
+
+    ctor =
+      case key do
+        "clear" -> "Clear"
+        "cloudy" -> "Cloudy"
+        "fog" -> "Fog"
+        "drizzle" -> "Drizzle"
+        "rain" -> "Rain"
+        "snow" -> "Snow"
+        "showers" -> "Showers"
+        "storm" -> "Storm"
+        _ -> "UnknownWeather"
+      end
+
+    %{"ctor" => ctor, "args" => []}
+  end
 
   @spec protocol_bool_fallback_value(map(), map()) :: boolean() | nil
   defp protocol_bool_fallback_value(ctx, record) when is_map(ctx) and is_map(record) do
@@ -4814,6 +4971,17 @@ defmodule Ide.Debugger do
     end)
   end
 
+  @spec maybe_apply_protocol_side_effects(runtime_state(), [map()], boolean()) :: runtime_state()
+  defp maybe_apply_protocol_side_effects(state, _protocol_events, true), do: state
+
+  defp maybe_apply_protocol_side_effects(state, protocol_events, false) when is_list(protocol_events) do
+    state
+    |> append_protocol_events(protocol_events)
+    |> apply_protocol_state_effects(protocol_events)
+  end
+
+  defp maybe_apply_protocol_side_effects(state, _protocol_events, _suppress?), do: state
+
   @spec append_protocol_events(runtime_state(), [Types.protocol_event()]) :: runtime_state()
   defp append_protocol_events(state, protocol_events) when is_list(protocol_events) do
     Enum.reduce(protocol_events, state, fn event, acc ->
@@ -5956,39 +6124,8 @@ defmodule Ide.Debugger do
 
       if is_map(row) and subscription_model_active?(state, :watch, row) do
         state
-        |> maybe_apply_watch_weather_step(new_weather, "ProvideTemperature", fn weather ->
-          temp = Map.get(weather, "temperatureC") || Map.get(weather, :temperatureC)
-
-          if is_integer(temp) or is_float(temp) do
-            %{
-              "ctor" => "FromPhone",
-              "args" => [
-                %{
-                  "ctor" => "ProvideTemperature",
-                  "args" => [%{"ctor" => "Celsius", "args" => [round(temp)]}]
-                }
-              ]
-            }
-          end
-        end)
-        |> maybe_apply_watch_weather_step(new_weather, "ProvideCondition", fn weather ->
-          condition = Map.get(weather, "condition") || Map.get(weather, :condition) || "clear"
-
-          wire_code =
-            @weather_condition_wire_codes[
-              condition |> to_string() |> String.downcase() |> String.replace(~r/[^a-z0-9]+/, "")
-            ] || 1
-
-          %{
-            "ctor" => "FromPhone",
-            "args" => [
-              %{
-                "ctor" => "ProvideCondition",
-                "args" => [wire_code]
-              }
-            ]
-          }
-        end)
+        |> maybe_apply_watch_weather_step(new_weather, "ProvideTemperature")
+        |> maybe_apply_watch_weather_step(new_weather, "ProvideCondition")
       else
         state
       end
@@ -5998,11 +6135,11 @@ defmodule Ide.Debugger do
   defp maybe_inject_watch_weather_from_simulator_settings(state, _previous_settings, _new_settings),
     do: state
 
-  defp maybe_apply_watch_weather_step(state, weather, message_name, value_builder)
-       when is_map(state) and is_map(weather) and is_function(value_builder, 1) do
-    case value_builder.(weather) do
+  defp maybe_apply_watch_weather_step(state, weather, message_name)
+       when is_map(state) and is_map(weather) and is_binary(message_name) do
+    case watch_weather_from_phone_message_value(message_name, weather) do
       %{} = message_value ->
-        message = "FromPhone (#{message_name} ...)"
+        message = watch_weather_step_message(message_name, weather)
 
         apply_step_once(
           state,
@@ -6017,6 +6154,34 @@ defmodule Ide.Debugger do
         state
     end
   end
+
+  @spec deliver_simulator_weather_to_watch(runtime_state()) :: runtime_state()
+  defp deliver_simulator_weather_to_watch(state) when is_map(state) do
+    settings = simulator_settings_from_state(state)
+    weather = settings["weather"] || %{}
+
+    if map_size(weather) == 0 do
+      state
+    else
+      row =
+        state
+        |> trigger_candidates(:watch)
+        |> Enum.find(fn candidate ->
+          trigger = Map.get(candidate, :trigger) || Map.get(candidate, "trigger")
+          trigger in ["phone_to_watch", "on_phone_to_watch"]
+        end)
+
+      if is_map(row) and subscription_model_active?(state, :watch, row) do
+        state
+        |> maybe_apply_watch_weather_step(weather, "ProvideTemperature")
+        |> maybe_apply_watch_weather_step(weather, "ProvideCondition")
+      else
+        state
+      end
+    end
+  end
+
+  defp deliver_simulator_weather_to_watch(state), do: state
 
   @spec maybe_inject_watch_subscription_trigger(runtime_state(), String.t()) :: runtime_state()
   defp maybe_inject_watch_subscription_trigger(state, trigger) when is_map(state) and is_binary(trigger) do
@@ -6246,7 +6411,7 @@ defmodule Ide.Debugger do
         ),
       "quiet_hours" =>
         normalize_boolean(map_value(settings, "quiet_hours"), defaults["quiet_hours"]),
-      "weather" => normalize_json_map(map_value(settings, "weather"), defaults["weather"]),
+      "weather" => normalize_weather_settings(map_value(settings, "weather"), defaults["weather"]),
       "calendar_events" =>
         normalize_json_list(map_value(settings, "calendar_events"), defaults["calendar_events"]),
       "storage_values" =>
@@ -6301,6 +6466,86 @@ defmodule Ide.Debugger do
 
   defp normalize_json_map(value, _default) when is_map(value), do: value
   defp normalize_json_map(_value, default) when is_map(default), do: default
+
+  @spec normalize_weather_settings(map() | nil, map()) :: map()
+  defp normalize_weather_settings(value, default) when is_map(value) and is_map(default) do
+    weather =
+      value
+      |> Map.take(["temperatureC", "condition", "humidityPercent", "pressureHpa", "windKph"])
+      |> Enum.reject(fn {_key, setting_value} -> is_nil(setting_value) or setting_value == "" end)
+      |> Map.new()
+
+    weather =
+      case weather_temperature_celsius(weather) do
+        nil -> Map.delete(weather, "temperatureC")
+        temp -> Map.put(weather, "temperatureC", temp)
+      end
+
+    if map_size(weather) == 0, do: default, else: weather
+  end
+
+  defp normalize_weather_settings(_value, default) when is_map(default), do: default
+  defp normalize_weather_settings(_value, _default), do: %{}
+
+  @spec weather_temperature_celsius(map()) :: integer() | nil
+  defp weather_temperature_celsius(weather) when is_map(weather) do
+    weather
+    |> Map.get("temperatureC", Map.get(weather, :temperatureC))
+    |> normalize_temperature_scalar()
+  end
+
+  defp weather_temperature_celsius(_weather), do: nil
+
+  @spec watch_weather_from_phone_message_value(String.t(), map()) :: map() | nil
+  defp watch_weather_from_phone_message_value("ProvideTemperature", weather) when is_map(weather) do
+    case weather_temperature_celsius(weather) do
+      nil ->
+        nil
+
+      temp ->
+        %{
+          "ctor" => "FromPhone",
+          "args" => [
+            %{
+              "ctor" => "ProvideTemperature",
+              "args" => [%{"ctor" => "Celsius", "args" => [temp]}]
+            }
+          ]
+        }
+    end
+  end
+
+  defp watch_weather_from_phone_message_value("ProvideCondition", weather) when is_map(weather) do
+    condition = weather_condition_term_from_settings(%{"weather" => weather})
+
+    %{
+      "ctor" => "FromPhone",
+      "args" => [
+        %{
+          "ctor" => "ProvideCondition",
+          "args" => [condition]
+        }
+      ]
+    }
+  end
+
+  defp watch_weather_from_phone_message_value(_message_name, _weather), do: nil
+
+  @spec watch_weather_step_message(String.t(), map()) :: String.t()
+  defp watch_weather_step_message("ProvideTemperature", weather) when is_map(weather) do
+    case weather_temperature_celsius(weather) do
+      nil -> "FromPhone (ProvideTemperature ...)"
+      temp -> "FromPhone (ProvideTemperature (Celsius #{temp}))"
+    end
+  end
+
+  defp watch_weather_step_message("ProvideCondition", weather) when is_map(weather) do
+    condition = weather_condition_term_from_settings(%{"weather" => weather})
+    ctor = Map.get(condition, "ctor") || "UnknownWeather"
+    "FromPhone (ProvideCondition #{ctor})"
+  end
+
+  defp watch_weather_step_message(message_name, _weather), do: "FromPhone (#{message_name} ...)"
 
   defp normalize_json_list(value, _default) when is_list(value), do: value
   defp normalize_json_list(_value, default) when is_list(default), do: default
@@ -7218,6 +7463,7 @@ defmodule Ide.Debugger do
         update_branches: update_branches
       }
       |> Map.merge(runtime_execution_artifacts(model))
+      |> maybe_put_vector_resource_indices(model)
 
     case runtime_executor_module().execute(request) do
       {:ok, %{model_patch: patch} = result} when is_map(patch) ->
@@ -8238,6 +8484,48 @@ defmodule Ide.Debugger do
   end
 
   defp attach_companion_configuration(state, _session_key), do: state
+
+  @spec attach_vector_resource_indices(map(), String.t()) :: map()
+  defp attach_vector_resource_indices(state, project_slug)
+       when is_map(state) and is_binary(project_slug) do
+    case vector_resource_indices_for_project(project_slug) do
+      indices when is_map(indices) and map_size(indices) > 0 ->
+        put_in(state, [:watch, :model, "vector_resource_indices"], indices)
+
+      _ ->
+        state
+    end
+  end
+
+  defp attach_vector_resource_indices(state, _project_slug), do: state
+
+  @spec vector_resource_indices_for_project(String.t()) :: map()
+  defp vector_resource_indices_for_project(project_slug) when is_binary(project_slug) do
+    with %Projects.Project{} = project <- Projects.get_project_by_scope_key(project_slug),
+         {:ok, entries} <- ResourceStore.list_vectors(project) do
+      entries
+      |> Enum.with_index(1)
+      |> Map.new(fn {row, index} -> {row.ctor, index} end)
+    else
+      _ -> %{}
+    end
+  rescue
+    _ -> %{}
+  end
+
+  @spec maybe_put_vector_resource_indices(map(), map()) :: map()
+  defp maybe_put_vector_resource_indices(request, model)
+       when is_map(request) and is_map(model) do
+    case Map.get(model, "vector_resource_indices") do
+      indices when is_map(indices) and map_size(indices) > 0 ->
+        Map.put(request, :vector_resource_indices, indices)
+
+      _ ->
+        request
+    end
+  end
+
+  defp maybe_put_vector_resource_indices(request, _model), do: request
 
   @spec companion_configuration_model(String.t()) :: map() | nil
   defp companion_configuration_model(session_key) do
@@ -9697,6 +9985,7 @@ defmodule Ide.Debugger do
           current_view_tree: view_tree
         }
         |> Map.merge(artifacts)
+        |> maybe_put_vector_resource_indices(model)
 
       case runtime_executor_module().execute(request) do
         {:ok, payload} when is_map(payload) ->
@@ -10628,6 +10917,7 @@ defmodule Ide.Debugger do
         current_view_tree: view_tree
       }
       |> Map.merge(runtime_execution_artifacts(model))
+      |> maybe_put_vector_resource_indices(model)
 
     execution =
       case runtime_executor_module().execute(request) do

@@ -1163,6 +1163,17 @@ defmodule Ide.Debugger.ElmIntrospect do
     Enum.find_value(args, &callback_constructor_from_expr(&1, bindings, seen, depth + 1))
   end
 
+  defp callback_constructor_from_expr(%{op: :call, name: name, args: args}, bindings, seen, depth)
+       when is_binary(name) and is_list(args) do
+    cond do
+      constructor_like_name?(name) and callback_preferred_over_result_mapper?(name) ->
+        view_type_name(name)
+
+      true ->
+        Enum.find_value(args, &callback_constructor_from_expr(&1, bindings, seen, depth + 1))
+    end
+  end
+
   defp callback_constructor_from_expr(%{op: :call, args: args}, bindings, seen, depth)
        when is_list(args) do
     Enum.find_value(args, &callback_constructor_from_expr(&1, bindings, seen, depth + 1))
@@ -1185,11 +1196,30 @@ defmodule Ide.Debugger.ElmIntrospect do
          seen,
          depth
        ) do
-    case callback_constructor_from_expr(left, bindings, seen, depth + 1) do
-      nil -> callback_constructor_from_expr(right, bindings, seen, depth + 1)
-      constructor -> constructor
+    left_ctor = callback_constructor_from_expr(left, bindings, seen, depth + 1)
+    right_ctor = callback_constructor_from_expr(right, bindings, seen, depth + 1)
+
+    cond do
+      callback_preferred_over_result_mapper?(left_ctor) ->
+        left_ctor
+
+      is_binary(left_ctor) ->
+        left_ctor
+
+      is_binary(right_ctor) ->
+        right_ctor
+
+      true ->
+        nil
     end
   end
+
+  @spec callback_preferred_over_result_mapper?(String.t() | nil) :: boolean()
+  defp callback_preferred_over_result_mapper?(ctor) when is_binary(ctor) do
+    ctor not in ["Current", "Forecast"]
+  end
+
+  defp callback_preferred_over_result_mapper?(_ctor), do: false
 
   defp callback_constructor_from_expr(%{op: :list_literal, items: items}, bindings, seen, depth)
        when is_list(items) do

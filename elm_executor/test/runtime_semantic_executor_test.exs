@@ -2113,6 +2113,43 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
            ]
   end
 
+  test "view_output resolves drawVectorAt via vector_resource_indices when core_ir lacks Resources module" do
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: "module Main exposing (main)\n",
+      vector_resource_indices: %{
+        "WeatherClear" => 1,
+        "WeatherFog" => 3
+      },
+      introspect: %{
+        "view_tree" => %{
+          "type" => "root",
+          "children" => [
+            %{
+              "type" => "drawVectorAt",
+              "children" => [
+                %{"type" => "expr", "value" => %{"ctor" => "WeatherFog", "args" => []}},
+                %{"type" => "expr", "value" => 8},
+                %{"type" => "expr", "value" => 16}
+              ]
+            }
+          ]
+        }
+      },
+      current_model: %{"runtime_model" => %{}},
+      current_view_tree: %{},
+      message: "Tick",
+      update_branches: ["Tick"]
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+
+    assert result.view_output == [
+             %{"kind" => "vector_at", "vector_id" => 3, "x" => 8, "y" => 16}
+           ]
+  end
+
   test "view_output includes drawVectorSequenceAt primitive" do
     request = %{
       source_root: "watch",

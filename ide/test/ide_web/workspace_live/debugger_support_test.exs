@@ -1136,6 +1136,58 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert op.y == 7
   end
 
+  test "hydrate_vector_svg_ops expands vector sequences into animation ops" do
+    alias Ide.Projects.FileStore
+
+    template_root =
+      Path.expand("../../../priv/project_templates/watchface_weather_animated", __DIR__)
+
+    vectors_json =
+      template_root
+      |> Path.join("resources/vectors.json")
+      |> File.read!()
+      |> Jason.decode!()
+
+    transition_entry =
+      Enum.find(vectors_json["entries"], fn entry ->
+        entry["ctor"] == "TransitionClearToRain"
+      end)
+
+    assert transition_entry
+
+    vector_id = 1
+
+    slug = "debugger-vseq-test-#{System.unique_integer([:positive])}"
+    project = %Ide.Projects.Project{slug: slug}
+    workspace = FileStore.project_root(project, Ide.Projects.projects_root())
+    vectors_dir = Path.join(workspace, "watch/resources/vectors")
+    File.mkdir_p!(vectors_dir)
+
+    File.write!(
+      Path.join(workspace, "watch/resources/vectors.json"),
+      Jason.encode!(%{entries: [transition_entry]})
+    )
+
+    File.cp!(
+      Path.join(template_root, "resources/vectors/TransitionClearToRain.pdc"),
+      Path.join(vectors_dir, "TransitionClearToRain.pdc")
+    )
+
+    on_exit(fn -> File.rm_rf!(workspace) end)
+
+    [anim_op] =
+      DebuggerPreview.hydrate_vector_svg_ops(
+        [%{kind: :vector_sequence_at, vector_id: vector_id, x: 10, y: 20}],
+        project
+      )
+
+    assert anim_op.kind == :vector_sequence_anim
+    assert anim_op.x == 10
+    assert anim_op.y == 20
+    assert length(anim_op.frame_elements) >= 2
+    assert length(anim_op.durations) == length(anim_op.frame_elements)
+  end
+
   test "debugger preview prefers evaluated runtime_view_output over tree fallback" do
     tree = %{
       "type" => "root",

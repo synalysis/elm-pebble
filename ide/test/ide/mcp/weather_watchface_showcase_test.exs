@@ -101,4 +101,56 @@ defmodule Ide.Mcp.WeatherWatchfaceShowcaseTest do
     assert String.contains?(source, "ClearToCloudy")
     assert String.contains?(source, "type VectorGraphic")
   end
+
+  test "debugger weather watchface renders fog vector id from project manifest" do
+    slug = "weather-fog-vector-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Weather Fog Vector",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "watchface-weather-animated"
+             })
+
+    workspace = Projects.project_workspace_path(project)
+    watch_source = File.read!(Path.join(workspace, "watch/src/Main.elm"))
+    phone_source = File.read!(Path.join(workspace, "phone/src/CompanionApp.elm"))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: phone_source,
+               source_root: "phone",
+               reason: "weather_fog_vector_companion"
+             })
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               source_root: "watch",
+               reason: "weather_fog_vector_watch"
+             })
+
+    assert {:ok, _state} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 18, "condition" => "fog"}
+             })
+
+    assert {:ok, state} =
+             Debugger.inject_trigger(slug, %{
+               target: "watch",
+               trigger: "timer",
+               message: "EnableWeatherTransitions"
+             })
+
+    view_output = get_in(state, [:watch, :model, "runtime_view_output"]) || []
+
+    assert Enum.any?(view_output, fn row ->
+             row["kind"] == "vector_at" and row["vector_id"] == 3
+           end)
+  end
 end
