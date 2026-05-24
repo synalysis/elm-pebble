@@ -5132,7 +5132,7 @@ defmodule IdeWeb.WorkspaceLive do
       {:ok, count} ->
         put_flash(
           socket,
-          :error,
+          :warning,
           "Prepare Release warning: #{count} uncommitted change(s) detected in project workspace."
         )
 

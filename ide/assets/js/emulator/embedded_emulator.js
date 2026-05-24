@@ -944,11 +944,27 @@ export class EmbeddedEmulatorHost {
     if (!raw) return
 
     try {
-      this.applySimulatorSettings(JSON.parse(raw), {source: "dataset"})
+      this.applySimulatorSettings(JSON.parse(raw), {source: "dataset", syncCompanion: false})
       this.lastAppliedSimulatorSettingsJson = raw
     } catch (_error) {
       this.appendLog("Could not parse initial simulator settings from page")
     }
+  }
+
+  companionSimulatorEnabled() {
+    return this.el.dataset.emulatorHasPhoneCompanion === "true"
+  }
+
+  emulatorSessionActive() {
+    return !!this.session?.id
+  }
+
+  shouldSyncCompanionSimulator(options = {}) {
+    return (
+      this.companionSimulatorEnabled() &&
+      this.emulatorSessionActive() &&
+      options.syncCompanion !== false
+    )
   }
 
   simulatorSettingsWeatherKey(settings = this.simulatorSettings) {
@@ -999,29 +1015,33 @@ export class EmbeddedEmulatorHost {
     this.simulatorSettingsSource = options.source || "push_event"
     this.simulatorSettingsAppliedAt = Date.now()
 
-    if (settings.battery_percent != null || settings.charging != null) {
-      this.setBattery(settings.battery_percent ?? 88, !!settings.charging)
+    if (this.emulatorSessionActive()) {
+      if (settings.battery_percent != null || settings.charging != null) {
+        this.setBattery(settings.battery_percent ?? 88, !!settings.charging)
+      }
+
+      if (settings.connected != null) {
+        this.sendQemu(QEMU.bluetooth, [settings.connected ? 1 : 0])
+      }
+
+      if (settings.clock_24h != null) {
+        this.sendQemu(QEMU.timeFormat, [settings.clock_24h ? 1 : 0])
+      }
+
+      if (settings.timeline_peek != null) {
+        this.sendQemu(QEMU.timelinePeek, [settings.timeline_peek ? 1 : 0])
+      }
+
+      if (settings.compass_heading_deg != null || settings.compass_valid != null) {
+        this.sendCompassSample(settings)
+      }
     }
 
-    if (settings.connected != null) {
-      this.sendQemu(QEMU.bluetooth, [settings.connected ? 1 : 0])
+    if (this.shouldSyncCompanionSimulator(options)) {
+      const quiet = options.quiet ?? options.source === "dataset"
+      this.pushSimulatorSettingsToPhoneBridgeNow({quiet})
+      this.scheduleWeatherPush({quiet})
     }
-
-    if (settings.clock_24h != null) {
-      this.sendQemu(QEMU.timeFormat, [settings.clock_24h ? 1 : 0])
-    }
-
-    if (settings.timeline_peek != null) {
-      this.sendQemu(QEMU.timelinePeek, [settings.timeline_peek ? 1 : 0])
-    }
-
-    if (settings.compass_heading_deg != null || settings.compass_valid != null) {
-      this.sendCompassSample(settings)
-    }
-
-    // Push settings to pypkjs immediately; debounced inject covers watch-side delivery.
-    this.pushSimulatorSettingsToPhoneBridgeNow()
-    this.scheduleWeatherPush({quiet: false})
 
     this.lastAppliedSimulatorSettingsJson = JSON.stringify(this.simulatorSettingsPayload(settings))
   }
@@ -1035,16 +1055,22 @@ export class EmbeddedEmulatorHost {
     return {...settings, weather}
   }
 
-  pushSimulatorSettingsToPhoneBridgeNow() {
+  pushSimulatorSettingsToPhoneBridgeNow(options = {}) {
+    if (!this.companionSimulatorEnabled()) return false
+
     const payload = this.simulatorSettingsPayload()
-    const weather = this.resolveWeatherSimulatorSettings(payload)
-    this.appendLog(
-      `weather trace [browser_send]: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
-    )
-    return this.sendSimulatorSettingsToPhoneBridge(payload)
+    const sent = this.sendSimulatorSettingsToPhoneBridge(payload)
+    if (sent && options.quiet === false) {
+      const weather = this.resolveWeatherSimulatorSettings(payload)
+      this.appendLog(
+        `synced simulator weather via phone bridge: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
+      )
+    }
+    return sent
   }
 
   scheduleWeatherPush(options = {}) {
+    if (!this.shouldSyncCompanionSimulator(options)) return
     this.resetWeatherDebugQueueIfStuck("new settings push")
     this.weatherDebugInFlight = false
     this.pendingWeatherRetry = null
@@ -1068,9 +1094,9 @@ export class EmbeddedEmulatorHost {
       const injectTimerId = window.setTimeout(() => {
         this.weatherPushRetryTimers = this.weatherPushRetryTimers.filter(id => id !== injectTimerId)
         const injected = this.enqueueWeatherDebugPush(weather, {quiet: true, force: true})
-        if (!injected) {
+        if (!injected && options.quiet === false) {
           this.appendLog(
-            `weather trace [browser_inject_skipped]: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"} (queue busy=${this.weatherDebugInFlight})`
+            `skipped simulator weather inject: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
           )
         }
       }, 400)

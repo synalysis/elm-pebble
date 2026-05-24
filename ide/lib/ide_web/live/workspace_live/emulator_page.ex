@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   import IdeWeb.WatchInteractives
 
+  alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.SimulatorSettings
   alias Ide.WatchModels
@@ -77,6 +78,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
         data-emulator-target={@selected_emulator_target}
         data-emulator-screen-width={elem(emulator_screen_size(@selected_emulator_target), 0)}
         data-emulator-screen-height={elem(emulator_screen_size(@selected_emulator_target), 1)}
+        data-emulator-has-phone-companion={Projects.companion_app_present?(@project) |> to_string()}
         data-emulator-simulator-settings={emulator_simulator_settings_json(@project, @debugger_state)}
         class="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4"
       >

@@ -2,6 +2,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
   @moduledoc false
   use IdeWeb, :html
 
+  alias Ide.Auth
   alias Phoenix.LiveView.Rendered
 
   @settings_panes [:settings, :settings_store, :settings_github]
@@ -106,7 +107,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         Release
       </.link>
       <.link
-        :if={@auth_mode == :public_pebble}
+        :if={Auth.app_store_publish_enabled?()}
         patch={~p"/projects/#{@project.slug}/settings/store"}
         class={settings_tab_class(@pane, :settings_store)}
       >
@@ -148,7 +149,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
           <p class="mt-1 text-xs text-zinc-600">
             {release_metadata_intro(@auth_mode)}
           </p>
-          <p :if={@auth_mode == :public_pebble} class="mt-1 text-xs text-zinc-600">
+          <p :if={Auth.app_store_publish_enabled?()} class="mt-1 text-xs text-zinc-600">
             App Store sync:
             <span class={push_status_class(@store_listing_sync_status)}>
               {status_label(@store_listing_sync_status)}
@@ -156,7 +157,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
           </p>
         </div>
         <button
-          :if={@auth_mode == :public_pebble}
+          :if={Auth.app_store_publish_enabled?()}
           type="submit"
           name="sync_store_listing"
           value="1"

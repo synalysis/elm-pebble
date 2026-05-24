@@ -302,6 +302,33 @@ defmodule Ide.CompilerTest do
     refute Enum.any?(result.diagnostics, &(&1.message =~ "check: failed\n\ncheck: failed"))
   end
 
+  test "check_workspace fails when any Elm root has function call errors" do
+    workspace_root = tmp_workspace_path("check-workspace-function-call")
+    on_exit(fn -> File.rm_rf(workspace_root) end)
+
+    assert :ok = ProjectTemplates.apply_template("watch-demo-health", workspace_root)
+    source_path = Path.join([workspace_root, "watch", "src", "Main.elm"])
+
+    source =
+      source_path
+      |> File.read!()
+      |> String.replace(
+        "Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 20 } (String.fromInt model.events)",
+        "Ui.textInt Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 20 } model.events"
+      )
+
+    File.write!(source_path, source)
+
+    assert {:error, {:compiler_check_failed, "watch", check_result}} =
+             Compiler.check_workspace("check-workspace-function-call",
+               workspace_root: workspace_root,
+               source_roots: ["watch"]
+             )
+
+    assert check_result.status == :error
+    assert check_result.error_count >= 1
+  end
+
   test "compile works without mix on PATH" do
     workspace_root = tmp_workspace_path("compile-in-process")
     on_exit(fn -> File.rm_rf(workspace_root) end)

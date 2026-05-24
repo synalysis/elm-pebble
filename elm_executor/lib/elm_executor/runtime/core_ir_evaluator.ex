@@ -916,7 +916,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         end
 
       {"pebble.ui.drawbitmapinrect", [bitmap_id, bounds]} ->
-        with {:ok, normalized_bitmap_id} <- normalize_bitmap_id(bitmap_id),
+        with {:ok, normalized_bitmap_id} <- normalize_bitmap_id(bitmap_id, context),
              {:ok, {x, y, w, h}} <- normalize_rect(bounds) do
           {:ok,
            ui_node("bitmapInRect", Enum.map([normalized_bitmap_id, x, y, w, h], &expr_node/1))}
@@ -925,7 +925,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         end
 
       {"pebble.ui.drawbitmapinrect", [bitmap_id, x, y, w, h]} ->
-        with {:ok, normalized_bitmap_id} <- normalize_bitmap_id(bitmap_id),
+        with {:ok, normalized_bitmap_id} <- normalize_bitmap_id(bitmap_id, context),
              true <- Enum.all?([x, y, w, h], &is_integer/1) do
           {:ok,
            ui_node("bitmapInRect", Enum.map([normalized_bitmap_id, x, y, w, h], &expr_node/1))}
@@ -934,7 +934,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         end
 
       {"pebble.ui.drawrotatedbitmap", [bitmap_id, src_rect, angle, center]} ->
-        with {:ok, normalized_bitmap_id} <- normalize_bitmap_id(bitmap_id),
+        with {:ok, normalized_bitmap_id} <- normalize_bitmap_id(bitmap_id, context),
              {:ok, {_src_x, _src_y, src_w, src_h}} <- normalize_rect(src_rect),
              {:ok, normalized_angle} <- normalize_rotation_angle(angle),
              {:ok, {center_x, center_y}} <- normalize_point(center) do
@@ -951,7 +951,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         end
 
       {"pebble.ui.drawrotatedbitmap", [bitmap_id, src_w, src_h, angle, center_x, center_y]} ->
-        with {:ok, normalized_bitmap_id} <- normalize_bitmap_id(bitmap_id),
+        with {:ok, normalized_bitmap_id} <- normalize_bitmap_id(bitmap_id, context),
              {:ok, normalized_angle} <- normalize_rotation_angle(angle),
              true <- Enum.all?([src_w, src_h, center_x, center_y], &is_integer/1) do
           {:ok,
@@ -3338,6 +3338,10 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp normalize_point(_), do: :error
 
   @spec normalize_rect(EvalTypes.runtime_value()) :: {:ok, {integer(), integer(), integer(), integer()}} | :error
+  defp normalize_rect({x, {y, {w, h}}})
+       when is_integer(x) and is_integer(y) and is_integer(w) and is_integer(h),
+       do: {:ok, {x, y, w, h}}
+
   defp normalize_rect(value) when is_map(value) do
     x = Map.get(value, "x") || Map.get(value, :x)
     y = Map.get(value, "y") || Map.get(value, :y)
@@ -3496,30 +3500,99 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec normalize_bitmap_id(EvalTypes.runtime_value()) :: {:ok, non_neg_integer()} | :error
-  defp normalize_bitmap_id(value) when is_integer(value), do: {:ok, value}
+  @spec bitmap_resource_id_from_value(EvalTypes.runtime_value(), map()) ::
+          {:ok, non_neg_integer()} | :error
+  def bitmap_resource_id_from_value(value, context \\ %{}), do: normalize_bitmap_id(value, context)
 
-  defp normalize_bitmap_id(%{"tag" => tag}) when is_integer(tag), do: {:ok, tag}
-  defp normalize_bitmap_id(%{tag: tag}) when is_integer(tag), do: {:ok, tag}
+  @doc false
+  @spec normalize_runtime_rect(EvalTypes.runtime_value()) ::
+          {:ok, {integer(), integer(), integer(), integer()}} | :error
+  def normalize_runtime_rect(value), do: normalize_rect(value)
 
-  defp normalize_bitmap_id(%{"ctor" => _ctor, "args" => []} = value) when is_map(value) do
-    case {Map.get(value, "ctor"), Map.get(value, "tag")} do
-      {"NoBitmap", _} -> {:ok, 0}
-      {_ctor, tag} when is_integer(tag) -> {:ok, tag}
-      _ -> :error
+  @doc false
+  @spec normalize_runtime_point(EvalTypes.runtime_value()) :: {:ok, {integer(), integer()}} | :error
+  def normalize_runtime_point(value), do: normalize_point(value)
+
+  @doc false
+  @spec normalize_runtime_color(EvalTypes.runtime_value()) :: {:ok, integer()} | :error
+  def normalize_runtime_color(value), do: normalize_color(value)
+
+  @doc false
+  @spec normalize_runtime_rotation_angle(EvalTypes.runtime_value()) :: {:ok, integer()} | :error
+  def normalize_runtime_rotation_angle(value), do: normalize_rotation_angle(value)
+
+  @spec normalize_bitmap_id(EvalTypes.runtime_value(), map()) :: {:ok, non_neg_integer()} | :error
+  defp normalize_bitmap_id(value, context)
+
+  defp normalize_bitmap_id(value, _context) when is_integer(value), do: {:ok, value}
+
+  defp normalize_bitmap_id(%{"tag" => tag}, _context) when is_integer(tag), do: {:ok, tag}
+  defp normalize_bitmap_id(%{tag: tag}, _context) when is_integer(tag), do: {:ok, tag}
+
+  defp normalize_bitmap_id(%{"ctor" => ctor, "args" => args} = value, context)
+       when is_map(value) and is_list(args) do
+    bitmap_resource_id_from_ctor(ctor, Map.get(value, "tag"), context)
+  end
+
+  defp normalize_bitmap_id(%{ctor: ctor, args: args} = value, context)
+       when is_map(value) and is_list(args) do
+    bitmap_resource_id_from_ctor(ctor, Map.get(value, :tag), context)
+  end
+
+  defp normalize_bitmap_id(_, _context), do: :error
+
+  @spec bitmap_resource_id_from_ctor(String.t() | atom(), integer() | nil, map()) ::
+          {:ok, non_neg_integer()} | :error
+  defp bitmap_resource_id_from_ctor(ctor, tag, context) do
+    ctor = to_string(ctor)
+
+    cond do
+      ctor in ["NoBitmap"] ->
+        {:ok, 0}
+
+      is_integer(tag) ->
+        {:ok, bitmap_id_from_union_tag(tag, context)}
+
+      true ->
+        cond do
+          is_integer(id = bitmap_resource_index_for_ctor(ctor, context)) and id >= 1 ->
+            {:ok, id}
+
+          is_integer(tag = constructor_tag_for_ctor(ctor, context)) ->
+            {:ok, bitmap_id_from_union_tag(tag, context)}
+
+          true ->
+            :error
+        end
     end
   end
 
-  defp normalize_bitmap_id(%{ctor: _ctor, args: []} = value) when is_map(value) do
-    case {Map.get(value, :ctor), Map.get(value, :tag)} do
-      {"NoBitmap", _} -> {:ok, 0}
-      {:NoBitmap, _} -> {:ok, 0}
-      {_ctor, tag} when is_integer(tag) -> {:ok, tag}
-      _ -> :error
+  @spec bitmap_id_from_union_tag(integer(), map()) :: non_neg_integer()
+  defp bitmap_id_from_union_tag(tag, context) when is_integer(tag) and is_map(context) do
+    if is_integer(constructor_tag_for_ctor("NoBitmap", context)) do
+      max(tag - 1, 0)
+    else
+      max(tag, 0)
     end
   end
 
-  defp normalize_bitmap_id(_), do: :error
+  @spec bitmap_resource_index_for_ctor(String.t() | atom(), map()) :: integer() | nil
+  defp bitmap_resource_index_for_ctor(ctor, context) when is_map(context) do
+    ctor =
+      ctor
+      |> to_string()
+      |> String.trim()
+
+    context
+    |> Map.get(:bitmap_resource_indices, %{})
+    |> Map.get(ctor)
+    |> case do
+      id when is_integer(id) and id >= 1 -> id
+      _ -> nil
+    end
+  end
+
+  defp bitmap_resource_index_for_ctor(_ctor, _context), do: nil
 
   @spec vector_resource_id_from_value(EvalTypes.runtime_value(), map()) ::
           {:ok, non_neg_integer()} | :error

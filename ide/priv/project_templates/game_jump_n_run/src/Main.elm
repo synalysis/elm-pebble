@@ -4,7 +4,6 @@ import Json.Decode as Decode
 import Pebble.Button as Button
 import Pebble.Events as Events
 import Pebble.Frame as Frame
-import Pebble.Game.Collision as Collision
 import Pebble.Platform as Platform
 import Pebble.Storage as Storage
 import Pebble.Ui as Ui
@@ -154,7 +153,14 @@ step model =
             if model.velocityY >= 0 then
                 tiles
                     |> List.filter (landedOnTile nextOffset model.playerY player)
-                    |> List.sortBy (\tile -> (tileRect nextOffset tile).y)
+                    |> List.sortBy
+                        (\tile ->
+                            let
+                                rect =
+                                    platformRect nextOffset tile
+                            in
+                            rect.y
+                        )
                     |> List.head
 
             else
@@ -163,7 +169,11 @@ step model =
         fixedY =
             case landingTile of
                 Just tile ->
-                    (tileRect nextOffset tile).y - playerH
+                    let
+                        rect =
+                            platformRect nextOffset tile
+                    in
+                    rect.y - playerH
 
                 Nothing ->
                     nextY
@@ -316,11 +326,11 @@ hash n =
     modBy 997 (n * 73 + 17)
 
 
-landedOnTile : Int -> Int -> Collision.Rect -> PlatformTile -> Bool
+landedOnTile : Int -> Int -> { x : Int, y : Int, w : Int, h : Int } -> PlatformTile -> Bool
 landedOnTile offset previousPlayerY player tile =
     let
         platform =
-            tileRect offset tile
+            platformRect offset tile
 
         previousBottom =
             previousPlayerY + player.h
@@ -340,12 +350,28 @@ landedOnTile offset previousPlayerY player tile =
     horizontalOverlap && playerBottom >= platform.y - 1 && (landingFromAbove || ridingPlatform)
 
 
-obstacleCollision : Collision.Rect -> Int -> Obstacle -> Bool
+obstacleCollision : { x : Int, y : Int, w : Int, h : Int } -> Int -> Obstacle -> Bool
 obstacleCollision player offset obstacle =
-    Collision.rectRect player (obstacleRect offset obstacle)
+    rectsOverlap player (obstacleRect offset obstacle)
 
 
-obstacleRect : Int -> Obstacle -> Collision.Rect
+rectsOverlap : { x : Int, y : Int, w : Int, h : Int } -> { x : Int, y : Int, w : Int, h : Int } -> Bool
+rectsOverlap a b =
+    a.x
+        < b.x
+        + b.w
+        && a.x
+        + a.w
+        > b.x
+        && a.y
+        < b.y
+        + b.h
+        && a.y
+        + a.h
+        > b.y
+
+
+obstacleRect : Int -> Obstacle -> { x : Int, y : Int, w : Int, h : Int }
 obstacleRect offset obstacle =
     { x = obstacle.slot * tileSpacing - offset + 12
     , y = obstacle.y
@@ -354,8 +380,8 @@ obstacleRect offset obstacle =
     }
 
 
-tileRect : Int -> PlatformTile -> Collision.Rect
-tileRect offset tile =
+platformRect : Int -> PlatformTile -> { x : Int, y : Int, w : Int, h : Int }
+platformRect offset tile =
     let
         bob =
             if tile.moving then
@@ -454,9 +480,14 @@ gameOverOps model =
     [ Ui.text Resources.DefaultFont textOptions { x = textX, y = textY, w = textW, h = 28 } "Press Up" ]
 
 
+toUiRect : { x : Int, y : Int, w : Int, h : Int } -> { x : Int, y : Int, w : Int, h : Int }
+toUiRect rect =
+    rect
+
+
 drawTile : Int -> PlatformTile -> Ui.RenderOp
 drawTile offset tile =
-    Ui.fillRect (tileRect offset tile) (tileColor tile)
+    Ui.fillRect (toUiRect (platformRect offset tile)) (tileColor tile)
 
 
 tileColor : PlatformTile -> Color
@@ -470,7 +501,7 @@ tileColor tile =
 
 drawObstacle : Int -> Obstacle -> Ui.RenderOp
 drawObstacle offset obstacle =
-    Ui.fillRect (obstacleRect offset obstacle) Color.black
+    Ui.fillRect (toUiRect (obstacleRect offset obstacle)) Color.black
 
 
 main : Program Decode.Value Model Msg

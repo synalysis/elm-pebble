@@ -358,26 +358,16 @@ siteFooter =
                 ]
             ]
             [ p []
-                [ text "Elm Pebble is an open-source development and is not affiliated with Elm, the Elm Software Foundation, Pebble, or any Pebble trademark owners." ]
-            , p
-                [ classes [ Tw.mt s3 ] ]
-                [ text "Built for the "
-                , footerExternalLink "https://repebble.com/" "Rebble"
-                , text " ecosystem—watches, companion app, and appstore. Elm Pebble is an independent project, not affiliated with Rebble or Core Devices."
+                [ text "Elm Pebble is open-source tooling for the "
+                , footerExternalLink "https://repebble.com/" "Pebble ecosystem"
+                , text ". It is an independent project, not affiliated with Elm, the Elm Software Foundation, Core Devices, or Pebble trademark owners."
                 ]
             , p
                 [ classes [ Tw.mt s3 ] ]
                 [ text "Developed by "
-                , a
-                    [ href "https://github.com/synalysis"
-                    , classes
-                        [ Tw.font_medium
-                        , Tw.text_color (blue s600)
-                        , hover [ Tw.text_color (blue s700) ]
-                        , dark [ Tw.text_color (blue s400) ]
-                        ]
-                    ]
-                    [ text "Synalysis" ]
+                , footerExternalLink "https://github.com/synalysis" "Synalysis"
+                , text ". Site built with "
+                , footerExternalLink "https://elm-pages.com/" "elm-pages"
                 , text "."
                 ]
             ]

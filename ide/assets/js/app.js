@@ -720,7 +720,7 @@ Hooks.EmbeddedEmulator = {
 
   handleEvent(event, payload) {
     if (this.host && event === "simulator_settings_applied") {
-      this.host.applySimulatorSettings(payload)
+      this.host.applySimulatorSettings(payload, {source: "push_event", quiet: false})
     }
   },
 

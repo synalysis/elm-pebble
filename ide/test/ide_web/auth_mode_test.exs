@@ -14,8 +14,11 @@ defmodule IdeWeb.AuthModeTest do
     :ok
   end
 
-  test "local mode allows anonymous project access", %{conn: conn} do
+  test "local mode allows anonymous project access and app store publish", %{conn: conn} do
     Application.put_env(:ide, Ide.Auth, mode: :local)
+
+    assert Auth.app_store_publish_enabled?()
+    refute Auth.public_mode?()
 
     conn = get(conn, ~p"/projects")
 

@@ -200,6 +200,7 @@ defmodule Ide.Debugger do
       }
       |> attach_companion_configuration(project_slug)
       |> attach_vector_resource_indices(project_slug)
+      |> attach_bitmap_resource_indices(project_slug)
       |> apply_launch_context_to_surfaces(launch_reason)
       |> apply_simulator_settings_to_surfaces()
       |> append_event("debugger.start", %{
@@ -529,6 +530,7 @@ defmodule Ide.Debugger do
         }
         |> Map.merge(artifacts)
         |> RuntimeArtifacts.put_vector_resource_indices_on_request(execution_model)
+        |> RuntimeArtifacts.put_bitmap_resource_indices_on_request(execution_model)
 
       case runtime_executor_module().execute(request) do
         {:ok, payload} when is_map(payload) ->
@@ -585,6 +587,7 @@ defmodule Ide.Debugger do
       |> apply_hot_reload(rel_path, source, reason, source_root)
       |> attach_companion_configuration(project_slug)
       |> attach_vector_resource_indices(project_slug)
+      |> attach_bitmap_resource_indices(project_slug)
     end)
   end
 
@@ -1445,6 +1448,7 @@ defmodule Ide.Debugger do
   defp apply_step_once(state, target, requested_message, message_value, source_override, trigger, opts \\ [])
        when target in [:watch, :companion, :phone] and is_list(opts) do
     suppress_protocol_events? = Keyword.get(opts, :suppress_protocol_events, false)
+    state = ensure_surface_compile_artifacts(state, target)
     surface = Surface.from_state(state, target)
 
     model =
@@ -5397,18 +5401,26 @@ defmodule Ide.Debugger do
           Types.surface_target(),
           Types.elm_introspect()
         ) :: runtime_state()
-  defp maybe_attach_compile_artifacts_for_parser_view(state, target, ei)
-       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ei) do
-    if parser_expression_introspect_view?(ei) and not surface_has_core_ir?(state, target) do
+  defp maybe_attach_compile_artifacts_for_parser_view(state, target, _ei)
+       when is_map(state) and target in [:watch, :companion, :phone] do
+    if surface_has_core_ir?(state, target) do
+      state
+    else
       source_root = source_root_for_target(target)
       artifacts = compile_artifacts_for_source_root(state, source_root)
       maybe_merge_runtime_artifacts(state, target, artifacts)
-    else
-      state
     end
   end
 
   defp maybe_attach_compile_artifacts_for_parser_view(state, _target, _ei), do: state
+
+  @spec ensure_surface_compile_artifacts(runtime_state(), Types.surface_target()) :: runtime_state()
+  defp ensure_surface_compile_artifacts(state, target)
+       when is_map(state) and target in [:watch, :companion, :phone] do
+    maybe_attach_compile_artifacts_for_parser_view(state, target, %{})
+  end
+
+  defp ensure_surface_compile_artifacts(state, _target), do: state
 
   @spec compile_artifacts_for_source_root(runtime_state(), String.t()) :: map()
   defp compile_artifacts_for_source_root(state, source_root) when is_binary(source_root) do
@@ -5442,12 +5454,6 @@ defmodule Ide.Debugger do
   end
 
   defp surface_has_core_ir?(_state, _target), do: false
-
-  @spec parser_expression_introspect_view?(Types.elm_introspect()) :: boolean()
-  defp parser_expression_introspect_view?(introspect) when is_map(introspect),
-    do: Ide.Debugger.ElmIntrospect.parser_expression_view?(introspect)
-
-  defp parser_expression_introspect_view?(_introspect), do: false
 
   defp restore_protocol_rx_metadata(state, recipient, meta)
        when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(meta) do
@@ -8795,6 +8801,22 @@ defmodule Ide.Debugger do
 
   defp attach_vector_resource_indices(state, _project_slug), do: state
 
+  @spec attach_bitmap_resource_indices(map(), String.t()) :: map()
+  defp attach_bitmap_resource_indices(state, project_slug)
+       when is_map(state) and is_binary(project_slug) do
+    case RuntimeArtifacts.bitmap_resource_indices_for_project(project_slug) do
+      indices when is_map(indices) and map_size(indices) > 0 ->
+        Surface.update_in_state(state, :watch, fn surface ->
+          Surface.put_shell(surface, Map.put(surface.shell, "bitmap_resource_indices", indices))
+        end)
+
+      _ ->
+        state
+    end
+  end
+
+  defp attach_bitmap_resource_indices(state, _project_slug), do: state
+
   @spec companion_configuration_model(String.t()) :: map() | nil
   defp companion_configuration_model(session_key) do
     try do
@@ -10301,6 +10323,7 @@ defmodule Ide.Debugger do
         }
         |> Map.merge(artifacts)
         |> RuntimeArtifacts.put_vector_resource_indices_on_request(execution_model)
+        |> RuntimeArtifacts.put_bitmap_resource_indices_on_request(execution_model)
 
       case runtime_executor_module().execute(request) do
         {:ok, payload} when is_map(payload) ->
@@ -11151,6 +11174,7 @@ defmodule Ide.Debugger do
       }
       |> Map.merge(RuntimeArtifacts.execution_artifacts(execution_model))
       |> RuntimeArtifacts.put_vector_resource_indices_on_request(execution_model)
+      |> RuntimeArtifacts.put_bitmap_resource_indices_on_request(execution_model)
 
     execution =
       case runtime_executor_module().execute(request) do

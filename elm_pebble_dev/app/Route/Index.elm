@@ -174,7 +174,7 @@ view _ _ =
                             [ text "Edit, inspect, and build projects at ide.elm-pebble.dev or run the same IDE locally with Docker." ]
                         , featureItem "Hardware-oriented loop"
                             [ text "Use the Pebble SDK and emulator, then install on "
-                            , externalLink "https://repebble.com/" "Rebble"
+                            , externalLink "https://repebble.com/" "Pebble"
                             , text " watches with the companion app and appstore."
                             ]
                         ]
@@ -201,7 +201,7 @@ view _ _ =
                             [ text "Describe the screen with Elm and the Pebble UI API; the compiler turns that into native draw code—not HTML or CSS on the watch." ]
                         , workflowStep "3. Try it on hardware"
                             [ text "Build with the Pebble SDK, run the emulator, then install on a "
-                            , externalLink "https://repebble.com/" "Rebble"
+                            , externalLink "https://repebble.com/" "Pebble"
                             , text " watch and see how the idea feels on your wrist."
                             ]
                         ]
@@ -213,9 +213,9 @@ view _ _ =
                         [ text "Who it is for" ]
                     , p
                         [ classes [ Tw.mt s4, Tw.max_w s96, Tw.text_lg, Tw.text_color (gray s700), dark [ Tw.text_color (gray s300) ] ] ]
-                        [ text "Pebble and "
-                        , externalLink "https://repebble.com/" "Rebble"
-                        , text " fans, Elm-curious developers, and anyone who wants a calmer way to build watch faces and small wrist apps with explicit state and predictable updates."
+                        [ text "Fans of the "
+                        , externalLink "https://repebble.com/" "Pebble ecosystem"
+                        , text ", Elm-curious developers, and anyone who wants a calmer way to build watch faces and small wrist apps with explicit state and predictable updates."
                         ]
                     ]
                 , section

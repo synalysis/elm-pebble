@@ -321,6 +321,10 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
 
     render_click(view, "prepare-release")
 
-    assert render(view) =~ "Prepare Release warning"
+    html = render(view)
+
+    assert html =~ "Prepare Release warning"
+    assert html =~ "Warning!"
+    refute html =~ "Error!"
   end
 end

@@ -127,14 +127,7 @@ defmodule Elmc.CLI do
 
     case Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: strip_dead_code}) do
       {:ok, result} ->
-        warnings = result |> compile_warnings() |> dedupe_warnings()
-        status = if error_diagnostics?(warnings), do: :error, else: :ok
-
-        %{
-          status: status,
-          output: compile_output(status, out_dir, warnings),
-          warnings: warnings
-        }
+        compile_project_result(result, out_dir)
 
       {:error, error} ->
         %{
@@ -143,6 +136,32 @@ defmodule Elmc.CLI do
           warnings: []
         }
     end
+  end
+
+  @doc """
+  Returns `:ok` when a compile result has no error-severity diagnostics.
+  """
+  @spec validate_compile_result(%{project: map(), ir: map()}) :: :ok | {:error, [map()]}
+  def validate_compile_result(%{project: _, ir: _} = result) do
+    warnings = result |> compile_warnings() |> dedupe_warnings()
+
+    if error_diagnostics?(warnings) do
+      {:error, warnings}
+    else
+      :ok
+    end
+  end
+
+  @spec compile_project_result(%{project: map(), ir: map()}, String.t()) :: project_run()
+  defp compile_project_result(result, out_dir) do
+    warnings = result |> compile_warnings() |> dedupe_warnings()
+    status = if error_diagnostics?(warnings), do: :error, else: :ok
+
+    %{
+      status: status,
+      output: compile_output(status, out_dir, warnings),
+      warnings: warnings
+    }
   end
 
   @spec compile_output(run_status(), String.t(), [map()]) :: String.t()

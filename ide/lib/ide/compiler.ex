@@ -130,6 +130,78 @@ defmodule Ide.Compiler do
   end
 
   @doc """
+  Returns Elm project roots that should be checked before packaging or building.
+  """
+  @spec workspace_check_roots(String.t(), [String.t()] | nil) :: [{String.t(), String.t()}]
+  def workspace_check_roots(workspace_root, source_roots \\ nil)
+      when is_binary(workspace_root) do
+    candidates =
+      case source_roots do
+        roots when is_list(roots) and roots != [] ->
+          [{"workspace", workspace_root} | Enum.map(roots, &{&1, Path.join(workspace_root, &1)})]
+
+        _ ->
+          Ide.Projects.FileStore.compiler_root_candidates(workspace_root)
+          |> Enum.map(fn path ->
+            label =
+              case Path.relative_to(path, workspace_root) do
+                "." -> "workspace"
+                rel -> rel
+              end
+
+            {label, path}
+          end)
+      end
+
+    roots =
+      candidates
+      |> Enum.uniq_by(fn {_label, path} -> path end)
+      |> Enum.filter(fn {_label, path} -> Ide.Projects.FileStore.elm_project_dir?(path) end)
+
+    case roots do
+      [] ->
+        fallback_label =
+          case source_roots do
+            [first | _] -> first
+            _ -> "watch"
+          end
+
+        [{fallback_label, Path.join(workspace_root, fallback_label)}]
+
+      found ->
+        found
+    end
+  end
+
+  @doc """
+  Runs elmc check for every Elm project root in a workspace.
+
+  Packaging and release flows use this to match the Build page gate.
+  """
+  @spec check_workspace(project_slug(), opts()) ::
+          :ok | {:error, {:compiler_check_failed, String.t(), check_result()}}
+  def check_workspace(project_slug, opts) do
+    workspace_root = Keyword.fetch!(opts, :workspace_root)
+    source_roots = Keyword.get(opts, :source_roots)
+
+    workspace_check_roots(workspace_root, source_roots)
+    |> Enum.reduce_while(:ok, fn {label, root_path}, :ok ->
+      scoped_slug = Ide.Projects.compiler_cache_key(project_slug, label)
+
+      case check(scoped_slug, workspace_root: root_path, source_roots: nil) do
+        {:ok, %{status: :ok}} ->
+          {:cont, :ok}
+
+        {:ok, check_result} ->
+          {:halt, {:error, {:compiler_check_failed, label, check_result}}}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  @doc """
   Runs `elmc compile` for a workspace and returns parsed diagnostics.
   """
   @spec compile(project_slug(), opts()) :: {:ok, compile_result()} | {:error, compiler_error()}

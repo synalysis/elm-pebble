@@ -2,6 +2,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
   @moduledoc false
   use IdeWeb, :html
 
+  alias Ide.Auth
   alias Phoenix.LiveView.Rendered
 
   @type assigns :: map()
@@ -56,7 +57,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
         for={@release_summary_form}
         id="publish-form"
         phx-change="update-publish-form"
-        phx-submit={if app_store_publish_enabled?(@auth_mode), do: "submit-publish-release"}
+        phx-submit={if Auth.app_store_publish_enabled?(), do: "submit-publish-release"}
         phx-debounce="300"
         class="mt-4 rounded border border-zinc-200 p-3"
       >
@@ -200,7 +201,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
         </div>
       </div>
 
-      <div :if={app_store_publish_enabled?(@auth_mode)} class="mt-4 rounded border border-zinc-200 p-3">
+      <div :if={Auth.app_store_publish_enabled?()} class="mt-4 rounded border border-zinc-200 p-3">
         <h3 class="text-sm font-semibold">Store Submission</h3>
         <p class="mt-1 text-xs text-zinc-600">
           Submit directly to the Rebble App Store from the prepared app workspace.
@@ -360,19 +361,12 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
   defp status_label(:error), do: "error"
   defp status_label(_), do: "unknown"
 
-  defp app_store_publish_enabled?(:public_pebble), do: true
-  defp app_store_publish_enabled?(_), do: false
-
-  defp release_summary_help(:public_pebble),
-    do:
-      "Changelog is sent to the App Store as release notes. Version and tags are edited in Project Settings."
-
   defp release_summary_help(:public_custom),
     do: "Changelog is saved in the project for your release notes export. Version and tags are edited in Project Settings."
 
   defp release_summary_help(_),
     do:
-      "Changelog is sent to the App Store as release notes when publishing. Version and tags are edited in Project Settings."
+      "Changelog is sent to the App Store as release notes. Version and tags are edited in Project Settings."
 
   defp app_store_login_needed?(current_user, firebase_id_token, firebase_id_token_exp) do
     is_nil(current_user) or is_nil(firebase_id_token) or

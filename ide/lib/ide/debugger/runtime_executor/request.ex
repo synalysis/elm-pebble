@@ -42,6 +42,7 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
       }
       |> Map.merge(RuntimeArtifacts.execution_artifacts(execution_model))
       |> RuntimeArtifacts.put_vector_resource_indices_on_request(execution_model)
+      |> RuntimeArtifacts.put_bitmap_resource_indices_on_request(execution_model)
 
     validate!(request)
   end

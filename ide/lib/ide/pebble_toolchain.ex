@@ -94,6 +94,11 @@ defmodule Ide.PebbleToolchain do
     project_name = Keyword.get(opts, :project_name, project_slug)
 
     with {:ok, workspace_root} <- normalize_workspace_root(workspace_root),
+         :ok <-
+           Compiler.check_workspace(project_slug,
+             workspace_root: workspace_root,
+             source_roots: Keyword.get(opts, :source_roots)
+           ),
          {:ok, app_root} <-
            prepare_project_build_app(
              project_slug,
@@ -1413,7 +1418,16 @@ defmodule Ide.PebbleToolchain do
 
   @spec compile_elmc_project(String.t(), map()) :: {:ok, map()} | {:error, toolchain_error()}
   defp compile_elmc_project(project_root, opts) do
-    Elmc.compile(project_root, opts)
+    with {:ok, result} <- Elmc.compile(project_root, opts),
+         :ok <- Elmc.CLI.validate_compile_result(result) do
+      {:ok, result}
+    else
+      {:error, warnings} when is_list(warnings) ->
+        {:error, {:elmc_compile_failed, %{kind: :compile_diagnostics, warnings: warnings}}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   rescue
     exception in ArgumentError ->
       if direct_render_only_view_error?(exception, opts) do
@@ -1434,8 +1448,16 @@ defmodule Ide.PebbleToolchain do
   defp compile_elmc_project_with_generic_renderer(project_root, opts) do
     fallback_opts = Map.put(opts, :direct_render_only, false)
 
-    with :ok <- reset_generated_dir(opts[:out_dir]) do
-      Elmc.compile(project_root, fallback_opts)
+    with :ok <- reset_generated_dir(opts[:out_dir]),
+         {:ok, result} <- Elmc.compile(project_root, fallback_opts),
+         :ok <- Elmc.CLI.validate_compile_result(result) do
+      {:ok, result}
+    else
+      {:error, warnings} when is_list(warnings) ->
+        {:error, {:elmc_compile_failed, %{kind: :compile_diagnostics, warnings: warnings}}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   rescue
     exception ->

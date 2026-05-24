@@ -32,6 +32,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   @shell_artifact_keys [
     "vector_resource_indices",
+    "bitmap_resource_indices",
     "elm_introspect",
     "elm_executor_core_ir",
     "elm_executor_core_ir_b64",
@@ -191,6 +192,15 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def vector_resource_indices(_model), do: %{}
 
+  @spec bitmap_resource_indices(execution_model() | map()) :: map()
+  def bitmap_resource_indices(model) when is_map(model) do
+    Map.get(model, "bitmap_resource_indices") ||
+      get_in(model, ["runtime_model", "bitmap_resource_indices"]) ||
+      %{}
+  end
+
+  def bitmap_resource_indices(_model), do: %{}
+
   @spec execution_artifacts(execution_model() | map()) :: Types.runtime_artifacts()
   def execution_artifacts(model) when is_map(model) do
     metadata = Map.get(model, "elm_executor_metadata")
@@ -208,7 +218,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def core_ir_eval_context(model, extras) when is_map(model) and is_list(extras) do
     module = module_name(model)
-    indices = vector_resource_indices(model)
+    vector_indices = vector_resource_indices(model)
+    bitmap_indices = bitmap_resource_indices(model)
 
     base =
       case decode_core_ir(model) do
@@ -226,8 +237,15 @@ defmodule Ide.Debugger.RuntimeArtifacts do
       end
 
     base =
-      if map_size(indices) > 0 do
-        Map.put(base, :vector_resource_indices, indices)
+      if map_size(vector_indices) > 0 do
+        Map.put(base, :vector_resource_indices, vector_indices)
+      else
+        base
+      end
+
+    base =
+      if map_size(bitmap_indices) > 0 do
+        Map.put(base, :bitmap_resource_indices, bitmap_indices)
       else
         base
       end
@@ -268,10 +286,39 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def put_vector_resource_indices_on_request(request, _model) when is_map(request), do: request
   def put_vector_resource_indices_on_request(request, _model), do: request
 
+  @spec put_bitmap_resource_indices_on_request(map(), map()) :: map()
+  def put_bitmap_resource_indices_on_request(request, model)
+      when is_map(request) and is_map(model) do
+    case bitmap_resource_indices(model) do
+      indices when map_size(indices) > 0 ->
+        Map.put(request, :bitmap_resource_indices, indices)
+
+      _ ->
+        request
+    end
+  end
+
+  def put_bitmap_resource_indices_on_request(request, _model) when is_map(request), do: request
+  def put_bitmap_resource_indices_on_request(request, _model), do: request
+
   @spec vector_resource_indices_for_project(String.t()) :: map()
   def vector_resource_indices_for_project(project_slug) when is_binary(project_slug) do
     with %Projects.Project{} = project <- Projects.get_project_by_scope_key(project_slug),
          {:ok, entries} <- ResourceStore.list_vectors(project) do
+      entries
+      |> Enum.with_index(1)
+      |> Map.new(fn {row, index} -> {row.ctor, index} end)
+    else
+      _ -> %{}
+    end
+  rescue
+    _ -> %{}
+  end
+
+  @spec bitmap_resource_indices_for_project(String.t()) :: map()
+  def bitmap_resource_indices_for_project(project_slug) when is_binary(project_slug) do
+    with %Projects.Project{} = project <- Projects.get_project_by_scope_key(project_slug),
+         {:ok, entries} <- ResourceStore.list(project) do
       entries
       |> Enum.with_index(1)
       |> Map.new(fn {row, index} -> {row.ctor, index} end)

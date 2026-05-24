@@ -62,9 +62,12 @@ defmodule Ide.Auth do
 
   @doc """
   True when the IDE can submit releases to the Rebble App Store API.
+
+  Enabled in local and public_pebble modes (Firebase login on the Publish tab).
+  Disabled in public_custom (PBW download only).
   """
   @spec app_store_publish_enabled?() :: boolean()
-  def app_store_publish_enabled?, do: public_pebble_mode?()
+  def app_store_publish_enabled?, do: mode() in [:local, :public_pebble]
 
   @spec firebase_config() :: map()
   def firebase_config do

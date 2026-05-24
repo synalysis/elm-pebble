@@ -53,6 +53,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       core_ir
       |> evaluator_context(source_module)
       |> Map.merge(vector_resource_indices_context(request, current_model))
+      |> Map.merge(bitmap_resource_indices_context(request, current_model))
       |> Map.put(:launch_context, launch_context_from_model(current_model))
     static_init_model = map_value(introspect, :init_model)
 
@@ -932,7 +933,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
     case CoreIREvaluator.evaluate(expr, %{"model" => runtime_model}, eval_context) do
       {:ok, value} ->
-        normalize_runtime_view_tree(value)
+        normalize_runtime_view_tree(value, eval_context)
 
       _ ->
         %{}
@@ -941,9 +942,9 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp evaluate_runtime_view_tree(_eval_context, _runtime_model), do: %{}
 
-  @spec normalize_runtime_view_tree(EvalTypes.runtime_value()) :: map()
-  defp normalize_runtime_view_tree(value) do
-    case normalize_pebble_ui_value(value) do
+  @spec normalize_runtime_view_tree(EvalTypes.runtime_value(), map()) :: map()
+  defp normalize_runtime_view_tree(value, eval_context \\ %{}) do
+    case normalize_pebble_ui_value(value, eval_context) do
       {:ok, node} -> node
       :error -> normalize_runtime_view_tree_fallback(value)
     end
@@ -1195,33 +1196,35 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec normalize_pebble_ui_value(EvalTypes.runtime_value()) :: {:ok, map()} | :error
-  defp normalize_pebble_ui_value(%{"type" => type, "children" => children} = value)
+  @spec normalize_pebble_ui_value(EvalTypes.runtime_value(), map()) :: {:ok, map()} | :error
+  defp normalize_pebble_ui_value(%{"type" => type, "children" => children} = value, _eval_context)
        when is_binary(type) and is_list(children) and type not in ["tuple2", "List"] do
     {:ok, normalize_runtime_view_tree_fallback(value)}
   end
 
-  defp normalize_pebble_ui_value(%{type: type, children: children} = value)
+  defp normalize_pebble_ui_value(%{type: type, children: children} = value, _eval_context)
        when is_binary(type) and is_list(children) and type not in ["tuple2", "List"] do
     {:ok, normalize_runtime_view_tree_fallback(value)}
   end
 
-  defp normalize_pebble_ui_value(value) do
+  defp normalize_pebble_ui_value(value, eval_context) do
     with {:ok, 1000, windows} <- tagged_constructor_value(value),
          {:ok, windows} <- constructor_list_values(windows),
-         {:ok, window_nodes} <- normalize_pebble_ui_list(windows, &normalize_pebble_window_node/1) do
+         {:ok, window_nodes} <-
+           normalize_pebble_ui_list(windows, &normalize_pebble_window_node(&1, eval_context)) do
       {:ok, %{"type" => "windowStack", "label" => "", "children" => window_nodes}}
     else
       _ -> :error
     end
   end
 
-  @spec normalize_pebble_window_node(EvalTypes.runtime_value()) :: {:ok, map()} | :error
-  defp normalize_pebble_window_node(value) do
+  @spec normalize_pebble_window_node(EvalTypes.runtime_value(), map()) :: {:ok, map()} | :error
+  defp normalize_pebble_window_node(value, eval_context) do
     with {:ok, 1001, payload} <- tagged_constructor_value(value),
          {:ok, [id, layers]} <- constructor_payload_args(payload, 2),
          {:ok, layers} <- constructor_list_values(layers),
-         {:ok, layer_nodes} <- normalize_pebble_ui_list(layers, &normalize_pebble_layer_node/1) do
+         {:ok, layer_nodes} <-
+           normalize_pebble_ui_list(layers, &normalize_pebble_layer_node(&1, eval_context)) do
       {:ok,
        %{
          "type" => "window",
@@ -1234,12 +1237,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec normalize_pebble_layer_node(EvalTypes.runtime_value()) :: {:ok, map()} | :error
-  defp normalize_pebble_layer_node(value) do
+  @spec normalize_pebble_layer_node(EvalTypes.runtime_value(), map()) :: {:ok, map()} | :error
+  defp normalize_pebble_layer_node(value, eval_context) do
     with {:ok, 1002, payload} <- tagged_constructor_value(value),
          {:ok, [id, ops]} <- constructor_payload_args(payload, 2),
          {:ok, ops} <- constructor_list_values(ops),
-         {:ok, op_nodes} <- normalize_pebble_ui_list(ops, &normalize_pebble_render_op/1) do
+         {:ok, op_nodes} <-
+           normalize_pebble_ui_list(ops, &normalize_pebble_render_op(&1, eval_context)) do
       {:ok,
        %{
          "type" => "canvasLayer",
@@ -1252,22 +1256,156 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec normalize_pebble_render_op(EvalTypes.runtime_value()) :: {:ok, map()} | :error
-  defp normalize_pebble_render_op(value) do
-    case normalize_pebble_context_group(value) do
-      {:ok, node} -> {:ok, node}
-      :error -> normalize_pebble_ui_value(value)
+  @spec normalize_pebble_render_op(EvalTypes.runtime_value(), map()) :: {:ok, map()} | :error
+  defp normalize_pebble_render_op(value, eval_context) do
+    case normalize_pebble_context_group(value, eval_context) do
+      {:ok, node} ->
+        {:ok, node}
+
+      :error ->
+        case normalize_pebble_tagged_render_op(value, eval_context) do
+          {:ok, node} -> {:ok, node}
+          :error -> normalize_pebble_ui_value(value, eval_context)
+        end
     end
   end
 
-  @spec normalize_pebble_context_group(EvalTypes.runtime_value()) :: {:ok, map()} | :error
-  defp normalize_pebble_context_group(value) do
+  @spec normalize_pebble_tagged_render_op(EvalTypes.runtime_value(), map()) :: {:ok, map()} | :error
+  defp normalize_pebble_tagged_render_op(value, eval_context) when is_map(eval_context) do
+    with {:ok, tag, payload} <- tagged_constructor_value(value),
+         type when is_binary(type) <- render_op_type_for_tag(tag),
+         {:ok, args} <- render_op_args_for_tag(tag, payload),
+         {:ok, fields} <- normalize_render_op_fields(type, args, eval_context) do
+      {:ok,
+       %{
+         "type" => type,
+         "label" => "",
+         "children" => Enum.map(fields, &normalize_runtime_view_tree_fallback/1)
+       }}
+    else
+      _ -> :error
+    end
+  end
+
+  defp normalize_pebble_tagged_render_op(_value, _eval_context), do: :error
+
+  @spec render_op_type_for_tag(integer()) :: String.t() | nil
+  defp render_op_type_for_tag(1), do: "textInt"
+  defp render_op_type_for_tag(2), do: "textLabel"
+  defp render_op_type_for_tag(3), do: "text"
+  defp render_op_type_for_tag(4), do: "clear"
+  defp render_op_type_for_tag(5), do: "pixel"
+  defp render_op_type_for_tag(6), do: "line"
+  defp render_op_type_for_tag(7), do: "rect"
+  defp render_op_type_for_tag(8), do: "fillRect"
+  defp render_op_type_for_tag(9), do: "circle"
+  defp render_op_type_for_tag(10), do: "fillCircle"
+  defp render_op_type_for_tag(12), do: "bitmapInRect"
+  defp render_op_type_for_tag(13), do: "rotatedBitmap"
+  defp render_op_type_for_tag(14), do: "drawVectorAt"
+  defp render_op_type_for_tag(15), do: "vectorSequenceAt"
+  defp render_op_type_for_tag(16), do: "pathFilled"
+  defp render_op_type_for_tag(17), do: "pathOutline"
+  defp render_op_type_for_tag(18), do: "pathOutlineOpen"
+  defp render_op_type_for_tag(19), do: "roundRect"
+  defp render_op_type_for_tag(20), do: "arc"
+  defp render_op_type_for_tag(21), do: "fillRadial"
+  defp render_op_type_for_tag(_), do: nil
+
+  @spec render_op_args_for_tag(integer(), EvalTypes.runtime_value()) ::
+          {:ok, [EvalTypes.runtime_value()]} | :error
+  defp render_op_args_for_tag(tag, payload) do
+    case constructor_payload_args(payload, render_op_arg_count(tag)) do
+      {:ok, args} -> {:ok, args}
+      :error -> :error
+    end
+  end
+
+  @spec render_op_arg_count(integer()) :: non_neg_integer()
+  defp render_op_arg_count(1), do: 3
+  defp render_op_arg_count(2), do: 3
+  defp render_op_arg_count(3), do: 3
+  defp render_op_arg_count(4), do: 1
+  defp render_op_arg_count(5), do: 2
+  defp render_op_arg_count(6), do: 3
+  defp render_op_arg_count(7), do: 2
+  defp render_op_arg_count(8), do: 2
+  defp render_op_arg_count(9), do: 3
+  defp render_op_arg_count(10), do: 3
+  defp render_op_arg_count(12), do: 2
+  defp render_op_arg_count(13), do: 4
+  defp render_op_arg_count(14), do: 2
+  defp render_op_arg_count(15), do: 2
+  defp render_op_arg_count(16), do: 1
+  defp render_op_arg_count(17), do: 1
+  defp render_op_arg_count(18), do: 1
+  defp render_op_arg_count(19), do: 3
+  defp render_op_arg_count(20), do: 6
+  defp render_op_arg_count(21), do: 6
+  defp render_op_arg_count(_), do: 1
+
+  @spec normalize_render_op_fields(String.t(), [EvalTypes.runtime_value()], map()) ::
+          {:ok, [EvalTypes.runtime_value()]} | :error
+  defp normalize_render_op_fields("bitmapInRect", [bitmap, bounds | _], eval_context) do
+    with {:ok, bitmap_id} <- CoreIREvaluator.bitmap_resource_id_from_value(bitmap, eval_context),
+         {:ok, {x, y, w, h}} <- CoreIREvaluator.normalize_runtime_rect(bounds) do
+      {:ok, [bitmap_id, x, y, w, h]}
+    else
+      _ -> :error
+    end
+  end
+
+  defp normalize_render_op_fields("rotatedBitmap", [bitmap, src_rect, angle, center | _], eval_context) do
+    with {:ok, bitmap_id} <- CoreIREvaluator.bitmap_resource_id_from_value(bitmap, eval_context),
+         {:ok, {_src_x, _src_y, src_w, src_h}} <- CoreIREvaluator.normalize_runtime_rect(src_rect),
+         {:ok, normalized_angle} <- CoreIREvaluator.normalize_runtime_rotation_angle(angle),
+         {:ok, {center_x, center_y}} <- CoreIREvaluator.normalize_runtime_point(center) do
+      {:ok, [bitmap_id, src_w, src_h, normalized_angle, center_x, center_y]}
+    else
+      _ -> :error
+    end
+  end
+
+  defp normalize_render_op_fields("drawVectorAt", [vector, origin | _], eval_context) do
+    with {:ok, vector_id} <- CoreIREvaluator.vector_resource_id_from_value(vector, eval_context),
+         {:ok, {x, y}} <- CoreIREvaluator.normalize_runtime_point(origin) do
+      {:ok, [vector_id, x, y]}
+    else
+      _ -> :error
+    end
+  end
+
+  defp normalize_render_op_fields("vectorSequenceAt", [vector, origin | _], eval_context) do
+    normalize_render_op_fields("drawVectorAt", [vector, origin], eval_context)
+  end
+
+  defp normalize_render_op_fields("fillRect", [bounds, color | _], _eval_context) do
+    with {:ok, {x, y, w, h}} <- CoreIREvaluator.normalize_runtime_rect(bounds),
+         {:ok, resolved_color} <- CoreIREvaluator.normalize_runtime_color(color) do
+      {:ok, [x, y, w, h, resolved_color]}
+    else
+      _ -> :error
+    end
+  end
+
+  defp normalize_render_op_fields("clear", [color | _], _eval_context) do
+    case CoreIREvaluator.normalize_runtime_color(color) do
+      {:ok, resolved_color} -> {:ok, [resolved_color]}
+      _ -> :error
+    end
+  end
+
+  defp normalize_render_op_fields(_type, args, _eval_context) when is_list(args), do: {:ok, args}
+
+  @spec normalize_pebble_context_group(EvalTypes.runtime_value(), map()) :: {:ok, map()} | :error
+  defp normalize_pebble_context_group(value, eval_context) do
     with {:ok, 19, payload} <- tagged_constructor_value(value),
          {:ok, [settings, ops]} <- constructor_payload_args(payload, 2),
          {:ok, settings} <- constructor_list_values(settings),
          {:ok, ops} <- constructor_list_values(ops),
          style <- normalize_pebble_context_style(settings),
-         {:ok, op_nodes} <- normalize_pebble_ui_list(ops, &normalize_pebble_render_op/1) do
+         {:ok, op_nodes} <-
+           normalize_pebble_ui_list(ops, &normalize_pebble_render_op(&1, eval_context)) do
       {:ok, %{"type" => "group", "label" => "", "style" => style, "children" => op_nodes}}
     else
       _ -> :error
@@ -1560,6 +1698,41 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   end
 
   defp vector_resource_indices_context(_request, _current_model), do: %{}
+
+  @spec bitmap_resource_indices_context(map(), map()) :: map()
+  defp bitmap_resource_indices_context(request, current_model)
+       when is_map(request) and is_map(current_model) do
+    indices =
+      map_value(request, :bitmap_resource_indices) ||
+        Map.get(current_model, "bitmap_resource_indices") ||
+        Map.get(current_model, :bitmap_resource_indices)
+
+    case normalize_bitmap_resource_indices(indices) do
+      %{} = normalized when map_size(normalized) > 0 ->
+        %{bitmap_resource_indices: normalized}
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp bitmap_resource_indices_context(_request, _current_model), do: %{}
+
+  @spec normalize_bitmap_resource_indices(map() | nil) :: map()
+  defp normalize_bitmap_resource_indices(indices) when is_map(indices) do
+    Enum.reduce(indices, %{}, fn
+      {ctor, id}, acc when is_binary(ctor) and is_integer(id) and id >= 1 ->
+        Map.put(acc, ctor, id)
+
+      {ctor, id}, acc when is_atom(ctor) and is_integer(id) and id >= 1 ->
+        Map.put(acc, Atom.to_string(ctor), id)
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp normalize_bitmap_resource_indices(_indices), do: %{}
 
   @spec normalize_vector_resource_indices(map() | nil) :: map()
   defp normalize_vector_resource_indices(indices) when is_map(indices) do

@@ -587,7 +587,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
            workspace_root: workspace_root,
            target_type: project.target_type,
            project_name: project.name,
-           target_platforms: targets
+           target_platforms: targets,
+           source_roots: project.source_roots
          ) do
       {:ok, package} ->
         %{
@@ -760,26 +761,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
   @spec build_roots(String.t(), [String.t()]) :: [root_pair()]
   def build_roots(workspace_root, source_roots) do
-    candidates =
-      [{"workspace", workspace_root}] ++
-        Enum.map(source_roots, fn root_name ->
-          {root_name, Path.join(workspace_root, root_name)}
-        end)
-
-    roots =
-      candidates
-      |> Enum.uniq_by(fn {_label, path} -> path end)
-      |> Enum.filter(fn {_label, path} -> File.exists?(Path.join(path, "elm.json")) end)
-
-    case roots do
-      [] ->
-        fallback_label = Enum.find(source_roots, &(&1 == "watch")) || List.first(source_roots) || "watch"
-
-        [{fallback_label, Path.join(workspace_root, fallback_label)}]
-
-      found ->
-        found
-    end
+    Compiler.workspace_check_roots(workspace_root, source_roots)
   end
 
   @spec render_build_pipeline_output(

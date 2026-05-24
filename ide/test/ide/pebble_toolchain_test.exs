@@ -585,4 +585,42 @@ defmodule Ide.PebbleToolchainTest do
 
     refute vector_section =~ ~s/Enum.sort_by(&to_string(Map.get(&1, "ctor", "")))/
   end
+
+  test "package rejects watch Elm roots with compiler check failures" do
+    alias Ide.ProjectTemplates
+
+    workspace_root =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_pebble_toolchain_check_gate_#{System.unique_integer([:positive])}"
+      )
+
+    on_exit(fn -> File.rm_rf(workspace_root) end)
+
+    assert :ok = ProjectTemplates.apply_template("watch-demo-health", workspace_root)
+
+    source_path = Path.join([workspace_root, "watch", "src", "Main.elm"])
+
+    source =
+      source_path
+      |> File.read!()
+      |> String.replace(
+        "Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 20 } (String.fromInt model.events)",
+        "Ui.textInt Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 20 } model.events"
+      )
+
+    File.write!(source_path, source)
+
+    assert {:error, {:compiler_check_failed, "watch", check_result}} =
+             PebbleToolchain.package("watch-demo-health-check-gate",
+               workspace_root: workspace_root,
+               target_type: "app",
+               project_name: "Health Check Gate",
+               target_platforms: ["basalt"],
+               source_roots: ["watch"]
+             )
+
+    assert check_result.status == :error
+    assert check_result.error_count >= 1
+  end
 end
