@@ -118,10 +118,22 @@ defmodule Ide.Debugger.Types do
           optional(atom()) => term()
         }
 
-  @type runtime_model :: %{
-          optional(String.t()) => term(),
-          optional(:elm_introspect) => elm_introspect()
+  @type app_model :: %{
+          optional(String.t()) => term()
         }
+
+  @type shell :: %{
+          optional(String.t()) => term(),
+          optional(:elm_introspect) => elm_introspect(),
+          optional(:elm_executor_core_ir) => map(),
+          optional(:elm_executor_core_ir_b64) => String.t(),
+          optional(:elm_executor_metadata) => map(),
+          optional(:vector_resource_indices) => map()
+        }
+
+  @type execution_model :: app_model() | shell()
+
+  @type runtime_model :: execution_model()
 
   @type surface_target :: :watch | :companion | :phone
 

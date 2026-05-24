@@ -760,6 +760,32 @@ defmodule Ide.DebuggerTest do
            end)
   end
 
+  test "watch reload applies init device data when introspect lives on shell" do
+    slug = "sim-watch-device-data-shell-#{System.unique_integer([:positive])}"
+
+    watch_source =
+      File.read!(
+        Path.join(["priv", "project_templates", "companion_demo_geolocation", "src", "Main.elm"])
+      )
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, st} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               reason: "watch_device_data_shell",
+               source_root: "watch"
+             })
+
+    assert get_in(st, [:watch, :shell, "elm_introspect", "module"]) == "Main"
+    refute get_in(st, [:watch, :model, "elm_introspect"])
+
+    assert Enum.any?(st.events, fn event ->
+             event.type == "debugger.device_data" and get_in(event.payload, [:target]) == "watch"
+           end)
+  end
+
   test "simulator settings drive companion geolocation payload" do
     slug = "sim-intro-geolocation-settings-#{System.unique_integer([:positive])}"
 

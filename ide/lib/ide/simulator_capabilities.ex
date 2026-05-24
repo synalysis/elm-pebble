@@ -95,7 +95,7 @@ defmodule Ide.SimulatorCapabilities do
   defp model_introspect(%{shell: _} = surface) when is_map(surface),
     do: RuntimeArtifacts.introspect(surface)
 
-  defp model_introspect(model) when is_map(model), do: Map.get(model, "elm_introspect")
+  defp model_introspect(model) when is_map(model), do: RuntimeArtifacts.introspect(model)
 
   @spec workspace_root(Project.t()) :: String.t() | nil
   defp workspace_root(%Project{} = project) do

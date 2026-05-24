@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   alias Ide.Debugger.CursorSeq
   alias Ide.Debugger
   alias Ide.Debugger.ElmIntrospect
+  alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeFingerprintDrift
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -1905,7 +1906,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def format_elm_introspect_brief(%{} = runtime) do
     model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
-    ei = Map.get(model, "elm_introspect") || Map.get(model, :elm_introspect)
+    ei = RuntimeArtifacts.introspect(runtime)
     mode = Map.get(model, "elm_executor_mode") || Map.get(model, :elm_executor_mode)
 
     case ei do
@@ -2344,9 +2345,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   @spec parser_view_tree(map()) :: map() | nil
   defp parser_view_tree(%{} = model) do
-    elm_introspect = Map.get(model, "elm_introspect") || Map.get(model, :elm_introspect) || %{}
-    tree = Map.get(elm_introspect, "view_tree") || Map.get(elm_introspect, :view_tree)
-    if is_map(tree), do: tree, else: nil
+    case RuntimeArtifacts.introspect(model) do
+      ei when is_map(ei) ->
+        tree = Map.get(ei, "view_tree") || Map.get(ei, :view_tree)
+        if is_map(tree), do: tree, else: nil
+
+      _ ->
+        nil
+    end
   end
 
   @spec model_diagnostic_preview(map() | nil) :: [map()]
@@ -2652,10 +2658,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   @spec runtime_elm_introspect(map()) :: map()
   defp runtime_elm_introspect(nil), do: nil
 
-  defp runtime_elm_introspect(%{} = rt) do
-    model = Map.get(rt, :model) || %{}
-    Map.get(model, "elm_introspect") || Map.get(model, :elm_introspect)
-  end
+  defp runtime_elm_introspect(%{} = rt), do: RuntimeArtifacts.introspect(rt)
 
   defp runtime_elm_introspect(_), do: nil
 
@@ -3388,7 +3391,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
     runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model) || %{}
 
-    is_map(Map.get(model, "elm_introspect") || Map.get(model, :elm_introspect)) or
+    is_map(RuntimeArtifacts.introspect(runtime)) or
       (is_map(runtime_model) and
          Enum.any?(Map.keys(runtime_model), fn key ->
            to_string(key) not in [

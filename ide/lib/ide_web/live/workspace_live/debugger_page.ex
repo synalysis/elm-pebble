@@ -3007,10 +3007,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     if is_map(view_tree) and map_size(view_tree) > 0 do
       view_tree
     else
-      model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
-      elm_introspect = Map.get(model, "elm_introspect") || Map.get(model, :elm_introspect) || %{}
-      parser_tree = Map.get(elm_introspect, "view_tree") || Map.get(elm_introspect, :view_tree)
-      if is_map(parser_tree), do: parser_tree, else: nil
+      case RuntimeArtifacts.introspect(runtime) do
+        ei when is_map(ei) ->
+          parser_tree = Map.get(ei, "view_tree") || Map.get(ei, :view_tree)
+          if is_map(parser_tree), do: parser_tree, else: nil
+
+        _ ->
+          nil
+      end
     end
   end
 

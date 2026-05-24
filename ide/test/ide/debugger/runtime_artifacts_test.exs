@@ -2,6 +2,7 @@ defmodule Ide.Debugger.RuntimeArtifactsTest do
   use ExUnit.Case, async: true
 
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.Surface
 
   describe "decode_core_ir/1" do
     test "returns embedded map when present" do
@@ -41,7 +42,7 @@ defmodule Ide.Debugger.RuntimeArtifactsTest do
     end
   end
 
-  describe "normalize_surface/1" do
+  describe "normalize_surface/1 and introspect/1" do
     test "migrates legacy shell keys from model into shell" do
       surface = %{
         model: %{
@@ -56,6 +57,22 @@ defmodule Ide.Debugger.RuntimeArtifactsTest do
       assert normalized.model == %{"count" => 1}
       assert normalized.shell["elm_introspect"] == %{"module" => "Main"}
       assert normalized.shell["elm_executor_core_ir_b64"] == "abc"
+    end
+
+    test "reads introspect from shell, not stripped app model" do
+      surface = %{
+        model: %{"runtime_model" => %{"latitudeE6" => 1}},
+        shell: %{"elm_introspect" => %{"module" => "Main", "update_case_branches" => ["Tick"]}}
+      }
+
+      assert RuntimeArtifacts.introspect(surface) == %{
+               "module" => "Main",
+               "update_case_branches" => ["Tick"]
+             }
+
+      assert RuntimeArtifacts.introspect(surface.model) == nil
+      assert RuntimeArtifacts.require_introspect(Surface.execution_model(surface))["module"] ==
+               "Main"
     end
   end
 

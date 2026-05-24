@@ -10,6 +10,10 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   alias Ide.Projects
   alias Ide.Resources.ResourceStore
 
+  @type app_model :: Types.app_model()
+  @type shell :: Types.shell()
+  @type execution_model :: Types.execution_model()
+
   @shell_artifact_keys [
     "vector_resource_indices",
     "elm_introspect",
@@ -51,7 +55,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     explicit = Map.get(surface, :shell) || Map.get(surface, "shell") || %{}
     model = Map.get(surface, :model) || Map.get(surface, "model") || %{}
 
-    take_shell_artifacts(model)
+    take_shell_artifacts(surface)
+    |> Map.merge(take_shell_artifacts(model))
     |> Map.merge(if is_map(explicit), do: explicit, else: %{})
   end
 
@@ -80,8 +85,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def execution_model(_surface), do: %{}
 
   @spec introspect(map()) :: map() | nil
-  def introspect(surface_or_model) when is_map(surface_or_model) do
-    shell_map(surface_or_model)
+  def introspect(surface_or_execution_model) when is_map(surface_or_execution_model) do
+    shell_map(surface_or_execution_model)
     |> Map.get("elm_introspect")
     |> case do
       value when is_map(value) -> value
@@ -90,6 +95,16 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   end
 
   def introspect(_), do: nil
+
+  @spec require_introspect(map()) :: map()
+  def require_introspect(surface_or_execution_model) when is_map(surface_or_execution_model) do
+    case introspect(surface_or_execution_model) do
+      ei when is_map(ei) -> ei
+      _ -> %{}
+    end
+  end
+
+  def require_introspect(_), do: %{}
 
   @spec normalize_surface(map()) :: map()
   def normalize_surface(surface) when is_map(surface) do
@@ -133,7 +148,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   @spec module_name(Types.runtime_model() | map()) :: String.t()
   def module_name(model) when is_map(model) do
     model
-    |> Map.get("elm_introspect", Map.get(model, :elm_introspect, %{}))
+    |> require_introspect()
     |> Map.get("module")
     |> case do
       name when is_binary(name) and name != "" -> name
