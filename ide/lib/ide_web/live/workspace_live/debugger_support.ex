@@ -665,11 +665,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   def replay_live_drift_severity(drift) when is_integer(drift) and drift <= 10, do: :medium
   def replay_live_drift_severity(drift) when is_integer(drift), do: :high
 
-  @spec runtime_json(Ide.Debugger.Types.runtime_model()) :: String.t()
+  @spec runtime_json(Ide.Debugger.Types.execution_model()) :: String.t()
   def runtime_json(runtime) when is_map(runtime), do: Jason.encode!(runtime, pretty: true)
   def runtime_json(_runtime), do: "{}"
 
-  @spec rendered_tree(Ide.Debugger.Types.runtime_model()) :: Ide.Debugger.Types.rendered_tree() | nil
+  @spec rendered_tree(Ide.Debugger.Types.execution_model()) :: Ide.Debugger.Types.rendered_tree() | nil
   def rendered_tree(%{} = runtime) do
     model = runtime_model(runtime)
 

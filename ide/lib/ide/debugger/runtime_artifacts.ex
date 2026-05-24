@@ -6,6 +6,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   consistent across the debugger session, semantic executor requests, and preview rendering.
   """
 
+  alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
   alias Ide.Projects
   alias Ide.Resources.ResourceStore
@@ -13,6 +14,21 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   @type app_model :: Types.app_model()
   @type shell :: Types.shell()
   @type execution_model :: Types.execution_model()
+  @type inner_runtime_model :: Types.inner_runtime_model()
+
+  @spec inner_runtime_model(app_model() | execution_model() | map()) :: inner_runtime_model()
+  def inner_runtime_model(model) when is_map(model) do
+    case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
+      nested when is_map(nested) -> nested
+      _ -> %{}
+    end
+  end
+
+  def inner_runtime_model(_model), do: %{}
+
+  @spec app_model(map()) :: app_model()
+  def app_model(model) when is_map(model), do: strip_shell_artifacts(model)
+  def app_model(_model), do: %{}
 
   @shell_artifact_keys [
     "vector_resource_indices",
@@ -51,6 +67,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def partition_fields(_fields), do: {%{}, %{}}
 
   @spec shell_map(map()) :: map()
+  def shell_map(%Surface{} = surface), do: shell_map(Surface.to_map(surface))
+
   def shell_map(surface) when is_map(surface) do
     explicit = Map.get(surface, :shell) || Map.get(surface, "shell") || %{}
     model = Map.get(surface, :model) || Map.get(surface, "model") || %{}
@@ -76,6 +94,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def public_model(_model), do: %{}
 
   @spec execution_model(map()) :: map()
+  def execution_model(%Surface{} = surface), do: Surface.execution_model(surface)
+
   def execution_model(surface) when is_map(surface) do
     surface = normalize_surface(surface)
     model = Map.get(surface, :model) || Map.get(surface, "model") || %{}
@@ -85,6 +105,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def execution_model(_surface), do: %{}
 
   @spec introspect(map()) :: map() | nil
+  def introspect(%Surface{} = surface), do: introspect(Surface.to_map(surface))
+
   def introspect(surface_or_execution_model) when is_map(surface_or_execution_model) do
     shell_map(surface_or_execution_model)
     |> Map.get("elm_introspect")
@@ -107,6 +129,8 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def require_introspect(_), do: %{}
 
   @spec normalize_surface(map()) :: map()
+  def normalize_surface(%Surface{} = surface), do: normalize_surface(Surface.to_map(surface))
+
   def normalize_surface(surface) when is_map(surface) do
     model = Map.get(surface, :model) || Map.get(surface, "model") || %{}
     shell = Map.get(surface, :shell) || Map.get(surface, "shell") || %{}
@@ -119,7 +143,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def normalize_surface(surface), do: surface
 
-  @spec decode_core_ir(Types.runtime_model() | map()) :: map() | nil
+  @spec decode_core_ir(execution_model() | map()) :: map() | nil
   def decode_core_ir(model) when is_map(model) do
     case Map.get(model, "elm_executor_core_ir") do
       value when is_map(value) ->
@@ -145,7 +169,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def decode_core_ir(_model), do: nil
 
-  @spec module_name(Types.runtime_model() | map()) :: String.t()
+  @spec module_name(execution_model() | map()) :: String.t()
   def module_name(model) when is_map(model) do
     model
     |> require_introspect()
@@ -158,7 +182,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def module_name(_model), do: "Main"
 
-  @spec vector_resource_indices(Types.runtime_model() | map()) :: map()
+  @spec vector_resource_indices(execution_model() | map()) :: map()
   def vector_resource_indices(model) when is_map(model) do
     Map.get(model, "vector_resource_indices") ||
       get_in(model, ["runtime_model", "vector_resource_indices"]) ||
@@ -167,7 +191,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def vector_resource_indices(_model), do: %{}
 
-  @spec execution_artifacts(Types.runtime_model() | map()) :: Types.runtime_artifacts()
+  @spec execution_artifacts(execution_model() | map()) :: Types.runtime_artifacts()
   def execution_artifacts(model) when is_map(model) do
     metadata = Map.get(model, "elm_executor_metadata")
     core_ir = decode_core_ir(model)
@@ -179,7 +203,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def execution_artifacts(_model), do: %{}
 
-  @spec core_ir_eval_context(Types.runtime_model() | map(), keyword()) :: map()
+  @spec core_ir_eval_context(execution_model() | map(), keyword()) :: map()
   def core_ir_eval_context(model, extras \\ [])
 
   def core_ir_eval_context(model, extras) when is_map(model) and is_list(extras) do

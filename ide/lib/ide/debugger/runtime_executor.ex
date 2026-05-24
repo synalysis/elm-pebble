@@ -13,9 +13,10 @@ defmodule Ide.Debugger.RuntimeExecutor do
           rel_path: String.t() | nil,
           source: String.t(),
           introspect: Types.elm_introspect(),
-          current_model: Types.runtime_model(),
+          current_model: Types.app_model(),
           current_view_tree: Types.view_output_tree(),
           message: String.t() | nil,
+          message_value: Types.protocol_message() | map() | nil,
           update_branches: [String.t()] | nil,
           elm_executor_core_ir: map() | nil,
           elm_executor_metadata: map() | nil
@@ -29,6 +30,8 @@ defmodule Ide.Debugger.RuntimeExecutor do
           protocol_events: [Types.protocol_event()],
           followup_messages: [map()]
         }
+
+  @type execute_request :: execution_input()
 
   @type fallback_reason :: Types.execution_fallback_reason()
 
@@ -410,8 +413,8 @@ defmodule Ide.Debugger.RuntimeExecutor do
     end
   end
 
-  @spec mutate_runtime_model(Types.runtime_model(), String.t(), [String.t()]) ::
-          Types.runtime_model()
+  @spec mutate_runtime_model(Types.inner_runtime_model(), String.t(), [String.t()]) ::
+          Types.inner_runtime_model()
   defp mutate_runtime_model(model, message, update_branches)
        when is_map(model) and is_binary(message) and is_list(update_branches) do
     op = step_operation_for_message(message, update_branches)
@@ -459,7 +462,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
 
   @spec derive_step_view_tree(
           Types.view_output_tree(),
-          Types.runtime_model(),
+          Types.inner_runtime_model(),
           String.t(),
           :inc | :dec | :toggle | :enable | :disable | :reset | :tick,
           String.t()

@@ -118,6 +118,10 @@ defmodule Ide.Debugger.Types do
           optional(atom()) => term()
         }
 
+  @type inner_runtime_model :: %{
+          optional(String.t()) => term()
+        }
+
   @type app_model :: %{
           optional(String.t()) => term()
         }
@@ -131,7 +135,9 @@ defmodule Ide.Debugger.Types do
           optional(:vector_resource_indices) => map()
         }
 
-  @type execution_model :: app_model() | shell()
+  @type execution_model :: map()
+
+  @type protocol_message :: protocol_ctor_value()
 
   @type runtime_model :: execution_model()
 

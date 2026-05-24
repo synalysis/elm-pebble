@@ -7,16 +7,22 @@ defmodule Ide.Debugger do
   alias Ide.Debugger.CursorSeq
   alias Ide.Debugger.HttpExecutor
   alias Ide.Debugger.RuntimeExecutor
+  alias Ide.Debugger.ProtocolResolutionCtx
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeFingerprintDrift
+  alias Ide.Debugger.StepInput
+  alias Ide.Debugger.StepResult
+  alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
+  alias Ide.Debugger.WireValues
+  alias Ide.SimulatorSettings
   alias Ide.Compiler
   alias Ide.Compiler.Diagnostics
   alias Ide.PebblePreferences
   alias Ide.Projects
   alias Ide.WatchModels
 
-  @dialyzer :no_match
+  @dialyzer [{:no_match, apply_step_once: 7}]
   @history_limit 500
   @default_auto_fire_interval_ms 1_000
   @min_auto_fire_interval_ms 100
@@ -126,10 +132,10 @@ defmodule Ide.Debugger do
           revision: String.t() | nil,
           watch_profile_id: String.t(),
           launch_context: map(),
-          simulator_settings: map(),
-          watch: map(),
-          companion: map(),
-          phone: map(),
+          simulator_settings: Types.simulator_settings(),
+          watch: Surface.surface_map(),
+          companion: Surface.surface_map(),
+          phone: Surface.surface_map(),
           storage: map(),
           auto_tick: map(),
           disabled_subscriptions: [map()],
@@ -1463,32 +1469,39 @@ defmodule Ide.Debugger do
   defp apply_step_once(state, target, requested_message, message_value, source_override, trigger, opts \\ [])
        when target in [:watch, :companion, :phone] and is_list(opts) do
     suppress_protocol_events? = Keyword.get(opts, :suppress_protocol_events, false)
-    surface = state |> Map.get(target, %{}) |> RuntimeArtifacts.normalize_surface()
-    execution_model = RuntimeArtifacts.execution_model(surface)
+    surface = Surface.from_state(state, target)
 
     model =
-      Map.get(surface, :model)
-      |> hydrate_runtime_model_for_message(nil)
+      surface
+      |> Surface.app_model()
+      |> hydrate_runtime_model_for_message(nil, [])
 
-    view_tree = Map.get(surface, :view_tree) || %{}
+    surface = Surface.put_app_model(surface, model)
+    execution_model = Surface.execution_model(surface)
 
     {message, msg_source, known_messages, update_branches, next_cursor} =
       resolve_step_message(execution_model, requested_message)
 
     message_value =
       if is_map(message_value) do
-        normalize_protocol_subscription_message_value(state, target, message_value)
+        normalize_protocol_subscription_message_value(state, target, message_value, model)
       else
         message_value
       end
 
-    runtime_result =
-      step_runtime_result(execution_model, view_tree, target, message, message_value, update_branches)
+    step =
+      StepInput.from_surface(target, surface, message,
+        message_value: message_value,
+        trigger: trigger,
+        message_source: source_override
+      )
+
+    runtime_result = step_runtime_result(step, update_branches)
 
     runtime_patch = Map.get(runtime_result, :model_patch, %{})
-    runtime_patch = normalize_runtime_patch_values(execution_model, runtime_patch)
+    runtime_patch = normalize_runtime_patch_values(step.execution_model, runtime_patch)
     runtime_view_tree = Map.get(runtime_result, :view_tree)
-    runtime_view_tree = if is_map(runtime_view_tree), do: runtime_view_tree, else: view_tree
+    runtime_view_tree = if is_map(runtime_view_tree), do: runtime_view_tree, else: step.view_tree
 
     runtime_view_output =
       preferred_runtime_view_output(
@@ -1503,7 +1516,7 @@ defmodule Ide.Debugger do
     model_for_protocol =
       model
       |> Map.merge(runtime_patch)
-      |> hydrate_runtime_model_for_message(message)
+      |> hydrate_runtime_model_for_message(message, [])
 
     command_protocol_events =
       cond do
@@ -1534,7 +1547,7 @@ defmodule Ide.Debugger do
       model
       |> Map.merge(runtime_patch)
       |> merge_protocol_runtime_model_patch(protocol_runtime_patch)
-      |> hydrate_runtime_model_for_message(message)
+      |> hydrate_runtime_model_for_message(message, patched_runtime_model_fields(runtime_patch))
       |> preserve_protocol_runtime_metadata(model)
       |> Map.put("runtime_last_message", message)
       |> Map.put("runtime_message_source", message_source)
@@ -1547,7 +1560,7 @@ defmodule Ide.Debugger do
     rendered_view_tree =
       render_view_after_update(
         runtime_view_tree,
-        view_tree,
+        step.view_tree,
         target,
         message,
         trigger,
@@ -1556,9 +1569,16 @@ defmodule Ide.Debugger do
 
     updated_state =
       state
-      |> put_in([target, :model], updated_model)
-      |> put_in([target, :view_tree], rendered_view_tree)
-      |> put_in([target, :last_message], message)
+      |> Surface.put_in_state(
+        target,
+        step.surface
+        |> Surface.put_app_model(updated_model)
+        |> Surface.put_view_tree(rendered_view_tree)
+        |> Surface.put_last_message(message)
+      )
+
+    step_result = StepResult.new(updated_state, Surface.from_state(updated_state, target))
+    updated_state = StepResult.state(step_result)
 
     root =
       updated_state
@@ -2628,26 +2648,28 @@ defmodule Ide.Debugger do
       |> Map.get(:simulator_settings)
       |> normalize_simulator_settings()
 
+    {lat, lon, accuracy} = SimulatorSettings.geolocation(settings)
+
     %{
-      "latitude" => settings["latitude"],
-      "longitude" => settings["longitude"],
-      "accuracy" => settings["accuracy"]
+      "latitude" => lat,
+      "longitude" => lon,
+      "accuracy" => accuracy
     }
   end
 
   defp debugger_geolocation_location(_state),
     do: debugger_geolocation_location(%{simulator_settings: default_simulator_settings()})
 
-  @spec geolocation_simulator_wire_int(map()) :: integer() | nil
+  @spec geolocation_simulator_wire_int(ProtocolResolutionCtx.t() | map()) :: integer() | nil
   defp geolocation_simulator_wire_int(ctx) when is_map(ctx) do
     with %{} = settings <- Map.get(ctx, :simulator_settings),
          index when is_integer(index) <- Map.get(ctx, :arg_index) do
-      location = debugger_geolocation_location(%{simulator_settings: settings})
+      {lat, lon, accuracy} = SimulatorSettings.geolocation(settings)
 
       case index do
-        0 -> micro_degrees_from_float(location["latitude"])
-        1 -> micro_degrees_from_float(location["longitude"])
-        2 -> round_float(location["accuracy"])
+        0 -> micro_degrees_from_float(lat)
+        1 -> micro_degrees_from_float(lon)
+        2 -> round_float(accuracy)
         _ -> nil
       end
     else
@@ -2903,12 +2925,14 @@ defmodule Ide.Debugger do
 
     case protocol_schema_from_state_or_model(state, model) do
       {:ok, schema} ->
-        ctx = %{
-          message_value: message_value,
-          runtime_model: Map.get(model, "runtime_model") || %{},
-          simulator_settings: simulator_settings_from_state(state),
-          protocol_ctor: protocol_message_ctor_name(cmd_call)
-        }
+        ctx =
+          ProtocolResolutionCtx.new(
+            direction: direction,
+            protocol_ctor: protocol_message_ctor_name(cmd_call),
+            runtime_model: RuntimeArtifacts.inner_runtime_model(model),
+            simulator_settings: simulator_settings_from_state(state),
+            message_value: message_value
+          )
 
         case resolve_protocol_message_from_cmd_call(cmd_call, schema, direction, ctx) do
           {message, protocol_value} when is_binary(message) and is_map(protocol_value) ->
@@ -2974,9 +2998,10 @@ defmodule Ide.Debugger do
 
   defp protocol_ctor_from_cmd_call(_cmd_call), do: :error
 
-  @spec resolve_protocol_ctor_args(list(), list(), map(), map()) :: {:ok, list()} | :error
-  defp resolve_protocol_ctor_args(inner_args, fields, schema, ctx)
-       when is_list(inner_args) and is_list(fields) and is_map(schema) and is_map(ctx) do
+  @spec resolve_protocol_ctor_args(list(), list(), map(), ProtocolResolutionCtx.t()) ::
+          {:ok, list()} | :error
+  defp resolve_protocol_ctor_args(inner_args, fields, schema, %ProtocolResolutionCtx{} = ctx)
+       when is_list(inner_args) and is_list(fields) and is_map(schema) do
     resolved =
       inner_args
       |> Enum.with_index()
@@ -2984,7 +3009,12 @@ defmodule Ide.Debugger do
         field = Enum.at(fields, index) || %{}
         wire_type = Map.get(field, :wire_type)
 
-        resolve_protocol_ctor_arg(arg, wire_type, schema, Map.put(ctx, :arg_index, index))
+        resolve_protocol_ctor_arg(
+          arg,
+          wire_type,
+          schema,
+          ProtocolResolutionCtx.with_arg_index(ctx, index)
+        )
       end)
 
     if Enum.any?(resolved, &(not is_nil(&1))) do
@@ -2996,31 +3026,17 @@ defmodule Ide.Debugger do
 
   defp resolve_protocol_ctor_args(_inner_args, _fields, _schema, _ctx), do: :error
 
-  @spec resolve_protocol_ctor_arg(term(), Types.protocol_wire_type(), map(), map()) :: term() | nil
+  @spec resolve_protocol_ctor_arg(term(), Types.protocol_wire_type(), map(), ProtocolResolutionCtx.t()) ::
+          term() | nil
   defp resolve_protocol_ctor_arg(arg, wire_type, schema, ctx) do
     value =
-      coalesce_protocol_resolved_value([
+      WireValues.coalesce([
         resolve_protocol_arg_expr(arg, ctx),
         resolve_protocol_arg_fallback(wire_type, schema, ctx),
         simulator_settings_wire_value(wire_type, ctx)
       ])
 
     normalize_protocol_resolved_value(wire_type, schema, value)
-  end
-
-  @spec coalesce_protocol_resolved_value([term()]) :: term() | nil
-  defp coalesce_protocol_resolved_value(values) when is_list(values) do
-    Enum.find(values, fn value -> not is_nil(value) end)
-  end
-
-  @spec map_get_first_present(map(), [String.t() | atom()]) :: term() | nil
-  defp map_get_first_present(map, keys) when is_map(map) and is_list(keys) do
-    Enum.reduce_while(keys, nil, fn key, _acc ->
-      case Map.fetch(map, key) do
-        {:ok, value} -> {:halt, value}
-        :error -> {:cont, nil}
-      end
-    end)
   end
 
   @spec normalize_protocol_resolved_value(Types.protocol_wire_type(), map(), term()) :: term() | nil
@@ -3304,7 +3320,7 @@ defmodule Ide.Debugger do
     value =
       case wire_type do
         :int ->
-          map_get_first_present(record, ["percent", "batteryPercent", "battery_percent"])
+          WireValues.map_get_first_present(record, ["percent", "batteryPercent", "battery_percent"])
 
         :bool ->
           protocol_bool_fallback_value(ctx, record)
@@ -3322,7 +3338,7 @@ defmodule Ide.Debugger do
           nil
       end
 
-    coalesce_protocol_resolved_value([
+    WireValues.coalesce([
       value,
       runtime_model_wire_value(wire_type, ctx)
     ])
@@ -3338,7 +3354,7 @@ defmodule Ide.Debugger do
         _ -> ["batteryPercent", "percent", "battery_percent"]
       end
 
-    map_get_first_present(runtime_model, keys)
+    WireValues.map_get_first_present(runtime_model, keys)
   end
 
   defp runtime_model_wire_value(:bool, ctx) do
@@ -3432,7 +3448,7 @@ defmodule Ide.Debugger do
         _ -> ["online", "charging", "notificationsEnabled", "quietHours"]
       end
 
-    Enum.find_value(keys, &Map.get(record, &1))
+    WireValues.map_get_first_present(record, keys)
   end
 
   defp protocol_bool_fallback_value(_ctx, _record), do: nil
@@ -3854,18 +3870,37 @@ defmodule Ide.Debugger do
 
   defp normalize_protocol_wire_value(_schema, value, _wire_type), do: value
 
-  @spec normalize_protocol_subscription_message_value(runtime_state(), Types.surface_target(), map()) :: map()
+  @spec normalize_protocol_subscription_message_value(
+          runtime_state(),
+          Types.surface_target(),
+          map()
+        ) :: map()
   defp normalize_protocol_subscription_message_value(state, recipient, message_value)
        when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(message_value) do
-    model = get_in(state, [recipient, :model]) || %{}
+    normalize_protocol_subscription_message_value(
+      state,
+      recipient,
+      message_value,
+      surface_app_model(state, recipient)
+    )
+  end
 
+  @spec normalize_protocol_subscription_message_value(
+          runtime_state(),
+          Types.surface_target(),
+          map(),
+          Types.app_model()
+        ) :: map()
+  defp normalize_protocol_subscription_message_value(state, recipient, message_value, app_model)
+       when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(message_value) and
+              is_map(app_model) do
     direction =
       case recipient do
         :watch -> :phone_to_watch
         _ -> :watch_to_phone
       end
 
-    case protocol_schema_from_state_or_model(state, model) do
+    case protocol_schema_from_state_or_model(state, app_model) do
       {:ok, schema} ->
         normalize_protocol_subscription_callback_value(schema, direction, message_value)
 
@@ -3874,7 +3909,7 @@ defmodule Ide.Debugger do
     end
   end
 
-  defp normalize_protocol_subscription_message_value(_state, _recipient, message_value),
+  defp normalize_protocol_subscription_message_value(_state, _recipient, message_value, _app_model),
     do: message_value
 
   @spec normalize_protocol_subscription_callback_value(map(), :watch_to_phone | :phone_to_watch, map()) :: map()
@@ -4685,7 +4720,7 @@ defmodule Ide.Debugger do
 
   @spec merge_declared_scalar_device_response(
           map(),
-          Types.runtime_model(),
+          Types.execution_model(),
           Types.device_request(),
           String.t() | integer() | boolean(),
           :string | :integer | :boolean
@@ -4705,7 +4740,7 @@ defmodule Ide.Debugger do
     do: runtime_model
 
   @spec scalar_runtime_model_key_for_device_response(
-          Types.runtime_model(),
+          Types.execution_model(),
           map(),
           Types.device_request(),
           :string | :integer | :boolean
@@ -4723,7 +4758,7 @@ defmodule Ide.Debugger do
   end
 
   @spec device_kind_runtime_model_key(
-          Types.runtime_model(),
+          Types.execution_model(),
           map(),
           String.t() | nil,
           :string | :integer | :boolean
@@ -4745,7 +4780,7 @@ defmodule Ide.Debugger do
 
   defp device_kind_runtime_model_key(_model, _runtime_model, _device_kind, _kind), do: :error
 
-  @spec device_response_constructor_declared?(Types.runtime_model(), String.t() | nil) :: boolean()
+  @spec device_response_constructor_declared?(Types.execution_model(), String.t() | nil) :: boolean()
   defp device_response_constructor_declared?(model, constructor)
        when is_map(model) and is_binary(constructor) and constructor != "" do
     case RuntimeArtifacts.introspect(model) do
@@ -4769,7 +4804,7 @@ defmodule Ide.Debugger do
 
   defp device_response_constructor_declared?(_model, _constructor), do: false
 
-  @spec unique_scalar_runtime_model_key(Types.runtime_model(), map(), :string | :integer | :boolean) ::
+  @spec unique_scalar_runtime_model_key(Types.execution_model(), map(), :string | :integer | :boolean) ::
           {:ok, String.t()} | :error
   defp unique_scalar_runtime_model_key(model, runtime_model, kind)
        when is_map(model) and is_map(runtime_model) and kind in [:string, :integer, :boolean] do
@@ -4833,7 +4868,7 @@ defmodule Ide.Debugger do
 
   defp coerce_preview_value(_existing, _value), do: :error
 
-  @spec normalize_runtime_patch_values(Types.runtime_model(), map()) :: map()
+  @spec normalize_runtime_patch_values(Types.execution_model(), map()) :: map()
   defp normalize_runtime_patch_values(model, patch) when is_map(model) and is_map(patch) do
     base_runtime_model =
       case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
@@ -4870,7 +4905,7 @@ defmodule Ide.Debugger do
     |> hydrate_static_runtime_model_values()
   end
 
-  @spec normalize_runtime_model_against_introspect(map(), Types.runtime_model()) :: map()
+  @spec normalize_runtime_model_against_introspect(map(), Types.execution_model()) :: map()
   defp normalize_runtime_model_against_introspect(runtime_model, model)
        when is_map(runtime_model) and is_map(model) do
     normalize_runtime_model_values(%{}, runtime_model, introspect_init_model(model))
@@ -4878,7 +4913,7 @@ defmodule Ide.Debugger do
 
   defp normalize_runtime_model_against_introspect(runtime_model, _model), do: runtime_model
 
-  @spec introspect_init_model(Types.runtime_model() | map()) :: Types.init_model_values()
+  @spec introspect_init_model(Types.execution_model() | map()) :: Types.init_model_values()
   defp introspect_init_model(model) when is_map(model) do
     init_model =
       case RuntimeArtifacts.introspect(model) do
@@ -5004,8 +5039,8 @@ defmodule Ide.Debugger do
     end
   end
 
-  @spec maybe_put_device_preview(Types.runtime_model(), Types.device_request()) ::
-          Types.runtime_model()
+  @spec maybe_put_device_preview(Types.app_model(), Types.device_request()) ::
+          Types.app_model()
   defp maybe_put_device_preview(model, req) when is_map(model) and is_map(req) do
     preview = Map.get(req, :preview)
     kind = Map.get(req, :kind)
@@ -7495,7 +7530,7 @@ defmodule Ide.Debugger do
     Map.put(state, :auto_tick, default_auto_tick())
   end
 
-  @spec resolve_step_message(Types.runtime_model(), String.t() | nil) ::
+  @spec resolve_step_message(Types.execution_model(), String.t() | nil) ::
           {String.t(), String.t(), [String.t()], [String.t()], non_neg_integer()}
   defp resolve_step_message(model, requested_message) when is_map(model) do
     ei = RuntimeArtifacts.require_introspect(model)
@@ -7571,32 +7606,18 @@ defmodule Ide.Debugger do
     end)
   end
 
-  @spec step_runtime_result(
-          Types.runtime_model(),
-          map(),
-          Types.surface_target(),
-          String.t(),
-          Types.subscription_payload(),
-          [String.t()]
-        ) :: Types.runtime_step_result()
-  defp step_runtime_result(model, view_tree, target, message, message_value, update_branches)
-       when is_map(model) and target in [:watch, :companion, :phone] and is_binary(message) do
-    introspect = RuntimeArtifacts.require_introspect(model)
-
+  @spec step_runtime_result(StepInput.t(), [String.t()]) :: Types.runtime_step_result()
+  defp step_runtime_result(%StepInput{} = step, update_branches)
+       when is_binary(step.message) do
     request =
-      %{
-        source_root: source_root_for_target(target),
-        rel_path: Map.get(model, "last_path"),
-        source: Map.get(model, "last_source") || "",
-        introspect: introspect,
-        current_model: RuntimeArtifacts.strip_shell_artifacts(model),
-        current_view_tree: view_tree,
-        message: message,
-        message_value: message_value,
-        update_branches: update_branches
-      }
-      |> Map.merge(RuntimeArtifacts.execution_artifacts(model))
-      |> RuntimeArtifacts.put_vector_resource_indices_on_request(model)
+      RuntimeExecutor.Request.build(
+        surface: step.surface,
+        view_tree: step.view_tree,
+        message: step.message,
+        message_value: step.message_value,
+        update_branches: update_branches,
+        source_root: source_root_for_target(step.target)
+      )
 
     case runtime_executor_module().execute(request) do
       {:ok, %{model_patch: patch} = result} when is_map(patch) ->
@@ -7612,16 +7633,16 @@ defmodule Ide.Debugger do
             followup_messages: normalize_followup_messages(Map.get(result, :followup_messages))
           }
         else
-          local_step_runtime_result(model, view_tree, target, message, update_branches)
+          local_step_runtime_result(step.execution_model, step.view_tree, step.target, step.message, update_branches)
         end
 
       _ ->
-        local_step_runtime_result(model, view_tree, target, message, update_branches)
+        local_step_runtime_result(step.execution_model, step.view_tree, step.target, step.message, update_branches)
     end
   end
 
   @spec local_step_runtime_result(
-          Types.runtime_model(),
+          Types.execution_model(),
           map(),
           Types.surface_target(),
           String.t(),
@@ -8073,12 +8094,11 @@ defmodule Ide.Debugger do
   @spec default_view_tree_for_target(Types.surface_label_input()) :: map()
   defp default_view_tree_for_target(:watch), do: Map.get(default_watch_runtime(), :view_tree)
 
-  defp default_view_tree_for_target(:companion),
-    do: Map.get(default_companion_runtime(), :view_tree)
+  defp default_view_tree_for_target(:companion), do: Map.get(default_companion_runtime(), :view_tree)
 
   defp default_view_tree_for_target(:phone), do: Map.get(default_phone_runtime(), :view_tree)
 
-  @spec refresh_runtime_fingerprints(Types.runtime_model(), map(), map()) :: Types.runtime_model()
+  @spec refresh_runtime_fingerprints(Types.execution_model(), map(), map()) :: Types.execution_model()
   defp refresh_runtime_fingerprints(model, runtime_model, view_tree)
        when is_map(model) and is_map(runtime_model) do
     runtime = Map.get(model, "elm_executor")
@@ -8563,14 +8583,14 @@ defmodule Ide.Debugger do
     %{enabled: false, interval_ms: nil, target: "all", targets: [], count: 1, worker_pid: nil}
   end
 
-  @spec default_watch_runtime(map() | nil) :: map()
+  @spec default_watch_runtime(map() | nil) :: Surface.surface_map()
   defp default_watch_runtime(launch_context \\ nil) do
     launch_context =
       if is_map(launch_context),
         do: launch_context,
         else: launch_context_for(default_watch_profile_id(), "LaunchUser")
 
-    %{
+    Surface.from_map(%{
       model: %{
         "status" => "idle",
         "launch_context" => launch_context
@@ -8578,12 +8598,13 @@ defmodule Ide.Debugger do
       last_message: nil,
       protocol_messages: [],
       view_tree: %{"type" => "root", "children" => []}
-    }
+    })
+    |> Surface.to_map()
   end
 
-  @spec default_companion_runtime() :: map()
+  @spec default_companion_runtime() :: Surface.surface_map()
   defp default_companion_runtime do
-    %{
+    Surface.from_map(%{
       model: protocol_surface_model("idle"),
       last_message: nil,
       protocol_messages: [],
@@ -8593,7 +8614,8 @@ defmodule Ide.Debugger do
         "box" => %{"x" => 0, "y" => 0, "w" => 180, "h" => 320},
         "children" => []
       }
-    }
+    })
+    |> Surface.to_map()
   end
 
   @spec attach_companion_configuration(map(), String.t()) :: map()
@@ -8623,7 +8645,9 @@ defmodule Ide.Debugger do
        when is_map(state) and is_binary(project_slug) do
     case RuntimeArtifacts.vector_resource_indices_for_project(project_slug) do
       indices when is_map(indices) and map_size(indices) > 0 ->
-        put_in(state, [:watch, :shell, "vector_resource_indices"], indices)
+        Surface.update_in_state(state, :watch, fn surface ->
+          Surface.put_shell(surface, Map.put(surface.shell, "vector_resource_indices", indices))
+        end)
 
       _ ->
         state
@@ -8720,8 +8744,8 @@ defmodule Ide.Debugger do
 
   defp put_companion_configuration_values(state, _values), do: state
 
-  @spec put_configuration_values_at(Types.runtime_model(), [String.t()], map()) ::
-          Types.runtime_model()
+  @spec put_configuration_values_at(Types.app_model(), [String.t()], map()) ::
+          Types.app_model()
   defp put_configuration_values_at(model, path, values) when is_map(model) and is_list(path) do
     case get_in(model, path) do
       %{} = configuration -> put_in(model, path, put_configuration_values(configuration, values))
@@ -8952,9 +8976,9 @@ defmodule Ide.Debugger do
 
   defp drop_companion_configuration(model), do: model
 
-  @spec default_phone_runtime() :: map()
+  @spec default_phone_runtime() :: Surface.surface_map()
   defp default_phone_runtime do
-    %{
+    Surface.from_map(%{
       model: protocol_surface_model("idle"),
       last_message: nil,
       protocol_messages: [],
@@ -8964,7 +8988,8 @@ defmodule Ide.Debugger do
         "box" => %{"x" => 0, "y" => 0, "w" => 200, "h" => 360},
         "children" => []
       }
-    }
+    })
+    |> Surface.to_map()
   end
 
   @spec compute_revision(String.t() | nil, String.t()) :: String.t()
@@ -9249,9 +9274,10 @@ defmodule Ide.Debugger do
   defp merge_simulator_settings_model(model, _settings) when is_map(model), do: model
   defp merge_simulator_settings_model(_model, _settings), do: %{}
 
-  @spec hydrate_runtime_model_for_message(Types.runtime_model(), String.t() | nil) ::
-          Types.runtime_model()
-  defp hydrate_runtime_model_for_message(model, message) when is_map(model) do
+  @spec hydrate_runtime_model_for_message(Types.app_model(), String.t() | nil, [String.t()]) ::
+          Types.app_model()
+  defp hydrate_runtime_model_for_message(model, message, skip_fields)
+       when is_map(model) and is_list(skip_fields) do
     runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model)
 
     if is_map(runtime_model) do
@@ -9259,7 +9285,7 @@ defmodule Ide.Debugger do
         runtime_model
         |> hydrate_static_runtime_model_values()
         |> hydrate_runtime_model_launch_context(model)
-        |> hydrate_runtime_model_message_payload(message)
+        |> hydrate_runtime_model_message_payload(message, skip_fields)
 
       Map.put(model, "runtime_model", hydrated)
     else
@@ -9267,7 +9293,18 @@ defmodule Ide.Debugger do
     end
   end
 
-  defp hydrate_runtime_model_for_message(_model, _message), do: %{}
+  defp hydrate_runtime_model_for_message(model, _message, _skip_fields) when is_map(model), do: model
+  defp hydrate_runtime_model_for_message(_model, _message, _skip_fields), do: %{}
+
+  @spec patched_runtime_model_fields(map()) :: [String.t()]
+  defp patched_runtime_model_fields(patch) when is_map(patch) do
+    case Map.get(patch, "runtime_model") || Map.get(patch, :runtime_model) do
+      runtime_model when is_map(runtime_model) -> Enum.map(Map.keys(runtime_model), &to_string/1)
+      _ -> []
+    end
+  end
+
+  defp patched_runtime_model_fields(_patch), do: []
 
   @spec hydrate_static_runtime_model_values(map()) :: map()
   defp hydrate_static_runtime_model_values(runtime_model) when is_map(runtime_model) do
@@ -9483,9 +9520,9 @@ defmodule Ide.Debugger do
     end
   end
 
-  @spec hydrate_runtime_model_message_payload(map(), String.t() | nil) :: map()
-  defp hydrate_runtime_model_message_payload(runtime_model, message)
-       when is_map(runtime_model) and is_binary(message) do
+  @spec hydrate_runtime_model_message_payload(map(), String.t() | nil, [String.t()]) :: map()
+  defp hydrate_runtime_model_message_payload(runtime_model, message, skip_fields)
+       when is_map(runtime_model) and is_binary(message) and is_list(skip_fields) do
     constructor = message_constructor(message)
     int_payload = integer_message_payload(message)
     payload = elm_message_payload(message)
@@ -9504,7 +9541,7 @@ defmodule Ide.Debugger do
 
     cond do
       not is_nil(payload) ->
-        maybe_put_message_payload_field(runtime_model, constructor, payload)
+        maybe_put_message_payload_field(runtime_model, constructor, payload, skip_fields)
 
       constructor == "MinuteChanged" and is_integer(int_payload) ->
         runtime_model
@@ -9517,7 +9554,9 @@ defmodule Ide.Debugger do
     end
   end
 
-  defp hydrate_runtime_model_message_payload(runtime_model, _message), do: runtime_model
+  defp hydrate_runtime_model_message_payload(runtime_model, _message, _skip_fields)
+       when is_map(runtime_model),
+       do: runtime_model
 
   @spec elm_message_payload(String.t()) :: Types.protocol_wire_arg() | nil
   defp elm_message_payload(message) when is_binary(message) do
@@ -9552,15 +9591,20 @@ defmodule Ide.Debugger do
     end
   end
 
-  @spec maybe_put_message_payload_field(map(), String.t(), Types.protocol_wire_arg()) :: map()
-  defp maybe_put_message_payload_field(runtime_model, constructor, payload)
-       when is_map(runtime_model) and is_binary(constructor) do
+  @spec maybe_put_message_payload_field(map(), String.t(), Types.protocol_wire_arg(), [String.t()]) ::
+          map()
+  defp maybe_put_message_payload_field(runtime_model, constructor, payload, skip_fields)
+       when is_map(runtime_model) and is_binary(constructor) and is_list(skip_fields) do
     case model_field_for_message_constructor(constructor, runtime_model) do
       field when is_binary(field) ->
-        if Map.has_key?(runtime_model, field) do
-          put_payload_value_if_needed(runtime_model, field, payload, constructor)
-        else
+        if field in skip_fields do
           runtime_model
+        else
+          if Map.has_key?(runtime_model, field) do
+            put_payload_value_if_needed(runtime_model, field, payload, constructor)
+          else
+            runtime_model
+          end
         end
 
       _ ->
@@ -9568,7 +9612,8 @@ defmodule Ide.Debugger do
     end
   end
 
-  defp maybe_put_message_payload_field(runtime_model, _constructor, _payload), do: runtime_model
+  defp maybe_put_message_payload_field(runtime_model, _constructor, _payload, _skip_fields),
+    do: runtime_model
 
   @spec model_field_for_message_constructor(String.t(), map() | nil) :: String.t() | nil
   defp model_field_for_message_constructor(constructor, runtime_model)
@@ -9830,14 +9875,19 @@ defmodule Ide.Debugger do
 
   defp maybe_merge_runtime_artifacts(state, _target, _fields), do: state
 
-  @spec surface_for(runtime_state(), Types.surface_target()) :: map()
+  @spec surface_for(runtime_state(), Types.surface_target()) :: Surface.t()
   defp surface_for(state, target) when is_map(state) and target in [:watch, :companion, :phone] do
-    state |> Map.get(target, %{}) |> RuntimeArtifacts.normalize_surface()
+    Surface.from_state(state, target)
+  end
+
+  @spec surface_app_model(runtime_state(), Types.surface_target()) :: Types.app_model()
+  defp surface_app_model(state, target) when is_map(state) do
+    state |> surface_for(target) |> Surface.app_model()
   end
 
   @spec introspect_for(runtime_state(), Types.surface_target()) :: map() | nil
   defp introspect_for(state, target) when is_map(state) do
-    state |> surface_for(target) |> RuntimeArtifacts.introspect()
+    state |> surface_for(target) |> Surface.introspect()
   end
 
   @spec merge_elmc_diagnostic_preview(map(), map()) :: map()
@@ -10914,7 +10964,7 @@ defmodule Ide.Debugger do
   defp source_root_for_target(:companion), do: "phone"
   defp source_root_for_target(:phone), do: "phone"
 
-  @spec http_eval_context(Types.runtime_model(), map()) :: map()
+  @spec http_eval_context(Types.execution_model(), map()) :: map()
   defp http_eval_context(model, settings) when is_map(model) and is_map(settings) do
     weather = Map.get(settings, "weather")
 
@@ -10994,7 +11044,7 @@ defmodule Ide.Debugger do
       })
       |> Map.merge(model_patch)
       |> put_runtime_view_output(Map.get(execution, :view_output))
-      |> hydrate_runtime_model_for_message(nil)
+      |> hydrate_runtime_model_for_message(nil, [])
 
     next_shell = Map.put(shell, "elm_introspect", ei)
 
@@ -11052,7 +11102,7 @@ defmodule Ide.Debugger do
     )
   end
 
-  @spec current_model_for_introspect_execution(Types.runtime_model()) :: Types.runtime_model()
+  @spec current_model_for_introspect_execution(Types.execution_model()) :: Types.execution_model()
   defp current_model_for_introspect_execution(model) when is_map(model) do
     Map.delete(model, "runtime_model")
   end
@@ -11147,13 +11197,13 @@ defmodule Ide.Debugger do
       )
 
     %{
-      "companion" => normalize_term(Map.get(state, :companion, %{})),
+      "companion" => normalize_term(Surface.to_map(Surface.from_state(state, :companion))),
       "debugger_seq" => Map.get(state, :debugger_seq, 0),
       "debugger_timeline" => normalize_term(Map.get(state, :debugger_timeline, [])),
       "disabled_subscriptions" => normalize_term(disabled_subscriptions(state)),
       "events" => events,
       "export_version" => 1,
-      "phone" => normalize_term(Map.get(state, :phone, %{})),
+      "phone" => normalize_term(Surface.to_map(Surface.from_state(state, :phone))),
       "project_slug" => project_slug,
       "revision" => Map.get(state, :revision),
       "running" => Map.get(state, :running, false),
@@ -11162,7 +11212,7 @@ defmodule Ide.Debugger do
       "simulator_settings" => normalize_term(simulator_settings_from_state(state)),
       "runtime_fingerprint_compare" => normalize_term(runtime_fingerprint_compare),
       "seq" => Map.get(state, :seq, 0),
-      "watch" => normalize_term(Map.get(state, :watch, %{}))
+      "watch" => normalize_term(Surface.to_map(Surface.from_state(state, :watch)))
     }
   end
 
@@ -11468,11 +11518,15 @@ defmodule Ide.Debugger do
   defp maybe_put_snapshot_refs(row, refs) when map_size(refs) == 0, do: row
   defp maybe_put_snapshot_refs(row, refs), do: Map.put(row, "snapshot_refs", refs)
 
-  @spec snapshot_surface(map(), map()) :: map()
+  @spec snapshot_surface(Surface.t() | map(), Surface.t() | map()) :: map()
+  defp snapshot_surface(%Surface{} = surface, _fallback), do: Surface.to_map(surface)
   defp snapshot_surface(surface, _fallback) when is_map(surface), do: surface
+  defp snapshot_surface(_surface, %Surface{} = fallback), do: Surface.to_map(fallback)
   defp snapshot_surface(_surface, fallback), do: fallback
 
   @spec normalize_term(Types.wire_input() | atom()) :: Types.normalized_export_term()
+  defp normalize_term(%Surface{} = surface), do: normalize_term(Surface.to_map(surface))
+
   defp normalize_term(map) when is_map(map) do
     map
     |> Enum.map(fn {k, v} -> {to_string(k), normalize_term(v)} end)
@@ -11605,51 +11659,60 @@ defmodule Ide.Debugger do
 
   defp infer_debugger_seq(_rows), do: 0
 
-  @spec import_watch(map()) :: map()
+  @spec import_watch(map()) :: Surface.surface_map()
   defp import_watch(map) when is_map(map) do
-    %{
-      model: Map.get(map, "model") || %{},
-      last_message: Map.get(map, "last_message"),
-      protocol_messages: Map.get(map, "protocol_messages") || [],
-      view_tree:
-        Map.get(map, "view_tree") ||
-          %{
-            "type" => "root",
-            "children" => []
-          }
-    }
+    Surface.to_map(
+      Surface.from_map(%{
+        model: Map.get(map, "model") || %{},
+        shell: Map.get(map, "shell") || %{},
+        last_message: Map.get(map, "last_message"),
+        protocol_messages: Map.get(map, "protocol_messages") || [],
+        view_tree:
+          Map.get(map, "view_tree") ||
+            %{
+              "type" => "root",
+              "children" => []
+            }
+      })
+    )
   end
 
-  @spec import_companion(map()) :: map()
+  @spec import_companion(map()) :: Surface.surface_map()
   defp import_companion(map) when is_map(map) do
-    %{
-      model: Map.get(map, "model") || %{},
-      last_message: Map.get(map, "last_message"),
-      protocol_messages: Map.get(map, "protocol_messages") || [],
-      view_tree:
-        Map.get(map, "view_tree") ||
-          %{
-            "type" => "CompanionRoot",
-            "label" => "idle",
-            "children" => []
-          }
-    }
+    Surface.to_map(
+      Surface.from_map(%{
+        model: Map.get(map, "model") || %{},
+        shell: Map.get(map, "shell") || %{},
+        last_message: Map.get(map, "last_message"),
+        protocol_messages: Map.get(map, "protocol_messages") || [],
+        view_tree:
+          Map.get(map, "view_tree") ||
+            %{
+              "type" => "CompanionRoot",
+              "label" => "idle",
+              "children" => []
+            }
+      })
+    )
   end
 
-  @spec import_phone(map()) :: map()
+  @spec import_phone(map()) :: Surface.surface_map()
   defp import_phone(map) when is_map(map) do
-    %{
-      model: Map.get(map, "model") || %{},
-      last_message: Map.get(map, "last_message"),
-      protocol_messages: Map.get(map, "protocol_messages") || [],
-      view_tree:
-        Map.get(map, "view_tree") ||
-          %{
-            "type" => "PhoneRoot",
-            "label" => "idle",
-            "children" => []
-          }
-    }
+    Surface.to_map(
+      Surface.from_map(%{
+        model: Map.get(map, "model") || %{},
+        shell: Map.get(map, "shell") || %{},
+        last_message: Map.get(map, "last_message"),
+        protocol_messages: Map.get(map, "protocol_messages") || [],
+        view_tree:
+          Map.get(map, "view_tree") ||
+            %{
+              "type" => "PhoneRoot",
+              "label" => "idle",
+              "children" => []
+            }
+      })
+    )
   end
 
   @spec runtime_executor_module() :: module()

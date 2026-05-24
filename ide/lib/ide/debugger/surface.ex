@@ -2,20 +2,28 @@ defmodule Ide.Debugger.Surface do
   @moduledoc """
   Typed debugger surface: app `model`, debugger `shell`, and optional view metadata.
 
-  Use `execution_model/1` (shell merged with stripped app model) for runtime execution,
-  protocol resolution, and introspect lookups. Use `app_model/1` for user-facing state only.
+  ## Which accessor to use
+
+  - `app_model/1` — user-facing Elm state stored on the surface (no shell artifacts).
+  - `execution_model/1` — app model merged with shell; use for runtime stepping and introspect.
+  - `introspect/1` — Elm introspect payload from shell only.
+  - `from_state/2` + `put_in_state/3` — read/write surfaces on debugger session state.
+
+  Prefer these helpers over `get_in(state, [target, :model])` or raw `Map.get(..., "elm_introspect")`.
   """
 
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.Types
 
   @enforce_keys [:model, :shell]
-  defstruct [:model, :shell, :view_tree, :last_message]
+  defstruct [:model, :shell, :view_tree, :last_message, :protocol_messages]
 
-  @type t :: %__MODULE__{
+  @opaque t :: %__MODULE__{
           model: RuntimeArtifacts.app_model(),
           shell: RuntimeArtifacts.shell(),
           view_tree: map() | nil,
-          last_message: term()
+          last_message: term(),
+          protocol_messages: list() | nil
         }
 
   @type surface_map :: %{
@@ -23,6 +31,7 @@ defmodule Ide.Debugger.Surface do
           optional(:shell) => map(),
           optional(:view_tree) => map(),
           optional(:last_message) => term(),
+          optional(:protocol_messages) => list(),
           optional(String.t()) => term()
         }
 
@@ -34,11 +43,30 @@ defmodule Ide.Debugger.Surface do
       model: Map.get(normalized, :model) || %{},
       shell: Map.get(normalized, :shell) || %{},
       view_tree: Map.get(normalized, :view_tree) || Map.get(normalized, "view_tree"),
-      last_message: Map.get(normalized, :last_message) || Map.get(normalized, "last_message")
+      last_message: Map.get(normalized, :last_message) || Map.get(normalized, "last_message"),
+      protocol_messages:
+        Map.get(normalized, :protocol_messages) || Map.get(normalized, "protocol_messages")
     }
   end
 
   def from_map(_surface), do: %__MODULE__{model: %{}, shell: %{}}
+
+  @spec from_state(map(), Types.surface_target()) :: t()
+  def from_state(state, target) when is_map(state) and target in [:watch, :companion, :phone] do
+    state |> Map.get(target, %{}) |> from_map()
+  end
+
+  @spec put_in_state(map(), Types.surface_target(), t() | surface_map()) :: map()
+  def put_in_state(state, target, surface)
+      when is_map(state) and target in [:watch, :companion, :phone] do
+    Map.put(state, target, to_map(from_map(surface)))
+  end
+
+  @spec update_in_state(map(), Types.surface_target(), (t() -> t())) :: map()
+  def update_in_state(state, target, fun)
+      when is_map(state) and target in [:watch, :companion, :phone] and is_function(fun, 1) do
+    state |> from_state(target) |> fun.() |> then(&put_in_state(state, target, &1))
+  end
 
   @spec to_map(t()) :: surface_map()
   def to_map(%__MODULE__{} = surface) do
@@ -46,7 +74,8 @@ defmodule Ide.Debugger.Surface do
       model: surface.model,
       shell: surface.shell,
       view_tree: surface.view_tree,
-      last_message: surface.last_message
+      last_message: surface.last_message,
+      protocol_messages: surface.protocol_messages
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
@@ -83,8 +112,23 @@ defmodule Ide.Debugger.Surface do
     %{surface | model: model}
   end
 
+  @spec merge_app_model(t(), map()) :: t()
+  def merge_app_model(%__MODULE__{} = surface, patch) when is_map(patch) do
+    %{surface | model: Map.merge(surface.model, patch)}
+  end
+
   @spec put_shell(t(), map()) :: t()
   def put_shell(%__MODULE__{} = surface, shell) when is_map(shell) do
     %{surface | shell: shell}
+  end
+
+  @spec put_view_tree(t(), map() | nil) :: t()
+  def put_view_tree(%__MODULE__{} = surface, view_tree) do
+    %{surface | view_tree: view_tree}
+  end
+
+  @spec put_last_message(t(), term()) :: t()
+  def put_last_message(%__MODULE__{} = surface, message) do
+    %{surface | last_message: message}
   end
 end

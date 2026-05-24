@@ -4,8 +4,11 @@ defmodule Ide.SimulatorSettings do
   """
 
   alias Ide.Debugger
+  alias Ide.Debugger.Types
   alias Ide.Projects.Project
   alias Ide.SimulatorCapabilities
+
+  @type t :: Types.simulator_settings()
 
   @type field_type :: :range | :checkbox | :text | :number | :date | :time | :select | :json
   @type field_spec :: %{
@@ -518,6 +521,29 @@ defmodule Ide.SimulatorSettings do
       hint: "JSON array of segment durations; ON/OFF alternating from ON."
     }
   ]
+
+  @doc """
+  Returns `{latitude, longitude, accuracy}` from normalized simulator settings.
+  """
+  @spec geolocation(t() | map()) :: {float() | nil, float() | nil, float() | nil}
+  def geolocation(settings) when is_map(settings) do
+    {
+      numeric_setting(settings, "latitude"),
+      numeric_setting(settings, "longitude"),
+      numeric_setting(settings, "accuracy")
+    }
+  end
+
+  def geolocation(_settings), do: {nil, nil, nil}
+
+  @spec numeric_setting(map(), String.t()) :: float() | nil
+  defp numeric_setting(settings, key) do
+    case Map.get(settings, key) do
+      value when is_integer(value) -> value * 1.0
+      value when is_float(value) -> value
+      _ -> nil
+    end
+  end
 
   @doc """
   Returns active field groups for the given project, optional debugger state, and UI mode.

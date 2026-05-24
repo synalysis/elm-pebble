@@ -4,6 +4,20 @@ defmodule Ide.Debugger.RuntimeArtifactsTest do
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.Surface
 
+  describe "inner_runtime_model/1" do
+    test "extracts nested runtime_model from app or execution model" do
+      app = %{"runtime_model" => %{"latitudeE6" => 0}, "status" => "idle"}
+      execution = Map.merge(%{"elm_introspect" => %{}}, app)
+
+      assert RuntimeArtifacts.inner_runtime_model(app) == %{"latitudeE6" => 0}
+      assert RuntimeArtifacts.inner_runtime_model(execution) == %{"latitudeE6" => 0}
+    end
+
+    test "returns empty map when runtime_model is absent" do
+      assert RuntimeArtifacts.inner_runtime_model(%{"status" => "idle"}) == %{}
+    end
+  end
+
   describe "decode_core_ir/1" do
     test "returns embedded map when present" do
       core_ir = %{"modules" => [%{"name" => "Main"}]}
