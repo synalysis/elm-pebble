@@ -2944,6 +2944,28 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   def debugger_rows_for_mode(_rows, _mode), do: []
 
+  @doc """
+  Hides internal runtime executor diagnostics from the user-facing timeline unless
+  IDE debug mode is enabled.
+  """
+  @spec filter_debugger_rows_for_display([debugger_row()], boolean()) :: [debugger_row()]
+  def filter_debugger_rows_for_display(rows, true) when is_list(rows), do: rows
+
+  def filter_debugger_rows_for_display(rows, _debug_mode) when is_list(rows) do
+    Enum.reject(rows, &debugger_runtime_status_row?/1)
+  end
+
+  def filter_debugger_rows_for_display(_rows, _debug_mode), do: []
+
+  @spec debugger_runtime_status_row?(debugger_row()) :: boolean()
+  def debugger_runtime_status_row?(row) when is_map(row) do
+    type = Map.get(row, :type) || Map.get(row, "type")
+    source = Map.get(row, :message_source) || Map.get(row, "message_source")
+    type == "runtime" and source == "runtime_status"
+  end
+
+  def debugger_runtime_status_row?(_row), do: false
+
   @spec debugger_timeline_text([debugger_row()]) :: String.t()
   def debugger_timeline_text(rows) when is_list(rows) do
     rows
@@ -3031,7 +3053,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   @spec selected_debugger_row(events() | map() | nil, maybe_non_neg_integer()) ::
           debugger_row() | nil
   def selected_debugger_row(source, cursor_seq) do
-    rows = debugger_rows(source, 500)
+    select_debugger_row(debugger_rows(source, 500), cursor_seq)
+  end
+
+  @spec select_debugger_row([debugger_row()], maybe_non_neg_integer()) :: debugger_row() | nil
+  defp select_debugger_row(rows, cursor_seq) when is_list(rows) do
     newest_rows = Enum.sort_by(rows, &Map.get(&1, :seq, 0), :desc)
     oldest_rows = Enum.reverse(newest_rows)
 
@@ -3040,11 +3066,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         nil
 
       is_integer(cursor_seq) ->
-        oldest_rows
-        |> Enum.find(fn row -> row.seq >= cursor_seq end) || List.first(newest_rows)
+        Enum.find(oldest_rows, fn row -> row.seq >= cursor_seq end) || List.first(newest_rows)
 
       true ->
         List.first(newest_rows)
+    end
+  end
+
+  @spec debug_mode_enabled?(socket()) :: boolean()
+  defp debug_mode_enabled?(socket) do
+    case socket do
+      %{assigns: %{debug_mode: true}} -> true
+      _ -> false
     end
   end
 
@@ -3719,8 +3752,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
     last_replay = replay_metadata_at_cursor(events, cursor_seq)
 
+    debug_mode = debug_mode_enabled?(socket)
+
     debugger =
-      debugger_assigns(cursor_seq, snapshot_runtime, debugger_state)
+      debugger_assigns(cursor_seq, snapshot_runtime, debugger_state, debug_mode)
 
     socket
     |> Component.assign(:debugger_state, debugger_state)
@@ -3782,11 +3817,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
     last_replay = replay_metadata_at_cursor(events, normalized_cursor)
 
+    debug_mode = debug_mode_enabled?(socket)
+
     debugger =
       debugger_assigns(
         normalized_cursor,
         snapshot_runtime,
-        socket.assigns[:debugger_state]
+        socket.assigns[:debugger_state],
+        debug_mode
       )
 
     socket
@@ -3846,7 +3884,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       phone: socket.assigns[:debugger_cursor_phone_runtime]
     }
 
-    debugger = debugger_assigns(debugger_cursor_seq, snapshot_runtime, debugger_state)
+    debug_mode = debug_mode_enabled?(socket)
+
+    debugger = debugger_assigns(debugger_cursor_seq, snapshot_runtime, debugger_state, debug_mode)
 
     socket
     |> Component.assign(:debugger_cursor_seq, debugger.cursor_seq)
@@ -3859,9 +3899,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   @spec jump_latest_debugger(socket()) :: socket()
   defp jump_latest_debugger(socket) do
+    debug_mode = debug_mode_enabled?(socket)
+
     latest_seq =
       case socket.assigns[:debugger_state] do
-        %{} = debugger_state -> latest_debugger_seq(debugger_state)
+        %{} = debugger_state -> latest_debugger_seq(debugger_state, debug_mode)
         _ -> nil
       end
 
@@ -3878,9 +3920,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   @spec debugger_cursor_at_latest?(socket()) :: boolean()
   defp debugger_cursor_at_latest?(socket) do
+    debug_mode = debug_mode_enabled?(socket)
+
     latest_seq =
       case socket.assigns[:debugger_state] do
-        %{} = debugger_state -> latest_debugger_seq(debugger_state)
+        %{} = debugger_state -> latest_debugger_seq(debugger_state, debug_mode)
         _ -> nil
       end
 
@@ -3894,10 +3938,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec latest_debugger_seq(map()) :: maybe_non_neg_integer()
-  defp latest_debugger_seq(debugger_state) when is_map(debugger_state) do
+  @spec latest_debugger_seq(map(), boolean()) :: maybe_non_neg_integer()
+  defp latest_debugger_seq(debugger_state, debug_mode \\ false) when is_map(debugger_state) do
     debugger_state
     |> debugger_rows()
+    |> filter_debugger_rows_for_display(debug_mode)
     |> Enum.map(&Map.get(&1, :seq))
     |> Enum.filter(&is_integer/1)
     |> case do
@@ -3913,11 +3958,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
             companion: map() | nil,
             phone: map() | nil
           },
-          map() | nil
+          map() | nil,
+          boolean()
         ) :: map()
-  defp debugger_assigns(cursor_seq, snapshot_runtime, debugger_state) do
-    rows = debugger_rows(debugger_state)
-    selected = selected_debugger_row(debugger_state, cursor_seq)
+  defp debugger_assigns(cursor_seq, snapshot_runtime, debugger_state, debug_mode \\ false) do
+    rows =
+      debugger_state
+      |> debugger_rows()
+      |> filter_debugger_rows_for_display(debug_mode)
+
+    selected = select_debugger_row(rows, cursor_seq)
     resolved_cursor_seq = if selected, do: selected.seq, else: nil
 
     watch_runtime =

@@ -2070,7 +2070,7 @@ defmodule Ide.DebuggerTest do
            end)
 
     assert {"watch", "ConnectionStatusChanged True", "init_device_data"} in timeline
-    assert {"phone", "RequestWeather CurrentLocation", "protocol_rx"} in timeline
+    assert {"phone", "FromWatch (Ok (RequestWeather CurrentLocation))", "protocol_rx"} in timeline
 
     runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
     assert runtime_model["batteryLevel"] == %{"ctor" => "Just", "args" => [88]}

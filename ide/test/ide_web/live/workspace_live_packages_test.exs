@@ -708,7 +708,8 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
 
     assert {"watch", "init"} in timeline
     assert Enum.any?(timeline, &(&1 == {"watch", "init_device_data"}))
-    assert Enum.any?(timeline, &(&1 == {"protocol", "protocol_rx"}))
+    assert Enum.any?(timeline, &(&1 == {"phone", "protocol_rx"}))
+    assert Enum.any?(timeline, &(&1 == {"watch", "protocol_rx"}))
   end
 
   test "editor opens watch Main elm by default", %{conn: conn} do

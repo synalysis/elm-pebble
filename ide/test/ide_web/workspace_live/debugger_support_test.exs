@@ -490,6 +490,40 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
              "#2 [companion] update Sync {\"ok\":true}\n#1 [watch] init init"
   end
 
+  test "runtime status rows are hidden from timeline unless debug mode is enabled" do
+    rows = [
+      %{seq: 1, target: "watch", type: "init", message: "init", message_source: "init"},
+      %{
+        seq: 2,
+        target: "watch",
+        type: "runtime",
+        message: "runtime no followups for 2 init cmd(s)",
+        message_source: "runtime_status"
+      },
+      %{
+        seq: 3,
+        target: "watch",
+        type: "update",
+        message: "CurrentTimeString \"01:01\"",
+        message_source: "init_device_data"
+      }
+    ]
+
+    assert DebuggerSupport.filter_debugger_rows_for_display(rows, false) ==
+             [
+               %{seq: 1, target: "watch", type: "init", message: "init", message_source: "init"},
+               %{
+                 seq: 3,
+                 target: "watch",
+                 type: "update",
+                 message: "CurrentTimeString \"01:01\"",
+                 message_source: "init_device_data"
+               }
+             ]
+
+    assert DebuggerSupport.filter_debugger_rows_for_display(rows, true) == rows
+  end
+
   test "subscription trigger modal support rejects opaque gateway payloads" do
     state = %{
       watch: %{

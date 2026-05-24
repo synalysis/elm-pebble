@@ -1418,32 +1418,6 @@ defmodule Ide.Debugger do
     )
   end
 
-  @spec append_protocol_debugger_event(runtime_state(), String.t(), map()) :: runtime_state()
-  defp append_protocol_debugger_event(state, message, message_source) when is_map(state) do
-    debugger_seq = Map.get(state, :debugger_seq, 0) + 1
-
-    row = %{
-      seq: debugger_seq,
-      raw_seq: Map.get(state, :seq, 0),
-      type: "update",
-      target: "protocol",
-      message: if(is_binary(message), do: message, else: to_string(message || "")),
-      message_source: if(is_binary(message_source), do: message_source, else: nil),
-      watch: Map.get(state, :watch, %{}),
-      companion: Map.get(state, :companion, %{}),
-      phone: Map.get(state, :phone, %{})
-    }
-
-    state
-    |> Map.put(:debugger_seq, debugger_seq)
-    |> Map.put(
-      :debugger_timeline,
-      [row | Map.get(state, :debugger_timeline, [])] |> Enum.take(@history_limit)
-    )
-  end
-
-  defp append_protocol_debugger_event(state, _message, _message_source), do: state
-
   @spec maybe_trim_events(runtime_state(), pos_integer() | Types.wire_input()) :: runtime_state()
   defp maybe_trim_events(state, limit) when is_integer(limit) and limit > 0 do
     %{state | events: Enum.take(state.events, limit)}
@@ -5142,16 +5116,6 @@ defmodule Ide.Debugger do
             message: Map.get(meta, :message),
             message_source: Map.get(meta, :message_source)
           })
-          |> append_protocol_debugger_event(
-            Map.get(meta, :message),
-            Map.get(meta, :message_source)
-          )
-          |> append_debugger_event(
-            "update",
-            recipient,
-            Map.get(meta, :message),
-            Map.get(meta, :message_source)
-          )
           |> append_event("debugger.view_render", %{
             target: source_root_for_target(recipient),
             root: root
