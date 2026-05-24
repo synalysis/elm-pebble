@@ -1,0 +1,97 @@
+defmodule Ide.Debugger.RuntimeArtifactsTest do
+  use ExUnit.Case, async: true
+
+  alias Ide.Debugger.RuntimeArtifacts
+
+  describe "decode_core_ir/1" do
+    test "returns embedded map when present" do
+      core_ir = %{"modules" => [%{"name" => "Main"}]}
+
+      assert RuntimeArtifacts.decode_core_ir(%{"elm_executor_core_ir" => core_ir}) == core_ir
+    end
+
+    test "decodes base64 artifact" do
+      core_ir = %{"modules" => [%{"name" => "Main"}]}
+      encoded = Base.encode64(:erlang.term_to_binary(core_ir))
+
+      assert RuntimeArtifacts.decode_core_ir(%{"elm_executor_core_ir_b64" => encoded}) == core_ir
+    end
+  end
+
+  describe "strip_shell_artifacts/1 and public_model/1" do
+    test "removes debugger shell keys from exported model view" do
+      model = %{
+        "count" => 1,
+        "elm_introspect" => %{"module" => "Main"},
+        "elm_executor_core_ir_b64" => "abc",
+        "vector_resource_indices" => %{"Fog" => 1}
+      }
+
+      assert RuntimeArtifacts.strip_shell_artifacts(model) == %{"count" => 1}
+      assert RuntimeArtifacts.public_model(model) == %{"count" => 1}
+    end
+
+    test "public_model prefers nested runtime_model" do
+      model = %{
+        "elm_introspect" => %{"module" => "Main"},
+        "runtime_model" => %{"weather" => "fog"}
+      }
+
+      assert RuntimeArtifacts.public_model(model) == %{"weather" => "fog"}
+    end
+  end
+
+  describe "normalize_surface/1" do
+    test "migrates legacy shell keys from model into shell" do
+      surface = %{
+        model: %{
+          "count" => 1,
+          "elm_introspect" => %{"module" => "Main"},
+          "elm_executor_core_ir_b64" => "abc"
+        }
+      }
+
+      normalized = RuntimeArtifacts.normalize_surface(surface)
+
+      assert normalized.model == %{"count" => 1}
+      assert normalized.shell["elm_introspect"] == %{"module" => "Main"}
+      assert normalized.shell["elm_executor_core_ir_b64"] == "abc"
+    end
+  end
+
+  describe "merge_shell_artifacts/2" do
+    test "copies shell artifact keys onto base runtime model" do
+      base = %{"count" => 1}
+      shell = %{"count" => 99, "elm_introspect" => %{"module" => "Main"}, "ignored" => true}
+
+      assert RuntimeArtifacts.merge_shell_artifacts(base, shell) == %{
+               "count" => 1,
+               "elm_introspect" => %{"module" => "Main"}
+             }
+    end
+  end
+
+  describe "core_ir_eval_context/2" do
+    test "includes vector resource indices and module name" do
+      model = %{
+        "elm_introspect" => %{"module" => "WeatherFace"},
+        "vector_resource_indices" => %{"Fog" => 3}
+      }
+
+      ctx = RuntimeArtifacts.core_ir_eval_context(model)
+
+      assert ctx.module == "WeatherFace"
+      assert ctx.source_module == "WeatherFace"
+      assert ctx.vector_resource_indices == %{"Fog" => 3}
+    end
+
+    test "merges optional extras" do
+      model = %{"elm_introspect" => %{"module" => "Main"}}
+      weather = %{"condition" => "fog"}
+
+      ctx = RuntimeArtifacts.core_ir_eval_context(model, simulator_weather: weather)
+
+      assert ctx.simulator_weather == weather
+    end
+  end
+end

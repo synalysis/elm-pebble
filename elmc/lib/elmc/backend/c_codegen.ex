@@ -1095,12 +1095,12 @@ defmodule Elmc.Backend.CCodegen do
     end)
   end
 
+  defp put_typed_arg_bindings(env, _arg_bindings, _type), do: env
+
   defp put_var_type(env, name, type) when is_binary(name) and is_binary(type) do
     types = Map.get(env, :__var_types__, %{})
     Map.put(env, :__var_types__, Map.put(types, name, type))
   end
-
-  defp put_typed_arg_bindings(env, _arg_bindings, _type), do: env
 
   defp enum_type?(type) when is_binary(type) do
     Process.get(:elmc_enum_types, MapSet.new())

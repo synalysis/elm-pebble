@@ -5,6 +5,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   import IdeWeb.WatchInteractives
 
   alias Ide.Debugger
+  alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Projects.Project
   alias Ide.Resources.ResourceStore
   alias IdeWeb.WorkspaceLive.DebuggerPreview
@@ -1727,7 +1728,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   @spec debugger_debugger_model(map() | nil) :: map()
   defp debugger_debugger_model(runtime) do
     runtime
-    |> debugger_runtime_model()
+    |> debugger_raw_runtime_model()
+    |> RuntimeArtifacts.public_model()
     |> hide_debugger_model_metadata()
     |> hide_companion_protocol_runtime_metadata(runtime)
   end
@@ -1742,11 +1744,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   end
 
   @spec companion_protocol_placeholder_model?(map(), map() | nil) :: boolean()
-  defp companion_protocol_placeholder_model?(runtime_model, runtime) when is_map(runtime_model) do
-    raw_model = debugger_raw_runtime_model(runtime)
-
+  defp companion_protocol_placeholder_model?(runtime_model, %{} = runtime) when is_map(runtime_model) do
     app_bootstrapped? =
-      is_map(Map.get(raw_model, "elm_introspect") || Map.get(raw_model, :elm_introspect))
+      case RuntimeArtifacts.introspect(runtime) do
+        %{} -> true
+        _ -> false
+      end
 
     not app_bootstrapped? and
       Map.keys(runtime_model)
@@ -1906,7 +1909,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   @spec hide_debugger_model_metadata(map()) :: map()
   defp hide_debugger_model_metadata(model) when is_map(model) do
     atom_keys = Enum.map(@debugger_model_metadata_keys, &String.to_atom/1)
-    Map.drop(model, @debugger_model_metadata_keys ++ atom_keys)
+
+    model
+    |> Map.drop(@debugger_model_metadata_keys ++ atom_keys)
+    |> RuntimeArtifacts.strip_shell_artifacts()
   end
 
   attr(:open, :boolean, required: true)
@@ -3076,45 +3082,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   @spec debugger_path_d(svg_op(), boolean()) :: String.t()
   defp debugger_path_d(op, close_shape?) when is_map(op) and is_boolean(close_shape?) do
-    points = Map.get(op, :points, []) || []
-    offset_x = Map.get(op, :offset_x, 0) || 0
-    offset_y = Map.get(op, :offset_y, 0) || 0
-    rotation = Map.get(op, :rotation, 0) || 0
-    rotation_rad = rotation * 2.0 * :math.pi() / 65_536.0
-    cos_r = :math.cos(rotation_rad)
-    sin_r = :math.sin(rotation_rad)
-
-    transformed =
-      points
-      |> Enum.map(fn
-        [x, y] when is_integer(x) and is_integer(y) ->
-          xr = x * cos_r - y * sin_r
-          yr = x * sin_r + y * cos_r
-          {xr + offset_x, yr + offset_y}
-
-        {x, y} when is_integer(x) and is_integer(y) ->
-          xr = x * cos_r - y * sin_r
-          yr = x * sin_r + y * cos_r
-          {xr + offset_x, yr + offset_y}
-
-        _ ->
-          nil
-      end)
-      |> Enum.reject(&is_nil/1)
-
-    case transformed do
-      [] ->
-        ""
-
-      [{sx, sy} | rest] ->
-        base =
-          "M #{Float.round(sx, 2)} #{Float.round(sy, 2)} " <>
-            Enum.map_join(rest, " ", fn {x, y} ->
-              "L #{Float.round(x, 2)} #{Float.round(y, 2)}"
-            end)
-
-        if close_shape?, do: base <> " Z", else: base
-    end
+    DebuggerPreview.svg_path_d(op, close_shape?)
   end
 
   defp debugger_path_d(_op, _close_shape?), do: ""

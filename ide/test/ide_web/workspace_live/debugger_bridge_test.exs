@@ -119,7 +119,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridgeTest do
       })
 
     assert {:ok, state} = Debugger.snapshot(project.slug, event_limit: 10)
-    assert get_in(state.companion, [:model, "elm_executor_core_ir_b64"])
+    assert get_in(state.companion, [:shell, "elm_executor_core_ir_b64"])
+    refute get_in(state.watch, [:shell, "elm_executor_core_ir_b64"])
+    refute get_in(state.companion, [:model, "elm_executor_core_ir_b64"])
     refute get_in(state.watch, [:model, "elm_executor_core_ir_b64"])
   end
 

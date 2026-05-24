@@ -1,6 +1,7 @@
 defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   @moduledoc false
 
+  alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Projects.Project
   alias Ide.Resources.PdcDecoder
   alias Ide.Resources.ResourceStore
@@ -126,6 +127,48 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   end
 
   def hydrate_vector_svg_ops(rows, _project) when is_list(rows), do: rows
+
+  @spec svg_path_d(svg_op(), boolean()) :: String.t()
+  def svg_path_d(op, close_shape?) when is_map(op) and is_boolean(close_shape?) do
+    points = Map.get(op, :points, []) || Map.get(op, "points", []) || []
+    offset_x = Map.get(op, :offset_x, 0) || Map.get(op, "offset_x", 0) || 0
+    offset_y = Map.get(op, :offset_y, 0) || Map.get(op, "offset_y", 0) || 0
+    rotation = Map.get(op, :rotation, 0) || Map.get(op, "rotation", 0) || 0
+    rotation_rad = rotation * 2.0 * :math.pi() / 65_536.0
+    cos_r = :math.cos(rotation_rad)
+    sin_r = :math.sin(rotation_rad)
+
+    transformed =
+      points
+      |> Enum.map(fn point ->
+        case normalize_point_pair(point) do
+          {:ok, [x, y]} ->
+            xr = x * cos_r - y * sin_r
+            yr = x * sin_r + y * cos_r
+            {xr + offset_x, yr + offset_y}
+
+          :error ->
+            nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    case transformed do
+      [] ->
+        ""
+
+      [{sx, sy} | rest] ->
+        base =
+          "M #{Float.round(sx, 2)} #{Float.round(sy, 2)} " <>
+            Enum.map_join(rest, " ", fn {x, y} ->
+              "L #{Float.round(x, 2)} #{Float.round(y, 2)}"
+            end)
+
+        if close_shape?, do: base <> " Z", else: base
+    end
+  end
+
+  def svg_path_d(_op, _close_shape?), do: ""
 
   @spec hydrate_static_vector(Project.t(), pos_integer(), integer(), integer()) :: [svg_op()]
   defp hydrate_static_vector(project, vector_id, x, y) do
@@ -323,38 +366,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   @spec runtime_model(runtime_input()) :: model_map()
   def runtime_model(runtime) when is_map(runtime) do
     model = raw_runtime_model(runtime)
+    shell = RuntimeArtifacts.shell_map(runtime)
     runtime_model = Map.get(model, "runtime_model") || Map.get(model, :runtime_model)
 
     base =
       if is_map(runtime_model) and map_size(runtime_model) > 0 do
         runtime_model
       else
-        model
+        RuntimeArtifacts.strip_shell_artifacts(model)
       end
 
-    merge_preview_artifacts(base, model)
+    RuntimeArtifacts.merge_shell_artifacts(base, shell)
   end
-
-  @spec merge_preview_artifacts(model_map(), model_map()) :: model_map()
-  defp merge_preview_artifacts(base, shell) when is_map(base) and is_map(shell) do
-    Enum.reduce(
-      [
-        "vector_resource_indices",
-        "elm_introspect",
-        "elm_executor_core_ir",
-        "elm_executor_core_ir_b64"
-      ],
-      base,
-      fn key, acc ->
-        case Map.get(shell, key) do
-          value when not is_nil(value) -> Map.put(acc, key, value)
-          _ -> acc
-        end
-      end
-    )
-  end
-
-  defp merge_preview_artifacts(base, _shell), do: base
 
   def runtime_model(_runtime), do: %{}
 
@@ -2418,7 +2441,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     ElmExecutor.Runtime.SemanticExecutor.evaluate_view_tree_value(
       node,
       model,
-      vector_eval_context(model)
+      RuntimeArtifacts.core_ir_eval_context(model)
     )
   end
 
@@ -2469,7 +2492,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
       is_map(evaluated) ->
         case ElmExecutor.Runtime.CoreIREvaluator.vector_resource_id_from_value(
                evaluated,
-               vector_eval_context(model)
+               RuntimeArtifacts.core_ir_eval_context(model)
              ) do
           {:ok, id} -> id
           :error -> nil
@@ -2484,69 +2507,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
 
       true ->
         nil
-    end
-  end
-
-  @spec vector_eval_context(model_map()) :: map()
-  defp vector_eval_context(model) when is_map(model) do
-    module =
-      model
-      |> Map.get("elm_introspect", %{})
-      |> Map.get("module")
-      |> case do
-        name when is_binary(name) and name != "" -> name
-        _ -> "Main"
-      end
-
-    indices =
-      Map.get(model, "vector_resource_indices") ||
-        get_in(model, ["runtime_model", "vector_resource_indices"]) ||
-        %{}
-
-    base =
-      case decode_core_ir_artifact(model) do
-        core_ir when is_map(core_ir) ->
-          %{
-            functions: ElmExecutor.Runtime.CoreIREvaluator.index_functions(core_ir),
-            record_aliases: ElmExecutor.Runtime.CoreIREvaluator.index_record_aliases(core_ir),
-            constructor_tags: ElmExecutor.Runtime.CoreIREvaluator.index_constructor_tags(core_ir),
-            module: module,
-            source_module: module
-          }
-
-        _ ->
-          %{module: module, source_module: module}
-      end
-
-    if is_map(indices) and map_size(indices) > 0 do
-      Map.put(base, :vector_resource_indices, indices)
-    else
-      base
-    end
-  end
-
-  defp vector_eval_context(_model), do: %{}
-
-  @spec decode_core_ir_artifact(model_map()) :: map() | nil
-  defp decode_core_ir_artifact(model) when is_map(model) do
-    case Map.get(model, "elm_executor_core_ir") do
-      value when is_map(value) ->
-        value
-
-      _ ->
-        case Map.get(model, "elm_executor_core_ir_b64") do
-          encoded when is_binary(encoded) and encoded != "" ->
-            with {:ok, binary} <- Base.decode64(encoded),
-                 value <- :erlang.binary_to_term(binary, [:safe]),
-                 true <- is_map(value) do
-              value
-            else
-              _ -> nil
-            end
-
-          _ ->
-            nil
-        end
     end
   end
 

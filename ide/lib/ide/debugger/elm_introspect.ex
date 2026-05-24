@@ -1109,6 +1109,13 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp qualified_call_targets(_), do: []
 
+  @spec callback_preferred_over_result_mapper?(String.t() | nil) :: boolean()
+  defp callback_preferred_over_result_mapper?(ctor) when is_binary(ctor) do
+    ctor not in ["Current", "Forecast"]
+  end
+
+  defp callback_preferred_over_result_mapper?(_ctor), do: false
+
   @spec callback_constructor_from_expr(Types.ast_expr(), Types.binding_map(), map(), non_neg_integer()) :: String.t() | nil
   defp callback_constructor_from_expr(_expr, _bindings, _seen, depth) when depth > 10, do: nil
 
@@ -1213,13 +1220,6 @@ defmodule Ide.Debugger.ElmIntrospect do
         nil
     end
   end
-
-  @spec callback_preferred_over_result_mapper?(String.t() | nil) :: boolean()
-  defp callback_preferred_over_result_mapper?(ctor) when is_binary(ctor) do
-    ctor not in ["Current", "Forecast"]
-  end
-
-  defp callback_preferred_over_result_mapper?(_ctor), do: false
 
   defp callback_constructor_from_expr(%{op: :list_literal, items: items}, bindings, seen, depth)
        when is_list(items) do

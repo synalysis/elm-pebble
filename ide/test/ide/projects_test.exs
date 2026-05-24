@@ -1309,10 +1309,12 @@ defmodule Ide.ProjectsTest do
                source_root: "watch"
              })
 
+    companion_shell = get_in(reloaded, [:companion, :shell]) || %{}
     companion_model = get_in(reloaded, [:companion, :model]) || %{}
     companion_runtime = Map.get(companion_model, "runtime_model") || %{}
 
-    assert get_in(companion_model, ["elm_introspect", "module"]) == "CompanionApp"
+    assert get_in(companion_shell, ["elm_introspect", "module"]) == "CompanionApp"
+    refute Map.has_key?(companion_model, "elm_introspect")
     assert %{"ctor" => "Just", "args" => [settings]} = companion_runtime["settings"]
     assert is_map(settings)
     refute Map.has_key?(settings, "$var")
@@ -1345,10 +1347,12 @@ defmodule Ide.ProjectsTest do
                source_root: "phone"
              })
 
+    companion_shell = get_in(state, [:companion, :shell]) || %{}
     companion_model = get_in(state, [:companion, :model]) || %{}
     companion_runtime = Map.get(companion_model, "runtime_model") || %{}
 
-    assert get_in(companion_model, ["elm_introspect", "module"]) == "CompanionApp"
+    assert get_in(companion_shell, ["elm_introspect", "module"]) == "CompanionApp"
+    refute Map.has_key?(companion_model, "elm_introspect")
     assert companion_runtime["figure"] == 0
     assert companion_runtime["rotationsSinceDownload"] == 0
     assert is_list(companion_runtime["names"]) or is_binary(companion_runtime["names"])

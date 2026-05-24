@@ -602,7 +602,8 @@ defmodule Ide.DebuggerTest do
     assert String.length(get_in(st, [:watch, :model, "runtime_model_sha256"])) == 64
     assert is_binary(get_in(st, [:watch, :model, "runtime_view_tree_sha256"]))
     assert String.length(get_in(st, [:watch, :model, "runtime_view_tree_sha256"])) == 64
-    assert get_in(st, [:watch, :model, "elm_introspect", "module"]) == "Snap"
+    assert get_in(st, [:watch, :shell, "elm_introspect", "module"]) == "Snap"
+    refute get_in(st, [:watch, :model, "elm_introspect"])
     assert get_in(st, [:watch, :view_tree, "type"]) == "Window"
 
     assert Enum.any?(st.events, &(&1.type == "debugger.elm_introspect"))
@@ -698,8 +699,9 @@ defmodule Ide.DebuggerTest do
                source_root: "phone"
              })
 
-    assert get_in(st, [:companion, :model, "elm_introspect", "module"]) == "ProtoSnap"
+    assert get_in(st, [:companion, :shell, "elm_introspect", "module"]) == "ProtoSnap"
     assert get_in(st, [:companion, :view_tree, "type"]) == "CompanionRoot"
+    refute get_in(st, [:watch, :shell, "elm_introspect"])
     refute get_in(st, [:watch, :model, "elm_introspect"])
   end
 
@@ -835,7 +837,7 @@ defmodule Ide.DebuggerTest do
                source_root: "phone"
              })
 
-    assert get_in(st, [:companion, :model, "elm_introspect", "module"]) == "PhoneSnap"
+    assert get_in(st, [:companion, :shell, "elm_introspect", "module"]) == "PhoneSnap"
     assert get_in(st, [:companion, :view_tree, "type"]) == "CompanionRoot"
   end
 
@@ -3690,7 +3692,9 @@ defmodule Ide.DebuggerTest do
              })
 
     assert {:ok, st_after_companion} = Debugger.snapshot(slug, event_limit: 10)
-    assert get_in(st_after_companion.companion, [:model, "elm_executor_core_ir_b64"])
+    assert get_in(st_after_companion.companion, [:shell, "elm_executor_core_ir_b64"])
+    refute get_in(st_after_companion.watch, [:shell, "elm_executor_core_ir_b64"])
+    refute get_in(st_after_companion.companion, [:model, "elm_executor_core_ir_b64"])
     refute get_in(st_after_companion.watch, [:model, "elm_executor_core_ir_b64"])
 
     assert {:ok, st_after_watch} =
@@ -3702,10 +3706,11 @@ defmodule Ide.DebuggerTest do
                elm_executor_metadata: %{"target" => "watch"}
              })
 
-    assert get_in(st_after_watch.watch, [:model, "elm_executor_core_ir_b64"])
+    assert get_in(st_after_watch.watch, [:shell, "elm_executor_core_ir_b64"])
+    refute get_in(st_after_watch.watch, [:model, "elm_executor_core_ir_b64"])
 
-    assert get_in(st_after_watch.companion, [:model, "elm_executor_core_ir_b64"]) ==
-             get_in(st_after_companion.companion, [:model, "elm_executor_core_ir_b64"])
+    assert get_in(st_after_watch.companion, [:shell, "elm_executor_core_ir_b64"]) ==
+             get_in(st_after_companion.companion, [:shell, "elm_executor_core_ir_b64"])
   end
 
   test "ingest_elmc_manifest merges model fields and appends event when running" do
@@ -3815,7 +3820,8 @@ defmodule Ide.DebuggerTest do
              })
 
     assert {:ok, stepped} = Debugger.step(slug, %{target: "phone", message: "Tick", count: 1})
-    assert get_in(reloaded, [:companion, :model, "elm_introspect", "module"]) == "CompanionSnap"
+    assert get_in(reloaded, [:companion, :shell, "elm_introspect", "module"]) == "CompanionSnap"
+    refute get_in(reloaded, [:companion, :model, "elm_introspect"])
     assert String.starts_with?(stepped.companion.last_message, "WeatherReceived ")
     assert get_in(stepped.companion.model, ["runtime_model", "lastResponse"]) == 1
 

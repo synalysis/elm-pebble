@@ -4,6 +4,7 @@ defmodule Ide.SimulatorCapabilities do
   """
 
   alias Ide.Debugger.ElmIntrospect
+  alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.SimulatorCapabilities.Detect
@@ -82,8 +83,18 @@ defmodule Ide.SimulatorCapabilities do
   defp runtime_introspect(_state, _surface), do: nil
 
   @spec model_introspect(map()) :: map() | nil
-  defp model_introspect(%{"model" => model}) when is_map(model), do: Map.get(model, "elm_introspect")
-  defp model_introspect(%{model: model}) when is_map(model), do: Map.get(model, "elm_introspect")
+  defp model_introspect(%{"model" => _} = surface) when is_map(surface),
+    do: RuntimeArtifacts.introspect(surface)
+
+  defp model_introspect(%{model: _} = surface) when is_map(surface),
+    do: RuntimeArtifacts.introspect(surface)
+
+  defp model_introspect(%{"shell" => _} = surface) when is_map(surface),
+    do: RuntimeArtifacts.introspect(surface)
+
+  defp model_introspect(%{shell: _} = surface) when is_map(surface),
+    do: RuntimeArtifacts.introspect(surface)
+
   defp model_introspect(model) when is_map(model), do: Map.get(model, "elm_introspect")
 
   @spec workspace_root(Project.t()) :: String.t() | nil

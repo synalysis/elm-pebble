@@ -4,7 +4,8 @@ defmodule Ide.Mcp.WeatherWatchfaceShowcaseTest do
   alias Ide.Debugger
   alias Ide.Mcp.Tools
   alias Ide.Projects
-  alias Ide.Resources.ResourceStore
+  alias Ide.Resources.{PdcDecoder, ResourceStore}
+  alias IdeWeb.WorkspaceLive.DebuggerPreview
 
   test "debugger render_tree includes vector draw ops for weather watchface runtime output" do
     slug = "weather-render-#{System.unique_integer([:positive])}"
@@ -151,6 +152,55 @@ defmodule Ide.Mcp.WeatherWatchfaceShowcaseTest do
 
     assert Enum.any?(view_output, fn row ->
              row["kind"] == "vector_at" and row["vector_id"] == 3
+           end)
+
+    fog_vector = Enum.find(view_output, &(&1["kind"] == "vector_at" and &1["vector_id"] == 3))
+
+    hydrated =
+      DebuggerPreview.hydrate_vector_svg_ops(
+        [
+          %{
+            kind: :vector_at,
+            vector_id: fog_vector["vector_id"],
+            x: fog_vector["x"],
+            y: fog_vector["y"]
+          }
+        ],
+        project
+      )
+      |> Enum.filter(&(&1.kind == :path_filled))
+
+    assert length(hydrated) == 3
+
+    assert Enum.all?(hydrated, fn op ->
+             path = DebuggerPreview.svg_path_d(op, true)
+             path != "" and String.starts_with?(path, "M ")
+           end)
+  end
+
+  test "hydrated weather vectors render path ops with map-shaped points" do
+    slug = "weather-path-points-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Weather Path Points",
+               "slug" => slug,
+               "target_type" => "watchface",
+               "template" => "watchface-weather-animated"
+             })
+
+    {:ok, path} = ResourceStore.vector_file_path_by_id(project, 1)
+    bytes = File.read!(path)
+    {:ok, image} = PdcDecoder.decode(bytes)
+    ops = PdcDecoder.to_debugger_ops(image, 0, 0)
+
+    path_ops = Enum.filter(ops, &(&1.kind in [:path_filled, :path_outline_open]))
+
+    assert path_ops != []
+
+    assert Enum.all?(path_ops, fn op ->
+             path = DebuggerPreview.svg_path_d(op, op.kind == :path_filled)
+             path != "" and String.starts_with?(path, "M ")
            end)
   end
 end
