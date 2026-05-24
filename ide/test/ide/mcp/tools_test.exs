@@ -270,12 +270,22 @@ defmodule Ide.Mcp.ToolsTest do
     :ok
   end
 
+  test "templates.list returns catalog entries from ProjectTemplates" do
+    assert {:ok, %{templates: templates}} = Tools.call("templates.list", %{}, [:read])
+    assert length(templates) == length(Ide.ProjectTemplates.template_keys())
+
+    assert Enum.any?(templates, fn entry ->
+             entry.key == "companion-demo-geolocation" and entry.target_type == "watchface"
+           end)
+  end
+
   test "lists tools for provided capability scope" do
     tool_defs = Tools.tool_definitions([:read, :build])
     tool_names = Enum.map(tool_defs, & &1.name)
 
     assert Enum.all?(tool_names, &Regex.match?(~r/^[A-Za-z0-9_]+$/, &1))
     assert "projects_list" in tool_names
+    assert "templates_list" in tool_names
     assert "projects_settings" in tool_names
     assert "files_read" in tool_names
     assert "files_stat" in tool_names

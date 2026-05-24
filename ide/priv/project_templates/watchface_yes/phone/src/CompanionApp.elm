@@ -88,7 +88,7 @@ sendSnapshot _ =
 
 requestCurrentLocation : Cmd Msg
 requestCurrentLocation =
-    Geolocation.currentPosition
+    Geolocation.currentPosition CurrentPosition
 
 
 sendLocationData : LocationSnapshot -> Cmd Msg
@@ -185,7 +185,7 @@ sign value =
 
 
 calcSunriseSunset : LocationSnapshot -> Int -> Time.Posix -> SunSnapshot
-calcSunriseSunset location tzOffsetMin _now =
+calcSunriseSunset location tzOffsetMin _ =
     { sunriseMin = sunriseMinute location tzOffsetMin
     , sunsetMin = sunsetMinute location tzOffsetMin
     , mode = SunCycle

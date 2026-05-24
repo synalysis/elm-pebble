@@ -17,6 +17,8 @@ defmodule Ide.ProjectCapabilities do
     app_focus
   )
 
+  @package_capabilities ~w(location configurable health)
+
   @doc """
   Returns true when the companion app exposes preferences or configuration UI.
   """
@@ -33,6 +35,19 @@ defmodule Ide.ProjectCapabilities do
       true -> true
       _ -> false
     end
+  end
+
+  @doc """
+  Returns Pebble package metadata capabilities inferred from Elm API usage.
+  """
+  @spec package_capabilities(String.t()) :: [String.t()]
+  def package_capabilities(workspace_root) when is_binary(workspace_root) do
+    workspace_root
+    |> infer_workspace()
+    |> MapSet.intersection(MapSet.new(@package_capabilities))
+    |> maybe_add_preferences_configurable(workspace_root)
+    |> MapSet.to_list()
+    |> Enum.sort()
   end
 
   @doc """
@@ -83,6 +98,18 @@ defmodule Ide.ProjectCapabilities do
 
       _ ->
         MapSet.new()
+    end
+  end
+
+  @spec maybe_add_preferences_configurable(MapSet.t(String.t()), String.t()) ::
+          MapSet.t(String.t())
+  defp maybe_add_preferences_configurable(caps, workspace_root) do
+    phone_root = Path.join(workspace_root, "phone")
+
+    if preferences_schema?(phone_root) do
+      MapSet.put(caps, "configurable")
+    else
+      caps
     end
   end
 

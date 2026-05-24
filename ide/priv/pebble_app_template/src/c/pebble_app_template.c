@@ -283,11 +283,13 @@ typedef struct {
   uint8_t cstring_kind;
 } ElmcInboxTupleSnapshot;
 
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static ElmcInboxTupleSnapshot s_inbox_snapshots[ELMC_INBOX_MAX_TUPLES];
 static int s_inbox_snapshot_count = 0;
 static char s_inbox_cstring_snapshot[ELMC_INBOX_STRING_MAX];
 static uint8_t s_inbox_tuple_wire[ELMC_INBOX_MAX_TUPLES][ELMC_INBOX_TUPLE_WIRE_BYTES];
 static uint8_t s_inbox_cstring_tuple_wire[ELMC_INBOX_STRING_MAX + 8];
+#endif
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static ElmcInboxTupleSnapshot s_companion_pending[ELMC_INBOX_MAX_TUPLES];
 static uint8_t s_companion_pending_wire[ELMC_INBOX_MAX_TUPLES][ELMC_INBOX_TUPLE_WIRE_BYTES];
@@ -376,8 +378,10 @@ static int64_t monotonic_ms(void) {
 }
 
 static void render_model(void);
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static void schedule_render_model(void);
 static void render_coalesce_callback(void *data);
+#endif
 static void apply_pending_cmd(void);
 static void startup_cmd_callback(void *data);
 static ElmcValue *build_launch_context(AppLaunchReason launch);
@@ -477,10 +481,14 @@ static HealthMetric health_metric_from_code(int64_t value) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM || ELMC_PEBBLE_FEATURE_CMD_HEALTH_ACCESSIBLE
+#ifdef PBL_HEALTH
 static time_t health_time_from_seconds(int64_t seconds) {
   if (seconds < 0) return (time_t)0;
   return (time_t)seconds;
 }
+#endif
+#endif
 #endif
 
 #if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK
@@ -893,6 +901,21 @@ static void apply_pending_cmd(void) {
       break;
     }
 #endif
+#if ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUPPORTED
+    case ELMC_PEBBLE_CMD_HEALTH_SUPPORTED: {
+      bool supported = false;
+#ifdef PBL_HEALTH
+      supported = true;
+#endif
+      int rc = cmd.p0 > 0 ? elmc_pebble_dispatch_tag_bool(&s_elm_app, cmd.p0, supported) : -6;
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd health_supported=%d rc=%d", supported ? 1 : 0, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
+      }
+      break;
+    }
+#endif
 #if ELMC_PEBBLE_FEATURE_CMD_HEALTH_VALUE
     case ELMC_PEBBLE_CMD_HEALTH_VALUE: {
       int64_t value = 0;
@@ -1068,9 +1091,18 @@ static void apply_pending_cmd(void) {
 #if ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN
     case ELMC_PEBBLE_CMD_VIBES_CUSTOM_PATTERN: {
       int32_t segments[64];
+      uint32_t durations[64];
       int count = parse_int_list(cmd.text, segments, 64);
       if (count > 0) {
-        vibes_enqueue_custom_pattern(segments, count);
+        for (int i = 0; i < count; i++) {
+          int32_t value = segments[i];
+          durations[i] = value < 0 ? 0U : (uint32_t)value;
+        }
+        VibePattern pattern = {
+          .durations = durations,
+          .num_segments = (uint32_t)count,
+        };
+        vibes_enqueue_custom_pattern(pattern);
       }
       APP_LOG(APP_LOG_LEVEL_INFO, "cmd vibes_custom_pattern count=%d", count);
       break;
@@ -1119,7 +1151,7 @@ static void apply_pending_cmd(void) {
 #ifdef PBL_COMPASS
       CompassHeadingData heading;
       CompassStatus status = compass_service_peek(&heading);
-      if (status == CompassStatusAvailable) {
+      if (status == CompassStatusCalibrated || status == CompassStatusCalibrating) {
         degrees = (double)heading.true_heading * 360.0 / TRIG_MAX_ANGLE;
         is_valid = true;
       } else if (status == CompassStatusDataInvalid) {
@@ -2040,6 +2072,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   ELMC_PEBBLE_TRACE_EXIT("draw_update_proc");
 }
 
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static void render_coalesce_callback(void *data) {
   ELMC_PEBBLE_TRACE_ENTER("render_coalesce_callback");
   (void)data;
@@ -2054,6 +2087,7 @@ static void schedule_render_model(void) {
   }
   s_render_coalesce_timer = app_timer_register(16, render_coalesce_callback, NULL);
 }
+#endif
 
 static void render_model(void) {
   ELMC_PEBBLE_TRACE_ENTER("render_model");
@@ -2081,6 +2115,7 @@ static void render_model(void) {
   ELMC_PEBBLE_TRACE_EXIT("render_model");
 }
 
+#if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && (ELMC_PEBBLE_FEATURE_TICK_EVENTS || ELMC_PEBBLE_FEATURE_HOUR_EVENTS || ELMC_PEBBLE_FEATURE_MINUTE_EVENTS || ELMC_PEBBLE_FEATURE_DAY_EVENTS || ELMC_PEBBLE_FEATURE_MONTH_EVENTS || ELMC_PEBBLE_FEATURE_YEAR_EVENTS)
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   ELMC_PEBBLE_TRACE_ENTER("tick_handler");
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
@@ -2149,6 +2184,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 #endif
   ELMC_PEBBLE_TRACE_EXIT("tick_handler");
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
 static bool send_companion_request(int request_tag, int request_value) {
@@ -2198,6 +2234,7 @@ static void companion_resync_callback(void *data) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static bool debug_storage_tuple_int(Tuple *tuple, int32_t *out) {
   if (!tuple || !out) {
     return false;
@@ -2328,12 +2365,14 @@ static Tuple *inbox_find_tuple(uint32_t key) {
   return NULL;
 }
 
+#if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK || ELMC_PEBBLE_FEATURE_DICTATION_EVENTS || ELMC_PEBBLE_FEATURE_CMD_DICTATION_START || ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static Tuple *inbox_tuple_at(int index) {
   if (index < 0 || index >= s_inbox_snapshot_count) {
     return NULL;
   }
   return elmc_inbox_materialize_tuple(&s_inbox_snapshots[index], s_inbox_tuple_wire[index]);
 }
+#endif
 
 static bool handle_debug_storage(void) {
   ELMC_PEBBLE_TRACE_ENTER("handle_debug_storage");
@@ -2438,27 +2477,85 @@ static bool handle_debug_storage(void) {
   ELMC_PEBBLE_TRACE_EXIT("handle_debug_storage");
   return false;
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static void companion_pending_clear(void);
 #endif
 
-static bool companion_simulator_weather_tuple(const Tuple *tuple) {
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
+static bool companion_simulator_weather_tuple(const Tuple *tuple) {
+#if ELMC_PEBBLE_FEATURE_INBOX_EVENTS && defined(ELMC_COMPANION_SIMULATOR_WEATHER) && ELMC_COMPANION_SIMULATOR_WEATHER
+  static int32_t s_pending_temp_c = 0;
+  static int32_t s_pending_condition_wire = 0;
+  static bool s_has_pending_temp = false;
+  static bool s_has_pending_condition = false;
+
   int32_t wire_value = 0;
+  CompanionProtocolPhoneToWatchMessage message = {0};
+  bool ready_to_dispatch = false;
+
   if (!tuple || !debug_storage_tuple_int((Tuple *)tuple, &wire_value)) {
     return false;
   }
 
-  CompanionProtocolPhoneToWatchMessage message = {0};
+#if defined(ELMC_COMPANION_SIMULATOR_WEATHER_MODE_UNIFIED) && ELMC_COMPANION_SIMULATOR_WEATHER_MODE_UNIFIED
+  if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_WEATHER_TEMPERATURE_C) {
+    s_pending_temp_c = wire_value;
+    s_has_pending_temp = true;
+  } else if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_WEATHER_CONDITION_WIRE) {
+    s_pending_condition_wire = wire_value;
+    s_has_pending_condition = true;
+  } else {
+    return false;
+  }
+
+  if (!s_has_pending_temp || !s_has_pending_condition) {
+    return true;
+  }
+
+  message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_WEATHER;
+  message.int_fields[0] = s_pending_temp_c;
+  message.int_fields[1] = s_pending_condition_wire;
+  s_has_pending_temp = false;
+  s_has_pending_condition = false;
+  ready_to_dispatch = true;
+#elif defined(ELMC_COMPANION_SIMULATOR_WEATHER_MODE_LEGACY_SPLIT) && ELMC_COMPANION_SIMULATOR_WEATHER_MODE_LEGACY_SPLIT
   if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_WEATHER_TEMPERATURE_C) {
     message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE;
-    message.int_fields[0] = 1; /* Celsius wire code */
+#if ELMC_COMPANION_PROTOCOL_HAS_UNION_PAYLOADS
+    message.int_fields[0] = 1;
     message.union_value_fields[0] = wire_value;
+#else
+    message.int_fields[0] = wire_value;
+#endif
+    ready_to_dispatch = true;
   } else if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_WEATHER_CONDITION_WIRE) {
     message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_CONDITION;
     message.int_fields[0] = wire_value;
+    ready_to_dispatch = true;
   } else {
+    return false;
+  }
+#elif defined(ELMC_COMPANION_SIMULATOR_WEATHER_MODE_TEMPERATURE_ONLY) && ELMC_COMPANION_SIMULATOR_WEATHER_MODE_TEMPERATURE_ONLY
+  if (tuple->key != ELMC_DEBUG_SIMULATOR_KEY_WEATHER_TEMPERATURE_C) {
+    return false;
+  }
+
+  message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE;
+#if ELMC_COMPANION_PROTOCOL_HAS_UNION_PAYLOADS
+  message.int_fields[0] = 1;
+  message.union_value_fields[0] = wire_value;
+#else
+  message.int_fields[0] = wire_value;
+#endif
+  ready_to_dispatch = true;
+#else
+  (void)wire_value;
+  return false;
+#endif
+
+  if (!ready_to_dispatch) {
     return false;
   }
 
@@ -2478,6 +2575,7 @@ static bool companion_simulator_weather_tuple(const Tuple *tuple) {
   return false;
 #endif
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static bool companion_decode_and_dispatch_snapshots(const ElmcInboxTupleSnapshot *snapshots, uint8_t wire[][ELMC_INBOX_TUPLE_WIRE_BYTES], int tuple_count) {
@@ -2688,6 +2786,7 @@ static void companion_pending_append(void) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static bool handle_debug_simulator_settings(void) {
 #if ELMC_PEBBLE_FEATURE_COMPASS_EVENTS || ELMC_PEBBLE_FEATURE_CMD_COMPASS_PEEK || ELMC_PEBBLE_FEATURE_DICTATION_EVENTS || ELMC_PEBBLE_FEATURE_CMD_DICTATION_START || ELMC_PEBBLE_FEATURE_CMD_DICTATION_STOP || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
   bool handled = false;
@@ -2719,11 +2818,12 @@ static bool handle_debug_simulator_settings(void) {
 
   return handled;
 #else
-  (void)0;
   return false;
 #endif
 }
+#endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   ELMC_PEBBLE_TRACE_ENTER("inbox_received_handler");
   // #region agent log
@@ -2791,6 +2891,7 @@ static void outbox_failed_handler(DictionaryIterator *iter, AppMessageResult rea
   APP_LOG(APP_LOG_LEVEL_WARNING, "outbox failed: %d", reason);
   ELMC_PEBBLE_TRACE_EXIT("outbox_failed_handler");
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_BUTTON_EVENTS || ELMC_PEBBLE_FEATURE_RAW_BUTTON_EVENTS
 static void note_user_interaction(void) {
@@ -3090,7 +3191,8 @@ static void compass_handler(CompassHeadingData heading) {
   ELMC_PEBBLE_TRACE_ENTER("compass_handler");
   double degrees = simulator_compass_heading_degrees();
   bool is_valid = simulator_compass_heading_is_valid();
-  if (heading.compass_status == CompassStatusAvailable) {
+  if (heading.compass_status == CompassStatusCalibrated ||
+      heading.compass_status == CompassStatusCalibrating) {
     degrees = (double)heading.true_heading * 360.0 / TRIG_MAX_ANGLE;
     is_valid = true;
   } else if (heading.compass_status == CompassStatusDataInvalid) {
@@ -3375,9 +3477,9 @@ static void init(void) {
 #endif
 #endif
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_APP_FOCUS_EVENTS
-    app_focus_service_subscribe((AppFocusHandlers){
+    app_focus_service_subscribe_handlers((AppFocusHandlers){
+        .will_focus = app_focus_handler,
         .did_focus = app_focus_handler,
-        .will_blur = app_focus_handler,
     });
 #endif
 #if ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS && ELMC_PEBBLE_FEATURE_COMPASS_EVENTS

@@ -105,8 +105,10 @@ defmodule Ide.Debugger.ElmIntrospect do
       |> annotate_view_tree_sources(api_metadata)
 
     view_source_locations = view_output_source_locations(api_metadata)
+    view_return_type = function_return_type(find_function_declaration(mod, "view"))
+    function_types = function_type_index(mod, api_metadata)
 
-    update_params = function_param_names(find_function_definition(mod, "update"))
+    update_params = function_param_names(find_function_declaration(mod, "update"))
     update_e = find_update_expr(mod)
     {update_branches, update_case_subject} = update_case_analysis(update_e, update_params)
 
@@ -182,10 +184,76 @@ defmodule Ide.Debugger.ElmIntrospect do
         "ports" => ports,
         "port_module" => port_module,
         "view_tree" => view_tree,
-        "view_source_locations" => view_source_locations
+        "view_source_locations" => view_source_locations,
+        "view_return_type" => view_return_type,
+        "function_types" => function_types
       }
     }
   end
+
+  @doc """
+  Returns true when a parser-derived view tree root still needs runtime Core IR evaluation.
+  """
+  @spec parser_expression_view?(map()) :: boolean()
+  def parser_expression_view?(introspect) when is_map(introspect) do
+    ei = Map.get(introspect, "elm_introspect") || introspect
+    root = Map.get(ei, "view_tree") || %{}
+    type = Map.get(root, "type")
+
+    cond do
+      runtime_drawable_view_root_type?(type) ->
+        false
+
+      ui_node_type_signature?(Map.get(ei, "view_return_type")) ->
+        true
+
+      root_call_returns_ui_node?(root, ei) ->
+        true
+
+      is_binary(type) and parser_expression_combinator_type?(type) ->
+        true
+
+      true ->
+        false
+    end
+  end
+
+  def parser_expression_view?(_), do: false
+
+  @doc false
+  @spec runtime_drawable_view_root_type?(String.t() | nil) :: boolean()
+  def runtime_drawable_view_root_type?(type) when type in ["windowStack", "WindowStack"], do: true
+  def runtime_drawable_view_root_type?(_), do: false
+
+  @doc false
+  @spec ui_node_type_signature?(String.t() | nil) :: boolean()
+  def ui_node_type_signature?(type) when is_binary(type) do
+    type
+    |> String.replace(~r/\s+/, "")
+    |> String.downcase()
+    |> String.ends_with?("uinode")
+  end
+
+  def ui_node_type_signature?(_), do: false
+
+  @doc false
+  @spec parser_expression_combinator_type?(String.t()) :: boolean()
+  def parser_expression_combinator_type?(type)
+      when type in [
+             "append",
+             "CanvasLayer",
+             "List",
+             "tuple2",
+             "call",
+             "expr",
+             "var",
+             "withDefault",
+             "if",
+             "case"
+           ],
+      do: true
+
+  def parser_expression_combinator_type?(_), do: false
 
   @spec map_expr(Types.ast_expr() | nil, (Types.ast_expr() -> term()), term()) :: term()
   defp map_expr(nil, _fun, fallback), do: fallback
@@ -355,6 +423,164 @@ defmodule Ide.Debugger.ElmIntrospect do
   defp find_function_definition(%Module{declarations: decls}, name) when is_binary(name) do
     Enum.find(decls, fn decl ->
       Map.get(decl, :kind) == :function_definition and Map.get(decl, :name) == name
+    end)
+  end
+
+  @spec find_function_declaration(Types.module_ref(), String.t()) :: Types.ast_declaration() | nil
+  defp find_function_declaration(%Module{declarations: decls}, name) when is_binary(name) do
+    Enum.find_value([:function_definition, :function_signature], fn kind ->
+      Enum.find(decls, fn decl ->
+        Map.get(decl, :kind) == kind and Map.get(decl, :name) == name
+      end)
+    end)
+  end
+
+  @spec function_return_type(Types.ast_declaration() | nil) :: String.t() | nil
+  defp function_return_type(%{type: type}) when is_binary(type), do: return_type_from_signature(type)
+  defp function_return_type(_), do: nil
+
+  @spec return_type_from_signature(String.t()) :: String.t()
+  defp return_type_from_signature(type) when is_binary(type) do
+    type
+    |> String.split("->")
+    |> List.last()
+    |> to_string()
+    |> String.trim()
+  end
+
+  @spec function_type_index(Module.t(), map()) :: map()
+  defp function_type_index(%Module{} = mod, _api_metadata) do
+    roots = source_roots_for_module(mod)
+
+    imported =
+      mod
+      |> then(fn m -> normalize_import_entries(Map.get(m, :import_entries)) end)
+      |> Enum.map(&Map.get(&1, "module"))
+      |> Enum.filter(&is_binary/1)
+      |> Enum.uniq()
+      |> Enum.reduce(%{}, fn module_name, acc ->
+        case parse_imported_module(module_name, roots) do
+          {:ok, imported} -> Map.merge(acc, module_function_types(imported, module_name))
+          _ -> acc
+        end
+      end)
+
+    Map.merge(imported, module_function_types(mod, mod.name))
+  end
+
+  @spec module_function_types(Module.t(), String.t()) :: map()
+  defp module_function_types(%Module{declarations: declarations}, module_name)
+       when is_binary(module_name) and is_list(declarations) do
+    declarations
+    |> Enum.reduce(%{}, fn decl, acc ->
+      case decl do
+        %{kind: kind, name: name, type: type}
+        when kind in [:function_definition, :function_signature] and is_binary(name) and
+               is_binary(type) ->
+          args = function_param_names(decl)
+          arity = function_arity_from_declaration(args, type)
+          key = function_type_key(module_name, name, arity)
+          Map.put(acc, key, type)
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
+  defp module_function_types(_module, _module_name), do: %{}
+
+  @spec function_type_key(String.t(), String.t(), non_neg_integer()) :: String.t()
+  defp function_type_key(module_name, function_name, arity)
+       when is_binary(module_name) and is_binary(function_name) and is_integer(arity) do
+    module_name <> "|" <> function_name <> "|" <> Integer.to_string(arity)
+  end
+
+  @spec function_arity_from_declaration([String.t()], String.t()) :: non_neg_integer()
+  defp function_arity_from_declaration(args, type) when is_list(args) and is_binary(type) do
+    case args do
+      [_ | _] = values -> length(values)
+      _ -> arity_from_type_signature(type)
+    end
+  end
+
+  @spec arity_from_type_signature(String.t()) :: non_neg_integer()
+  defp arity_from_type_signature(type) when is_binary(type) do
+    type
+    |> String.split("->")
+    |> length()
+    |> Kernel.-(1)
+    |> max(0)
+  end
+
+  @spec root_call_returns_ui_node?(map(), map()) :: boolean()
+  defp root_call_returns_ui_node?(root, ei) when is_map(root) and is_map(ei) do
+    with target when is_binary(target) <- Map.get(root, "qualified_target"),
+         types when is_map(types) <- Map.get(ei, "function_types"),
+         {module_name, function_name} <-
+           resolve_source_call(target, introspect_call_resolution(ei)),
+         key <- function_type_key(module_name, function_name, call_tree_arity(root)),
+         type when is_binary(type) <-
+           Map.get(types, key) || find_function_type_signature(types, module_name, function_name) do
+      ui_node_type_signature?(return_type_from_signature(type))
+    else
+      _ -> false
+    end
+  end
+
+  defp root_call_returns_ui_node?(_, _), do: false
+
+  @spec introspect_call_resolution(map()) :: map()
+  defp introspect_call_resolution(ei) when is_map(ei) do
+    aliases =
+      (Map.get(ei, "import_entries") || [])
+      |> Enum.reduce(%{}, fn entry, acc ->
+        module_name = Map.get(entry, "module")
+        alias_name = Map.get(entry, "as")
+
+        acc
+        |> put_module_alias(module_name, module_name)
+        |> put_module_alias(alias_name, module_name)
+        |> put_module_alias(module_short_name(module_name), module_name)
+      end)
+
+    unqualified =
+      (Map.get(ei, "import_entries") || [])
+      |> Enum.reduce(%{}, fn entry, acc ->
+        case Map.get(entry, "exposing") do
+          names when is_list(names) ->
+            Enum.reduce(names, acc, fn name, inner_acc ->
+              if is_binary(name),
+                do: Map.put(inner_acc, name, Map.get(entry, "module")),
+                else: inner_acc
+            end)
+
+          _ ->
+            acc
+        end
+      end)
+
+    %{aliases: aliases, unqualified: unqualified}
+  end
+
+  @spec call_tree_arity(map()) :: non_neg_integer()
+  defp call_tree_arity(root) when is_map(root) do
+    root
+    |> Map.get("children", [])
+    |> case do
+      children when is_list(children) -> length(children)
+      _ -> 0
+    end
+  end
+
+  @spec find_function_type_signature(map(), String.t(), String.t()) :: String.t() | nil
+  defp find_function_type_signature(types, module_name, function_name)
+       when is_map(types) and is_binary(module_name) and is_binary(function_name) do
+    prefix = module_name <> "|" <> function_name <> "|"
+
+    types
+    |> Enum.find_value(fn {key, type} ->
+      if is_binary(key) and String.starts_with?(key, prefix), do: type
     end)
   end
 
@@ -1411,7 +1637,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   @spec update_case_subject_allowed?(term(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
           boolean()
-  defp update_case_subject_allowed?(subj, allowed, update_params, bindings \\ %{})
+  defp update_case_subject_allowed?(subj, allowed, update_params, bindings)
        when is_list(allowed) and is_list(update_params) and is_map(bindings) do
     case case_subject_text(subj, bindings) do
       "" ->
@@ -1484,7 +1710,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   @spec view_case_subject_allowed?(term(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
           boolean()
-  defp view_case_subject_allowed?(subj, allowed, view_params, bindings \\ %{})
+  defp view_case_subject_allowed?(subj, allowed, view_params, bindings)
        when is_list(allowed) and is_list(view_params) and is_map(bindings) do
     case case_subject_text(subj, bindings) do
       "" ->

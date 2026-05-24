@@ -9,7 +9,7 @@ defmodule Ide.ProjectCapabilities.Detect do
   @configuration_commands ~w(open subscribe)
   @configuration_subscriptions ~w(onConfiguration onClosed)
 
-  @health_api_commands ~w(value sumToday sum accessible onEvent)
+  @health_api_commands ~w(value sumToday sum accessible supported onEvent)
 
   @watch_module_caps %{
     "watch_accel" => "Accel",

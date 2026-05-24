@@ -584,29 +584,43 @@ defmodule Ide.Compiler do
   end
 
   defp parse_diagnostics(:error, output) do
-    chunks =
+    embedded =
+      output
+      |> extract_embedded_warnings()
+      |> Enum.map(&warning_to_diagnostic/1)
+
+    compiler_errors =
       output
       |> String.split(~r/\n(?=-- )/, trim: true)
       |> Enum.map(&String.trim/1)
       |> Enum.reject(&(&1 == ""))
+      |> Enum.reject(&skip_compiler_error_chunk?/1)
+      |> Enum.map(&chunk_to_diagnostic/1)
 
-    if chunks == [] do
-      [
-        %{
-          severity: "error",
-          source: "elmc",
-          message: "Compiler check failed without formatted diagnostics.",
-          file: nil,
-          line: nil,
-          column: nil
-        }
-      ]
-    else
-      Enum.map(chunks, &chunk_to_diagnostic/1) ++
-        (output
-         |> extract_embedded_warnings()
-         |> Enum.map(&warning_to_diagnostic/1))
+    case embedded ++ compiler_errors do
+      [] ->
+        [
+          %{
+            severity: "error",
+            source: "elmc",
+            message: "Compiler check failed without formatted diagnostics.",
+            file: nil,
+            line: nil,
+            column: nil
+          }
+        ]
+
+      diagnostics ->
+        diagnostics
     end
+  end
+
+  @spec skip_compiler_error_chunk?(String.t()) :: boolean()
+  defp skip_compiler_error_chunk?(chunk) when is_binary(chunk) do
+    String.starts_with?(chunk, "check:") or
+      String.match?(chunk, ~r/^modules: \d+(\n|$)/) or
+      String.starts_with?(chunk, "ELMC_WARNINGS_JSON:") or
+      String.starts_with?(chunk, "-- LOWERER WARNING")
   end
 
   @spec elm_check_result(:ok | :error, String.t(), String.t(), [diagnostic()]) :: check_result()
@@ -799,6 +813,7 @@ defmodule Ide.Compiler do
   @spec warning_to_diagnostic(map()) :: map()
   defp warning_to_diagnostic(warning) when is_map(warning) do
     line = warning["line"]
+    column = warning["column"]
 
     %{
       severity: warning["severity"] || "warning",
@@ -806,7 +821,7 @@ defmodule Ide.Compiler do
       message: warning["message"] || inspect(warning),
       file: warning["file"],
       line: if(is_integer(line), do: line, else: nil),
-      column: warning["column"],
+      column: if(is_integer(column), do: column, else: nil),
       warning_type: warning["type"],
       warning_code: warning["code"],
       warning_constructor: warning["constructor"],

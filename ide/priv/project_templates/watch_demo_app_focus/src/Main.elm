@@ -41,7 +41,7 @@ view model =
         [ Ui.clear Color.white
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "App focus"
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 40, w = 136, h = 20 } (focusLabel model.focus)
-        , Ui.textInt Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 72, w = 136, h = 20 } model.changes
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 72, w = 136, h = 20 } (String.fromInt model.changes)
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 100, w = 136, h = 40 } "Toggle focus in simulator"
         ]
 

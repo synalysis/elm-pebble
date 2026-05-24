@@ -7,6 +7,7 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.Frontend.DefaultImports
   alias ElmEx.IR
   alias ElmEx.IR.Declaration
+  alias ElmEx.IR.FunctionCallCheck
   alias ElmEx.IR.Module
 
   @typep expr() :: map()
@@ -291,6 +292,12 @@ defmodule ElmEx.IR.Lowerer do
           project.modules,
           global_payload_arity_lookup,
           global_qualified_payload_arity_lookup
+        ) ++
+        FunctionCallCheck.collect_project_diagnostics(
+          project.modules,
+          project_module_exports,
+          project.project_dir,
+          Map.get(project.elm_json, "source-directories", ["src"])
         ) ++
         collect_preferences_schema_field_order_diagnostics(project.modules)
 

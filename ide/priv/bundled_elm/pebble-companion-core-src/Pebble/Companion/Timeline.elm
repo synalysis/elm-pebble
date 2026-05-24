@@ -29,6 +29,7 @@ module Pebble.Companion.Timeline exposing
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Pebble.Companion.Codec as Codec
+import Pebble.Companion.Contract exposing (ResultEnvelope)
 import Pebble.Companion.Phone as Phone
 import Pebble.Companion.Platform as Platform
 
@@ -145,7 +146,7 @@ decodeCommandResponse value =
             Err (Decode.errorToString error)
 
 
-decodeBridgeError : Pebble.Companion.Contract.ResultEnvelope -> String
+decodeBridgeError : ResultEnvelope -> String
 decodeBridgeError envelope =
     case envelope.error of
         Just error ->

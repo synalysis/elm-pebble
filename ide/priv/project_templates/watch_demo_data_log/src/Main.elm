@@ -79,8 +79,8 @@ view model =
     Ui.toUiNode
         [ Ui.clear Color.white
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "DataLog demo"
-        , Ui.textInt Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } model.events
-        , Ui.textInt Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 20 } model.lastValue
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (String.fromInt model.events)
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 20 } (String.fromInt model.lastValue)
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 84, w = 136, h = 40 } "Up: int32 Select: int32 Down: bytes"
         ]
 

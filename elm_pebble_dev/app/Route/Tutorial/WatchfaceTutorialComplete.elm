@@ -106,13 +106,13 @@ view _ _ =
                 , sectionBlock "The big idea: Elm programs are loops"
                     [ paragraph "If you know React, Redux, SwiftUI, game loops, or server request handlers, the structure will feel familiar. The program keeps all important state in one value called the model. Events arrive as messages. An update function receives a message and returns the next model plus any commands that should talk to the outside world."
                     , paragraph "The watchface is not building HTML. The view function returns Pebble drawing instructions, and elm-pebble turns those instructions into native Pebble rendering code."
-                    , codeBlock "Watch app: watch/src/Main.elm" "type alias Model =\n    { screenW : Int\n    , screenH : Int\n    , isRound : Bool\n    , currentDateTime : Maybe PebbleTime.CurrentDateTime\n    , batteryLevel : Maybe Int\n    , connected : Maybe Bool\n    , temperature : Maybe Temperature\n    , condition : Maybe WeatherCondition\n    , backgroundColor : Maybe PebbleColor.Color\n    , textColor : Maybe PebbleColor.Color\n    , showDate : Maybe Bool\n    }"
+                    , codeBlock "Watch app: watch/src/Main.elm" "type alias Model =\n    { screenW : Int\n    , screenH : Int\n    , displayShape : PebblePlatform.DisplayShape\n    , currentDateTime : Maybe PebbleTime.CurrentDateTime\n    , batteryLevel : Maybe Int\n    , connected : Maybe Bool\n    , temperature : Maybe Temperature\n    , condition : Maybe WeatherCondition\n    , backgroundColor : Maybe TutorialColor\n    , textColor : Maybe TutorialColor\n    , showDate : Maybe Bool\n    }"
                     ]
                 , sectionBlock "Step 1: the model is your app state"
                     [ paragraph "The model is an Elm record. A record is close to a typed object or struct: every field has a name and a type, and Elm checks that you use those fields consistently."
                     , paragraph "Several fields use Maybe. Think of Maybe as a safer nullable value: Nothing means the value has not arrived yet, and Just value means it is available. The watch starts before it has time, battery, connection, weather, or phone settings, so those values are optional."
                     , bulletList
-                        [ "screenW, screenH, and isRound come from the launch context so the same code can draw on different Pebble screen shapes."
+                        [ "screenW, screenH, and displayShape come from the launch context so the same code can draw on round and rectangular Pebble screens."
                         , "currentDateTime, batteryLevel, and connected are facts read from the watch."
                         , "temperature, condition, backgroundColor, textColor, and showDate are supplied by the phone companion protocol."
                         ]
@@ -124,7 +124,7 @@ view _ _ =
                     ]
                 , sectionBlock "Step 3: init builds the first model and asks for data"
                     [ paragraph "init runs once when the watchface starts. It copies screen information out of PebblePlatform.LaunchContext, fills everything else with Nothing, then batches several startup commands."
-                    , codeBlock "Watch app: watch/src/Main.elm" "init context =\n    ( { screenW = context.screen.width\n      , screenH = context.screen.height\n      , isRound = context.screen.isRound\n      , currentDateTime = Nothing\n      , batteryLevel = Nothing\n      , connected = Nothing\n      , temperature = Nothing\n      , condition = Nothing\n      , backgroundColor = Nothing\n      , textColor = Nothing\n      , showDate = Nothing\n      }\n    , Cmd.batch\n        [ PebbleTime.currentDateTime CurrentDateTime\n        , PebbleSystem.batteryLevel BatteryLevelChanged\n        , PebbleSystem.connectionStatus ConnectionStatusChanged\n        , CompanionWatch.sendWatchToPhone (RequestWeather CurrentLocation)\n        ]\n    )"
+                    , codeBlock "Watch app: watch/src/Main.elm" "init context =\n    ( { screenW = context.screen.width\n      , screenH = context.screen.height\n      , displayShape = context.screen.shape\n      , currentDateTime = Nothing\n      , batteryLevel = Nothing\n      , connected = Nothing\n      , temperature = Nothing\n      , condition = Nothing\n      , backgroundColor = Nothing\n      , textColor = Nothing\n      , showDate = Nothing\n      }\n    , Cmd.batch\n        [ PebbleTime.currentDateTime CurrentDateTime\n        , PebbleSystem.batteryLevel BatteryLevelChanged\n        , PebbleSystem.connectionStatus ConnectionStatusChanged\n        , CompanionWatch.sendWatchToPhone (RequestWeather CurrentLocation)\n        ]\n    )"
                     , paragraph "Commands are Elm's way to request side effects. The code does not directly mutate global state or block while reading the battery. It asks the Pebble runtime to do work and says which Msg constructor should wrap the result when it comes back."
                     ]
                 , sectionBlock "Step 4: update is the state machine"
@@ -150,15 +150,17 @@ view _ _ =
                         ]
                     ]
                 , sectionBlock "Step 6: the companion app answers watch requests"
-                    [ paragraph "The companion app is another Elm program, but it runs on the phone side rather than on the watch. It uses Platform.worker because it has no visual UI here: it listens for watch messages, performs HTTP requests, and sends messages back."
-                    , codeBlock "Companion app: phone/src/CompanionApp.elm" "type Msg\n    = FromWatch (Result String WatchToPhone)\n    | WeatherReceived (Result Http.Error WeatherReport)\n    | DemoPosted (Result Http.Error String)"
-                    , paragraph "When the watch sends RequestWeather, the phone builds an Open-Meteo URL, starts an Http.get command, and also sends a demo POST request. When the weather response arrives, it rounds the temperature and sends two typed messages back to the watch."
-                    , codeBlock "Companion app: phone/src/CompanionApp.elm" "WeatherReceived result ->\n    case result of\n        Ok weather ->\n            let\n                rounded =\n                    round weather.temperature\n            in\n            ( { model | lastResponse = rounded }\n            , Cmd.batch\n                [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius rounded))\n                , CompanionPhone.sendPhoneToWatch (ProvideCondition weather.condition)\n                ]\n            )\n\n        Err _ ->\n            ( model, Cmd.none )"
-                    , paragraph "The companion app subscribes with CompanionPhone.onWatchToPhone FromWatch. That means incoming phone-side AppMessage payloads enter the same Elm update loop as HTTP responses."
+                    [ paragraph "The companion app is another Elm program, but it runs on the phone side rather than on the watch. It uses Platform.worker because it has no visual UI here: it listens for watch messages, reads configuration from the phone settings page, performs HTTP requests, and sends messages back."
+                    , codeBlock "Companion app: phone/src/CompanionApp.elm" "type Msg\n    = FromWatch (Result String WatchToPhone)\n    | FromBridge (Result String CompanionPreferences.Settings)\n    | WeatherReceived (Result Http.Error WeatherReport)"
+                    , paragraph "When the watch sends RequestWeather, the phone builds an Open-Meteo URL and starts an Http.get command. It also sends placeholder temperature and condition messages immediately so the watch has something to render while the request is in flight. When the weather response arrives, it rounds the temperature and sends the real values. On failure it records the error and sends safe fallback values."
+                    , codeBlock "Companion app: phone/src/CompanionApp.elm" "FromWatch (Ok (RequestWeather location)) ->\n    ( model\n    , Cmd.batch\n        [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius 0))\n        , CompanionPhone.sendPhoneToWatch (ProvideCondition Clear)\n        , Http.get { url = openMeteoUrl location, expect = ... }\n        ]\n    )\n\nWeatherReceived (Ok weather) ->\n    ( { model | lastResponse = round weather.temperature }\n    , Cmd.batch\n        [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius rounded))\n        , CompanionPhone.sendPhoneToWatch (ProvideCondition weather.condition)\n        ]\n    )"
+                    , paragraph "CompanionPreferences.elm describes the phone configuration UI with Pebble.Companion.Preferences. When settings change, GeneratedPreferences.onConfiguration delivers them as FromBridge messages, and sendSettings pushes SetBackgroundColor, SetTextColor, and SetShowDate to the watch."
+                    , paragraph "The companion subscribes with CompanionPhone.onWatchToPhone FromWatch and GeneratedPreferences.onConfiguration FromBridge, so AppMessage traffic and configuration updates share the same update loop as HTTP responses."
                     ]
                 , sectionBlock "Step 7: phone messages update watch settings and weather"
                     [ paragraph "Back on the watch, CompanionWatch.onPhoneToWatch turns incoming phone messages into FromPhone values. The watch receives PhoneToWatch values, so the update code can pattern match on declared messages instead of parsing loose strings."
-                    , codeBlock "Watch app: watch/src/Main.elm" "updateFromPhone message model =\n    case message of\n        ProvideTemperature temperature ->\n            ( { model | temperature = Just temperature }, Cmd.none )\n\n        ProvideCondition condition ->\n            ( { model | condition = Just condition }, Cmd.none )\n\n        SetBackgroundColor color ->\n            ( { model | backgroundColor = Just (pebbleColor color) }, Cmd.none )"
+                    , codeBlock "Watch app: watch/src/Main.elm" "updateFromPhone message model =\n    case message of\n        ProvideTemperature temperature ->\n            ( { model | temperature = Just temperature }, Cmd.none )\n\n        ProvideCondition condition ->\n            ( { model | condition = Just condition }, Cmd.none )\n\n        SetBackgroundColor color ->\n            ( { model | backgroundColor = Just color }, Cmd.none )"
+                    , paragraph "The view converts TutorialColor values to PebbleColor.Color with pebbleColor when it is time to draw, so update can store the protocol types directly."
                     , paragraph "That is normal Elm style: make the allowed messages explicit, handle every case, and let the compiler complain if the protocol changes and you forget to update the watch."
                     ]
                 , sectionBlock "Step 8: subscriptions keep the watchface alive"
@@ -167,7 +169,7 @@ view _ _ =
                     , paragraph "Each subscription names the Msg constructor that should be used when the event fires. That keeps external events flowing through the same update function as startup responses."
                     ]
                 , sectionBlock "Step 9: view computes layout, then draws"
-                    [ paragraph "The view function is pure: it looks at the model and returns drawing instructions. It first calculates positions from the screen size and shape, chooses default colors, and conditionally builds small lists of render operations."
+                    [ paragraph "The view function is pure: it looks at the model and returns drawing instructions. It uses PebblePlatform.displayShapeIsRound for layout, converts TutorialColor settings with pebbleColor, and conditionally builds small lists of render operations."
                     , bulletList
                         [ "batteryOps draws a battery outline and fill only after a battery level is known."
                         , "btIcon draws the Bluetooth icon only when connected is Just False."
@@ -183,14 +185,14 @@ view _ _ =
                     , paragraph "Notice the fallback. While the clock value is missing, the UI still has something predictable to draw. Once CurrentDateTime arrives, the same function formats the real value."
                     ]
                 , sectionBlock "Step 11: main connects your code to Pebble"
-                    [ paragraph "The last value, main, hands the core pieces to the elm-pebble platform: init for startup, update for state transitions, and subscriptions for ongoing events."
-                    , codeBlock "Watch app: watch/src/Main.elm" "main : Program Decode.Value Model Msg\nmain =\n    PebblePlatform.worker\n        { init = init\n        , update = update\n        , subscriptions = subscriptions\n        }"
-                    , paragraph "The view function is still the drawing contract used by the watchface tooling. The worker entry point keeps the runtime event loop explicit: initialize state, react to messages, and stay subscribed to Pebble and companion events."
+                    [ paragraph "The last value, main, registers this program as a watchface with the elm-pebble platform. Watchfaces use PebblePlatform.watchface, which wires init, update, view, and subscriptions together."
+                    , codeBlock "Watch app: watch/src/Main.elm" "main : Program Decode.Value Model Msg\nmain =\n    PebblePlatform.watchface\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }"
+                    , paragraph "Full Pebble apps that are not watchfaces can use PebblePlatform.worker instead. The companion phone app in this template uses Platform.worker because it has no watch drawing surface."
                     ]
                 , sectionBlock "What to change first"
                     [ paragraph "Once you understand the loop, safe experiments become obvious."
                     , bulletList
-                        [ "Change the default colors in view by replacing PebbleColor.black or PebbleColor.white."
+                        [ "Change the default colors in view by adjusting the Maybe.withDefault Black and Maybe.withDefault White fallbacks for backgroundColor and textColor."
                         , "Move text by changing timeY, dateY, weatherY, or batteryY."
                         , "Change updateFromPhone if you add a new phone setting to the companion protocol."
                         , "Add a new Msg when a new Pebble event or command result needs to affect the model."
@@ -265,7 +267,7 @@ intro =
         [ classes [ Tw.mt s12 ] ]
         [ h2 [ classes [ Tw.text_n2xl, Tw.font_semibold, Tw.tracking_tight ] ] [ text "What the template builds" ]
         , paragraph "The complete tutorial template is a real watchface: it shows the time, optional date, weather text, battery level, and a Bluetooth warning icon. It adapts to rectangular and round Pebble screens, asks the phone companion for weather, and vibrates when the watch disconnects."
-        , paragraph "Most of the watch rendering code lives in watch/src/Main.elm. The shared protocol in protocol/src/Companion/Types.elm defines the messages that can travel between watch and phone, and phone/src/CompanionApp.elm implements the companion worker that fetches weather and replies."
+        , paragraph "Most of the watch rendering code lives in watch/src/Main.elm. The shared protocol in protocol/src/Companion/Types.elm defines the messages that can travel between watch and phone. phone/src/CompanionApp.elm implements the companion worker that fetches weather and replies, and phone/src/CompanionPreferences.elm defines the phone configuration page that pushes color and date settings to the watch."
         ]
 
 

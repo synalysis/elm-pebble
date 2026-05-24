@@ -22,7 +22,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation game-basic game-tiny-bird game-jump-n-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info game-basic game-tiny-bird game-jump-n-run game-2048)
 
   @template_dirs %{
     "starter" => "starter",
@@ -46,6 +46,9 @@ defmodule Ide.ProjectTemplates do
     "watch-demo-app-focus" => "watch_demo_app_focus",
     "watch-demo-compass" => "watch_demo_compass",
     "watch-demo-dictation" => "watch_demo_dictation",
+    "watch-demo-health" => "watch_demo_health",
+    "watch-demo-light" => "watch_demo_light",
+    "watch-demo-watch-info" => "watch_demo_watch_info",
     "game-basic" => "game_basic",
     "game-tiny-bird" => "game_tiny_bird",
     "game-jump-n-run" => "game_jump_n_run",
@@ -107,6 +110,20 @@ defmodule Ide.ProjectTemplates do
   end
 
   @doc """
+  Returns template metadata for automation and MCP consumers.
+  """
+  @spec catalog() :: [map()]
+  def catalog do
+    Enum.map(options(), fn {label, key} ->
+      %{
+        key: key,
+        label: label,
+        target_type: target_type_for_template(key)
+      }
+    end)
+  end
+
+  @doc """
   Returns select options for template pickers.
   """
   @spec options() :: [{String.t(), String.t()}]
@@ -133,6 +150,9 @@ defmodule Ide.ProjectTemplates do
       {"Watch demo: App focus (app)", "watch-demo-app-focus"},
       {"Watch demo: Compass (app, aplite)", "watch-demo-compass"},
       {"Watch demo: Dictation (app, mic models)", "watch-demo-dictation"},
+      {"Watch demo: Health (app, Time+)", "watch-demo-health"},
+      {"Watch demo: Backlight (app)", "watch-demo-light"},
+      {"Watch demo: Watch info (app)", "watch-demo-watch-info"},
       {"Game: Basic", "game-basic"},
       {"Game: Tiny Bird", "game-tiny-bird"},
       {"Game: Jump'n Run", "game-jump-n-run"},
@@ -208,6 +228,15 @@ defmodule Ide.ProjectTemplates do
 
       "watch-demo-dictation" ->
         seed_watch_only_workspace(workspace_path, "watch_demo_dictation")
+
+      "watch-demo-health" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_health")
+
+      "watch-demo-light" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_light")
+
+      "watch-demo-watch-info" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_watch_info")
 
       "game-basic" ->
         seed_watch_only_workspace(workspace_path, "game_basic")

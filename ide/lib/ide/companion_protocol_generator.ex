@@ -267,6 +267,7 @@ defmodule Ide.CompanionProtocolGenerator do
     #{tag_lines}
 
     #define COMPANION_PROTOCOL_MAX_FIELDS #{max_fields}
+    #{companion_simulator_weather_macros(schema, uses_union_payloads?)}
 
     typedef enum {
       COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN = 0,
@@ -471,6 +472,37 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp optional_c_struct_field(true, field), do: [field]
   defp optional_c_struct_field(false, _field), do: []
+
+  defp companion_simulator_weather_macros(schema, uses_union_payloads?) do
+    names = schema.phone_to_watch |> Enum.map(& &1.name) |> MapSet.new()
+
+    mode =
+      cond do
+        MapSet.member?(names, "ProvideWeather") ->
+          "#define ELMC_COMPANION_SIMULATOR_WEATHER_MODE_UNIFIED 1"
+
+        MapSet.member?(names, "ProvideTemperature") and MapSet.member?(names, "ProvideCondition") ->
+          "#define ELMC_COMPANION_SIMULATOR_WEATHER_MODE_LEGACY_SPLIT 1"
+
+        MapSet.member?(names, "ProvideTemperature") ->
+          "#define ELMC_COMPANION_SIMULATOR_WEATHER_MODE_TEMPERATURE_ONLY 1"
+
+        true ->
+          nil
+      end
+
+    weather_enabled? = not is_nil(mode)
+
+    lines =
+      [
+        "#define ELMC_COMPANION_SIMULATOR_WEATHER #{if weather_enabled?, do: 1, else: 0}",
+        "#define ELMC_COMPANION_PROTOCOL_HAS_UNION_PAYLOADS #{if uses_union_payloads?, do: 1, else: 0}",
+        mode
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    Enum.join(lines, "\n")
+  end
 
   defp c_init_union_seen_fields(schema) do
     if companion_protocol_uses_union_payloads?(schema) do

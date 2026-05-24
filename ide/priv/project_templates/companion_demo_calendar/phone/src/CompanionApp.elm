@@ -16,7 +16,7 @@ type Msg
     | GotCalendar (Result String (List Calendar.CalendarEvent))
 
 
-init : Platform.Flags -> ( Model, Cmd Msg )
+init : () -> ( Model, Cmd Msg )
 init _ =
     ( { lastTitle = "" }
     , Calendar.current (GotCalendar << Result.map maybeAsList)
@@ -58,7 +58,7 @@ subscriptions _ =
         ]
 
 
-main : Platform.Program Model Msg
+main : Platform.Program () Model Msg
 main =
     Platform.worker
         { init = init

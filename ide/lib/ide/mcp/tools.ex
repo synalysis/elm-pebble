@@ -17,6 +17,7 @@ defmodule Ide.Mcp.Tools do
   alias Ide.Packages
   alias Ide.EmulatorSupport
   alias Ide.PebbleToolchain
+  alias Ide.ProjectTemplates
   alias Ide.Projects
   alias Ide.Projects.BootstrapError
   alias Ide.PublishManifest
@@ -102,8 +103,14 @@ defmodule Ide.Mcp.Tools do
   }
 
   @vector_conversion_opts ConversionOpts.input_schema_properties()
+  @mcp_template_keys ProjectTemplates.template_keys()
 
   @read_tools [
+    %{
+      name: "templates.list",
+      description: "List available project templates with labels and implied target types.",
+      inputSchema: %{type: "object", additionalProperties: JsonSchema.disallow_extra_properties(), properties: %{}}
+    },
     %{
       name: "projects.list",
       description: "List known IDE projects.",
@@ -827,22 +834,7 @@ defmodule Ide.Mcp.Tools do
           name: %{type: "string"},
           slug: %{type: "string"},
           target_type: %{type: "string", enum: ["app", "watchface", "companion"]},
-          template: %{
-            type: "string",
-            enum: [
-              "starter",
-              "watchface-digital",
-              "watchface-analog",
-              "watchface-tutorial-complete",
-              "watchface-yes",
-              "watchface-tangram-time",
-              "watchface-weather-animated",
-              "game-basic",
-              "game-tiny-bird",
-              "game-jump-n-run",
-              "game-2048"
-            ]
-          }
+          template: %{type: "string", enum: @mcp_template_keys}
         }
       }
     },
@@ -1575,6 +1567,10 @@ defmodule Ide.Mcp.Tools do
   defp do_audit_arguments(_name, args) when is_map(args), do: args
 
   @spec do_call(String.t(), map()) :: tool_result()
+  defp do_call("templates.list", _args) do
+    {:ok, %{templates: ProjectTemplates.catalog()}}
+  end
+
   defp do_call("projects.list", _args) do
     projects = Enum.map(Projects.list_projects(), &project_summary/1)
     {:ok, projects_list_payload(projects)}
@@ -1932,7 +1928,8 @@ defmodule Ide.Mcp.Tools do
            toolchain.package(slug,
              workspace_root: Projects.project_workspace_path(project),
              target_type: project.target_type,
-             project_name: project.name
+             project_name: project.name,
+             target_platforms: publish_target_platforms(project)
            ) do
       {:ok, pebble_package_payload(slug, result)}
     else
@@ -3495,6 +3492,7 @@ defmodule Ide.Mcp.Tools do
       slug: slug,
       status: result.status,
       artifact_path: result.artifact_path,
+      package_path: result.artifact_path,
       app_root: result.app_root,
       build_result: result.build_result
     }
@@ -4335,6 +4333,7 @@ defmodule Ide.Mcp.Tools do
   end
 
   @spec authorized?(String.t(), [capability()]) :: boolean()
+  defp authorized?("templates.list", capabilities), do: :read in capabilities
   defp authorized?("projects.list", capabilities), do: :read in capabilities
   defp authorized?("projects.settings", capabilities), do: :read in capabilities
   defp authorized?("projects.tree", capabilities), do: :read in capabilities
@@ -5177,21 +5176,8 @@ defmodule Ide.Mcp.Tools do
   defp parser_expression_view_tree?(_tree), do: false
 
   @spec parser_expression_root_type?(String.t()) :: boolean()
-  defp parser_expression_root_type?(type)
-       when type in [
-              "toUiNode",
-              "append",
-              "List",
-              "call",
-              "expr",
-              "var",
-              "withDefault",
-              "if",
-              "case"
-            ],
-       do: true
-
-  defp parser_expression_root_type?(_type), do: false
+  defp parser_expression_root_type?(type),
+    do: Ide.Debugger.ElmIntrospect.parser_expression_combinator_type?(type)
 
   @spec compact_debugger_event(map()) :: map()
   defp compact_debugger_event(event) when is_map(event) do

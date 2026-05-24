@@ -17,6 +17,12 @@
     "binops": [],
     "comment": "Typed declarations for Pebble companion preference pages.\n\nThe same schema describes the generated, Slate-like configuration page and the\ndecoder used when Pebble returns saved values.\n\n    type alias Settings =\n        { showDate : Bool\n        , units : Units\n        }\n\n    type Units\n        = Celsius\n        | Fahrenheit\n\n    settings : Schema Settings\n    settings =\n        schema \"Settings\" Settings\n            |> section \"Display\"\n                (\\s ->\n                    s\n                        |> field \"showDate\" (toggle \"Show date\" True)\n                        |> field \"units\"\n                            (choice \"Units\"\n                                [ choiceOption Celsius \"c\" \"Celsius\"\n                                , choiceOption Fahrenheit \"f\" \"Fahrenheit\"\n                                ]\n                            )\n                )\n\n# Schemas\n@docs Schema, Error, schema, section, field, decoder, decodeString, decodeResponse\n\n# Controls\n@docs Control, Field, Section, toggle, text, number, slider, color, choice, ChoiceOption, choiceOption, sendToWatch\n\n# Colors\n@docs Color, black, white, green, blue, yellow",
     "name": "Pebble.Companion.Preferences",
+    "native_api_links": [
+      {
+        "label": "Preferences",
+        "url": "https://developer.repebble.com/docs/c/User_Interface/Preferences/"
+      }
+    ],
     "unions": [
       {
         "args": [

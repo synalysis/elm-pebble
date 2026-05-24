@@ -2,6 +2,7 @@ module PackageDocs exposing
     ( AliasDoc
     , ElmJson
     , ModuleDoc
+    , NativeApiLink
     , PackageData
     , PackageRoute
     , UnionDoc
@@ -59,9 +60,16 @@ type alias PackageData =
 type alias ModuleDoc =
     { name : String
     , comment : String
+    , nativeApiLinks : List NativeApiLink
     , unions : List UnionDoc
     , aliases : List AliasDoc
     , values : List ValueDoc
+    }
+
+
+type alias NativeApiLink =
+    { label : String
+    , url : String
     }
 
 
@@ -223,12 +231,28 @@ dependenciesDecoder =
 
 moduleDocDecoder : Decoder ModuleDoc
 moduleDocDecoder =
-    Decode.map5 ModuleDoc
+    Decode.map6 ModuleDoc
         (Decode.field "name" Decode.string)
         (Decode.field "comment" Decode.string)
+        (nativeApiLinksDecoder)
         (Decode.field "unions" (Decode.list unionDocDecoder))
         (Decode.field "aliases" (Decode.list aliasDocDecoder))
         (Decode.field "values" (Decode.list valueDocDecoder))
+
+
+nativeApiLinkDecoder : Decoder NativeApiLink
+nativeApiLinkDecoder =
+    Decode.map2 NativeApiLink
+        (Decode.field "label" Decode.string)
+        (Decode.field "url" Decode.string)
+
+
+nativeApiLinksDecoder : Decoder (List NativeApiLink)
+nativeApiLinksDecoder =
+    Decode.oneOf
+        [ Decode.field "native_api_links" (Decode.list nativeApiLinkDecoder)
+        , Decode.succeed []
+        ]
 
 
 unionDocDecoder : Decoder UnionDoc

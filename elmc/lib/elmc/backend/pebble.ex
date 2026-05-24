@@ -78,7 +78,8 @@ defmodule Elmc.Backend.Pebble do
     compass_peek: 36,
     dictation_start: 37,
     dictation_stop: 38,
-    unobstructed_bounds_peek: 39
+    unobstructed_bounds_peek: 39,
+    health_supported: 40
   ]
 
   @run_modes [
@@ -3372,6 +3373,7 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM_TODAY", flags[:cmd_health_sum_today]},
       {"ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUM", flags[:cmd_health_sum]},
       {"ELMC_PEBBLE_FEATURE_CMD_HEALTH_ACCESSIBLE", flags[:cmd_health_accessible]},
+      {"ELMC_PEBBLE_FEATURE_CMD_HEALTH_SUPPORTED", flags[:cmd_health_supported]},
       {"ELMC_PEBBLE_FEATURE_CMD_VIBES_CUSTOM_PATTERN", flags[:cmd_vibes_custom_pattern]},
       {"ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_BYTES", flags[:cmd_data_log_bytes]},
       {"ELMC_PEBBLE_FEATURE_CMD_DATA_LOG_INT32", flags[:cmd_data_log_int32]},
@@ -3556,6 +3558,9 @@ defmodule Elmc.Backend.Pebble do
       cmd_health_sum_today: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthSumToday"),
       cmd_health_sum: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthSum"),
       cmd_health_accessible: uses_target?(targets, "Elm.Kernel.PebbleWatch.healthAccessible"),
+      cmd_health_supported:
+        uses_target?(targets, "Pebble.Health.supported") or
+          uses_target?(targets, "Elm.Kernel.PebbleWatch.healthSupported"),
       cmd_vibes_custom_pattern:
         uses_target?(targets, "Pebble.Vibes.pattern") or
           uses_target?(targets, "Elm.Kernel.PebbleWatch.vibesCustomPattern"),

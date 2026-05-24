@@ -29,9 +29,11 @@ defmodule Ide.ProjectTemplatesTest do
   test "watch demo templates with metadata restrict target platforms" do
     compass = ProjectTemplates.target_platforms_for_template("watch-demo-compass")
     dictation = ProjectTemplates.target_platforms_for_template("watch-demo-dictation")
+    health = ProjectTemplates.target_platforms_for_template("watch-demo-health")
 
     assert compass == ["aplite"]
     assert dictation == ["diorite", "emery", "flint"]
+    assert health == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
   end
 
   test "create_project applies template target platform defaults" do

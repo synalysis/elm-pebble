@@ -100,7 +100,7 @@ view model =
         [ Ui.clear Color.white
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Vibes pattern"
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (patternLabel model)
-        , Ui.textInt Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 64, w = 136, h = 20 } model.presses
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 64, w = 136, h = 20 } (String.fromInt model.presses)
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 92, w = 136, h = 40 } "Up/Down: pattern Select: play"
         ]
 

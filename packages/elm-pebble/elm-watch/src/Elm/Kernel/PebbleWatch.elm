@@ -20,6 +20,7 @@ module Elm.Kernel.PebbleWatch exposing
     , healthAccessible
     , healthSum
     , healthSumToday
+    , healthSupported
     , healthValue
     , logErrorCode
     , logInfoCode
@@ -181,6 +182,15 @@ getBatteryLevel toMsg =
 
 getConnectionStatus : (Bool -> msg) -> Cmd msg
 getConnectionStatus toMsg =
+    let
+        keep =
+            toMsg
+    in
+    Cmd.none
+
+
+healthSupported : (Bool -> msg) -> Cmd msg
+healthSupported toMsg =
     let
         keep =
             toMsg

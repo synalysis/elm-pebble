@@ -7503,6 +7503,14 @@ defmodule Elmc.Backend.CCodegen do
   defp special_value_from_target("Elm.Kernel.PebbleWatch.getConnectionStatus", [_to_msg]),
     do: %{op: :int_literal, value: command_kind(:get_connection_status)}
 
+  defp special_value_from_target("Elm.Kernel.PebbleWatch.healthSupported", [to_msg]),
+    do:
+      encoded_cmd_expr(
+        command_kind(:health_supported),
+        [constructor_tag_expr(to_msg)],
+        1
+      )
+
   defp special_value_from_target("Elm.Kernel.PebbleWatch.healthValue", [metric, to_msg]),
     do:
       encoded_cmd_expr(

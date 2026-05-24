@@ -56,13 +56,13 @@ type Error
 set : String -> Value -> Cmd msg
 set key value =
     Phone.sendBridgeCommand <|
-        Command.command ("storage-set-" ++ key) "storage" "set"
+        (Command.command ("storage-set-" ++ key) "storage" "set"
             |> Command.withPayload
                 (Encode.object
                     [ ( "key", Encode.string key )
                     , ( "value", encodeValue value )
                     ]
-                )
+                ))
 
 
 {-| Read a stored value and deliver it to `toMsg`.
@@ -93,8 +93,8 @@ errorToString error =
 remove : String -> Cmd msg
 remove key =
     Phone.sendBridgeCommand <|
-        Command.command ("storage-remove-" ++ key) "storage" "remove"
-            |> Command.withPayload (Encode.object [ ( "key", Encode.string key ) ])
+        (Command.command ("storage-remove-" ++ key) "storage" "remove"
+            |> Command.withPayload (Encode.object [ ( "key", Encode.string key ) ]))
 
 
 {-| Clear all stored values.

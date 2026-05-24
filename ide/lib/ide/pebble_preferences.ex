@@ -257,8 +257,8 @@ defmodule Ide.PebblePreferences do
         Configuration.onClosed <|
             \\maybeResponse ->
                 toMsg <|
-                    Preferences.decodeResponse PreferencesSchema.#{value_name} maybeResponse
-                        |> Result.mapError preferencesErrorToString
+                    (Preferences.decodeResponse PreferencesSchema.#{value_name} maybeResponse
+                        |> Result.mapError preferencesErrorToString)
 
 
     {-| Decode a raw bridge event produced when the configuration page closes.

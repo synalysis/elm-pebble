@@ -17,6 +17,12 @@
     "binops": [],
     "comment": "Accelerometer subscriptions for Pebble watches.\n\n# Types\n@docs Config, Sample, SamplingRate\n\n# Defaults\n@docs defaultConfig\n\n# Subscriptions\n@docs onData, onTap",
     "name": "Pebble.Accel",
+    "native_api_links": [
+      {
+        "label": "AccelerometerService",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Event_Service/AccelerometerService/"
+      }
+    ],
     "unions": [
       {
         "args": [],
@@ -65,6 +71,12 @@
     "binops": [],
     "comment": "Observe when the watch app gains or loses foreground focus.\n\n@docs State, onChange",
     "name": "Pebble.AppFocus",
+    "native_api_links": [
+      {
+        "label": "AppFocusService",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Event_Service/AppFocusService/"
+      }
+    ],
     "unions": [
       {
         "args": [],
@@ -95,6 +107,12 @@
     "binops": [],
     "comment": "Button subscriptions for Pebble watches.\n\n# Types\n@docs Button, Event\n\n# Subscriptions\n@docs on, onPress, onRelease, onLongPress",
     "name": "Pebble.Button",
+    "native_api_links": [
+      {
+        "label": "Clicks",
+        "url": "https://developer.repebble.com/docs/c/User_Interface/Clicks/"
+      }
+    ],
     "unions": [
       {
         "args": [],
@@ -174,6 +192,12 @@
     "binops": [],
     "comment": "Core watch commands.\n\nUse this module for generic scheduling. Hardware controls live in\n`Pebble.Hardware`, watch metadata requests live in `Pebble.WatchInfo`, and\nkey-value persistence helpers live in `Pebble.Storage`.\n\n    type Msg\n        = WakeUp\n\n    scheduleWakeUp : Cmd Msg\n    scheduleWakeUp =\n        timerAfter 1000\n\n# Scheduling\n@docs none, timerAfter\n\n# Time\n@docs CurrentDateTime, getCurrentDateTime",
     "name": "Pebble.Cmd",
+    "native_api_links": [
+      {
+        "label": "Timer",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Timer/"
+      }
+    ],
     "unions": [],
     "values": [
       {
@@ -205,6 +229,12 @@
     "binops": [],
     "comment": "Read compass heading from watches with a magnetometer.\n\n@docs Error, Heading, current, onChange",
     "name": "Pebble.Compass",
+    "native_api_links": [
+      {
+        "label": "CompassService",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Event_Service/CompassService/"
+      }
+    ],
     "unions": [
       {
         "args": [],
@@ -240,6 +270,12 @@
     "binops": [],
     "comment": "Log analytics bytes to the Pebble data logging service.\n\nEach log session is identified by a numeric tag (uint32 on device). Create tags\nwith `tag` and pass them to `logBytes` or `logInt32`.\n\n@docs Tag, tag, logBytes, logInt32",
     "name": "Pebble.DataLog",
+    "native_api_links": [
+      {
+        "label": "DataLogging",
+        "url": "https://developer.repebble.com/docs/c/Foundation/DataLogging/"
+      }
+    ],
     "unions": [
       {
         "args": [],
@@ -271,6 +307,12 @@
     "binops": [],
     "comment": "Voice dictation via the Pebble microphone and phone speech recognition.\n\n@docs Error, Status, start, stop, onStatus, onResult",
     "name": "Pebble.Dictation",
+    "native_api_links": [
+      {
+        "label": "Dictation",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Dictation/"
+      }
+    ],
     "unions": [
       {
         "args": [],
@@ -345,6 +387,12 @@
     "binops": [],
     "comment": "Generic watch-side event subscriptions.\n\nEach helper turns a platform event into a regular Elm `Sub msg`.\n\n# Time\n@docs onSecondChange, onMinuteChange, onHourChange, onDayChange, onMonthChange, onYearChange\n\n# Composition\n@docs batch",
     "name": "Pebble.Events",
+    "native_api_links": [
+      {
+        "label": "TickTimerService",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Event_Service/TickTimerService/"
+      }
+    ],
     "unions": [],
     "values": [
       {
@@ -537,8 +585,14 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Access Pebble Health data such as step count, active time, distance, sleep,\ncalories, and heart rate.\n\n# Types\n@docs Metric, Event\n\n# Commands\n@docs value, sumToday, sum, accessible\n\n# Subscriptions\n@docs onEvent",
+    "comment": "Access Pebble Health data such as step count, active time, distance, sleep,\ncalories, and heart rate.\n\n# Types\n@docs Metric, Event\n\n# Commands\n@docs supported, value, sumToday, sum, accessible\n\n# Subscriptions\n@docs onEvent",
     "name": "Pebble.Health",
+    "native_api_links": [
+      {
+        "label": "HealthService",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Event_Service/HealthService/"
+      }
+    ],
     "unions": [
       {
         "args": [],
@@ -600,6 +654,11 @@
       }
     ],
     "values": [
+      {
+        "comment": "Request whether the Health API is available on this watch.",
+        "name": "supported",
+        "type": "(Bool -> msg) -> Cmd msg"
+      },
       {
         "comment": "Request the current value for a metric.\n\nFor example, `value StepCount GotSteps` requests the current step count.",
         "name": "value",
@@ -804,6 +863,12 @@
     "binops": [],
     "comment": "Backlight controls.\n\n@docs interaction, disable, enable",
     "name": "Pebble.Light",
+    "native_api_links": [
+      {
+        "label": "Light",
+        "url": "https://developer.repebble.com/docs/c/User_Interface/Light/"
+      }
+    ],
     "unions": [],
     "values": [
       {
@@ -828,6 +893,12 @@
     "binops": [],
     "comment": "Runtime logging commands.\n\nThis app-focused wave exposes integer code logging for deterministic C-side\nlogging output.\n\n@docs infoCode, warnCode, errorCode",
     "name": "Pebble.Log",
+    "native_api_links": [
+      {
+        "label": "Logging",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Logging/"
+      }
+    ],
     "unions": [],
     "values": [
       {
@@ -865,6 +936,12 @@
     "binops": [],
     "comment": "Platform glue for Pebble watch applications.\n\nThis module wraps `Platform.worker` so your `init` function receives a\ntyped `LaunchContext` decoded from JSON launch metadata.\n\n# Launch metadata\n@docs LaunchReason, LaunchScreen, LaunchContext, ColorCapability, DisplayShape, launchReasonFromTag, launchReasonToInt, colorCapabilityIsColor, displayShapeIsRound\n\n# Program entrypoint\n@docs watchface, application",
     "name": "Pebble.Platform",
+    "native_api_links": [
+      {
+        "label": "App",
+        "url": "https://developer.repebble.com/docs/c/Foundation/App/"
+      }
+    ],
     "unions": [
       {
         "args": [],
@@ -978,6 +1055,12 @@
     "binops": [],
     "comment": "Watch-local key/value storage commands.\n\nThe watch runtime exposes a lightweight integer key/value store.\n\n    saveCounter : Cmd msg\n    saveCounter =\n        writeInt 1 42\n\n    loadCounter : Cmd Msg\n    loadCounter =\n        readInt 1 CounterLoaded\n\n\n# Operations\n\n@docs writeInt, readInt, writeString, readString, delete",
     "name": "Pebble.Storage",
+    "native_api_links": [
+      {
+        "label": "Storage",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Storage/"
+      }
+    ],
     "unions": [],
     "values": [
       {
@@ -1012,6 +1095,16 @@
     "binops": [],
     "comment": "System-state subscriptions sourced from Pebble event services.\n\n@docs batteryLevel, connectionStatus, onBatteryChange, onConnectionChange",
     "name": "Pebble.System",
+    "native_api_links": [
+      {
+        "label": "BatteryStateService",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Event_Service/BatteryStateService/"
+      },
+      {
+        "label": "ConnectionService",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Event_Service/ConnectionService/"
+      }
+    ],
     "unions": [],
     "values": [
       {
@@ -1048,6 +1141,12 @@
     "binops": [],
     "comment": "Commands for reading watch time and timezone information.\n\n# Time and timezone\n@docs DayOfWeek, CurrentDateTime, currentDateTime, currentTimeString, clockStyle24h, timezoneIsSet, timezone",
     "name": "Pebble.Time",
+    "native_api_links": [
+      {
+        "label": "Wall_Time",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Wall_Time/"
+      }
+    ],
     "unions": [
       {
         "args": [],
@@ -1135,6 +1234,12 @@
       },
       {
         "args": [],
+        "comment": "Vector graphic resource handle from `Pebble.Ui.Resources`.",
+        "name": "VectorGraphic",
+        "type": "UiResources.VectorGraphic"
+      },
+      {
+        "args": [],
         "comment": "Path geometry for path draw operations.",
         "name": "Path",
         "type": "( List ( Int, Int ), ( Int, Int ), Int )"
@@ -1159,8 +1264,14 @@
       }
     ],
     "binops": [],
-    "comment": "Retained virtual UI model for Pebble rendering.\n\n`Pebble.Ui` provides a declarative scene graph for watch windows, layers,\nand drawing operations. Build values here and emit them through your app's\nrender bridge to keep view logic in pure Elm.\n\n    mainWindow : WindowNode\n    mainWindow =\n        window 1\n            [ canvasLayer 2\n                [ fillRect\n                    { x = 0, y = 0, w = 144, h = 168 }\n                    UiColor.black\n                ]\n            ]\n\n\n# Core nodes\n\n@docs UiNode, WindowNode, LayerNode, toUiNode, windowStack, window, canvasLayer\n\n\n# Drawing operations\n\n@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawRotatedBitmap, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial\n\n\n# Resources, labels and path/context helpers\n\n@docs Label, Context, Bitmap, Font, Path, Point, Rect, Rotation, TextAlignment, TextOverflow, TextOptions, defaultTextOptions, alignLeft, alignCenter, alignRight, wordWrap, trailingEllipsis, fillOverflow, context, path, rotationFromPebbleAngle, rotationFromDegrees\n\n\n# Drawing settings\n\n@docs ContextSetting, strokeWidth, antialiased, strokeColor, fillColor, textColor, compositingMode",
+    "comment": "Retained virtual UI model for Pebble rendering.\n\n`Pebble.Ui` provides a declarative scene graph for watch windows, layers,\nand drawing operations. Build values here and emit them through your app's\nrender bridge to keep view logic in pure Elm.\n\n    mainWindow : WindowNode\n    mainWindow =\n        window 1\n            [ canvasLayer 2\n                [ fillRect\n                    { x = 0, y = 0, w = 144, h = 168 }\n                    UiColor.black\n                ]\n            ]\n\n\n# Core nodes\n\n@docs UiNode, WindowNode, LayerNode, toUiNode, windowStack, window, canvasLayer\n\n\n# Drawing operations\n\n@docs RenderOp, text, textInt, textLabel, clear, fillRect, pixel, line, rect, circle, fillCircle, drawBitmapInRect, drawRotatedBitmap, drawVectorAt, drawVectorSequenceAt, group, pathFilled, pathOutline, pathOutlineOpen, roundRect, arc, fillRadial\n\n\n# Resources, labels and path/context helpers\n\n@docs Label, Context, Bitmap, Font, VectorGraphic, Path, Point, Rect, Rotation, TextAlignment, TextOverflow, TextOptions, defaultTextOptions, alignLeft, alignCenter, alignRight, wordWrap, trailingEllipsis, fillOverflow, context, path, rotationFromPebbleAngle, rotationFromDegrees\n\n\n# Drawing settings\n\n@docs ContextSetting, strokeWidth, antialiased, strokeColor, fillColor, textColor, compositingMode",
     "name": "Pebble.Ui",
+    "native_api_links": [
+      {
+        "label": "Drawing_Primitives",
+        "url": "https://developer.repebble.com/docs/c/Graphics/Drawing_Primitives/"
+      }
+    ],
     "unions": [
       {
         "args": [],
@@ -1367,6 +1478,16 @@
         "type": "Bitmap -> Rect -> Rotation -> Point -> RenderOp"
       },
       {
+        "comment": "Draw a Pebble Draw Command vector resource at the given origin.",
+        "name": "drawVectorAt",
+        "type": "VectorGraphic -> Point -> RenderOp"
+      },
+      {
+        "comment": "Draw a Pebble Draw Command sequence resource at the given origin.",
+        "name": "drawVectorSequenceAt",
+        "type": "VectorGraphic -> Point -> RenderOp"
+      },
+      {
         "comment": "Group operations under a temporary style context.",
         "name": "group",
         "type": "Context -> RenderOp"
@@ -1491,8 +1612,49 @@
   {
     "aliases": [],
     "binops": [],
+    "comment": "Observe Timeline Quick View unobstructed-area changes on round watches.\n\nUse `currentBounds` during startup to sync the initial layout, then subscribe to\n`onWillChange`, `onChanging`, and `onDidChange` to animate layout transitions.\n\n@docs onWillChange, onChanging, onDidChange, currentBounds",
+    "name": "Pebble.UnobstructedArea",
+    "native_api_links": [
+      {
+        "label": "UnobstructedArea",
+        "url": "https://developer.repebble.com/docs/c/User_Interface/UnobstructedArea/"
+      }
+    ],
+    "unions": [],
+    "values": [
+      {
+        "comment": "Receive the final unobstructed bounds before a Timeline peek transition.",
+        "name": "onWillChange",
+        "type": "(Rect -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive animation progress while the unobstructed area is changing.\n\nProgress ranges from 0 to 255, matching Pebble's `AnimationProgress`.",
+        "name": "onChanging",
+        "type": "(Int -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive notification after the unobstructed area finished changing.",
+        "name": "onDidChange",
+        "type": "msg -> Sub msg"
+      },
+      {
+        "comment": "Read the current unobstructed bounds once.",
+        "name": "currentBounds",
+        "type": "(Rect -> msg) -> Cmd msg"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
     "comment": "Vibration motor controls.\n\n@docs cancel, shortPulse, longPulse, doublePulse, pattern",
     "name": "Pebble.Vibes",
+    "native_api_links": [
+      {
+        "label": "Vibes",
+        "url": "https://developer.repebble.com/docs/c/User_Interface/Vibes/"
+      }
+    ],
     "unions": [],
     "values": [
       {
@@ -1527,6 +1689,12 @@
     "binops": [],
     "comment": "Wakeup scheduling commands.\n\n@docs scheduleAfterSeconds, cancel",
     "name": "Pebble.Wakeup",
+    "native_api_links": [
+      {
+        "label": "Wakeup",
+        "url": "https://developer.repebble.com/docs/c/Foundation/Wakeup/"
+      }
+    ],
     "unions": [],
     "values": [
       {
@@ -1553,6 +1721,12 @@
     "binops": [],
     "comment": "Access information about the watch itself.\n\nThis API mirrors Pebble's C `WatchInfo` module and provides information such as\nwatch model, watch color, and firmware version.\n\n# Types\n@docs WatchModel, FirmwareVersion, WatchColor\n\n# Device info\n@docs getModel, getFirmwareVersion, getColor",
     "name": "Pebble.WatchInfo",
+    "native_api_links": [
+      {
+        "label": "WatchInfo",
+        "url": "https://developer.repebble.com/docs/c/Foundation/WatchInfo/"
+      }
+    ],
     "unions": [
       {
         "args": [],

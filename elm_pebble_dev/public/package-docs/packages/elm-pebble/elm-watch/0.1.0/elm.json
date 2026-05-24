@@ -27,6 +27,7 @@
     "Pebble.System",
     "Pebble.Time",
     "Pebble.Ui",
+    "Pebble.UnobstructedArea",
     "Pebble.Vibes",
     "Pebble.Wakeup",
     "Pebble.WatchInfo"

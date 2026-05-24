@@ -4,8 +4,8 @@ import BackendTask exposing (BackendTask)
 import FatalError exposing (FatalError)
 import Head
 import Head.Seo as Seo
-import Html exposing (div, h1, h2, img, li, p, section, span, text, ul)
-import Html.Attributes exposing (alt, src)
+import Html exposing (a, div, h1, h2, img, li, p, section, span, text, ul)
+import Html.Attributes exposing (alt, href, rel, src, target)
 import Pages.Url
 import PagesMsg exposing (PagesMsg)
 import Route
@@ -152,6 +152,26 @@ view _ _ =
                             ]
                         ]
                         [ text "The IDE is a normal Elixir application: Phoenix on the server, LiveView for the workspace UI, and the usual Mix project layout. It ties together editing, syntax-aware Elm tooling, debugger state, Pebble SDK commands, and AI-facing integration servers without turning project files into ad-hoc strings." ]
+                    , p
+                        [ classes [ Tw.mt s5 ] ]
+                        [ a
+                            [ href "https://ide.elm-pebble.dev"
+                            , rel "noreferrer"
+                            , target "_blank"
+                            , classes
+                                [ Tw.inline_flex
+                                , Tw.rounded_lg
+                                , Tw.bg_color (blue s600)
+                                , Tw.px s6
+                                , Tw.py s3
+                                , Tw.font_semibold
+                                , Tw.text_simple white
+                                , Tw.shadow_lg
+                                , Tw.raw "hover:bg-blue-700"
+                                ]
+                            ]
+                            [ text "Open the hosted IDE" ]
+                        ]
                     ]
                 , section
                     [ classes [ Tw.mt s12 ] ]
@@ -257,6 +277,43 @@ view _ _ =
                         [ li [] [ text "Start a debugger session from the workspace and see watch, companion, and phone state in one place." ]
                         , li [] [ text "Fire supported events such as ticks, launch events, button-like triggers, and protocol messages without rebuilding the whole mental model by hand." ]
                         , li [] [ text "Step through the event timeline, compare snapshots, replay recent messages, and inspect compiler/build events alongside runtime state." ]
+                        ]
+                    ]
+                , section
+                    [ classes [ Tw.mt s12 ] ]
+                    [ h2
+                        [ classes [ Tw.text_n2xl, Tw.font_semibold, Tw.tracking_tight ] ]
+                        [ text "Projects, templates, and publish" ]
+                    , p
+                        [ classes [ Tw.mt s4, Tw.text_color (gray s700), dark [ Tw.text_color (gray s300) ] ] ]
+                        [ text "The IDE creates projects from templates: starter apps, watchfaces, companion API demos, watch hardware demos, and game starters. Each project can include watch, protocol, and phone source trees with separate elm.json files where needed." ]
+                    , p
+                        [ classes [ Tw.mt s4, Tw.text_color (gray s700), dark [ Tw.text_color (gray s300) ] ] ]
+                        [ text "The build loop runs elmc check/compile, packages PBW files with the Pebble SDK, targets emulators or hardware, captures screenshots, and checks release metadata before publishing." ]
+                    ]
+                , section
+                    [ classes [ Tw.mt s12 ] ]
+                    [ h2
+                        [ classes [ Tw.text_n2xl, Tw.font_semibold, Tw.tracking_tight ] ]
+                        [ text "Emulators and simulator settings" ]
+                    , p
+                        [ classes [ Tw.mt s4, Tw.text_color (gray s700), dark [ Tw.text_color (gray s300) ] ] ]
+                        [ text "The Emulator workspace tab supports an embedded QEMU-based runtime in the IDE container, an external Pebble SDK emulator window, and an optional browser WASM emulator when the runtime assets are built separately." ]
+                    , ul
+                        [ classes
+                            [ Tw.mt s5
+                            , Tw.flex
+                            , Tw.flex_col
+                            , Tw.gap s3
+                            , Tw.list_disc
+                            , Tw.pl s6
+                            , Tw.text_color (gray s700)
+                            , dark [ Tw.text_color (gray s300) ]
+                            ]
+                        ]
+                        [ li [] [ text "Simulator settings adjust battery, connectivity, time, weather, storage, and other companion bridge values that apply while debugging or emulating." ]
+                        , li [] [ text "Embedded emulator storage editing lets you inspect and change Pebble.Storage keys during runs." ]
+                        , li [] [ text "WASM emulation is opt-in: build the runtime with the repository’s wasm-emulator-builder Docker target or scripts/build_wasm_emulator_runtime.sh, then serve assets from the IDE data volume." ]
                         ]
                     ]
                 , section

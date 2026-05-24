@@ -29,6 +29,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
       {call("__sub__", [var("x"), var("y")]), 7},
       {call("__mul__", [var("x"), var("y")]), 30},
       {call("__idiv__", [var("x"), var("y")]), 3},
+      {call("Main.__idiv__", [var("x"), var("y")]), 3},
       {call("__fdiv__", [var("x"), var("y")]), 10 / 3},
       {call("__pow__", [var("y"), int(3)]), 27},
       {call("modBy", [var("y"), var("x")]), 1},
@@ -44,6 +45,33 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
     for {expr, expected} <- cases do
       assert {:ok, ^expected} = CoreIREvaluator.evaluate(expr, env)
     end
+  end
+
+  test "add_const and add_vars resolve zero-arity top-level values from context" do
+    context = %{
+      functions: %{
+        {"Main", "offsetY", 0} => %{
+          params: [],
+          body: %{"op" => :int_literal, "value" => 58}
+        }
+      },
+      module: "Main",
+      source_module: "Main"
+    }
+
+    assert {:ok, 126} =
+             CoreIREvaluator.evaluate(
+               %{"op" => :add_const, "var" => "offsetY", "value" => 68},
+               %{},
+               context
+             )
+
+    assert {:ok, 116} =
+             CoreIREvaluator.evaluate(
+               %{"op" => :add_vars, "left" => "offsetY", "right" => "offsetY"},
+               %{},
+               context
+             )
   end
 
   test "compares maybe constructors across runtime representations" do
@@ -511,6 +539,89 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
     assert Enum.map(text_args, fn node ->
              if Map.has_key?(node, "value"), do: node["value"], else: node["label"]
            end) == [1, 0, 42, 144, 56, "08:41"]
+  end
+
+  test "wraps render-op lists through indexed Pebble.Ui helpers regardless of helper name" do
+    helper_body = %{
+      "op" => :qualified_call,
+      "target" => "PebbleUi.windowStack",
+      "args" => [
+        %{
+          "op" => :list_literal,
+          "items" => [
+            %{
+              "op" => :qualified_call,
+              "target" => "PebbleUi.window",
+              "args" => [
+                %{"op" => :int_literal, "value" => 1},
+                %{
+                  "op" => :list_literal,
+                  "items" => [
+                    %{
+                      "op" => :qualified_call,
+                      "target" => "PebbleUi.canvasLayer",
+                      "args" => [
+                        %{"op" => :int_literal, "value" => 1},
+                        %{"op" => :var, "name" => "ops"}
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Pebble.Ui",
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "packRenderOps",
+              "type" => "List RenderOp -> UiNode",
+              "args" => ["ops"],
+              "expr" => helper_body
+            }
+          ]
+        }
+      ]
+    }
+
+    context = %{
+      functions: CoreIREvaluator.index_functions(core_ir),
+      module: "Main",
+      source_module: "Main"
+    }
+
+    expr = %{
+      "op" => :qualified_call,
+      "target" => "PebbleUi.packRenderOps",
+      "args" => [
+        %{
+          "op" => :list_literal,
+          "items" => [
+            %{
+              "op" => :qualified_call,
+              "target" => "PebbleUi.clear",
+              "args" => [
+                %{"op" => :qualified_call, "target" => "PebbleColor.black", "args" => []}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, %{"type" => "windowStack", "children" => [window]}} =
+             CoreIREvaluator.evaluate(expr, %{}, context)
+
+    assert %{"type" => "window", "children" => [_id, canvas]} = window
+    assert %{"type" => "canvasLayer", "children" => [_layer_id, clear]} = canvas
+    assert clear["type"] == "clear"
   end
 
   test "evaluates elm/http get descriptors and decodes json callbacks" do

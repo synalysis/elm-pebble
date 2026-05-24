@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.State do
   import Phoenix.Component, only: [assign: 3, to_form: 2]
   import Phoenix.LiveView, only: [allow_upload: 3]
 
+  alias Ide.ProjectCapabilities
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.Settings
@@ -178,6 +179,7 @@ defmodule IdeWeb.WorkspaceLive.State do
       :project_settings_form,
       to_form(project_settings_form_data(nil), as: :project_settings)
     )
+    |> assign(:detected_capabilities, [])
     |> assign(:github_push_status, :idle)
     |> assign(:github_push_output, nil)
     |> assign(:store_listing_sync_status, :idle)
@@ -275,6 +277,10 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(
       :project_settings_form,
       to_form(project_settings_form_data(project), as: :project_settings)
+    )
+    |> assign(
+      :detected_capabilities,
+      ProjectCapabilities.package_capabilities(Projects.project_workspace_path(project))
     )
     |> assign(:github_push_status, :idle)
     |> assign(:github_push_output, nil)

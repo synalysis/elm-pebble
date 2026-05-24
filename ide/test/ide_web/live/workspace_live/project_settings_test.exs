@@ -178,6 +178,21 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     assert has_element?(view, "input[name='simulator[locale]'][value='de-DE']")
   end
 
+  test "project settings release pane shows read-only detected capabilities", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceProjectCapabilities",
+               "slug" => "workspace-project-capabilities",
+               "target_type" => "app"
+             })
+
+    assert {:ok, _view, html} = live(conn, ~p"/projects/#{project.slug}/settings")
+
+    assert html =~ "Detected from Elm API usage"
+    assert html =~ "Not used"
+    refute html =~ "project_settings[capabilities]"
+  end
+
   test "project settings pane saves release metadata and github config", %{conn: conn} do
     assert {:ok, project} =
              Projects.create_project(%{
@@ -195,7 +210,6 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
         "description" => "A small Pebble watchapp.",
         "tags" => "fitness,utility",
         "target_platforms" => ["basalt", "chalk"],
-        "capabilities" => ["location", "health"],
         "website_url" => "https://elm-pebble.dev",
         "source_url" => "https://github.com/elm-pebble/watch"
       }
@@ -232,7 +246,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     assert updated.release_defaults["description"] == "A small Pebble watchapp."
     assert updated.release_defaults["tags"] == "fitness,utility"
     assert updated.release_defaults["target_platforms"] == ["basalt", "chalk"]
-    assert updated.release_defaults["capabilities"] == ["location", "health"]
+    assert updated.release_defaults["capabilities"] == []
     assert updated.release_defaults["generate_store_graphics"] == true
     assert updated.release_defaults["website_url"] == "https://elm-pebble.dev"
     assert updated.release_defaults["source_url"] == "https://github.com/elm-pebble/watch"

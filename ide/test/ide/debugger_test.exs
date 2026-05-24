@@ -2077,6 +2077,111 @@ defmodule Ide.DebuggerTest do
     assert runtime_model["connected"] == %{"ctor" => "Just", "args" => [true]}
   end
 
+  test "watch demo health template returns simulated step counts in debugger" do
+    slug = "sim-watch-demo-health-#{System.unique_integer([:positive])}"
+
+    source =
+      File.read!(Path.join(["priv", "project_templates", "watch_demo_health", "src", "Main.elm"]))
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.set_simulator_settings(slug, %{
+               "health_steps" => 5123,
+               "health_steps_today" => 9876
+             })
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: source,
+               reason: "watch_demo_health",
+               source_root: "watch"
+             })
+
+    runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
+
+    assert get_in(runtime_model, ["supported", "ctor"]) == "Just"
+    assert get_in(runtime_model, ["supported", "args", Access.at(0)]) == true
+    assert get_in(runtime_model, ["stepsNow", "ctor"]) == "Just"
+    assert get_in(runtime_model, ["stepsNow", "args", Access.at(0)]) == 5123
+    assert get_in(runtime_model, ["stepsToday", "ctor"]) == "Just"
+    assert get_in(runtime_model, ["stepsToday", "args", Access.at(0)]) == 9876
+
+    assert Enum.any?(reloaded.debugger_timeline, fn row ->
+             row.target == "watch" and
+               (row.message == "GotSupported" or String.starts_with?(row.message, "GotSupported "))
+           end)
+
+    assert {:ok, compiled} =
+             compile_health_template_preview(slug, source, reloaded.revision)
+
+    view_output = get_in(compiled, [:watch, :model, "runtime_view_output"]) || []
+    texts = for row <- view_output, row["kind"] == "text", do: row["text"]
+
+    assert "Health demo" in texts
+    assert Enum.any?(texts, &String.starts_with?(&1, "Now: "))
+    assert Enum.any?(texts, &String.starts_with?(&1, "Today: "))
+  end
+
+  test "watch demo health template reports unsupported on aplite in debugger" do
+    slug = "sim-watch-demo-health-aplite-#{System.unique_integer([:positive])}"
+
+    source =
+      File.read!(Path.join(["priv", "project_templates", "watch_demo_health", "src", "Main.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+    assert {:ok, _} = Debugger.set_watch_profile(slug, %{watch_profile_id: "aplite"})
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: source,
+               reason: "watch_demo_health_aplite",
+               source_root: "watch"
+             })
+
+    runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
+
+    assert get_in(runtime_model, ["supported", "ctor"]) == "Just"
+    assert get_in(runtime_model, ["supported", "args", Access.at(0)]) == false
+    assert get_in(runtime_model, ["stepsNow", "ctor"]) == "Nothing"
+    assert get_in(runtime_model, ["stepsToday", "ctor"]) == "Nothing"
+
+    assert {:ok, compiled} =
+             compile_health_template_preview(slug, source, reloaded.revision)
+
+    view_output = get_in(compiled, [:watch, :model, "runtime_view_output"]) || []
+    texts = for row <- view_output, row["kind"] == "text", do: row["text"]
+
+    assert "Health API not supported on this watch" in texts
+  end
+
+  test "watch demo watch-info template loads device info in debugger" do
+    slug = "sim-watch-demo-watch-info-#{System.unique_integer([:positive])}"
+
+    source =
+      File.read!(
+        Path.join(["priv", "project_templates", "watch_demo_watch_info", "src", "Main.elm"])
+      )
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: source,
+               reason: "watch_demo_watch_info",
+               source_root: "watch"
+             })
+
+    runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
+
+    assert get_in(runtime_model, ["model", "ctor"]) == "Just"
+    assert get_in(runtime_model, ["color", "ctor"]) == "Just"
+    assert get_in(runtime_model, ["firmware", "ctor"]) == "Just"
+  end
+
   test "tutorial watchface request weather carries structured protocol payload" do
     slug = "sim-tutorial-weather-roundtrip-#{System.unique_integer([:positive])}"
 
@@ -4485,6 +4590,32 @@ defmodule Ide.DebuggerTest do
       end)
 
     assert newyork_watch_updates == 0
+  end
+
+  defp compile_health_template_preview(slug, source, revision) do
+    workspace_root =
+      Path.join([
+        System.tmp_dir!(),
+        "watch_demo_health_preview_#{System.unique_integer([:positive])}"
+      ])
+
+    assert :ok = Ide.ProjectTemplates.apply_template("watch-demo-health", workspace_root)
+    File.write!(Path.join(workspace_root, "watch/src/Main.elm"), source)
+
+    assert {:ok, compile_result} =
+             Ide.Compiler.compile("watch-demo-health-preview-#{slug}",
+               workspace_root: workspace_root
+             )
+
+    assert compile_result.status == :ok
+
+    Debugger.ingest_elmc_compile(slug, %{
+      status: :ok,
+      compiled_path: "watch",
+      revision: revision || "health-preview",
+      elm_executor_core_ir_b64: compile_result.elm_executor_core_ir_b64,
+      elm_executor_metadata: compile_result.elm_executor_metadata || %{}
+    })
   end
 
   defp collect_view_text(node) when is_map(node) do

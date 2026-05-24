@@ -14,7 +14,7 @@ import FatalError exposing (FatalError)
 import Head
 import Head.Seo as Seo
 import Html exposing (a, div, h1, h2, img, li, node, p, section, span, text, ul)
-import Html.Attributes exposing (alt, attribute, href, rel, src, type_)
+import Html.Attributes exposing (alt, attribute, href, rel, src, target, type_)
 import Pages.Url
 import PagesMsg exposing (PagesMsg)
 import Route
@@ -162,12 +162,21 @@ view _ _ =
                         [ text "Elm Pebble brings the parts you need for real Pebble projects into one Elm-first workflow." ]
                     , ul
                         [ classes [ Tw.mt s6, Tw.grid, Tw.grid_cols_1, Tw.gap s5, md [ Tw.grid_cols_3 ] ] ]
-                        [ featureItem "Elm to native Pebble apps" "Write Elm and compile to C code that runs on the Pebble SDK instead of a browser runtime."
-                        , featureItem "Typed Pebble UI" "Build watch screens with Elm data structures for text, images, shapes, layout, colors, and resources."
-                        , featureItem "Companion communication" "Define shared protocol types for watch-to-phone messages, including AppMessage-style data flow."
-                        , featureItem "Project templates" "Start from working watchface, companion app, and protocol templates instead of assembling the structure by hand."
-                        , featureItem "Browser-based IDE" "Edit, inspect, and build projects from the Elm Pebble IDE with tooling shaped around Pebble apps."
-                        , featureItem "Hardware-oriented loop" "Use the Pebble SDK, emulator, and real watches as the target for every iteration."
+                        [ featureItem "Elm to native Pebble apps"
+                            [ text "Write Elm and compile to C code that runs on the Pebble SDK instead of a browser runtime." ]
+                        , featureItem "Typed Pebble UI"
+                            [ text "Build watch screens with Elm data structures for text, images, shapes, layout, colors, and resources." ]
+                        , featureItem "Companion communication"
+                            [ text "Define shared protocol types for watch-to-phone messages, including AppMessage-style data flow." ]
+                        , featureItem "Project templates"
+                            [ text "Start from working watchface, companion app, and protocol templates instead of assembling the structure by hand." ]
+                        , featureItem "Hosted and local IDE"
+                            [ text "Edit, inspect, and build projects at ide.elm-pebble.dev or run the same IDE locally with Docker." ]
+                        , featureItem "Hardware-oriented loop"
+                            [ text "Use the Pebble SDK and emulator, then install on "
+                            , externalLink "https://repebble.com/" "Rebble"
+                            , text " watches with the companion app and appstore."
+                            ]
                         ]
                     ]
                 , section
@@ -186,9 +195,15 @@ view _ _ =
                         [ text "Pebble apps are not web pages: there is no browser on the watch. You write Elm that compiles to C and drives Pebble's native UI. Anything that makes this site pretty in your desktop browser stays there—your watch never sees it." ]
                     , ul
                         [ classes [ Tw.mt s6, Tw.grid, Tw.grid_cols_1, Tw.gap s5, md [ Tw.grid_cols_3 ] ] ]
-                        [ workflowStep "1. Start small" "Grab a minimal watch face or tiny app skeleton, then grow it one visible behavior at a time."
-                        , workflowStep "2. Play in Elm" "Describe the screen with Elm and the Pebble UI API; the compiler turns that into native draw code—not HTML or CSS on the watch."
-                        , workflowStep "3. Try it on hardware" "Build with the Pebble SDK, run the emulator or flash your watch, and see how the idea feels on the wrist."
+                        [ workflowStep "1. Start small"
+                            [ text "Create a project from a template in the IDE—starter app, watchface, companion demo, or game—then grow it one visible behavior at a time." ]
+                        , workflowStep "2. Play in Elm"
+                            [ text "Describe the screen with Elm and the Pebble UI API; the compiler turns that into native draw code—not HTML or CSS on the watch." ]
+                        , workflowStep "3. Try it on hardware"
+                            [ text "Build with the Pebble SDK, run the emulator, then install on a "
+                            , externalLink "https://repebble.com/" "Rebble"
+                            , text " watch and see how the idea feels on your wrist."
+                            ]
                         ]
                     ]
                 , section
@@ -198,13 +213,16 @@ view _ _ =
                         [ text "Who it is for" ]
                     , p
                         [ classes [ Tw.mt s4, Tw.max_w s96, Tw.text_lg, Tw.text_color (gray s700), dark [ Tw.text_color (gray s300) ] ] ]
-                        [ text "Pebble fans, Elm-curious developers, and anyone who wants a calmer way to build watch faces and small wrist apps with explicit state and predictable updates." ]
+                        [ text "Pebble and "
+                        , externalLink "https://repebble.com/" "Rebble"
+                        , text " fans, Elm-curious developers, and anyone who wants a calmer way to build watch faces and small wrist apps with explicit state and predictable updates."
+                        ]
                     ]
                 , section
                     [ classes [ Tw.mt s12 ] ]
                     [ div
                         [ classes [ Tw.flex, Tw.flex_col, Tw.gap s4 ] ]
-                        [ Route.Ide
+                        [ Route.GettingStarted
                             |> Route.link
                                 [ classes
                                     [ Tw.inline_flex
@@ -213,7 +231,20 @@ view _ _ =
                                     , Tw.font_semibold
                                     , Tw.text_color (blue s600)
                                     , hover [ Tw.text_color (blue s700) ]
-                                    , dark [ Tw.text_color (blue s400), hover [ Tw.text_color (blue s300) ] ]
+                                    , dark [ Tw.text_color (blue s400) ]
+                                    ]
+                                ]
+                                [ text "Getting started with Elm Pebble" ]
+                        , Route.Ide
+                            |> Route.link
+                                [ classes
+                                    [ Tw.inline_flex
+                                    , Tw.items_center
+                                    , Tw.text_base
+                                    , Tw.font_semibold
+                                    , Tw.text_color (blue s600)
+                                    , hover [ Tw.text_color (blue s700) ]
+                                    , dark [ Tw.text_color (blue s400) ]
                                     ]
                                 ]
                                 [ text "How the elm-pebble IDE is built" ]
@@ -226,7 +257,7 @@ view _ _ =
                                     , Tw.font_semibold
                                     , Tw.text_color (blue s600)
                                     , hover [ Tw.text_color (blue s700) ]
-                                    , dark [ Tw.text_color (blue s400), hover [ Tw.text_color (blue s300) ] ]
+                                    , dark [ Tw.text_color (blue s400) ]
                                     ]
                                 ]
                                 [ text "Why Elm fits Pebble watchfaces and apps" ]
@@ -239,14 +270,14 @@ view _ _ =
                                     , Tw.font_semibold
                                     , Tw.text_color (blue s600)
                                     , hover [ Tw.text_color (blue s700) ]
-                                    , dark [ Tw.text_color (blue s400), hover [ Tw.text_color (blue s300) ] ]
+                                    , dark [ Tw.text_color (blue s400) ]
                                     ]
                                 ]
                                 [ text "Read the Watchface tutorial complete walkthrough" ]
                         ]
                     , p
                         [ classes [ Tw.mt s4, Tw.text_base, Tw.text_color (gray s600), dark [ Tw.text_color (gray s400) ] ] ]
-                        [ text "Clone, run, and iterate from Elm code to an emulator or watch without losing the shape of your app." ]
+                        [ text "Open the hosted IDE to create a project, or clone the repository and run docker compose up -d for a local workspace. Iterate from Elm code to the emulator or a real watch without losing the shape of your app." ]
                     ]
                 ]
             ]
@@ -428,7 +459,7 @@ benefitCard title description =
         ]
 
 
-featureItem : String -> String -> Html.Html msg
+featureItem : String -> List (Html.Html msg) -> Html.Html msg
 featureItem title description =
     li
         [ classes
@@ -448,8 +479,23 @@ featureItem title description =
         [ h2 [ classes [ Tw.text_lg, Tw.font_semibold ] ] [ text title ]
         , p
             [ classes [ Tw.mt s3, Tw.text_base, Tw.text_color (gray s700), dark [ Tw.text_color (gray s300) ] ] ]
-            [ text description ]
+            description
         ]
+
+
+externalLink : String -> String -> Html.Html msg
+externalLink url label =
+    a
+        [ href url
+        , target "_blank"
+        , rel "noreferrer"
+        , classes
+            [ Tw.font_semibold
+            , Tw.text_color (blue s700)
+            , dark [ Tw.text_color (blue s400) ]
+            ]
+        ]
+        [ text label ]
 
 
 visualizationCard : String -> String -> Html.Html msg -> Html.Html msg
@@ -616,7 +662,7 @@ wiringCellAttributes maybeLabel =
             ]
 
 
-workflowStep : String -> String -> Html.Html msg
+workflowStep : String -> List (Html.Html msg) -> Html.Html msg
 workflowStep heading description =
     li
         [ classes
@@ -632,5 +678,5 @@ workflowStep heading description =
         [ h2 [ classes [ Tw.text_lg, Tw.font_semibold ] ] [ text heading ]
         , p
             [ classes [ Tw.mt s3, Tw.text_color (gray s700), dark [ Tw.text_color (gray s300) ] ] ]
-            [ text description ]
+            description
         ]

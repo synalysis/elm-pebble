@@ -5,6 +5,7 @@ module Pebble.Health exposing
     , onEvent
     , sum
     , sumToday
+    , supported
     , value
     )
 
@@ -15,7 +16,7 @@ calories, and heart rate.
 @docs Metric, Event
 
 # Commands
-@docs value, sumToday, sum, accessible
+@docs supported, value, sumToday, sum, accessible
 
 # Subscriptions
 @docs onEvent
@@ -23,6 +24,13 @@ calories, and heart rate.
 -}
 
 import Elm.Kernel.PebbleWatch
+
+
+{-| Request whether the Health API is available on this watch.
+-}
+supported : (Bool -> msg) -> Cmd msg
+supported =
+    Elm.Kernel.PebbleWatch.healthSupported
 
 
 {-| A Pebble health metric.

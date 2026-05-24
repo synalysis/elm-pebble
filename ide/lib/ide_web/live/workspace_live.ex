@@ -83,6 +83,13 @@ defmodule IdeWeb.WorkspaceLive do
         settings = Settings.current()
         previous_pane = socket.assigns[:pane]
         _ = Projects.ensure_bitmap_generated(project)
+
+        project =
+          case Projects.sync_detected_capabilities(project) do
+            {:ok, updated} -> updated
+            _ -> project
+          end
+
         tree = Projects.list_source_tree(project)
         bitmap_resources = load_bitmap_resources(project)
         vector_resources = load_vector_resources(project)
@@ -585,6 +592,13 @@ defmodule IdeWeb.WorkspaceLive do
                 end
 
               socket = schedule_editor_check(socket, tab)
+
+              socket =
+                if capability_sync_source?(tab.source_root, tab.rel_path) do
+                  refresh_detected_capabilities(socket)
+                else
+                  socket
+                end
 
               {:noreply, put_flash(socket, :info, flash_message)}
 
@@ -2490,7 +2504,7 @@ defmodule IdeWeb.WorkspaceLive do
     defaults = project.release_defaults || %{}
     github = project.github || %{}
 
-    release_defaults = merge_release_defaults(defaults, params, section)
+    release_defaults = merge_release_defaults(defaults, params, section, workspace_root)
     github = merge_github_config(github, params, section)
 
     attrs = %{
@@ -2511,6 +2525,10 @@ defmodule IdeWeb.WorkspaceLive do
         socket =
           socket
           |> assign(:project, updated)
+          |> assign(
+            :detected_capabilities,
+            Ide.ProjectCapabilities.package_capabilities(workspace_root)
+          )
           |> assign(
             :project_settings_form,
             to_form(State.project_settings_form_data(updated), as: :project_settings)
@@ -2540,7 +2558,7 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  defp merge_release_defaults(defaults, params, :release) do
+  defp merge_release_defaults(defaults, params, :release, workspace_root) do
     defaults
     |> Map.put("version_label", String.trim(params["version_label"] || Map.get(defaults, "version_label", "")))
     |> Map.put("description", String.trim(params["description"] || Map.get(defaults, "description", "")))
@@ -2551,14 +2569,14 @@ defmodule IdeWeb.WorkspaceLive do
       "target_platforms",
       target_platforms_param(params, Map.get(defaults, "target_platforms"))
     )
-    |> Map.put("capabilities", capabilities_param(params, Map.get(defaults, "capabilities")))
+    |> Map.put("capabilities", Ide.ProjectCapabilities.package_capabilities(workspace_root))
   end
 
-  defp merge_release_defaults(defaults, params, :store) do
+  defp merge_release_defaults(defaults, params, :store, _workspace_root) do
     Map.put(defaults, "generate_store_graphics", to_bool(Map.get(params, "generate_store_graphics")))
   end
 
-  defp merge_release_defaults(defaults, _params, _), do: defaults
+  defp merge_release_defaults(defaults, _params, _section, _workspace_root), do: defaults
 
   defp merge_github_config(github, params, :github) do
     github
@@ -2577,11 +2595,6 @@ defmodule IdeWeb.WorkspaceLive do
     do: State.target_platforms_form_value(platforms)
 
   defp target_platforms_param(_params, defaults), do: State.target_platforms_form_value(defaults)
-
-  defp capabilities_param(%{"capabilities" => capabilities}, _defaults),
-    do: State.capabilities_form_value(capabilities)
-
-  defp capabilities_param(_params, defaults), do: State.capabilities_form_value(defaults)
 
   defp visibility_param(%{"github_visibility" => visibility}, _defaults),
     do: Projects.github_visibility(visibility)
@@ -5330,5 +5343,31 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp external_emulator_disabled_message do
     "External Pebble emulator is not available on this hosted IDE. Use Embedded or WASM instead."
+  end
+
+  defp capability_sync_source?(source_root, rel_path)
+       when is_binary(source_root) and is_binary(rel_path) do
+    source_root in ["watch", "phone"] and String.ends_with?(rel_path, ".elm")
+  end
+
+  defp capability_sync_source?(_, _), do: false
+
+  defp refresh_detected_capabilities(socket) do
+    project = socket.assigns.project
+    workspace_root = Projects.project_workspace_path(project)
+
+    project =
+      case Projects.sync_detected_capabilities(project) do
+        {:ok, updated} -> updated
+        _ -> project
+      end
+
+    socket
+    |> assign(:project, project)
+    |> assign(:detected_capabilities, Ide.ProjectCapabilities.package_capabilities(workspace_root))
+    |> assign(
+      :project_settings_form,
+      to_form(State.project_settings_form_data(project), as: :project_settings)
+    )
   end
 end

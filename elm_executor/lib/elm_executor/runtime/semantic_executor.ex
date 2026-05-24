@@ -53,6 +53,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       core_ir
       |> evaluator_context(source_module)
       |> Map.merge(vector_resource_indices_context(request, current_model))
+      |> Map.put(:launch_context, launch_context_from_model(current_model))
     static_init_model = map_value(introspect, :init_model)
 
     base_runtime_model =
@@ -1623,6 +1624,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp normalize_launch_context(_context) do
     normalize_launch_context(%{})
   end
+
+  @spec launch_context_from_model(map()) :: map()
+  defp launch_context_from_model(model) when is_map(model) do
+    Map.get(model, "launch_context") || Map.get(model, :launch_context) || %{}
+  end
+
+  defp launch_context_from_model(_model), do: %{}
 
   @spec launch_context_screen(map(), map()) :: map()
   defp launch_context_screen(screen, context) when is_map(screen) and is_map(context) do

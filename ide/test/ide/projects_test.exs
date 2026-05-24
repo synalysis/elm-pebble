@@ -434,7 +434,10 @@ defmodule Ide.ProjectsTest do
       {"watch-demo-data-log", "Pebble.DataLog", "app"},
       {"watch-demo-app-focus", "Pebble.AppFocus", "app"},
       {"watch-demo-compass", "Pebble.Compass", "app"},
-      {"watch-demo-dictation", "Pebble.Dictation", "app"}
+      {"watch-demo-dictation", "Pebble.Dictation", "app"},
+      {"watch-demo-health", "Pebble.Health", "app"},
+      {"watch-demo-light", "Pebble.Light", "app"},
+      {"watch-demo-watch-info", "Pebble.WatchInfo", "app"}
     ]
 
     for {template, snippet, target_type} <- demos do

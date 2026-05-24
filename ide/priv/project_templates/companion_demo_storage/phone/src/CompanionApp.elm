@@ -78,7 +78,7 @@ update msg model =
             ( model, Cmd.none )
 
         GotPreference (Ok ( "units", value )) ->
-            case Decode.decodeValue Decode.string value |> Result.andThen unitsFromString of
+            case Decode.decodeValue Decode.string value |> Result.mapError Decode.errorToString |> Result.andThen unitsFromString of
                 Ok units ->
                     ( { model | units = units }
                     , pushValues model.theme units
@@ -102,7 +102,7 @@ update msg model =
             ( model, Cmd.none )
 
         StoredUnits (Ok ( "units", value )) ->
-            case Decode.decodeValue Decode.string value |> Result.andThen unitsFromString of
+            case Decode.decodeValue Decode.string value |> Result.mapError Decode.errorToString |> Result.andThen unitsFromString of
                 Ok units ->
                     ( { model | units = units }, pushValues model.theme units )
 

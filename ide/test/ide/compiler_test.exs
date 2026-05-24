@@ -39,7 +39,7 @@ defmodule Ide.CompilerTest do
   test "watch app templates produce strict CoreIR artifacts" do
     templates =
       ["game-2048", "game-basic", "starter", "watchface-digital"] ++
-        ~w(watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation)
+        ~w(watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info)
 
     for template <- templates do
       workspace_root = tmp_workspace_path("strict-coreir-#{template}")
@@ -265,6 +265,41 @@ defmodule Ide.CompilerTest do
     assert model["turn"] == 1
     assert List.first(model["cells"]) == 4
     assert step.runtime["operation_source"] == "core_ir_update_eval"
+  end
+
+  test "check_source_root reports watch function call type errors like Elm" do
+    workspace_root = tmp_workspace_path("check-source-root-function-call")
+    on_exit(fn -> File.rm_rf(workspace_root) end)
+
+    assert :ok = ProjectTemplates.apply_template("watch-demo-health", workspace_root)
+    source_path = Path.join([workspace_root, "watch", "src", "Main.elm"])
+
+    source =
+      source_path
+      |> File.read!()
+      |> String.replace(
+        "Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 20 } (String.fromInt model.events)",
+        "Ui.textInt Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 20 } model.events"
+      )
+
+    File.write!(source_path, source)
+
+    assert {:ok, result} =
+             Compiler.check_source_root("check-source-root-function-call",
+               workspace_root: workspace_root,
+               source_root: "watch"
+             )
+
+    assert result.status == :error
+    assert result.error_count >= 1
+
+    assert Enum.any?(
+             result.diagnostics,
+             &(&1.severity == "error" and &1.file == "src/Main.elm" and &1.line == 131 and
+                 &1.message =~ "textInt")
+           )
+
+    refute Enum.any?(result.diagnostics, &(&1.message =~ "check: failed\n\ncheck: failed"))
   end
 
   test "compile works without mix on PATH" do

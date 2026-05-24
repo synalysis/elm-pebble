@@ -328,6 +328,8 @@ defmodule Ide.Debugger do
       "compass_heading_deg" => 0,
       "compass_valid" => true,
       "app_in_focus" => true,
+      "health_steps" => 4200,
+      "health_steps_today" => 9100,
       "dictation_transcript" => "",
       "dictation_error" => "",
       "vibe_pattern_ms" => []
@@ -1649,7 +1651,9 @@ defmodule Ide.Debugger do
     if is_map(ei) do
       ei
       |> introspect_cmd_calls("init_cmd_calls")
+      |> expand_helper_cmd_calls(ei)
       |> Enum.flat_map(&device_request_from_cmd_call/1)
+      |> Enum.reject(&init_device_request_deferred_to_runtime?/1)
       |> Enum.uniq_by(fn req -> {req.kind, req.response_message} end)
       |> Enum.map(&finalize_device_request(&1, model))
       |> Enum.reduce(state, fn req, acc ->
@@ -4050,6 +4054,28 @@ defmodule Ide.Debugger do
     "#{ctor} #{elm_literal(value)}"
   end
 
+  defp device_response_message(%{
+         response_message: ctor,
+         kind: kind,
+         preview: preview
+       })
+       when is_binary(ctor) and ctor != "" and
+              kind in [
+                "health_value",
+                "health_sum_today",
+                "health_sum",
+                "health_accessible",
+                "health_supported"
+              ] do
+    value =
+      case preview do
+        %{"value" => metric_value} -> metric_value
+        metric_value -> metric_value
+      end
+
+    "#{ctor} #{elm_literal(value)}"
+  end
+
   defp device_response_message(%{response_message: ctor}) when is_binary(ctor), do: ctor
   defp device_response_message(_req), do: nil
 
@@ -4399,15 +4425,19 @@ defmodule Ide.Debugger do
       ei
       |> introspect_cmd_calls("update_cmd_calls")
       |> update_cmd_calls_for_message(current_ctor)
+      |> expand_helper_cmd_calls(ei)
       |> Enum.flat_map(&device_request_from_cmd_call/1)
 
     init_requests =
       ei
       |> introspect_cmd_calls("init_cmd_calls")
+      |> expand_helper_cmd_calls(ei)
       |> Enum.flat_map(&device_request_from_cmd_call/1)
+      |> Enum.reject(&init_device_request_deferred_to_runtime?/1)
       |> Enum.reject(&init_device_request_already_satisfied?(model, &1))
 
     (update_requests ++ init_requests)
+    |> Enum.reject(&health_metric_request_disabled?(model, &1))
     |> Enum.reject(fn req ->
       not is_binary(req.response_message) or req.response_message == "" or
         req.response_message == current_ctor
@@ -4507,12 +4537,58 @@ defmodule Ide.Debugger do
       name in ["getFirmwareVersion", "firmwareVersion"] ->
         [%{kind: "firmware_version", response_message: response_ctor}]
 
+      name in ["value"] and health_cmd_target?(cmd_call) ->
+        [%{kind: "health_value", response_message: response_ctor}]
+
+      name in ["supported"] and health_cmd_target?(cmd_call) ->
+        [%{kind: "health_supported", response_message: response_ctor}]
+
+      name in ["sumToday"] and health_cmd_target?(cmd_call) ->
+        [%{kind: "health_sum_today", response_message: response_ctor}]
+
+      name in ["sum"] and health_cmd_target?(cmd_call) ->
+        [%{kind: "health_sum", response_message: response_ctor}]
+
+      name in ["accessible"] and health_cmd_target?(cmd_call) ->
+        [%{kind: "health_accessible", response_message: response_ctor}]
+
       true ->
         []
     end
   end
 
   defp device_request_from_cmd_call(_cmd_call), do: []
+
+  @spec health_cmd_target?(Types.cmd_call()) :: boolean()
+  defp health_cmd_target?(cmd_call) when is_map(cmd_call) do
+    target = (Map.get(cmd_call, "target") || Map.get(cmd_call, :target) || "") |> to_string()
+
+    String.contains?(target, "Health.") or
+      String.contains?(target, "PebbleWatch.health") or
+      String.contains?(target, "Elm.Kernel.PebbleWatch.health")
+  end
+
+  defp health_cmd_target?(_cmd_call), do: false
+
+  @spec init_device_request_deferred_to_runtime?(map()) :: boolean()
+  defp init_device_request_deferred_to_runtime?(%{kind: "health_supported"}), do: true
+  defp init_device_request_deferred_to_runtime?(_req), do: false
+
+  @spec health_metric_request_disabled?(map(), map()) :: boolean()
+  defp health_metric_request_disabled?(model, %{kind: kind})
+       when is_map(model) and kind in ["health_value", "health_sum_today", "health_sum", "health_accessible"] do
+    launch_context = Map.get(model, "launch_context") || %{}
+
+    health_runtime_disabled?(Map.get(model, "runtime_model") || %{}) or
+      Map.get(launch_context, "supports_health") != true
+  end
+
+  defp health_metric_request_disabled?(_model, _req), do: false
+
+  @spec health_runtime_disabled?(map()) :: boolean()
+  defp health_runtime_disabled?(%{"supported" => %{"ctor" => "Just", "args" => [false]}}), do: true
+  defp health_runtime_disabled?(%{"supported" => %{"ctor" => "Just", "args" => [true]}}), do: false
+  defp health_runtime_disabled?(_runtime_model), do: false
 
   @spec finalize_device_request(map(), map()) :: map()
   defp finalize_device_request(%{kind: "current_time_string"} = req, model) do
@@ -4587,6 +4663,30 @@ defmodule Ide.Debugger do
 
   defp finalize_device_request(%{kind: "firmware_version"} = req, _model),
     do: Map.put(req, :preview, "v4.4.0-sim")
+
+  defp finalize_device_request(%{kind: "health_value"} = req, model) do
+    settings = simulator_settings_from_model(model)
+    Map.put(req, :preview, %{"value" => settings["health_steps"]})
+  end
+
+  defp finalize_device_request(%{kind: "health_supported"} = req, model) do
+    launch_context = Map.get(model, "launch_context") || %{}
+    supported = Map.get(launch_context, "supports_health") == true
+    Map.put(req, :preview, supported)
+  end
+
+  defp finalize_device_request(%{kind: "health_sum_today"} = req, model) do
+    settings = simulator_settings_from_model(model)
+    Map.put(req, :preview, %{"value" => settings["health_steps_today"]})
+  end
+
+  defp finalize_device_request(%{kind: "health_sum"} = req, model) do
+    settings = simulator_settings_from_model(model)
+    Map.put(req, :preview, %{"value" => settings["health_steps_today"]})
+  end
+
+  defp finalize_device_request(%{kind: "health_accessible"} = req, _model),
+    do: Map.put(req, :preview, true)
 
   defp finalize_device_request(req, _model), do: Map.put(req, :preview, nil)
 
@@ -5272,6 +5372,8 @@ defmodule Ide.Debugger do
   @spec runtime_entrypoint_artifacts(String.t(), map(), String.t()) :: map()
   defp runtime_entrypoint_artifacts(session_key, project, source_root)
        when is_binary(session_key) and is_binary(source_root) do
+    _ = Projects.ensure_compiler_workspace(project)
+
     workspace_root =
       project
       |> Projects.project_workspace_path()
@@ -5289,6 +5391,63 @@ defmodule Ide.Debugger do
   rescue
     _ -> %{}
   end
+
+  @spec maybe_attach_compile_artifacts_for_parser_view(
+          runtime_state(),
+          Types.surface_target(),
+          Types.elm_introspect()
+        ) :: runtime_state()
+  defp maybe_attach_compile_artifacts_for_parser_view(state, target, ei)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ei) do
+    if parser_expression_introspect_view?(ei) and not surface_has_core_ir?(state, target) do
+      source_root = source_root_for_target(target)
+      artifacts = compile_artifacts_for_source_root(state, source_root)
+      maybe_merge_runtime_artifacts(state, target, artifacts)
+    else
+      state
+    end
+  end
+
+  defp maybe_attach_compile_artifacts_for_parser_view(state, _target, _ei), do: state
+
+  @spec compile_artifacts_for_source_root(runtime_state(), String.t()) :: map()
+  defp compile_artifacts_for_source_root(state, source_root) when is_binary(source_root) do
+    with session_key when is_binary(session_key) <- session_key_from_state(state),
+         %{} = project <- Projects.get_project_by_scope_key(session_key) do
+      runtime_entrypoint_artifacts(session_key, project, source_root)
+    else
+      _ -> %{}
+    end
+  rescue
+    DBConnection.OwnershipError ->
+      %{}
+
+    error in RuntimeError ->
+      if String.contains?(Exception.message(error), "could not lookup Ecto repo") do
+        %{}
+      else
+        reraise(error, __STACKTRACE__)
+      end
+  end
+
+  defp compile_artifacts_for_source_root(_state, _source_root), do: %{}
+
+  @spec surface_has_core_ir?(runtime_state(), Types.surface_target()) :: boolean()
+  defp surface_has_core_ir?(state, target) when is_map(state) do
+    state
+    |> Map.get(target, %{})
+    |> RuntimeArtifacts.execution_model()
+    |> RuntimeArtifacts.decode_core_ir()
+    |> is_map()
+  end
+
+  defp surface_has_core_ir?(_state, _target), do: false
+
+  @spec parser_expression_introspect_view?(Types.elm_introspect()) :: boolean()
+  defp parser_expression_introspect_view?(introspect) when is_map(introspect),
+    do: Ide.Debugger.ElmIntrospect.parser_expression_view?(introspect)
+
+  defp parser_expression_introspect_view?(_introspect), do: false
 
   defp restore_protocol_rx_metadata(state, recipient, meta)
        when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(meta) do
@@ -6578,6 +6737,16 @@ defmodule Ide.Debugger do
         normalize_boolean(map_value(settings, "compass_valid"), defaults["compass_valid"]),
       "app_in_focus" =>
         normalize_boolean(map_value(settings, "app_in_focus"), defaults["app_in_focus"]),
+      "health_steps" =>
+        settings
+        |> map_value("health_steps")
+        |> normalize_integer(defaults["health_steps"])
+        |> max(0),
+      "health_steps_today" =>
+        settings
+        |> map_value("health_steps_today")
+        |> normalize_integer(defaults["health_steps_today"])
+        |> max(0),
       "dictation_transcript" =>
         normalize_string(
           map_value(settings, "dictation_transcript"),
@@ -10255,23 +10424,8 @@ defmodule Ide.Debugger do
   defp parser_expression_view_tree?(_tree), do: false
 
   @spec parser_expression_root_type?(String.t()) :: boolean()
-  defp parser_expression_root_type?(type)
-       when type in [
-              "toUiNode",
-              "append",
-              "CanvasLayer",
-              "List",
-              "tuple2",
-              "call",
-              "expr",
-              "var",
-              "withDefault",
-              "if",
-              "case"
-            ],
-       do: true
-
-  defp parser_expression_root_type?(_type), do: false
+  defp parser_expression_root_type?(type),
+    do: Ide.Debugger.ElmIntrospect.parser_expression_combinator_type?(type)
 
   @spec maybe_put_runtime_artifact_atom_key(map(), atom(), map()) :: map()
   defp maybe_put_runtime_artifact_atom_key(map, key, value)
@@ -10979,6 +11133,7 @@ defmodule Ide.Debugger do
         ) :: runtime_state()
   defp apply_elm_introspect_snapshot(state, ei, target, source, rel_path)
        when is_map(ei) and target in [:watch, :companion, :phone] and is_binary(source) do
+    state = maybe_attach_compile_artifacts_for_parser_view(state, target, ei)
     surface = Map.get(state, target) || %{}
     model = Map.get(surface, :model) || %{}
     shell = RuntimeArtifacts.shell_map(surface)
@@ -11082,14 +11237,28 @@ defmodule Ide.Debugger do
   @spec introspect_view_usable?(map()) :: boolean()
   defp introspect_view_usable?(%{"type" => "unknown", "children" => []}), do: false
 
-  defp introspect_view_usable?(%{"type" => type}) when is_binary(type),
-    do: type not in ["root", "unknown"] and not parser_expression_root_type?(type)
+  defp introspect_view_usable?(%{"type" => type} = tree) when is_binary(type) do
+    type not in ["root", "unknown", "previewUnavailable"] and
+      not unresolved_parser_view_root?(tree)
+  end
 
   defp introspect_view_usable?(%{"children" => children})
        when is_list(children) and children != [],
        do: true
 
   defp introspect_view_usable?(_), do: false
+
+  @spec unresolved_parser_view_root?(map()) :: boolean()
+  defp unresolved_parser_view_root?(%{"type" => type, "qualified_target" => _})
+       when is_binary(type) do
+    not Ide.Debugger.ElmIntrospect.runtime_drawable_view_root_type?(type)
+  end
+
+  defp unresolved_parser_view_root?(%{"type" => type}) when is_binary(type) do
+    Ide.Debugger.ElmIntrospect.parser_expression_combinator_type?(type)
+  end
+
+  defp unresolved_parser_view_root?(_), do: false
 
   @spec preview_unavailable_view_tree(:watch | :companion | :phone, String.t()) :: map()
   defp preview_unavailable_view_tree(target, reason) do

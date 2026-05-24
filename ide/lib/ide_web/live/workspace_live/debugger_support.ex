@@ -735,21 +735,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defp parser_expression_view_tree?(_tree), do: false
 
   @spec parser_expression_root_type?(String.t()) :: boolean()
-  defp parser_expression_root_type?(type)
-       when type in [
-              "toUiNode",
-              "append",
-              "List",
-              "call",
-              "expr",
-              "var",
-              "withDefault",
-              "if",
-              "case"
-            ],
-       do: true
-
-  defp parser_expression_root_type?(_type), do: false
+  defp parser_expression_root_type?(type),
+    do: Ide.Debugger.ElmIntrospect.parser_expression_combinator_type?(type)
 
   @spec runtime_view_output_tree(map()) :: map() | nil
   defp runtime_view_output_tree(model) when is_map(model) do
@@ -3939,7 +3926,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   end
 
   @spec latest_debugger_seq(map(), boolean()) :: maybe_non_neg_integer()
-  defp latest_debugger_seq(debugger_state, debug_mode \\ false) when is_map(debugger_state) do
+  defp latest_debugger_seq(debugger_state, debug_mode) when is_map(debugger_state) do
     debugger_state
     |> debugger_rows()
     |> filter_debugger_rows_for_display(debug_mode)
@@ -3961,7 +3948,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
           map() | nil,
           boolean()
         ) :: map()
-  defp debugger_assigns(cursor_seq, snapshot_runtime, debugger_state, debug_mode \\ false) do
+  defp debugger_assigns(cursor_seq, snapshot_runtime, debugger_state, debug_mode) do
     rows =
       debugger_state
       |> debugger_rows()

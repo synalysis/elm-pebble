@@ -14,6 +14,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
   def eval("pebble.watchinfo", function_name, values, ops),
     do: eval_device_builtin(function_name, values, ops)
 
+  def eval("pebble.health", function_name, values, ops),
+    do: eval_pebble_health_kernel(function_name, values, ops)
+
   def eval("pebble.cmd", function_name, values, ops),
     do: eval_device_builtin(function_name, values, ops)
 
@@ -92,6 +95,24 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
       "getcolor" ->
         device_command("watch_color", values, watch_color_value(), ops)
 
+      "healthvalue" ->
+        health_device_command("health_value", values, health_steps_value(), ops)
+
+      "healthsumtoday" ->
+        health_device_command("health_sum_today", values, health_steps_today_value(), ops)
+
+      "healthsum" ->
+        health_device_command("health_sum", values, health_steps_sum_value(), ops)
+
+      "healthaccessible" ->
+        health_device_command("health_accessible", values, true, ops)
+
+      "healthsupported" ->
+        device_command("health_supported", values, health_supported_value(ops), ops)
+
+      "backlight" ->
+        backlight_command(values)
+
       "storagereadint" ->
         storage_read_command("int", values, 0, ops)
 
@@ -109,6 +130,24 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
 
       _ ->
         :no_builtin
+    end
+  end
+
+  @spec eval_pebble_health_kernel(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) ::
+          EvalTypes.builtin_eval_result() | EvalTypes.command_map()
+  defp eval_pebble_health_kernel(function_name, values, ops) do
+    eval_pebble_watch_kernel_builtin(pebble_health_kernel_name(function_name), values, ops)
+  end
+
+  @spec pebble_health_kernel_name(String.t()) :: String.t()
+  defp pebble_health_kernel_name(function_name) when is_binary(function_name) do
+    case function_name do
+      "supported" -> "healthsupported"
+      "value" -> "healthvalue"
+      "sumtoday" -> "healthsumtoday"
+      "sum" -> "healthsum"
+      "accessible" -> "healthaccessible"
+      other -> other
     end
   end
 
@@ -174,6 +213,32 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
   end
 
   defp device_command(_kind, _values, _value, _ops), do: :no_builtin
+
+  @spec health_device_command(String.t(), EvalTypes.runtime_values(), EvalTypes.runtime_value(), EvalTypes.ops_context()) ::
+          EvalTypes.command_map() | :no_builtin
+  defp health_device_command(kind, [metric, to_msg], value, ops) when is_integer(metric) do
+    device_command(kind, [to_msg], value, ops)
+  end
+
+  defp health_device_command(_kind, _values, _value, _ops), do: :no_builtin
+
+  @spec backlight_command(EvalTypes.runtime_values()) :: EvalTypes.cmd_eval_result()
+  defp backlight_command([mode]) do
+    {:ok,
+     %{
+       "kind" => "cmd.device.backlight",
+       "package" => "elm-pebble/elm-watch",
+       "mode" => backlight_mode(mode)
+     }}
+  end
+
+  defp backlight_command(_values), do: :no_builtin
+
+  @spec backlight_mode(EvalTypes.runtime_value()) :: String.t()
+  defp backlight_mode(nil), do: "interaction"
+  defp backlight_mode(true), do: "enable"
+  defp backlight_mode(false), do: "disable"
+  defp backlight_mode(_mode), do: "interaction"
 
   @spec storage_read_command(String.t(), EvalTypes.runtime_values(), EvalTypes.runtime_value(), EvalTypes.ops_context()) :: EvalTypes.command_map()
   defp storage_read_command(type, [key, to_msg], default_value, ops) when is_integer(key) do
@@ -264,4 +329,27 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
   defp watch_model_value, do: %{"ctor" => "PebbleTime", "args" => []}
   defp firmware_version_value, do: %{"major" => 4, "minor" => 4, "patch" => 0}
   defp watch_color_value, do: %{"ctor" => "Black", "args" => []}
+  defp health_steps_value, do: 4200
+  defp health_steps_today_value, do: 9100
+  defp health_steps_sum_value, do: 750
+
+  @spec health_supported_value(map()) :: boolean()
+  defp health_supported_value(ops) when is_map(ops) do
+    ops
+    |> Map.get(:launch_context, %{})
+    |> launch_context_supports_health?()
+  end
+
+  defp health_supported_value(_ops), do: false
+
+  @spec launch_context_supports_health?(map()) :: boolean()
+  defp launch_context_supports_health?(context) when is_map(context) do
+    case Map.get(context, :supports_health) || Map.get(context, "supports_health") ||
+           Map.get(context, :supportsHealth) || Map.get(context, "supportsHealth") do
+      true -> true
+      _ -> false
+    end
+  end
+
+  defp launch_context_supports_health?(_context), do: false
 end

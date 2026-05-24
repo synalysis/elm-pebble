@@ -369,6 +369,43 @@ defmodule Ide.Debugger.ElmIntrospectTest do
     assert [%{"path" => "src/Main.elm"}] = ei["view_source_locations"]["text"]
   end
 
+  test "parser_expression_view detects custom UiNode wrappers by return type metadata" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Model = {}
+
+    type Msg = Tick
+
+    init _ = ( {}, Cmd.none )
+    update _ model = ( model, Cmd.none )
+
+    packUi ops =
+        Ui.windowStack
+            [ Ui.window 1
+                [ Ui.canvasLayer 1 ops ]
+            ]
+
+    view : Model -> Ui.UiNode
+    view _ =
+        [ Ui.clear Color.white ]
+            |> packUi
+
+    main = Platform.sandbox { init = init, update = update, view = view }
+    """
+
+    assert {:ok, %{"elm_introspect" => ei}} =
+             ElmIntrospect.analyze_source(source, "watch/src/Main.elm")
+
+    assert ei["view_return_type"] == "Ui.UiNode"
+    assert is_map(ei["function_types"])
+    assert ElmIntrospect.parser_expression_view?(%{"elm_introspect" => ei})
+    assert get_in(ei, ["view_tree", "type"]) == "packUi"
+  end
+
   test "analyze_source keeps tuple2 operands in view tree nodes" do
     source = """
     module Main exposing (main)

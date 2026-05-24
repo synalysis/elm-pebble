@@ -16,7 +16,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
     ~H"""
     <section
       :if={settings_pane?(@pane)}
-      class="min-h-0 flex-1 overflow-auto rounded-lg border border-zinc-200 bg-white p-5 shadow-sm"
+      class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm"
     >
       <div class="flex items-start justify-between gap-3">
         <div>
@@ -52,6 +52,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         <.release_metadata_section
           :if={@pane == :settings}
           project_settings_form={@project_settings_form}
+          detected_capabilities={@detected_capabilities}
           store_listing_sync_status={@store_listing_sync_status}
           auth_mode={@auth_mode}
         />
@@ -134,6 +135,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
   end
 
   attr :project_settings_form, :map, required: true
+  attr :detected_capabilities, :list, required: true
   attr :store_listing_sync_status, :atom, required: true
   attr :auth_mode, :atom, required: true
 
@@ -252,25 +254,29 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         <fieldset class="text-xs md:col-span-2">
           <legend class="mb-1 block font-medium text-zinc-700">Capabilities</legend>
           <p class="mb-2 text-zinc-600">
-            Declare capabilities that appear in the Pebble package metadata.
+            Detected from Elm API usage in watch and phone sources. These appear in Pebble package metadata.
           </p>
           <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <label
+            <div
               :for={capability <- capability_options()}
-              class="flex items-start gap-2 rounded border border-zinc-200 bg-zinc-50 p-2"
+              class={[
+                "rounded border p-2",
+                capability.id in @detected_capabilities && "border-emerald-200 bg-emerald-50",
+                capability.id not in @detected_capabilities && "border-zinc-200 bg-zinc-50 opacity-70"
+              ]}
             >
-              <input
-                type="checkbox"
-                name="project_settings[capabilities][]"
-                value={capability.id}
-                checked={capability.id in (@project_settings_form["capabilities"].value || [])}
-                class="mt-0.5"
-              />
-              <span>
-                <span class="block font-medium text-zinc-800">{capability.label}</span>
-                <span class="block text-zinc-500">{capability.help}</span>
+              <span class="block font-medium text-zinc-800">{capability.label}</span>
+              <span class="block text-zinc-500">{capability.help}</span>
+              <span
+                :if={capability.id in @detected_capabilities}
+                class="mt-1 block font-medium text-emerald-700"
+              >
+                Detected
               </span>
-            </label>
+              <span :if={capability.id not in @detected_capabilities} class="mt-1 block text-zinc-500">
+                Not used
+              </span>
+            </div>
           </div>
         </fieldset>
       </div>

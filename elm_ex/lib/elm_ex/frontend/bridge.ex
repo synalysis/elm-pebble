@@ -229,7 +229,9 @@ defmodule ElmEx.Frontend.Bridge do
       "code" => Map.get(diagnostic, :code),
       "module" => Map.get(diagnostic, :module),
       "function" => Map.get(diagnostic, :function),
+      "file" => Map.get(diagnostic, :file),
       "line" => Map.get(diagnostic, :line),
+      "column" => Map.get(diagnostic, :column),
       "constructor" => Map.get(diagnostic, :constructor),
       "expected_kind" =>
         case Map.get(diagnostic, :expected_kind) do

@@ -41,13 +41,13 @@ get key toMsg =
 set : String -> Encode.Value -> Cmd msg
 set key value =
     Phone.sendBridgeCommand <|
-        Command.command ("preferences-set-" ++ key) "preferences" "set"
+        (Command.command ("preferences-set-" ++ key) "preferences" "set"
             |> Command.withPayload
                 (Encode.object
                     [ ( "key", Encode.string key )
                     , ( "value", value )
                     ]
-                )
+                ))
 
 
 {-| Receive pushed preference updates from the companion bridge.

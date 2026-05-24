@@ -6,10 +6,10 @@ defmodule Ide.Projects.Project do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Ide.ProjectTemplates
   alias Ide.Projects.Types
 
   @target_types ~w(app watchface companion)
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation game-basic game-tiny-bird game-jump-n-run game-2048)
 
   @type t :: %__MODULE__{
           id: integer() | nil,
@@ -86,7 +86,9 @@ defmodule Ide.Projects.Project do
     |> validate_length(:source_roots, min: 1)
     |> validate_inclusion(:target_type, @target_types)
     |> validate_change(:template, fn :template, value ->
-      if is_nil(value) or value in @template_keys, do: [], else: [template: "is invalid"]
+      if is_nil(value) or value in ProjectTemplates.template_keys(),
+        do: [],
+        else: [template: "is invalid"]
     end)
     |> unique_constraint(:slug, name: :projects_owner_id_slug_index)
     |> unique_constraint(:slug, name: :projects_local_slug_index)

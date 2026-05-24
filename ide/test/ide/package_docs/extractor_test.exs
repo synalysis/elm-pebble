@@ -33,6 +33,19 @@ defmodule Ide.PackageDocs.ExtractorTest do
     assert {:ok, ui_doc} = Extractor.build_module_doc(ui_path)
     assert ui_doc["comment"] =~ "mainWindow"
     assert Enum.any?(ui_doc["aliases"], &(&1["name"] == "Bitmap"))
+
+    unobstructed_path =
+      Path.expand(
+        "../../../../packages/elm-pebble/elm-watch/src/Pebble/UnobstructedArea.elm",
+        __DIR__
+      )
+
+    assert {:ok, unobstructed_doc} = Extractor.build_module_doc(unobstructed_path)
+
+    assert [%{"label" => "UnobstructedArea", "url" => url}] =
+             unobstructed_doc["native_api_links"]
+
+    assert url == "https://developer.repebble.com/docs/c/User_Interface/UnobstructedArea/"
   end
 
   defp package_fixture do

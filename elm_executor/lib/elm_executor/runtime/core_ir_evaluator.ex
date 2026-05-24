@@ -109,11 +109,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           params =
             normalize_params(generic_map_value(decl, "params") || generic_map_value(decl, "args"))
 
+          type = generic_map_value(decl, "type")
+
           Map.put(a, {module_name, name, length(params)}, %{
             module: module_name,
             name: name,
             params: params,
-            body: body
+            body: body,
+            type: if(is_binary(type), do: type, else: nil)
           })
         else
           a
@@ -360,7 +363,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         name = expr["var"] || expr[:var]
         value = expr["value"] || expr[:value]
 
-        with left when is_number(left) <- numeric_env_value(env, name),
+        with {:ok, left} <- numeric_operand_from_var(name, env, context, stack),
              right when is_number(right) <- value do
           {:ok, left + right}
         else
@@ -371,7 +374,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         name = expr["var"] || expr[:var]
         value = expr["value"] || expr[:value]
 
-        with left when is_number(left) <- numeric_env_value(env, name),
+        with {:ok, left} <- numeric_operand_from_var(name, env, context, stack),
              right when is_number(right) <- value do
           {:ok, left - right}
         else
@@ -382,8 +385,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         left_name = expr["left"] || expr[:left]
         right_name = expr["right"] || expr[:right]
 
-        with left when is_number(left) <- numeric_env_value(env, left_name),
-             right when is_number(right) <- numeric_env_value(env, right_name) do
+        with {:ok, left} <- numeric_operand_from_var(left_name, env, context, stack),
+             {:ok, right} <- numeric_operand_from_var(right_name, env, context, stack) do
           {:ok, left + right}
         else
           _ -> {:error, {:invalid_add_vars, left_name, right_name}}
@@ -1144,9 +1147,6 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       {"pebble.ui.group", [{:ui_context, style, ops}]} ->
         {:ok, ui_group_node(style, ops)}
 
-      {"pebble.ui.touinode", [ops]} when is_list(ops) ->
-        {:ok, ui_node("group", ui_children_from_value(ops))}
-
       {"pebble.ui.canvaslayer", [z, ops]} ->
         {:ok, ui_node("canvasLayer", [expr_node(z)] ++ ui_children_from_value(ops))}
 
@@ -1211,7 +1211,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           ok
 
         {:error, _} = err ->
-          err
+          if force_legacy_operator_fallback do
+            case eval_builtin_legacy(name, values, env, context, stack) do
+              {:ok, value} -> {:ok, value}
+              _ -> err
+            end
+          else
+            err
+          end
 
         :skip_legacy_fallback ->
           :no_builtin
@@ -1309,6 +1316,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         )
 
       "pebble.watchinfo" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
+
+      "pebble.health" ->
         ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
           module_name,
           function_name,
@@ -1433,11 +1448,18 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         )
 
       "pebble.ui" ->
-        if function_name == "touinode" and
-             indexed_function_defined?(context, "Pebble.Ui", function_name, length(values)) do
-          :no_builtin
-        else
-          eval_ui_builtin(normalized_full, values, context)
+        case eval_ui_builtin(normalized_full, values, context) do
+          :no_builtin ->
+            cond do
+              indexed_pebble_ui_function?(context, function_name, length(values)) ->
+                :no_builtin
+
+              true ->
+                maybe_wrap_render_ops_as_ui_node(function_name, values, context)
+            end
+
+          other ->
+            other
         end
 
       "pebble.ui.color" ->
@@ -1488,18 +1510,77 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   defp eval_generated_preferences_builtin(_function_name, _values), do: :no_builtin
 
-  defp indexed_function_defined?(context, module_name, function_name, arity)
-       when is_map(context) and is_binary(module_name) and is_binary(function_name) and
-              is_integer(arity) do
+  @spec indexed_pebble_ui_function?(map(), String.t(), non_neg_integer()) :: boolean()
+  defp indexed_pebble_ui_function?(context, function_name, arity)
+       when is_map(context) and is_binary(function_name) and is_integer(arity) do
     context
     |> Map.get(:functions, %{})
     |> Enum.any?(fn
-      {{^module_name, name, ^arity}, _def} when is_binary(name) ->
-        normalize_builtin_name(name) == function_name
+      {{module_name, name, ^arity}, _def} when is_binary(module_name) and is_binary(name) ->
+        compact_module_name(module_name) == "pebbleui" and
+          normalize_builtin_name(name) == function_name
 
       _ ->
         false
     end)
+  end
+
+  @spec maybe_wrap_render_ops_as_ui_node(String.t(), EvalTypes.runtime_values(), map()) ::
+          EvalTypes.builtin_eval_result()
+  defp maybe_wrap_render_ops_as_ui_node(function_name, values, context)
+       when is_binary(function_name) and is_list(values) and is_map(context) do
+    with [ops] <- values,
+         true <- is_list(ops),
+         type when is_binary(type) <-
+           function_type_signature(context, "Pebble.Ui", function_name, 1),
+         true <- render_ops_to_ui_node_signature?(type) do
+      wrap_render_ops_list_as_ui_node(ops)
+    else
+      _ -> :no_builtin
+    end
+  end
+
+  @spec function_type_signature(map(), String.t(), String.t(), non_neg_integer()) ::
+          String.t() | nil
+  defp function_type_signature(context, module_name, function_name, arity)
+       when is_map(context) and is_binary(module_name) and is_binary(function_name) and
+              is_integer(arity) do
+    target_compact = compact_module_name(module_name)
+    target_name = normalize_builtin_name(function_name)
+
+    context
+    |> Map.get(:functions, %{})
+    |> Enum.find_value(fn
+      {{candidate_module, name, ^arity}, defn} when is_binary(candidate_module) and is_binary(name) ->
+        if compact_module_name(candidate_module) == target_compact and
+             normalize_builtin_name(name) == target_name do
+          case defn do
+            %{type: type} when is_binary(type) and type != "" -> type
+            _ -> nil
+          end
+        end
+
+      _ ->
+        nil
+    end)
+  end
+
+  @spec render_ops_to_ui_node_signature?(String.t()) :: boolean()
+  defp render_ops_to_ui_node_signature?(type) when is_binary(type) do
+    type
+    |> String.replace(~r/\s+/, "")
+    |> String.downcase()
+    |> then(fn normalized ->
+      String.match?(normalized, ~r/listrenderop->.*uinode$/) or
+        String.match?(normalized, ~r/\(.*listrenderop.*\)->.*uinode$/)
+    end)
+  end
+
+  @spec wrap_render_ops_list_as_ui_node(list()) :: {:ok, EvalTypes.ui_node_map()}
+  defp wrap_render_ops_list_as_ui_node(ops) when is_list(ops) do
+    canvas = ui_node("canvasLayer", [expr_node(1) | ui_children_from_value(ops)])
+    window = ui_node("window", [expr_node(1), canvas])
+    {:ok, ui_node("windowStack", [window])}
   end
 
   @spec list_builtin_ops(map(), map(), list()) :: map()
@@ -1603,7 +1684,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     %{
       call: &call_callable(&1, &2, env, context, stack),
       debug_to_string: &elm_debug_to_string/1,
-      normalize_union_value: &normalize_union_value(&1, &2, context)
+      normalize_union_value: &normalize_union_value(&1, &2, context),
+      launch_context: Map.get(context, :launch_context) || Map.get(context, "launch_context") || %{}
     }
   end
 
@@ -1764,6 +1846,10 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
       {"__idiv__", [a, b]} when is_integer(a) and is_integer(b) ->
         {:ok, div(a, b)}
+
+      {"__idiv__", [a, b]} when is_number(a) and is_number(b) ->
+        divisor = trunc(b)
+        if divisor == 0, do: {:ok, nil}, else: {:ok, div(trunc(a), divisor)}
 
       {"compare", [a, b]} ->
         {:ok, compare_ctor(a, b)}
@@ -3775,8 +3861,33 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
          stack,
          allow_global_lookup
        ) do
-    functions = Map.get(context, :functions, %{})
     key = {module_name, function_name, length(values)}
+
+    if intrinsic_operator_name?(function_name) do
+      intrinsic_operator_fallback(function_name, values, context, stack, key)
+    else
+      apply_indexed_function_in_module_impl(
+        module_name,
+        function_name,
+        values,
+        context,
+        stack,
+        allow_global_lookup,
+        key
+      )
+    end
+  end
+
+  defp apply_indexed_function_in_module_impl(
+         module_name,
+         function_name,
+         values,
+         context,
+         stack,
+         allow_global_lookup,
+         key
+       ) do
+    functions = Map.get(context, :functions, %{})
 
     cond do
       function_recursion_depth(stack, key) >= @max_function_recursion_depth ->
@@ -3855,36 +3966,56 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
                   zero_arity_key = {module_name, function_name, 0}
 
-                  if is_map(zero_arity_def) and values != [] do
-                    %{body: body} = zero_arity_def
+                    if is_map(zero_arity_def) and values != [] do
+                      %{body: body} = zero_arity_def
 
-                    with {:ok, callable} <-
-                           do_evaluate(
-                             body,
-                             %{},
-                             with_function_context(context, module_name),
-                             [zero_arity_key | stack]
-                           ),
-                         {:ok, value} <-
-                           call_callable(
-                             callable,
-                             values,
-                             %{},
-                             with_function_context(context, module_name),
-                             [zero_arity_key | stack]
-                           ) do
-                      {:ok, value}
+                      with {:ok, callable} <-
+                             do_evaluate(
+                               body,
+                               %{},
+                               with_function_context(context, module_name),
+                               [zero_arity_key | stack]
+                             ),
+                           {:ok, value} <-
+                             call_callable(
+                               callable,
+                               values,
+                               %{},
+                               with_function_context(context, module_name),
+                               [zero_arity_key | stack]
+                             ) do
+                        {:ok, value}
+                      else
+                        _ -> intrinsic_operator_fallback(function_name, values, context, stack, key)
+                      end
                     else
-                      _ -> {:error, {:unknown_function, key}}
+                      intrinsic_operator_fallback(function_name, values, context, stack, key)
                     end
-                  else
-                    {:error, {:unknown_function, key}}
-                  end
               end
             end
         end
     end
   end
+
+  @spec intrinsic_operator_fallback(String.t(), [term()], map(), EvalTypes.eval_stack(), tuple()) ::
+          EvalTypes.eval_result()
+  defp intrinsic_operator_fallback(function_name, values, context, stack, key)
+       when is_binary(function_name) and is_list(values) and is_map(context) and is_list(stack) do
+    if intrinsic_operator_name?(function_name) do
+      case eval_builtin(function_name, values, %{}, context, stack) do
+        {:ok, value} -> {:ok, value}
+        _ -> {:error, {:unknown_function, key}}
+      end
+    else
+      {:error, {:unknown_function, key}}
+    end
+  end
+
+  @spec intrinsic_operator_name?(String.t()) :: boolean()
+  defp intrinsic_operator_name?(name) when is_binary(name),
+    do: String.starts_with?(name, "__") and String.ends_with?(name, "__")
+
+  defp intrinsic_operator_name?(_name), do: false
 
   defp apply_overapplied_result(head_result, rest_values, env, context, stack)
        when is_list(rest_values) do
@@ -4476,6 +4607,34 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     do: generic_map_value(base, field)
 
   defp field_access(_base, _field), do: nil
+
+  @spec numeric_operand_from_var(
+          String.t() | atom() | nil,
+          EvalTypes.env(),
+          map(),
+          EvalTypes.eval_stack()
+        ) :: {:ok, number()} | {:error, term()}
+  defp numeric_operand_from_var(name, env, context, stack)
+       when is_binary(name) and is_map(env) and is_map(context) and is_list(stack) do
+    cond do
+      is_number(value = numeric_env_value(env, name)) ->
+        {:ok, value}
+
+      true ->
+        case resolve_zero_arity_value(name, context, stack) do
+          {:ok, value} when is_number(value) ->
+            {:ok, value}
+
+          _ ->
+            case maybe_evaluate(%{"op" => :var, "name" => name}, env, context, stack) do
+              {:ok, value} when is_number(value) -> {:ok, value}
+              other -> other
+            end
+        end
+    end
+  end
+
+  defp numeric_operand_from_var(_name, _env, _context, _stack), do: {:error, :invalid_operand}
 
   @spec numeric_env_value(EvalTypes.env(), String.t() | atom()) :: number() | nil
   defp numeric_env_value(env, name) when is_map(env) and is_binary(name) do

@@ -98,6 +98,9 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       refute File.read!(source) =~ "const CompanionProtocolPhoneToWatchDecoder *decoder"
       assert File.read!(header) =~ "COMPANION_PROTOCOL_KEY_PROVIDE_TEMPERATURE_FIELD1_TAG"
       assert File.read!(header) =~ "COMPANION_PROTOCOL_KEY_PROVIDE_TEMPERATURE_FIELD1_VALUE"
+      assert File.read!(header) =~ "ELMC_COMPANION_SIMULATOR_WEATHER 1"
+      assert File.read!(header) =~ "ELMC_COMPANION_SIMULATOR_WEATHER_MODE_TEMPERATURE_ONLY 1"
+      assert File.read!(header) =~ "ELMC_COMPANION_PROTOCOL_HAS_UNION_PAYLOADS 1"
       assert File.read!(js) =~ "decodeWatchToPhonePayload"
       assert File.read!(js) =~ "locationNameForCode"
       assert File.read!(js) =~ ~s/payload[String(constants.KEY_MESSAGE_TAG)] = 201/

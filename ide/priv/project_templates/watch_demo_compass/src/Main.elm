@@ -81,7 +81,7 @@ view model =
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } "Compass demo"
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (headingLabel model.heading model.hasCompass)
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 60, w = 136, h = 20 } (validLabel model.heading)
-        , Ui.textInt Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 84, w = 136, h = 20 } model.refreshes
+        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 84, w = 136, h = 20 } (String.fromInt model.refreshes)
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 108, w = 136, h = 24 } "Select: peek heading"
         ]
 

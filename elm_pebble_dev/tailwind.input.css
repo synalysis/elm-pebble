@@ -1,3 +1,18 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Header nav: avoid hidden/md:flex cascade issues and <details> ignoring display:none */
+@layer components {
+  @media (max-width: 47.99rem) {
+    .site-header-desktop-nav {
+      display: none !important;
+    }
+  }
+
+  @media (min-width: 48rem) {
+    .site-header-mobile-menu {
+      display: none !important;
+    }
+  }
+}

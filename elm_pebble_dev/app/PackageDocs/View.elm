@@ -15,8 +15,8 @@ module PackageDocs.View exposing
 
 import Dict exposing (Dict)
 import Html exposing (Html, a, code, div, h1, h2, h3, li, p, pre, section, span, text, ul)
-import Html.Attributes exposing (class, href, id)
-import PackageDocs exposing (AliasDoc, ElmJson, ModuleDoc, PackageData, PackageRoute, UnionDoc, ValueDoc)
+import Html.Attributes exposing (class, href, id, rel, target)
+import PackageDocs exposing (AliasDoc, ElmJson, ModuleDoc, NativeApiLink, PackageData, PackageRoute, UnionDoc, ValueDoc)
 import Route
 
 
@@ -126,6 +126,7 @@ moduleDocs moduleDoc =
 
               else
                 div [ class "mt-6 space-y-4 text-gray-700 dark:text-gray-300" ] (renderComment intro)
+            , nativeApiLinksSection moduleDoc.nativeApiLinks
             ]
         , div [] declarationViews
         ]
@@ -153,6 +154,34 @@ renderSectionIfAny title children =
 
     else
         Just (declarationsSection title children)
+
+
+nativeApiLinksSection : List NativeApiLink -> Html msg
+nativeApiLinksSection links =
+    if List.isEmpty links then
+        text ""
+
+    else
+        div [ class "mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40" ]
+            [ p [ class "text-sm font-semibold text-blue-900 dark:text-blue-100" ]
+                [ text "Native Pebble C API" ]
+            , ul [ class "mt-2 list-disc space-y-1 pl-5 text-sm text-blue-800 dark:text-blue-200" ]
+                (List.map nativeApiLinkItem links)
+            ]
+
+
+nativeApiLinkItem : NativeApiLink -> Html msg
+nativeApiLinkItem link =
+    li []
+        [ a
+            [ href link.url
+            , target "_blank"
+            , rel "noopener noreferrer"
+            , class "font-medium underline decoration-blue-400 underline-offset-2 hover:text-blue-950 dark:hover:text-white"
+            ]
+            [ text link.label ]
+        , text " on developer.repebble.com"
+        ]
 
 
 renderDocSection : Dict String Declaration -> DocSection -> Maybe (Html msg)

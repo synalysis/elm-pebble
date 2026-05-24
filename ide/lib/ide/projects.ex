@@ -508,28 +508,24 @@ defmodule Ide.Projects do
   end
 
   @doc """
-  Merges Pebble capabilities inferred from Elm source usage into project settings.
-
-  Existing capabilities are preserved; newly detected ones are added automatically.
+  Updates Pebble package capabilities from Elm API usage in project sources.
   """
   @spec sync_detected_capabilities(Project.t()) :: {:ok, Project.t()} | {:error, Types.project_error()}
   def sync_detected_capabilities(%Project{} = project) do
+    project = Repo.get(Project, project.id) || project
     workspace_root = project_workspace_path(project)
-    detected = Ide.ProjectCapabilities.infer_workspace(workspace_root)
+    detected = Ide.ProjectCapabilities.package_capabilities(workspace_root)
 
     current =
       project
       |> Map.get(:release_defaults, %{})
       |> Map.get("capabilities", [])
       |> IdeWeb.WorkspaceLive.State.capabilities_form_value()
-      |> MapSet.new()
 
-    merged = MapSet.union(current, detected)
-
-    if MapSet.equal?(merged, current) do
+    if detected == current do
       {:ok, project}
     else
-      defaults = Map.put(project.release_defaults || %{}, "capabilities", MapSet.to_list(merged))
+      defaults = Map.put(project.release_defaults || %{}, "capabilities", detected)
 
       update_project(project, %{"release_defaults" => defaults})
     end

@@ -2,6 +2,7 @@ defmodule Ide.PackageDocs.Extractor do
   @moduledoc false
 
   alias ElmEx.Frontend.DocsMetadata
+  alias Ide.PackageDocs.NativeApiLinks
   alias Ide.PackageDocs.Types
 
   @spec build_package_docs(String.t()) :: {:ok, [map()]} | {:error, Types.export_error()}
@@ -180,6 +181,15 @@ defmodule Ide.PackageDocs.Extractor do
           update_in(acc["values"], &(&1 ++ [value_doc(declaration)]))
       end
     end)
+    |> maybe_put_native_api_links(metadata.name)
+  end
+
+  @spec maybe_put_native_api_links(map(), String.t()) :: map()
+  defp maybe_put_native_api_links(doc, module_name) when is_map(doc) do
+    case NativeApiLinks.links_for_module(module_name) do
+      [] -> doc
+      links -> Map.put(doc, "native_api_links", links)
+    end
   end
 
   @spec union_doc(map(), list()) :: map()

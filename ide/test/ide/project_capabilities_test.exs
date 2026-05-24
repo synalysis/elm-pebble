@@ -266,7 +266,21 @@ defmodule Ide.ProjectCapabilitiesTest do
     assert ProjectCapabilities.companion_preferences?(workspace)
   end
 
-  test "sync_detected_capabilities merges inferred capabilities into project settings" do
+  test "package_capabilities returns only Pebble package metadata capabilities" do
+    tmp = System.tmp_dir!()
+    workspace = Path.join(tmp, "package-caps-#{System.unique_integer([:positive])}")
+    watch_src = Path.join(workspace, "watch/src")
+    File.mkdir_p!(watch_src)
+    File.write!(Path.join(workspace, "watch/elm.json"), "{}")
+    File.write!(Path.join(watch_src, "Main.elm"), @watch_health)
+
+    on_exit(fn -> File.rm_rf!(workspace) end)
+
+    assert ProjectCapabilities.package_capabilities(workspace) == ["health"]
+    refute "watch_accel" in ProjectCapabilities.package_capabilities(workspace)
+  end
+
+  test "sync_detected_capabilities sets inferred package capabilities from project sources" do
     slug = "project-capabilities-sync-#{System.unique_integer([:positive])}"
 
     assert {:ok, project} =
@@ -287,6 +301,27 @@ defmodule Ide.ProjectCapabilitiesTest do
              )
 
     updated = Ide.Projects.get_project_by_slug(slug)
-    assert "location" in (updated.release_defaults["capabilities"] || [])
+    assert updated.release_defaults["capabilities"] == ["location"]
+  end
+
+  test "sync_detected_capabilities removes stale capabilities when APIs are no longer used" do
+    slug = "project-capabilities-prune-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Ide.Projects.create_project(%{
+               "name" => "Capabilities Prune",
+               "slug" => slug,
+               "target_type" => "app"
+             })
+
+    on_exit(fn -> Ide.Projects.delete_project(project) end)
+
+    assert {:ok, _} =
+             Ide.Projects.update_project(project, %{
+               "release_defaults" => %{"capabilities" => ["location", "health"]}
+             })
+
+    assert {:ok, updated} = Ide.Projects.sync_detected_capabilities(project)
+    assert updated.release_defaults["capabilities"] == []
   end
 end
