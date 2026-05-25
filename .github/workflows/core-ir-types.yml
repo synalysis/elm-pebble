@@ -1,0 +1,60 @@
+name: Core IR Types
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  elm_ex:
+    name: elm_ex types and validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.1"
+          elixir-version: "1.17.3"
+
+      - name: Install dependencies
+        working-directory: elm_ex
+        run: mix deps.get
+
+      - name: Test
+        working-directory: elm_ex
+        run: mix test
+
+      - name: Dialyzer
+        working-directory: elm_ex
+        run: mix dialyzer --format short
+
+  elm_executor:
+    name: elm_executor contract types
+    runs-on: ubuntu-latest
+    needs: elm_ex
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.1"
+          elixir-version: "1.17.3"
+
+      - name: Install dependencies
+        working-directory: elm_executor
+        run: mix deps.get
+
+      - name: Test Core IR contract
+        working-directory: elm_executor
+        run: |
+          mix test test/core_ir_contract_test.exs
+          mix test test/runtime_semantic_executor_test.exs:3199
+          mix test test/runtime_semantic_executor_test.exs:3234
+          mix test test/runtime_core_ir_evaluator_test.exs:6
+
+      - name: Dialyzer
+        working-directory: elm_executor
+        run: mix dialyzer --format short

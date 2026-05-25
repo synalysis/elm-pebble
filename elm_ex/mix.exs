@@ -8,6 +8,10 @@ defmodule ElmEx.MixProject do
       elixir: "~> 1.17",
       compilers: [:leex, :yecc] ++ Mix.compilers(),
       start_permanent: Mix.env() == :prod,
+      dialyzer: [
+        plt_add_apps: [:mix],
+        ignore_warnings: ".dialyzer_ignore.exs"
+      ],
       deps: deps(),
       description: "Elm parser, AST, and IR — a reusable frontend for Elm-to-X compilers"
     ]

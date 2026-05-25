@@ -2,6 +2,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd do
   @moduledoc false
 
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  alias ElmExecutor.Runtime.SemanticExecutor.Types.CommandMap
   @spec eval(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
   def eval("none", []), do: {:ok, %{"kind" => "cmd.none", "commands" => []}}
 
@@ -18,7 +19,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd do
   def eval(_function_name, _values), do: :no_builtin
 
   @spec timer_after_command(integer(), EvalTypes.runtime_value()) ::
-          {:ok, map()} | :no_builtin
+          {:ok, CommandMap.t()} | :no_builtin
   defp timer_after_command(ms, message_ctor) when is_integer(ms) do
     {message, message_value} = normalize_timer_message(message_ctor)
 

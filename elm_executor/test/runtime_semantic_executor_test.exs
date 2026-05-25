@@ -3196,6 +3196,83 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert result.protocol_events == []
   end
 
+  test "validate_shape accepts core IR from arithmetic fixture source" do
+    core_ir =
+      core_ir_from_sources([
+        {"Main.elm",
+         """
+         module Main exposing (main)
+
+         main =
+             1 + 2
+         """}
+      ])
+
+    assert {:ok, _} = ElmEx.CoreIR.validate_shape(core_ir)
+  end
+
+  test "validate_shape accepts core IR from case-expression fixture source" do
+    core_ir =
+      core_ir_from_sources([
+        {"Main.elm",
+         """
+         module Main exposing (main)
+
+         main =
+             case 1 of
+                 0 ->
+                     0
+
+                 _ ->
+                     1
+         """}
+      ])
+
+    assert {:ok, _} = ElmEx.CoreIR.validate_shape(core_ir)
+  end
+
+  test "execute rejects structurally invalid core IR" do
+    core_ir =
+      core_ir_from_sources([
+        {"Main.elm",
+         """
+         module Main exposing (main)
+
+         main =
+             1
+         """}
+      ])
+
+    broken = %{
+      "version" => core_ir.version,
+      "modules" =>
+        put_in(
+          core_ir.modules,
+          [
+            hd(core_ir.modules)
+            |> Map.update!("declarations", fn decls ->
+              [
+                hd(decls)
+                |> Map.put("expr", %{"op" => "call"})
+              ]
+            end)
+          ]
+        ),
+      "diagnostics" => core_ir.diagnostics,
+      "deterministic_sha256" => core_ir.deterministic_sha256
+    }
+
+    request = %{
+      source_root: "watch",
+      introspect: %{"module" => "Main", "init_model" => %{}},
+      current_model: %{"runtime_model" => %{}},
+      current_view_tree: %{},
+      elm_executor_core_ir: broken
+    }
+
+    assert {:error, {:invalid_core_ir, _errors}} = SemanticExecutor.execute(request)
+  end
+
   defp core_ir_from_sources(sources) when is_list(sources) do
     modules =
       Enum.map(sources, fn {path, source} ->

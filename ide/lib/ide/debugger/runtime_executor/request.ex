@@ -17,7 +17,7 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
           optional(:message) => String.t() | nil,
           optional(:message_value) => Types.protocol_message() | map() | nil,
           optional(:update_branches) => [String.t()] | nil,
-          optional(:elm_executor_core_ir) => map() | nil,
+          optional(:elm_executor_core_ir) => Types.core_ir(),
           optional(:elm_executor_metadata) => map() | nil
         }
 

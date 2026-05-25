@@ -6,6 +6,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   consistent across the debugger session, semantic executor requests, and preview rendering.
   """
 
+  alias ElmEx.CoreIR
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
   alias Ide.Projects
@@ -144,9 +145,12 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def normalize_surface(surface), do: surface
 
-  @spec decode_core_ir(execution_model() | map()) :: map() | nil
+  @spec decode_core_ir(execution_model() | map()) :: Types.core_ir()
   def decode_core_ir(model) when is_map(model) do
     case Map.get(model, "elm_executor_core_ir") do
+      %CoreIR{} = value ->
+        value
+
       value when is_map(value) ->
         value
 
@@ -155,6 +159,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
           encoded when is_binary(encoded) and encoded != "" ->
             with {:ok, binary} <- Base.decode64(encoded) do
               case :erlang.binary_to_term(binary, [:safe]) do
+                %CoreIR{} = value -> value
                 value when is_map(value) -> value
                 _ -> nil
               end

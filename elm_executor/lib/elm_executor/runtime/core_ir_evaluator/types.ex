@@ -1,6 +1,11 @@
 defmodule ElmExecutor.Runtime.CoreIREvaluator.Types do
   @moduledoc false
 
+  alias ElmEx.CoreIR
+  alias ElmEx.CoreIR.Types, as: CoreIRTypes
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types.CtorMap
+  alias ElmExecutor.Runtime.SemanticExecutor.Types.CommandMap
+
   @type runtime_scalar ::
           number() | boolean() | String.t() | :nan | :infinity | :neg_infinity
 
@@ -22,11 +27,13 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Types do
 
   @type ops_context :: map()
 
-  @type expr :: map()
+  @type expr :: CoreIRTypes.Expr.t() | CoreIRTypes.Expr.wire_expr()
 
   @type env :: map()
 
-  @type core_ir_map :: map()
+  @type core_ir :: CoreIR.t() | CoreIRTypes.wire_map() | core_ir_map()
+
+  @type core_ir_map :: %{optional(String.t()) => term(), optional(atom()) => term()}
 
   @type pair_entry :: {runtime_value(), runtime_value()} | runtime_values() | map()
 
@@ -34,7 +41,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Types do
 
   @type ctor_name :: String.t()
 
-  @type command_map :: map()
+  @type command_map :: CommandMap.t()
 
   @type cmd_ok :: {:ok, command_map()}
 
@@ -44,7 +51,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Types do
 
   @type builtin_partial :: {:builtin_partial, String.t(), runtime_values()}
 
-  @type ctor_map :: map()
+  @type ctor_map :: CtorMap.t()
 
   @type maybe_parsed :: {:just, runtime_value()} | :nothing | :invalid
 

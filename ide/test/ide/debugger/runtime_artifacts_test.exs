@@ -31,6 +31,32 @@ defmodule Ide.Debugger.RuntimeArtifactsTest do
 
       assert RuntimeArtifacts.decode_core_ir(%{"elm_executor_core_ir_b64" => encoded}) == core_ir
     end
+
+    test "decodes base64 CoreIR struct artifact" do
+      {:ok, core_ir} =
+        ElmEx.CoreIR.from_ir(%ElmEx.IR{
+          modules: [
+            %ElmEx.IR.Module{
+              name: "Main",
+              imports: [],
+              declarations: [
+                %ElmEx.IR.Declaration{
+                  kind: :function,
+                  name: "main",
+                  args: [],
+                  expr: %{op: :int_literal, value: 1},
+                  ownership: []
+                }
+              ]
+            }
+          ]
+        })
+
+      encoded = Base.encode64(:erlang.term_to_binary(core_ir))
+
+      assert %ElmEx.CoreIR{version: "elm_ex.core_ir.v1"} =
+               RuntimeArtifacts.decode_core_ir(%{"elm_executor_core_ir_b64" => encoded})
+    end
   end
 
   describe "strip_shell_artifacts/1 and public_model/1" do

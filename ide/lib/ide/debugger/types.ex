@@ -3,6 +3,12 @@ defmodule Ide.Debugger.Types do
   Shared types for debugger runtime state, timeline rows, and compiler ingest payloads.
   """
 
+  alias ElmEx.CoreIR
+  alias ElmEx.CoreIR.Types, as: CoreIRTypes
+
+  @type core_ir :: CoreIR.t() | CoreIRTypes.wire_map() | map() | nil
+  @type core_ir_expr :: CoreIRTypes.Expr.t() | CoreIRTypes.Expr.wire_expr()
+
   @type simulator_settings :: %{
           optional(String.t()) => term()
         }
@@ -52,12 +58,14 @@ defmodule Ide.Debugger.Types do
           optional(:diagnostics) => list(),
           optional(:elm_executor_core_ir_b64) => String.t(),
           optional(:elm_executor_metadata) => map(),
+          optional(:elm_executor_core_ir) => core_ir(),
           optional(String.t()) => term()
         }
 
   @type cmd_call :: %{
           optional(String.t()) => String.t() | [term()] | map() | nil,
-          optional(atom()) => String.t() | [term()] | map() | nil
+          optional(atom()) => String.t() | [term()] | map() | nil,
+          optional(:kind) => String.t()
         }
 
   @type companion_bridge_request :: %{
@@ -129,7 +137,7 @@ defmodule Ide.Debugger.Types do
   @type shell :: %{
           optional(String.t()) => term(),
           optional(:elm_introspect) => elm_introspect(),
-          optional(:elm_executor_core_ir) => map(),
+          optional(:elm_executor_core_ir) => core_ir(),
           optional(:elm_executor_core_ir_b64) => String.t(),
           optional(:elm_executor_metadata) => map(),
           optional(:vector_resource_indices) => map()

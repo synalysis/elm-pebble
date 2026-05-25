@@ -3,6 +3,16 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
 
   alias ElmExecutor.Runtime.CoreIREvaluator
 
+  test "string-key and atom-key expr ops evaluate identically" do
+    env = %{}
+
+    atom_expr = %{"op" => :int_literal, "value" => 9}
+    string_expr = %{"op" => "int_literal", "value" => 9}
+
+    assert {:ok, 9} = CoreIREvaluator.evaluate(atom_expr, env)
+    assert {:ok, 9} = CoreIREvaluator.evaluate(string_expr, env)
+  end
+
   test "evaluates arithmetic and let bindings deterministically" do
     expr = %{
       "op" => :let_in,

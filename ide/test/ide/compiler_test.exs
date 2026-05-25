@@ -58,6 +58,7 @@ defmodule Ide.CompilerTest do
       assert {:ok, ir} = ElmEx.IR.Lowerer.lower_project(project)
       assert {:ok, core_ir} = ElmEx.CoreIR.from_ir(ir, strict?: true)
       assert core_ir.version == "elm_ex.core_ir.v1"
+      assert {:ok, _} = ElmEx.CoreIR.validate_shape(core_ir)
     end
   end
 
@@ -76,7 +77,12 @@ defmodule Ide.CompilerTest do
 
       assert result.status == :ok
       assert is_binary(result.elm_executor_core_ir_b64)
+
       assert get_in(result, [:elm_executor_metadata, "core_ir_validation"]) == "strict"
+
+      assert {:ok, binary} = Base.decode64(result.elm_executor_core_ir_b64)
+      assert %ElmEx.CoreIR{} = core_ir = :erlang.binary_to_term(binary, [:safe])
+      assert {:ok, _} = ElmEx.CoreIR.validate_shape(core_ir)
     end
   end
 

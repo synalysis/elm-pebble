@@ -11,6 +11,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   alias ElmEx.Frontend.GeneratedParser
   alias ElmEx.Frontend.Project
   alias ElmEx.IR.Lowerer
+  alias ElmExecutor.Runtime.CoreIRContract
   alias ElmExecutor.Runtime.CoreIREvaluator
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
@@ -38,7 +39,6 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     source = map_value(request, :source) || ""
     introspect = map_value(request, :introspect)
     introspect = if is_map(introspect), do: introspect, else: %{}
-    source_module = map_value(introspect, :module)
     current_model = map_value(request, :current_model)
     current_model = if is_map(current_model), do: current_model, else: %{}
     current_view_tree = map_value(request, :current_view_tree)
@@ -48,6 +48,36 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
     artifact_core_ir = map_value(request, :elm_executor_core_ir)
     core_ir = source_core_ir_fallback(artifact_core_ir, source, rel_path)
+
+    with :ok <- CoreIRContract.validate(core_ir) do
+      execute_validated(request, core_ir, %{
+        source_root: source_root,
+        rel_path: rel_path,
+        source: source,
+        introspect: introspect,
+        source_module: map_value(introspect, :module),
+        current_model: current_model,
+        current_view_tree: current_view_tree,
+        message: message,
+        message_value: message_value
+      })
+    end
+  end
+
+  def execute(_), do: {:error, :invalid_execution_request}
+
+  defp execute_validated(request, core_ir, ctx) do
+    %{
+      source_root: source_root,
+      rel_path: rel_path,
+      source: source,
+      introspect: introspect,
+      source_module: source_module,
+      current_model: current_model,
+      current_view_tree: current_view_tree,
+      message: message,
+      message_value: message_value
+    } = ctx
 
     eval_context =
       core_ir
@@ -188,8 +218,6 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
        followup_messages: followup_messages
      }}
   end
-
-  def execute(_), do: {:error, :invalid_execution_request}
 
   @spec map_value(map(), atom() | String.t()) :: EvalTypes.runtime_value() | nil
   defp map_value(map, atom_key) when is_map(map) and is_atom(atom_key) do

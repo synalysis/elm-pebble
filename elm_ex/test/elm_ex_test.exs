@@ -637,6 +637,94 @@ defmodule ElmExTest do
            )
   end
 
+  defp write_minimal_elm_project!(root, main_source) do
+    src = Path.join(root, "src")
+    File.mkdir_p!(src)
+
+    File.write!(Path.join(root, "elm.json"), Jason.encode!(%{
+      "type" => "application",
+      "source-directories" => ["src"],
+      "elm-version" => "0.19.1",
+      "dependencies" => %{"direct" => %{}, "indirect" => %{}},
+      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+    }))
+
+    File.write!(Path.join(src, "Main.elm"), main_source)
+    on_exit(fn -> File.rm_rf(root) end)
+    root
+  end
+
+  defp core_ir_from_project_dir!(dir) do
+    assert {:ok, ir} = ElmEx.parse_and_lower(dir)
+    assert {:ok, core_ir} = CoreIR.from_ir(ir, strict?: false)
+    core_ir
+  end
+
+  test "validate_shape accepts Core IR from arithmetic fixture project" do
+    root =
+      write_minimal_elm_project!(
+        Path.join(System.tmp_dir!(), "elm-ex-shape-arith-#{System.unique_integer([:positive])}"),
+        """
+        module Main exposing (main)
+
+        main =
+            1 + 2
+        """
+      )
+
+    core_ir = core_ir_from_project_dir!(root)
+    assert {:ok, _} = CoreIR.validate_shape(core_ir)
+  end
+
+  test "validate_shape accepts Core IR from case-expression fixture project" do
+    root =
+      write_minimal_elm_project!(
+        Path.join(System.tmp_dir!(), "elm-ex-shape-case-#{System.unique_integer([:positive])}"),
+        """
+        module Main exposing (main)
+
+        main =
+            case 1 of
+                0 ->
+                    "zero"
+
+                _ ->
+                    "other"
+        """
+      )
+
+    core_ir = core_ir_from_project_dir!(root)
+    assert {:ok, _} = CoreIR.validate_shape(core_ir)
+  end
+
+  test "validate_shape rejects call expr missing required name" do
+    bad = %{
+      "version" => "elm_ex.core_ir.v1",
+      "modules" => [
+        %{
+          "name" => "Main",
+          "imports" => [],
+          "unions" => %{},
+          "declarations" => [
+            %{
+              "kind" => "function",
+              "name" => "f",
+              "type" => nil,
+              "args" => [],
+              "ownership" => [],
+              "expr" => %{"op" => "call"}
+            }
+          ]
+        }
+      ],
+      "diagnostics" => [],
+      "deterministic_sha256" => "abc"
+    }
+
+    assert {:error, errors} = CoreIR.validate_shape(bad)
+    assert Enum.any?(errors, &(&1.code == "invalid_core_ir_shape"))
+  end
+
   test "CoreIR strict mode accepts supported IR and emits deterministic hash" do
     ir = %IR{
       modules: [

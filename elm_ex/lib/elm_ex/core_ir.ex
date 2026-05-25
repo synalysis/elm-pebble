@@ -6,16 +6,23 @@ defmodule ElmEx.CoreIR do
   alias ElmEx.IR
   alias ElmEx.IR.Validation
   alias ElmEx.CoreIR.Types
+  alias ElmEx.CoreIR.Validate
 
   @type t :: %__MODULE__{
           version: String.t(),
-          modules: [map()],
-          diagnostics: [map()],
+          modules: [Types.module_t()],
+          diagnostics: [Types.diagnostic()],
           deterministic_sha256: String.t()
         }
 
   @enforce_keys [:version, :modules, :diagnostics, :deterministic_sha256]
   defstruct [:version, :modules, :diagnostics, :deterministic_sha256]
+
+  @doc """
+  Validates structural shape of normalized Core IR (modules, declarations, expr ops).
+  """
+  @spec validate_shape(Types.wire_core_ir()) :: {:ok, t()} | {:error, [Validate.shape_error()]}
+  defdelegate validate_shape(core_ir), to: Validate
 
   @spec from_ir(IR.t(), keyword()) :: {:ok, t()} | {:error, map()}
   def from_ir(%IR{} = ir, opts \\ []) do
@@ -37,19 +44,36 @@ defmodule ElmEx.CoreIR do
       deterministic_sha256: stable_term_sha256(modules)
     }
 
-    if strict? and has_blocking_diagnostics?(diagnostics) do
-      {:error,
-       %{
-         type: "core_ir_validation_failed",
-         message: "CoreIR contains unsupported semantics for strict backend compilation.",
-         diagnostics: diagnostics
-       }}
-    else
-      {:ok, core_ir}
+    cond do
+      strict? and has_blocking_diagnostics?(diagnostics) ->
+        {:error,
+         %{
+           type: "core_ir_validation_failed",
+           message: "CoreIR contains unsupported semantics for strict backend compilation.",
+           diagnostics: diagnostics
+         }}
+
+      strict? ->
+        case validate_shape(core_ir) do
+          {:ok, validated} ->
+            {:ok, validated}
+
+          {:error, shape_errors} ->
+            {:error,
+             %{
+               type: "core_ir_validation_failed",
+               message: "CoreIR failed structural shape validation.",
+               diagnostics: diagnostics,
+               shape_errors: shape_errors
+             }}
+        end
+
+      true ->
+        {:ok, core_ir}
     end
   end
 
-  @spec normalize_module(ElmEx.IR.Module.t()) :: Types.normalized_module()
+  @spec normalize_module(ElmEx.IR.Module.t()) :: map()
   defp normalize_module(module) do
     %{
       "name" => module.name,
@@ -95,22 +119,30 @@ defmodule ElmEx.CoreIR do
     }
   end
 
-  @spec normalize_expr(map() | nil) :: Types.normalized_value()
+  @spec normalize_expr(map() | nil) :: Types.expr() | Types.normalized_value() | nil
   defp normalize_expr(nil), do: nil
 
   defp normalize_expr(expr) when is_map(expr) do
     expr
-    |> Enum.map(fn {k, v} -> {to_string(k), normalize_value(v)} end)
+    |> Enum.map(fn {k, v} ->
+      key = to_string(k)
+      {key, if(key == "op", do: normalize_op_value(v), else: normalize_value(v))}
+    end)
     |> Enum.sort_by(fn {k, _} -> k end)
     |> Map.new()
   end
+
+  @spec normalize_op_value(term()) :: String.t()
+  defp normalize_op_value(v) when is_atom(v), do: to_string(v)
+  defp normalize_op_value(v) when is_binary(v), do: v
+  defp normalize_op_value(v), do: to_string(v)
 
   @spec normalize_value(Types.normalized_value()) :: Types.normalized_value()
   defp normalize_value(value) when is_map(value), do: normalize_expr(value)
   defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
   defp normalize_value(value), do: value
 
-  @spec normalize_diagnostic(map()) :: Types.normalized_diagnostic()
+  @spec normalize_diagnostic(map()) :: map()
   defp normalize_diagnostic(diagnostic) when is_map(diagnostic) do
     %{
       "severity" => to_string(Map.get(diagnostic, :severity, :warning)),

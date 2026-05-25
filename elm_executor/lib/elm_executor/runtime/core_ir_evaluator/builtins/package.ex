@@ -3,6 +3,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
 
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd
+  alias ElmExecutor.Runtime.SemanticExecutor.Types.CommandMap
 
   @spec eval(String.t(), String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) :: EvalTypes.builtin_eval_result() | EvalTypes.command_map() | :no_builtin
   def eval("pebble.storage", function_name, values, ops),
@@ -31,7 +32,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
 
   def eval(_module_name, _function_name, _values, _ops), do: :no_builtin
 
-  @spec eval_protocol_builtin(String.t(), String.t(), list(), map()) :: {:ok, map()} | :no_builtin
+  @spec eval_protocol_builtin(String.t(), String.t(), list(), map()) ::
+          {:ok, CommandMap.t()} | :no_builtin
   defp eval_protocol_builtin(direction, "sendphonetowatch", [message], ops)
        when direction == "phone_to_watch" and is_map(ops) do
     {:ok, protocol_command(direction, "companion", "watch", "PhoneToWatch", message, ops)}

@@ -57,6 +57,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       elm_debug_to_string: 1
     ]
 
+  alias ElmEx.CoreIR
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
 
@@ -92,7 +93,10 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     )
   end
 
-  @spec index_functions(map() | nil) :: map()
+  @spec index_functions(EvalTypes.core_ir() | nil) :: map()
+  def index_functions(%CoreIR{} = core_ir),
+    do: index_functions(%{modules: core_ir.modules})
+
   def index_functions(%{modules: modules}) when is_list(modules),
     do: index_functions(%{"modules" => modules})
 
