@@ -392,6 +392,9 @@ static bool deliver_current_date_time(const char *reason);
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
 static void display_bounds_diag_callback(void *data);
 #endif
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS && ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
+static void deferred_datetime_callback(void *data);
+#endif
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
 static bool send_companion_request(int request_tag, int request_value);
 static void flush_pending_companion_request(void);
@@ -3553,8 +3556,10 @@ static void init(void) {
     (void)storage_snapshot_timer;
     AppTimer *display_diag_timer = app_timer_register(2000, display_bounds_diag_callback, NULL);
     (void)display_diag_timer;
+#if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
     AppTimer *datetime_timer = app_timer_register(2500, deferred_datetime_callback, NULL);
     (void)datetime_timer;
+#endif
 #endif
 #if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
     if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
