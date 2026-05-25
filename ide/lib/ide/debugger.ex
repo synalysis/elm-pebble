@@ -2764,6 +2764,9 @@ defmodule Ide.Debugger do
     end
   end
 
+  defp protocol_message_payload_for_cmd_call(_state, _cmd_call, _model, _direction, _message_value),
+    do: {nil, nil}
+
   @spec protocol_message_payload_from_cmd_call(map(), map(), :watch_to_phone | :phone_to_watch, map()) ::
           {String.t() | nil, term()}
   defp protocol_message_payload_from_cmd_call(cmd_call, schema, direction, ctx)
@@ -2810,7 +2813,7 @@ defmodule Ide.Debugger do
 
   @spec protocol_message_payload_from_arg_values(map(), :watch_to_phone | :phone_to_watch | nil) ::
           {String.t() | nil, term()}
-  defp protocol_message_payload_from_arg_values(cmd_call, direction \\ nil)
+  defp protocol_message_payload_from_arg_values(cmd_call, direction)
 
   defp protocol_message_payload_from_arg_values(cmd_call, direction) when is_map(cmd_call) do
     case protocol_ctor_from_cmd_call(cmd_call) do
@@ -2832,9 +2835,6 @@ defmodule Ide.Debugger do
         if is_binary(callback) and callback != "", do: {callback, nil}, else: {nil, nil}
     end
   end
-
-  defp protocol_message_payload_for_cmd_call(_state, _cmd_call, _model, _direction, _message_value),
-    do: {nil, nil}
 
   @spec protocol_message_ctor_name(map()) :: String.t() | nil
   defp protocol_message_ctor_name(cmd_call) when is_map(cmd_call) do
@@ -3916,7 +3916,7 @@ defmodule Ide.Debugger do
   defp protocol_wire_message_display(_message_value), do: nil
 
   @spec protocol_wire_message_value(Types.subscription_payload()) :: map() | nil
-  defp protocol_wire_message_value(%{"ctor" => ctor, "args" => args} = value)
+  defp protocol_wire_message_value(%{"ctor" => ctor, "args" => args})
        when ctor in @protocol_subscription_wrapper_ctors and is_list(args) do
     case List.wrap(args) do
       [%{"ctor" => result, "args" => [inner | _]} | _]
