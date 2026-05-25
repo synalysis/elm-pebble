@@ -27,12 +27,12 @@ defmodule Elmc.WorkerAdapterTest do
         ElmcValue *has_compass = elmc_new_int(0);
         ElmcValue *supports_health = elmc_new_int(0);
         const char *names[] = {
-          "reason", "watchModel", "watchProfileId", "screen",
-          "hasMicrophone", "hasCompass", "supportsHealth"
+          "hasCompass", "hasMicrophone", "reason", "screen",
+          "supportsHealth", "watchModel", "watchProfileId"
         };
         ElmcValue *values[] = {
-          reason, watch_model, watch_profile_id, screen,
-          has_microphone, has_compass, supports_health
+          has_compass, has_microphone, reason, screen,
+          supports_health, watch_model, watch_profile_id
         };
         return elmc_record_new_take(7, names, values);
       }

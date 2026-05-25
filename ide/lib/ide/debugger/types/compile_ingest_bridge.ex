@@ -49,13 +49,16 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(String.t()) => term()
         }
 
-  @spec from_compiler_check_result(Compiler.check_result()) :: CompileIngestAttrs.t()
+  @spec from_compiler_check_result(check_result() | Compiler.check_result() | map()) ::
+          CompileIngestAttrs.t()
   def from_compiler_check_result(%{} = result), do: from_check_result(result)
 
-  @spec from_compiler_compile_result(Compiler.compile_result()) :: CompileIngestAttrs.t()
+  @spec from_compiler_compile_result(compile_result() | Compiler.compile_result() | map()) ::
+          CompileIngestAttrs.t()
   def from_compiler_compile_result(%{} = result), do: from_compile_result(result)
 
-  @spec from_compiler_manifest_result(Compiler.manifest_result()) :: CompileIngestAttrs.t()
+  @spec from_compiler_manifest_result(manifest_result() | Compiler.manifest_result() | map()) ::
+          CompileIngestAttrs.t()
   def from_compiler_manifest_result(%{} = result), do: from_manifest_result(result)
 
   @spec from_check_result(check_result()) :: CompileIngestAttrs.t()

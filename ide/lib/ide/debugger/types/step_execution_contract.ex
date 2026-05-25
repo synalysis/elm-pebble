@@ -68,15 +68,7 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
 
   @spec deep_merge_runtime_model(map(), map()) :: map()
   defp deep_merge_runtime_model(existing, patch) when is_map(existing) and is_map(patch) do
-    Map.merge(existing, patch, fn
-      key, existing_val, patch_val
-      when key in ["latitudeE6", "longitudeE6", "accuracyM"] and is_integer(patch_val) and
-             patch_val == 0 and is_integer(existing_val) and existing_val != 0 ->
-        existing_val
-
-      _key, _existing_val, patch_val ->
-        patch_val
-    end)
+    Map.merge(existing, patch)
   end
 
   defp deep_merge_runtime_model(_existing, patch) when is_map(patch), do: patch

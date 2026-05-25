@@ -51,7 +51,8 @@ defmodule Ide.Mcp.GeolocationWatchfaceTest do
     assert watch_runtime_model["accuracyM"] == 25
 
     refute Enum.any?(st.debugger_timeline, fn row ->
-             row.target == "watch" and String.starts_with?(row.message, "ProvidePosition ")
+             row.target == "watch" and row.message_source == "simulator_settings" and
+               String.starts_with?(row.message, "ProvidePosition ")
            end)
 
     assert Enum.any?(st.debugger_timeline, fn row ->

@@ -9,7 +9,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
       Enum.flat_map(ops, fn op ->
         [
           ".Pebble.Companion.#{module}.#{op}",
-          ".#{module}.#{op}"
+          ".#{module}.#{op}",
+          "#{module}.#{op}"
         ]
       end)
     end

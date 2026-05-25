@@ -241,9 +241,27 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   def parser_expression_view_tree_node?(_, _), do: false
 
+  @spec parser_ui_node_wrapper_type?(map()) :: boolean()
+  defp parser_ui_node_wrapper_type?(node) when is_map(node) do
+    case Map.get(node, "type") do
+      "toUiNode" ->
+        true
+
+      type when is_binary(type) ->
+        String.ends_with?(type, "toUiNode")
+
+      _ ->
+        qualified = Map.get(node, "qualified_target") || Map.get(node, "target")
+
+        is_binary(qualified) and String.ends_with?(qualified, "toUiNode")
+    end
+  end
+
+  defp parser_ui_node_wrapper_type?(_node), do: false
+
   @spec ui_node_call_with_unevaluated_children?(map(), map()) :: boolean()
   defp ui_node_call_with_unevaluated_children?(node, ei) when is_map(node) and is_map(ei) do
-    view_tree_call_returns_ui_node?(node, ei) and
+    (view_tree_call_returns_ui_node?(node, ei) or parser_ui_node_wrapper_type?(node)) and
       not parser_expression_structural_type?(Map.get(node, "type")) and
       Enum.any?(List.wrap(Map.get(node, "children")), fn child ->
         is_map(child) and parser_expression_view_tree_node?(child, ei)
@@ -2161,7 +2179,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp inline_view_lets(other, _bindings, _seen), do: other
 
-  @spec msg_constructors(Types.ast_expr() | nil) :: Types.string_list()
+  @spec msg_constructors(%Module{} | nil) :: Types.string_list()
   defp msg_constructors(%Module{declarations: decls}) do
     decls
     |> msg_union()
@@ -2174,7 +2192,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec msg_constructor_arities(Types.ast_expr() | nil) :: %{optional(String.t()) => non_neg_integer()}
+  @spec msg_constructor_arities(%Module{} | nil) :: %{optional(String.t()) => non_neg_integer()}
   defp msg_constructor_arities(%Module{declarations: decls}) do
     decls
     |> msg_union()

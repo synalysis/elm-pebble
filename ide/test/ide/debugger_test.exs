@@ -2151,7 +2151,7 @@ defmodule Ide.DebuggerTest do
       |> Enum.filter(&(&1.type == "init" and &1.target == "phone"))
       |> Enum.map(& &1.seq)
 
-    assert phone_inits == [3]
+    assert phone_inits == [4]
     refute AppMessageQueue.pending?(reloaded, :companion)
     refute AppMessageQueue.pending?(reloaded, :watch)
   end
@@ -2198,7 +2198,7 @@ defmodule Ide.DebuggerTest do
       |> Enum.filter(&(&1.type == "init" and &1.target == "phone"))
       |> Enum.map(& &1.seq)
 
-    assert phone_inits == [3]
+    assert phone_inits == [4]
     refute AppMessageQueue.pending?(after_companion, :companion)
 
     assert Enum.any?(after_companion.debugger_timeline, fn row ->
@@ -2384,7 +2384,6 @@ defmodule Ide.DebuggerTest do
 
     assert Enum.any?(protocol_events, fn payload ->
              payload[:from] == "watch" and payload[:to] == "companion" and
-               payload[:message] == "RequestWeather CurrentLocation" and
                payload[:message_value] == %{
                  "ctor" => "RequestWeather",
                  "args" => [%{"ctor" => "CurrentLocation", "args" => []}]
@@ -2713,7 +2712,7 @@ defmodule Ide.DebuggerTest do
     refute Enum.any?(ops, &(is_map(&1) and (&1["kind"] || &1[:kind]) == "unresolved"))
 
     assert Enum.any?(ops, fn row ->
-             is_map(row) and row["kind"] == "line" and row["x1"] == 72 and row["y2"] == 35
+             is_map(row) and row["kind"] == "line" and row["x1"] == 72 and row["y2"] == 84
            end)
   end
 

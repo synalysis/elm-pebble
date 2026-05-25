@@ -241,6 +241,7 @@ defmodule Ide.Mcp.ToolTypes do
           required(:slug) => String.t(),
           required(:status) => :ok | :error,
           required(:artifact_path) => String.t(),
+          optional(:package_path) => String.t(),
           required(:app_root) => String.t(),
           required(:build_result) => map()
         }

@@ -31,7 +31,7 @@ defmodule Ide.Debugger.Types.RuntimeEventAppend do
     RuntimeEventLog.wire_type?(type) or Map.has_key?(wire_types_by_string(), type)
   end
 
-  @spec wire_types_by_string() :: %{String.t() => atom()}
+  @spec wire_types_by_string() :: map()
   defp wire_types_by_string do
     Map.merge(RuntimeEventLog.known_wire_types(), @wire_types)
   end

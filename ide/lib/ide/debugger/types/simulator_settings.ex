@@ -6,6 +6,8 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
   Runtime maps use string keys; typespecs use atoms for Dialyzer (same fields).
   """
 
+  alias Ide.Debugger.Types.StorageValue
+
   @type weather :: %{
           optional(:temperatureC) => integer(),
           optional(:condition) => String.t(),

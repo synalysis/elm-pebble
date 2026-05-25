@@ -2,6 +2,7 @@ defmodule Ide.ProjectsTest do
   use Ide.DataCase, async: false
 
   alias Ide.Debugger
+  alias Ide.Debugger.AppMessageQueue
   alias Ide.Auth.User
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -1305,14 +1306,25 @@ defmodule Ide.ProjectsTest do
              })
 
     assert {:ok, watch_source} = Projects.read_source_file(project, "watch", "src/Main.elm")
+    assert {:ok, companion_source} = Projects.read_source_file(project, "phone", "src/CompanionApp.elm")
     assert {:ok, _} = Debugger.start_session(slug)
 
-    assert {:ok, reloaded} =
+    assert {:ok, after_watch} =
              Debugger.reload(slug, %{
                rel_path: "watch/src/Main.elm",
                source: watch_source,
                reason: "lazy_companion_boot",
                source_root: "watch"
+             })
+
+    assert AppMessageQueue.pending?(after_watch, :companion)
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "phone/src/CompanionApp.elm",
+               source: companion_source,
+               reason: "lazy_companion_boot_companion",
+               source_root: "phone"
              })
 
     companion_shell = get_in(reloaded, [:companion, :shell]) || %{}

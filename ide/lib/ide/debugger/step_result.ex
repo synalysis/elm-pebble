@@ -14,7 +14,7 @@ defmodule Ide.Debugger.StepResult do
           surface: Surface.t()
         }
 
-  @spec new(RuntimeState.t() | map(), Surface.t()) :: t()
+  @spec new(map(), %Surface{}) :: t()
   def new(state, %Surface{} = surface) when is_map(state) do
     %__MODULE__{state: state, surface: surface}
   end
