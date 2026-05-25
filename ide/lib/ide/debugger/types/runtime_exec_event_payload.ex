@@ -3,14 +3,15 @@ defmodule Ide.Debugger.Types.RuntimeExecEventPayload do
   Payload for `debugger.runtime_exec` events (`append_runtime_exec_event_for_target/3`).
   """
 
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.ExecutionRuntimeSnapshot
 
   @type extra :: %{
           optional(:trigger) => String.t(),
           optional(:message) => String.t(),
           optional(:message_source) => String.t() | nil,
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type t :: %{
@@ -31,8 +32,8 @@ defmodule Ide.Debugger.Types.RuntimeExecEventPayload do
           optional(:view_tree_node_count) => non_neg_integer(),
           optional(:runtime_model_sha256) => String.t(),
           optional(:view_tree_sha256) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

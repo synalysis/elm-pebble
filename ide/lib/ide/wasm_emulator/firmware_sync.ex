@@ -101,7 +101,14 @@ defmodule Ide.WasmEmulator.FirmwareSync do
     :ok
   end
 
-  @spec copy_micro_flash(String.t(), String.t()) :: :ok | {:error, term()}
+  @type firmware_error ::
+          :objcopy_unavailable
+          | :spi_flash_missing
+          | {:objcopy_failed, String.t()}
+          | {:bunzip2_failed, String.t()}
+          | File.posix()
+
+  @spec copy_micro_flash(String.t(), String.t()) :: :ok | {:error, firmware_error()}
   defp copy_micro_flash(src, dest) do
     cond do
       raw_micro_flash?(src) ->
@@ -122,7 +129,7 @@ defmodule Ide.WasmEmulator.FirmwareSync do
     end
   end
 
-  @spec copy_spi_flash(String.t(), String.t()) :: :ok | {:error, term()}
+  @spec copy_spi_flash(String.t(), String.t()) :: :ok | {:error, firmware_error()}
   defp copy_spi_flash(qemu_dir, dest) do
     plain = Path.join(qemu_dir, "qemu_spi_flash.bin")
     compressed = Path.join(qemu_dir, "qemu_spi_flash.bin.bz2")
@@ -143,7 +150,7 @@ defmodule Ide.WasmEmulator.FirmwareSync do
     end
   end
 
-  @spec write_manifest(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
+  @spec write_manifest(String.t(), String.t(), String.t()) :: :ok | {:error, firmware_error()}
   defp write_manifest(platform, dest_dir, spi_dest) do
     spi_size =
       case File.stat(spi_dest) do

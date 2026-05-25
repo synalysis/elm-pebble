@@ -1,11 +1,12 @@
 defmodule Ide.Debugger.Types.SnapshotContinueEventPayload do
   @moduledoc "Payload for `debugger.snapshot_continue` cursor materialization events."
+  alias Ide.Debugger.Types
 
   @type t :: %{
           optional(:cursor_seq) => non_neg_integer() | nil,
           optional(:source) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @spec from_cursor(non_neg_integer() | nil, String.t()) :: t()

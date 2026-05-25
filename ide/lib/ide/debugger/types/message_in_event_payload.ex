@@ -3,12 +3,13 @@ defmodule Ide.Debugger.Types.MessageInEventPayload do
   Shared payload for `debugger.init_in` and `debugger.update_in` events.
   """
 
+  alias Ide.Debugger.Types
   @type t :: %{
           optional(:target) => String.t(),
           optional(:message) => String.t(),
           optional(:message_source) => String.t() | nil,
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

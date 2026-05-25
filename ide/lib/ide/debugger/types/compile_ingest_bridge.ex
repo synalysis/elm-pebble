@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
   """
 
   alias Ide.Compiler
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.CompileIngestAttrs
 
   @type check_result :: %{
@@ -13,8 +14,8 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(:diagnostics) => list(),
           optional(:error_count) => non_neg_integer(),
           optional(:warning_count) => non_neg_integer(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type compile_result :: %{
@@ -30,8 +31,8 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(:source_root) => String.t(),
           optional(:elm_executor_core_ir_b64) => String.t(),
           optional(:elm_executor_metadata) => map(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type manifest_result :: %{
@@ -40,13 +41,13 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(:revision) => String.t(),
           optional(:cached?) => boolean(),
           optional(:strict?) => boolean(),
-          optional(:schema_version) => term(),
+          optional(:schema_version) => String.t() | integer() | map() | nil,
           optional(:detail) => String.t(),
           optional(:diagnostics) => list(),
           optional(:error_count) => non_neg_integer(),
           optional(:warning_count) => non_neg_integer(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @spec from_compiler_check_result(check_result() | Compiler.check_result() | map()) ::

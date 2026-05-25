@@ -69,11 +69,11 @@ defmodule Ide.Debugger.ElmIntrospect.Payload do
           optional(atom()) => json_value()
         }
 
-  @type wire_payload :: t() | %{optional(String.t()) => term(), optional(atom()) => term()}
+  @type wire_payload :: t() | %{optional(String.t()) => json_value(), optional(atom()) => json_value()}
 
   @type snapshot :: %{
           optional(:elm_introspect) => wire_payload(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => json_value(),
+          optional(atom()) => json_value()
         }
 end

@@ -13,8 +13,8 @@ defmodule Ide.Debugger.Types.ReplayEventPayload do
           optional(:replayed_count) => non_neg_integer(),
           optional(:used_frozen_preview) => boolean(),
           optional(:used_live_query) => boolean(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type t :: %{
@@ -27,8 +27,8 @@ defmodule Ide.Debugger.Types.ReplayEventPayload do
           optional(:replay_target_counts) => map(),
           optional(:replay_message_counts) => map(),
           optional(:replay_preview) => [map()],
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @spec telemetry(

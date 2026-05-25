@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.ElmcDiagnosticPreview do
   Truncated compiler diagnostic rows stored on surface models and `debugger.elmc_*` events.
   """
 
+  alias Ide.Debugger.Types
   @type severity :: String.t()
 
   @type row :: %{
@@ -17,8 +18,8 @@ defmodule Ide.Debugger.Types.ElmcDiagnosticPreview do
           optional(:warning_constructor) => String.t() | nil,
           optional(:warning_expected_kind) => String.t() | nil,
           optional(:warning_has_arg_pattern) => boolean() | nil,
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_row :: row() | map()

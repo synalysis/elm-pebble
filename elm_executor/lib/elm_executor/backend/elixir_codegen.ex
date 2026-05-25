@@ -59,7 +59,7 @@ defmodule ElmExecutor.Backend.ElixirCodegen do
         |> :erlang.binary_to_term()
       end
 
-      @spec debugger_execute(map()) :: {:ok, map()} | {:error, term()}
+      @spec debugger_execute(map()) :: {:ok, map()} | {:error, atom() | String.t() | tuple()}
       def debugger_execute(request) when is_map(request) do
         ElmExecutor.Runtime.Executor.execute(request, core_ir(), compiler_metadata())
       end

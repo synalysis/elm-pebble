@@ -5,9 +5,14 @@ defmodule Ide.Mcp.ToolTypes do
 
   alias Ide.AppStore.Types, as: AppStoreTypes
   alias Ide.Debugger.Types, as: DebuggerTypes
+  alias Ide.Mcp.WireTypes
   alias Ide.Projects.Types, as: ProjectsTypes
 
+  @type json_value :: WireTypes.json_value()
+  @type file_mtime :: :calendar.datetime()
+
   @type tool_result :: {:ok, map()} | {:error, String.t()}
+  @type tool_persist_error :: atom() | String.t() | Ecto.Changeset.t() | map()
   @type tool_args :: map()
 
   @type release_defaults :: ProjectsTypes.release_defaults()
@@ -55,15 +60,15 @@ defmodule Ide.Mcp.ToolTypes do
         }
 
   @type projects_settings_result :: %{
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => json_value(),
+          optional(String.t()) => json_value()
         }
 
   @type build_status_result :: %{
           optional(:slug) => String.t(),
           optional(:status) => String.t(),
           optional(:detail) => String.t(),
-          optional(String.t()) => term()
+          optional(String.t()) => json_value()
         }
 
   @type ingest_compile_result :: {:ok, map()} | {:error, String.t()}
@@ -99,8 +104,8 @@ defmodule Ide.Mcp.ToolTypes do
           required(:status) => :ok | :error,
           optional(:artifact_path) => String.t(),
           optional(:app_root) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => json_value(),
+          optional(String.t()) => json_value()
         }
 
   @type debugger_state_replay_result :: %{
@@ -108,8 +113,8 @@ defmodule Ide.Mcp.ToolTypes do
           required(:event_window) => non_neg_integer(),
           required(:runtime_fingerprint_digest) => map(),
           required(:snapshot_refs) => [map()],
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => json_value(),
+          optional(String.t()) => json_value()
         }
 
   @type debugger_state_full_result :: %{
@@ -118,8 +123,8 @@ defmodule Ide.Mcp.ToolTypes do
           required(:runtime_fingerprints) => map(),
           required(:runtime_fingerprint_digest) => map(),
           required(:snapshot_refs) => [map()],
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => json_value(),
+          optional(String.t()) => json_value()
         }
 
   @type debugger_state_result :: debugger_state_replay_result() | debugger_state_full_result()
@@ -129,15 +134,15 @@ defmodule Ide.Mcp.ToolTypes do
           required(:status) => :ok | :error,
           optional(:detail) => String.t(),
           optional(:diagnostics) => [map()],
-          optional(String.t()) => term()
+          optional(String.t()) => json_value()
         }
 
   @type publish_prepare_result :: %{
           required(:slug) => String.t(),
           required(:status) => :ok | :error,
           optional(:artifact_path) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => json_value(),
+          optional(String.t()) => json_value()
         }
 
   @type publish_submit_result :: %{
@@ -147,7 +152,7 @@ defmodule Ide.Mcp.ToolTypes do
           optional(:command) => String.t(),
           optional(:exit_code) => integer(),
           optional(:cwd) => String.t(),
-          optional(String.t()) => term()
+          optional(String.t()) => json_value()
         }
 
   @type project_summary :: %{
@@ -184,7 +189,7 @@ defmodule Ide.Mcp.ToolTypes do
           optional(:root_type) => String.t(),
           optional(:node_count) => non_neg_integer(),
           optional(:nodes) => [map()],
-          optional(atom()) => term()
+          optional(atom()) => json_value()
         }
 
   @type debugger_surface_state_result :: %{
@@ -197,7 +202,7 @@ defmodule Ide.Mcp.ToolTypes do
           optional(:protocol_messages) => list(),
           optional(:runtime_fingerprint) => map() | nil,
           optional(:render_tree) => debugger_render_tree_summary() | nil,
-          optional(atom()) => term()
+          optional(atom()) => json_value()
         }
 
   @type compiler_recent_result :: %{
@@ -213,8 +218,8 @@ defmodule Ide.Mcp.ToolTypes do
           required(:runtime_model) => map(),
           required(:model_keys) => [String.t()],
           required(:runtime_model_keys) => [String.t()],
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => json_value(),
+          optional(String.t()) => json_value()
         }
 
   @type debugger_models_result :: %{
@@ -247,8 +252,8 @@ defmodule Ide.Mcp.ToolTypes do
         }
 
   @type debugger_timeline_event :: %{
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => json_value(),
+          optional(String.t()) => json_value()
         }
 
   @type debugger_timeline_result :: %{
@@ -274,14 +279,16 @@ defmodule Ide.Mcp.ToolTypes do
           optional(:revision) => String.t()
         }
 
+  @type tool_payload_value :: json_value() | map() | [map()]
+
   @type debugger_preview_diagnostics_result :: %{
           required(:slug) => String.t(),
           required(:target) => String.t(),
           required(:status) => String.t(),
           required(:render_source) => String.t(),
           required(:node_count) => non_neg_integer(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => tool_payload_value(),
+          optional(String.t()) => tool_payload_value()
         }
 
   @type traces_summary_result :: %{
@@ -302,22 +309,22 @@ defmodule Ide.Mcp.ToolTypes do
 
   @type debugger_cursor_inspect_replay_result :: %{
           required(:slug) => String.t(),
-          required(:cursor_seq) => non_neg_integer(),
+          required(:cursor_seq) => non_neg_integer() | nil,
           required(:event_window) => non_neg_integer(),
           required(:snapshot_refs) => [map()],
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => tool_payload_value(),
+          optional(String.t()) => tool_payload_value()
         }
 
   @type debugger_cursor_inspect_full_result :: %{
           required(:slug) => String.t(),
-          required(:cursor_seq) => non_neg_integer(),
+          required(:cursor_seq) => non_neg_integer() | nil,
           required(:event_window) => non_neg_integer(),
           required(:snapshot_refs) => [map()],
           required(:elmc_diagnostics) => [map()],
           required(:runtime_fingerprint_digest) => map(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => tool_payload_value(),
+          optional(String.t()) => tool_payload_value()
         }
 
   @type debugger_cursor_inspect_result ::
@@ -371,7 +378,7 @@ defmodule Ide.Mcp.ToolTypes do
           required(:path) => String.t(),
           required(:bytes) => non_neg_integer(),
           required(:modified_at) => String.t(),
-          required(:sort_key) => term()
+          required(:sort_key) => file_mtime()
         }
 
   @type trace_exports_summary :: %{

@@ -21,13 +21,13 @@ defmodule Ide.Debugger.Types.CompileIngestAttrs do
           optional(:warning_count) => non_neg_integer(),
           optional(:detail) => String.t(),
           optional(:source_root) => String.t(),
-          optional(:schema_version) => term(),
+          optional(:schema_version) => String.t() | integer() | map() | nil,
           optional(:diagnostics) => list(),
           optional(:elm_executor_core_ir) => Types.core_ir(),
           optional(:elm_executor_core_ir_b64) => String.t(),
           optional(:elm_executor_metadata) => map(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

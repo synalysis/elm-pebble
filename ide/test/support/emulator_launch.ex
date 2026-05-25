@@ -7,7 +7,7 @@ defmodule Ide.TestSupport.EmulatorLaunch do
   @max_attempts 8
   @initial_delay_ms 25
 
-  @type launch_error :: Types.emulator_error() | {:exit, term()}
+  @type launch_error :: Types.emulator_error() | {:exit, Types.exit_reason()}
 
   @spec launch(Ide.Emulator.launch_opts()) :: {:ok, map()} | {:error, launch_error()}
   def launch(opts) when is_list(opts) do

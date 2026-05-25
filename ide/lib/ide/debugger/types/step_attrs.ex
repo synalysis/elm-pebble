@@ -12,8 +12,8 @@ defmodule Ide.Debugger.Types.StepAttrs do
           optional(:interval_ms) => pos_integer() | String.t() | nil,
           optional(:enabled) => boolean() | String.t() | nil,
           optional(:trigger) => String.t() | nil,
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

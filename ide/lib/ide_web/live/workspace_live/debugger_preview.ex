@@ -229,7 +229,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
     end
   end
 
-  @spec read_vector_bytes(Project.t(), pos_integer()) :: {:ok, binary()} | {:error, term()}
+  @spec read_vector_bytes(Project.t(), pos_integer()) :: {:ok, binary()} | {:error, File.posix() | atom()}
   defp read_vector_bytes(project, vector_id) do
     with {:ok, path} <- ResourceStore.vector_file_path_by_id(project, vector_id),
          {:ok, bytes} <- File.read(path) do

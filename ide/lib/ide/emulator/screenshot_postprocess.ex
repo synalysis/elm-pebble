@@ -65,7 +65,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
   def blank_bgrx_pixel(_profile), do: @opaque_black
 
   @spec finalize(binary(), pos_integer(), pos_integer(), String.t(), pixel_format()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, binary()} | {:error, Types.screenshot_error()}
   def finalize(pixels, width, height, platform, pixel_format) do
     profile = WatchModels.profile_for(platform)
     {exp_w, exp_h} = screen_size(platform)
@@ -100,7 +100,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
   end
 
   @spec crop_framebuffer(binary(), pos_integer(), pos_integer(), pos_integer(), pos_integer()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, binary()} | {:error, Types.screenshot_error()}
   def crop_framebuffer(pixels, src_w, src_h, dst_w, dst_h)
       when src_w >= dst_w and src_h >= dst_h do
     if byte_size(pixels) < src_w * src_h * 4 do
@@ -121,7 +121,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
   end
 
   @spec normalize_pixels_to_bgrx(binary(), pixel_format(), pos_integer(), pos_integer()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, binary()} | {:error, Types.screenshot_error()}
   def normalize_pixels_to_bgrx(pixels, format, width, height) do
     expected = width * height * 4
 
@@ -139,7 +139,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
   end
 
   @spec apply_shape_mask(binary(), pos_integer(), pos_integer(), map()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, binary()} | {:error, Types.screenshot_error()}
   def apply_shape_mask(pixels, width, height, %{"shape" => "round"} = profile) do
     {:ok, mask_round_bgrx(pixels, width, height, blank_bgrx_pixel(profile))}
   end
@@ -219,7 +219,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
 
   @doc false
   @spec trim_content_margins(binary(), pos_integer(), pos_integer(), map()) ::
-          {:ok, binary(), pos_integer(), pos_integer()} | {:error, term()}
+          {:ok, binary(), pos_integer(), pos_integer()} | {:error, Types.screenshot_error()}
   def trim_content_margins(pixels, width, height, profile) do
     blank = blank_bgrx_pixel(profile)
 
@@ -323,7 +323,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
 
   @doc false
   @spec resize_bgrx(binary(), pos_integer(), pos_integer(), pos_integer(), pos_integer()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, binary()} | {:error, Types.screenshot_error()}
   def resize_bgrx(pixels, src_w, src_h, dst_w, dst_h) do
     if src_w == dst_w and src_h == dst_h do
       {:ok, pixels}

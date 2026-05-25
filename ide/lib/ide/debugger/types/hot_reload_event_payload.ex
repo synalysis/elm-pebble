@@ -3,13 +3,14 @@ defmodule Ide.Debugger.Types.HotReloadEventPayload do
   Payload for `debugger.reload` events after `Debugger.reload/2`.
   """
 
+  alias Ide.Debugger.Types
   @type t :: %{
           optional(:reason) => String.t(),
           optional(:rel_path) => String.t() | nil,
           optional(:revision) => String.t(),
           optional(:source_root) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

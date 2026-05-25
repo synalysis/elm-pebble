@@ -38,7 +38,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Types do
           optional(:params) => [String.t()],
           optional(:body) => expr() | map() | nil,
           optional(:type) => String.t() | nil,
-          optional(atom()) => term()
+          optional(atom()) => runtime_value()
         }
 
   @type function_index :: %{optional(function_index_key()) => function_entry()}
@@ -57,7 +57,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Types do
 
   @type core_ir :: CoreIR.t() | CoreIRTypes.wire_map() | core_ir_map()
 
-  @type core_ir_map :: %{optional(String.t()) => term(), optional(atom()) => term()}
+  @type core_ir_map :: %{optional(String.t()) => wire_input(), optional(atom()) => wire_input()}
+
+  @type wire_input :: runtime_value() | map()
 
   @type pair_entry :: {runtime_value(), runtime_value()} | runtime_values() | map()
 

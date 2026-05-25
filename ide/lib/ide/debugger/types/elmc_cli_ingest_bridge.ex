@@ -105,7 +105,7 @@ defmodule Ide.Debugger.Types.ElmcCliIngestBridge do
     Diagnostics.normalize_list(warnings)
   end
 
-  @spec manifest_schema_version(map() | nil) :: term()
+  @spec manifest_schema_version(map() | nil) :: String.t() | integer() | map() | nil
   defp manifest_schema_version(%{"schema_version" => v}), do: v
   defp manifest_schema_version(%{schema_version: v}), do: v
   defp manifest_schema_version(_), do: nil

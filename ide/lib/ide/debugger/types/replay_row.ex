@@ -9,8 +9,8 @@ defmodule Ide.Debugger.Types.ReplayRow do
           optional(:seq) => non_neg_integer(),
           optional(:target) => Types.surface_target(),
           optional(:message) => String.t(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

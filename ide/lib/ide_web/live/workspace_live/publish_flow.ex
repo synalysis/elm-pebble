@@ -192,7 +192,7 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
   end
 
   @spec stage_publish_screenshots(String.t(), [{String.t(), [map()]}]) ::
-          {:ok, [String.t()]} | {:error, term()}
+          {:ok, [String.t()]} | {:error, prepare_release_error()}
   def stage_publish_screenshots(app_root, screenshot_groups)
       when is_binary(app_root) and is_list(screenshot_groups) do
     output_dir = Path.join([app_root, ".elm-pebble-publish", "screenshots"])

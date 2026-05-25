@@ -6,6 +6,7 @@ defmodule Ide.Debugger.Types.Shell do
   typespecs use atoms for Dialyzer.
   """
 
+  alias Ide.Debugger.Types
   alias ElmEx.CoreIR
   alias ElmEx.CoreIR.Types, as: CoreIRTypes
   alias Ide.Debugger.ElmIntrospect.Payload
@@ -18,8 +19,8 @@ defmodule Ide.Debugger.Types.Shell do
           optional(:elm_executor_metadata) => map(),
           optional(:vector_resource_indices) => ArtifactTypes.resource_indices(),
           optional(:bitmap_resource_indices) => ArtifactTypes.resource_indices(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

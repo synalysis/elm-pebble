@@ -18,7 +18,7 @@ defmodule Ide.GitHub.Client do
   def oauth_scope, do: @oauth_scope
 
   @type http_method :: :get | :post
-  @type mock_response :: {:ok, %{status: integer(), body: map() | term()}} | {:error, Types.api_error()}
+  @type mock_response :: {:ok, %{status: integer(), body: Types.http_body()}} | {:error, Types.api_error()}
 
   @spec start_device_flow(String.t() | nil) :: {:ok, map()} | {:error, Types.api_error()}
   def start_device_flow(scope \\ @oauth_scope) do

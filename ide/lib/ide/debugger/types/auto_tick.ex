@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.AutoTick do
   Auto tick / auto-fire worker state on `RuntimeState.auto_tick`.
   """
 
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.DisabledSubscription
 
   @type t :: %{
@@ -13,7 +14,7 @@ defmodule Ide.Debugger.Types.AutoTick do
           optional(:count) => pos_integer() | nil,
           optional(:worker_pid) => pid() | nil,
           optional(:subscriptions) => [DisabledSubscription.wire_map()],
-          optional(atom()) => term()
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

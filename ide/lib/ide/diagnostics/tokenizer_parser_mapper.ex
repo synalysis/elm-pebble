@@ -25,7 +25,7 @@ defmodule Ide.Diagnostics.TokenizerParserMapper do
   @type catalog_id :: atom()
   @type diagnostic_extra :: keyword()
   @type diagnostic_field_value :: String.t() | integer() | atom() | nil
-  @type wire_reason :: String.t() | list() | atom() | number() | term()
+  @type wire_reason :: String.t() | list() | atom() | number() | map() | tuple()
 
   @spec unterminated_block_comment(integer(), integer(), integer(), integer()) :: diagnostic()
   def unterminated_block_comment(line, column, end_line, end_column) do

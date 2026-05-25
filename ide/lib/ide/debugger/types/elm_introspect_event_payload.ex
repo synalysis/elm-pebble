@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.ElmIntrospectEventPayload do
   Summary payload for `debugger.elm_introspect` events.
   """
 
+  alias Ide.Debugger.Types
   @type t :: %{
           optional(:module) => String.t() | nil,
           optional(:rel_path) => String.t() | nil,
@@ -53,8 +54,8 @@ defmodule Ide.Debugger.Types.ElmIntrospectEventPayload do
           optional(:update_params) => list(),
           optional(:view_params) => list(),
           optional(:subscriptions_params) => list(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

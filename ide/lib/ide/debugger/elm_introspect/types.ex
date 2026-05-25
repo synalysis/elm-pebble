@@ -15,10 +15,12 @@ defmodule Ide.Debugger.ElmIntrospect.Types do
   @type view_tree :: ViewTreeNode.view_tree() | map()
   @type view_tree_node :: ViewTreeNode.t() | map()
   @type program_outline :: map() | nil
+  @type case_subject :: ast_expr() | String.t()
+
   @type module_scan :: {
           [map()],
           boolean(),
-          term(),
+          exposing_value(),
           [import_entry()],
           non_neg_integer() | nil,
           non_neg_integer() | nil
@@ -31,9 +33,9 @@ defmodule Ide.Debugger.ElmIntrospect.Types do
   @type parse_error :: atom() | String.t() | map() | tuple()
   @type json_value :: Payload.json_value()
   @type param_list :: [String.t()]
-  @type binding_map :: %{optional(atom()) => term(), optional(String.t()) => term()}
+  @type binding_map :: %{optional(atom()) => json_value(), optional(String.t()) => json_value()}
   @type case_branch_labels :: {[String.t()], String.t() | nil}
   @type cmd_call_list :: [cmd_call_row()]
   @type string_list :: [String.t()]
-  @type wire_pick :: term() | nil
+  @type wire_pick :: json_value() | nil
 end

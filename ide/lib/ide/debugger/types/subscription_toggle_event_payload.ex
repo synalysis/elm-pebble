@@ -1,5 +1,6 @@
 defmodule Ide.Debugger.Types.SubscriptionToggleEventPayload do
   @moduledoc "Payload for `debugger.subscription_toggle` subscription gating events."
+  alias Ide.Debugger.Types
 
   @type t :: %{
           optional(:action) => String.t(),
@@ -8,8 +9,8 @@ defmodule Ide.Debugger.Types.SubscriptionToggleEventPayload do
           optional(:message) => String.t(),
           optional(:enabled) => boolean(),
           optional(:disabled_subscriptions) => [map()],
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @spec blocked(String.t(), String.t()) :: t()

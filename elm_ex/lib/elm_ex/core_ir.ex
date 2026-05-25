@@ -78,7 +78,7 @@ defmodule ElmEx.CoreIR do
     }
   end
 
-  @spec normalize_unions(map() | term()) :: map()
+  @spec normalize_unions(map() | list() | atom() | nil) :: map()
   defp normalize_unions(unions) when is_map(unions) do
     unions
     |> Enum.map(fn {name, constructors} ->
@@ -90,7 +90,8 @@ defmodule ElmEx.CoreIR do
 
   defp normalize_unions(_), do: %{}
 
-  @spec normalize_constructors(map() | term()) :: Types.normalized_value()
+  @spec normalize_constructors(map() | list() | atom() | String.t() | number() | boolean() | nil) ::
+          Types.normalized_value()
   defp normalize_constructors(constructors) when is_map(constructors) do
     constructors
     |> Enum.map(fn {ctor, payload} ->
@@ -127,7 +128,7 @@ defmodule ElmEx.CoreIR do
     |> Map.new()
   end
 
-  @spec normalize_op_value(term()) :: String.t()
+  @spec normalize_op_value(atom() | String.t() | number()) :: String.t()
   defp normalize_op_value(v) when is_atom(v), do: to_string(v)
   defp normalize_op_value(v) when is_binary(v), do: v
   defp normalize_op_value(v), do: to_string(v)

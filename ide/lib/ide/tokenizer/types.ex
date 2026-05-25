@@ -76,7 +76,7 @@ defmodule Ide.Tokenizer.Types do
   @type take_literal_result :: {String.t(), String.t(), boolean()}
   @type elmc_lex_state :: %{optional(integer()) => [elmc_token()]}
   @type ensure_loaded_error :: String.t()
-  @type parser_reason :: term()
+  @type parser_reason :: atom() | String.t() | map() | tuple()
 
   @type parser_diagnostic_map :: %{
           required(:source) => String.t(),
@@ -87,6 +87,7 @@ defmodule Ide.Tokenizer.Types do
           optional(:detail) => String.t()
         }
 
-  @type elmc_raw_token :: {atom(), integer(), term()} | {atom(), integer()} | term()
-  @type elmc_value :: String.t() | charlist() | atom() | number() | term()
+  @type elmc_raw_token ::
+          {atom(), integer(), elmc_value()} | {atom(), integer()} | map() | atom() | String.t()
+  @type elmc_value :: String.t() | charlist() | atom() | number() | boolean() | list() | map() | nil
 end

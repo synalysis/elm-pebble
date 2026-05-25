@@ -281,7 +281,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp generic_map_value(_map, _key), do: nil
 
-  @spec list_count(term()) :: non_neg_integer()
+  @spec list_count(EvalTypes.runtime_value()) :: non_neg_integer()
   defp list_count(value) when is_list(value), do: length(value)
   defp list_count(_), do: 0
 
@@ -1187,7 +1187,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp normalize_runtime_view_tree_fallback(_),
     do: %{"type" => "unknown", "label" => "", "children" => []}
 
-  @spec normalize_runtime_text_fields(map() | list() | term()) :: map() | list() | term()
+  @spec normalize_runtime_text_fields(EvalTypes.runtime_value()) :: EvalTypes.runtime_value()
   defp normalize_runtime_text_fields(%{} = node) do
     node
     |> normalize_runtime_text_field("text")
@@ -2603,7 +2603,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  @spec fallback_helper_param_value(String.t() | nil, map()) :: term()
+  @spec fallback_helper_param_value(String.t() | nil, map()) :: EvalTypes.runtime_value()
   defp fallback_helper_param_value(type, runtime_model) when is_map(runtime_model) do
     normalized = if is_binary(type), do: String.downcase(type), else: ""
 
@@ -3029,7 +3029,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp vector_id_from_view_tree_node(_node, _context), do: nil
 
-  @spec preview_vector_id(map() | term(), map(), map()) :: integer() | nil
+  @spec preview_vector_id(EvalTypes.runtime_value(), map(), map()) :: integer() | nil
   defp preview_vector_id(vector_node, runtime_model, eval_context)
        when is_map(runtime_model) and is_map(eval_context) do
     indices = Map.get(eval_context, :vector_resource_indices) || %{}
@@ -3092,7 +3092,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp vector_index_from_runtime_model(_runtime_model, _indices), do: nil
 
-  @spec vector_index_ids_for_runtime_value(term(), map()) :: [integer()]
+  @spec vector_index_ids_for_runtime_value(EvalTypes.runtime_value(), map()) :: [integer()]
   defp vector_index_ids_for_runtime_value(%{"ctor" => "Just", "args" => [inner]}, indices),
     do: vector_index_ids_for_runtime_value(inner, indices)
 
@@ -3115,7 +3115,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp vector_index_ids_for_runtime_value(_value, _indices), do: []
 
-  @spec vector_index_for_runtime_value(term(), map()) :: integer() | nil
+  @spec vector_index_for_runtime_value(EvalTypes.runtime_value(), map()) :: integer() | nil
   defp vector_index_for_runtime_value(%{"ctor" => "Just", "args" => [inner]}, indices),
     do: vector_index_for_runtime_value(inner, indices)
 
@@ -3802,7 +3802,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     |> to_string()
   end
 
-  @spec view_binding_value(String.t(), map(), map()) :: term()
+  @spec view_binding_value(String.t(), map(), map()) :: EvalTypes.runtime_value()
   defp view_binding_value(name, runtime_model, eval_context)
        when is_binary(name) and name != "" and is_map(runtime_model) and is_map(eval_context) do
     Map.get(view_eval_env(runtime_model, eval_context), name)
@@ -3810,7 +3810,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp view_binding_value(_name, _runtime_model, _eval_context), do: nil
 
-  @spec point_coords_from_value(term()) :: SemTypes.point_pair()
+  @spec point_coords_from_value(EvalTypes.runtime_value()) :: SemTypes.point_pair()
   defp point_coords_from_value(%{"ctor" => "Point", "args" => [x, y]})
        when is_integer(x) and is_integer(y),
        do: {:ok, [x, y]}
@@ -4401,7 +4401,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp resolve_timer_followup_message(row, _eval_context) when is_map(row), do: row
   defp resolve_timer_followup_message(row, _eval_context), do: row
 
-  @spec resolve_followup_message_value(term(), map()) :: {String.t(), term()} | nil
+  @spec resolve_followup_message_value(EvalTypes.runtime_value(), map()) ::
+          {String.t(), EvalTypes.runtime_value()} | nil
   defp resolve_followup_message_value({:function_ref, name}, _eval_context) when is_binary(name),
     do: {name, %{"ctor" => name, "args" => []}}
 

@@ -11,7 +11,9 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.IR.Module
 
   @typep expr() :: map()
+  @typep pattern() :: map()
   @typep lookup() :: map()
+  @typep name() :: String.t() | nil
   @typep payload_kind() :: :none | :single | :multi | :function_like
   @typep diagnostic() :: map()
   @typep constructor_lookup() :: %{
@@ -1382,8 +1384,8 @@ defmodule ElmEx.IR.Lowerer do
   @spec expr_preferences_schema_field_order_diagnostics(
           expr(),
           map(),
-          term() | nil,
-          term() | nil,
+          name() | nil,
+          name() | nil,
           integer() | nil
         ) :: [diagnostic()]
   defp expr_preferences_schema_field_order_diagnostics(
@@ -1441,8 +1443,8 @@ defmodule ElmEx.IR.Lowerer do
   @spec nested_preferences_schema_field_order_diagnostics(
           map(),
           map(),
-          term() | nil,
-          term() | nil,
+          name() | nil,
+          name() | nil,
           integer() | nil
         ) :: [diagnostic()]
   defp nested_preferences_schema_field_order_diagnostics(
@@ -1556,8 +1558,8 @@ defmodule ElmEx.IR.Lowerer do
   @spec expr_constructor_call_arity_diagnostics(
           expr(),
           lookup(),
-          term() | nil,
-          term() | nil,
+          name() | nil,
+          name() | nil,
           integer() | nil
         ) :: [diagnostic()]
   defp expr_constructor_call_arity_diagnostics(
@@ -1704,8 +1706,8 @@ defmodule ElmEx.IR.Lowerer do
   @spec expr_constructor_arity_diagnostics(
           expr(),
           lookup(),
-          term() | nil,
-          term() | nil,
+          name() | nil,
+          name() | nil,
           integer() | nil
         ) :: [diagnostic()]
   defp expr_constructor_arity_diagnostics(
@@ -1788,10 +1790,10 @@ defmodule ElmEx.IR.Lowerer do
     do: []
 
   @spec pattern_constructor_arity_diagnostics(
-          term(),
+          pattern(),
           lookup(),
-          term() | nil,
-          term() | nil,
+          name() | nil,
+          name() | nil,
           integer() | nil
         ) :: [diagnostic()]
   defp pattern_constructor_arity_diagnostics(

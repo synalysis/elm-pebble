@@ -5,9 +5,10 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
   Keys use string literals stored on watch/companion/phone runtime models.
   """
 
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.{CompileIngestAttrs, ElmcDiagnosticPreview, ElmcEventPayload}
 
-  @type wire_map :: %{optional(String.t()) => term()}
+  @type wire_map :: Types.wire_map()
 
   @type check_fields :: wire_map()
   @type compile_fields :: wire_map()
@@ -144,7 +145,7 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
   def compile_source_root_to_target(:phone), do: :companion
   def compile_source_root_to_target(_value), do: nil
 
-  @spec field(map(), atom()) :: term()
+  @spec field(map(), atom()) :: Types.wire_input() | nil
   defp field(attrs, key) when is_map(attrs) and is_atom(key) do
     Map.get(attrs, key) || Map.get(attrs, Atom.to_string(key))
   end
@@ -153,7 +154,7 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
   defp bool_wire(true), do: "true"
   defp bool_wire(false), do: "false"
 
-  @spec maybe_put_artifact(artifact_fields(), String.t(), term()) :: artifact_fields()
+  @spec maybe_put_artifact(artifact_fields(), String.t(), map() | String.t() | nil) :: artifact_fields()
   defp maybe_put_artifact(map, key, value) when is_map(map) and is_binary(key) do
     case value do
       v when is_map(v) or is_binary(v) -> Map.put(map, key, v)

@@ -1,12 +1,13 @@
 defmodule Ide.Debugger.Types.TickEventPayload do
   @moduledoc "Payload for `debugger.tick` batch tick events."
+  alias Ide.Debugger.Types
 
   @type t :: %{
           optional(:target) => String.t() | nil,
           optional(:count) => non_neg_integer(),
           optional(:targets) => [String.t()],
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @spec from_tick(String.t() | nil, non_neg_integer(), [String.t()]) :: t()

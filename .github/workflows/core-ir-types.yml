@@ -134,6 +134,10 @@ jobs:
           mix test test/ide/debugger/runtime_event_append_test.exs
           mix test test/ide/compiler_elmc_ingest_test.exs
 
+      - name: Dialyzer
+        working-directory: ide
+        run: mix dialyzer --format short
+
   elmc:
     name: elmc runtime executor types
     runs-on: ubuntu-latest

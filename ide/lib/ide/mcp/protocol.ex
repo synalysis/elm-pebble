@@ -13,7 +13,7 @@ defmodule Ide.Mcp.Protocol do
 
   @type capabilities :: [Tools.capability()]
   @type json_rpc_id :: integer() | String.t() | nil
-  @type json_rpc_request :: %{required(String.t()) => term(), optional(String.t()) => term()}
+  @type json_rpc_request :: %{required(String.t()) => WireTypes.json_value(), optional(String.t()) => WireTypes.json_value()}
   @type json_rpc_error :: %{
           required(String.t()) => integer() | String.t()
         }
@@ -111,7 +111,7 @@ defmodule Ide.Mcp.Protocol do
   @type capability_input :: String.t() | atom()
 
   @doc false
-  @spec json_safe(term()) :: WireTypes.json_value()
+  @spec json_safe(WireTypes.json_value() | term()) :: WireTypes.json_value()
   def json_safe(value)
       when is_nil(value) or is_boolean(value) or is_number(value) or is_binary(value),
       do: value

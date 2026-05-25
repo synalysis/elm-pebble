@@ -612,15 +612,18 @@ defmodule Ide.Screenshots do
     |> String.replace(["-", ":", "T", "Z"], "")
   end
 
+  @type progress_detail ::
+          step_ok_value() | screenshot() | screenshot_error() | String.t() | atom()
+
   @type progress_payload ::
           {:phase, String.t()}
-          | {:close, term()}
+          | {:close, step_ok_value() | {:ok, map()} | {:error, screenshot_error()} | nil}
           | {:target, String.t(), atom()}
-          | {:target, String.t(), atom(), term()}
-          | {:target, String.t(), atom(), atom(), term()}
-          | {:target, String.t(), atom(), String.t(), term()}
+          | {:target, String.t(), atom(), progress_detail()}
+          | {:target, String.t(), atom(), atom(), progress_detail()}
+          | {:target, String.t(), atom(), String.t(), progress_detail()}
           | {:target, String.t(), atom(), pos_integer(), pos_integer()}
-          | {:target, String.t(), atom(), pos_integer(), pos_integer(), term()}
+          | {:target, String.t(), atom(), pos_integer(), pos_integer(), progress_detail()}
 
   @type step_ok_value :: map() | binary() | :ok
 
@@ -649,7 +652,7 @@ defmodule Ide.Screenshots do
 
   @spec stop_emulator_safe(
           project_slug(),
-          (progress_payload() -> term()) | nil,
+          (progress_payload() -> :ok) | nil,
           String.t(),
           atom()
         ) :: {:ok, PebbleToolchain.command_result()} | {:error, screenshot_error()}
@@ -670,7 +673,7 @@ defmodule Ide.Screenshots do
           pos_integer(),
           pos_integer(),
           non_neg_integer(),
-          (progress_payload() -> term()) | nil,
+          (progress_payload() -> :ok) | nil,
           opts()
         ) :: {:ok, capture_result()} | {:error, screenshot_error()}
   defp capture_with_retries(

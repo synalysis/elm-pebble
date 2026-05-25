@@ -2,6 +2,7 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
   @moduledoc false
 
   alias Ide.Emulator.PebbleProtocol.Frame
+  alias Ide.Emulator.Types
 
   @endpoint_app_run_state 52
   @endpoint_app_fetch 6001
@@ -89,7 +90,7 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
   def frame({endpoint, payload}), do: Frame.encode(endpoint, payload)
 
   @spec decode_app_fetch_request(binary()) ::
-          {:ok, %{uuid: String.t(), app_id: non_neg_integer()}} | {:error, term()}
+          {:ok, %{uuid: String.t(), app_id: non_neg_integer()}} | {:error, Types.packet_decode_error()}
   def decode_app_fetch_request(<<0x01, uuid::binary-size(16), app_id::little-32>>) do
     {:ok, %{uuid: format_uuid(uuid), app_id: app_id}}
   end
@@ -98,7 +99,7 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
 
   @spec decode_blob_response(binary()) ::
           {:ok, %{token: non_neg_integer(), response: non_neg_integer(), success?: boolean()}}
-          | {:error, term()}
+          | {:error, Types.packet_decode_error()}
   def decode_blob_response(<<token::little-16, response>>) do
     {:ok, %{token: token, response: response, success?: response == @blob_success}}
   end
@@ -107,7 +108,7 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
 
   @spec decode_putbytes_response(binary()) ::
           {:ok, %{ack?: boolean(), result: :ack | :nack, cookie: non_neg_integer()}}
-          | {:error, term()}
+          | {:error, Types.packet_decode_error()}
   def decode_putbytes_response(<<@putbytes_ack, cookie::32>>) do
     {:ok, %{ack?: true, result: :ack, cookie: cookie}}
   end
@@ -119,7 +120,7 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
   def decode_putbytes_response(payload), do: {:error, {:unexpected_putbytes_payload, payload}}
 
   @spec putbytes_ack?(map(), non_neg_integer() | [non_neg_integer()] | nil) ::
-          :ok | {:error, term()}
+          :ok | {:error, Types.packet_decode_error()}
   def putbytes_ack?(%{ack?: true, cookie: cookie}, expected_cookie)
       when is_nil(expected_cookie) or cookie == expected_cookie,
       do: :ok

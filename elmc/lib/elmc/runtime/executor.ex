@@ -102,7 +102,7 @@ defmodule Elmc.Runtime.Executor do
     Map.get(map, atom_key) || Map.get(map, Atom.to_string(atom_key))
   end
 
-  @spec normalize_update_branches(list() | term()) :: Types.update_branches()
+  @spec normalize_update_branches(list() | map() | nil) :: Types.update_branches()
   defp normalize_update_branches(value) when is_list(value) do
     value
     |> Enum.filter(&is_binary/1)
@@ -113,7 +113,7 @@ defmodule Elmc.Runtime.Executor do
 
   defp normalize_update_branches(_), do: []
 
-  @spec list_count(list() | term()) :: non_neg_integer()
+  @spec list_count(list() | map() | nil) :: non_neg_integer()
   defp list_count(value) when is_list(value), do: length(value)
   defp list_count(_), do: 0
 

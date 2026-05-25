@@ -12,11 +12,11 @@ defmodule Ide.Debugger.Types.PackageCmdEventPayload do
           optional(:package) => String.t(),
           optional(:command) => command_map(),
           optional(:response_message) => String.t() | nil,
-          optional(:response) => term(),
+          optional(:response) => Types.subscription_payload(),
           optional(:simulated) => boolean(),
           optional(:detail) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()
@@ -38,7 +38,7 @@ defmodule Ide.Debugger.Types.PackageCmdEventPayload do
           String.t(),
           String.t(),
           command_map(),
-          term(),
+          Types.subscription_payload(),
           boolean(),
           String.t() | nil
         ) :: t()

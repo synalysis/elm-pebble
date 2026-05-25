@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.Types.DeviceDataEventPayload do
   @moduledoc "Payload for `debugger.device_data` simulated device API responses."
 
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.DeviceRequest
 
   @type t :: %{
@@ -8,8 +9,8 @@ defmodule Ide.Debugger.Types.DeviceDataEventPayload do
           optional(:request) => DeviceRequest.kind(),
           optional(:response_message) => String.t(),
           optional(:response_value) => DeviceRequest.preview(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @spec from_request(String.t(), DeviceRequest.t() | map()) :: t()

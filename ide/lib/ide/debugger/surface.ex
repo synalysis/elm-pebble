@@ -23,7 +23,7 @@ defmodule Ide.Debugger.Surface do
           model: Types.app_model(),
           shell: Types.shell(),
           view_tree: ViewTreeNode.view_tree() | ViewTreeNode.t() | nil,
-          last_message: term(),
+          last_message: String.t() | nil,
           protocol_messages: list() | nil
         }
 
@@ -31,9 +31,9 @@ defmodule Ide.Debugger.Surface do
           optional(:model) => map(),
           optional(:shell) => map(),
           optional(:view_tree) => Types.view_output_tree(),
-          optional(:last_message) => term(),
+          optional(:last_message) => String.t() | nil,
           optional(:protocol_messages) => list(),
-          optional(String.t()) => term()
+          optional(String.t()) => Types.wire_input()
         }
 
   @spec from_map(map()) :: t()
@@ -128,7 +128,7 @@ defmodule Ide.Debugger.Surface do
     %{surface | view_tree: view_tree}
   end
 
-  @spec put_last_message(t(), term()) :: t()
+  @spec put_last_message(t(), String.t() | nil) :: t()
   def put_last_message(%__MODULE__{} = surface, message) do
     %{surface | last_message: message}
   end

@@ -7,6 +7,8 @@ defmodule ElmEx.CoreIR.Types.Expr do
   may coerce known `"op"` values to atoms at evaluation time.
   """
 
+  alias ElmEx.CoreIR.Types
+
   @type op_name :: String.t()
 
   @type t ::
@@ -47,7 +49,7 @@ defmodule ElmEx.CoreIR.Types.Expr do
           | unsupported()
           | wire_expr()
 
-  @type wire_expr :: %{optional(String.t()) => term(), optional(atom()) => term()}
+  @type wire_expr :: Types.wire_map()
 
   @type int_literal :: %{required(:op) => op_name(), required(:value) => integer()}
   @type float_literal :: %{required(:op) => op_name(), required(:value) => float()}
@@ -165,7 +167,7 @@ defmodule ElmEx.CoreIR.Types.Expr do
           optional(:field_types) => map()
         }
 
-  @type unsupported :: %{required(:op) => op_name(), optional(:source) => term()}
+  @type unsupported :: %{required(:op) => op_name(), optional(:source) => normalized_value()}
 
   @type normalized_value ::
           t()

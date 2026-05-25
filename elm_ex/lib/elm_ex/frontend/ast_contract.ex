@@ -15,13 +15,13 @@ defmodule ElmEx.Frontend.AstContract do
     end
   end
 
-  @spec validate_module_name(String.t() | term()) :: :ok | {:error, atom()}
+  @spec validate_module_name(String.t() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_module_name(name) when is_binary(name) and name != "", do: :ok
 
   defp validate_module_name(_),
     do: {:error, %{kind: :ast_contract_error, reason: :invalid_module_name}}
 
-  @spec validate_imports([String.t()] | term()) :: :ok | {:error, atom()}
+  @spec validate_imports([String.t()] | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_imports(imports) when is_list(imports) do
     if Enum.all?(imports, &(is_binary(&1) and &1 != "")) do
       :ok
@@ -32,7 +32,7 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_imports(_), do: {:error, %{kind: :ast_contract_error, reason: :invalid_imports}}
 
-  @spec validate_declarations([Types.declaration()] | term()) :: :ok | {:error, map()}
+  @spec validate_declarations([Types.declaration()] | Types.invalid_input()) :: :ok | {:error, map()}
   defp validate_declarations(declarations) when is_list(declarations) do
     declarations
     |> Enum.with_index()
@@ -96,11 +96,11 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_declaration(_), do: {:error, :unknown_declaration_kind}
 
-  @spec validate_non_empty_binary(String.t() | term(), atom()) :: :ok | {:error, atom()}
+  @spec validate_non_empty_binary(String.t() | Types.invalid_input(), atom()) :: :ok | {:error, atom()}
   defp validate_non_empty_binary(value, _reason) when is_binary(value) and value != "", do: :ok
   defp validate_non_empty_binary(_value, reason), do: {:error, reason}
 
-  @spec validate_function_args([String.t()] | term()) :: :ok | {:error, atom()}
+  @spec validate_function_args([String.t()] | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_function_args(args) when is_list(args) do
     if Enum.all?(args, &(is_binary(&1) and &1 != "")) do
       :ok
@@ -111,7 +111,7 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_function_args(_), do: {:error, :invalid_function_args}
 
-  @spec validate_span(Types.span() | term()) :: :ok | {:error, atom()}
+  @spec validate_span(Types.span() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_span(%{start_line: start_line, end_line: end_line})
        when is_integer(start_line) and is_integer(end_line) and start_line > 0 and
               end_line >= start_line,
@@ -119,7 +119,7 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_span(_), do: {:error, :invalid_span}
 
-  @spec validate_union_constructors([Types.union_constructor()] | term()) :: :ok | {:error, atom()}
+  @spec validate_union_constructors([Types.union_constructor()] | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_union_constructors(constructors) when is_list(constructors) do
     if Enum.all?(constructors, &valid_union_constructor?/1) do
       :ok
@@ -130,14 +130,14 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_union_constructors(_), do: {:error, :invalid_union_constructors}
 
-  @spec valid_union_constructor?(Types.union_constructor() | term()) :: boolean()
+  @spec valid_union_constructor?(Types.union_constructor() | Types.invalid_input()) :: boolean()
   defp valid_union_constructor?(%{name: name, arg: arg})
        when is_binary(name) and name != "" and (is_nil(arg) or (is_binary(arg) and arg != "")),
        do: true
 
   defp valid_union_constructor?(_), do: false
 
-  @spec validate_expr(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_expr(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_expr(expr) when is_map(expr) do
     case expr[:op] do
       nil ->
@@ -240,33 +240,33 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_expr(_), do: {:error, :invalid_function_expr}
 
-  @spec validate_non_empty_or_empty_binary(String.t() | term(), atom()) :: :ok | {:error, atom()}
+  @spec validate_non_empty_or_empty_binary(String.t() | Types.invalid_input(), atom()) :: :ok | {:error, atom()}
   defp validate_non_empty_or_empty_binary(value, _reason) when is_binary(value), do: :ok
   defp validate_non_empty_or_empty_binary(_value, reason), do: {:error, reason}
 
-  @spec validate_float_literal(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_float_literal(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_float_literal(%{value: value}) when is_float(value) or is_integer(value), do: :ok
   defp validate_float_literal(_), do: {:error, :invalid_float_literal}
 
-  @spec validate_add_const(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_add_const(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_add_const(%{var: var, value: value}) when is_binary(var) and is_integer(value),
     do: :ok
 
   defp validate_add_const(_), do: {:error, :invalid_add_const}
 
-  @spec validate_add_vars(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_add_vars(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_add_vars(%{left: left, right: right}) when is_binary(left) and is_binary(right),
     do: :ok
 
   defp validate_add_vars(_), do: {:error, :invalid_add_vars}
 
-  @spec validate_sub_const(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_sub_const(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_sub_const(%{var: var, value: value}) when is_binary(var) and is_integer(value),
     do: :ok
 
   defp validate_sub_const(_), do: {:error, :invalid_sub_const}
 
-  @spec validate_compare(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_compare(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_compare(%{left: left, right: right, kind: kind})
        when kind in [:eq, :neq, :gt, :gte, :lt, :lte] do
     with :ok <- validate_expr(left),
@@ -277,7 +277,7 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_compare(_), do: {:error, :invalid_compare_expr}
 
-  @spec validate_tuple2(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_tuple2(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_tuple2(%{left: left, right: right}) do
     with :ok <- validate_expr(left),
          :ok <- validate_expr(right) do
@@ -287,14 +287,14 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_tuple2(_), do: {:error, :invalid_tuple_expr}
 
-  @spec validate_list_literal(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_list_literal(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_list_literal(%{items: items}) when is_list(items) do
     validate_expr_list(items, :invalid_list_literal)
   end
 
   defp validate_list_literal(_), do: {:error, :invalid_list_literal}
 
-  @spec validate_call_like(String.t() | term(), [Types.expr()] | term() | nil, atom()) ::
+  @spec validate_call_like(String.t() | Types.invalid_input(), [Types.expr()] | Types.invalid_input() | nil, atom()) ::
           :ok | {:error, atom()}
   defp validate_call_like(name_or_target, args, reason) do
     with :ok <- validate_non_empty_binary(name_or_target, reason),
@@ -303,7 +303,7 @@ defmodule ElmEx.Frontend.AstContract do
     end
   end
 
-  @spec validate_field_access(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_field_access(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_field_access(%{arg: arg, field: field}) when is_binary(arg) and is_binary(field),
     do: :ok
 
@@ -312,21 +312,21 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_field_access(_), do: {:error, :invalid_field_access_expr}
 
-  @spec validate_field_call(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_field_call(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_field_call(%{arg: arg, field: field, args: args})
        when is_binary(arg) and is_binary(field) and is_list(args),
        do: validate_expr_list(args, :invalid_field_call_expr)
 
   defp validate_field_call(_), do: {:error, :invalid_field_call_expr}
 
-  @spec validate_compose(Types.compose_expr() | term(), atom()) :: :ok | {:error, atom()}
+  @spec validate_compose(Types.compose_expr() | Types.invalid_input(), atom()) :: :ok | {:error, atom()}
   defp validate_compose(%{f: f, g: g}, _reason)
        when is_binary(f) and f != "" and is_binary(g) and g != "",
        do: :ok
 
   defp validate_compose(_, reason), do: {:error, reason}
 
-  @spec validate_lambda(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_lambda(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_lambda(%{args: args, body: body}) when is_list(args) do
     with :ok <- validate_function_args(args),
          :ok <- validate_expr(body) do
@@ -336,7 +336,7 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_lambda(_), do: {:error, :invalid_lambda_expr}
 
-  @spec validate_let_in(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_let_in(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_let_in(%{name: name, value_expr: value_expr, in_expr: in_expr}) do
     with :ok <- validate_non_empty_binary(name, :invalid_let_name),
          :ok <- validate_expr(value_expr),
@@ -347,7 +347,7 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_let_in(_), do: {:error, :invalid_let_expr}
 
-  @spec validate_if_expr(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_if_expr(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_if_expr(%{cond: cond_expr, then_expr: then_expr, else_expr: else_expr}) do
     with :ok <- validate_expr(cond_expr),
          :ok <- validate_expr(then_expr),
@@ -358,7 +358,7 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_if_expr(_), do: {:error, :invalid_if_expr}
 
-  @spec validate_case_expr(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_case_expr(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_case_expr(%{subject: subject, branches: branches}) when is_list(branches) do
     with :ok <- validate_case_subject(subject) do
       if Enum.all?(branches, &valid_case_branch?/1) do
@@ -371,12 +371,12 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_case_expr(_), do: {:error, :invalid_case_expr}
 
-  @spec validate_case_subject(String.t() | Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_case_subject(String.t() | Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_case_subject(subject) when is_binary(subject), do: :ok
   defp validate_case_subject(subject) when is_map(subject), do: validate_expr(subject)
   defp validate_case_subject(_), do: {:error, :invalid_case_expr}
 
-  @spec valid_case_branch?(Types.case_branch() | term()) :: boolean()
+  @spec valid_case_branch?(Types.case_branch() | Types.invalid_input()) :: boolean()
   defp valid_case_branch?(%{pattern: pattern, expr: expr}) do
     with :ok <- validate_pattern(pattern),
          :ok <- validate_expr(expr) do
@@ -388,7 +388,7 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp valid_case_branch?(_), do: false
 
-  @spec validate_pattern(Types.pattern() | term()) :: :ok | {:error, atom()}
+  @spec validate_pattern(Types.pattern() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_pattern(%{kind: :wildcard}), do: :ok
   defp validate_pattern(%{kind: :var, name: name}) when is_binary(name) and name != "", do: :ok
   defp validate_pattern(%{kind: :unknown, source: source}) when is_binary(source), do: :ok
@@ -432,7 +432,7 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_pattern(_), do: {:error, :invalid_pattern}
 
-  @spec validate_record_literal(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_record_literal(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_record_literal(%{fields: fields}) when is_list(fields) do
     if Enum.all?(fields, &valid_record_field?/1) do
       :ok
@@ -443,7 +443,7 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_record_literal(_), do: {:error, :invalid_record_literal}
 
-  @spec validate_record_update(Types.expr() | term()) :: :ok | {:error, atom()}
+  @spec validate_record_update(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_record_update(%{base: base, fields: fields}) when is_list(fields) do
     with :ok <- validate_expr(base) do
       if Enum.all?(fields, &valid_record_field?/1) do
@@ -456,14 +456,14 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_record_update(_), do: {:error, :invalid_record_update}
 
-  @spec valid_record_field?(Types.record_field() | term()) :: boolean()
+  @spec valid_record_field?(Types.record_field() | Types.invalid_input()) :: boolean()
   defp valid_record_field?(%{name: name, expr: expr}) when is_binary(name) and is_map(expr) do
     validate_expr(expr) == :ok
   end
 
   defp valid_record_field?(_), do: false
 
-  @spec validate_unary_wrapped_expr(Types.expr() | term(), atom()) :: :ok | {:error, atom()}
+  @spec validate_unary_wrapped_expr(Types.expr() | Types.invalid_input(), atom()) :: :ok | {:error, atom()}
   defp validate_unary_wrapped_expr(expr, key) when is_map(expr) do
     case expr[key] do
       child when is_map(child) -> validate_expr(child)
@@ -471,7 +471,7 @@ defmodule ElmEx.Frontend.AstContract do
     end
   end
 
-  @spec validate_expr_list([Types.expr()] | term(), atom()) :: :ok | {:error, atom()}
+  @spec validate_expr_list([Types.expr()] | Types.invalid_input(), atom()) :: :ok | {:error, atom()}
   defp validate_expr_list(items, reason) when is_list(items) do
     if Enum.all?(items, &(validate_expr(&1) == :ok)) do
       :ok

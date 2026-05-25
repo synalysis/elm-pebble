@@ -773,11 +773,11 @@ defmodule Ide.SimulatorSettings do
     end)
   end
 
-  @spec maybe_put(map(), String.t(), term()) :: map()
+  @spec maybe_put(map(), String.t(), Types.wire_input() | nil) :: map()
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  @spec map_get(map(), String.t()) :: term()
+  @spec map_get(map(), String.t()) :: Types.wire_input() | nil
   defp map_get(map, key) when is_map(map) do
     case Map.fetch(map, key) do
       {:ok, value} -> value
@@ -785,7 +785,7 @@ defmodule Ide.SimulatorSettings do
     end
   end
 
-  @spec find_atom_key(map(), String.t()) :: term()
+  @spec find_atom_key(map(), String.t()) :: Types.wire_input() | nil
   defp find_atom_key(map, key) do
     Enum.find_value(map, fn
       {atom_key, value} when is_atom(atom_key) ->
@@ -796,11 +796,11 @@ defmodule Ide.SimulatorSettings do
     end)
   end
 
-  @spec present?(term()) :: boolean()
+  @spec present?(Types.wire_input()) :: boolean()
   defp present?(value) when value in [nil, ""], do: false
   defp present?(_value), do: true
 
-  @spec encode_json(term()) :: String.t()
+  @spec encode_json(Types.wire_input()) :: String.t()
   defp encode_json(value) when is_binary(value), do: value
 
   defp encode_json(value) do
@@ -810,7 +810,7 @@ defmodule Ide.SimulatorSettings do
     end
   end
 
-  @spec decode_json_list(term()) :: list() | nil
+  @spec decode_json_list(Types.wire_input()) :: list() | nil
   defp decode_json_list(value) when is_list(value), do: value
 
   defp decode_json_list(value) when is_binary(value) do
@@ -828,7 +828,7 @@ defmodule Ide.SimulatorSettings do
 
   defp decode_json_list(_value), do: nil
 
-  @spec decode_json_map(term()) :: map() | nil
+  @spec decode_json_map(Types.wire_input()) :: map() | nil
   defp decode_json_map(value) when is_map(value), do: value
 
   defp decode_json_map(value) when is_binary(value) do

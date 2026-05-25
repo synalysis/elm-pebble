@@ -19,4 +19,7 @@ defmodule ElmEx.Frontend.AstContract.Types do
   @type record_field :: RecordField.t()
   @type compare_kind :: :eq | :neq | :gt | :gte | :lt | :lte
   @type compose_expr :: %{optional(atom()) => String.t()}
+
+  @type invalid_input ::
+          map() | list() | atom() | String.t() | number() | boolean() | nil | tuple()
 end

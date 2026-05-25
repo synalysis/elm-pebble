@@ -4,6 +4,7 @@ defmodule Ide.Debugger.Types.RuntimeState do
   """
 
   alias Ide.Debugger.Surface
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.{
     AutoTick,
     DebuggerTimelineRow,
@@ -40,7 +41,7 @@ defmodule Ide.Debugger.Types.RuntimeState do
           required(:debugger_timeline) => [debugger_event()],
           required(:debugger_seq) => non_neg_integer(),
           required(:seq) => non_neg_integer(),
-          optional(atom()) => term()
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

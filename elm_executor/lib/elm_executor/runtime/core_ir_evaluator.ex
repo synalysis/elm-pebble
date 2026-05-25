@@ -318,7 +318,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     Map.new(map, fn {key, value} -> {to_string(key), to_string(value)} end)
   end
 
-  @spec normalize_params(list() | term()) :: [String.t()]
+  @spec normalize_params(list() | map() | nil) :: [String.t()]
   defp normalize_params(params) when is_list(params) do
     params
     |> Enum.map(fn p ->
@@ -3996,11 +3996,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   @spec apply_indexed_function_in_module(
           String.t(),
           String.t(),
-          [term()],
-          term(),
-          term(),
+          EvalTypes.runtime_values(),
+          EvalTypes.ops_context(),
+          EvalTypes.eval_stack(),
           boolean()
-        ) :: term()
+        ) :: EvalTypes.eval_result()
   defp apply_indexed_function_in_module(
          module_name,
          function_name,
@@ -4145,8 +4145,13 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec intrinsic_operator_fallback(String.t(), [term()], map(), EvalTypes.eval_stack(), tuple()) ::
-          EvalTypes.eval_result()
+  @spec intrinsic_operator_fallback(
+          String.t(),
+          EvalTypes.runtime_values(),
+          EvalTypes.ops_context(),
+          EvalTypes.eval_stack(),
+          EvalTypes.function_index_key()
+        ) :: EvalTypes.eval_result()
   defp intrinsic_operator_fallback(function_name, values, context, stack, key)
        when is_binary(function_name) and is_list(values) and is_map(context) and is_list(stack) do
     if intrinsic_operator_name?(function_name) do
@@ -4761,7 +4766,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           EvalTypes.env(),
           map(),
           EvalTypes.eval_stack()
-        ) :: {:ok, number()} | {:error, term()}
+        ) :: {:ok, number()} | {:error, EvalTypes.eval_error()}
   defp numeric_operand_from_var(name, env, context, stack)
        when is_binary(name) and is_map(env) and is_map(context) and is_list(stack) do
     cond do

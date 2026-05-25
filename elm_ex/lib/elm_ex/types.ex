@@ -13,7 +13,7 @@ defmodule ElmEx.Types do
 
   @type detail_value :: atom() | boolean() | number() | String.t() | nil
 
-  @type parse_reason :: atom() | {:illegal, String.t() | [char() | integer()]} | term()
+  @type parse_reason :: atom() | {:illegal, String.t() | [char() | integer()]} | map() | tuple()
 
   @type elm_message_part ::
           String.t()

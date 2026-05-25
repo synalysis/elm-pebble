@@ -3,11 +3,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types.LaunchContext do
   Launch context passed to `Main.init` during debugger init evaluation (runtime map).
   """
 
+  alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
+
   @type screen_shape :: %{
           optional(:is_round) => boolean(),
           optional(:width) => pos_integer(),
           optional(:height) => pos_integer(),
-          optional(atom()) => term()
+          optional(atom()) => SemTypes.wire_input()
         }
 
   @type t :: %{
@@ -16,8 +18,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types.LaunchContext do
           optional(:watch_model) => String.t(),
           optional(:launch_reason) => String.t(),
           optional(:screen) => map(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => SemTypes.wire_input(),
+          optional(atom()) => SemTypes.wire_input()
         }
 
   @type wire_map :: t() | map()

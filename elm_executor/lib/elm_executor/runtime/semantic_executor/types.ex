@@ -39,8 +39,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types do
           atom()
           | String.t()
           | tuple()
-          | {:invalid_core_ir, [map()]}
-          | {:invalid_core_ir, term()}
+          | {:invalid_core_ir, [map()] | runtime_value()}
 
   @type view_output_row :: ViewOutputRow.t()
 
@@ -65,4 +64,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types do
   @type tagged_values :: {:ok, [runtime_value()]} | :error
 
   @type pebble_ui_normalizer :: (runtime_value() -> {:ok, ViewTreeNode.t()} | :error)
+
+  @type wire_scalar :: String.t() | integer() | float() | boolean() | nil
+
+  @type wire_input :: wire_scalar() | list() | map()
+
+  @type wire_map :: %{optional(String.t()) => wire_input(), optional(atom()) => wire_input()}
 end

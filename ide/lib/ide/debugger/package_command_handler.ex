@@ -179,9 +179,9 @@ defmodule Ide.Debugger.PackageCommandHandler do
   end
 
   @spec replace_first_constructor_arg(
-          Types.protocol_ctor_value() | {integer(), Types.protocol_wire_arg()} | term(),
+          Types.protocol_message_wire_value(),
           Types.protocol_wire_arg()
-        ) :: Types.protocol_ctor_value() | {integer(), Types.protocol_wire_arg()} | term()
+        ) :: Types.protocol_message_wire_value()
   defp replace_first_constructor_arg(%{"ctor" => ctor, "args" => args} = value, next)
        when is_binary(ctor) and is_list(args) do
     Map.put(value, "args", replace_first_list_value(args, next))

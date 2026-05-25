@@ -5,6 +5,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
 
   alias ElmExecutor.Runtime.SemanticExecutor.Types.ExecutionResult, as: ExecutorExecutionResult
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
+  alias Ide.Debugger.Types
 
   @spec normalize(ExecutorExecutionResult.wire_map() | map()) :: ExecutorTypes.execution_result()
   def normalize(result) when is_map(result) do
@@ -50,7 +51,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
     }
   end
 
-  @spec annotate_backend(ExecutorTypes.execution_result(), String.t(), term() | nil) ::
+  @spec annotate_backend(ExecutorTypes.execution_result(), String.t(), Types.execution_fallback_reason() | nil) ::
           ExecutorTypes.execution_result()
   def annotate_backend(%{} = payload, backend, reason \\ nil)
       when is_binary(backend) do
@@ -80,7 +81,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
     end
   end
 
-  @spec maybe_put_fallback_reason(map(), term() | nil) :: map()
+  @spec maybe_put_fallback_reason(map(), Types.execution_fallback_reason() | nil) :: map()
   defp maybe_put_fallback_reason(map, nil) when is_map(map), do: map
 
   defp maybe_put_fallback_reason(map, reason) when is_map(map) do

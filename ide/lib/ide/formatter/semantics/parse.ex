@@ -137,9 +137,10 @@ defmodule Ide.Formatter.Semantics.Parse do
   defp valid_payload_shape?(_), do: false
 
   @type parser_error_reason ::
-          {pos_integer(), term()}
-          | {pos_integer(), module(), term()}
-          | term()
+          {pos_integer(), String.t() | atom()}
+          | {pos_integer(), module(), String.t() | atom()}
+          | String.t()
+          | atom()
 
   @spec parser_error_line(parser_error_reason()) :: pos_integer()
   defp parser_error_line(reason) do

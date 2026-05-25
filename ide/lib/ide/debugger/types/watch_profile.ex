@@ -3,10 +3,11 @@ defmodule Ide.Debugger.Types.WatchProfile do
   Watch hardware profile from `Ide.WatchModels` / `Debugger.watch_profiles/0`.
   """
 
+  alias Ide.Debugger.Types
   @type screen :: %{
           optional(:width) => pos_integer(),
           optional(:height) => pos_integer(),
-          optional(String.t()) => term()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type profile :: %{
@@ -17,7 +18,7 @@ defmodule Ide.Debugger.Types.WatchProfile do
           optional(:has_microphone) => boolean(),
           optional(:has_compass) => boolean(),
           optional(:supports_health) => boolean(),
-          optional(String.t()) => term()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type list_item :: %{
@@ -30,7 +31,7 @@ defmodule Ide.Debugger.Types.WatchProfile do
           optional(:has_microphone) => boolean(),
           optional(:has_compass) => boolean(),
           optional(:supports_health) => boolean(),
-          optional(String.t()) => term()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_profile :: profile() | map()

@@ -1786,10 +1786,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @doc """
-  Single markdown document for assistants: meta, timeline text, and JSON blocks for models and rendered tree.
-  """
-  @spec debugger_agent_state_markdown(%{
+  @type debugger_state_export_ctx :: %{
           optional(:format_version) => String.t(),
           required(:project_name) => String.t(),
           required(:project_slug) => String.t(),
@@ -1800,10 +1797,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
           required(:rendered_view_json) => String.t(),
           optional(:session_running) => boolean() | nil,
           optional(:session_event_count) => non_neg_integer() | nil,
-          optional(:debugger_cursor_seq) => term(),
-          optional(:selected_timeline_seq) => term(),
-          optional(:watch_profile_id) => term()
-        }) :: String.t()
+          optional(:debugger_cursor_seq) => non_neg_integer() | String.t() | nil,
+          optional(:selected_timeline_seq) => non_neg_integer() | String.t() | nil,
+          optional(:watch_profile_id) => String.t() | nil
+        }
+
+  @doc """
+  Single markdown document for assistants: meta, timeline text, and JSON blocks for models and rendered tree.
+  """
+  @spec debugger_agent_state_markdown(debugger_state_export_ctx()) :: String.t()
   def debugger_agent_state_markdown(%{} = ctx) do
     format = Map.get(ctx, :format_version, "elm-pebble.debugger_state.v1")
     name = Map.get(ctx, :project_name, "")
@@ -4247,7 +4249,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     type in ["debuggerRenderStep", "elmcRuntimeStep"]
   end
 
-  @spec render_suffix(term()) :: String.t()
+  @spec render_suffix(String.t() | integer() | nil) :: String.t()
   defp render_suffix(""), do: ""
   defp render_suffix(nil), do: ""
   defp render_suffix(value), do: "[#{value}]"

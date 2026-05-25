@@ -31,7 +31,9 @@ defmodule Ide.Acp.Client do
     client_capabilities: %{}
   ]
 
-  @type request_result :: {:ok, map() | list() | nil} | {:error, term()}
+  @type acp_error :: String.t() | map() | atom() | tuple()
+
+  @type request_result :: {:ok, map() | list() | nil} | {:error, acp_error()}
 
   @doc """
   Starts an ACP client and launches the configured agent subprocess.

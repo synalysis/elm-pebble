@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.ImportTraceBody do
   Debugger trace export/import JSON body (`export_version` 1).
   """
 
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Surface
 
   @type export_version :: 1
@@ -20,7 +21,7 @@ defmodule Ide.Debugger.Types.ImportTraceBody do
           optional(:companion) => Surface.surface_map() | map(),
           optional(:phone) => Surface.surface_map() | map(),
           optional(:events) => [map()],
-          optional(String.t()) => term()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

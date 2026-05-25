@@ -96,7 +96,9 @@ defmodule Ide.Packages.Types do
 
   @type index_cache_key :: {atom(), String.t()}
 
-  @type docs_json_module :: %{optional(String.t()) => term()}
+  @type docs_json_module :: %{optional(String.t()) => json_field()}
+
+  @type json_field :: String.t() | integer() | boolean() | list() | map() | nil
 
   @type index_validators :: %{
           optional(:etag) => String.t(),
@@ -123,7 +125,7 @@ defmodule Ide.Packages.Types do
   @type resolver_error :: map()
 
   @type http_status_error :: {:http_status, pos_integer(), String.t()}
-  @type network_error :: {:network, term()}
+  @type network_error :: {:network, String.t() | map() | Exception.t()}
   @type invalid_json_error :: {:invalid_json, String.t()}
 
   @type catalog_error ::
@@ -141,7 +143,7 @@ defmodule Ide.Packages.Types do
   @type elm_json_error ::
           :elm_json_not_found
           | :invalid_elm_json
-          | {:invalid_elm_json, Jason.DecodeError.t() | term()}
+          | {:invalid_elm_json, Jason.DecodeError.t() | String.t() | map()}
 
   @type project_package_error ::
           :builtin_package_not_removable

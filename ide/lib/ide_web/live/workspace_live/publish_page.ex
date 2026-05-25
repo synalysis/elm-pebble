@@ -5,6 +5,8 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
   alias Ide.Auth
   alias Phoenix.LiveView.Rendered
 
+  alias Ide.Mcp.WireTypes
+
   @type assigns :: map()
   @type rendered :: Rendered.t()
   @type flow_status :: :idle | :running | :ok | :error
@@ -14,7 +16,10 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
           required(:warnings) => non_neg_integer(),
           required(:passed) => non_neg_integer()
         }
-  @type publish_check :: %{required(:status) => :ok | :error | atom(), optional(atom()) => term()}
+  @type publish_check :: %{
+          required(:status) => :ok | :error | atom(),
+          optional(atom()) => WireTypes.json_value()
+        }
 
   @spec render(assigns()) :: rendered()
   def render(assigns) do

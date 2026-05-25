@@ -116,5 +116,5 @@ defmodule ElmEx.Frontend.AstContract.Types.Expr do
           | string_length_expr()
           | char_from_code_expr()
           | unsupported()
-          | %{required(:op) => atom(), optional(atom()) => term()}
+          | %{required(:op) => atom(), optional(atom()) => AstTypes.invalid_input()}
 end

@@ -7,6 +7,7 @@ defmodule Ide.Emulator.SdkScreenshotStyle do
   """
 
   alias Ide.Emulator.ScreenshotCaptureRepair
+  alias Ide.Emulator.Types
 
   # Pebble SDK `pebble_tool.commands.screenshot._correct_colours/1` palette mapping.
   @colour_map %{
@@ -101,7 +102,7 @@ defmodule Ide.Emulator.SdkScreenshotStyle do
   }
 
   @spec process(String.t(), binary(), pos_integer(), pos_integer()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, binary()} | {:error, Types.screenshot_error()}
   def process(platform, rgb, width, height)
       when is_binary(rgb) and is_integer(width) and width > 0 and is_integer(height) and height > 0 do
     expected = width * height * 3
@@ -117,7 +118,7 @@ defmodule Ide.Emulator.SdkScreenshotStyle do
 
   @doc false
   @spec build_rgba(String.t(), binary(), pos_integer(), pos_integer()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, binary()} | {:error, Types.screenshot_error()}
   def build_rgba(platform, rgb, width, height, opts \\ []) do
     {rgb, width, height} = ScreenshotCaptureRepair.repair_rgb(rgb, width, height, platform, opts)
 

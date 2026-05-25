@@ -3,12 +3,14 @@ defmodule Ide.Debugger.Protocol.ConstructorValue do
   Elm custom-type constructor value on the companion protocol wire (ctor + args).
   """
 
+  alias Ide.Debugger.Types
+
   @type t :: %{
           optional(:ctor) => String.t(),
-          optional(:args) => [term()],
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(:args) => [Types.protocol_wire_arg()],
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
-  @type wire_value :: t() | %{optional(String.t()) => term(), optional(atom()) => term()}
+  @type wire_value :: t() | Types.wire_map()
 end

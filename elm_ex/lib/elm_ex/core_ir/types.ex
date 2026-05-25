@@ -13,14 +13,15 @@ defmodule ElmEx.CoreIR.Types do
   @type shape_error :: ShapeError.t()
   @type expr :: Expr.t()
 
+  @type wire_scalar :: String.t() | integer() | float() | boolean() | nil
+
+  @type wire_input :: wire_scalar() | list() | map()
+
+  @type wire_map :: %{optional(String.t()) => wire_input(), optional(atom()) => wire_input()}
+
   @type normalized_module :: module_t()
   @type normalized_diagnostic :: diagnostic()
   @type normalized_value :: Expr.normalized_value()
-
-  @type wire_map :: %{
-          optional(String.t()) => term(),
-          optional(atom()) => term()
-        }
 
   @type wire_core_ir :: wire_map() | ElmEx.CoreIR.t()
 end

@@ -3,6 +3,9 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types.ViewOutputRow do
   Draw-pipeline rows emitted by `SemanticExecutor` (`"kind"` discriminant, string keys).
   """
 
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
+
   @type kind :: String.t()
 
   @type context_kind :: :push_context | :pop_context
@@ -57,13 +60,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types.ViewOutputRow do
 
   @type unresolved_row :: %{
           optional(:kind) => kind(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => SemTypes.wire_input(),
+          optional(atom()) => SemTypes.wire_input()
         }
 
   @type style_row :: %{
           optional(:kind) => kind(),
-          optional(:value) => term(),
+          optional(:value) => EvalTypes.runtime_value(),
           optional(:color) => integer()
         }
 
@@ -81,7 +84,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types.ViewOutputRow do
           | unresolved_row()
           | wire_row()
 
-  @type wire_row :: %{optional(String.t()) => term(), optional(atom()) => term()}
+  @type wire_row :: SemTypes.wire_map()
 
   @type view_output :: [t()]
 end

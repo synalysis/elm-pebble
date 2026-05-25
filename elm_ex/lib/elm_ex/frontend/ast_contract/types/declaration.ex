@@ -39,5 +39,5 @@ defmodule ElmEx.Frontend.AstContract.Types.Declaration do
           | function_signature()
           | type_alias_decl()
           | union_decl()
-          | %{required(:kind) => atom(), optional(atom()) => term()}
+          | %{required(:kind) => atom(), optional(atom()) => AstTypes.invalid_input()}
 end

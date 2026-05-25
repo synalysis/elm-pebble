@@ -6,6 +6,9 @@ defmodule Ide.AppStore.Types do
   alias Ide.Packages.Types, as: PackageTypes
   alias Ide.ZipArchive
 
+  @type http_body :: map() | String.t() | binary() | nil
+  @type http_response :: map() | String.t() | binary()
+
   @type publish_opts :: [
           {:app_root, String.t()}
           | {:artifact_path, String.t()}
@@ -23,7 +26,7 @@ defmodule Ide.AppStore.Types do
           | {:generate_store_graphics, boolean()}
           | {:website, String.t()}
           | {:source, String.t()}
-          | {:request_fun, (atom(), String.t(), list(), term(), pos_integer() -> term())}
+          | {:request_fun, (atom(), String.t(), list(), http_body(), pos_integer() -> http_response())}
           | keyword()
         ]
 
@@ -50,7 +53,7 @@ defmodule Ide.AppStore.Types do
         }
 
   @type developer_me :: %{
-          optional(String.t()) => term()
+          optional(String.t()) => String.t() | integer() | boolean() | map() | list() | nil
         }
 
   @type api_payload :: map()

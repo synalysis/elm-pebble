@@ -120,6 +120,11 @@ defmodule Ide.Mcp.WeatherWatchfaceShowcaseTest do
 
     assert {:ok, _} = Debugger.start_session(slug)
 
+    assert {:ok, _state} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 18, "condition" => "fog"}
+             })
+
     assert {:ok, _} =
              Debugger.reload(slug, %{
                rel_path: "src/CompanionApp.elm",
@@ -134,11 +139,6 @@ defmodule Ide.Mcp.WeatherWatchfaceShowcaseTest do
                source: watch_source,
                source_root: "watch",
                reason: "weather_fog_vector_watch"
-             })
-
-    assert {:ok, _state} =
-             Debugger.set_simulator_settings(slug, %{
-               "weather" => %{"temperatureC" => 18, "condition" => "fog"}
              })
 
     assert {:ok, state} =

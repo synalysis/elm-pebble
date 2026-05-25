@@ -8,13 +8,14 @@ defmodule Ide.Debugger.Types.RuntimeStepResult do
   alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewTreeNode
   alias Ide.Debugger.Protocol.Event
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.ExecutionRuntimeSnapshot
 
   @type runtime_snapshot :: ExecutionRuntimeSnapshot.t() | ExecutionRuntimeSnapshot.wire_map()
 
-  @type model_patch :: %{optional(String.t()) => term(), optional(atom()) => term()}
+  @type model_patch :: Types.wire_map()
 
-  @type followup_message :: %{optional(String.t()) => term(), optional(atom()) => term()}
+  @type followup_message :: String.t() | Types.protocol_ctor_value() | map()
 
   @type t :: %{
           optional(:model_patch) => model_patch(),
@@ -23,8 +24,8 @@ defmodule Ide.Debugger.Types.RuntimeStepResult do
           optional(:runtime) => runtime_snapshot(),
           optional(:protocol_events) => [Event.t() | map()],
           optional(:followup_messages) => [followup_message() | String.t()],
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_result :: t() | map()

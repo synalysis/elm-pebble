@@ -24,7 +24,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport.Types do
   @type modify_error :: :read_only_file | :protected_file
   @type editor_state :: map()
   @type wire_input :: String.t() | integer() | boolean() | nil
-  @type format_error :: map() | atom() | String.t() | {atom(), term()}
+  @type format_error :: map() | atom() | String.t() | {atom(), map() | String.t() | atom()}
   @type diagnostic_field :: String.t() | integer() | atom() | boolean() | nil
   @type kw_value :: String.t() | integer() | boolean() | list() | map() | atom() | nil
 end

@@ -12,7 +12,7 @@ defmodule Ide.Resources.Types do
 
   @type manifest_entry :: map()
   @type manifest :: %{
-          optional(String.t()) => term(),
+          optional(String.t()) => wire_input(),
           optional(:schema_version) => integer(),
           optional(:entries) => [manifest_entry()]
         }

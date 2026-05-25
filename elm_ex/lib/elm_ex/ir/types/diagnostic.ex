@@ -17,6 +17,8 @@ defmodule ElmEx.IR.Types.Diagnostic do
           | :constructor_payload_arity
           | :preferences_schema_field_order
 
+  alias ElmEx.CoreIR.Types
+
   @type t :: %{
           optional(:severity) => severity(),
           optional(:code) => code(),
@@ -24,8 +26,8 @@ defmodule ElmEx.IR.Types.Diagnostic do
           optional(:function) => String.t() | nil,
           optional(:message) => String.t(),
           optional(:line) => pos_integer() | nil,
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

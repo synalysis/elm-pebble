@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
   Event payloads for `debugger.elmc_*` runtime history entries.
   """
 
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.{CompileIngestAttrs, ElmcDiagnosticPreview}
 
   @type status :: String.t()
@@ -23,8 +24,8 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
           optional(:detail) => String.t(),
           optional(:diagnostic_preview) => diagnostic_preview(),
           optional(:elm_executor_metadata) => map(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()
@@ -118,7 +119,7 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
   def status_string(s) when is_atom(s), do: Atom.to_string(s)
   def status_string(s), do: to_string(s)
 
-  @spec manifest_schema_string(term()) :: String.t()
+  @spec manifest_schema_string(String.t() | integer() | map() | nil) :: String.t()
   def manifest_schema_string(v) when is_integer(v), do: Integer.to_string(v)
   def manifest_schema_string(v) when is_binary(v), do: v
   def manifest_schema_string(_), do: "—"

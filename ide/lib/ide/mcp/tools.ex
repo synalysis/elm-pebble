@@ -3090,7 +3090,7 @@ defmodule Ide.Mcp.Tools do
   end
 
   @spec cache_latest_result_field(module(), String.t(), DateTime.t() | nil, atom()) ::
-          term() | nil
+          WireTypes.json_value() | nil
   defp cache_latest_result_field(cache, slug, since, field) when is_binary(slug) and is_atom(field) do
     case cache.latest(slug) do
       {:ok, entry} ->
@@ -3217,7 +3217,7 @@ defmodule Ide.Mcp.Tools do
 
   @spec debugger_cursor_inspect_full_payload(
           String.t(),
-          non_neg_integer(),
+          non_neg_integer() | nil,
           non_neg_integer(),
           [map()],
           map(),
@@ -4048,7 +4048,7 @@ defmodule Ide.Mcp.Tools do
   end
 
   @spec persist_project_debugger_setting(map(), String.t(), WireTypes.debugger_setting_value()) ::
-          {:ok, map()} | {:error, term()}
+          {:ok, map()} | {:error, ToolTypes.tool_persist_error()}
   defp persist_project_debugger_setting(project, key, value)
        when is_map(project) and is_binary(key) do
     settings =
@@ -4087,7 +4087,7 @@ defmodule Ide.Mcp.Tools do
   end
 
   @spec persist_project_disabled_subscription_setting(map(), map()) ::
-          {:ok, map()} | {:error, term()}
+          {:ok, map()} | {:error, ToolTypes.tool_persist_error()}
   defp persist_project_disabled_subscription_setting(project, attrs)
        when is_map(project) and is_map(attrs) do
     target = debugger_setting_target(map_value(attrs, "target"))
@@ -4302,7 +4302,7 @@ defmodule Ide.Mcp.Tools do
     end
   end
 
-  @spec format_pebble_package_failure(term()) :: String.t()
+  @spec format_pebble_package_failure(PebbleToolchain.toolchain_error()) :: String.t()
   defp format_pebble_package_failure({:pebble_build_failed, %{output: output} = result})
        when is_binary(output) do
     tail =
@@ -4424,7 +4424,6 @@ defmodule Ide.Mcp.Tools do
   defp authorized?(_, _), do: false
 
   @spec add_if(list(), boolean(), list()) :: list()
-  @spec add_if([term()], boolean(), [term()]) :: [term()]
   defp add_if(list, condition, entries) when is_boolean(condition) do
     if condition, do: list ++ entries, else: list
   end
@@ -4982,10 +4981,19 @@ defmodule Ide.Mcp.Tools do
   defp compact_debugger_model(_model, _include_view_output?), do: %{}
 
   @spec model_keys(map()) :: [String.t()]
-  defp model_keys(model) when is_map(model),
-    do: model |> Map.keys() |> Enum.map(&to_string/1) |> Enum.sort()
+  defp model_keys(model) when is_map(model) do
+    model
+    |> Map.keys()
+    |> Enum.map(&model_key_to_string/1)
+    |> Enum.sort()
+  end
 
   defp model_keys(_model), do: []
+
+  @spec model_key_to_string(atom() | String.t() | integer()) :: String.t()
+  defp model_key_to_string(key) when is_atom(key), do: Atom.to_string(key)
+  defp model_key_to_string(key) when is_binary(key), do: key
+  defp model_key_to_string(key) when is_integer(key), do: Integer.to_string(key)
 
   @spec maybe_render_tree_payload(map() | nil, map(), boolean()) :: map() | nil
   defp maybe_render_tree_payload(runtime, screen, include?) do
@@ -5040,7 +5048,11 @@ defmodule Ide.Mcp.Tools do
         []
       end
     root_type = rendered_node_type(rendered_tree)
-    runtime_fingerprint = Map.get(runtime_fingerprints, target)
+    runtime_fingerprint =
+      case Map.get(runtime_fingerprints, target) do
+        %{} = fp -> fp
+        _ -> nil
+      end
     surface_tree_sha256 = if is_map(view_tree), do: stable_term_sha256(view_tree), else: nil
 
     fingerprint_view_tree_sha256 =
@@ -5277,7 +5289,7 @@ defmodule Ide.Mcp.Tools do
   end
 
   @spec debugger_reload_source(map(), String.t(), String.t(), WireTypes.json_value()) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, String.t()} | {:error, ToolTypes.tool_persist_error()}
   defp debugger_reload_source(_project, _source_root, _rel_path, source) when is_binary(source),
     do: {:ok, source}
 
@@ -5824,7 +5836,7 @@ defmodule Ide.Mcp.Tools do
   end
 
   @spec read_trace_export_files() ::
-          {:ok, [ToolTypes.trace_export_file_internal()]} | {:error, term()}
+          {:ok, [ToolTypes.trace_export_file_internal()]} | {:error, ToolTypes.tool_persist_error()}
   defp read_trace_export_files do
     case File.ls(trace_export_dir()) do
       {:ok, names} ->
@@ -5862,7 +5874,7 @@ defmodule Ide.Mcp.Tools do
   end
 
   @spec trace_health_payload(pos_integer(), pos_integer()) ::
-          {:ok, ToolTypes.trace_health_status_result()} | {:error, term()}
+          {:ok, ToolTypes.trace_health_status_result()} | {:error, ToolTypes.tool_persist_error()}
   defp trace_health_payload(warn_count, warn_bytes) do
     with {:ok, files} <- read_trace_export_files() do
       total_count = length(files)
@@ -6039,7 +6051,7 @@ defmodule Ide.Mcp.Tools do
   end
 
   @spec resolve_install_package_path(map(), map(), module()) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, String.t()} | {:error, ToolTypes.tool_persist_error()}
   defp resolve_install_package_path(project, args, toolchain) do
     case Map.get(args, "package_path") do
       path when is_binary(path) and path != "" ->

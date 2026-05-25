@@ -5,12 +5,14 @@ defmodule ElmEx.CoreIR.Types.ShapeError do
 
   @type path_segment :: String.t() | non_neg_integer()
 
+  alias ElmEx.CoreIR.Types
+
   @type t :: %{
           required(:code) => String.t(),
           required(:message) => String.t(),
           required(:path) => [path_segment()],
           optional(:op) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 end

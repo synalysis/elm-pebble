@@ -34,5 +34,7 @@ defmodule Ide.Debugger.Protocol.Schema do
           required(:key_ids) => %{optional(String.t()) => pos_integer()}
         }
 
-  @type wire_schema :: t() | %{optional(String.t()) => term(), optional(atom()) => term()}
+  alias Ide.Debugger.Types
+
+  @type wire_schema :: t() | Types.wire_map()
 end

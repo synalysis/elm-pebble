@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Protocol.Event do
   Runtime protocol event surfaced by the semantic executor / debugger step loop.
   """
 
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.ProtocolTxRxPayload
 
   @type t :: %{
@@ -11,11 +12,11 @@ defmodule Ide.Debugger.Protocol.Event do
           optional(:from) => String.t(),
           optional(:to) => String.t(),
           optional(:message) => String.t(),
-          optional(:message_value) => term(),
+          optional(:message_value) => Types.protocol_message_wire_value(),
           optional(:trigger) => String.t(),
           optional(:message_source) => String.t(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_event :: t() | map()

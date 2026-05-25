@@ -16,7 +16,7 @@ defmodule IdeWeb.WorkspaceLive.Types do
   alias IdeWeb.WorkspaceLive.PackagesFlow
   alias IdeWeb.WorkspaceLive.PublishFlow
 
-  @type async_exit_reason :: term()
+  @type async_exit_reason :: async_error() | atom() | tuple() | String.t()
 
   @type file_error :: File.posix() | atom() | String.t()
 

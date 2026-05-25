@@ -328,7 +328,7 @@ defmodule Elmc.CLI do
     |> Enum.reverse()
   end
 
-  @spec warning_dedupe_key(cli_diagnostic() | term()) :: warning_dedupe_key()
+  @spec warning_dedupe_key(cli_diagnostic() | map() | String.t() | atom()) :: warning_dedupe_key()
   defp warning_dedupe_key(warning) when is_map(warning) do
     {
       Map.get(warning, "type", Map.get(warning, :type, "warning")),

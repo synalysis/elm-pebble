@@ -10,12 +10,12 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   @type capture_progress ::
           Screenshots.progress_payload()
           | {:target, String.t(), :captured, Screenshots.screenshot()}
-          | {:close, {:ok, term()} | {:error, term()}}
+          | {:close, {:ok, map()} | {:error, String.t() | atom() | map()}}
   @type target_statuses :: %{String.t() => String.t()}
   @type screenshot_row :: Screenshots.screenshot() | map()
   @type screenshot_identity :: {:path, String.t()} | {:filename, String.t()} | {:fallback, String.t()}
   @type screenshot_sort_key :: integer() | String.t()
-  @type install_error :: atom() | tuple() | term()
+  @type install_error :: atom() | tuple() | String.t()
 
   def group_screenshots(shots), do: ResourcesFlow.group_screenshots(shots)
 

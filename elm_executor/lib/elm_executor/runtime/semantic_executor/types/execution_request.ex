@@ -2,10 +2,11 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types.ExecutionRequest do
   @moduledoc false
 
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
   alias ElmExecutor.Runtime.SemanticExecutor.Types.{EvalContext, IntrospectPayload}
 
   @type introspect :: IntrospectPayload.wire_payload()
-  @type runtime_model :: %{optional(String.t()) => term(), optional(atom()) => term()}
+  @type runtime_model :: SemTypes.wire_map()
   @type view_tree :: map()
 
   @type t :: %{
@@ -22,7 +23,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types.ExecutionRequest do
           optional(:elm_executor_metadata) => map(),
           optional(:vector_resource_indices) => EvalContext.resource_indices(),
           optional(:bitmap_resource_indices) => EvalContext.resource_indices(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => SemTypes.wire_input(),
+          optional(atom()) => SemTypes.wire_input()
         }
 end

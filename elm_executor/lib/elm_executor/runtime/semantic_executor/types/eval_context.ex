@@ -5,6 +5,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types.EvalContext do
   alias ElmExecutor.Runtime.CoreIREvaluator.Types.ConstructorTagEntry
   alias ElmExecutor.Runtime.CoreIREvaluator.Types.RecordAliasIndex
   alias ElmExecutor.Runtime.SemanticExecutor.Types.LaunchContext
+  alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
 
   @type function_index_key :: EvalTypes.function_index_key()
   @type function_entry :: EvalTypes.function_entry()
@@ -29,7 +30,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types.EvalContext do
           optional(:vector_resource_indices) => resource_indices(),
           optional(:bitmap_resource_indices) => resource_indices(),
           optional(:launch_context) => launch_context(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => SemTypes.wire_input(),
+          optional(atom()) => SemTypes.wire_input()
         }
 end

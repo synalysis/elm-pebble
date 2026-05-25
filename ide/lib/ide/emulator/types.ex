@@ -15,33 +15,35 @@ defmodule Ide.Emulator.Types do
           | :uv_or_pipx_not_found
           | :not_found
 
+  @type error_detail :: String.t() | atom() | map() | integer() | binary() | [String.t() | atom()]
+
   @type session_tuple_error ::
-          {:install_retry_reset_failed, term(), term()}
-          | {:qemu_boot_firmware_failure, term()}
-          | {:protocol_router_start_failed, term()}
-          | {:daemon_start_failed, String.t(), term()}
-          | {:daemon_exited_before_ready, term()}
-          | {:daemon_not_ready, term(), term()}
+          {:install_retry_reset_failed, error_detail(), error_detail()}
+          | {:qemu_boot_firmware_failure, error_detail()}
+          | {:protocol_router_start_failed, error_detail()}
+          | {:daemon_start_failed, String.t(), error_detail()}
+          | {:daemon_exited_before_ready, error_detail()}
+          | {:daemon_not_ready, error_detail(), error_detail()}
           | {:install_ready_timeout, String.t(), String.t()}
-          | {:qemu_console_closed, term()}
-          | {:port_allocation_failed, term()}
+          | {:qemu_console_closed, error_detail()}
+          | {:port_allocation_failed, error_detail()}
           | {:qemu_flash_image_not_found, String.t()}
-          | {:persist_dir_failed, term()}
+          | {:persist_dir_failed, error_detail()}
           | {:bzip2_failed, binary()}
-          | {:embedded_emulator_unavailable, [term()]}
-          | {:embedded_emulator_image_download_failed, term()}
+          | {:embedded_emulator_unavailable, [error_detail()]}
+          | {:embedded_emulator_image_download_failed, error_detail()}
           | {:compatible_python_not_found, [String.t()]}
           | {:child_not_running, :qemu | :protocol_router}
-          | {:port_not_ready, :vnc | :phone, term()}
+          | {:port_not_ready, :vnc | :phone, error_detail()}
 
   @type pbw_error ::
-          {:pbw_zip_error, term()}
-          | {:pbw_rewrite_failed, term()}
-          | {:pbw_zip_rewrite_failed, term()}
+          {:pbw_zip_error, error_detail()}
+          | {:pbw_rewrite_failed, error_detail()}
+          | {:pbw_zip_rewrite_failed, error_detail()}
           | {:manifest_not_found, String.t()}
           | {:blob_not_found, atom(), String.t()}
           | {:entry_not_found, String.t()}
-          | {:json_decode_failed, String.t(), term()}
+          | {:json_decode_failed, String.t(), error_detail()}
           | {:pbw_uuid_mismatch, String.t(), String.t()}
 
   @type sdk_error ::
@@ -50,8 +52,8 @@ defmodule Ide.Emulator.Types do
           | {:sdk_archive_not_found, String.t()}
           | {:toolchain_archive_not_found, String.t()}
           | {:sdk_metadata_invalid, String.t()}
-          | {:sdk_metadata_failed, String.t(), term()}
-          | {:sdk_download_failed, String.t(), term()}
+          | {:sdk_metadata_failed, String.t(), error_detail()}
+          | {:sdk_download_failed, String.t(), error_detail()}
           | {:sdk_core_missing_after_extract, String.t()}
           | {:sdk_extract_failed, integer(), String.t()}
           | {:toolchain_missing_after_extract, String.t()}
@@ -66,14 +68,47 @@ defmodule Ide.Emulator.Types do
           | :vnc_security_failed
           | :vnc_empty_framebuffer_update
           | :invalid_vnc_pixel_format
+          | {:invalid_bgrx_buffer, non_neg_integer(), non_neg_integer()}
+          | {:invalid_rgb_buffer, non_neg_integer(), non_neg_integer()}
+          | {:invalid_rgba_buffer, non_neg_integer(), non_neg_integer()}
+          | {:vnc_incomplete_framebuffer, non_neg_integer(), non_neg_integer()}
+          | {:vnc_framebuffer_too_small, pos_integer(), pos_integer(), pos_integer(), pos_integer()}
+          | {:vnc_unsupported_pixel_format, map()}
+          | {:vnc_rectangle_too_large, non_neg_integer()}
+          | {:vnc_unsupported_encoding, non_neg_integer()}
+          | {:screenshot_failed, non_neg_integer()}
+          | {:unknown_screenshot_version, integer()}
+
+  @type packet_decode_error ::
+          {:unexpected_app_fetch_payload, binary()}
+          | {:unexpected_blob_response_payload, binary()}
+          | {:unexpected_putbytes_payload, binary()}
+          | {:wrong_cookie, list() | non_neg_integer(), non_neg_integer()}
+          | {:nack, non_neg_integer()}
+
+  @type install_error ::
+          router_error()
+          | pbw_error()
+          | packet_decode_error()
+          | :timeout
+          | {:putbytes_failed, map(), packet_decode_error() | :timeout | {:timeout, map() | non_neg_integer()}}
+          | {:blob_insert_failed, non_neg_integer()}
+          | {:wrong_blob_token, non_neg_integer(), non_neg_integer()}
+          | {:wrong_app_fetch_uuid, String.t(), String.t()}
 
   @type router_error :: :timeout | :busy | :superseded
 
-  @type exit_reason :: term()
+  @type exit_reason ::
+          :normal
+          | :shutdown
+          | {:shutdown, atom() | String.t()}
+          | atom()
+          | tuple()
+          | String.t()
 
   @type session_error ::
           session_atom_error() | session_tuple_error() | exit_reason()
 
   @type emulator_error ::
-          session_error() | pbw_error() | sdk_error() | screenshot_error() | router_error() | :timeout
+          session_error() | pbw_error() | sdk_error() | screenshot_error() | router_error() | install_error() | :timeout
 end

@@ -6,6 +6,7 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
   Runtime maps use string keys; typespecs use atoms for Dialyzer (same fields).
   """
 
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.StorageValue
 
   @type weather :: %{
@@ -14,14 +15,14 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
           optional(:humidityPercent) => integer(),
           optional(:pressureHpa) => integer(),
           optional(:windKph) => integer(),
-          optional(String.t()) => term()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type environment :: %{
           optional(:sun) => map(),
           optional(:moon) => map(),
-          optional(:tide) => term() | nil,
-          optional(String.t()) => term()
+          optional(:tide) => map() | nil,
+          optional(String.t()) => Types.wire_input()
         }
 
   @type t :: %{
@@ -57,8 +58,8 @@ defmodule Ide.Debugger.Types.SimulatorSettings do
           optional(:dictation_transcript) => String.t(),
           optional(:dictation_error) => String.t(),
           optional(:vibe_pattern_ms) => [integer()],
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

@@ -425,7 +425,7 @@ defmodule Ide.Settings do
   end
 
   @spec normalize_editor_mode(wire_input()) ::
-          {:ok, editor_mode()} | {:error, {:invalid_editor_mode, term()}}
+          {:ok, editor_mode()} | {:error, {:invalid_editor_mode, wire_input()}}
   defp normalize_editor_mode(:regular), do: {:ok, :regular}
   defp normalize_editor_mode(:vim), do: {:ok, :vim}
   defp normalize_editor_mode("regular"), do: {:ok, :regular}
@@ -446,7 +446,7 @@ defmodule Ide.Settings do
   defp formatter_backend_to_string(_), do: "built_in"
 
   @spec normalize_editor_theme(wire_input()) ::
-          {:ok, editor_theme()} | {:error, {:invalid_editor_theme, term()}}
+          {:ok, editor_theme()} | {:error, {:invalid_editor_theme, wire_input()}}
   defp normalize_editor_theme(:system), do: {:ok, :system}
   defp normalize_editor_theme(:dark), do: {:ok, :dark}
   defp normalize_editor_theme(:light), do: {:ok, :light}

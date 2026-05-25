@@ -26,11 +26,13 @@ defmodule Ide.Auth.Types do
 
   @type mail_delivery_response :: map()
 
+  @type mail_payload :: String.t() | map() | integer() | atom()
+
   @type mail_delivery_error ::
           atom()
           | String.t()
-          | {:client_error, term()}
-          | {:server_error, term()}
-          | {:retries_exceeded, term()}
-          | {:no_more_retries, term()}
+          | {:client_error, mail_payload()}
+          | {:server_error, mail_payload()}
+          | {:retries_exceeded, mail_payload()}
+          | {:no_more_retries, mail_payload()}
 end

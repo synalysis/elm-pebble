@@ -1,6 +1,11 @@
 defmodule Ide.Debugger.CompanionSubscriptionTrigger do
   @moduledoc false
 
+  alias Ide.Debugger.Types
+
+  @type field_value :: boolean() | integer() | String.t()
+  @type raw_value :: Types.wire_scalar() | map() | list() | nil
+
   defmodule ApiSuffixes do
     @moduledoc false
 
@@ -323,7 +328,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp simulator_settings(_state), do: %{}
 
-  @spec setting_value(map(), map()) :: term()
+  @spec setting_value(map(), map()) :: field_value()
   defp setting_value(settings, %{type: type, default: default, key: field_key} = field)
        when is_map(settings) do
     lookup_key = Map.get(field, :setting) || field_key
@@ -348,7 +353,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp setting_value(_settings, %{default: default}), do: default
 
-  @spec nested_setting_value(map(), String.t()) :: term()
+  @spec nested_setting_value(map(), String.t()) :: raw_value()
   defp nested_setting_value(settings, "weather_" <> field) do
     get_in(settings, ["weather", field])
   end
@@ -359,7 +364,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp nested_setting_value(_settings, _key), do: nil
 
-  @spec calendar_event_setting_value(map(), String.t()) :: term()
+  @spec calendar_event_setting_value(map(), String.t()) :: raw_value()
   defp calendar_event_setting_value(settings, key) when is_map(settings) and is_binary(key) do
     case Map.get(settings, "calendar_events", []) |> List.first() do
       %{} = event -> Map.get(event, key)
@@ -369,7 +374,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp calendar_event_setting_value(_settings, _key), do: nil
 
-  @spec encode_field_value(atom(), term()) :: String.t()
+  @spec encode_field_value(atom(), raw_value()) :: String.t()
   defp encode_field_value(:boolean, value), do: if(value in [true, "true", "1", 1], do: "true", else: "false")
   defp encode_field_value(:integer, value) when is_integer(value), do: Integer.to_string(value)
   defp encode_field_value(_type, value), do: to_string(value)
@@ -445,7 +450,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     end)
   end
 
-  @spec field_param(map(), String.t()) :: term()
+  @spec field_param(map(), String.t()) :: raw_value()
   defp field_param(params, key) when is_map(params) and is_binary(key) do
     Map.get(params, "companion_field_" <> key) ||
       Map.get(params, :"companion_field_#{key}") ||
@@ -454,7 +459,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp field_param(_params, _key), do: nil
 
-  @spec nested_companion_field(map(), String.t()) :: term()
+  @spec nested_companion_field(map(), String.t()) :: raw_value()
   defp nested_companion_field(params, key) do
     case Map.get(params, "companion_fields") || Map.get(params, :companion_fields) do
       fields when is_list(fields) ->
@@ -469,12 +474,12 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     end
   end
 
-  @spec decode_field_value(atom(), term()) :: term()
+  @spec decode_field_value(atom(), raw_value()) :: field_value()
   defp decode_field_value(:boolean, value), do: value in [true, "true", "True", "1", 1]
   defp decode_field_value(:integer, value), do: normalize_integer(value, 0)
   defp decode_field_value(_type, value), do: to_string(value || "")
 
-  @spec normalize_integer(term(), integer()) :: integer()
+  @spec normalize_integer(raw_value(), integer()) :: integer()
   defp normalize_integer(value, _default) when is_integer(value), do: value
 
   defp normalize_integer(value, default) when is_binary(value) do

@@ -1061,7 +1061,7 @@ defmodule IdeWeb.SettingsLive do
 
   defp maybe_check_emulator_installation(socket), do: socket
 
-  @spec persist_integration_settings(map(), atom()) :: :ok | {:error, term()}
+  @spec persist_integration_settings(map(), atom()) :: Ide.Settings.settings_set_result()
   defp persist_integration_settings(_params, mode) when mode != :local, do: :ok
 
   defp persist_integration_settings(params, :local) do

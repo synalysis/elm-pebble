@@ -5,7 +5,8 @@ defmodule Ide.Debugger.Types.SaveConfigurationAttrs do
   Keys are configuration field ids; values are encoded per control type at runtime.
   """
 
-  @type values_map :: %{optional(String.t()) => term()}
+  alias Ide.Debugger.Types
+  @type values_map :: %{optional(String.t()) => Types.wire_input()}
 
   @type t :: values_map()
 

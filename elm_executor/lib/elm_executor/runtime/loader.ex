@@ -7,7 +7,7 @@ defmodule ElmExecutor.Runtime.Loader do
           {:missing_manifest, String.t()}
           | {:entry_module_mismatch, String.t() | nil, String.t()}
           | {:missing_compiled_module, String.t()}
-          | {:module_load_failed, term()}
+          | {:module_load_failed, String.t() | Exception.t() | atom() | tuple()}
           | Jason.DecodeError.t()
 
   @spec load_from_dir(String.t(), String.t()) :: {:ok, module()} | {:error, load_error()}

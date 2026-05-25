@@ -3,12 +3,13 @@ defmodule Ide.Debugger.Types.LaunchContext do
   Watch launch metadata from `Debugger.launch_context_for/2` stored on session state and models.
   """
 
+  alias Ide.Debugger.Types
   @type screen :: %{
           optional(:width) => pos_integer(),
           optional(:height) => pos_integer(),
           optional(:shape) => String.t(),
           optional(:color_mode) => String.t(),
-          optional(String.t()) => term()
+          optional(String.t()) => Types.wire_input()
         }
 
   @type t :: %{
@@ -20,8 +21,8 @@ defmodule Ide.Debugger.Types.LaunchContext do
           optional(:has_compass) => boolean(),
           optional(:supports_health) => boolean(),
           optional(:screen) => screen() | map(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

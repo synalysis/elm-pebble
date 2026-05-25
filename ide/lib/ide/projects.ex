@@ -19,6 +19,8 @@ defmodule Ide.Projects do
   alias Ide.ProjectImport
   alias Ide.ProjectTemplates
   alias Ide.Projects.BootstrapError
+
+  @type workspace_error :: atom() | File.posix() | tuple() | String.t()
   alias Ide.PebblePreferences
   alias Ide.Repo
 
@@ -901,7 +903,7 @@ defmodule Ide.Projects do
   @doc """
   Ensures compiler roots exist and legacy unscoped workspaces are adopted.
   """
-  @spec ensure_compiler_workspace(Project.t()) :: :ok | {:error, term()}
+  @spec ensure_compiler_workspace(Project.t()) :: :ok | {:error, workspace_error()}
   def ensure_compiler_workspace(%Project{} = project) do
     workspace = project_workspace_path(project)
 
@@ -943,7 +945,7 @@ defmodule Ide.Projects do
   end
 
   @spec bootstrap_new_project(Project.t(), String.t()) ::
-          {:ok, Project.t()} | {:error, Ecto.Changeset.t() | term()}
+          {:ok, Project.t()} | {:error, Ecto.Changeset.t() | BootstrapError.bootstrap_reason()}
   defp bootstrap_new_project(%Project{} = project, template) do
     workspace = project_workspace_path(project)
 
@@ -957,7 +959,7 @@ defmodule Ide.Projects do
   end
 
   @spec bootstrap_imported_project(Project.t(), String.t()) ::
-          {:ok, Project.t()} | {:error, Ecto.Changeset.t() | term()}
+          {:ok, Project.t()} | {:error, Ecto.Changeset.t() | BootstrapError.bootstrap_reason()}
   defp bootstrap_imported_project(%Project{} = project, source_path) do
     workspace = project_workspace_path(project)
 
@@ -969,7 +971,8 @@ defmodule Ide.Projects do
     end
   end
 
-  @spec rollback_bootstrap(Project.t(), BootstrapError.operation(), term(), keyword()) :: no_return()
+  @spec rollback_bootstrap(Project.t(), BootstrapError.operation(), BootstrapError.bootstrap_reason(), keyword()) ::
+          no_return()
   defp rollback_bootstrap(%Project{} = project, operation, reason, context) do
     workspace = project_workspace_path(project)
 

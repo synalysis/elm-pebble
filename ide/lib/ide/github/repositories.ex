@@ -170,7 +170,7 @@ defmodule Ide.GitHub.Repositories do
   defp maybe_put_description(params, description), do: Map.put(params, "description", description)
 
   @spec create_for_owner(String.t(), String.t(), map(), keyword()) ::
-          {:ok, map()} | {:error, term()}
+          {:ok, map()} | {:error, Types.api_error()}
   defp create_for_owner(token, owner, params, opts) do
     user_login = Keyword.get(opts, :user_login) || Credentials.current().user_login
 

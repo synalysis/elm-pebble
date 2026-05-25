@@ -3,6 +3,11 @@ defmodule Ide.Projects.Types do
   Shared types for persisted project JSON fields and API boundaries.
   """
 
+  alias Ide.Debugger.Types, as: DebuggerTypes
+  alias Ide.Projects.FileTypes
+
+  @type wire_input :: DebuggerTypes.wire_input()
+
   @type scope_user :: nil | :current_scope | %{optional(:id) => integer() | nil}
 
   @type github_visibility :: String.t()
@@ -21,7 +26,7 @@ defmodule Ide.Projects.Types do
         }
 
   @type store_metadata :: %{
-          optional(String.t()) => term()
+          optional(String.t()) => wire_input()
         }
 
   @type subscription_row :: %{
@@ -36,11 +41,9 @@ defmodule Ide.Projects.Types do
           optional(:watch_profile_id) => String.t(),
           optional(:geolocation) => map(),
           optional(:companion_bridge) => map(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => wire_input(),
+          optional(atom()) => wire_input()
         }
-
-  alias Ide.Projects.FileTypes
 
   @type source_tree :: FileTypes.source_tree()
   @type read_result :: FileTypes.read_result()

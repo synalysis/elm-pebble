@@ -3,6 +3,8 @@ defmodule ElmEx.Frontend.AstContract.Types.Pattern do
   Parser case-expression patterns validated by `AstContract.validate_pattern/1`.
   """
 
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
+
   @type wildcard :: %{required(:kind) => :wildcard}
   @type var_pattern :: %{required(:kind) => :var, required(:name) => String.t()}
   @type unknown :: %{required(:kind) => :unknown, required(:source) => String.t()}
@@ -30,5 +32,5 @@ defmodule ElmEx.Frontend.AstContract.Types.Pattern do
           | int_pattern()
           | string_pattern()
           | record_pattern()
-          | %{required(:kind) => atom(), optional(atom()) => term()}
+          | %{required(:kind) => atom(), optional(atom()) => AstTypes.invalid_input()}
 end

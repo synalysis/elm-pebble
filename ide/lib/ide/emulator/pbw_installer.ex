@@ -4,6 +4,7 @@ defmodule Ide.Emulator.PBWInstaller do
   require Logger
 
   alias Ide.Emulator.PBW
+  alias Ide.Emulator.Types
   alias Ide.Emulator.PebbleProtocol.CRC32
   alias Ide.Emulator.PebbleProtocol.Packets
   alias Ide.Emulator.PebbleProtocol.Router
@@ -28,7 +29,7 @@ defmodule Ide.Emulator.PBWInstaller do
         }
 
   @spec install(pid(), String.t(), String.t(), keyword()) ::
-          {:ok, install_result()} | {:error, term()}
+          {:ok, install_result()} | {:error, Types.install_error()}
   def install(router, pbw_path, platform, opts \\ [])
       when is_pid(router) and is_binary(pbw_path) and is_binary(platform) do
     chunk_size = Keyword.get(opts, :chunk_size, @default_chunk_size)

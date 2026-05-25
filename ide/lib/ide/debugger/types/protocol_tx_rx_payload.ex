@@ -12,8 +12,8 @@ defmodule Ide.Debugger.Types.ProtocolTxRxPayload do
           optional(:message_value) => Types.subscription_payload() | nil,
           optional(:trigger) => String.t(),
           optional(:message_source) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

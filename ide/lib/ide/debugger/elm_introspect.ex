@@ -1832,7 +1832,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     |> Enum.uniq()
   end
 
-  @spec init_case_subject_allowed?(term(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
+  @spec init_case_subject_allowed?(Types.case_subject(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
           boolean()
   defp init_case_subject_allowed?(subj, allowed, init_params, bindings)
        when is_list(allowed) and is_list(init_params) and is_map(bindings) do
@@ -1910,7 +1910,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp update_case_analysis(_, _), do: {[], nil}
 
-  @spec update_case_subject_allowed?(term(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
+  @spec update_case_subject_allowed?(Types.case_subject(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
           boolean()
   defp update_case_subject_allowed?(subj, allowed, update_params, bindings)
        when is_list(allowed) and is_list(update_params) and is_map(bindings) do
@@ -1983,7 +1983,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec view_case_subject_allowed?(term(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
+  @spec view_case_subject_allowed?(Types.case_subject(), Types.param_list(), Types.param_list(), Types.binding_map()) ::
           boolean()
   defp view_case_subject_allowed?(subj, allowed, view_params, bindings)
        when is_list(allowed) and is_list(view_params) and is_map(bindings) do
@@ -2035,7 +2035,7 @@ defmodule Ide.Debugger.ElmIntrospect do
   defp resolve_case_subject(subj, _) when is_binary(subj), do: subj
   defp resolve_case_subject(_, _), do: ""
 
-  @spec case_subject_text(term(), Types.binding_map()) :: String.t()
+  @spec case_subject_text(Types.case_subject(), Types.binding_map()) :: String.t()
   defp case_subject_text(subj, bindings) when is_binary(subj), do: resolve_case_subject(subj, bindings)
 
   defp case_subject_text(subj, bindings) when is_map(subj),

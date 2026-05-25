@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.RuntimeStatusEventPayload do
   Payload for `debugger.runtime_status` events (`maybe_append_runtime_status_debugger_event/4`).
   """
 
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.ExecutionRuntimeSnapshot
 
   @type t :: %{
@@ -13,8 +14,8 @@ defmodule Ide.Debugger.Types.RuntimeStatusEventPayload do
           optional(:external_fallback_reason) => String.t() | nil,
           optional(:followup_message_count) => non_neg_integer() | nil,
           optional(:init_cmd_count) => non_neg_integer() | nil,
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

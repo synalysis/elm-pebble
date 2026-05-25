@@ -8,13 +8,16 @@ defmodule Ide.EditorDocLinks do
   @type resolve_symbol_result ::
           {:ok, String.t(), String.t()} | {:error, :bad_qualified_word | :not_in_exposing}
 
+  @type resolve_error ::
+          :no_import_metadata | :unresolved_symbol | :bad_qualified_word | :not_in_exposing
+
   @doc """
   Given editor `content` and a byte `offset`, resolves a documentation URL on package.elm-lang.org
   when the identifier refers to an imported module symbol and `module_index` maps module names to packages.
   """
   @spec resolve(String.t(), non_neg_integer(), %{optional(String.t()) => String.t()}) ::
           {:ok, %{url: String.t(), package: String.t(), module: String.t(), symbol: String.t()}}
-          | {:error, term()}
+          | {:error, resolve_error()}
   def resolve(content, offset, module_index)
       when is_binary(content) and is_integer(offset) and is_map(module_index) do
     with {:ok, snapshot} <- ElmIntrospect.analyze_source(content, "Editor.elm"),

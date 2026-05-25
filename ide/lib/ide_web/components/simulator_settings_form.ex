@@ -4,6 +4,7 @@ defmodule IdeWeb.SimulatorSettingsForm do
 
   alias Ide.Projects.Project
   alias Ide.SimulatorSettings
+  alias Ide.Debugger.Types
   alias Phoenix.LiveView.Rendered
 
   @type assigns :: map()
@@ -202,17 +203,17 @@ defmodule IdeWeb.SimulatorSettingsForm do
   defp input_type(:number), do: "number"
   defp input_type(_), do: "text"
 
-  @spec field_value(map(), String.t()) :: term()
+  @spec field_value(map(), String.t()) :: Types.wire_input() | nil
   defp field_value(settings, key) when is_map(settings), do: Map.get(settings, key)
 
-  @spec optional_string(term()) :: String.t()
+  @spec optional_string(Types.wire_scalar() | list() | map()) :: String.t()
   defp optional_string(value) when is_binary(value), do: value
   defp optional_string(nil), do: ""
   defp optional_string(value) when is_number(value), do: to_string(value)
   defp optional_string(value) when is_boolean(value), do: to_string(value)
   defp optional_string(_), do: ""
 
-  @spec truthy?(term()) :: boolean()
+  @spec truthy?(Types.wire_scalar()) :: boolean()
   defp truthy?(value) when value in [true, "true", "True", "on", "1", 1], do: true
   defp truthy?(_value), do: false
 end

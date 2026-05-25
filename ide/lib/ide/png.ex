@@ -8,7 +8,7 @@ defmodule Ide.Png do
           | :unsupported_png_format
           | :invalid_rgba_buffer
           | :unsupported_png_filter
-          | {:png_decompress_failed, term()}
+          | {:png_decompress_failed, String.t() | atom()}
           | {:png_incomplete_image_data, non_neg_integer(), non_neg_integer()}
 
   @spec dimensions(binary() | String.t()) :: {:ok, pos_integer(), pos_integer()} | :error

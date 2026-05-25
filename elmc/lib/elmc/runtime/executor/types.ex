@@ -16,7 +16,7 @@ defmodule Elmc.Runtime.Executor.Types do
   @type view_tree :: SemTypes.view_tree()
   @type view_output :: SemTypes.view_output()
 
-  @type dynamic_value :: term()
+  @type dynamic_value :: SemTypes.runtime_value()
   @type introspect :: map()
   @type operation :: :set | :inc | :dec | :toggle | :enable | :disable | :reset | :tick
   @type set_payload_type :: :int | :bool | nil
@@ -45,5 +45,5 @@ defmodule Elmc.Runtime.Executor.Types do
   @type view_tree_source_label :: String.t()
   @type char_code :: non_neg_integer()
   @type closer_stack :: [char_code() | nil]
-  @type hash_input :: term()
+  @type hash_input :: SemTypes.runtime_value() | map() | list()
 end

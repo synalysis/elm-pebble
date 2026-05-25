@@ -14,10 +14,17 @@ defmodule Ide.Projects.BootstrapError do
           optional(:workspace) => String.t()
         }
 
+  @type bootstrap_reason ::
+          atom()
+          | File.posix()
+          | tuple()
+          | String.t()
+          | map()
+
   @doc """
   Returns a user-facing explanation for a project bootstrap failure.
   """
-  @spec describe(term(), context()) :: String.t()
+  @spec describe(bootstrap_reason(), context()) :: String.t()
   def describe(reason, context \\ %{})
 
   def describe({:missing_template_asset, path}, _context) do
@@ -104,7 +111,7 @@ defmodule Ide.Projects.BootstrapError do
   @doc """
   Logs a bootstrap failure with enough context to diagnose deployment issues.
   """
-  @spec log_failure(operation(), Project.t(), term(), context()) :: :ok
+  @spec log_failure(operation(), Project.t(), bootstrap_reason(), context()) :: :ok
   def log_failure(operation, %Project{} = project, reason, context \\ %{}) do
     workspace = Map.get(context, :workspace) || workspace_for(project)
     context = Map.merge(context, %{operation: operation, workspace: workspace})

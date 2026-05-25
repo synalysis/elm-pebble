@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.TriggerCandidate do
   Auto-fire / inject-trigger candidate row from `Debugger.trigger_candidates/2`.
   """
 
+  alias Ide.Debugger.Types
   @type source :: String.t()
 
   @type t :: %{
@@ -16,8 +17,8 @@ defmodule Ide.Debugger.Types.TriggerCandidate do
           optional(:model_active) => boolean(),
           optional(:interval_ms) => pos_integer(),
           optional(:declared_interval_ms) => pos_integer(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

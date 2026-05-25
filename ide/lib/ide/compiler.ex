@@ -43,7 +43,7 @@ defmodule Ide.Compiler do
           optional(:elm_executor_metadata) => map()
         }
   @type manifest_data :: %{
-          optional(String.t()) => term()
+          optional(String.t()) => String.t() | integer() | boolean() | list() | map() | nil
         }
 
   @type compiler_error :: atom() | String.t() | tuple()
@@ -520,7 +520,7 @@ defmodule Ide.Compiler do
   defp maybe_attach_elm_executor_artifacts(result, _project_dir), do: result
 
   @spec build_elm_executor_artifacts(String.t()) ::
-          {:ok, %{core_ir: term(), metadata: map()}} | {:error, atom()}
+          {:ok, %{core_ir: CoreIR.t(), metadata: map()}} | {:error, atom()}
   defp build_elm_executor_artifacts(project_dir) when is_binary(project_dir) do
     with {:ok, project} <- Bridge.load_project(project_dir),
          {:ok, ir} <- Lowerer.lower_project(project) do

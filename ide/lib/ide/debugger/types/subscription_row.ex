@@ -5,14 +5,15 @@ defmodule Ide.Debugger.Types.SubscriptionRow do
   Uses string keys `target` (`watch` | `protocol`) and `trigger` at runtime.
   """
 
+  alias Ide.Debugger.Types
   @type target_filter :: String.t()
 
   @type t :: %{
           optional(:target) => target_filter(),
           optional(:trigger) => String.t(),
           optional(:enabled) => boolean(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

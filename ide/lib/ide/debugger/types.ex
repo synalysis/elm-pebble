@@ -208,7 +208,7 @@ defmodule Ide.Debugger.Types do
 
   @type protocol_wire_normalize_input :: protocol_wire_arg()
 
-  @type init_model_values :: %{optional(String.t()) => term()}
+  @type init_model_values :: wire_map()
 
   @type elm_introspect :: Payload.wire_payload()
 
@@ -232,6 +232,22 @@ defmodule Ide.Debugger.Types do
 
   @type wire_input :: wire_scalar() | list() | map()
 
+  @type wire_map :: %{optional(String.t()) => wire_input(), optional(atom()) => wire_input()}
+
+  @type companion_bridge_payload ::
+          boolean()
+          | map()
+          | [map()]
+          | String.t()
+          | integer()
+          | nil
+
+  @type device_preview_map :: %{
+          optional(String.t()) => String.t() | integer() | boolean()
+        }
+
+  @type device_preview :: nil | boolean() | String.t() | device_preview_map()
+
   @type elm_maybe :: protocol_ctor_value() | map() | nil
 
   @type protocol_inbound_row :: %{
@@ -249,7 +265,7 @@ defmodule Ide.Debugger.Types do
 
   @type replay_step_message :: ReplayRow.t()
 
-  @type runtime_fingerprint :: %{optional(String.t()) => term()}
+  @type runtime_fingerprint :: wire_map()
 
   @type normalized_export_term :: map() | list() | wire_scalar()
 
@@ -278,12 +294,12 @@ defmodule Ide.Debugger.Types do
   @type execution_error ::
           :invalid_execution_input
           | :invalid_http_command
-          | {:invalid_elm_executor_result, term()}
-          | {:elmc_runtime_executor_failed, term()}
-          | {:invalid_elmc_runtime_result, term()}
-          | {:elmc_runtime_unavailable, term()}
+          | {:invalid_elm_executor_result, execution_fallback_reason()}
+          | {:elmc_runtime_executor_failed, execution_fallback_reason()}
+          | {:invalid_elmc_runtime_result, execution_fallback_reason()}
+          | {:elmc_runtime_unavailable, execution_fallback_reason()}
           | {:external_runtime_executor_failed, execution_fallback_reason()}
-          | {:invalid_external_runtime_result, term()}
+          | {:invalid_external_runtime_result, execution_fallback_reason()}
           | execution_fallback_reason()
 
   @type http_executor_error :: :invalid_http_command | protocol_error()

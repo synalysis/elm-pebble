@@ -1,6 +1,14 @@
 defmodule Ide.Debugger.HttpSimulator do
   @moduledoc false
 
+  alias Ide.Debugger.Types.SimulatorSettings
+
+  @type json_decoder :: tuple() | atom() | list()
+
+  @type json_leaf :: String.t() | number() | boolean() | map() | list()
+
+  @type weather_map :: SimulatorSettings.weather() | map()
+
   @spec simulated_response(map(), map() | nil) :: {:ok, map()} | :skip
   def simulated_response(%{"expect" => %{"kind" => "json", "decoder" => decoder}} = _command, weather)
       when is_map(weather) and map_size(weather) > 0 and not is_nil(decoder) do
@@ -15,7 +23,7 @@ defmodule Ide.Debugger.HttpSimulator do
 
   def simulated_response(_command, _weather), do: :skip
 
-  @spec build_json_body(term(), map()) :: map()
+  @spec build_json_body(json_decoder(), weather_map()) :: map()
   def build_json_body(decoder, weather) when is_map(weather) do
     decoder_object(decoder, weather)
   end
@@ -73,7 +81,7 @@ defmodule Ide.Debugger.HttpSimulator do
     end)
   end
 
-  @spec leaf_value(String.t() | nil, atom(), map()) :: term()
+  @spec leaf_value(String.t() | nil, atom(), weather_map()) :: json_leaf()
   defp leaf_value(field, :float, weather), do: float_value(field, weather)
   defp leaf_value(field, :int, weather), do: int_value(field, weather)
   defp leaf_value(_field, :string, weather), do: to_string(Map.get(weather, "condition") || "clear")
@@ -121,7 +129,7 @@ defmodule Ide.Debugger.HttpSimulator do
     end
   end
 
-  @spec condition_weather_code(term()) :: integer()
+  @spec condition_weather_code(String.t() | atom() | nil) :: integer()
   def condition_weather_code(condition) do
     # Open-Meteo WMO weather_code values for simulated HTTP JSON bodies.
     # Companion apps decode these with openMeteoConditionFromCode, not protocol wire codes.

@@ -1,5 +1,6 @@
 defmodule Ide.Debugger.Types.TickAutoEventPayload do
   @moduledoc "Payload for `debugger.tick_auto` auto-fire control events."
+  alias Ide.Debugger.Types
 
   @type t :: %{
           optional(:action) => String.t(),
@@ -10,8 +11,8 @@ defmodule Ide.Debugger.Types.TickAutoEventPayload do
           optional(:trigger) => String.t() | nil,
           optional(:enabled) => boolean(),
           optional(:subscriptions) => [map()],
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @spec start(

@@ -7,6 +7,7 @@ defmodule Ide.Debugger.Types.ExecutionModel do
   """
 
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.{InnerRuntimeModel, Shell}
 
   @type t :: Shell.t() | wire_map()
@@ -14,13 +15,13 @@ defmodule Ide.Debugger.Types.ExecutionModel do
   @type wire_map :: %{
           optional(:runtime_model) => InnerRuntimeModel.t() | InnerRuntimeModel.wire_map(),
           optional(:elm_introspect) => map(),
-          optional(:elm_executor_core_ir) => term(),
+          optional(:elm_executor_core_ir) => Types.core_ir(),
           optional(:elm_executor_core_ir_b64) => String.t(),
           optional(:elm_executor_metadata) => map(),
           optional(:vector_resource_indices) => map(),
           optional(:bitmap_resource_indices) => map(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
   @spec from_surface(map()) :: wire_map()

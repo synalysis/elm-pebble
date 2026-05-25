@@ -1,11 +1,12 @@
 defmodule Ide.Debugger.Types.WatchProfileSetEventPayload do
   @moduledoc "Payload for `debugger.watch_profile_set` events."
+  alias Ide.Debugger.Types
 
   @type t :: %{
           optional(:watch_profile_id) => String.t(),
           optional(:launch_reason) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
         }
 
   @spec from_profile(String.t(), String.t()) :: t()

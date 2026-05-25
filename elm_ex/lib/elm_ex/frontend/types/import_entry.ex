@@ -10,7 +10,7 @@ defmodule ElmEx.Frontend.Types.ImportEntry do
           required(:module) => String.t(),
           optional(:as) => String.t() | nil,
           optional(:exposing) => exposing(),
-          optional(String.t()) => term()
+          optional(String.t()) => String.t() | integer() | boolean() | list() | nil
         }
 
   @type wire_map :: t() | map()

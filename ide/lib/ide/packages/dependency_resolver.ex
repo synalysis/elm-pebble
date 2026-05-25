@@ -243,7 +243,7 @@ defmodule Ide.Packages.DependencyResolver do
           Types.resolver_state()
         ) ::
           {:ok, [String.t()], Types.resolver_state()}
-          | {:error, term(), Types.resolver_state()}
+          | {:error, Types.resolver_error(), Types.resolver_state()}
   defp candidates_for(package, constraints, callbacks, state) do
     with {:ok, versions, state2} <- fetch_versions(package, callbacks, state) do
       candidates =
@@ -295,7 +295,7 @@ defmodule Ide.Packages.DependencyResolver do
 
   @spec fetch_release_deps(String.t(), String.t(), callbacks(), Types.resolver_state()) ::
           {:ok, Types.dependency_constraints_map(), Types.resolver_state()}
-          | {:error, term(), Types.resolver_state()}
+          | {:error, Types.resolver_error(), Types.resolver_state()}
   defp fetch_release_deps(package, version, callbacks, state) do
     key = {package, version}
 

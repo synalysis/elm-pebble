@@ -267,19 +267,9 @@ defmodule Ide.Emulator.Session do
     error
   end
 
-  defp retryable_install_error?({:libpebble2_install_failed, _exit_code, output})
-       when is_binary(output) do
-    String.contains?(output, "TimeoutError") or
-      String.contains?(output, "ConnectionError") or
-      String.contains?(output, "Connection refused")
-  end
-
   defp retryable_install_error?({:putbytes_failed, _meta, :timeout}), do: true
   defp retryable_install_error?({:putbytes_failed, _meta, {:timeout, _observed}}), do: true
-  defp retryable_install_error?(:timeout), do: true
-  defp retryable_install_error?({:timeout, _observed}), do: true
   defp retryable_install_error?({:blob_insert_failed, _response}), do: true
-  defp retryable_install_error?(:busy), do: true
 
   defp retryable_install_error?(_reason), do: false
 

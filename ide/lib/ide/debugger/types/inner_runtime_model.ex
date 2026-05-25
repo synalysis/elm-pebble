@@ -3,7 +3,9 @@ defmodule Ide.Debugger.Types.InnerRuntimeModel do
   Nested `runtime_model` map inside debugger app/execution models.
   """
 
-  @type t :: %{optional(String.t()) => term(), optional(atom()) => term()}
+  alias Ide.Debugger.Types
+
+  @type t :: Types.wire_map()
 
   @type wire_map :: t() | map()
 end

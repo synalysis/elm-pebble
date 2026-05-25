@@ -3,14 +3,15 @@ defmodule Ide.Debugger.Types.CompanionBridgeRequest do
   Simulated companion bridge operation derived from introspect `Cmd` calls on phone/companion surfaces.
   """
 
+  alias Ide.Debugger.Types
   @type t :: %{
           required(:api) => String.t(),
           required(:op) => String.t(),
           optional(:key) => String.t() | nil,
-          optional(:value) => term(),
+          optional(:value) => Types.companion_bridge_payload(),
           optional(:callback) => String.t() | nil,
           optional(:plain_result) => boolean(),
-          optional(atom()) => term()
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

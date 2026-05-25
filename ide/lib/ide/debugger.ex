@@ -1244,7 +1244,7 @@ defmodule Ide.Debugger do
   end
 
   @spec import_trace(String.t(), Types.import_trace_input(), keyword()) ::
-          {:ok, runtime_state()} | {:error, term()}
+          {:ok, runtime_state()} | {:error, Types.protocol_error() | atom() | String.t() | map()}
   def import_trace(session_key, input, opts \\ []) when is_binary(session_key) do
     human_slug = human_slug_from_session_key(session_key)
 
@@ -1362,8 +1362,8 @@ defmodule Ide.Debugger do
           runtime_state(),
           String.t(),
           :watch | :companion | :phone,
-          term(),
-          term()
+          String.t() | Types.wire_input(),
+          String.t() | nil
         ) ::
           runtime_state()
   defp append_debugger_event(state, type, target, message, message_source)
@@ -1397,22 +1397,37 @@ defmodule Ide.Debugger do
 
   defp maybe_trim_events(state, _limit), do: state
 
-  @spec apply_step_once(runtime_state(), Types.surface_target(), String.t(), String.t() | nil, String.t()) :: runtime_state()
+  @spec apply_step_once(runtime_state(), Types.surface_target(), String.t() | nil, String.t() | nil, String.t()) ::
+          runtime_state()
   defp apply_step_once(state, target, requested_message, source_override, trigger)
        when target in [:watch, :companion, :phone] do
-    apply_step_once(state, target, requested_message, nil, source_override, trigger)
+    do_apply_step_once(state, target, requested_message, nil, source_override, trigger, [])
   end
 
   @spec apply_step_once(
           runtime_state(),
           Types.surface_target(),
-          String.t(),
-          Types.subscription_payload(),
+          String.t() | nil,
+          Types.subscription_payload() | nil,
           String.t() | nil,
           String.t(),
           keyword()
         ) :: runtime_state()
   defp apply_step_once(state, target, requested_message, message_value, source_override, trigger, opts \\ [])
+       when target in [:watch, :companion, :phone] and is_list(opts) do
+    do_apply_step_once(state, target, requested_message, message_value, source_override, trigger, opts)
+  end
+
+  @spec do_apply_step_once(
+          runtime_state(),
+          Types.surface_target(),
+          String.t() | nil,
+          Types.subscription_payload() | nil,
+          String.t() | nil,
+          String.t(),
+          keyword()
+        ) :: runtime_state()
+  defp do_apply_step_once(state, target, requested_message, message_value, source_override, trigger, opts)
        when target in [:watch, :companion, :phone] and is_list(opts) do
     suppress_protocol_events? = Keyword.get(opts, :suppress_protocol_events, false)
     state = ensure_surface_compile_artifacts(state, target)
@@ -1429,12 +1444,7 @@ defmodule Ide.Debugger do
     {message, msg_source, known_messages, update_branches, next_cursor} =
       resolve_step_message(execution_model, requested_message)
 
-    message_value =
-      if is_map(message_value) do
-        normalize_protocol_subscription_message_value(state, target, message_value, model)
-      else
-        message_value
-      end
+    message_value = normalize_step_message_value(state, target, message_value, model)
 
     step =
       StepInput.from_surface(target, surface, message,
@@ -1605,6 +1615,21 @@ defmodule Ide.Debugger do
       runtime_followups
     )
   end
+
+  @spec normalize_step_message_value(
+          runtime_state(),
+          Types.surface_target(),
+          Types.subscription_payload() | nil,
+          map()
+        ) :: Types.subscription_payload() | nil
+  defp normalize_step_message_value(_state, _target, nil, _model), do: nil
+
+  defp normalize_step_message_value(state, target, message_value, model)
+       when is_map(message_value) do
+    normalize_protocol_subscription_message_value(state, target, message_value, model)
+  end
+
+  defp normalize_step_message_value(_state, _target, message_value, _model), do: message_value
 
   @spec maybe_apply_device_data_responses(runtime_state(), Types.surface_target(), String.t(), map(), String.t()) :: runtime_state()
   defp maybe_apply_device_data_responses(state, _target, _message, _model, "configuration"),
@@ -1924,7 +1949,7 @@ defmodule Ide.Debugger do
     Enum.map(@companion_bridge_subscription_contracts, &Map.fetch!(&1, :source))
   end
 
-  @spec companion_bridge_payload(map(), atom(), map()) :: term()
+  @spec companion_bridge_payload(map(), atom(), map()) :: Types.companion_bridge_payload()
   defp companion_bridge_payload(state, kind, request)
 
   defp companion_bridge_payload(state, :calendar, request) when is_map(state) and is_map(request) do
@@ -1990,7 +2015,7 @@ defmodule Ide.Debugger do
 
   defp companion_bridge_weather_info(_weather), do: %{}
 
-  @spec companion_bridge_subscription_message_value(String.t(), String.t(), String.t(), term()) ::
+  @spec companion_bridge_subscription_message_value(String.t(), String.t(), String.t(), Types.companion_bridge_payload()) ::
           map()
   defp companion_bridge_subscription_message_value("weather", callback, result_ctor, payload) do
     wrapped_payload = wrap_weather_bridge_ok_payload(result_ctor, payload, "Current")
@@ -2001,7 +2026,8 @@ defmodule Ide.Debugger do
     subscription_result_message_value(callback, result_ctor, payload)
   end
 
-  @spec wrap_weather_bridge_ok_payload(String.t(), term(), String.t()) :: term()
+  @spec wrap_weather_bridge_ok_payload(String.t(), Types.companion_bridge_payload(), String.t()) ::
+          Types.companion_bridge_payload()
   defp wrap_weather_bridge_ok_payload("Ok", %{"ctor" => variant, "args" => [info | _]}, _default_variant)
        when is_binary(variant) and is_map(info) do
     %{"ctor" => variant, "args" => [companion_bridge_weather_info(info)]}
@@ -2259,7 +2285,7 @@ defmodule Ide.Debugger do
   end
 
   @spec companion_preferences_result(map(), map()) ::
-          {map(), {:ok, term()} | {:error, String.t()}}
+          {map(), {:ok, {String.t(), Types.wire_input()}} | {:error, String.t()}}
   defp companion_preferences_result(state, request) when is_map(state) and is_map(request) do
     settings = simulator_settings_from_state(state)
     values = Map.get(settings, "preferences", %{})
@@ -2499,11 +2525,11 @@ defmodule Ide.Debugger do
     end
   end
 
-  @spec micro_degrees_from_float(term()) :: integer() | nil
+  @spec micro_degrees_from_float(number()) :: integer() | nil
   defp micro_degrees_from_float(value) when is_number(value), do: round(value * 1_000_000)
   defp micro_degrees_from_float(_value), do: nil
 
-  @spec round_float(term()) :: integer() | nil
+  @spec round_float(number()) :: integer() | nil
   defp round_float(value) when is_integer(value), do: value
   defp round_float(value) when is_float(value), do: round(value)
   defp round_float(_value), do: nil
@@ -2512,7 +2538,7 @@ defmodule Ide.Debugger do
           map(),
           :watch | :companion | :phone,
           String.t(),
-          term(),
+          Types.companion_bridge_payload(),
           String.t(),
           String.t(),
           map()
@@ -2589,7 +2615,7 @@ defmodule Ide.Debugger do
           map(),
           :watch | :companion | :phone,
           String.t(),
-          term(),
+          Types.subscription_payload(),
           String.t(),
           String.t()
         ) :: map()
@@ -2736,13 +2762,13 @@ defmodule Ide.Debugger do
 
   defp expand_helper_cmd_calls(calls, _ei) when is_list(calls), do: calls
   @spec protocol_message_payload_for_cmd_call(
-          term(),
+          Types.runtime_state() | map(),
           map(),
-          term(),
+          Types.app_model() | map(),
           :watch_to_phone | :phone_to_watch,
           Types.subscription_payload()
         ) ::
-          {String.t() | nil, term()}
+          {String.t() | nil, Types.protocol_message_wire_value()}
   defp protocol_message_payload_for_cmd_call(state, cmd_call, model, direction, message_value)
 
   defp protocol_message_payload_for_cmd_call(state, cmd_call, model, direction, message_value)
@@ -2769,7 +2795,7 @@ defmodule Ide.Debugger do
     do: {nil, nil}
 
   @spec protocol_message_payload_from_cmd_call(map(), map(), :watch_to_phone | :phone_to_watch, map()) ::
-          {String.t() | nil, term()}
+          {String.t() | nil, Types.protocol_message_wire_value()}
   defp protocol_message_payload_from_cmd_call(cmd_call, schema, direction, ctx)
        when is_map(cmd_call) and is_map(schema) and direction in [:watch_to_phone, :phone_to_watch] and
               is_map(ctx) do
@@ -2798,8 +2824,8 @@ defmodule Ide.Debugger do
   @spec wrap_watch_to_phone_protocol_payload(
           :watch_to_phone | :phone_to_watch,
           String.t(),
-          term()
-        ) :: {String.t(), term()}
+          Types.protocol_message_wire_value()
+        ) :: {String.t(), Types.protocol_message_wire_value()}
   defp wrap_watch_to_phone_protocol_payload(:watch_to_phone, message, protocol_value)
        when is_binary(message) do
     if String.starts_with?(message, "FromWatch") do
@@ -2813,7 +2839,7 @@ defmodule Ide.Debugger do
     do: {message, protocol_value}
 
   @spec protocol_message_payload_from_arg_values(map(), :watch_to_phone | :phone_to_watch | nil) ::
-          {String.t() | nil, term()}
+          {String.t() | nil, Types.protocol_message_wire_value()}
   defp protocol_message_payload_from_arg_values(cmd_call, direction)
 
   defp protocol_message_payload_from_arg_values(cmd_call, direction) when is_map(cmd_call) do
@@ -2933,12 +2959,12 @@ defmodule Ide.Debugger do
   defp unwrap_protocol_wire_ctor(other), do: other
 
   @spec resolve_protocol_ctor_args(
-          [term()],
+          [Types.protocol_wire_arg()],
           [Ide.Debugger.Protocol.Schema.field()],
           Types.protocol_schema(),
           ProtocolResolutionCtx.t()
         ) ::
-          {:ok, list()} | :error
+          {:ok, [Types.protocol_wire_arg()]} | :error
   defp resolve_protocol_ctor_args(inner_args, fields, schema, %ProtocolResolutionCtx{} = ctx)
        when is_list(inner_args) and is_list(fields) and is_map(schema) do
     resolved =
@@ -2966,12 +2992,12 @@ defmodule Ide.Debugger do
   defp resolve_protocol_ctor_args(_inner_args, _fields, _schema, _ctx), do: :error
 
   @spec resolve_protocol_ctor_arg(
-          term(),
+          Types.protocol_wire_arg(),
           Types.protocol_wire_type(),
           Types.protocol_schema(),
           ProtocolResolutionCtx.t()
         ) ::
-          term() | nil
+          Types.protocol_wire_arg() | nil
   defp resolve_protocol_ctor_arg(arg, wire_type, schema, ctx) do
     value =
       WireValues.coalesce([
@@ -2983,7 +3009,8 @@ defmodule Ide.Debugger do
     normalize_protocol_resolved_value(wire_type, schema, value)
   end
 
-  @spec normalize_protocol_resolved_value(Types.protocol_wire_type(), map(), term()) :: term() | nil
+  @spec normalize_protocol_resolved_value(Types.protocol_wire_type(), map(), Types.protocol_wire_arg()) ::
+          Types.protocol_wire_arg() | nil
   defp normalize_protocol_resolved_value({:union, "Temperature"} = wire_type, schema, value) do
     normalize_temperature_value(value, schema, wire_type)
   end
@@ -3009,7 +3036,8 @@ defmodule Ide.Debugger do
 
   defp normalize_protocol_resolved_value(_wire_type, _schema, value), do: value
 
-  @spec normalize_temperature_value(term(), map(), Types.protocol_wire_type()) :: term() | nil
+  @spec normalize_temperature_value(Types.protocol_wire_arg(), map(), Types.protocol_wire_type()) ::
+          Types.protocol_wire_arg() | nil
   defp normalize_temperature_value(%{"ctor" => "Celsius", "args" => [arg | _]}, _schema, _wire_type) do
     case normalize_temperature_scalar(arg) do
       nil -> %{"ctor" => "Celsius", "args" => [0]}
@@ -3041,7 +3069,7 @@ defmodule Ide.Debugger do
 
   defp normalize_temperature_value(value, _schema, _wire_type), do: value
 
-  @spec normalize_temperature_scalar(term()) :: integer() | nil
+  @spec normalize_temperature_scalar(number() | String.t()) :: integer() | nil
   defp normalize_temperature_scalar(value) when is_integer(value), do: value
 
   defp normalize_temperature_scalar(value) when is_float(value),
@@ -3071,7 +3099,7 @@ defmodule Ide.Debugger do
   defp normalize_temperature_scalar(%{"temperature" => temp}), do: normalize_temperature_scalar(temp)
   defp normalize_temperature_scalar(_value), do: nil
 
-  @spec resolve_protocol_arg_expr(term(), map()) :: term() | nil
+  @spec resolve_protocol_arg_expr(Types.protocol_wire_arg(), map()) :: Types.protocol_wire_arg() | nil
   defp resolve_protocol_arg_expr(%{"$field" => field, "$on" => on_expr}, ctx)
        when is_binary(field) and is_map(on_expr) and is_map(ctx) do
     case resolve_protocol_binding_record(on_expr, ctx) do
@@ -3133,7 +3161,7 @@ defmodule Ide.Debugger do
   defp resolve_protocol_arg_expr(%{"$opaque" => true, "op" => "field_access"}, _ctx), do: nil
   defp resolve_protocol_arg_expr(_arg, _ctx), do: nil
 
-  @spec resolve_protocol_binding_record(map(), map()) :: term() | nil
+  @spec resolve_protocol_binding_record(map(), map()) :: Types.protocol_wire_arg() | nil
   defp resolve_protocol_binding_record(%{"$var" => name}, ctx)
        when is_binary(name) and is_map(ctx) do
     case Map.get(protocol_message_var_bindings(ctx), name) do
@@ -3246,7 +3274,8 @@ defmodule Ide.Debugger do
 
   defp protocol_ok_inner_record(%{ctor: ctor, args: _}) when ctor in ["Online", "Offline"], do: nil
   defp protocol_ok_inner_record(value) when is_map(value), do: value
-  @spec resolve_protocol_arg_fallback(Types.protocol_wire_type(), map(), map()) :: term() | nil
+  @spec resolve_protocol_arg_fallback(Types.protocol_wire_type(), map(), map()) ::
+          Types.protocol_wire_arg() | nil
   defp resolve_protocol_arg_fallback(wire_type, schema, ctx) when is_map(schema) and is_map(ctx) do
     record =
       protocol_update_payload_record(Map.get(ctx, :message_value)) ||
@@ -3282,7 +3311,7 @@ defmodule Ide.Debugger do
 
   defp resolve_protocol_arg_fallback(_wire_type, _schema, _ctx), do: nil
 
-  @spec runtime_model_wire_value(Types.protocol_wire_type(), map()) :: term() | nil
+  @spec runtime_model_wire_value(Types.protocol_wire_type(), map()) :: Types.wire_input() | nil
   defp runtime_model_wire_value(:int, %{runtime_model: %{} = runtime_model} = ctx) do
     keys =
       case Map.get(ctx, :protocol_ctor) do
@@ -3303,13 +3332,13 @@ defmodule Ide.Debugger do
 
   defp runtime_model_wire_value(_wire_type, _ctx), do: nil
 
-  @spec provide_position_runtime_model_keys(term()) :: [String.t()]
+  @spec provide_position_runtime_model_keys(Types.protocol_ctor_value() | map()) :: [String.t()]
   defp provide_position_runtime_model_keys(0), do: ["latitudeE6"]
   defp provide_position_runtime_model_keys(1), do: ["longitudeE6"]
   defp provide_position_runtime_model_keys(2), do: ["accuracyM"]
   defp provide_position_runtime_model_keys(_), do: []
 
-  @spec simulator_settings_wire_value(Types.protocol_wire_type(), map()) :: term() | nil
+  @spec simulator_settings_wire_value(Types.protocol_wire_type(), map()) :: Types.wire_input() | nil
   defp simulator_settings_wire_value(:int, ctx) when is_map(ctx) do
     case Map.get(ctx, :protocol_ctor) do
       "ProvidePosition" ->
@@ -3772,9 +3801,9 @@ defmodule Ide.Debugger do
 
   @spec normalize_protocol_wire_value(
           Types.protocol_schema(),
-          term(),
+          Types.protocol_wire_arg(),
           Types.protocol_wire_type()
-        ) :: term()
+        ) :: Types.protocol_wire_arg()
   defp normalize_protocol_wire_value(schema, value, {:enum, type})
        when is_map(schema) and is_binary(type) do
     cond do
@@ -3857,7 +3886,8 @@ defmodule Ide.Debugger do
   defp normalize_protocol_subscription_callback_value(_schema, _direction, message_value),
     do: message_value
 
-  @spec normalize_protocol_subscription_payload(map(), :watch_to_phone | :phone_to_watch, term()) :: term()
+  @spec normalize_protocol_subscription_payload(map(), :watch_to_phone | :phone_to_watch, Types.subscription_payload()) ::
+          Types.subscription_payload()
   defp normalize_protocol_subscription_payload(schema, direction, %{"ctor" => "Ok", "args" => [inner | _]} = value)
        when is_map(schema) and is_map(inner) do
     normalized_inner = normalize_protocol_subscription_payload(schema, direction, inner)
@@ -3936,9 +3966,7 @@ defmodule Ide.Debugger do
   defp protocol_wire_message_value(%{"ctor" => _ctor, "args" => _args} = value), do: value
   defp protocol_wire_message_value(_value), do: nil
 
-  @spec protocol_arg_display(
-          Types.protocol_ctor_value() | String.t() | integer() | float() | boolean() | term()
-        ) :: String.t()
+  @spec protocol_arg_display(Types.protocol_wire_arg()) :: String.t()
   defp protocol_arg_display(%{"ctor" => ctor, "args" => []}) when is_binary(ctor), do: ctor
   defp protocol_arg_display(%{ctor: ctor, args: []}) when is_binary(ctor), do: ctor
   defp protocol_arg_display(value) when is_binary(value), do: inspect(value)
@@ -5065,7 +5093,7 @@ defmodule Ide.Debugger do
     end
   end
 
-  @spec unwrap_just_scalar(term(), term()) :: term()
+  @spec unwrap_just_scalar(Types.wire_input(), Types.wire_input()) :: Types.wire_input()
   defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, %{"ctor" => "Just", "args" => [_]}),
     do: %{"ctor" => "Just", "args" => [inner]}
 
@@ -5076,23 +5104,23 @@ defmodule Ide.Debugger do
 
   defp unwrap_just_scalar(value, _shape), do: value
 
-  @spec coerce_char_list_string(term(), term()) :: term()
+  @spec coerce_char_list_string(Types.wire_input(), Types.wire_input()) :: Types.wire_input()
   defp coerce_char_list_string(value, shape) when is_binary(shape) and is_list(value) do
     if char_list_string?(value), do: List.to_string(value), else: value
   end
 
   defp coerce_char_list_string(value, _shape), do: value
 
-  @spec coerce_singleton_int_list(term(), term()) :: term()
+  @spec coerce_singleton_int_list(Types.wire_input(), Types.wire_input()) :: Types.wire_input()
   defp coerce_singleton_int_list([n], shape) when is_integer(shape) and is_integer(n), do: n
   defp coerce_singleton_int_list(value, _shape), do: value
 
-  @spec char_list_string?(list()) :: boolean()
-  defp char_list_string?(list) when is_list(list) do
-    list != [] and Enum.all?(list, &((is_integer(&1) and &1 >= 32 and &1 <= 126) or &1 == 9))
+  @spec char_list_string?(Types.wire_input()) :: boolean()
+  defp char_list_string?(list) do
+    is_list(list) and
+      list != [] and
+      Enum.all?(list, &((is_integer(&1) and &1 >= 32 and &1 <= 126) or &1 == 9))
   end
-
-  defp char_list_string?(_list), do: false
 
   @spec maybe_put_device_preview(Types.app_model(), Types.device_request()) ::
           Types.app_model()
@@ -5461,7 +5489,7 @@ defmodule Ide.Debugger do
   end
 
   @spec protocol_rx_subscription_message(runtime_state(), Types.surface_target(), map()) ::
-          {String.t(), term()} | String.t() | nil
+          {String.t(), Types.protocol_message_wire_value()} | String.t() | nil
   defp protocol_rx_subscription_message(state, recipient, meta)
        when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(meta) do
     from = Map.get(meta, :from)
@@ -5508,7 +5536,7 @@ defmodule Ide.Debugger do
   defp protocol_rx_subscription_callback(_state, _recipient, _event_kind), do: nil
 
   @spec protocol_callback_message(String.t() | nil, String.t(), Types.subscription_payload(), boolean()) ::
-          {String.t(), term()} | String.t() | nil
+          {String.t(), Types.protocol_message_wire_value()} | String.t() | nil
   defp protocol_callback_message(callback, message, message_value, wrap_result?)
        when is_binary(callback) and callback != "" and is_binary(message) and message != "" do
     already_wrapped? = wrap_result? and String.starts_with?(message, "#{callback} (Ok ")
@@ -5628,7 +5656,7 @@ defmodule Ide.Debugger do
     put_in(state, [recipient, :model, "protocol_last_view_message"], row["message"])
   end
 
-  @spec patch_watch_runtime_from_protocol_message(runtime_state(), Types.surface_target(), term()) ::
+  @spec patch_watch_runtime_from_protocol_message(runtime_state(), Types.surface_target(), Types.protocol_ctor_value() | map()) ::
           runtime_state()
   defp patch_watch_runtime_from_protocol_message(state, :watch, message_value) do
     ei = introspect_for(state, :watch)
@@ -5687,7 +5715,7 @@ defmodule Ide.Debugger do
     |> Map.new()
   end
 
-  @spec protocol_result_wrapper_patch_value?(term()) :: boolean()
+  @spec protocol_result_wrapper_patch_value?(Types.protocol_ctor_value() | map()) :: boolean()
   defp protocol_result_wrapper_patch_value?(%{"ctor" => ctor, "args" => _})
        when ctor in ["Ok", "Err"],
        do: true
@@ -5739,7 +5767,7 @@ defmodule Ide.Debugger do
     |> maybe_remap_patch_key("accuracy", "accuracyM", &round_float/1)
   end
 
-  @spec maybe_remap_patch_key(map(), String.t(), String.t(), (term() -> term())) :: map()
+  @spec maybe_remap_patch_key(map(), String.t(), String.t(), (Types.wire_input() -> Types.wire_input())) :: map()
   defp maybe_remap_patch_key(patch, from, to, converter) when is_map(patch) and is_binary(from) and is_binary(to) do
     case Map.fetch(patch, from) do
       {:ok, value} -> patch |> Map.delete(from) |> Map.put(to, converter.(value))
@@ -5747,7 +5775,7 @@ defmodule Ide.Debugger do
     end
   end
 
-  @spec latitude_to_microdegrees(term()) :: integer()
+  @spec latitude_to_microdegrees(number() | String.t()) :: integer()
   defp latitude_to_microdegrees(value) when is_integer(value) and value > 1_000_000, do: value
 
   defp latitude_to_microdegrees(value) when is_integer(value),
@@ -5758,7 +5786,7 @@ defmodule Ide.Debugger do
 
   defp latitude_to_microdegrees(value), do: value
 
-  @spec longitude_to_microdegrees(term()) :: integer()
+  @spec longitude_to_microdegrees(number() | String.t()) :: integer()
   defp longitude_to_microdegrees(value) when is_integer(value) and abs(value) > 1_000_000, do: value
 
   defp longitude_to_microdegrees(value) when is_integer(value),
@@ -5783,7 +5811,7 @@ defmodule Ide.Debugger do
 
   defp model_field_for_patch_field(_patch_key, _init_keys), do: nil
 
-  @spec protocol_runtime_model_patch_from_message_value(map() | nil, term()) :: map()
+  @spec protocol_runtime_model_patch_from_message_value(map() | nil, Types.protocol_ctor_value() | map()) :: map()
   defp protocol_runtime_model_patch_from_message_value(introspect, %{"ctor" => "FromPhone", "args" => [inner | _]})
        when is_map(introspect) and is_map(inner) do
     protocol_runtime_model_patch_from_message_value(introspect, inner)
@@ -5922,7 +5950,7 @@ defmodule Ide.Debugger do
   defp protocol_position_microdegrees(value) when is_float(value),
     do: round(value * 1_000_000)
 
-  @spec wrap_protocol_patch_value(map(), String.t(), term()) :: term()
+  @spec wrap_protocol_patch_value(map(), String.t(), Types.wire_input()) :: Types.wire_input()
   defp wrap_protocol_patch_value(introspect, field, value) when is_map(introspect) and is_binary(field) do
     case value do
       %{"ctor" => ctor, "args" => _} when ctor in ["Just", "Nothing", "Ok", "Err"] ->
@@ -5938,7 +5966,7 @@ defmodule Ide.Debugger do
 
   defp wrap_protocol_patch_value(_introspect, _field, value), do: value
 
-  @spec wrap_protocol_patch_value_for_init(map(), String.t(), term()) :: term()
+  @spec wrap_protocol_patch_value_for_init(map(), String.t(), Types.wire_input()) :: Types.wire_input()
   defp wrap_protocol_patch_value_for_init(introspect, field, value) when is_map(introspect) and is_binary(field) do
     init = Map.get(introspect, "init_model") || %{}
 
@@ -5963,7 +5991,7 @@ defmodule Ide.Debugger do
 
   defp wrap_protocol_patch_fields_to_init_model(patch, _introspect), do: patch
 
-  @spec subscription_payload_model_patch(map() | nil, term()) :: map()
+  @spec subscription_payload_model_patch(map() | nil, Types.subscription_payload()) :: map()
   defp subscription_payload_model_patch(introspect, %{"ctor" => _ctor, "args" => args})
        when is_map(introspect) and is_list(args) do
     protocol_runtime_model_patch_from_ok_payload(introspect, args)
@@ -6046,7 +6074,7 @@ defmodule Ide.Debugger do
     end
   end
 
-  @spec promote_protocol_result_wrapper(term(), map()) :: map()
+  @spec promote_protocol_result_wrapper(Types.protocol_ctor_value() | map(), map()) :: map()
   defp promote_protocol_result_wrapper(%{"ctor" => ctor, "args" => [record | _]}, extra)
        when ctor in ["Ok", "Err"] and is_map(record) do
     cond do
@@ -6120,7 +6148,7 @@ defmodule Ide.Debugger do
     end
   end
 
-  @spec protocol_watch_online_from_message_value(term()) :: boolean() | nil
+  @spec protocol_watch_online_from_message_value(Types.protocol_ctor_value() | map()) :: boolean() | nil
   defp protocol_watch_online_from_message_value(%{"ctor" => "FromPhone", "args" => [inner | _]})
        when is_map(inner),
        do: protocol_watch_online_from_message_value(inner)
@@ -6517,7 +6545,7 @@ defmodule Ide.Debugger do
   defp subscription_guard_satisfied?(_state, _target, _guard), do: true
 
   @spec runtime_field_value(runtime_state(), Types.surface_target(), String.t()) ::
-          {:ok, term()} | :error
+          {:ok, Types.wire_input()} | :error
   defp runtime_field_value(state, target, subject)
        when is_map(state) and target in [:watch, :companion, :phone] and is_binary(subject) do
     model = get_in(state, [target, :model]) || %{}
@@ -6586,7 +6614,7 @@ defmodule Ide.Debugger do
 
   defp runtime_value_truthy?(_value), do: true
 
-  @spec runtime_value_branch_label(term()) :: String.t()
+  @spec runtime_value_branch_label(Types.wire_input()) :: String.t()
   defp runtime_value_branch_label(value) when is_binary(value), do: value
   defp runtime_value_branch_label(value) when is_atom(value), do: Atom.to_string(value)
 
@@ -10054,7 +10082,7 @@ defmodule Ide.Debugger do
     end
   end
 
-  @spec elm_list_wire_to_elixir(term()) :: list()
+  @spec elm_list_wire_to_elixir(Types.protocol_ctor_value() | list() | map()) :: list()
   defp elm_list_wire_to_elixir([]), do: []
 
   defp elm_list_wire_to_elixir(%{"ctor" => "[]", "args" => []}), do: []
@@ -10957,12 +10985,12 @@ defmodule Ide.Debugger do
   defp maybe_append_runtime_status_debugger_event(state, _target), do: state
 
   @spec maybe_append_runtime_status_debugger_event(
-          map(),
+          runtime_state() | map(),
           :watch | :companion | :phone,
-          term(),
-          term()
+          Types.runtime_step_result() | map(),
+          Types.elm_introspect() | map()
         ) ::
-          map()
+          runtime_state() | map()
   defp maybe_append_runtime_status_debugger_event(state, target, execution, introspect)
        when is_map(state) and target in [:watch, :companion, :phone] and is_map(execution) do
     runtime =

@@ -5,6 +5,7 @@ defmodule Ide.Debugger.Types.ExecutionRuntimeSnapshot do
   Populated by semantic executor, elmc adapter, and `RuntimeExecutor.annotate_execution_backend/3`.
   """
 
+  alias Ide.Debugger.Types
   @type t :: %{
           optional(:engine) => String.t(),
           optional(:source_root) => String.t(),
@@ -18,8 +19,8 @@ defmodule Ide.Debugger.Types.ExecutionRuntimeSnapshot do
           optional(:heuristic_fallback_used) => boolean(),
           optional(:followup_message_count) => non_neg_integer(),
           optional(:view_output_count) => non_neg_integer(),
-          optional(String.t()) => term(),
-          optional(atom()) => term()
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
         }
 
   @type wire_map :: t() | map()

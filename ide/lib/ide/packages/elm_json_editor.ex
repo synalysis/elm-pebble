@@ -239,7 +239,7 @@ defmodule Ide.Packages.ElmJsonEditor do
   defp normalize_scope("indirect"), do: "indirect"
   defp normalize_scope(_), do: "direct"
 
-  @spec ensure_map(map() | term()) :: map()
+  @spec ensure_map(map() | list() | String.t() | nil) :: map()
   defp ensure_map(value) when is_map(value), do: value
   defp ensure_map(_), do: %{}
 
