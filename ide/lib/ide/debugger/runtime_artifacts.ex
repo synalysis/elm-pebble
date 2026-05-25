@@ -69,8 +69,12 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def partition_fields(_fields), do: {%{}, %{}}
 
-  @spec shell_map(map()) :: shell()
-  def shell_map(%Surface{} = surface), do: shell_map(Surface.to_map(surface))
+  @spec shell_map(Surface.t() | map()) :: shell()
+  def shell_map(%Surface{model: model, shell: explicit}) do
+    take_shell_artifacts(%{model: model, shell: explicit})
+    |> Map.merge(take_shell_artifacts(model))
+    |> Map.merge(if is_map(explicit), do: explicit, else: %{})
+  end
 
   def shell_map(surface) when is_map(surface) do
     explicit = Map.get(surface, :shell) || Map.get(surface, "shell") || %{}
@@ -137,8 +141,15 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def execution_model(_surface), do: %{}
 
-  @spec introspect(map()) :: map() | nil
-  def introspect(%Surface{} = surface), do: introspect(Surface.to_map(surface))
+  @spec introspect(Surface.t() | map()) :: map() | nil
+  def introspect(%Surface{} = surface) do
+    shell_map(surface)
+    |> Map.get("elm_introspect")
+    |> case do
+      value when is_map(value) -> value
+      _ -> nil
+    end
+  end
 
   def introspect(surface_or_execution_model) when is_map(surface_or_execution_model) do
     shell_map(surface_or_execution_model)
@@ -161,8 +172,16 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def require_introspect(_), do: %{}
 
-  @spec normalize_surface(map()) :: map()
-  def normalize_surface(%Surface{} = surface), do: normalize_surface(Surface.to_map(surface))
+  @spec normalize_surface(Surface.t() | map()) :: map()
+  def normalize_surface(%Surface{model: model, shell: shell} = surface) do
+    normalize_surface(%{
+      model: model,
+      shell: shell,
+      view_tree: surface.view_tree,
+      last_message: surface.last_message,
+      protocol_messages: surface.protocol_messages
+    })
+  end
 
   def normalize_surface(surface) when is_map(surface) do
     model = Map.get(surface, :model) || Map.get(surface, "model") || %{}

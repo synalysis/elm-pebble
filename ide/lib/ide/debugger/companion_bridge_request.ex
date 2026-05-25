@@ -142,8 +142,6 @@ defmodule Ide.Debugger.CompanionBridgeRequest do
     %{callback: Map.get(row, "callback_constructor") || Map.get(row, :callback_constructor)}
   end
 
-  defp request_meta(_row), do: %{callback: nil}
-
   @spec companion_call_target?(String.t(), String.t()) :: boolean()
   defp companion_call_target?(target, module_name)
        when is_binary(target) and is_binary(module_name) do

@@ -19,7 +19,7 @@ defmodule Ide.Debugger.Surface do
   @enforce_keys [:model, :shell]
   defstruct [:model, :shell, :view_tree, :last_message, :protocol_messages]
 
-  @opaque t :: %__MODULE__{
+  @type t :: %__MODULE__{
           model: Types.app_model(),
           shell: Types.shell(),
           view_tree: ViewTreeNode.view_tree() | ViewTreeNode.t() | nil,

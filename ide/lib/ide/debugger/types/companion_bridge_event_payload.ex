@@ -32,7 +32,8 @@ defmodule Ide.Debugger.Types.CompanionBridgeEventPayload do
     }
   end
 
-  @spec from_subscription(String.t(), String.t(), String.t(), String.t() | nil, term()) :: t()
+  @spec from_subscription(String.t(), String.t(), String.t(), term(), String.t() | term() | nil) ::
+          t()
   def from_subscription(target, api, response_message, response_value, result \\ "Ok") do
     from_response(target, api, "subscribe", response_message, response_value, result)
   end

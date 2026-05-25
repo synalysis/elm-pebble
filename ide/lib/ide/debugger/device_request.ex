@@ -74,6 +74,4 @@ defmodule Ide.Debugger.DeviceRequest do
       String.contains?(target, "PebbleWatch.health") or
       String.contains?(target, "Elm.Kernel.PebbleWatch.health")
   end
-
-  defp health_cmd_target?(_cmd_call), do: false
 end
