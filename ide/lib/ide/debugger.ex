@@ -1453,6 +1453,7 @@ defmodule Ide.Debugger do
     preview_runtime_model =
       model
       |> Types.StepExecutionContract.merge_model_patch(runtime_patch)
+      |> hydrate_runtime_model_for_message(message, patched_runtime_model_fields(runtime_patch))
       |> RuntimeArtifacts.preview_runtime_model()
 
     runtime_view_output =
@@ -1468,7 +1469,7 @@ defmodule Ide.Debugger do
             preview_runtime_model
           )
 
-        choose_runtime_view_output(rows, supplemented)
+        choose_runtime_view_output(supplemented, rows)
       end)
 
     message_source = source_override || msg_source
@@ -8356,6 +8357,9 @@ defmodule Ide.Debugger do
       vector_rows?(supplemental_rows) and not vector_rows?(primary_rows) ->
         supplemental_rows
 
+      parser_preview_resolved?(supplemental_rows) and parser_preview_unresolved?(primary_rows) ->
+        supplemental_rows
+
       length(supplemental_rows) > length(primary_rows) ->
         supplemental_rows
 
@@ -8381,6 +8385,12 @@ defmodule Ide.Debugger do
       is_map(row) and Map.get(row, "kind") == "vector_at" and is_integer(Map.get(row, "vector_id"))
     end)
   end
+
+  defp parser_preview_unresolved?(rows) when is_list(rows),
+    do: Enum.any?(rows, &(is_map(&1) and Map.get(&1, "kind") == "unresolved"))
+
+  defp parser_preview_resolved?(rows) when is_list(rows),
+    do: rows != [] and not parser_preview_unresolved?(rows)
 
   @spec supplement_parser_runtime_view_output(Types.execution_model(), map(), map()) :: [map()]
   defp supplement_parser_runtime_view_output(execution_model, view_tree, runtime_model)
@@ -8436,9 +8446,13 @@ defmodule Ide.Debugger do
   defp screen_dimensions_for_view_preview(execution_model) when is_map(execution_model) do
     %{
       "screenW" =>
-        Map.get(execution_model, "screen_width") || Map.get(execution_model, "screenW"),
+        Map.get(execution_model, "screen_width") ||
+          Map.get(execution_model, "screenW") ||
+          get_in(execution_model, ["launch_context", "screen", "width"]),
       "screenH" =>
-        Map.get(execution_model, "screen_height") || Map.get(execution_model, "screenH")
+        Map.get(execution_model, "screen_height") ||
+          Map.get(execution_model, "screenH") ||
+          get_in(execution_model, ["launch_context", "screen", "height"])
     }
     |> Enum.reject(fn {_key, value} -> not is_integer(value) end)
     |> Map.new()
@@ -10139,11 +10153,19 @@ defmodule Ide.Debugger do
        do: runtime_model
 
   @spec unresolved_runtime_value?(Types.wire_input()) :: boolean()
+  defp unresolved_runtime_value?(%{"$field" => field, "$on" => _}) when is_binary(field), do: true
+  defp unresolved_runtime_value?(%{:"$field" => field, :"$on" => _}) when is_binary(field), do: true
+  defp unresolved_runtime_value?(%{"$var" => name}) when is_binary(name), do: true
+  defp unresolved_runtime_value?(%{:"$var" => name}) when is_binary(name), do: true
   defp unresolved_runtime_value?(%{"$opaque" => true}), do: true
   defp unresolved_runtime_value?(%{:"$opaque" => true}), do: true
   defp unresolved_runtime_value?(%{"op" => "field_access"}), do: true
   defp unresolved_runtime_value?(%{op: "field_access"}), do: true
   defp unresolved_runtime_value?(%{op: :field_access}), do: true
+
+  defp unresolved_runtime_value?(value) when is_map(value),
+    do: Enum.any?(value, fn {_key, nested} -> unresolved_runtime_value?(nested) end)
+
   defp unresolved_runtime_value?(_value), do: false
 
   @spec launch_context_display_shape(map()) :: String.t() | nil

@@ -1925,6 +1925,9 @@ defmodule Ide.DebuggerTest do
 
     assert is_binary(preview["string"])
     assert runtime_model["timeString"] == preview["string"]
+    assert runtime_model["screenW"] == 144
+    assert runtime_model["screenH"] == 168
+    assert runtime_model["displayShape"] == %{"ctor" => "Rectangular", "args" => []}
 
     assert get_in(reloaded, [:watch, :view_tree, "type"]) == "windowStack"
 

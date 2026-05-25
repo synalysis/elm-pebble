@@ -3407,10 +3407,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
           |> String.downcase()
 
         cond do
-          String.contains?(type, "defaultfont") -> 0
-          String.contains?(type, "uifont") -> 0
-          String.contains?(label, "defaultfont") -> 0
-          String.contains?(label, "uifont") -> 0
+          String.contains?(type, "defaultfont") -> 1
+          String.contains?(type, "uifont") -> 1
+          String.contains?(label, "defaultfont") -> 1
+          String.contains?(label, "uifont") -> 1
           true -> nil
         end
     end
@@ -4127,7 +4127,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     case children do
       [font_node, options_node, bounds_node, _text_node] ->
         with font_id when is_integer(font_id) <-
-               eval_view_int(font_node, runtime_model, eval_context),
+               eval_view_font_id(font_node, runtime_model, eval_context),
              {:ok, [x, y, w, h]} <- rect_quad_from_node(bounds_node, runtime_model, eval_context),
              {:ok, [alignment, overflow]} <-
                text_options_from_node(options_node, runtime_model, eval_context) do
@@ -4138,7 +4138,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
       [font_node, x_node, y_node, w_node, h_node, alignment_node, overflow_node, _text_node | _] ->
         with font_id when is_integer(font_id) <-
-               eval_view_int(font_node, runtime_model, eval_context),
+               eval_view_font_id(font_node, runtime_model, eval_context),
              x when is_integer(x) <- eval_view_int(x_node, runtime_model, eval_context),
              y when is_integer(y) <- eval_view_int(y_node, runtime_model, eval_context),
              w when is_integer(w) <- eval_view_int(w_node, runtime_model, eval_context),
@@ -4154,7 +4154,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
       [font_node, x_node, y_node, w_node, h_node, _text_node | _] ->
         with font_id when is_integer(font_id) <-
-               eval_view_int(font_node, runtime_model, eval_context),
+               eval_view_font_id(font_node, runtime_model, eval_context),
              x when is_integer(x) <- eval_view_int(x_node, runtime_model, eval_context),
              y when is_integer(y) <- eval_view_int(y_node, runtime_model, eval_context),
              w when is_integer(w) <- eval_view_int(w_node, runtime_model, eval_context),
