@@ -3901,7 +3901,9 @@ defmodule Elmc.Backend.CCodegen do
       |> Enum.flat_map(fn decl ->
         case Map.get(decl, :expr) do
           %{op: :record_alias, fields: fields} when is_list(fields) ->
-            shape = Enum.map(fields, &to_string/1)
+            # Record literals are sorted alphabetically in elm_ex IR lowering; field
+            # indices must use the same order when emitting indexed record access.
+            shape = fields |> Enum.map(&to_string/1) |> Enum.sort()
             [{{mod.name, decl.name}, shape}]
 
           _ ->

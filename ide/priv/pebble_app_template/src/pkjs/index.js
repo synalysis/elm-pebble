@@ -1410,6 +1410,22 @@ function requestCompanionWeatherRefresh() {
     deliverIncoming(normalizeIncomingAppMessage(payload));
 }
 
+function companionSupportsWeatherPlatform() {
+    return !!(
+        platformIncomingPorts.weather ||
+        platformIncomingPorts["weather-current"] ||
+        platformIncomingPorts["weather-forecast"]
+    );
+}
+
+function companionSupportsCalendarPlatform() {
+    return !!(
+        platformIncomingPorts.calendar ||
+        platformIncomingPorts["calendar-upcoming"] ||
+        platformIncomingPorts["calendar-next"]
+    );
+}
+
 function companionApplySimulatorSettings(settings) {
     if (!settings || typeof settings !== "object") {
         return;
@@ -1418,18 +1434,25 @@ function companionApplySimulatorSettings(settings) {
     companionSimulatorSettings = normalizeCompanionSimulatorSettings(settings);
     companionGlobalRoot().__elmPebbleCompanionSimulatorSettings = companionSimulatorSettings;
     markCompanionSimulatorSettingsReady();
-    deliverCalendarUpcoming(null, calendarEventsFromSettings());
 
-    var signature = companionWeatherSignature(companionSimulatorSettings);
-    if (signature) {
-        console.log(
-            "companion weather apply",
-            signature,
-            JSON.stringify(weatherFromSettings() || {})
-        );
-        if (signature !== lastDeliveredCompanionWeatherSignature) {
-            lastDeliveredCompanionWeatherSignature = signature;
-            deliverWeatherToWatch();
+    if (companionSupportsCalendarPlatform()) {
+        deliverCalendarUpcoming(null, calendarEventsFromSettings());
+    }
+
+    if (companionSupportsWeatherPlatform() && shouldUseSimulatorWeather()) {
+        var signature = companionWeatherSignature(companionSimulatorSettings);
+
+        if (signature) {
+            console.log(
+                "companion weather apply",
+                signature,
+                JSON.stringify(weatherFromSettings() || {})
+            );
+
+            if (signature !== lastDeliveredCompanionWeatherSignature) {
+                lastDeliveredCompanionWeatherSignature = signature;
+                deliverWeatherToWatch();
+            }
         }
     }
 }

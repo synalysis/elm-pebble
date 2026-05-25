@@ -94,6 +94,9 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
         data-emulator-screen-width={elem(emulator_screen_size(@selected_emulator_target), 0)}
         data-emulator-screen-height={elem(emulator_screen_size(@selected_emulator_target), 1)}
         data-emulator-has-phone-companion={Projects.companion_app_present?(@project) |> to_string()}
+        data-emulator-simulator-capabilities={
+          emulator_simulator_capabilities_json(@project, @debugger_state)
+        }
         data-emulator-simulator-settings={emulator_simulator_settings_json(@project, @debugger_state)}
         class="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4"
       >
@@ -800,6 +803,15 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
     battery_percent charging connected clock_24h timeline_peek
     compass_heading_deg compass_valid weather
   )
+
+  @spec emulator_simulator_capabilities_json(Project.t() | map() | nil, map() | nil) ::
+          String.t()
+  defp emulator_simulator_capabilities_json(project, debugger_state) do
+    project
+    |> SimulatorSettings.capabilities_for(debugger_state, :emulator)
+    |> MapSet.to_list()
+    |> Jason.encode!()
+  end
 
   @spec emulator_simulator_settings_json(Project.t() | map() | nil, map() | nil) :: String.t()
   defp emulator_simulator_settings_json(project, debugger_state) do

@@ -4454,6 +4454,7 @@ defmodule IdeWeb.WorkspaceLive do
       settings
       |> Map.put("emulator_target", selected_target)
       |> Map.put("emulator_mode", selected_mode)
+      |> Map.put("watch_profile_id", normalize_debugger_watch_profile_id(selected_target))
 
     case Projects.update_project(project, %{"debugger_settings" => updated_settings}) do
       {:ok, updated} -> updated

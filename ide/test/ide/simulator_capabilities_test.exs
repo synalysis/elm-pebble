@@ -258,4 +258,17 @@ defmodule Ide.SimulatorCapabilitiesTest do
 
     refute "Weather" in titles
   end
+
+  test "emulator page exposes simulator capabilities for weather gating" do
+    source = File.read!("lib/ide_web/live/workspace_live/emulator_page.ex")
+    js = File.read!("assets/js/emulator/embedded_emulator.js")
+
+    assert source =~ "data-emulator-simulator-capabilities"
+    assert source =~ "emulator_simulator_capabilities_json"
+    assert js =~ "simulatorWeatherEnabled()"
+    assert js =~ "emulatorSimulatorCapabilities"
+    assert js =~ "readVncFramebufferSize"
+    assert js =~ "clipViewport"
+    assert js =~ "expectedScreenSize"
+  end
 end

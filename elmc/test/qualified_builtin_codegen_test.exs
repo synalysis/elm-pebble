@@ -492,6 +492,38 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute native_min_body =~ "elmc_record_get(model, \"screenH\")"
   end
 
+  test "record field indices follow alphabetical record literal order" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/record_field_order_project", __DIR__)
+    out_dir = Path.expand("tmp/record_field_order_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> record_field_order_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_view")
+      |> List.last()
+      |> String.split("ElmcValue *elmc_fn_", parts: 2)
+      |> hd()
+
+    assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, 6 /* screenW */)"
+    assert body =~ "ELMC_RECORD_GET_INDEX_INT(model, 5 /* screenH */)"
+  end
+
   test "String.fromInt over native Int avoids temporary boxed integer" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/native_string_from_int_project", __DIR__)
@@ -2437,6 +2469,27 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     nativeMinRecordFields : NativeMinRecordModel -> Int
     nativeMinRecordFields model =
         min model.screenW model.screenH
+    """
+  end
+
+  defp record_field_order_source do
+    """
+
+
+    type alias WatchModel =
+        { now : Maybe Int
+        , screenW : Int
+        , screenH : Int
+        , colorMode : Int
+        , companionFigure : Maybe Int
+        , downloadedPieces : List Int
+        , pendingFigure : Maybe Int
+        }
+
+
+    view : WatchModel -> Int
+    view model =
+        model.screenW + model.screenH
     """
   end
 

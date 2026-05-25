@@ -26,6 +26,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
 
     updated = Projects.get_project_by_slug(project.slug)
     assert updated.debugger_settings["emulator_target"] == "emery"
+    assert updated.debugger_settings["watch_profile_id"] == "emery"
 
     assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/emulator")
     assert has_element?(view, "select[name='emulator[target]'] option[selected][value='emery']")

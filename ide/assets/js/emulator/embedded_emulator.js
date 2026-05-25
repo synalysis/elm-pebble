@@ -189,6 +189,8 @@ export class EmbeddedEmulatorHost {
     this.weatherDebugFallbackTimer = null
     this.pendingWeatherRetry = null
     this.lastSentWeatherJson = null
+    this.vncViewportConfigKey = null
+    this.vncViewportConfigTimer = null
     this.boundEmulatorButtons = new WeakSet()
     this.syncStateToDom = () => {
       if (this.destroyed) return
@@ -254,6 +256,7 @@ export class EmbeddedEmulatorHost {
 
   updated() {
     const previousCanvas = this.canvas
+    this.refreshSimulatorCapabilities()
     this.canvas = this.el.querySelector("[data-emulator-canvas]")
     this.status = this.el.querySelector("[data-emulator-status]")
     this.log = this.el.querySelector("[data-emulator-log]")
@@ -293,7 +296,7 @@ export class EmbeddedEmulatorHost {
     if (!this.session) return
 
     this.sessionEnded = false
-    this.resizeCanvas(this.session.screen)
+    this.applyCanvasSize()
     this.startPing()
     if (this.session.backend_enabled && !(this.rfb && this.rfbCanvas === this.canvas)) {
       this.connectVnc().catch(error => {
@@ -311,6 +314,11 @@ export class EmbeddedEmulatorHost {
     this.stopPing()
     this.stopVncReconnect()
     this.stopConfigPopupPolling()
+    if (this.vncViewportConfigTimer) {
+      window.clearTimeout(this.vncViewportConfigTimer)
+      this.vncViewportConfigTimer = null
+    }
+    this.vncViewportConfigKey = null
     this.weatherInjectTimers.forEach(timerId => window.clearTimeout(timerId))
     this.weatherInjectTimers = []
     this.weatherPushRetryTimers.forEach(timerId => window.clearTimeout(timerId))
@@ -380,7 +388,9 @@ export class EmbeddedEmulatorHost {
       })
       // #endregion
       if (!this.destroyed) {
-        this.resizeCanvas(this.session.screen)
+        this.warnSessionScreenMismatch()
+        this.logEmulatorPlatform()
+        this.applyCanvasSize()
         await this.connectVnc()
         this.startPing()
       }
@@ -445,6 +455,7 @@ export class EmbeddedEmulatorHost {
     }
     this.rfb = rfb
     this.rfbCanvas = this.canvas
+    this.vncViewportConfigKey = null
     this.vncConnecting = false
     this.reconnectingVnc = false
     this.updateControlButtons()
@@ -458,7 +469,6 @@ export class EmbeddedEmulatorHost {
       clientHeight: this.canvas?.clientHeight
     })
     // #endregion
-    rfb.scaleViewport = true
     rfb.resizeSession = false
     rfb.addEventListener("connect", () => {
       if (this.destroyed) return
@@ -474,9 +484,17 @@ export class EmbeddedEmulatorHost {
         clientHeight: this.canvas?.clientHeight
       })
       // #endregion
+      this.scheduleVncViewportConfig(rfb, "connect", 100)
+      this.scheduleVncViewportConfig(rfb, "connect_1s", 1000)
+      this.scheduleVncViewportConfig(rfb, "connect_3s", 3000)
       this.scheduleVncCanvasSample("after_connect")
       this.scheduleVncCanvasSample("after_connect_1s", 1000)
       if (this.session && !this.stopping) this.setStatus("Embedded emulator display connected")
+    })
+    rfb.addEventListener("framebufferresize", () => {
+      if (this.destroyed) return
+      if (rfb !== this.rfb) return
+      this.scheduleVncViewportConfig(rfb, "framebufferresize")
     })
     rfb.addEventListener("disconnect", event => {
       if (this.destroyed) return
@@ -531,6 +549,66 @@ export class EmbeddedEmulatorHost {
   stopVncReconnect() {
     if (this.vncReconnectTimer) window.clearTimeout(this.vncReconnectTimer)
     this.vncReconnectTimer = null
+  }
+
+  readVncBackingSize() {
+    const innerCanvas = this.canvas?.querySelector("canvas")
+    if (!innerCanvas?.width || !innerCanvas?.height) return null
+    return {width: innerCanvas.width, height: innerCanvas.height}
+  }
+
+  readVncFramebufferSize(rfb) {
+    const fbWidth = rfb?._fbWidth ?? 0
+    const fbHeight = rfb?._fbHeight ?? 0
+    if (fbWidth > 0 && fbHeight > 0) {
+      return {width: fbWidth, height: fbHeight}
+    }
+    return this.readVncBackingSize()
+  }
+
+  scheduleVncViewportConfig(rfb, reason, delayMs = 100) {
+    window.setTimeout(() => {
+      if (this.destroyed || rfb !== this.rfb) return
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          this.configureVncDisplay(rfb, reason)
+        })
+      })
+    }, delayMs)
+  }
+
+  configureVncDisplay(rfb, reason = "connect") {
+    if (this.destroyed || !rfb || rfb !== this.rfb || !this.canvas) return
+
+    const screen = this.expectedScreenSize()
+    this.applyCanvasSize()
+    rfb.resizeSession = false
+
+    const framebuffer = this.readVncFramebufferSize(rfb)
+    const canvasBacking = this.readVncBackingSize()
+    const fbWidth = framebuffer?.width ?? 0
+    const fbHeight = framebuffer?.height ?? 0
+    const oversized =
+      fbWidth > screen.width + 1 ||
+      fbHeight > screen.height + 1
+    const configKey = `${fbWidth}x${fbHeight}:${screen.width}x${screen.height}`
+    if (this.vncViewportConfigKey === configKey) return
+    this.vncViewportConfigKey = configKey
+
+    // Always clip at 1:1. scaleViewport scales the entire padded QEMU surface into
+    // the canvas, which shrinks a top-left draw layer into the upper-left quadrant.
+    rfb.scaleViewport = false
+    rfb.clipViewport = true
+
+    const canvasNote =
+      canvasBacking && (canvasBacking.width !== fbWidth || canvasBacking.height !== fbHeight)
+        ? ` canvas ${canvasBacking.width}x${canvasBacking.height}`
+        : ""
+
+    this.appendLog(
+      `VNC viewport ${reason}: framebuffer ${fbWidth}x${fbHeight}, screen ${screen.width}x${screen.height}, clip${oversized ? " (padded fb)" : ""}${canvasNote}`,
+      {flushTransfers: false, flushSystemLogs: false}
+    )
   }
 
   scheduleVncCanvasSample(label, delayMs = 0) {
@@ -681,6 +759,10 @@ export class EmbeddedEmulatorHost {
     this.lastSentWeatherJson = null
     this.setStatus(parts ? `PBW installed on embedded emulator (${parts})` : "PBW installed on embedded emulator")
     this.appendLog("native PBW install complete")
+    if (this.rfb) {
+      this.scheduleVncViewportConfig(this.rfb, "after_install", 500)
+      this.scheduleVncViewportConfig(this.rfb, "after_install_2s", 2000)
+    }
   }
 
   async ensurePhoneBridge(timeoutMs = 10_000) {
@@ -798,13 +880,17 @@ export class EmbeddedEmulatorHost {
         break
       case 0x0e:
         if (data[1] === 0) {
-          const weather = this.resolveWeatherSimulatorSettings()
-          this.appendLog(
-            `weather trace [browser_ack]: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
-          )
+          if (this.simulatorWeatherEnabled()) {
+            const weather = this.resolveWeatherSimulatorSettings()
+            this.appendLog(
+              `weather trace [browser_ack]: ${this.parseSimulatorTemperatureC(weather?.temperatureC) ?? "?"}°C ${weather?.condition || "clear"}`
+            )
+          }
         } else {
           this.appendLog("simulator settings sync failed")
-          this.scheduleWeatherPush({quiet: true})
+          if (this.simulatorWeatherEnabled()) {
+            this.scheduleWeatherPush({quiet: true})
+          }
         }
         break
       case 0x0f:
@@ -840,6 +926,7 @@ export class EmbeddedEmulatorHost {
       if (endpoint === 0x0030 || endpoint === 0x0034 || endpoint === ENDPOINT_APP_LOG || endpoint === ENDPOINT_DATA_LOGGING) {
         const payload = frame.slice(4)
         if (endpoint === 0x0034 && opcode === 0x00 && payload[0] === 0x01) {
+          if (this.rfb) this.scheduleVncViewportConfig(this.rfb, "app_start", 500)
           this.scheduleVncCanvasSample("after_app_start_250ms", 250)
           this.scheduleVncCanvasSample("after_app_start_1500ms", 1500)
           this.scheduleWeatherSimulatorInject("after_app_start")
@@ -951,6 +1038,30 @@ export class EmbeddedEmulatorHost {
     }
   }
 
+  parseSimulatorCapabilities() {
+    const raw = this.el.dataset.emulatorSimulatorCapabilities
+    if (!raw) return new Set()
+
+    try {
+      const parsed = JSON.parse(raw)
+      return new Set(Array.isArray(parsed) ? parsed : [])
+    } catch (_error) {
+      return new Set()
+    }
+  }
+
+  simulatorCapabilities() {
+    return this._simulatorCapabilities || (this._simulatorCapabilities = this.parseSimulatorCapabilities())
+  }
+
+  simulatorWeatherEnabled() {
+    return this.simulatorCapabilities().has("weather")
+  }
+
+  refreshSimulatorCapabilities() {
+    this._simulatorCapabilities = this.parseSimulatorCapabilities()
+  }
+
   companionSimulatorEnabled() {
     return this.el.dataset.emulatorHasPhoneCompanion === "true"
   }
@@ -1040,7 +1151,9 @@ export class EmbeddedEmulatorHost {
     if (this.shouldSyncCompanionSimulator(options)) {
       const quiet = options.quiet ?? options.source === "dataset"
       this.pushSimulatorSettingsToPhoneBridgeNow({quiet})
-      this.scheduleWeatherPush({quiet})
+      if (this.simulatorWeatherEnabled()) {
+        this.scheduleWeatherPush({quiet})
+      }
     }
 
     this.lastAppliedSimulatorSettingsJson = JSON.stringify(this.simulatorSettingsPayload(settings))
@@ -1048,11 +1161,24 @@ export class EmbeddedEmulatorHost {
 
   simulatorSettingsPayload(settings = this.simulatorSettings) {
     if (!settings || typeof settings !== "object") {
-      return {weather: {...DEFAULT_SIMULATOR_WEATHER}}
+      return this.simulatorWeatherEnabled() ? {weather: {...DEFAULT_SIMULATOR_WEATHER}} : {}
     }
 
+    const payload = {...settings}
     const weather = this.resolveWeatherSimulatorSettings(settings)
-    return {...settings, weather}
+
+    if (weather) {
+      payload.weather = weather
+    } else {
+      delete payload.weather
+      delete payload.weather_temperatureC
+      delete payload.weather_condition
+      delete payload.weather_humidityPercent
+      delete payload.weather_pressureHpa
+      delete payload.weather_windKph
+    }
+
+    return payload
   }
 
   pushSimulatorSettingsToPhoneBridgeNow(options = {}) {
@@ -1060,16 +1186,17 @@ export class EmbeddedEmulatorHost {
 
     const payload = this.simulatorSettingsPayload()
     const sent = this.sendSimulatorSettingsToPhoneBridge(payload)
-    if (sent && options.quiet === false) {
+    if (sent && options.quiet === false && this.simulatorWeatherEnabled()) {
       const weather = this.resolveWeatherSimulatorSettings(payload)
       this.appendLog(
-        `synced simulator weather via phone bridge: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
+        `synced simulator weather via phone bridge: ${this.parseSimulatorTemperatureC(weather?.temperatureC) ?? "?"}°C ${weather?.condition || "clear"}`
       )
     }
     return sent
   }
 
   scheduleWeatherPush(options = {}) {
+    if (!this.simulatorWeatherEnabled()) return
     if (!this.shouldSyncCompanionSimulator(options)) return
     this.resetWeatherDebugQueueIfStuck("new settings push")
     this.weatherDebugInFlight = false
@@ -1151,6 +1278,7 @@ export class EmbeddedEmulatorHost {
   }
 
   enqueueWeatherDebugPush(weather, options = {}) {
+    if (!this.simulatorWeatherEnabled()) return false
     if (!this.session?.app_uuid) {
       if (options.quiet === false) {
         this.appendLog("skipped simulator weather: install a PBW on the emulator first")
@@ -1233,7 +1361,9 @@ export class EmbeddedEmulatorHost {
   }
 
   resolveWeatherSimulatorSettings(settings = this.simulatorSettings) {
-    if (!settings || typeof settings !== "object") return DEFAULT_SIMULATOR_WEATHER
+    if (!settings || typeof settings !== "object") {
+      return this.simulatorWeatherEnabled() ? DEFAULT_SIMULATOR_WEATHER : null
+    }
 
     const nested = settings.weather
     if (nested && typeof nested === "object" && !Array.isArray(nested)) {
@@ -1262,10 +1392,11 @@ export class EmbeddedEmulatorHost {
       }
     }
 
-    return DEFAULT_SIMULATOR_WEATHER
+    return this.simulatorWeatherEnabled() ? DEFAULT_SIMULATOR_WEATHER : null
   }
 
   scheduleWeatherSimulatorInject(reason) {
+    if (!this.simulatorWeatherEnabled()) return
     this.weatherInjectTimers.forEach(timerId => window.clearTimeout(timerId))
     const timerId = window.setTimeout(() => {
       this.weatherInjectTimers = this.weatherInjectTimers.filter(id => id !== timerId)
@@ -1275,6 +1406,7 @@ export class EmbeddedEmulatorHost {
   }
 
   injectWeatherSimulatorSettings(reason) {
+    if (!this.simulatorWeatherEnabled()) return
     const weather = this.resolveWeatherSimulatorSettings()
     const sent = this.pushWeatherDebugAppMessage(weather, {quiet: true})
     if (sent) {
@@ -1285,6 +1417,7 @@ export class EmbeddedEmulatorHost {
   }
 
   pushWeatherDebugAppMessage(weather, options = {}) {
+    if (!this.simulatorWeatherEnabled()) return false
     const resolved = weather && typeof weather === "object" ? weather : DEFAULT_SIMULATOR_WEATHER
     const temperatureC = this.parseSimulatorTemperatureC(resolved.temperatureC)
     const conditionWire = this.weatherConditionWireCode(resolved.condition)
@@ -1926,9 +2059,18 @@ export class EmbeddedEmulatorHost {
 
     try {
       this.setStatus("Saving embedded emulator screenshot...")
+      const screen = this.expectedScreenSize()
+      const image =
+        screen &&
+        canvas.width >= screen.width &&
+        canvas.height >= screen.height &&
+        (canvas.width !== screen.width || canvas.height !== screen.height)
+          ? this.cropCanvasToScreen(canvas, screen)
+          : canvas.toDataURL("image/png")
+
       const result = await postJSON(`/api/wasm-emulator/projects/${encodeURIComponent(this.el.dataset.projectSlug)}/screenshot`, {
         platform: this.el.dataset.emulatorTarget || "embedded",
-        image: canvas.toDataURL("image/png")
+        image
       })
 
       if (result.screenshot) {
@@ -1976,14 +2118,53 @@ export class EmbeddedEmulatorHost {
     return {width, height}
   }
 
+  expectedScreenSize() {
+    const target = this.targetScreenSize()
+    const sessionScreen = this.session?.screen
+    if (!sessionScreen?.width || !sessionScreen?.height) return target
+    if (sessionScreen.width !== target.width || sessionScreen.height !== target.height) return target
+    return {width: sessionScreen.width, height: sessionScreen.height}
+  }
+
+  cropCanvasToScreen(canvas, screen) {
+    const crop = document.createElement("canvas")
+    crop.width = screen.width
+    crop.height = screen.height
+    const ctx = crop.getContext("2d")
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, screen.width, screen.height)
+    return crop.toDataURL("image/png")
+  }
+
+  warnSessionScreenMismatch() {
+    const target = this.targetScreenSize()
+    const sessionScreen = this.session?.screen
+    if (!sessionScreen?.width || !sessionScreen?.height) return
+    if (sessionScreen.width === target.width && sessionScreen.height === target.height) return
+    this.appendLog(
+      `emulator session screen ${sessionScreen.width}x${sessionScreen.height} differs from selected target ${target.width}x${target.height}; using target size for display`
+    )
+  }
+
+  logEmulatorPlatform() {
+    const screen = this.expectedScreenSize()
+    const platform = this.session?.platform || this.el.dataset.emulatorTarget || "unknown"
+    this.appendLog(`Embedded emulator platform ${platform} (${screen.width}x${screen.height})`)
+  }
+
   applyCanvasSize() {
-    this.resizeCanvas(this.session?.screen || this.targetScreenSize())
+    this.resizeCanvas(this.expectedScreenSize())
   }
 
   resizeCanvas(screen) {
     if (!this.canvas || !screen) return
     this.canvas.style.width = `${screen.width}px`
     this.canvas.style.height = `${screen.height}px`
+    this.canvas.style.overflow = "hidden"
+    this.canvas.style.display = "block"
+    this.canvas.style.imageRendering = "pixelated"
+    const innerCanvas = this.canvas.querySelector("canvas")
+    if (innerCanvas) innerCanvas.style.imageRendering = "pixelated"
   }
 
   setStatus(message) {

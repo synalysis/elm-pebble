@@ -140,15 +140,21 @@ defmodule Ide.Png do
     if byte_size(data) < expected do
       {:error, {:png_incomplete_image_data, byte_size(data), expected}}
     else
-      rgba =
-        Enum.reduce(0..(height - 1), <<>>, fn y, acc ->
-          row = :binary.part(data, y * (row_bytes + 1), row_bytes + 1)
-          <<filter, pixels::binary-size(row_bytes)>> = row
-          unfiltered = unfilter_row(filter, pixels, acc, row_bytes, y)
-          acc <> unfiltered
-        end)
+      try do
+        rgba =
+          Enum.reduce(0..(height - 1), <<>>, fn y, acc ->
+            row = :binary.part(data, y * (row_bytes + 1), row_bytes + 1)
+            <<filter, pixels::binary-size(row_bytes)>> = row
+            unfiltered = unfilter_row(filter, pixels, acc, row_bytes, y)
+            acc <> unfiltered
+          end)
 
-      {:ok, rgba}
+        {:ok, rgba}
+      rescue
+        MatchError -> {:error, :invalid_png}
+      catch
+        :throw, {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -159,11 +165,14 @@ defmodule Ide.Png do
   end
 
   defp unfilter_row(2, pixels, prev_rows, row_bytes, y) do
-    if y == 0 do
-      pixels
-    else
-      unfilter_up(pixels, prev_row(prev_rows, row_bytes), row_bytes)
-    end
+    prev =
+      if y == 0 do
+        :binary.copy(<<0>>, row_bytes)
+      else
+        prev_row(prev_rows, row_bytes)
+      end
+
+    unfilter_up(pixels, prev, row_bytes)
   end
 
   defp unfilter_row(3, pixels, prev_rows, row_bytes, y) do
@@ -183,6 +192,8 @@ defmodule Ide.Png do
     :binary.part(prev_rows, byte_size(prev_rows) - row_bytes, row_bytes)
   end
 
+  defp unfilter_sub(<<>>, _prev, _row_bytes), do: <<>>
+
   defp unfilter_sub(pixels, <<>>, row_bytes) do
     <<current::binary-size(row_bytes), rest::binary>> = pixels
     current <> unfilter_sub(rest, <<>>, row_bytes)
@@ -194,6 +205,8 @@ defmodule Ide.Png do
     fixed = add_bytes(current, prev_row)
     fixed <> unfilter_sub(rest, prev_rest, row_bytes)
   end
+
+  defp unfilter_up(<<>>, _prev, _row_bytes), do: <<>>
 
   defp unfilter_up(pixels, prev, row_bytes) do
     <<current::binary-size(row_bytes), rest::binary>> = pixels

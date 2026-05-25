@@ -385,6 +385,13 @@ static void render_coalesce_callback(void *data);
 static void apply_pending_cmd(void);
 static void startup_cmd_callback(void *data);
 static ElmcValue *build_launch_context(AppLaunchReason launch);
+static GRect display_bounds(void);
+#if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
+static bool deliver_current_date_time(const char *reason);
+#endif
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+static void display_bounds_diag_callback(void *data);
+#endif
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
 static bool send_companion_request(int request_tag, int request_value);
 static void flush_pending_companion_request(void);
@@ -681,6 +688,50 @@ static void frame_timer_callback(void *data) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
+static bool deliver_current_date_time(const char *reason) {
+  time_t now = time(NULL);
+  struct tm *local = localtime(&now);
+  if (!local || ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET <= 0) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "current_date_time unavailable (%s)", reason ? reason : "unknown");
+    return false;
+  }
+
+  int64_t day_of_week = local->tm_wday == 0 ? 6 : local->tm_wday - 1;
+  const char *field_names[] = {
+      "year", "month", "day", "dayOfWeek", "hour", "minute", "second", "utcOffsetMinutes"};
+  int64_t field_values[] = {
+      local->tm_year + 1900,
+      local->tm_mon + 1,
+      local->tm_mday,
+      day_of_week,
+      local->tm_hour,
+      local->tm_min,
+      local->tm_sec,
+      0};
+  int rc = elmc_pebble_dispatch_tag_record_int_fields(
+      &s_elm_app,
+      ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET,
+      8,
+      field_names,
+      field_values);
+  APP_LOG(APP_LOG_LEVEL_INFO, "current_date_time (%s) hour=%d minute=%d rc=%d",
+          reason ? reason : "unknown", local->tm_hour, local->tm_min, rc);
+  if (rc == 0) {
+    apply_pending_cmd();
+    render_model();
+  }
+  return rc == 0;
+}
+
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+static void deferred_datetime_callback(void *data) {
+  (void)data;
+  (void)deliver_current_date_time("deferred");
+}
+#endif
+#endif
+
 static void apply_pending_cmd(void) {
   ELMC_PEBBLE_TRACE_ENTER("apply_pending_cmd");
   for (int cmd_guard = 0; cmd_guard < 32; cmd_guard++) {
@@ -832,36 +883,7 @@ static void apply_pending_cmd(void) {
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_DATE_TIME
     case ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME: {
-      time_t now = time(NULL);
-      struct tm *local = localtime(&now);
-      if (!local || ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET <= 0) {
-        APP_LOG(APP_LOG_LEVEL_WARNING, "cmd current_date_time unavailable");
-        break;
-      }
-
-      int64_t day_of_week = local->tm_wday == 0 ? 6 : local->tm_wday - 1;
-      const char *field_names[] = {
-          "year", "month", "day", "dayOfWeek", "hour", "minute", "second", "utcOffsetMinutes"};
-      int64_t field_values[] = {
-          local->tm_year + 1900,
-          local->tm_mon + 1,
-          local->tm_mday,
-          day_of_week,
-          local->tm_hour,
-          local->tm_min,
-          local->tm_sec,
-          0};
-      int rc = elmc_pebble_dispatch_tag_record_int_fields(
-          &s_elm_app,
-          ELMC_PEBBLE_MSG_CURRENT_DATE_TIME_TARGET,
-          8,
-          field_names,
-          field_values);
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd current_date_time rc=%d", rc);
-      if (rc == 0) {
-        apply_pending_cmd();
-        render_model();
-      }
+      (void)deliver_current_date_time("cmd");
       break;
     }
 #endif
@@ -2831,15 +2853,6 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   // #endregion
   (void)context;
   inbox_snapshot_tuples(iter);
-#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-  companion_inbox_log("inbox tuples=%d", s_inbox_snapshot_count);
-  for (int i = 0; i < s_inbox_snapshot_count; i++) {
-    companion_inbox_log("  key=%lu type=%d value=%ld",
-                        (unsigned long)s_inbox_snapshots[i].key,
-                        (int)s_inbox_snapshots[i].type,
-                        (long)s_inbox_snapshots[i].int_value);
-  }
-#endif
 
   if (handle_debug_storage()) {
     ELMC_PEBBLE_TRACE_EXIT("inbox_received_handler");
@@ -2851,6 +2864,16 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     ELMC_PEBBLE_TRACE_EXIT("inbox_received_handler");
     return;
   }
+
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+  companion_inbox_log("inbox tuples=%d", s_inbox_snapshot_count);
+  for (int i = 0; i < s_inbox_snapshot_count; i++) {
+    companion_inbox_log("  key=%lu type=%d value=%ld",
+                        (unsigned long)s_inbox_snapshots[i].key,
+                        (int)s_inbox_snapshots[i].type,
+                        (long)s_inbox_snapshots[i].int_value);
+  }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
   // #region agent log
@@ -2889,6 +2912,12 @@ static void outbox_failed_handler(DictionaryIterator *iter, AppMessageResult rea
   (void)iter;
   (void)context;
   APP_LOG(APP_LOG_LEVEL_WARNING, "outbox failed: %d", reason);
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
+  if (s_pending_companion_request || s_last_companion_request_valid) {
+    AppTimer *retry_timer = app_timer_register(250, companion_resync_callback, NULL);
+    (void)retry_timer;
+  }
+#endif
   ELMC_PEBBLE_TRACE_EXIT("outbox_failed_handler");
 }
 #endif
@@ -3238,8 +3267,9 @@ static void dictation_session_callback(DictationSessionStatus status, char *tran
 static void main_window_load(Window *window) {
   ELMC_PEBBLE_TRACE_ENTER("main_window_load");
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window load");
-  Layer *window_layer = window_get_root_layer(window);
-  GRect bounds = layer_get_bounds(window_layer);
+  GRect bounds = display_bounds();
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw layer bounds w=%d h=%d", (int)bounds.size.w,
+                        (int)bounds.size.h);
 
   s_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   if (!s_font) {
@@ -3252,7 +3282,7 @@ static void main_window_load(Window *window) {
     return;
   }
   layer_set_update_proc(s_draw_layer, draw_update_proc);
-  layer_add_child(window_layer, s_draw_layer);
+  layer_add_child(window_get_root_layer(window), s_draw_layer);
   if (s_render_pending) {
     s_render_pending = false;
     layer_mark_dirty(s_draw_layer);
@@ -3294,21 +3324,96 @@ static int launch_reason_to_elm_tag(AppLaunchReason launch) {
   }
 }
 
-static ElmcValue *build_launch_context(AppLaunchReason launch) {
-  ELMC_PEBBLE_TRACE_ENTER("build_launch_context");
-  GRect bounds = layer_get_bounds(window_get_root_layer(s_main_window));
-  if (bounds.size.w <= 0 || bounds.size.h <= 0) {
+static GRect display_bounds(void) {
+  GRect layer = GRectZero;
+  if (s_main_window) {
+    layer = layer_get_bounds(window_get_root_layer(s_main_window));
+  }
 #ifdef PBL_DISPLAY_WIDTH
-    bounds.size.w = PBL_DISPLAY_WIDTH;
+  const int16_t compile_w = PBL_DISPLAY_WIDTH;
 #else
-    bounds.size.w = PBL_IF_ROUND_ELSE(180, 144);
+  const int16_t compile_w = PBL_IF_ROUND_ELSE(180, 144);
 #endif
 #ifdef PBL_DISPLAY_HEIGHT
-    bounds.size.h = PBL_DISPLAY_HEIGHT;
+  const int16_t compile_h = PBL_DISPLAY_HEIGHT;
 #else
-    bounds.size.h = PBL_IF_ROUND_ELSE(180, 168);
+  const int16_t compile_h = PBL_IF_ROUND_ELSE(180, 168);
 #endif
+
+  if (layer.size.w <= 0 || layer.size.h <= 0) {
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
+                          "display bounds unavailable; using compile w=%d h=%d", (int)compile_w,
+                          (int)compile_h);
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    companion_inbox_log("display bounds unavailable; using compile w=%d h=%d", (int)compile_w,
+                      (int)compile_h);
+#else
+    APP_LOG(APP_LOG_LEVEL_INFO, "display bounds unavailable; using compile w=%d h=%d",
+            (int)compile_w, (int)compile_h);
+#endif
+    return GRect(0, 0, compile_w, compile_h);
   }
+
+  // Before the window is pushed, some targets report undersized bounds. Once the
+  // window is on-screen, trust the layer size even when QEMU reports a larger
+  // framebuffer than PBL_DISPLAY_* (forcing compile size leaves a small draw
+  // layer in the top-left of a bigger surface).
+  if (layer.size.w < compile_w || layer.size.h < compile_h) {
+    ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
+                          "display bounds layer w=%d h=%d smaller than compile w=%d h=%d; using compile",
+                          (int)layer.size.w, (int)layer.size.h, (int)compile_w, (int)compile_h);
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+    companion_inbox_log(
+        "display bounds layer w=%d h=%d smaller than compile w=%d h=%d; using compile",
+        (int)layer.size.w, (int)layer.size.h, (int)compile_w, (int)compile_h);
+#else
+    APP_LOG(APP_LOG_LEVEL_INFO,
+            "display bounds layer w=%d h=%d smaller than compile w=%d h=%d; using compile",
+            (int)layer.size.w, (int)layer.size.h, (int)compile_w, (int)compile_h);
+#endif
+    return GRect(0, 0, compile_w, compile_h);
+  }
+
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
+                        "display bounds layer w=%d h=%d (compile w=%d h=%d)", (int)layer.size.w,
+                        (int)layer.size.h, (int)compile_w, (int)compile_h);
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+  companion_inbox_log("display bounds layer w=%d h=%d (compile w=%d h=%d)", (int)layer.size.w,
+                      (int)layer.size.h, (int)compile_w, (int)compile_h);
+#else
+  APP_LOG(APP_LOG_LEVEL_INFO, "display bounds layer w=%d h=%d (compile w=%d h=%d)",
+          (int)layer.size.w, (int)layer.size.h, (int)compile_w, (int)compile_h);
+#endif
+  return GRect(0, 0, layer.size.w, layer.size.h);
+}
+
+#if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
+static void display_bounds_diag_callback(void *data) {
+  (void)data;
+  GRect bounds = display_bounds();
+#ifdef PBL_DISPLAY_WIDTH
+  const int16_t compile_w = PBL_DISPLAY_WIDTH;
+#else
+  const int16_t compile_w = PBL_IF_ROUND_ELSE(180, 144);
+#endif
+#ifdef PBL_DISPLAY_HEIGHT
+  const int16_t compile_h = PBL_DISPLAY_HEIGHT;
+#else
+  const int16_t compile_h = PBL_IF_ROUND_ELSE(180, 168);
+#endif
+  APP_LOG(APP_LOG_LEVEL_INFO, "display diag layer w=%d h=%d compile w=%d h=%d",
+          (int)bounds.size.w, (int)bounds.size.h, (int)compile_w, (int)compile_h);
+  companion_inbox_log("display diag layer w=%d h=%d compile w=%d h=%d", (int)bounds.size.w,
+                      (int)bounds.size.h, (int)compile_w, (int)compile_h);
+}
+#endif
+
+static ElmcValue *build_launch_context(AppLaunchReason launch) {
+  ELMC_PEBBLE_TRACE_ENTER("build_launch_context");
+  GRect bounds = display_bounds();
+
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "launch context screen w=%d h=%d",
+                        (int)bounds.size.w, (int)bounds.size.h);
 
   ElmcValue *screen_width = elmc_new_int(bounds.size.w);
   ElmcValue *screen_height = elmc_new_int(bounds.size.h);
@@ -3400,6 +3505,9 @@ static void init(void) {
 #endif
   // #endregion
 
+  window_stack_push(s_main_window, true);
+  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
+
   AppLaunchReason launch = launch_reason();
   ElmcValue *flags = build_launch_context(launch);
   // #region agent probe
@@ -3443,6 +3551,10 @@ static void init(void) {
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
     AppTimer *storage_snapshot_timer = app_timer_register(1500, emulator_storage_snapshot_callback, NULL);
     (void)storage_snapshot_timer;
+    AppTimer *display_diag_timer = app_timer_register(2000, display_bounds_diag_callback, NULL);
+    (void)display_diag_timer;
+    AppTimer *datetime_timer = app_timer_register(2500, deferred_datetime_callback, NULL);
+    (void)datetime_timer;
 #endif
 #if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
     if (s_run_mode == ELMC_PEBBLE_MODE_APP) {
@@ -3514,8 +3626,6 @@ static void init(void) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "elmc_pebble_init failed: %d", rc);
   }
 
-  window_stack_push(s_main_window, true);
-  ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED990A01);
   // #endregion

@@ -230,7 +230,9 @@ defmodule Ide.PebbleToolchainTest do
 
     assert source =~ "function handleWeatherCommand(request)"
     assert source =~ "function fetchWeatherFromGeolocation"
-    assert source =~ "function shouldUseSimulatorWeather"
+    assert source =~ "function companionSupportsWeatherPlatform"
+    assert source =~ "function companionSupportsCalendarPlatform"
+    assert source =~ "companionSupportsWeatherPlatform() && shouldUseSimulatorWeather()"
     assert source =~ "function weatherFromSettings()"
     assert source =~ "function normalizeCompanionSimulatorSettings("
     assert source =~ "function deliverWeatherToWatch()"
@@ -316,6 +318,19 @@ defmodule Ide.PebbleToolchainTest do
 
     assert app_template =~
              "#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS"
+  end
+
+  test "pebble app template initializes Elm after pushing the window once" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    push_idx = :binary.match(template, "window_stack_push(s_main_window, true);") |> elem(0)
+    launch_idx = :binary.match(template, "build_launch_context(launch)") |> elem(0)
+    init_idx = :binary.match(template, "elmc_pebble_init_with_mode") |> elem(0)
+
+    assert push_idx < launch_idx
+    assert launch_idx < init_idx
+    refute template =~ ~s/} else {\n    APP_LOG(APP_LOG_LEVEL_ERROR, "elmc_pebble_init failed: %d", rc);\n  }\n\n  window_stack_push(s_main_window, true);/
+    assert template =~ "display_bounds"
   end
 
   test "emulator install wipes before installing" do
