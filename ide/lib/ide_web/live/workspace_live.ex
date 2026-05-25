@@ -4271,8 +4271,6 @@ defmodule IdeWeb.WorkspaceLive do
   defp bootstrap_debugger_preview(socket, project) do
     case debugger_bootstrap_elm_source(project, socket) do
       {:ok, rel_path, content, source_root} ->
-        maybe_bootstrap_companion_debugger(project)
-
         case Ide.Debugger.reload(Projects.scope_key(project), %{
                rel_path: rel_path,
                source: content,
@@ -4280,6 +4278,10 @@ defmodule IdeWeb.WorkspaceLive do
                source_root: source_root
              }) do
           {:ok, _} ->
+            # Load companion after watch so init protocol (e.g. ProvideFigure) does not
+            # bootstrap the watch via protocol_rx before the deliberate watch reload.
+            maybe_bootstrap_companion_debugger(project)
+
             {DebuggerSupport.refresh(socket),
              "Debugger started. Loaded #{editor_source_display_path(rel_path)}; watch preview uses parser snapshots when the view outline parses."}
         end

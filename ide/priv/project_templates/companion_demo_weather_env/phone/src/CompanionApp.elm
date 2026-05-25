@@ -104,8 +104,7 @@ emptyModel =
 refreshAll : Cmd Msg
 refreshAll =
     Cmd.batch
-        [ Weather.setup
-        , Environment.setup
+        [ Environment.setup
         , Weather.current (GotWeather << Result.map Weather.Current)
         , Environment.current GotEnvironment
         ]

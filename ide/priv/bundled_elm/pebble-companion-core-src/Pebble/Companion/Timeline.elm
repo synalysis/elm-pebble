@@ -18,7 +18,7 @@ module Pebble.Companion.Timeline exposing
 
 # Commands
 
-@docs getToken, insertPin, deletePin
+@docs getToken, insertPin, deletePin, setupToken, setupCommands
 
 # Subscriptions
 
@@ -29,7 +29,6 @@ module Pebble.Companion.Timeline exposing
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Pebble.Companion.Codec as Codec
-import Pebble.Companion.Contract exposing (ResultEnvelope)
 import Pebble.Companion.Phone as Phone
 import Pebble.Companion.Platform as Platform
 
@@ -76,11 +75,15 @@ onCommands toMsg =
     Platform.subscribe (handlerCommands toMsg)
 
 
+{-| Register the timeline token platform handler with the companion bridge.
+-}
 setupToken : Cmd msg
 setupToken =
     Platform.setup timelineTokenInterest
 
 
+{-| Register the timeline command platform handler with the companion bridge.
+-}
 setupCommands : Cmd msg
 setupCommands =
     Platform.setup timelineCommandInterest
@@ -146,7 +149,7 @@ decodeCommandResponse value =
             Err (Decode.errorToString error)
 
 
-decodeBridgeError : ResultEnvelope -> String
+decodeBridgeError : Pebble.Companion.Contract.ResultEnvelope -> String
 decodeBridgeError envelope =
     case envelope.error of
         Just error ->

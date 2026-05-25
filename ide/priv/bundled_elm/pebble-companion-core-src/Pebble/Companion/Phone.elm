@@ -43,6 +43,10 @@ project's protocol definition in `protocol/src/Companion/Types.elm`.
 
 @docs decodeWatchToPhone, onWatchToPhone, sendPhoneToWatch
 
+# Platform bridge
+
+@docs request, requestWithPayload, send, sendBridgeCommand, registerHandler
+
 # Platform ports
 
 @docs platformIncomingFor
@@ -65,11 +69,15 @@ type Request a
     = Request CommandEnvelope (Decode.Value -> Result String a)
 
 
+{-| Build a typed platform bridge request from an API id, operation, and response decoder.
+-}
 request : String -> String -> String -> (Decode.Value -> Result String a) -> Request a
 request id api op decodeResponse =
     Request (Command.command id api op) decodeResponse
 
 
+{-| Build a platform bridge request that includes a JSON payload.
+-}
 requestWithPayload :
     String
     -> String
@@ -81,6 +89,8 @@ requestWithPayload id api op payload decodeResponse =
     Request (Command.command id api op |> Command.withPayload payload) decodeResponse
 
 
+{-| Send a typed platform bridge request and decode the response into `msg`.
+-}
 send : (Result String a -> msg) -> Request a -> Cmd msg
 send toMsg (Request envelope decodeResponse) =
     sendRequest envelope decodeResponse toMsg
@@ -161,6 +171,8 @@ port timelineCommandsPlatformIncoming : (Decode.Value -> msg) -> Sub msg
 port outgoing : Encode.Value -> Cmd msg
 
 
+{-| Register interest in a platform handler with the companion bridge.
+-}
 registerHandler : String -> Encode.Value -> Cmd msg
 registerHandler handlerId interest =
     outgoing <|
@@ -266,6 +278,8 @@ sendPhoneToWatch message =
         |> outgoing
 
 
+{-| Send a raw platform bridge command envelope to the companion runtime.
+-}
 sendBridgeCommand : CommandEnvelope -> Cmd msg
 sendBridgeCommand command =
     Codec.encodeCommand command

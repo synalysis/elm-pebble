@@ -134,27 +134,6 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     slug = acc.slug
 
     acc =
-      case mcp("files.stat", %{"slug" => slug, "source_root" => "phone", "rel_path" => "src/CompanionApp.elm"}) do
-        {:ok, _} ->
-          reload = mcp("debugger.reload", %{
-            "slug" => slug,
-            "source_root" => "phone",
-            "rel_path" => "src/CompanionApp.elm",
-            "reason" => "mcp_template_health_phone"
-          })
-
-          case reload do
-            {:ok, _} -> acc
-            {:error, reason} -> fail(acc, "reload phone", reason)
-          end
-
-        {:error, _} ->
-          acc
-      end
-
-    if acc.status == :error do
-      acc
-    else
       case mcp("debugger.reload", %{
              "slug" => slug,
              "source_root" => "watch",
@@ -163,6 +142,25 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
            }) do
         {:ok, _} -> acc
         {:error, reason} -> fail(acc, "reload watch", reason)
+      end
+
+    if acc.status == :error do
+      acc
+    else
+      case mcp("files.stat", %{"slug" => slug, "source_root" => "phone", "rel_path" => "src/CompanionApp.elm"}) do
+        {:ok, _} ->
+          case mcp("debugger.reload", %{
+                 "slug" => slug,
+                 "source_root" => "phone",
+                 "rel_path" => "src/CompanionApp.elm",
+                 "reason" => "mcp_template_health_phone"
+               }) do
+            {:ok, _} -> acc
+            {:error, reason} -> fail(acc, "reload phone", reason)
+          end
+
+        {:error, _} ->
+          acc
       end
     end
   end

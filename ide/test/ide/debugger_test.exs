@@ -2,6 +2,7 @@ defmodule Ide.DebuggerTest do
   use ExUnit.Case, async: false
 
   alias Ide.Debugger
+  alias Ide.Debugger.AppMessageQueue
   alias Ide.Debugger.RuntimeExecutor
   alias Ide.Debugger.RuntimeExecutor.ElmcAdapter
 
@@ -2049,6 +2050,161 @@ defmodule Ide.DebuggerTest do
     refute Map.has_key?(runtime_model, "screenHeight")
     refute Map.has_key?(runtime_model, "hour")
     refute Map.has_key?(runtime_model, "dayOfWeek")
+  end
+
+  test "tangram watchface runtime model stays free of weather and message ctor pollution" do
+    slug = "sim-tangram-model-purity-#{System.unique_integer([:positive])}"
+
+    watch_source =
+      File.read!(
+        Path.join(["priv", "project_templates", "watchface_tangram_time", "src", "Main.elm"])
+      )
+
+    companion_source =
+      File.read!(
+        Path.join(["priv", "project_templates", "watchface_tangram_time", "phone", "src", "CompanionApp.elm"])
+      )
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, watch_reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: watch_source,
+               reason: "tangram_watch_model_purity",
+               source_root: "watch"
+             })
+
+    watch_runtime_model = get_in(watch_reloaded, [:watch, :model, "runtime_model"]) || %{}
+
+    refute Map.has_key?(watch_runtime_model, "condition")
+    refute Map.has_key?(watch_runtime_model, "temperature")
+    refute Map.has_key?(watch_runtime_model, "displayedCondition")
+    refute Map.has_key?(watch_runtime_model, "displayedTemperature")
+    assert Map.has_key?(watch_runtime_model, "companionFigure")
+
+    assert {:ok, companion_reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: companion_source,
+               reason: "tangram_companion_model_purity",
+               source_root: "phone"
+             })
+
+    companion_runtime_model = get_in(companion_reloaded, [:companion, :model, "runtime_model"]) || %{}
+
+    assert companion_runtime_model["figure"] == 0
+    assert is_list(companion_runtime_model["names"]) or is_binary(companion_runtime_model["names"])
+    refute Map.has_key?(companion_runtime_model, "ctor")
+    refute Map.has_key?(companion_runtime_model, "args")
+    refute Map.has_key?(companion_runtime_model, "$ctor")
+    refute Map.has_key?(companion_runtime_model, "$args")
+  end
+
+  test "tangram debugger bootstrap order yields a single watch init" do
+    slug = "sim-tangram-bootstrap-order-#{System.unique_integer([:positive])}"
+
+    watch_source =
+      File.read!(
+        Path.join(["priv", "project_templates", "watchface_tangram_time", "src", "Main.elm"])
+      )
+
+    companion_source =
+      File.read!(
+        Path.join(["priv", "project_templates", "watchface_tangram_time", "phone", "src", "CompanionApp.elm"])
+      )
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               reason: "tangram_watch_bootstrap",
+               source_root: "watch"
+             })
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: companion_source,
+               reason: "tangram_companion_bootstrap",
+               source_root: "phone"
+             })
+
+    watch_inits =
+      reloaded.debugger_timeline
+      |> Enum.filter(&(&1.type == "init" and &1.target == "watch"))
+      |> Enum.map(& &1.seq)
+
+    current_date_time_updates =
+      reloaded.debugger_timeline
+      |> Enum.filter(&(&1.type == "update" and &1.target == "watch"))
+      |> Enum.filter(&(String.contains?(&1.message, "CurrentDateTime")))
+      |> Enum.map(& &1.seq)
+
+    assert watch_inits == [1]
+    assert current_date_time_updates == [2]
+
+    phone_inits =
+      reloaded.debugger_timeline
+      |> Enum.filter(&(&1.type == "init" and &1.target == "phone"))
+      |> Enum.map(& &1.seq)
+
+    assert phone_inits == [3]
+    refute AppMessageQueue.pending?(reloaded, :companion)
+    refute AppMessageQueue.pending?(reloaded, :watch)
+  end
+
+  test "watch init queues companion protocol until companion reload instead of bootstrapping init" do
+    slug = "sim-watch-queues-companion-#{System.unique_integer([:positive])}"
+
+    watch_source =
+      File.read!(
+        Path.join(["priv", "project_templates", "watchface_tangram_time", "src", "Main.elm"])
+      )
+
+    companion_source =
+      File.read!(
+        Path.join(["priv", "project_templates", "watchface_tangram_time", "phone", "src", "CompanionApp.elm"])
+      )
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, after_watch} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: watch_source,
+               reason: "watch_only",
+               source_root: "watch"
+             })
+
+    assert AppMessageQueue.pending?(after_watch, :companion)
+
+    refute Enum.any?(after_watch.debugger_timeline, fn row ->
+             row.type == "init" and row.target == "phone"
+           end)
+
+    assert {:ok, after_companion} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: companion_source,
+               reason: "companion_after_watch",
+               source_root: "phone"
+             })
+
+    phone_inits =
+      after_companion.debugger_timeline
+      |> Enum.filter(&(&1.type == "init" and &1.target == "phone"))
+      |> Enum.map(& &1.seq)
+
+    assert phone_inits == [3]
+    refute AppMessageQueue.pending?(after_companion, :companion)
+
+    assert Enum.any?(after_companion.debugger_timeline, fn row ->
+             row.type == "update" and row.target == "phone" and
+               String.contains?(row.message, "FromWatch")
+           end)
   end
 
   test "tutorial watchface init emits platform and companion command events" do
@@ -4364,11 +4520,6 @@ defmodule Ide.DebuggerTest do
     assert {:ok, _} = Debugger.start_session(slug)
 
     assert {:ok, _} =
-             Debugger.set_simulator_settings(slug, %{
-               "weather" => %{"temperatureC" => 26, "condition" => "drizzle"}
-             })
-
-    assert {:ok, _} =
              Debugger.reload(slug, %{
                rel_path: "src/CompanionApp.elm",
                source: phone_source,
@@ -4376,7 +4527,7 @@ defmodule Ide.DebuggerTest do
                reason: "weather_bridge_companion"
              })
 
-    assert {:ok, state} =
+    assert {:ok, _} =
              Debugger.reload(slug, %{
                rel_path: "src/Main.elm",
                source: watch_source,
@@ -4384,7 +4535,18 @@ defmodule Ide.DebuggerTest do
                reason: "weather_bridge_watch"
              })
 
-    runtime_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
+    assert {:ok, state} =
+             Debugger.set_simulator_settings(slug, %{
+               "weather" => %{"temperatureC" => 26, "condition" => "drizzle"}
+             })
+
+    runtime_model =
+      state
+      |> get_in([:watch, :model])
+      |> case do
+        %{} = model -> Ide.Debugger.RuntimeArtifacts.preview_runtime_model(model)
+        _ -> %{}
+      end
 
     assert match?(
              %{"ctor" => "Just", "args" => [%{"ctor" => "Celsius", "args" => [26]}]},

@@ -93,11 +93,16 @@ defmodule Ide.Debugger.ElmIntrospect do
     view_e = find_view_expr(mod)
     {view_case_branches, view_case_subject} = view_case_analysis(view_e, view_params)
 
+    function_types = function_type_index(mod, %{})
+
     api_metadata =
       mod
       |> source_api_metadata()
       |> Map.put(:source_path, source_path_override || source_display_path(mod))
       |> Map.put(:source_lines, source_lines(mod))
+      |> Map.put(:module, mod.name)
+      |> Map.put(:module_ref, mod)
+      |> Map.put(:function_types, function_types)
 
     view_tree =
       map_expr(
@@ -109,7 +114,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
     view_source_locations = view_output_source_locations(api_metadata)
     view_return_type = function_return_type(find_function_declaration(mod, "view"))
-    function_types = function_type_index(mod, api_metadata)
+    function_view_trees = function_render_view_trees(mod, api_metadata)
 
     update_params = function_param_names(find_function_declaration(mod, "update"))
     update_e = find_update_expr(mod)
@@ -189,7 +194,8 @@ defmodule Ide.Debugger.ElmIntrospect do
         "view_tree" => view_tree,
         "view_source_locations" => view_source_locations,
         "view_return_type" => view_return_type,
-        "function_types" => function_types
+        "function_types" => function_types,
+        "function_view_trees" => function_view_trees
       }
     }
   end
@@ -225,11 +231,7 @@ defmodule Ide.Debugger.ElmIntrospect do
       view_tree_call_returns_ui_node?(node, ei) ->
         true
 
-      ui_node_type_signature?(Map.get(ei, "view_return_type")) and
-          not runtime_drawable_view_root_type?(type) ->
-        true
-
-      parser_expression_wrapper_with_unevaluated_children?(node, ei) ->
+      ui_node_call_with_unevaluated_children?(node, ei) ->
         true
 
       true ->
@@ -237,19 +239,18 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec parser_expression_wrapper_with_unevaluated_children?(map(), map()) :: boolean()
-  defp parser_expression_wrapper_with_unevaluated_children?(node, ei) when is_map(node) and is_map(ei) do
-    type = Map.get(node, "type")
+  def parser_expression_view_tree_node?(_, _), do: false
 
-    type in ["toUiNode", "call", "expr"] and
+  @spec ui_node_call_with_unevaluated_children?(map(), map()) :: boolean()
+  defp ui_node_call_with_unevaluated_children?(node, ei) when is_map(node) and is_map(ei) do
+    view_tree_call_returns_ui_node?(node, ei) and
+      not parser_expression_structural_type?(Map.get(node, "type")) and
       Enum.any?(List.wrap(Map.get(node, "children")), fn child ->
         is_map(child) and parser_expression_view_tree_node?(child, ei)
       end)
   end
 
-  defp parser_expression_wrapper_with_unevaluated_children?(_, _), do: false
-
-  def parser_expression_view_tree_node?(_, _), do: false
+  defp ui_node_call_with_unevaluated_children?(_, _), do: false
 
   @doc false
   @spec runtime_drawable_view_root_type?(String.t() | nil) :: boolean()
@@ -542,6 +543,44 @@ defmodule Ide.Debugger.ElmIntrospect do
     module_name <> "|" <> function_name <> "|" <> Integer.to_string(arity)
   end
 
+  @spec function_render_view_trees(Module.t(), map()) :: map()
+  defp function_render_view_trees(%Module{} = mod, api_metadata) when is_map(api_metadata) do
+    module_function_types(mod, mod.name)
+    |> Enum.reduce(%{}, fn {key, signature}, acc ->
+      if render_op_function_return_type?(signature) do
+        case String.split(key, "|", parts: 3) do
+          [_module, function_name, _arity] ->
+            case find_function_definition(mod, function_name) do
+              %{expr: expr} when not is_nil(expr) ->
+                Map.put(acc, key, expr_to_view_tree(expr, 0, 40, api_metadata))
+
+              _ ->
+                acc
+            end
+
+          _ ->
+            acc
+        end
+      else
+        acc
+      end
+    end)
+  end
+
+  defp function_render_view_trees(_mod, _api_metadata), do: %{}
+
+  @spec render_op_function_return_type?(String.t()) :: boolean()
+  defp render_op_function_return_type?(signature) when is_binary(signature) do
+    normalized =
+      signature
+      |> String.replace(~r/\s+/, "")
+      |> String.downcase()
+
+    String.match?(normalized, ~r/list.*renderop/) or String.match?(normalized, ~r/->renderop$/)
+  end
+
+  defp render_op_function_return_type?(_signature), do: false
+
   @spec function_arity_from_declaration([String.t()], String.t()) :: non_neg_integer()
   defp function_arity_from_declaration(args, type) when is_list(args) and is_binary(type) do
     case args do
@@ -561,10 +600,22 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   @spec view_tree_call_returns_ui_node?(map(), map()) :: boolean()
   defp view_tree_call_returns_ui_node?(node, ei) when is_map(node) and is_map(ei) do
-    with target when is_binary(target) <- view_tree_call_target(node),
-         types when is_map(types) <- Map.get(ei, "function_types"),
+    case Map.get(node, "return_kind") do
+      "ui_node" -> true
+      "render_op" -> false
+      _ -> view_tree_call_returns_ui_node_from_target?(view_tree_call_target(node), call_tree_arity(node), ei)
+    end
+  end
+
+  defp view_tree_call_returns_ui_node?(_, _), do: false
+
+  @spec view_tree_call_returns_ui_node_from_target?(String.t() | nil, non_neg_integer(), map()) ::
+          boolean()
+  defp view_tree_call_returns_ui_node_from_target?(target, arity, ei)
+       when is_binary(target) and is_integer(arity) and is_map(ei) do
+    with types when is_map(types) <- Map.get(ei, "function_types"),
          {module_name, function_name} <- resolve_view_tree_call_target(target, ei),
-         key <- function_type_key(module_name, function_name, call_tree_arity(node)),
+         key <- function_type_key(module_name, function_name, arity),
          type when is_binary(type) <-
            Map.get(types, key) || find_function_type_signature(types, module_name, function_name) do
       ui_node_type_signature?(return_type_from_signature(type)) or
@@ -574,7 +625,145 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  defp view_tree_call_returns_ui_node?(_, _), do: false
+  defp view_tree_call_returns_ui_node_from_target?(_target, _arity, _ei), do: false
+
+  @spec view_tree_call_return_kind(String.t(), non_neg_integer(), map()) :: String.t() | nil
+  defp view_tree_call_return_kind(target, arity, api_metadata)
+       when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
+    cond do
+      view_tree_call_returns_ui_node_from_target?(target, arity, api_metadata) ->
+        "ui_node"
+
+      scene_root_call_return_kind?(target, arity, api_metadata) ->
+        "ui_node"
+
+      render_op_call_from_target?(target, arity, api_metadata) ->
+        "render_op"
+
+      true ->
+        infer_local_function_return_kind(target, arity, api_metadata)
+    end
+  end
+
+  defp view_tree_call_return_kind(_target, _arity, _api_metadata), do: nil
+
+  @spec infer_local_function_return_kind(String.t(), non_neg_integer(), map()) :: String.t() | nil
+  defp infer_local_function_return_kind(target, arity, api_metadata)
+       when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
+    with %Module{} = mod <- Map.get(api_metadata, :module_ref),
+         {module_name, function_name} <- resolve_view_tree_call_target(target, api_metadata),
+         true <- module_name == mod.name,
+         %{args: args, expr: expr} <- find_function_definition(mod, function_name),
+         true <- length(List.wrap(args)) == arity do
+      infer_expr_return_kind(expr, api_metadata)
+    else
+      _ -> nil
+    end
+  end
+
+  defp infer_local_function_return_kind(_target, _arity, _api_metadata), do: nil
+
+  @spec infer_expr_return_kind(Types.ast_expr(), map()) :: String.t() | nil
+  defp infer_expr_return_kind(expr, api_metadata) when is_map(expr) and is_map(api_metadata) do
+    case expr do
+      %{op: :qualified_call, target: target, args: args} when is_list(args) ->
+        view_tree_call_return_kind(target, length(args), api_metadata)
+
+      %{op: :call, name: name, args: args} when is_list(args) ->
+        view_tree_call_return_kind(name, length(args), api_metadata)
+
+      %{op: :expr, expr: inner} ->
+        infer_expr_return_kind(inner, api_metadata)
+
+      %{op: :let_in, in_expr: inner} ->
+        infer_expr_return_kind(inner, api_metadata)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp infer_expr_return_kind(_expr, _api_metadata), do: nil
+
+  @spec render_op_call_from_target?(String.t(), non_neg_integer(), map()) :: boolean()
+  defp render_op_call_from_target?(target, arity, api_metadata)
+       when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
+    with types when is_map(types) <- Map.get(api_metadata, "function_types"),
+         {module_name, function_name} <- resolve_view_tree_call_target(target, api_metadata),
+         key <- function_type_key(module_name, function_name, arity),
+         type when is_binary(type) <-
+           Map.get(types, key) || find_function_type_signature(types, module_name, function_name) do
+      render_op_function_return_type?(type)
+    else
+      _ -> false
+    end
+  end
+
+  defp render_op_call_from_target?(_target, _arity, _api_metadata), do: false
+
+  @spec scene_root_call_return_kind?(String.t(), non_neg_integer(), map()) :: boolean()
+  defp scene_root_call_return_kind?(target, arity, api_metadata)
+       when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
+    with types when is_map(types) <- Map.get(api_metadata, "function_types") || Map.get(api_metadata, :function_types),
+         {module_name, function_name} <- resolve_view_tree_call_target(target, api_metadata),
+         key <- function_type_key(module_name, function_name, arity),
+         type when is_binary(type) <-
+           Map.get(types, key) || find_function_type_signature(types, module_name, function_name),
+         return_type when is_binary(return_type) <- return_type_from_signature(type) do
+      ui_node_type_signature?(return_type) or
+        runtime_drawable_view_root_type?(view_type_name(return_type))
+    else
+      _ -> false
+    end
+  end
+
+  defp scene_root_call_return_kind?(_target, _arity, _api_metadata), do: false
+
+  @spec resolve_view_tree_call_target(String.t(), map()) :: {String.t(), String.t()} | nil
+  defp resolve_view_tree_call_target(target, metadata) when is_binary(target) and is_map(metadata) do
+    resolution =
+      case metadata do
+        %{aliases: _} -> metadata
+        %{"aliases" => _} -> metadata
+        _ -> introspect_call_resolution(metadata)
+      end
+
+    case resolve_source_call(target, resolution) do
+      {module_name, function_name} when is_binary(module_name) and is_binary(function_name) ->
+        {module_name, function_name}
+
+      _ ->
+        module_name = Map.get(metadata, "module") || Map.get(metadata, :module)
+
+        if is_binary(module_name) and not String.contains?(target, ".") do
+          {module_name, target}
+        end
+    end
+  end
+
+  defp resolve_view_tree_call_target(_target, _metadata), do: nil
+
+  @spec maybe_put_view_tree_return_kind(map(), String.t(), non_neg_integer(), map()) :: map()
+  defp maybe_put_view_tree_return_kind(node, target, arity, api_metadata)
+       when is_map(node) and is_binary(target) and is_map(api_metadata) do
+    case view_tree_call_return_kind(target, arity, api_metadata) do
+      kind when is_binary(kind) -> Map.put(node, "return_kind", kind)
+      _ -> node
+    end
+  end
+
+  defp maybe_put_view_tree_return_kind(node, _target, _arity, _api_metadata), do: node
+
+  @spec view_tree_call_target_name(String.t(), map()) :: String.t()
+  defp view_tree_call_target_name(name, api_metadata) when is_binary(name) and is_map(api_metadata) do
+    if String.contains?(name, ".") do
+      name
+    else
+      module_name = Map.get(api_metadata, "module") || Map.get(api_metadata, :module) || ""
+
+      if module_name != "", do: module_name <> "." <> name, else: name
+    end
+  end
 
   @spec view_tree_call_target(map()) :: String.t() | nil
   defp view_tree_call_target(node) when is_map(node) do
@@ -585,23 +774,6 @@ defmodule Ide.Debugger.ElmIntrospect do
         {_, type} when is_binary(type) -> type
         _ -> nil
       end
-  end
-
-  @spec resolve_view_tree_call_target(String.t(), map()) :: {String.t(), String.t()} | nil
-  defp resolve_view_tree_call_target(target, ei) when is_binary(target) and is_map(ei) do
-    resolution = introspect_call_resolution(ei)
-
-    case resolve_source_call(target, resolution) do
-      {module_name, function_name} when is_binary(module_name) and is_binary(function_name) ->
-        {module_name, function_name}
-
-      _ ->
-        module_name = Map.get(ei, "module")
-
-        if is_binary(module_name) and not String.contains?(target, ".") do
-          {module_name, target}
-        end
-    end
   end
 
   @spec render_ops_to_ui_node_signature?(String.t()) :: boolean()
@@ -2230,34 +2402,45 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp expr_to_view_tree(%{op: :qualified_call, target: t, args: args}, d, max, api_metadata)
        when d < max do
+    arity = length(args)
+
     %{
       "type" => view_type_name(t),
       "qualified_target" => t,
       "label" => view_arg_label(args),
-      "arg_names" => source_call_arg_names(t, length(args), api_metadata),
+      "arg_names" => source_call_arg_names(t, arity, api_metadata),
       "children" => Enum.map(args, &expr_to_view_tree(&1, d + 1, max, api_metadata))
     }
+    |> maybe_put_view_tree_return_kind(t, arity, api_metadata)
   end
 
   defp expr_to_view_tree(%{op: :constructor_call, target: t, args: args}, d, max, api_metadata)
        when d < max do
+    arity = length(args)
+
     %{
       "type" => view_type_name(t),
       "qualified_target" => t,
       "label" => view_arg_label(args),
-      "arg_names" => source_call_arg_names(t, length(args), api_metadata),
+      "arg_names" => source_call_arg_names(t, arity, api_metadata),
       "children" => Enum.map(args, &expr_to_view_tree(&1, d + 1, max, api_metadata))
     }
+    |> maybe_put_view_tree_return_kind(t, arity, api_metadata)
   end
 
   defp expr_to_view_tree(%{op: :call, name: name, args: args}, d, max, api_metadata)
        when d < max do
+    arity = length(args)
+    target = view_tree_call_target_name(name, api_metadata)
+
     %{
       "type" => internal_arithmetic_view_type(name),
+      "qualified_target" => target,
       "label" => name,
-      "arg_names" => source_call_arg_names(name, length(args), api_metadata),
+      "arg_names" => source_call_arg_names(target, arity, api_metadata),
       "children" => Enum.map(args, &expr_to_view_tree(&1, d + 1, max, api_metadata))
     }
+    |> maybe_put_view_tree_return_kind(target, arity, api_metadata)
   end
 
   defp expr_to_view_tree(%{op: :lambda, body: body}, d, max, api_metadata) when d < max do
@@ -2278,6 +2461,20 @@ defmodule Ide.Debugger.ElmIntrospect do
         expr_to_view_tree(t, d + 1, max, api_metadata),
         expr_to_view_tree(e, d + 1, max, api_metadata)
       ]
+    }
+  end
+
+  defp expr_to_view_tree(%{op: :case, subject: s, branches: branches}, d, max, api_metadata)
+       when d < max and is_list(branches) do
+    %{
+      "type" => "case",
+      "label" => to_string(s),
+      "children" =>
+        Enum.flat_map(branches, fn
+          %{expr: expr} -> [expr_to_view_tree(expr, d + 1, max, api_metadata)]
+          %{"expr" => expr} -> [expr_to_view_tree(expr, d + 1, max, api_metadata)]
+          _ -> []
+        end)
     }
   end
 

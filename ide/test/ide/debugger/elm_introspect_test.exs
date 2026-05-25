@@ -408,6 +408,45 @@ defmodule Ide.Debugger.ElmIntrospectTest do
     assert ElmIntrospect.parser_expression_view_tree_node?(root, ei)
     refute ElmIntrospect.parser_expression_structural_type?("packUi")
     assert get_in(ei, ["view_tree", "type"]) == "packUi"
+    assert get_in(ei, ["view_tree", "return_kind"]) == "ui_node"
+  end
+
+  test "parser_expression_view detects renamed UiNode wrappers via return_kind metadata" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Model = {}
+
+    type Msg = Tick
+
+    init _ = ( {}, Cmd.none )
+    update _ model = ( model, Cmd.none )
+
+    buildScene ops =
+        Ui.windowStack
+            [ Ui.window 1
+                [ Ui.canvasLayer 1 ops ]
+            ]
+
+    view : Model -> Ui.UiNode
+    view _ =
+        [ Ui.clear Color.white ]
+            |> buildScene
+
+    main = Platform.sandbox { init = init, update = update, view = view }
+    """
+
+    assert {:ok, %{"elm_introspect" => ei}} =
+             ElmIntrospect.analyze_source(source, "watch/src/Main.elm")
+
+    root = ei["view_tree"]
+    assert get_in(root, ["type"]) == "buildScene"
+    assert get_in(root, ["return_kind"]) == "ui_node"
+    assert ElmIntrospect.parser_expression_view?(%{"elm_introspect" => ei})
+    refute ElmIntrospect.parser_expression_view_tree_node?(%{"type" => "toUiNode"}, ei)
   end
 
   test "analyze_source keeps tuple2 operands in view tree nodes" do

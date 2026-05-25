@@ -1,11 +1,25 @@
 defmodule Ide.Debugger.CompanionSubscriptionTrigger do
   @moduledoc false
 
+  defmodule ApiSuffixes do
+    @moduledoc false
+
+    @spec suffixes(String.t(), [String.t()]) :: [String.t()]
+    def suffixes(module, ops) when is_binary(module) and is_list(ops) do
+      Enum.flat_map(ops, fn op ->
+        [
+          ".Pebble.Companion.#{module}.#{op}",
+          ".#{module}.#{op}"
+        ]
+      end)
+    end
+  end
+
   @contracts [
     %{
       source: "battery",
-      names: ["onBattery"],
-      target_suffixes: [".onBattery", ".Battery.onBattery"],
+      target_suffixes: ApiSuffixes.suffixes("Battery", ["onBattery"]),
+      trigger_slugs: ["on_battery"],
       payload: :battery,
       fields: [
         %{key: "percent", label: "Percent", type: :integer, setting: "battery_percent", default: 88},
@@ -14,8 +28,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     },
     %{
       source: "locale",
-      names: ["onLocale"],
-      target_suffixes: [".onLocale", ".Locale.onLocale"],
+      target_suffixes: ApiSuffixes.suffixes("Locale", ["onLocale"]),
+      trigger_slugs: ["on_locale"],
       payload: :locale,
       fields: [
         %{key: "locale", label: "Locale", type: :string, setting: "locale", default: "en-US"},
@@ -26,8 +40,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     },
     %{
       source: "network",
-      names: ["onConnectivity"],
-      target_suffixes: [".onConnectivity", ".Connectivity.onConnectivity"],
+      target_suffixes: ApiSuffixes.suffixes("Connectivity", ["onConnectivity"]),
+      trigger_slugs: ["on_connectivity"],
       payload: :network,
       plain_result: true,
       fields: [
@@ -36,8 +50,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     },
     %{
       source: "notifications",
-      names: ["onNotificationStatus"],
-      target_suffixes: [".onNotificationStatus", ".Notifications.onNotificationStatus"],
+      target_suffixes: ApiSuffixes.suffixes("Notifications", ["onNotificationStatus"]),
+      trigger_slugs: ["on_notification_status"],
       payload: :notifications,
       fields: [
         %{
@@ -58,8 +72,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     },
     %{
       source: "environment",
-      names: ["onEnvironment"],
-      target_suffixes: [".onEnvironment", ".Environment.onEnvironment"],
+      target_suffixes: ApiSuffixes.suffixes("Environment", ["onEnvironment"]),
+      trigger_slugs: ["on_environment"],
       payload: :environment,
       fields: [
         %{
@@ -87,15 +101,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     },
     %{
       source: "weather",
-      names: ["onWeather", "onCurrent", "onForecast"],
-      target_suffixes: [
-        ".onWeather",
-        ".Weather.onWeather",
-        ".onCurrent",
-        ".Weather.onCurrent",
-        ".onForecast",
-        ".Weather.onForecast"
-      ],
+      target_suffixes: ApiSuffixes.suffixes("Weather", ["onWeather", "onCurrent", "onForecast"]),
+      trigger_slugs: ["on_weather", "on_weather_current", "on_weather_forecast"],
       payload: :weather,
       fields: [
         %{
@@ -137,15 +144,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     },
     %{
       source: "calendar",
-      names: ["onCalendar", "onCurrent", "onUpcoming"],
-      target_suffixes: [
-        ".onCalendar",
-        ".Calendar.onCalendar",
-        ".onCurrent",
-        ".Calendar.onCurrent",
-        ".onUpcoming",
-        ".Calendar.onUpcoming"
-      ],
+      target_suffixes: ApiSuffixes.suffixes("Calendar", ["onCalendar", "onCurrent", "onUpcoming"]),
+      trigger_slugs: ["on_calendar", "on_calendar_current", "on_calendar_upcoming"],
       payload: :calendar,
       fields: [
         %{key: "id", label: "ID", type: :string, default: "event-1"},
@@ -180,9 +180,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   @spec contract_for_trigger(String.t()) :: {:ok, map()} | :error
   def contract_for_trigger(trigger) when is_binary(trigger) do
-    normalized = normalize_trigger(trigger)
-
-    case Enum.find(@contracts, &trigger_matches_contract?(normalized, &1)) do
+    case Enum.find(@contracts, &trigger_matches_contract?(trigger, &1)) do
       %{} = contract -> {:ok, contract}
       _ -> :error
     end
@@ -280,19 +278,27 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
   def message_value(_params), do: nil
 
   @spec trigger_matches_contract?(String.t(), map()) :: boolean()
-  defp trigger_matches_contract?(normalized, contract) when is_binary(normalized) do
-    names = Map.get(contract, :names, []) |> List.wrap()
+  defp trigger_matches_contract?(trigger, contract) when is_binary(trigger) do
+    normalized = normalize_trigger(trigger)
     suffixes = Map.get(contract, :target_suffixes, []) |> List.wrap()
+    slugs = Map.get(contract, :trigger_slugs, []) |> List.wrap()
 
-    Enum.any?(names, fn name ->
-      name_norm = normalize_trigger(name)
-      normalized == name_norm or String.ends_with?(normalized, name_norm)
-    end) or
+    Enum.any?(slugs, &(trigger_slug(&1) == trigger_slug(trigger))) or
       Enum.any?(suffixes, fn suffix ->
         suffix_norm = normalize_trigger(suffix)
         String.ends_with?(normalized, suffix_norm)
       end)
   end
+
+  @spec trigger_slug(String.t()) :: String.t()
+  defp trigger_slug(trigger) when is_binary(trigger) do
+    trigger
+    |> String.trim()
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9_]/, "")
+  end
+
+  defp trigger_slug(_trigger), do: ""
 
   @spec normalize_trigger(String.t()) :: String.t()
   defp normalize_trigger(trigger) when is_binary(trigger) do
@@ -482,18 +488,24 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
   @spec weather_current_trigger?(String.t()) :: boolean()
   defp weather_current_trigger?(trigger) do
     normalized = normalize_trigger(trigger)
-    String.contains?(normalized, "oncurrent") or String.ends_with?(normalized, ".oncurrent")
+
+    (String.contains?(normalized, "weather") and String.contains?(normalized, "oncurrent")) or
+      normalized == "onweathercurrent"
   end
 
   @spec weather_forecast_trigger?(String.t()) :: boolean()
   defp weather_forecast_trigger?(trigger) do
     normalized = normalize_trigger(trigger)
-    String.contains?(normalized, "onforecast") or String.ends_with?(normalized, ".onforecast")
+
+    (String.contains?(normalized, "weather") and String.contains?(normalized, "onforecast")) or
+      normalized == "onweatherforecast"
   end
 
   @spec calendar_current_trigger?(String.t()) :: boolean()
   defp calendar_current_trigger?(trigger) do
     normalized = normalize_trigger(trigger)
-    String.contains?(normalized, "oncurrent") and String.contains?(normalized, "calendar")
+
+    (String.contains?(normalized, "calendar") and String.contains?(normalized, "oncurrent")) or
+      normalized == "oncalendarcurrent"
   end
 end

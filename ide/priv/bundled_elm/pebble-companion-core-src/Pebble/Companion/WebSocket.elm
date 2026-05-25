@@ -23,7 +23,7 @@ module Pebble.Companion.WebSocket exposing
 
 # Commands
 
-@docs connect, disconnect, send
+@docs connect, disconnect, send, setup, setupCommands
 
 # Subscriptions
 
@@ -94,11 +94,15 @@ onCommands toMsg =
     Platform.subscribe (handlerCommands toMsg)
 
 
+{-| Register the WebSocket event platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup webSocketInterest
 
 
+{-| Register the WebSocket command platform handler with the companion bridge.
+-}
 setupCommands : Cmd msg
 setupCommands =
     Platform.setup webSocketCommandInterest

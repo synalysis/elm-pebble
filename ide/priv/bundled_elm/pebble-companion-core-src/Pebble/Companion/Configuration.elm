@@ -14,7 +14,7 @@ module Pebble.Companion.Configuration exposing
 
 # Commands
 
-@docs open
+@docs open, setup
 
 # Subscriptions
 
@@ -43,8 +43,8 @@ type Event
 open : String -> Cmd msg
 open url =
     Phone.sendBridgeCommand <|
-        (Command.command "configuration-open" "configuration" "open"
-            |> Command.withPayload (Encode.object [ ( "url", Encode.string url ) ]))
+        Command.command "configuration-open" "configuration" "open"
+            |> Command.withPayload (Encode.object [ ( "url", Encode.string url ) ])
 
 
 {-| Receive configuration close events from the companion bridge.
@@ -53,9 +53,11 @@ Registering this subscription also tells the bridge to send configuration events
 -}
 onClosed : (Maybe String -> msg) -> Sub msg
 onClosed toMsg =
-    Platform.subscribe (handler toMsg)
+    Platform.subscribe (handler (toClosedMsg toMsg))
 
 
+{-| Register this platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup configurationInterest

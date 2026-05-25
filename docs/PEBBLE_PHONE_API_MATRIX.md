@@ -27,7 +27,7 @@ It is intentionally limited to APIs available in the Pebble companion (PebbleKit
 | Phone locale and 12/24h preference | browser `navigator.language` / runtime context | `Pebble.Companion.Locale` | implemented | `current` command + `onLocale` subscription with language, region, and clock preference |
 | Phone battery | browser Battery Status API where available | `Pebble.Companion.Battery` | implemented with unsupported fallback | `current` command + `onBattery` subscription returning percent and charging |
 | Calendar | platform calendar bridge when available | `Pebble.Companion.Calendar` | typed contract, unsupported fallback | `current`/`upcoming` commands + typed permission-aware errors |
-| Weather | platform/Pebble-provided weather only | `Pebble.Companion.Weather` | typed contract, unsupported fallback | `current`/`forecast` commands; no HTTP wrapper |
+| Weather | IDE simulator settings; phone HTTP (Open-Meteo + geolocation) via bridge | `Pebble.Companion.Weather` | typed contract, unsupported fallback | `current`/`forecast` commands and `onWeather` subscription; no city/query parameters on the Elm API |
 | Notifications | platform notification status when available | `Pebble.Companion.Notifications` | typed contract, unsupported fallback | quiet-hours and notification-enabled status |
 | User preferences | phone-side preference persistence | `Pebble.Companion.PreferenceStore` | implemented | bridge-managed key/value preferences with `Result String` app boundary |
 | Environment (sun/moon/tide) | platform context plus location/time contracts | `Pebble.Companion.Environment` | typed contract, simulator fixtures | typed sun, moon, and tide snapshots; unsupported when runtime lacks data |

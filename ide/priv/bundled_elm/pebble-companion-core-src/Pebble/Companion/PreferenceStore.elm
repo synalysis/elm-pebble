@@ -9,7 +9,7 @@ module Pebble.Companion.PreferenceStore exposing
 
 # Commands
 
-@docs get, set
+@docs get, set, setup
 
 # Subscriptions
 
@@ -41,13 +41,13 @@ get key toMsg =
 set : String -> Encode.Value -> Cmd msg
 set key value =
     Phone.sendBridgeCommand <|
-        (Command.command ("preferences-set-" ++ key) "preferences" "set"
+        Command.command ("preferences-set-" ++ key) "preferences" "set"
             |> Command.withPayload
                 (Encode.object
                     [ ( "key", Encode.string key )
                     , ( "value", value )
                     ]
-                ))
+                )
 
 
 {-| Receive pushed preference updates from the companion bridge.
@@ -59,6 +59,8 @@ onPreference toMsg =
     Platform.subscribe (handler toMsg)
 
 
+{-| Register this platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup preferencesInterest

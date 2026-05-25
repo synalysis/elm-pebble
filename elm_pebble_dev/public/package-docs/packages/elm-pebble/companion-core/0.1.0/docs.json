@@ -616,7 +616,7 @@
       }
     ],
     "binops": [],
-    "comment": "Platform-provided weather for companion apps.\n\nWeather comes from the Pebble companion bridge (IDE simulator settings or the\nphone companion runtime). These functions do **not** take a city name or other\nweather query.\n\n    import Pebble.Companion.Weather as Weather\n\n    type Msg\n        = GotCurrent (Result String Weather.WeatherInfo)\n        | GotForecast (Result String (List Weather.WeatherInfo))\n        | GotWeatherPush (Result String Weather.WeatherUpdate)\n\n    init _ =\n        ( model, Weather.current GotCurrent )\n\n    subscriptions _ =\n        Weather.onWeather GotWeatherPush\n\n    update msg model =\n        case msg of\n            GotCurrent (Ok info) ->\n                ( { model | tempC = info.temperatureC }, Cmd.none )\n\n            GotCurrent (Err error) ->\n                ( { model | weatherError = Just error }, Cmd.none )\n\n            GotForecast _ ->\n                ( model, Cmd.none )\n\n            GotWeatherPush (Ok (Weather.Current info)) ->\n                ( { model | tempC = info.temperatureC }, Cmd.none )\n\n            GotWeatherPush _ ->\n                ( model, Cmd.none )\n\n# Types\n\n@docs Condition, WeatherInfo, WeatherUpdate\n\n# Commands\n\n@docs current, forecast, setup, setupCurrent, setupForecast\n\n# Subscriptions\n\n@docs onWeather, onCurrent, onForecast",
+    "comment": "Platform-provided weather for companion apps.\n\nWeather is supplied by the companion bridge:\n\n- In the **IDE debugger**, values come from simulator settings. These functions do not take a city name or other query parameters.\n- On a **phone**, the bridge fetches live data over **HTTP** (Open-Meteo) using the device location from geolocation. Apps still do not pass a city name or other query string to `current` or `forecast`.\n\nUse `current`, `forecast`, and `onWeather` directly — no separate registration commands.\n\n    import Pebble.Companion.Weather as Weather\n\n    type Msg\n        = GotCurrent (Result String Weather.WeatherInfo)\n        | GotForecast (Result String (List Weather.WeatherInfo))\n        | GotWeatherPush (Result String Weather.WeatherUpdate)\n\n    init _ =\n        ( model, Weather.current GotCurrent )\n\n    subscriptions _ =\n        Weather.onWeather GotWeatherPush\n\n    update msg model =\n        case msg of\n            GotCurrent (Ok info) ->\n                ( { model | tempC = info.temperatureC }, Cmd.none )\n\n            GotCurrent (Err error) ->\n                ( { model | weatherError = Just error }, Cmd.none )\n\n            GotForecast _ ->\n                ( model, Cmd.none )\n\n            GotWeatherPush (Ok (Weather.Current info)) ->\n                ( { model | tempC = info.temperatureC }, Cmd.none )\n\n            GotWeatherPush _ ->\n                ( model, Cmd.none )\n\n# Types\n\n@docs Condition, WeatherInfo, WeatherUpdate\n\n# Commands\n\n@docs current, forecast\n\n# Subscriptions\n\n@docs onWeather, onCurrent, onForecast",
     "name": "Pebble.Companion.Weather",
     "unions": [
       {
@@ -685,42 +685,27 @@
     ],
     "values": [
       {
-        "comment": "Request the current platform weather snapshot.",
+        "comment": "Request the current platform weather snapshot.\n\nRegisters bridge handlers needed for weather command responses and push updates.",
         "name": "current",
         "type": "(Result String WeatherInfo -> msg) -> Cmd msg"
       },
       {
-        "comment": "Request forecast snapshots from the platform weather service.",
+        "comment": "Request forecast snapshots from the platform weather service.\n\nRegisters the bridge handler needed for forecast command responses.",
         "name": "forecast",
         "type": "(Result String (List WeatherInfo) -> msg) -> Cmd msg"
       },
       {
-        "comment": "Register the weather push platform handler with the companion bridge.",
-        "name": "setup",
-        "type": "Cmd msg"
-      },
-      {
-        "comment": "Register the current-weather platform handler with the companion bridge.",
-        "name": "setupCurrent",
-        "type": "Cmd msg"
-      },
-      {
-        "comment": "Register the forecast platform handler with the companion bridge.",
-        "name": "setupForecast",
-        "type": "Cmd msg"
-      },
-      {
-        "comment": "Receive pushed weather updates from the companion bridge.\n\nRegistering this subscription also tells the bridge to send weather updates.",
+        "comment": "Receive pushed weather updates from the companion bridge.\n\nPair with `current` (or `forecast`) in `init` so the bridge registers interest and\ncan deliver pushed updates. Calling `current` also sends the bridge subscribe\noperation for ongoing weather events.",
         "name": "onWeather",
         "type": "(Result String WeatherUpdate -> msg) -> Sub msg"
       },
       {
-        "comment": "Receive current-weather command responses on the dedicated weather port.",
+        "comment": "Receive current-weather command responses on the dedicated weather port.\n\nPair with `current` in `init` so command responses are routed to this handler.",
         "name": "onCurrent",
         "type": "(Result String WeatherInfo -> msg) -> Sub msg"
       },
       {
-        "comment": "Receive forecast command responses on the dedicated weather port.",
+        "comment": "Receive forecast command responses on the dedicated weather port.\n\nPair with `forecast` in `init` so command responses are routed to this handler.",
         "name": "onForecast",
         "type": "(Result String (List WeatherInfo) -> msg) -> Sub msg"
       }

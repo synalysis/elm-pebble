@@ -96,6 +96,36 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def public_model(_model), do: %{}
 
+  @runtime_preview_envelope_keys [
+    "runtime_model",
+    "runtime_view_output",
+    "runtime_last_message",
+    "runtime_message_source",
+    "runtime_message_cursor",
+    "runtime_known_messages",
+    "runtime_update_branches",
+    "runtime_view_tree_sha256",
+    "runtime_model_sha256",
+    "runtime_model_source",
+    "elm_executor_mode",
+    "elm_executor",
+    "elmc_check",
+    "elmc_compile",
+    "elmc_diagnostic_preview"
+  ]
+
+  @spec preview_runtime_model(map()) :: map()
+  def preview_runtime_model(model) when is_map(model) do
+    inner = inner_runtime_model(model)
+
+    model
+    |> strip_shell_artifacts()
+    |> Map.drop(runtime_preview_envelope_drop_keys())
+    |> Map.merge(inner)
+  end
+
+  def preview_runtime_model(_model), do: %{}
+
   @spec execution_model(map()) :: map()
   def execution_model(%Surface{} = surface), do: Surface.execution_model(surface)
 
@@ -346,5 +376,10 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   @spec shell_artifact_drop_keys() :: [String.t() | atom()]
   defp shell_artifact_drop_keys do
     @shell_artifact_keys ++ Enum.map(@shell_artifact_keys, &String.to_atom/1)
+  end
+
+  @spec runtime_preview_envelope_drop_keys() :: [String.t() | atom()]
+  defp runtime_preview_envelope_drop_keys do
+    @runtime_preview_envelope_keys ++ Enum.map(@runtime_preview_envelope_keys, &String.to_atom/1)
   end
 end

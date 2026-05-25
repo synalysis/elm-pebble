@@ -4,6 +4,7 @@ defmodule Ide.Debugger do
   """
 
   use Agent
+  alias Ide.Debugger.AppMessageQueue
   alias Ide.Debugger.CompileIngest
   alias Ide.Debugger.CursorSeq
   alias Ide.Debugger.HttpExecutor
@@ -28,89 +29,79 @@ defmodule Ide.Debugger do
   alias Ide.Projects
   alias Ide.WatchModels
 
+  defmodule CompanionApiSuffixes do
+    @moduledoc false
+
+    @spec suffixes(String.t(), [String.t()]) :: [String.t()]
+    def suffixes(module, ops) when is_binary(module) and is_list(ops) do
+      Enum.flat_map(ops, fn op ->
+        [
+          ".Pebble.Companion.#{module}.#{op}",
+          ".#{module}.#{op}"
+        ]
+      end)
+    end
+  end
+
   @dialyzer [{:no_match, apply_step_once: 7}]
   @history_limit 500
   @default_auto_fire_interval_ms 1_000
   @min_auto_fire_interval_ms 100
   @agent_call_timeout_ms 30_000
   @configuration_subscription_contract %{
-    names: ["onConfiguration", "onClosed"],
-    target_suffixes: [".onConfiguration", ".onClosed", ".Configuration.onClosed"]
+    target_suffixes:
+      CompanionApiSuffixes.suffixes("Configuration", ["onConfiguration", "onClosed"])
   }
   @geolocation_subscription_contract %{
-    names: ["onCurrentPosition"],
-    target_suffixes: [".onCurrentPosition"]
+    target_suffixes: CompanionApiSuffixes.suffixes("Geolocation", ["onCurrentPosition"])
   }
   @companion_bridge_subscription_contracts [
     %{
       source: "battery",
-      names: ["onBattery"],
-      target_suffixes: [".onBattery", ".Battery.onBattery"],
+      target_suffixes: CompanionApiSuffixes.suffixes("Battery", ["onBattery"]),
       payload: :battery
     },
     %{
       source: "locale",
-      names: ["onLocale"],
-      target_suffixes: [".onLocale", ".Locale.onLocale"],
+      target_suffixes: CompanionApiSuffixes.suffixes("Locale", ["onLocale"]),
       payload: :locale
     },
     %{
       source: "network",
-      names: ["onConnectivity"],
-      target_suffixes: [".onConnectivity", ".Connectivity.onConnectivity"],
+      target_suffixes: CompanionApiSuffixes.suffixes("Connectivity", ["onConnectivity"]),
       payload: :network,
       plain_result: true
     },
     %{
       source: "notifications",
-      names: ["onNotificationStatus"],
-      target_suffixes: [".onNotificationStatus", ".Notifications.onNotificationStatus"],
+      target_suffixes:
+        CompanionApiSuffixes.suffixes("Notifications", ["onNotificationStatus"]),
       payload: :notifications
     },
     %{
       source: "weather",
-      names: ["onWeather", "onCurrent", "onForecast"],
-      target_suffixes: [
-        ".onWeather",
-        ".Weather.onWeather",
-        ".onCurrent",
-        ".Weather.onCurrent",
-        ".onForecast",
-        ".Weather.onForecast"
-      ],
+      target_suffixes:
+        CompanionApiSuffixes.suffixes("Weather", ["onWeather", "onCurrent", "onForecast"]),
       payload: :weather,
       ok_result_variant: "Current"
     },
     %{
       source: "calendar",
-      names: ["onCalendar", "onCurrent", "onUpcoming"],
-      target_suffixes: [
-        ".onCalendar",
-        ".Calendar.onCalendar",
-        ".onCurrent",
-        ".Calendar.onCurrent",
-        ".onUpcoming",
-        ".Calendar.onUpcoming"
-      ],
+      target_suffixes:
+        CompanionApiSuffixes.suffixes("Calendar", ["onCalendar", "onCurrent", "onUpcoming"]),
       payload: :calendar
     },
     %{
       source: "environment",
-      names: ["onEnvironment"],
-      target_suffixes: [".onEnvironment", ".Environment.onEnvironment"],
+      target_suffixes: CompanionApiSuffixes.suffixes("Environment", ["onEnvironment"]),
       payload: :environment
     }
   ]
   @storage_result_contract %{
-    names: ["onStorage"],
-    target_suffixes: [".onStorage", ".Storage.onStorage"]
+    target_suffixes: CompanionApiSuffixes.suffixes("Storage", ["onStorage"])
   }
   @preferences_result_contract %{
-    names: ["onPreference"],
-    target_suffixes: [
-      ".onPreference",
-      ".PreferenceStore.onPreference"
-    ]
+    target_suffixes: CompanionApiSuffixes.suffixes("PreferenceStore", ["onPreference"])
   }
 
   @type runtime_event :: RuntimeState.runtime_event()
@@ -165,7 +156,8 @@ defmodule Ide.Debugger do
           events: [],
           debugger_timeline: [],
           debugger_seq: 0,
-          seq: 0
+          seq: 0,
+          app_message_queues: AppMessageQueue.empty()
       }
       |> attach_companion_configuration(project_slug)
       |> attach_vector_resource_indices(project_slug)
@@ -207,7 +199,8 @@ defmodule Ide.Debugger do
             companion: default_companion_runtime(),
             phone: default_phone_runtime(),
             debugger_timeline: [],
-            debugger_seq: 0
+            debugger_seq: 0,
+            app_message_queues: AppMessageQueue.empty()
         }
         |> attach_companion_configuration(project_slug)
         |> apply_simulator_settings_to_surfaces()
@@ -545,6 +538,9 @@ defmodule Ide.Debugger do
       |> attach_vector_resource_indices(project_slug)
       |> attach_bitmap_resource_indices(project_slug)
       |> apply_hot_reload(rel_path, source, reason, source_root)
+      |> then(fn reloaded ->
+        if source_root == "watch", do: deliver_simulator_weather_to_watch(reloaded), else: reloaded
+      end)
       |> attach_companion_configuration(project_slug)
     end)
   end
@@ -1464,11 +1460,7 @@ defmodule Ide.Debugger do
     preview_runtime_model =
       model
       |> Types.StepExecutionContract.merge_model_patch(runtime_patch)
-      |> Map.get("runtime_model")
-      |> case do
-        value when is_map(value) -> value
-        _ -> %{}
-      end
+      |> RuntimeArtifacts.preview_runtime_model()
 
     runtime_view_output =
       preferred_runtime_view_output(
@@ -2530,7 +2522,8 @@ defmodule Ide.Debugger do
   defp micro_degrees_from_float(_value), do: nil
 
   @spec round_float(term()) :: integer() | nil
-  defp round_float(value) when is_number(value), do: round(value)
+  defp round_float(value) when is_integer(value), do: value
+  defp round_float(value) when is_float(value), do: round(value)
   defp round_float(_value), do: nil
 
   @spec apply_companion_subscription_response(
@@ -2651,13 +2644,12 @@ defmodule Ide.Debugger do
 
   @spec subscription_callback(Types.cmd_call(), map()) :: String.t() | nil
   defp subscription_callback(ei, contract) when is_map(ei) and is_map(contract) do
-    names = Map.get(contract, :names, []) |> List.wrap()
     target_suffixes = Map.get(contract, :target_suffixes, []) |> List.wrap()
 
     ei
     |> introspect_cmd_calls("subscription_calls")
     |> Enum.find_value(fn row ->
-      if subscription_call_matches?(row, names, target_suffixes) do
+      if subscription_call_matches?(row, target_suffixes) do
         callback = Map.get(row, "callback_constructor")
         if is_binary(callback) and callback != "", do: callback, else: nil
       end
@@ -2666,14 +2658,13 @@ defmodule Ide.Debugger do
 
   defp subscription_callback(_ei, _contract), do: nil
 
-  @spec subscription_call_matches?(map(), [String.t()], [String.t()]) :: boolean()
-  defp subscription_call_matches?(row, names, target_suffixes)
-       when is_map(row) and is_list(names) and is_list(target_suffixes) do
-    Enum.any?(names, &cmd_call_name?(row, &1)) or
-      Enum.any?(target_suffixes, &cmd_call_target_ends_with?(row, &1))
+  @spec subscription_call_matches?(map(), [String.t()]) :: boolean()
+  defp subscription_call_matches?(row, target_suffixes)
+       when is_map(row) and is_list(target_suffixes) do
+    Enum.any?(target_suffixes, &cmd_call_target_ends_with?(row, &1))
   end
 
-  defp subscription_call_matches?(_row, _names, _target_suffixes), do: false
+  defp subscription_call_matches?(_row, _target_suffixes), do: false
 
   defp protocol_events_from_cmd_call(state, target_surface, cmd_call, model, message_value \\ nil)
 
@@ -5057,50 +5048,70 @@ defmodule Ide.Debugger do
   defp apply_protocol_state_effects(state, protocol_events) when is_list(protocol_events) do
     Enum.reduce(protocol_events, state, fn event, acc ->
       if event.type == "debugger.protocol_rx" and is_map(event.payload) do
-        {next_state, recipient, meta} = apply_protocol_rx_effect(acc, event.payload)
-
-        if recipient in [:watch, :companion, :phone] do
-          root =
-            next_state
-            |> get_in([recipient, :view_tree, "type"])
-            |> case do
-              value when is_binary(value) and value != "" -> value
-              _ -> "simulated-root"
-            end
-
-          next_state
-          |> maybe_bootstrap_runtime_source(recipient)
-          |> append_runtime_exec_event_for_target(recipient, %{
-            trigger: "protocol_rx",
-            message: Map.get(meta, :message),
-            message_source: Map.get(meta, :message_source),
-            protocol_from: Map.get(meta, :from),
-            protocol_to: source_root_for_target(recipient),
-            protocol_inbound_count: Map.get(meta, :inbound_count)
-          })
-          |> append_event(
-            "debugger.update_in",
-            Ide.Debugger.Types.MessageInEventPayload.from_message(
-              source_root_for_target(recipient),
-              Map.get(meta, :message),
-              Map.get(meta, :message_source)
-            )
-          )
-          |> append_event(
-            "debugger.view_render",
-            Ide.Debugger.Types.ViewRenderEventPayload.from_render(
-              source_root_for_target(recipient),
-              root
-            )
-          )
-          |> maybe_apply_protocol_rx_subscription(recipient, meta)
-        else
-          next_state
-        end
+        handle_protocol_rx_event(acc, event.payload)
       else
         acc
       end
     end)
+  end
+
+  @spec handle_protocol_rx_event(runtime_state(), Types.protocol_tx_rx_payload()) :: runtime_state()
+  defp handle_protocol_rx_event(state, payload) when is_map(payload) do
+    recipient = protocol_surface_key(Map.get(payload, :to) || Map.get(payload, "to"))
+
+    if recipient in [:watch, :companion, :phone] do
+      if runtime_source_loaded?(state, recipient) do
+        deliver_protocol_rx_to_surface(state, payload)
+      else
+        AppMessageQueue.enqueue(state, recipient, payload)
+      end
+    else
+      state
+    end
+  end
+
+  @spec deliver_protocol_rx_to_surface(runtime_state(), Types.protocol_tx_rx_payload()) ::
+          runtime_state()
+  defp deliver_protocol_rx_to_surface(state, payload) when is_map(payload) do
+    {next_state, recipient, meta} = apply_protocol_rx_effect(state, payload)
+
+    if recipient in [:watch, :companion, :phone] do
+      root =
+        next_state
+        |> get_in([recipient, :view_tree, "type"])
+        |> case do
+          value when is_binary(value) and value != "" -> value
+          _ -> "simulated-root"
+        end
+
+      next_state
+      |> append_runtime_exec_event_for_target(recipient, %{
+        trigger: "protocol_rx",
+        message: Map.get(meta, :message),
+        message_source: Map.get(meta, :message_source),
+        protocol_from: Map.get(meta, :from),
+        protocol_to: source_root_for_target(recipient),
+        protocol_inbound_count: Map.get(meta, :inbound_count)
+      })
+      |> append_event(
+        "debugger.update_in",
+        Ide.Debugger.Types.MessageInEventPayload.from_message(
+          source_root_for_target(recipient),
+          Map.get(meta, :message),
+          Map.get(meta, :message_source)
+        )
+      )
+      |> append_event(
+        "debugger.view_render",
+        Ide.Debugger.Types.ViewRenderEventPayload.from_render(
+          source_root_for_target(recipient),
+          root
+        )
+      )
+      |> maybe_apply_protocol_rx_subscription(recipient, meta)
+    else
+      next_state
+    end
   end
 
   @spec apply_protocol_rx_effect(runtime_state(), Types.protocol_tx_rx_payload()) ::
@@ -5183,27 +5194,21 @@ defmodule Ide.Debugger do
 
   defp maybe_apply_protocol_rx_subscription(state, _recipient, _meta), do: state
 
-  @spec maybe_bootstrap_runtime_source(runtime_state(), Types.surface_target()) :: runtime_state()
-  defp maybe_bootstrap_runtime_source(state, target)
+  @spec drain_app_message_queue(runtime_state(), Types.surface_target()) :: runtime_state()
+  defp drain_app_message_queue(state, target)
        when is_map(state) and target in [:watch, :companion, :phone] do
-    if runtime_source_loaded?(state, target) do
-      state
-    else
-      case runtime_entrypoint_source(state, target) do
-        {:ok, source_root, rel_path, source, artifacts} ->
-          state
-          |> maybe_merge_runtime_artifacts(target, artifacts)
-          |> put_reload_source_fields(target, rel_path, source, source_root)
-          |> merge_elm_introspect_with_payload(rel_path, source, source_root)
-          |> elem(0)
+    {state, entries} = AppMessageQueue.drain_entries(state, target)
 
-        :error ->
-          state
+    Enum.reduce(entries, state, fn payload, acc ->
+      if runtime_source_loaded?(acc, target) do
+        deliver_protocol_rx_to_surface(acc, payload)
+      else
+        AppMessageQueue.enqueue(acc, target, payload)
       end
-    end
+    end)
   end
 
-  defp maybe_bootstrap_runtime_source(state, _target), do: state
+  defp drain_app_message_queue(state, _target), do: state
 
   @spec runtime_source_loaded?(runtime_state(), Types.surface_target()) :: boolean()
   defp runtime_source_loaded?(state, target) when is_map(state) do
@@ -5215,32 +5220,6 @@ defmodule Ide.Debugger do
   end
 
   defp runtime_source_loaded?(_state, _target), do: false
-
-  @spec runtime_entrypoint_source(runtime_state(), Types.surface_target()) ::
-          {:ok, String.t(), String.t(), String.t(), map()} | :error
-  defp runtime_entrypoint_source(state, target) when is_map(state) do
-    with session_key when is_binary(session_key) <- session_key_from_state(state),
-         %{} = project <- Projects.get_project_by_scope_key(session_key),
-         {source_root, rel_path} <- runtime_entrypoint_path(target),
-         {:ok, source} <- Projects.read_source_file(project, source_root, rel_path),
-         true <- is_binary(source) and String.trim(source) != "" do
-      artifacts = runtime_entrypoint_artifacts(session_key, project, source_root)
-      {:ok, source_root, rel_path, source, artifacts}
-    else
-      _ -> :error
-    end
-  rescue
-    DBConnection.OwnershipError ->
-      :error
-  end
-
-  defp runtime_entrypoint_source(_state, _target), do: :error
-
-  @spec runtime_entrypoint_path(Types.surface_target()) :: {String.t(), String.t()} | nil
-  defp runtime_entrypoint_path(:watch), do: {"watch", "src/Main.elm"}
-  defp runtime_entrypoint_path(:companion), do: {"phone", "src/CompanionApp.elm"}
-  defp runtime_entrypoint_path(:phone), do: {"phone", "src/CompanionApp.elm"}
-  defp runtime_entrypoint_path(_target), do: nil
 
   @spec runtime_entrypoint_artifacts(String.t(), map(), String.t()) :: map()
   defp runtime_entrypoint_artifacts(session_key, project, source_root)
@@ -5562,13 +5541,25 @@ defmodule Ide.Debugger do
 
   @spec align_protocol_patch_to_init_model(map(), map() | nil) :: map()
   defp align_protocol_patch_to_init_model(patch, introspect) when is_map(patch) and is_map(introspect) do
-    init_keys = Map.keys(Map.get(introspect, "init_model") || %{})
-    patch = remap_geolocation_patch_keys(patch)
+    init_keys =
+      (Map.get(introspect, "init_model") || %{})
+      |> Map.keys()
+      |> Enum.map(&to_string/1)
 
-    Enum.reduce(patch, patch, fn {key, value}, acc ->
-      case model_field_for_patch_field(key, init_keys) do
-        target when is_binary(target) -> Map.put(acc, target, value)
-        _ -> acc
+    patch
+    |> remap_geolocation_patch_keys()
+    |> Enum.reduce(%{}, fn {key, value}, acc ->
+      key = to_string(key)
+
+      cond do
+        key in init_keys ->
+          Map.put(acc, key, value)
+
+        true ->
+          case model_field_for_patch_field(key, init_keys) do
+            target when is_binary(target) -> Map.put(acc, target, value)
+            _ -> acc
+          end
       end
     end)
   end
@@ -5614,11 +5605,6 @@ defmodule Ide.Debugger do
     do: round(value * 1_000_000)
 
   defp longitude_to_microdegrees(value), do: value
-
-  @spec round_float(term()) :: term()
-  defp round_float(value) when is_float(value), do: round(value)
-  defp round_float(value) when is_integer(value), do: value
-  defp round_float(value), do: value
 
   @spec model_field_for_patch_field(String.t(), [String.t()]) :: String.t() | nil
   defp model_field_for_patch_field(patch_key, init_keys) when is_binary(patch_key) and is_list(init_keys) do
@@ -5707,7 +5693,7 @@ defmodule Ide.Debugger do
   defp protocol_provide_ctor_patch(introspect, %{"ctor" => ctor, "args" => args})
        when is_map(introspect) and is_binary(ctor) and is_list(args) do
     if String.starts_with?(ctor, "Provide") do
-      case provide_ctor_model_field(ctor) do
+      case provide_ctor_model_field(introspect, ctor) do
         field when is_binary(field) ->
           value =
             case args do
@@ -5732,33 +5718,36 @@ defmodule Ide.Debugger do
   defp mirror_related_runtime_model_fields(patch, introspect) when is_map(patch) and is_map(introspect) do
     init = Map.get(introspect, "init_model") || %{}
 
-    Enum.reduce(
-      [
-        {"condition", "displayedCondition"},
-        {"temperature", "displayedTemperature"}
-      ],
-      patch,
-      fn {source_key, target_key}, acc ->
-        case {Map.get(acc, source_key), Map.has_key?(init, target_key)} do
-          {value, true} when not is_nil(value) ->
-            Map.put(acc, target_key, value)
+    Enum.reduce(patch, patch, fn {source_key, value}, acc ->
+      target =
+        introspect
+        |> Map.get("update_case_branches", [])
+        |> Enum.find_value(fn branch ->
+          if is_binary(branch) and String.contains?(branch, "Provide") do
+            branch
+            |> parse_update_branch_field_aliases()
+            |> Map.get(source_key)
+          end
+        end)
 
-          _ ->
-            acc
-        end
+      case {value, target, Map.has_key?(init, target)} do
+        {val, field, true} when not is_nil(val) and is_binary(field) -> Map.put(acc, field, val)
+        _ -> acc
       end
-    )
+    end)
   end
 
   defp mirror_related_runtime_model_fields(patch, _introspect), do: patch
 
-  @spec provide_ctor_model_field(String.t()) :: String.t() | nil
-  defp provide_ctor_model_field("ProvideTemperature"), do: "temperature"
-  defp provide_ctor_model_field("ProvideCondition"), do: "condition"
-  defp provide_ctor_model_field("ProvideConnectivity"), do: "online"
-  defp provide_ctor_model_field("ProvideBattery"), do: "batteryPercent"
-  defp provide_ctor_model_field("ProvideLocale"), do: "locale"
-  defp provide_ctor_model_field(_), do: nil
+  @spec provide_ctor_model_field(map(), String.t()) :: String.t() | nil
+  defp provide_ctor_model_field(introspect, ctor) when is_map(introspect) and is_binary(ctor) do
+    case protocol_ctor_binding_names(introspect, ctor) do
+      [field | _] when is_binary(field) -> field
+      _ -> nil
+    end
+  end
+
+  defp provide_ctor_model_field(_introspect, _ctor), do: nil
 
   @spec protocol_position_microdegrees(number()) :: integer()
   defp protocol_position_microdegrees(value) when is_integer(value) and abs(value) > 1_000_000,
@@ -5899,12 +5888,16 @@ defmodule Ide.Debugger do
   @spec promote_protocol_result_wrapper(term(), map()) :: map()
   defp promote_protocol_result_wrapper(%{"ctor" => ctor, "args" => [record | _]}, extra)
        when ctor in ["Ok", "Err"] and is_map(record) do
-    if maybe_runtime_ctor?(record), do: extra, else: Map.merge(extra, record)
+    cond do
+      maybe_runtime_ctor?(record) -> extra
+      elm_message_constructor_map?(record) -> extra
+      true -> Map.merge(extra, record)
+    end
   end
 
   defp promote_protocol_result_wrapper(%{ctor: ctor, args: [record | _]}, extra)
        when ctor in ["Ok", "Err"] and is_map(record) do
-    if maybe_runtime_ctor?(record), do: extra, else: Map.merge(extra, record)
+    promote_protocol_result_wrapper(%{"ctor" => ctor, "args" => [record]}, extra)
   end
 
   defp promote_protocol_result_wrapper(_wrapper, extra), do: extra
@@ -6715,8 +6708,43 @@ defmodule Ide.Debugger do
     end
   end
 
+  @spec elm_message_constructor_map?(map()) :: boolean()
+  defp elm_message_constructor_map?(map) when is_map(map) do
+    keys = map |> Map.keys() |> Enum.map(&to_string/1) |> Enum.sort()
+    keys == ["args", "ctor"] or keys == ["$args", "$ctor"]
+  end
+
+  @companion_weather_phone_messages ~w(ProvideTemperature ProvideCondition)
+
+  @spec watch_protocol_supports_weather_delivery?(runtime_state()) :: boolean()
+  defp watch_protocol_supports_weather_delivery?(state) when is_map(state) do
+    case project_protocol_schema(state) do
+      {:ok, schema} ->
+        schema
+        |> Map.get(:phone_to_watch, [])
+        |> List.wrap()
+        |> Enum.any?(fn
+          %{name: name} when is_binary(name) -> name in @companion_weather_phone_messages
+          %{"name" => name} when is_binary(name) -> name in @companion_weather_phone_messages
+          _ -> false
+        end)
+
+      _ ->
+        false
+    end
+  end
+
   @spec deliver_simulator_weather_to_watch(runtime_state()) :: runtime_state()
   defp deliver_simulator_weather_to_watch(state) when is_map(state) do
+    if watch_protocol_supports_weather_delivery?(state) do
+      deliver_simulator_weather_to_watch_when_declared(state)
+    else
+      state
+    end
+  end
+
+  @spec deliver_simulator_weather_to_watch_when_declared(runtime_state()) :: runtime_state()
+  defp deliver_simulator_weather_to_watch_when_declared(state) when is_map(state) do
     settings = simulator_settings_from_state(state)
     weather = settings["weather"] || %{}
 
@@ -6740,8 +6768,6 @@ defmodule Ide.Debugger do
       end
     end
   end
-
-  defp deliver_simulator_weather_to_watch(state), do: state
 
   @spec deliver_simulator_position_to_watch(runtime_state()) :: runtime_state()
   defp deliver_simulator_position_to_watch(state) when is_map(state) do
@@ -6806,49 +6832,6 @@ defmodule Ide.Debugger do
   end
 
   defp watch_geolocation_from_phone_message_value(_settings), do: nil
-
-  @weather_init_field_keys ~w(
-    condition
-    temperature
-    displayedCondition
-    displayedTemperature
-  )
-
-  @spec maybe_deliver_simulator_weather_after_watch_introspect(runtime_state(), atom()) ::
-          runtime_state()
-  defp maybe_deliver_simulator_weather_after_watch_introspect(state, :watch) when is_map(state) do
-    if init_model_weather_fields_unset?(state, :watch) do
-      state
-    else
-      deliver_simulator_weather_to_watch(state)
-    end
-  end
-
-  defp maybe_deliver_simulator_weather_after_watch_introspect(state, _target), do: state
-
-  @spec init_model_weather_fields_unset?(runtime_state(), Types.surface_target()) :: boolean()
-  defp init_model_weather_fields_unset?(state, :watch) when is_map(state) do
-    case introspect_for(state, :watch) do
-      %{"init_model" => init} when is_map(init) ->
-        present =
-          @weather_init_field_keys
-          |> Enum.filter(&Map.has_key?(init, &1))
-
-        present != [] and Enum.all?(present, &init_model_value_is_nothing?(Map.get(init, &1)))
-
-      _ ->
-        false
-    end
-  end
-
-  defp init_model_weather_fields_unset?(_state, _target), do: false
-
-  @spec init_model_value_is_nothing?(term()) :: boolean()
-  defp init_model_value_is_nothing?(%{"ctor" => "Nothing"}), do: true
-  defp init_model_value_is_nothing?(%{"$ctor" => "Nothing"}), do: true
-  defp init_model_value_is_nothing?(%{ctor: :Nothing}), do: true
-  defp init_model_value_is_nothing?(%{"$ctor" => ctor}) when ctor in ["Nothing", :Nothing], do: true
-  defp init_model_value_is_nothing?(_value), do: false
 
   @spec maybe_inject_watch_subscription_trigger(runtime_state(), String.t()) :: runtime_state()
   defp maybe_inject_watch_subscription_trigger(state, trigger) when is_map(state) and is_binary(trigger) do
@@ -8210,11 +8193,24 @@ defmodule Ide.Debugger do
     primary_rows = normalize_view_output(primary)
     supplemental_rows = normalize_view_output(supplemental)
 
+    primary_vector_ids = vector_at_ids(primary_rows)
+    supplemental_vector_ids = vector_at_ids(supplemental_rows)
+
+    prefer_supplemental_vectors? =
+      supplemental_vector_ids != [] and
+        (primary_vector_ids == [] or primary_vector_ids != supplemental_vector_ids)
+
     cond do
       supplemental_rows == [] ->
         primary_rows
 
       primary_rows == [] ->
+        supplemental_rows
+
+      prefer_supplemental_vectors? ->
+        supplemental_rows
+
+      resolved_vector_rows?(supplemental_rows) and not resolved_vector_rows?(primary_rows) ->
         supplemental_rows
 
       vector_rows?(supplemental_rows) and not vector_rows?(primary_rows) ->
@@ -8231,6 +8227,23 @@ defmodule Ide.Debugger do
   defp vector_rows?(rows) when is_list(rows),
     do: Enum.any?(rows, &(is_map(&1) and Map.get(&1, "kind") == "vector_at"))
 
+  defp vector_at_ids(rows) when is_list(rows) do
+    rows
+    |> Enum.flat_map(fn
+      %{"kind" => "vector_at", "vector_id" => id} when is_integer(id) -> [id]
+      %{kind: "vector_at", vector_id: id} when is_integer(id) -> [id]
+      _ -> []
+    end)
+  end
+
+  defp vector_at_ids(_rows), do: []
+
+  defp resolved_vector_rows?(rows) when is_list(rows) do
+    Enum.any?(rows, fn row ->
+      is_map(row) and Map.get(row, "kind") == "vector_at" and is_integer(Map.get(row, "vector_id"))
+    end)
+  end
+
   @spec supplement_parser_runtime_view_output(Types.execution_model(), map(), map()) :: [map()]
   defp supplement_parser_runtime_view_output(execution_model, view_tree, runtime_model)
        when is_map(execution_model) and is_map(view_tree) and is_map(runtime_model) do
@@ -8241,15 +8254,8 @@ defmodule Ide.Debugger do
     else
       eval_context =
         execution_model
-        |> RuntimeArtifacts.vector_resource_indices()
-        |> then(fn indices ->
-          base = %{}
-
-          base =
-            if map_size(indices) > 0,
-              do: Map.put(base, :vector_resource_indices, indices),
-              else: base
-
+        |> RuntimeArtifacts.core_ir_eval_context()
+        |> then(fn base ->
           case RuntimeArtifacts.introspect(execution_model) do
             %{} = ei -> Map.put(base, :elm_introspect, ei)
             _ -> base
@@ -8268,6 +8274,8 @@ defmodule Ide.Debugger do
     end
   end
 
+  defp supplement_parser_runtime_view_output(_execution_model, _view_tree, _runtime_model), do: []
+
   @spec introspect_parser_view_tree(Types.execution_model(), map()) :: map()
   defp introspect_parser_view_tree(execution_model, view_tree) when is_map(execution_model) do
     case introspect_view_tree(RuntimeArtifacts.introspect(execution_model)) do
@@ -8285,6 +8293,8 @@ defmodule Ide.Debugger do
     end
   end
 
+  defp introspect_parser_view_tree(_execution_model, view_tree), do: view_tree
+
   defp introspect_view_tree(%{} = introspect), do: Map.get(introspect, "view_tree") || %{}
   defp introspect_view_tree(_), do: %{}
 
@@ -8301,10 +8311,6 @@ defmodule Ide.Debugger do
   end
 
   defp screen_dimensions_for_view_preview(_execution_model), do: %{}
-
-  defp introspect_parser_view_tree(_execution_model, view_tree), do: view_tree
-
-  defp supplement_parser_runtime_view_output(_execution_model, _view_tree, _runtime_model), do: []
 
   @spec render_view_after_update(map() | nil, map() | nil, Types.surface_target(), String.t(), String.t(), map()) :: map()
   defp render_view_after_update(
@@ -9058,7 +9064,8 @@ defmodule Ide.Debugger do
       events: [],
       debugger_timeline: [],
       debugger_seq: 0,
-      seq: 0
+      seq: 0,
+      app_message_queues: AppMessageQueue.empty()
     }
     |> apply_simulator_settings_to_surfaces()
   end
@@ -10555,7 +10562,7 @@ defmodule Ide.Debugger do
        when is_map(state) and target in [:watch, :companion, :phone] and is_map(execution_model) and
               is_map(introspect) do
     model = get_in(state, [target, :model]) || %{}
-    runtime_model = RuntimeArtifacts.inner_runtime_model(model)
+    runtime_model = RuntimeArtifacts.preview_runtime_model(model)
 
     view_output =
       supplement_parser_runtime_view_output(execution_model, Map.get(introspect, "view_tree") || %{}, runtime_model)
@@ -10738,7 +10745,6 @@ defmodule Ide.Debugger do
             |> maybe_apply_init_protocol_events(introspect_target_key(source_root))
             |> maybe_apply_init_geolocation_response(introspect_target_key(source_root))
             |> maybe_apply_init_companion_bridge_commands(introspect_target_key(source_root))
-            |> maybe_deliver_simulator_weather_after_watch_introspect(introspect_target_key(source_root))
             |> then(fn reloaded ->
               if introspect_target_key(source_root) == :watch do
                 refresh_runtime_preview_for_target(reloaded, :watch)
@@ -11128,6 +11134,7 @@ defmodule Ide.Debugger do
       "init",
       normalize_followup_messages(execution_followup_messages(execution))
     )
+    |> drain_app_message_queue(target)
   end
 
   @spec current_model_for_introspect_execution(Types.execution_model()) :: Types.execution_model()

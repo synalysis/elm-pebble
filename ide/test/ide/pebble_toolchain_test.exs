@@ -229,6 +229,8 @@ defmodule Ide.PebbleToolchainTest do
     source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
 
     assert source =~ "function handleWeatherCommand(request)"
+    assert source =~ "function fetchWeatherFromGeolocation"
+    assert source =~ "function shouldUseSimulatorWeather"
     assert source =~ "function weatherFromSettings()"
     assert source =~ "function normalizeCompanionSimulatorSettings("
     assert source =~ "function deliverWeatherToWatch()"

@@ -570,6 +570,30 @@ function flushPendingPlatformIncomingPorts() {
     });
 }
 
+var DEFAULT_PLATFORM_HANDLER_INTERESTS = {
+    "weather-current": {
+        eventPrefixes: [],
+        resultIdPrefixes: ["weather-current"]
+    },
+    "weather-forecast": {
+        eventPrefixes: [],
+        resultIdPrefixes: ["weather-forecast"]
+    }
+};
+
+function registerDefaultPlatformHandler(handlerId) {
+    var interest = DEFAULT_PLATFORM_HANDLER_INTERESTS[handlerId];
+
+    if (!interest || platformHandlers[handlerId]) {
+        return;
+    }
+
+    platformHandlers[handlerId] = {
+        eventPrefixes: interest.eventPrefixes,
+        resultIdPrefixes: interest.resultIdPrefixes
+    };
+}
+
 function wireCompanionIncomingPorts(app) {
     if (app.ports && app.ports.incoming) {
         incomingPort = app.ports.incoming;
@@ -590,6 +614,7 @@ function wireCompanionIncomingPorts(app) {
 
         if (app.ports && app.ports[portName]) {
             platformIncomingPorts[handlerId] = app.ports[portName];
+            registerDefaultPlatformHandler(handlerId);
         }
     });
 }
@@ -1068,6 +1093,176 @@ function openMeteoJsonFromSettings() {
     });
 }
 
+function shouldUseSimulatorWeather() {
+    return (
+        hasExplicitCompanionSimulatorWeather(currentCompanionSimulatorSettings()) ||
+        hasExplicitCompanionSimulatorWeather(peekPendingCompanionSimulatorSettings())
+    );
+}
+
+function wmoCodeToCondition(code) {
+    if (code === 0) {
+        return "clear";
+    }
+
+    if (code <= 3) {
+        return "cloudy";
+    }
+
+    if (code <= 48) {
+        return "fog";
+    }
+
+    if (code <= 57) {
+        return "drizzle";
+    }
+
+    if (code <= 67) {
+        return "rain";
+    }
+
+    if (code <= 77) {
+        return "snow";
+    }
+
+    if (code <= 86) {
+        return "showers";
+    }
+
+    if (code <= 99) {
+        return "storm";
+    }
+
+    return "unknownweather";
+}
+
+function weatherInfoFromOpenMeteoBody(bodyText) {
+    var parsed;
+
+    try {
+        parsed = JSON.parse(bodyText);
+    } catch (_parseError) {
+        return null;
+    }
+
+    if (!parsed || !parsed.current) {
+        return null;
+    }
+
+    var current = parsed.current;
+    var temperature = current.temperature_2m;
+
+    if (typeof temperature !== "number" || !isFinite(temperature)) {
+        return null;
+    }
+
+    return {
+        temperatureC: Math.round(temperature),
+        condition: wmoCodeToCondition(Number(current.weather_code || 0)),
+        humidityPercent:
+            typeof current.relative_humidity_2m === "number"
+                ? Math.round(current.relative_humidity_2m)
+                : undefined,
+        pressureHpa:
+            typeof current.surface_pressure === "number"
+                ? Math.round(current.surface_pressure)
+                : undefined,
+        windKph:
+            typeof current.wind_speed_10m === "number"
+                ? Math.round(current.wind_speed_10m)
+                : undefined
+    };
+}
+
+function fetchOpenMeteoWeather(latitude, longitude, callback) {
+    var url =
+        "https://api.open-meteo.com/v1/forecast?latitude=" +
+        encodeURIComponent(latitude) +
+        "&longitude=" +
+        encodeURIComponent(longitude) +
+        "&current=temperature_2m,weather_code,relative_humidity_2m,surface_pressure,wind_speed_10m&forecast_days=1";
+    var xhr = new XMLHttpRequest();
+    xhr.timeout = 15000;
+
+    xhr.onload = function () {
+        if (xhr.status < 200 || xhr.status >= 300) {
+            callback(null);
+            return;
+        }
+
+        callback(weatherInfoFromOpenMeteoBody(xhr.responseText));
+    };
+
+    xhr.onerror = function () {
+        callback(null);
+    };
+
+    xhr.ontimeout = function () {
+        callback(null);
+    };
+
+    xhr.open("GET", url);
+    xhr.send();
+}
+
+function fetchWeatherFromGeolocation(callback) {
+    if (!geolocationAvailable()) {
+        callback(null);
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        function (position) {
+            fetchOpenMeteoWeather(position.coords.latitude, position.coords.longitude, callback);
+        },
+        function () {
+            callback(null);
+        },
+        { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
+    );
+}
+
+function resolveWeatherInfo(callback) {
+    if (shouldUseSimulatorWeather()) {
+        callback(weatherFromSettings());
+        return;
+    }
+
+    fetchWeatherFromGeolocation(callback);
+}
+
+function deliverWeatherInfo(requestId, info, eventName) {
+    if (!info) {
+        return false;
+    }
+
+    if (eventName === "weather.forecast") {
+        var payload = { forecast: [info] };
+
+        if (requestId) {
+            deliverBridgeResult(requestId, true, payload);
+        }
+
+        deliverPlatformIncoming({
+            event: eventName,
+            payload: payload
+        });
+
+        return true;
+    }
+
+    if (requestId) {
+        deliverBridgeResult(requestId, true, info);
+    }
+
+    deliverPlatformIncoming({
+        event: "weather.current",
+        payload: info
+    });
+
+    return true;
+}
+
 function deliverWeatherCurrent(requestId, attempt) {
     attempt = typeof attempt === "number" ? attempt : 0;
 
@@ -1078,18 +1273,8 @@ function deliverWeatherCurrent(requestId, attempt) {
         return false;
     }
 
-    var info = weatherFromSettings();
-    if (!info) {
-        return false;
-    }
-
-    if (requestId) {
-        deliverBridgeResult(requestId, true, info);
-    }
-
-    deliverPlatformIncoming({
-        event: "weather.current",
-        payload: info
+    resolveWeatherInfo(function (info) {
+        deliverWeatherInfo(requestId, info, "weather.current");
     });
 
     return true;
@@ -1108,22 +1293,16 @@ function handleWeatherCommand(request) {
         return;
     }
 
-    var info = weatherFromSettings();
-
-    if (!info) {
-        bridgeCommandError(request, "weather", "Weather data unavailable from simulator settings");
-        return;
-    }
-
     if (op === "forecast") {
-        var payload = { forecast: [info] };
-        if (requestId) {
-            deliverBridgeResult(requestId, true, payload);
-        }
-        deliverPlatformIncoming({
-            event: "weather.forecast",
-            payload: payload
-        });
+        setTimeout(function () {
+            syncCompanionSimulatorSettingsFromGlobal();
+            applyPendingCompanionSimulatorSettings();
+            resolveWeatherInfo(function (info) {
+                if (!deliverWeatherInfo(requestId, info, "weather.forecast")) {
+                    bridgeCommandError(request, "weather", "Weather unavailable");
+                }
+            });
+        }, 150);
         return;
     }
 

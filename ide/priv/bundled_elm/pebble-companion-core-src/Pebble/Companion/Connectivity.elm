@@ -23,7 +23,7 @@ does **not** describe watch-to-phone Bluetooth connection — use
 
 # Commands
 
-@docs current
+@docs current, setup
 
 # Subscriptions
 
@@ -63,6 +63,8 @@ onConnectivity toMsg =
     Platform.subscribe (handler toMsg)
 
 
+{-| Register this platform handler with the companion bridge.
+-}
 setup : Cmd msg
 setup =
     Platform.setup connectivityInterest

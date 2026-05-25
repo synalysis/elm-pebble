@@ -3675,20 +3675,17 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       ctor in ["NoVectorGraphic"] ->
         {:ok, 0}
 
+      is_integer(id = vector_resource_index_for_ctor(ctor, context)) and id >= 1 ->
+        {:ok, id}
+
       is_integer(tag) ->
         {:ok, tag + 1}
 
+      is_integer(tag = constructor_tag_for_ctor(ctor, context)) ->
+        {:ok, tag + 1}
+
       true ->
-        cond do
-          is_integer(tag = constructor_tag_for_ctor(ctor, context)) ->
-            {:ok, tag + 1}
-
-          is_integer(id = vector_resource_index_for_ctor(ctor, context)) and id >= 1 ->
-            {:ok, id}
-
-          true ->
-            :error
-        end
+        :error
     end
   end
 

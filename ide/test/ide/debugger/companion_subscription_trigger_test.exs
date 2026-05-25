@@ -3,10 +3,11 @@ defmodule Ide.Debugger.CompanionSubscriptionTriggerTest do
 
   alias Ide.Debugger.CompanionSubscriptionTrigger
 
-  test "companion_trigger? matches onBattery subscription triggers" do
+  test "companion_trigger? matches module-qualified battery subscription triggers" do
     assert CompanionSubscriptionTrigger.companion_trigger?("Battery.onBattery")
-    assert CompanionSubscriptionTrigger.companion_trigger?("onBattery")
+    assert CompanionSubscriptionTrigger.companion_trigger?("Pebble.Companion.Battery.onBattery")
     assert CompanionSubscriptionTrigger.companion_trigger?("on_battery")
+    refute CompanionSubscriptionTrigger.companion_trigger?("onBattery")
     refute CompanionSubscriptionTrigger.companion_trigger?("PebbleSystem.onBatteryChange")
   end
 

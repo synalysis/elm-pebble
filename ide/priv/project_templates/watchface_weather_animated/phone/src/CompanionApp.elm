@@ -25,10 +25,7 @@ type Msg
 init : Decode.Value -> ( Model, Cmd Msg )
 init _ =
     ( initialModel
-    , Cmd.batch
-        [ Lifecycle.setup
-        , Weather.setup
-        ]
+    , Lifecycle.setup
     )
 
 

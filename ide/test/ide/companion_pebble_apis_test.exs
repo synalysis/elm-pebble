@@ -64,11 +64,23 @@ defmodule Ide.CompanionPebbleApisTest do
     weather = File.read!(Path.join(@core_src, "Weather.elm"))
     assert String.contains?(weather, "(Result String WeatherInfo -> msg) -> Cmd msg")
     assert String.contains?(weather, "type WeatherUpdate")
-    assert String.contains?(weather, "Platform.subscribe")
     assert String.contains?(weather, "onWeather")
     assert String.contains?(weather, "onCurrent :")
     assert String.contains?(weather, "onForecast :")
+    assert String.contains?(weather, "Open-Meteo")
+    assert String.contains?(weather, "no separate registration commands")
+    refute String.contains?(weather, "setup :")
+    refute String.contains?(weather, "setupCurrent")
     refute String.contains?(weather, "part :")
+
+    weather_doc =
+      @docs_json
+      |> File.read!()
+      |> Jason.decode!()
+      |> Enum.find(&(Map.fetch!(&1, "name") == "Pebble.Companion.Weather"))
+
+    assert String.contains?(weather_doc["comment"], "Open-Meteo")
+    refute String.contains?(weather_doc["comment"], "setupForecast")
 
     connectivity = File.read!(Path.join(@core_src, "Connectivity.elm"))
     assert String.contains?(connectivity, "type Connectivity")

@@ -7,16 +7,16 @@ module Pebble.Companion.Weather exposing
     , onWeather
     , onCurrent
     , onForecast
-    , setup
-    , setupCurrent
-    , setupForecast
     )
 
 {-| Platform-provided weather for companion apps.
 
-Weather comes from the Pebble companion bridge (IDE simulator settings or the
-phone companion runtime). These functions do **not** take a city name or other
-weather query.
+Weather is supplied by the companion bridge:
+
+- In the **IDE debugger**, values come from simulator settings. These functions do not take a city name or other query parameters.
+- On a **phone**, the bridge fetches live data over **HTTP** (Open-Meteo) using the device location from geolocation. Apps still do not pass a city name or other query string to `current` or `forecast`.
+
+Use `current`, `forecast`, and `onWeather` directly — no separate registration commands.
 
     import Pebble.Companion.Weather as Weather
 
@@ -54,7 +54,7 @@ weather query.
 
 # Commands
 
-@docs current, forecast, setup, setupCurrent, setupForecast
+@docs current, forecast
 
 # Subscriptions
 
@@ -103,24 +103,37 @@ type WeatherUpdate
 
 
 {-| Request the current platform weather snapshot.
+
+Registers bridge handlers needed for weather command responses and push updates.
 -}
 current : (Result String WeatherInfo -> msg) -> Cmd msg
 current toMsg =
-    Phone.send toMsg <|
-        Phone.request "weather-current" "weather" "current" decodeCurrentResponse
+    Cmd.batch
+        [ Platform.setup weatherPushInterest
+        , Platform.setup weatherCurrentInterest
+        , Phone.send toMsg <|
+            Phone.request "weather-current" "weather" "current" decodeCurrentResponse
+        ]
 
 
 {-| Request forecast snapshots from the platform weather service.
+
+Registers the bridge handler needed for forecast command responses.
 -}
 forecast : (Result String (List WeatherInfo) -> msg) -> Cmd msg
 forecast toMsg =
-    Phone.send toMsg <|
-        Phone.request "weather-forecast" "weather" "forecast" decodeForecastResponse
+    Cmd.batch
+        [ Platform.setup weatherForecastInterest
+        , Phone.send toMsg <|
+            Phone.request "weather-forecast" "weather" "forecast" decodeForecastResponse
+        ]
 
 
 {-| Receive pushed weather updates from the companion bridge.
 
-Registering this subscription also tells the bridge to send weather updates.
+Pair with `current` (or `forecast`) in `init` so the bridge registers interest and
+can deliver pushed updates. Calling `current` also sends the bridge subscribe
+operation for ongoing weather events.
 -}
 onWeather : (Result String WeatherUpdate -> msg) -> Sub msg
 onWeather toMsg =
@@ -128,6 +141,8 @@ onWeather toMsg =
 
 
 {-| Receive current-weather command responses on the dedicated weather port.
+
+Pair with `current` in `init` so command responses are routed to this handler.
 -}
 onCurrent : (Result String WeatherInfo -> msg) -> Sub msg
 onCurrent toMsg =
@@ -135,31 +150,12 @@ onCurrent toMsg =
 
 
 {-| Receive forecast command responses on the dedicated weather port.
+
+Pair with `forecast` in `init` so command responses are routed to this handler.
 -}
 onForecast : (Result String (List WeatherInfo) -> msg) -> Sub msg
 onForecast toMsg =
     Platform.subscribe (handlerForecast toMsg)
-
-
-{-| Register the weather push platform handler with the companion bridge.
--}
-setup : Cmd msg
-setup =
-    Platform.setup weatherPushInterest
-
-
-{-| Register the current-weather platform handler with the companion bridge.
--}
-setupCurrent : Cmd msg
-setupCurrent =
-    Platform.setup weatherCurrentInterest
-
-
-{-| Register the forecast platform handler with the companion bridge.
--}
-setupForecast : Cmd msg
-setupForecast =
-    Platform.setup weatherForecastInterest
 
 
 handler toMsg =
