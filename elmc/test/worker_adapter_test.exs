@@ -20,12 +20,21 @@ defmodule Elmc.WorkerAdapterTest do
 
       static ElmcValue *launch_context(void) {
         ElmcValue *reason = elmc_new_int(1); /* Pebble.Platform.LaunchSystem constructor tag */
-        ElmcValue *screen = elmc_int_zero();
         ElmcValue *watch_model = elmc_new_string("");
         ElmcValue *watch_profile_id = elmc_new_string("");
-        const char *names[] = {"reason", "screen", "watchModel", "watchProfileId"};
-        ElmcValue *values[] = {reason, screen, watch_model, watch_profile_id};
-        return elmc_record_new_take(4, names, values);
+        ElmcValue *screen = elmc_int_zero();
+        ElmcValue *has_microphone = elmc_new_int(0);
+        ElmcValue *has_compass = elmc_new_int(0);
+        ElmcValue *supports_health = elmc_new_int(0);
+        const char *names[] = {
+          "reason", "watchModel", "watchProfileId", "screen",
+          "hasMicrophone", "hasCompass", "supportsHealth"
+        };
+        ElmcValue *values[] = {
+          reason, watch_model, watch_profile_id, screen,
+          has_microphone, has_compass, supports_health
+        };
+        return elmc_record_new_take(7, names, values);
       }
 
       int main(void) {

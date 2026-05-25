@@ -32,7 +32,15 @@ defmodule Elmc.PebbleSurfaceCoverageTest do
     "Pebble.Wakeup" =>
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Wakeup.elm", __DIR__),
     "Pebble.WatchInfo" =>
-      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/WatchInfo.elm", __DIR__)
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/WatchInfo.elm", __DIR__),
+    "Pebble.AppFocus" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/AppFocus.elm", __DIR__),
+    "Pebble.Compass" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Compass.elm", __DIR__),
+    "Pebble.DataLog" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/DataLog.elm", __DIR__),
+    "Pebble.Dictation" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Dictation.elm", __DIR__)
   }
 
   test "surface fixture coverage stays in sync with Pebble APIs" do

@@ -403,6 +403,10 @@ defmodule Ide.Debugger.ElmIntrospectTest do
     assert ei["view_return_type"] == "Ui.UiNode"
     assert is_map(ei["function_types"])
     assert ElmIntrospect.parser_expression_view?(%{"elm_introspect" => ei})
+
+    root = get_in(ei, ["view_tree"])
+    assert ElmIntrospect.parser_expression_view_tree_node?(root, ei)
+    refute ElmIntrospect.parser_expression_structural_type?("packUi")
     assert get_in(ei, ["view_tree", "type"]) == "packUi"
   end
 

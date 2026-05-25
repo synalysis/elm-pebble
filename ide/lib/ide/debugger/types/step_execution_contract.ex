@@ -46,9 +46,38 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
   @spec merge_model_patch(map(), RuntimeStepResult.model_patch()) :: map()
   def merge_model_patch(model, patch) when is_map(model) and is_map(patch) do
     Enum.reduce(patch, model, fn
-      {key, value}, acc when is_binary(key) -> Map.put(acc, key, value)
-      {key, value}, acc when is_atom(key) -> Map.put(acc, Atom.to_string(key), value)
-      _, acc -> acc
+      {"runtime_model", patch_runtime}, acc when is_map(patch_runtime) ->
+        existing =
+          case Map.get(acc, "runtime_model") do
+            value when is_map(value) -> value
+            _ -> %{}
+          end
+
+        Map.put(acc, "runtime_model", deep_merge_runtime_model(existing, patch_runtime))
+
+      {key, value}, acc when is_binary(key) ->
+        Map.put(acc, key, value)
+
+      {key, value}, acc when is_atom(key) ->
+        Map.put(acc, Atom.to_string(key), value)
+
+      _, acc ->
+        acc
     end)
   end
+
+  @spec deep_merge_runtime_model(map(), map()) :: map()
+  defp deep_merge_runtime_model(existing, patch) when is_map(existing) and is_map(patch) do
+    Map.merge(existing, patch, fn
+      key, existing_val, patch_val
+      when key in ["latitudeE6", "longitudeE6", "accuracyM"] and is_integer(patch_val) and
+             patch_val == 0 and is_integer(existing_val) and existing_val != 0 ->
+        existing_val
+
+      _key, _existing_val, patch_val ->
+        patch_val
+    end)
+  end
+
+  defp deep_merge_runtime_model(_existing, patch) when is_map(patch), do: patch
 end

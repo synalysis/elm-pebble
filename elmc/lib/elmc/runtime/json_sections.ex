@@ -23,6 +23,8 @@ defmodule Elmc.Runtime.JsonSections do
     ElmcValue *elmc_json_decode_map3(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3);
     ElmcValue *elmc_json_decode_map4(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4);
     ElmcValue *elmc_json_decode_map5(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5);
+    ElmcValue *elmc_json_decode_map6(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6);
+    ElmcValue *elmc_json_decode_map7(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6, ElmcValue *d7);
     ElmcValue *elmc_json_decode_succeed(ElmcValue *value);
     ElmcValue *elmc_json_decode_fail(ElmcValue *msg);
     ElmcValue *elmc_json_decode_and_then(ElmcValue *f, ElmcValue *decoder);
@@ -78,6 +80,7 @@ defmodule Elmc.Runtime.JsonSections do
     #define ELMC_JSON_DECODER_MAP 111
     #define ELMC_JSON_DECODER_MAP2 112
     #define ELMC_JSON_DECODER_AND_THEN 113
+    #define ELMC_JSON_DECODER_MAP7 114
 
     #if defined(__GNUC__) || defined(__clang__)
     #define ELMC_MAYBE_UNUSED __attribute__((unused))
@@ -654,6 +657,50 @@ defmodule Elmc.Runtime.JsonSections do
       return mapped;
     }
 
+    static ElmcValue *elmc_json_decode_map7_with_value(ElmcValue *payload, const ElmcJsonValue *node, const char **error_out) {
+      if (!payload || payload->tag != ELMC_TAG_TUPLE2 || payload->payload == NULL) {
+        if (error_out) *error_out = "Invalid map7 decoder";
+        return NULL;
+      }
+
+      ElmcTuple2 *outer = (ElmcTuple2 *)payload->payload;
+      ElmcValue *decoders[7];
+      ElmcValue *cursor = outer->second;
+      int count = 0;
+
+      while (cursor && count < 7) {
+        if (cursor->tag == ELMC_TAG_TUPLE2 && cursor->payload != NULL) {
+          ElmcTuple2 *pair = (ElmcTuple2 *)cursor->payload;
+          decoders[count++] = pair->first;
+          cursor = pair->second;
+        } else {
+          decoders[count++] = cursor;
+          cursor = NULL;
+        }
+      }
+
+      if (count != 7) {
+        if (error_out) *error_out = "Invalid map7 decoder";
+        return NULL;
+      }
+
+      ElmcValue *args[7];
+      int i;
+
+      for (i = 0; i < 7; i++) {
+        args[i] = elmc_json_decode_with_value(decoders[i], node, error_out);
+        if (!args[i]) {
+          for (int j = 0; j < i; j++) elmc_release(args[j]);
+          return NULL;
+        }
+      }
+
+      ElmcValue *mapped = elmc_closure_call(outer->first, args, 7);
+      for (i = 0; i < 7; i++) elmc_release(args[i]);
+      if (!mapped && error_out) *error_out = "Failed to map7 decoded value";
+      return mapped;
+    }
+
     static ElmcValue *elmc_json_decode_map2_with_value(ElmcValue *payload, const ElmcJsonValue *node, const char **error_out) {
       if (!payload || payload->tag != ELMC_TAG_TUPLE2 || payload->payload == NULL) {
         if (error_out) *error_out = "Invalid map2 decoder";
@@ -809,6 +856,8 @@ defmodule Elmc.Runtime.JsonSections do
           return elmc_json_decode_map_with_value(payload, node, error_out);
         case ELMC_JSON_DECODER_MAP2:
           return elmc_json_decode_map2_with_value(payload, node, error_out);
+        case ELMC_JSON_DECODER_MAP7:
+          return elmc_json_decode_map7_with_value(payload, node, error_out);
         case ELMC_JSON_DECODER_AND_THEN:
           if (!payload || payload->tag != ELMC_TAG_TUPLE2 || payload->payload == NULL) {
             if (error_out) *error_out = "Invalid andThen decoder";
@@ -950,9 +999,52 @@ defmodule Elmc.Runtime.JsonSections do
       return elmc_result_err(elmc_new_string("Json.Decode.map4 not implemented in C runtime"));
     }
 
+    static ElmcValue *elmc_json_decode_map_build_payload(ElmcValue *f, ElmcValue **decoders, int count) {
+      ElmcValue *tail = NULL;
+      int i;
+
+      if (!f || count < 2 || count > 7) return NULL;
+
+      tail = elmc_tuple2(decoders[count - 2], decoders[count - 1]);
+      if (!tail) return NULL;
+
+      for (i = count - 3; i >= 0; i--) {
+        ElmcValue *next = elmc_tuple2(decoders[i], tail);
+        elmc_release(tail);
+        if (!next) return NULL;
+        tail = next;
+      }
+
+      ElmcValue *payload = elmc_tuple2(f, tail);
+      elmc_release(tail);
+      return payload;
+    }
+
     ElmcValue *elmc_json_decode_map5(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5) {
-      (void)f; (void)d1; (void)d2; (void)d3; (void)d4; (void)d5;
-      return elmc_result_err(elmc_new_string("Json.Decode.map5 not implemented in C runtime"));
+      ElmcValue *decoders[] = {d1, d2, d3, d4, d5};
+      ElmcValue *payload = elmc_json_decode_map_build_payload(f, decoders, 5);
+      if (!payload) return NULL;
+      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_MAP2, payload);
+      elmc_release(payload);
+      return wrapped;
+    }
+
+    ElmcValue *elmc_json_decode_map6(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6) {
+      ElmcValue *decoders[] = {d1, d2, d3, d4, d5, d6};
+      ElmcValue *payload = elmc_json_decode_map_build_payload(f, decoders, 6);
+      if (!payload) return NULL;
+      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_MAP2, payload);
+      elmc_release(payload);
+      return wrapped;
+    }
+
+    ElmcValue *elmc_json_decode_map7(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6, ElmcValue *d7) {
+      ElmcValue *decoders[] = {d1, d2, d3, d4, d5, d6, d7};
+      ElmcValue *payload = elmc_json_decode_map_build_payload(f, decoders, 7);
+      if (!payload) return NULL;
+      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_MAP7, payload);
+      elmc_release(payload);
+      return wrapped;
     }
 
     ElmcValue *elmc_json_decode_succeed(ElmcValue *value) {

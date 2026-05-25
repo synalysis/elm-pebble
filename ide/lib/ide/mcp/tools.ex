@@ -5030,7 +5030,9 @@ defmodule Ide.Mcp.Tools do
     view_tree = map_get_any(runtime, ["view_tree", :view_tree], nil)
     rendered_tree = DebuggerSupport.rendered_tree(runtime)
     runtime_output = runtime_view_output_rows(model)
-    render_source = preview_render_source(runtime_output, view_tree, rendered_tree)
+    ei = Ide.Debugger.RuntimeArtifacts.require_introspect(model)
+
+    render_source = preview_render_source(runtime_output, view_tree, rendered_tree, ei)
     nodes =
       if is_map(rendered_tree) do
         preview_nodes(rendered_tree, screen)
@@ -5075,7 +5077,8 @@ defmodule Ide.Mcp.Tools do
           runtime_output,
           view_tree,
           surface_tree_sha256,
-          fingerprint_view_tree_sha256
+          fingerprint_view_tree_sha256,
+          ei
         )
     }
   end
@@ -5100,15 +5103,17 @@ defmodule Ide.Mcp.Tools do
     |> Enum.take(24)
   end
 
-  @spec preview_render_source([map()], map(), map()) :: String.t()
-  defp preview_render_source([_ | _], _view_tree, _rendered_tree), do: "runtime_view_output"
+  @spec preview_render_source([map()], map(), map(), map()) :: String.t()
+  defp preview_render_source([_ | _], _view_tree, _rendered_tree, _ei), do: "runtime_view_output"
 
-  defp preview_render_source([], %{} = view_tree, _rendered_tree) do
-    if parser_expression_view_tree?(view_tree), do: "parser_view_tree", else: "runtime_view_tree"
+  defp preview_render_source([], %{} = view_tree, _rendered_tree, ei) when is_map(ei) do
+    if parser_expression_view_tree?(view_tree, ei),
+      do: "parser_view_tree",
+      else: "runtime_view_tree"
   end
 
-  defp preview_render_source([], _view_tree, %{}), do: "parser_view_tree"
-  defp preview_render_source([], _view_tree, _rendered_tree), do: "none"
+  defp preview_render_source([], _view_tree, %{} = _rendered_tree, _ei), do: "parser_view_tree"
+  defp preview_render_source([], _view_tree, _rendered_tree, _ei), do: "none"
 
   @spec preview_status(String.t(), [map()]) :: String.t()
   defp preview_status("none", _nodes), do: "empty"
@@ -5125,16 +5130,25 @@ defmodule Ide.Mcp.Tools do
     )
   end
 
-  @spec preview_findings(String.t(), map() | nil, [map()], map() | nil, String.t() | nil, String.t() | nil) ::
-          [String.t()]
+  @spec preview_findings(
+          String.t(),
+          map() | nil,
+          [map()],
+          map() | nil,
+          String.t() | nil,
+          String.t() | nil,
+          map()
+        ) :: [String.t()]
   defp preview_findings(
          render_source,
          rendered_tree,
          runtime_output,
          view_tree,
          surface_tree_sha256,
-         fingerprint_view_tree_sha256
-       ) do
+         fingerprint_view_tree_sha256,
+         ei
+       )
+       when is_map(ei) do
     []
     |> maybe_add_finding(runtime_output == [], "no_runtime_view_output")
     |> maybe_add_finding(not is_map(rendered_tree), "no_rendered_tree")
@@ -5144,7 +5158,7 @@ defmodule Ide.Mcp.Tools do
       "surface_tree_differs_from_runtime_fingerprint"
     )
     |> maybe_add_finding(
-      parser_expression_view_tree?(view_tree),
+      parser_expression_view_tree?(view_tree, ei),
       "runtime_view_tree_is_expression_outline"
     )
     |> Enum.reverse()
@@ -5169,15 +5183,11 @@ defmodule Ide.Mcp.Tools do
     |> Base.encode16(case: :lower)
   end
 
-  @spec parser_expression_view_tree?(map() | nil) :: boolean()
-  defp parser_expression_view_tree?(%{"type" => type}) when is_binary(type),
-    do: parser_expression_root_type?(type)
+  @spec parser_expression_view_tree?(map() | nil, map()) :: boolean()
+  defp parser_expression_view_tree?(tree, ei) when is_map(tree) and is_map(ei),
+    do: Ide.Debugger.ElmIntrospect.parser_expression_view_tree_node?(tree, ei)
 
-  defp parser_expression_view_tree?(_tree), do: false
-
-  @spec parser_expression_root_type?(String.t()) :: boolean()
-  defp parser_expression_root_type?(type),
-    do: Ide.Debugger.ElmIntrospect.parser_expression_combinator_type?(type)
+  defp parser_expression_view_tree?(_tree, _ei), do: false
 
   @spec compact_debugger_event(map()) :: map()
   defp compact_debugger_event(event) when is_map(event) do

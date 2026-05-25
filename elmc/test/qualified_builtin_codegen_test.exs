@@ -1386,7 +1386,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [sun_window_body | _rest] = String.split(sun_body, "int elmc_fn_", parts: 2)
 
-    assert sun_window_body =~ "ELMC_RECORD_GET_INDEX_INT("
+    assert sun_window_body =~ "elmc_record_get_index("
     assert sun_window_body =~ "0 /* sunriseMin */"
     assert sun_window_body =~ "1 /* sunsetMin */"
     refute sun_window_body =~ "elmc_record_get_int("

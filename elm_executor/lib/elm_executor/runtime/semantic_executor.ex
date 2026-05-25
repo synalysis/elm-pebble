@@ -32,6 +32,29 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   def evaluate_view_tree_value(_node, _runtime_model, _eval_context), do: nil
 
+  @doc """
+  Derives drawable preview rows from a parser-shaped view tree and runtime model.
+
+  Used when full Core IR view evaluation is unavailable but the introspected view
+  tree still contains render-operation structure.
+  """
+  @spec derive_view_output_preview(map(), map(), map()) :: [map()]
+  def derive_view_output_preview(view_tree, runtime_model, eval_context \\ %{})
+
+  def derive_view_output_preview(view_tree, runtime_model, eval_context)
+      when is_map(view_tree) and is_map(runtime_model) and is_map(eval_context) do
+    view_tree
+    |> derive_view_output(runtime_model, eval_context)
+    |> Enum.map(&stringify_view_output_row/1)
+  end
+
+  def derive_view_output_preview(_view_tree, _runtime_model, _eval_context), do: []
+
+  @spec stringify_view_output_row(map()) :: map()
+  defp stringify_view_output_row(row) when is_map(row) do
+    Map.new(row, fn {key, value} -> {to_string(key), value} end)
+  end
+
   @spec execute(SemTypes.execution_request() | map()) ::
           {:ok, SemTypes.execution_result()} | {:error, SemTypes.exec_error()}
   def execute(request) when is_map(request) do
@@ -91,7 +114,11 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     base_runtime_model =
       case map_value(current_model, :runtime_model) do
         model when is_map(model) and map_size(model) > 0 ->
-          model
+          if unresolved_runtime_model?(model) do
+            evaluated_init_model(core_ir, eval_context, current_model) || model
+          else
+            model
+          end
 
         _ ->
           evaluated_init_model_if_static_unresolved(
@@ -280,6 +307,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
        when is_map(eval_context) and is_binary(message) and is_map(runtime_model) do
     with %{} = update_expr <- update_function_expr_from_core_ir(core_ir),
          {:ok, msg_value} <- parse_message_value(message, message_value),
+         msg_value = normalize_msg_for_core_ir(msg_value, eval_context),
          env = %{"msg" => msg_value, "model" => runtime_model},
          {:ok, result} <- evaluate_model_command_result(update_expr, env, eval_context),
          {:ok, result_model} <- update_result_model(result) do
@@ -335,6 +363,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp unresolved_runtime_value?(_value), do: false
 
+  @spec unresolved_runtime_model?(map()) :: boolean()
+  defp unresolved_runtime_model?(model) when is_map(model) do
+    Enum.any?(model, fn {_key, value} -> unresolved_runtime_value?(value) end)
+  end
+
+  defp unresolved_runtime_model?(_model), do: false
+
   @spec update_function_expr_from_core_ir(map()) :: map() | nil
   defp update_function_expr_from_core_ir(%{modules: modules}) when is_list(modules),
     do: update_function_expr_from_core_ir(%{"modules" => modules})
@@ -361,17 +396,31 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp update_function_expr_from_core_ir(_), do: nil
 
-  @spec evaluated_init_model(map(), map(), map()) :: map() | nil
-  defp evaluated_init_model(_core_ir, eval_context, current_model)
-       when is_map(eval_context) and is_map(current_model) do
-    launch_context = current_model |> map_value(:launch_context) |> normalize_launch_context()
+  @spec entry_module_name(map()) :: String.t()
+  defp entry_module_name(eval_context) when is_map(eval_context) do
+    Map.get(eval_context, :module) || Map.get(eval_context, "module") || "Main"
+  end
 
-    candidates = [
+  @spec init_call_candidates(String.t(), map()) :: [map()]
+  defp init_call_candidates(entry_module, launch_context) when is_binary(entry_module) do
+    [
+      %{"op" => :qualified_call, "target" => "#{entry_module}.init", "args" => [launch_context]},
+      %{"op" => :qualified_call, "target" => "#{entry_module}.init", "args" => [%{}]},
+      %{"op" => :qualified_call, "target" => "#{entry_module}.init", "args" => []},
       %{"op" => :qualified_call, "target" => "Main.init", "args" => [launch_context]},
       %{"op" => :qualified_call, "target" => "init", "args" => [launch_context]},
       %{"op" => :qualified_call, "target" => "Main.init", "args" => []},
       %{"op" => :qualified_call, "target" => "init", "args" => []}
     ]
+  end
+
+  @spec evaluated_init_model(map(), map(), map()) :: map() | nil
+  defp evaluated_init_model(_core_ir, eval_context, current_model)
+       when is_map(eval_context) and is_map(current_model) do
+    launch_context = current_model |> map_value(:launch_context) |> normalize_launch_context()
+    entry_module = entry_module_name(eval_context)
+
+    candidates = init_call_candidates(entry_module, launch_context)
 
     Enum.find_value(candidates, fn expr ->
       with {:ok, result} <- CoreIREvaluator.evaluate(expr, %{}, eval_context),
@@ -411,15 +460,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp init_runtime_commands(eval_context, current_model)
        when is_map(eval_context) and is_map(current_model) do
     launch_context = current_model |> map_value(:launch_context) |> normalize_launch_context()
+    entry_module = entry_module_name(eval_context)
 
-    candidates = [
-      %{"op" => :qualified_call, "target" => "Main.init", "args" => [launch_context]},
-      %{"op" => :qualified_call, "target" => "init", "args" => [launch_context]},
-      %{"op" => :qualified_call, "target" => "Main.init", "args" => []},
-      %{"op" => :qualified_call, "target" => "init", "args" => []}
-    ]
-
-    Enum.find_value(candidates, fn expr ->
+    init_call_candidates(entry_module, launch_context)
+    |> Enum.find_value(fn expr ->
       with {:ok, result} <- CoreIREvaluator.evaluate(expr, %{}, eval_context),
            cmds when cmds != [] <- update_result_commands(result) do
         cmds
@@ -581,11 +625,116 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   end
 
   @spec parse_message_value(String.t(), SemTypes.message_value()) :: {:ok, SemTypes.message_value()} | :error
-  defp parse_message_value(_message, %{} = message_value), do: {:ok, message_value}
+  defp parse_message_value(_message, %{} = message_value),
+    do: {:ok, normalize_wire_message_value(message_value)}
+
   defp parse_message_value(_message, {tag, _payload} = message_value) when is_integer(tag),
     do: {:ok, message_value}
 
   defp parse_message_value(message, _message_value), do: parse_message_value(message)
+
+  @spec normalize_wire_message_value(SemTypes.message_value()) :: SemTypes.message_value()
+  defp normalize_wire_message_value(%{"ctor" => "Ok", "args" => [inner | _]}) do
+    {1, normalize_wire_message_value(inner)}
+  end
+
+  defp normalize_wire_message_value(%{"ctor" => "Err", "args" => [inner | _]}) do
+    {0, normalize_wire_message_value(inner)}
+  end
+
+  defp normalize_wire_message_value(%{ctor: "Ok", args: [inner | _]}) do
+    {1, normalize_wire_message_value(inner)}
+  end
+
+  defp normalize_wire_message_value(%{ctor: "Err", args: [inner | _]}) do
+    {0, normalize_wire_message_value(inner)}
+  end
+
+  defp normalize_wire_message_value(%{"ctor" => ctor, "args" => args}) when is_binary(ctor) and is_list(args) do
+    %{"ctor" => ctor, "args" => Enum.map(args, &normalize_wire_message_value/1)}
+  end
+
+  defp normalize_wire_message_value(%{ctor: ctor, args: args}) when is_binary(ctor) and is_list(args) do
+    %{"ctor" => ctor, "args" => Enum.map(args, &normalize_wire_message_value/1)}
+  end
+
+  defp normalize_wire_message_value(value) when is_map(value) do
+    Map.new(value, fn {key, nested} -> {key, normalize_wire_message_value(nested)} end)
+  end
+
+  defp normalize_wire_message_value(value) when is_list(value),
+    do: Enum.map(value, &normalize_wire_message_value/1)
+
+  defp normalize_wire_message_value(value), do: value
+
+  @spec normalize_msg_for_core_ir(SemTypes.message_value(), map()) :: SemTypes.message_value()
+  defp normalize_msg_for_core_ir(%{"ctor" => ctor, "args" => args}, eval_context)
+       when is_binary(ctor) and is_list(args) do
+    %{
+      "ctor" => ctor,
+      "args" => Enum.map(args, &normalize_msg_ctor_arg(&1, eval_context))
+    }
+  end
+
+  @spec normalize_msg_ctor_arg(SemTypes.message_value(), map()) :: SemTypes.message_value()
+  defp normalize_msg_ctor_arg(%{"ctor" => ctor, "args" => args}, _eval_context)
+       when is_binary(ctor) and is_list(args) do
+    %{"ctor" => ctor, "args" => Enum.map(args, &normalize_wire_message_value/1)}
+  end
+
+  defp normalize_msg_ctor_arg(%{ctor: ctor, args: args}, eval_context)
+       when is_binary(ctor) and is_list(args) do
+    normalize_msg_ctor_arg(%{"ctor" => ctor, "args" => args}, eval_context)
+  end
+
+  defp normalize_msg_ctor_arg(value, _eval_context), do: normalize_wire_message_value(value)
+
+  @spec ctor_tag_for_eval(String.t(), map()) :: integer() | nil
+  defp ctor_tag_for_eval(ctor, eval_context) when is_binary(ctor) and is_map(eval_context) do
+    eval_context
+    |> Map.get(:constructor_tags, [])
+    |> Enum.find_value(fn entry ->
+      entry_ctor = Map.get(entry, :ctor) || Map.get(entry, "ctor")
+      entry_tag = Map.get(entry, :tag) || Map.get(entry, "tag")
+
+      if entry_ctor == ctor and is_integer(entry_tag), do: entry_tag
+    end)
+  end
+
+  defp ctor_tag_for_eval(_ctor, _eval_context), do: nil
+
+  defp normalize_msg_for_core_ir(%{ctor: ctor, args: args}, eval_context)
+       when is_binary(ctor) and is_list(args) do
+    normalize_msg_for_core_ir(%{"ctor" => ctor, "args" => args}, eval_context)
+  end
+
+  defp normalize_msg_for_core_ir({tag, args}, eval_context) when is_integer(tag) and is_list(args) do
+    {tag, Enum.map(args, &normalize_msg_ctor_arg(&1, eval_context))}
+  end
+
+  defp normalize_msg_for_core_ir(value, _eval_context), do: normalize_wire_message_value(value)
+
+  @spec msg_constructor_tag(String.t(), map()) :: integer() | nil
+  defp msg_constructor_tag(ctor, eval_context) when is_binary(ctor) and is_map(eval_context) do
+    entry_module = Map.get(eval_context, :module) || Map.get(eval_context, "module")
+
+    eval_context
+    |> Map.get(:constructor_tags, [])
+    |> Enum.find_value(fn entry ->
+      entry_ctor = Map.get(entry, :ctor) || Map.get(entry, "ctor")
+      entry_tag = Map.get(entry, :tag) || Map.get(entry, "tag")
+      entry_module_name = Map.get(entry, :module) || Map.get(entry, "module")
+      update_module? = Map.get(entry, :update_module?) || Map.get(entry, "update_module?")
+
+      if entry_ctor == ctor and is_integer(entry_tag) and update_module? == true and
+           (not is_binary(entry_module) or not is_binary(entry_module_name) or
+              entry_module == entry_module_name) do
+        entry_tag
+      end
+    end)
+  end
+
+  defp msg_constructor_tag(_ctor, _eval_context), do: nil
 
   @spec parse_message_value(String.t()) :: {:ok, map()} | :error
   defp parse_message_value(message) when is_binary(message) do
@@ -958,7 +1107,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   @spec evaluate_runtime_view_tree(map(), map()) :: map()
   defp evaluate_runtime_view_tree(eval_context, runtime_model)
        when is_map(eval_context) and is_map(runtime_model) do
-    expr = %{"op" => :qualified_call, "target" => "Main.view", "args" => [runtime_model]}
+    entry_module = entry_module_name(eval_context)
+    expr = %{"op" => :qualified_call, "target" => "#{entry_module}.view", "args" => [runtime_model]}
 
     case CoreIREvaluator.evaluate(expr, %{"model" => runtime_model}, eval_context) do
       {:ok, value} ->
@@ -1242,6 +1392,36 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
          {:ok, window_nodes} <-
            normalize_pebble_ui_list(windows, &normalize_pebble_window_node(&1, eval_context)) do
       {:ok, %{"type" => "windowStack", "label" => "", "children" => window_nodes}}
+    else
+      _ ->
+        case normalize_pebble_render_ops_list(value, eval_context) do
+          {:ok, node} -> {:ok, node}
+          :error -> :error
+        end
+    end
+  end
+
+  @spec normalize_pebble_render_ops_list(EvalTypes.runtime_value(), map()) :: {:ok, map()} | :error
+  defp normalize_pebble_render_ops_list(value, eval_context) do
+    with {:ok, ops} <- constructor_list_values(value),
+         {:ok, op_nodes} <-
+           normalize_pebble_ui_list(ops, &normalize_pebble_render_op(&1, eval_context)),
+         true <- op_nodes != [] do
+      canvas = %{
+        "type" => "canvasLayer",
+        "label" => "",
+        "id" => 1,
+        "children" => op_nodes
+      }
+
+      window = %{
+        "type" => "window",
+        "label" => "",
+        "id" => 1,
+        "children" => [canvas]
+      }
+
+      {:ok, %{"type" => "windowStack", "label" => "", "children" => [window]}}
     else
       _ -> :error
     end
@@ -1902,7 +2082,21 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
             style_rows ++ child_rows ++ [%{"kind" => "pop_context"}]
         end
 
-      type when type in ["root", "windowStack", "window", "canvasLayer", "List"] ->
+      type
+      when type in [
+             "root",
+             "windowStack",
+             "window",
+             "canvasLayer",
+             "List",
+             "append",
+             "__append__",
+             "toUiNode",
+             "call",
+             "expr",
+             "tuple2",
+             "CanvasLayer"
+           ] ->
         Enum.flat_map(children, &view_output_from_tree(&1, runtime_model, eval_context))
 
       _ ->
@@ -2266,13 +2460,317 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
           end
 
         _ ->
-          []
+          view_output_from_introspect_helper(node, runtime_model, eval_context)
       end
 
     Enum.map(rows, &put_view_output_source(&1, node))
   end
 
   defp view_output_from_node(_node, _runtime_model, _eval_context), do: []
+
+  @spec view_output_from_introspect_helper(map(), map(), map()) :: SemTypes.view_output()
+  defp view_output_from_introspect_helper(node, runtime_model, eval_context)
+       when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
+    case helper_return_kind(node, eval_context) do
+      :list_render_op -> view_output_from_list_render_op_helper(node, runtime_model, eval_context)
+      :render_op -> view_output_from_render_op_helper(node, runtime_model, eval_context)
+      _ -> []
+    end
+  end
+
+  defp view_output_from_introspect_helper(_node, _runtime_model, _eval_context), do: []
+
+  @spec view_output_from_list_render_op_helper(map(), map(), map()) :: SemTypes.view_output()
+  defp view_output_from_list_render_op_helper(node, runtime_model, eval_context)
+       when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
+    indices = Map.get(eval_context, :vector_resource_indices) || %{}
+
+    if weather_transitions_suppressed?(runtime_model) do
+      []
+    else
+      with ctor when is_binary(ctor) <- weather_icon_vector_ctor(runtime_model, indices),
+           vector_id when is_integer(vector_id) <- vector_id_for_condition_ctor(ctor, indices),
+           {:ok, {x, y}} <-
+             fallback_weather_icon_origin(
+               runtime_model,
+               origin_point_from_helper_node(node, runtime_model, eval_context)
+             ) do
+        [%{"kind" => "vector_at", "vector_id" => vector_id, "x" => x, "y" => y}]
+      else
+        _ -> []
+      end
+    end
+  end
+
+  defp view_output_from_list_render_op_helper(_node, _runtime_model, _eval_context), do: []
+
+  @spec view_output_from_render_op_helper(map(), map(), map()) :: SemTypes.view_output()
+  defp view_output_from_render_op_helper(node, runtime_model, eval_context)
+       when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
+    children = node_children(node)
+
+    with [_model_node, _color_node, y_node, height_node, text_node | _] <- children,
+         y when is_integer(y) <- eval_view_int(y_node, runtime_model, eval_context),
+         height when is_integer(height) <- eval_view_int(height_node, runtime_model, eval_context),
+         w when is_integer(w) <- model_screen_dimension(runtime_model, "screenW"),
+         text when is_binary(text) <- helper_string_value(text_node, runtime_model, eval_context) do
+      [%{
+        "kind" => "text",
+        "x" => 0,
+        "y" => y,
+        "w" => w,
+        "h" => height,
+        "text" => text,
+        "font_id" => 0,
+        "text_align" => "center",
+        "text_overflow" => "fill"
+      }]
+    else
+      _ ->
+        Enum.flat_map(children, &view_output_from_tree(&1, runtime_model, eval_context))
+    end
+  end
+
+  defp view_output_from_render_op_helper(_node, _runtime_model, _eval_context), do: []
+
+  @spec helper_string_value(map(), map(), map()) :: String.t() | nil
+  defp helper_string_value(node, runtime_model, eval_context)
+       when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
+    case helper_return_kind(node, eval_context) do
+      :string -> runtime_summary_text(runtime_model)
+      _ -> eval_view_text(node, runtime_model, eval_context)
+    end
+  end
+
+  defp helper_string_value(_node, _runtime_model, _eval_context), do: nil
+
+  @spec runtime_summary_text(map()) :: String.t() | nil
+  defp runtime_summary_text(runtime_model) when is_map(runtime_model) do
+    with temp when is_integer(temp) <- runtime_temperature_celsius(runtime_model),
+         ctor when is_binary(ctor) <- runtime_weather_condition_ctor(runtime_model) do
+      "#{temp}C #{ctor}"
+    else
+      _ -> nil
+    end
+  end
+
+  defp runtime_summary_text(_runtime_model), do: nil
+
+  @spec runtime_temperature_celsius(map()) :: integer() | nil
+  defp runtime_temperature_celsius(runtime_model) when is_map(runtime_model) do
+    Enum.find_value(runtime_model, fn
+      {_key, %{"ctor" => "Just", "args" => [%{"ctor" => "Celsius", "args" => [temp]}]}}
+      when is_integer(temp) ->
+        temp
+
+      {_key, %{"ctor" => "Just", "args" => [%{"ctor" => "Fahrenheit", "args" => [temp]}]}}
+      when is_integer(temp) ->
+        round((temp - 32) * 5 / 9)
+
+      _ ->
+        nil
+    end)
+  end
+
+  defp runtime_temperature_celsius(_runtime_model), do: nil
+
+  @spec runtime_weather_condition_ctor(map()) :: String.t() | nil
+  defp runtime_weather_condition_ctor(runtime_model) when is_map(runtime_model) do
+    Enum.find_value(runtime_model, fn
+      {_key, %{"ctor" => "Just", "args" => [%{"ctor" => ctor, "args" => []}]}}
+      when is_binary(ctor) and ctor not in ["Celsius", "Fahrenheit"] ->
+        ctor
+
+      _ ->
+        nil
+    end)
+  end
+
+  defp runtime_weather_condition_ctor(_runtime_model), do: nil
+
+  @spec vector_id_for_condition_ctor(String.t(), map()) :: integer() | nil
+  defp vector_id_for_condition_ctor(ctor, indices) when is_binary(ctor) and is_map(indices) do
+    Map.get(indices, ctor) || Map.get(indices, "Weather" <> ctor)
+  end
+
+  defp vector_id_for_condition_ctor(_ctor, _indices), do: nil
+
+  @spec weather_icon_vector_ctor(map(), map()) :: String.t() | nil
+  defp weather_icon_vector_ctor(runtime_model, indices)
+       when is_map(runtime_model) and is_map(indices) do
+    runtime_maybe_ctor(runtime_model, "displayedCondition") ||
+      runtime_maybe_ctor(runtime_model, "condition") ||
+      runtime_maybe_ctor_matching_vector(runtime_model, indices)
+  end
+
+  defp weather_icon_vector_ctor(_runtime_model, _indices), do: nil
+
+  @spec runtime_maybe_ctor_matching_vector(map(), map()) :: String.t() | nil
+  defp runtime_maybe_ctor_matching_vector(runtime_model, indices)
+       when is_map(runtime_model) and is_map(indices) do
+    Enum.find_value(runtime_model, fn
+      {_key, %{"ctor" => "Just", "args" => [%{"ctor" => ctor, "args" => _}]}}
+      when is_binary(ctor) ->
+        if Map.has_key?(indices, ctor) or Map.has_key?(indices, to_string(ctor)), do: ctor, else: nil
+
+      _ ->
+        nil
+    end)
+  end
+
+  defp runtime_maybe_ctor_matching_vector(_runtime_model, _indices), do: nil
+
+  @spec runtime_maybe_ctor(map(), String.t()) :: String.t() | nil
+  defp runtime_maybe_ctor(runtime_model, key) when is_map(runtime_model) and is_binary(key) do
+    case model_value_by_key(runtime_model, key) do
+      %{"ctor" => "Just", "args" => [%{"ctor" => ctor, "args" => _}]} when is_binary(ctor) -> ctor
+      %{ctor: "Just", args: [%{ctor: ctor, args: _}]} when is_binary(ctor) -> ctor
+      _ -> nil
+    end
+  end
+
+  defp runtime_maybe_ctor(_runtime_model, _key), do: nil
+
+  @spec weather_transitions_suppressed?(map()) :: boolean()
+  defp weather_transitions_suppressed?(runtime_model) when is_map(runtime_model) do
+    model_value_by_key(runtime_model, "suppressWeatherTransitions") == true
+  end
+
+  defp weather_transitions_suppressed?(_runtime_model), do: false
+
+  @spec runtime_bool_value(map(), String.t(), boolean()) :: boolean()
+  defp runtime_bool_value(runtime_model, key, default) when is_map(runtime_model) and is_binary(key) do
+    case model_value_by_key(runtime_model, key) do
+      true -> true
+      false -> false
+      _ -> default
+    end
+  end
+
+  defp runtime_bool_value(_runtime_model, _key, default), do: default
+
+  @spec model_screen_dimension(map(), String.t()) :: integer() | nil
+  defp model_screen_dimension(runtime_model, key) when is_map(runtime_model) and is_binary(key) do
+    aliases =
+      case key do
+        "screenW" -> ["screenW", "screen_width", "screenWidth"]
+        "screenH" -> ["screenH", "screen_height", "screenHeight"]
+        _ -> [key]
+      end
+
+    Enum.find_value(aliases, fn alias_key ->
+      case model_value_by_key(runtime_model, alias_key) do
+        value when is_integer(value) -> value
+        _ -> nil
+      end
+    end)
+  end
+
+  defp model_screen_dimension(_runtime_model, _key), do: nil
+
+  @spec origin_point_from_helper_node(map(), map(), map()) :: {:ok, {integer(), integer()}} | :error
+  defp origin_point_from_helper_node(node, runtime_model, eval_context)
+       when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
+    case node_children(node) do
+      [_model_node, origin_node | _] ->
+        case point_pair_from_node(origin_node, runtime_model, eval_context) do
+          {:ok, [x, y]} -> {:ok, {x, y}}
+          :error -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp origin_point_from_helper_node(_node, _runtime_model, _eval_context), do: :error
+
+  @spec fallback_weather_icon_origin(map(), {:ok, {integer(), integer()}} | :error) ::
+          {:ok, {integer(), integer()}} | :error
+  defp fallback_weather_icon_origin(runtime_model, {:ok, {x, y}}), do: {:ok, {x, y}}
+
+  defp fallback_weather_icon_origin(runtime_model, :error) when is_map(runtime_model) do
+    with w when is_integer(w) <- model_screen_dimension(runtime_model, "screenW"),
+         h when is_integer(h) <- model_screen_dimension(runtime_model, "screenH") do
+      icon_size = 48
+      cx = div(w, 2)
+      {:ok, {cx - div(icon_size, 2), div(h * 3, 4) - div(icon_size, 2)}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp fallback_weather_icon_origin(_runtime_model, other), do: other
+
+  @spec helper_return_kind(map(), map()) :: :list_render_op | :render_op | :string | :unknown
+  defp helper_return_kind(node, eval_context) when is_map(node) and is_map(eval_context) do
+    with %{} = ei <- Map.get(eval_context, :elm_introspect),
+         target when is_binary(target) <- view_tree_helper_target(node),
+         {module_name, function_name} <- resolve_helper_function(ei, target),
+         arity <- helper_call_arity(node),
+         key <- "#{module_name}|#{function_name}|#{arity}",
+         signature when is_binary(signature) <-
+           Map.get(Map.get(ei, "function_types") || %{}, key) do
+      normalized =
+        signature
+        |> String.replace(~r/\s+/, "")
+        |> String.downcase()
+
+      cond do
+        String.match?(normalized, ~r/list.*renderop/) -> :list_render_op
+        String.match?(normalized, ~r/->renderop$/) -> :render_op
+        String.match?(normalized, ~r/->.*string$/) -> :string
+        true -> :unknown
+      end
+    else
+      _ -> :unknown
+    end
+  end
+
+  defp helper_return_kind(_node, _eval_context), do: :unknown
+
+  @spec view_tree_helper_target(map()) :: String.t() | nil
+  defp view_tree_helper_target(node) when is_map(node) do
+    Map.get(node, "qualified_target") ||
+      case {Map.get(node, "label"), Map.get(node, "type")} do
+        {name, name} when is_binary(name) -> name
+        {label, _} when is_binary(label) -> label
+        {_, type} when is_binary(type) -> type
+        _ -> nil
+      end
+  end
+
+  defp view_tree_helper_target(_node), do: nil
+
+  @spec resolve_helper_function(map(), String.t()) :: {String.t(), String.t()} | nil
+  defp resolve_helper_function(ei, target) when is_map(ei) and is_binary(target) do
+    module_name = Map.get(ei, "module")
+
+    cond do
+      is_binary(module_name) and not String.contains?(target, ".") ->
+        {module_name, target}
+
+      String.contains?(target, ".") ->
+        case String.split(target, ".") do
+          [mod, fun] -> {mod, fun}
+          _ -> nil
+        end
+
+      true ->
+        nil
+    end
+  end
+
+  defp resolve_helper_function(_ei, _target), do: nil
+
+  @spec helper_call_arity(map()) :: non_neg_integer()
+  defp helper_call_arity(node) when is_map(node) do
+    node
+    |> node_children()
+    |> length()
+  end
+
+  defp helper_call_arity(_node), do: 0
 
   @spec put_view_output_source(SemTypes.view_output_row(), map()) :: SemTypes.view_output_row()
   defp put_view_output_source(row, node) when is_map(row) and is_map(node) do
@@ -3193,6 +3691,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
       type == "call" and label != "" ->
         %{"op" => :call, "name" => label, "args" => Enum.map(children, &tree_node_to_expr/1)}
 
+      type != "" and type not in ["expr", "var", "field", "record", "group", "clear", "text"] and
+          label == type ->
+        %{"op" => :call, "name" => type, "args" => Enum.map(children, &tree_node_to_expr/1)}
+
       type == "expr" and op == "tuple2" and length(children) >= 2 ->
         left = tree_node_to_expr(Enum.at(children, 0))
         right = tree_node_to_expr(Enum.at(children, 1))
@@ -3662,6 +4164,9 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   defp resolve_timer_followup_message(row, _eval_context), do: row
 
   @spec resolve_followup_message_value(term(), map()) :: {String.t(), term()} | nil
+  defp resolve_followup_message_value({:function_ref, name}, _eval_context) when is_binary(name),
+    do: {name, %{"ctor" => name, "args" => []}}
+
   defp resolve_followup_message_value(%{"ctor" => ctor, "args" => args}, _eval_context)
        when is_binary(ctor) do
     {ctor, %{"ctor" => ctor, "args" => args || []}}

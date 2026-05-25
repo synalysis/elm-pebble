@@ -353,6 +353,7 @@ defmodule Ide.Debugger do
         Ide.Debugger.Types.SimulatorSettingsSetEventPayload.from_settings(settings)
       )
       |> maybe_apply_simulator_settings_geolocation_response()
+      |> deliver_simulator_position_to_watch()
       |> maybe_apply_simulator_settings_companion_bridge_responses()
       |> maybe_reapply_companion_http_commands()
       |> maybe_apply_init_companion_bridge_commands(:companion)
@@ -512,7 +513,8 @@ defmodule Ide.Debugger do
               Map.get(payload, :view_tree),
               latest_view_tree,
               view_tree,
-              runtime_view_output
+              runtime_view_output,
+              RuntimeArtifacts.require_introspect(next_model)
             )
 
           snapshot_runtime
@@ -540,10 +542,10 @@ defmodule Ide.Debugger do
     update(project_slug, fn state ->
       state
       |> ensure_phone_state()
-      |> apply_hot_reload(rel_path, source, reason, source_root)
-      |> attach_companion_configuration(project_slug)
       |> attach_vector_resource_indices(project_slug)
       |> attach_bitmap_resource_indices(project_slug)
+      |> apply_hot_reload(rel_path, source, reason, source_root)
+      |> attach_companion_configuration(project_slug)
     end)
   end
 
@@ -1459,11 +1461,30 @@ defmodule Ide.Debugger do
     runtime_view_tree = Map.get(runtime_result, :view_tree)
     runtime_view_tree = if is_map(runtime_view_tree), do: runtime_view_tree, else: step.view_tree
 
+    preview_runtime_model =
+      model
+      |> Types.StepExecutionContract.merge_model_patch(runtime_patch)
+      |> Map.get("runtime_model")
+      |> case do
+        value when is_map(value) -> value
+        _ -> %{}
+      end
+
     runtime_view_output =
       preferred_runtime_view_output(
         Map.get(runtime_result, :view_output),
         Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output)
       )
+      |> then(fn rows ->
+        supplemented =
+          supplement_parser_runtime_view_output(
+            step.execution_model,
+            runtime_view_tree,
+            preview_runtime_model
+          )
+
+        choose_runtime_view_output(rows, supplemented)
+      end)
 
     message_source = source_override || msg_source
 
@@ -1496,13 +1517,19 @@ defmodule Ide.Debugger do
       |> normalize_protocol_events_from_schema(state)
       |> enrich_protocol_events(trigger, message_source)
 
+    introspect = introspect_for(state, target)
+
     protocol_runtime_patch =
-      protocol_runtime_model_patch_from_message_value(introspect_for(state, target), message_value)
+      subscription_payload_model_patch(introspect, message_value)
+      |> Map.merge(protocol_runtime_model_patch_from_message_value(introspect, message_value))
 
     updated_model =
       model
       |> Types.StepExecutionContract.merge_model_patch(runtime_patch)
-      |> merge_protocol_runtime_model_patch(protocol_runtime_patch)
+      |> merge_protocol_runtime_model_patch(
+        protocol_runtime_patch,
+        introspect_for(state, target)
+      )
       |> hydrate_runtime_model_for_message(message, patched_runtime_model_fields(runtime_patch))
       |> preserve_protocol_runtime_metadata(model)
       |> Map.put("runtime_last_message", message)
@@ -1597,12 +1624,6 @@ defmodule Ide.Debugger do
   end
 
   @spec maybe_apply_device_data_responses(runtime_state(), Types.surface_target(), String.t(), map(), String.t()) :: runtime_state()
-  defp maybe_apply_device_data_responses(state, _target, _message, _model, "device_data"),
-    do: state
-
-  defp maybe_apply_device_data_responses(state, _target, _message, _model, "init_device_data"),
-    do: state
-
   defp maybe_apply_device_data_responses(state, _target, _message, _model, "configuration"),
     do: state
 
@@ -1726,7 +1747,9 @@ defmodule Ide.Debugger do
 
   @spec maybe_apply_simulator_settings_geolocation_response(runtime_state()) :: runtime_state()
   defp maybe_apply_simulator_settings_geolocation_response(state) when is_map(state) do
-    maybe_apply_geolocation_subscription_response(state, :companion, "simulator_settings")
+    state
+    |> maybe_apply_geolocation_subscription_response(:companion, "simulator_settings")
+    |> maybe_apply_geolocation_subscription_response(:watch, "simulator_settings")
   end
 
   defp maybe_apply_simulator_settings_geolocation_response(state), do: state
@@ -4377,7 +4400,6 @@ defmodule Ide.Debugger do
     do: Ide.Debugger.DeviceRequest.from_cmd_call(cmd_call)
 
   @spec init_device_request_deferred_to_runtime?(map()) :: boolean()
-  defp init_device_request_deferred_to_runtime?(%{kind: "health_supported"}), do: true
   defp init_device_request_deferred_to_runtime?(_req), do: false
 
   @spec health_metric_request_disabled?(map(), map()) :: boolean()
@@ -4911,12 +4933,22 @@ defmodule Ide.Debugger do
   defp normalize_runtime_value(_previous, values) when is_list(values),
     do: Enum.map(values, &normalize_runtime_value(nil, &1))
 
+  defp normalize_runtime_value(_previous, %{"ctor" => "::", "args" => [head, tail]}),
+    do: elm_list_wire_to_elixir(%{"ctor" => "::", "args" => [head, tail]})
+
+  defp normalize_runtime_value(_previous, %{"ctor" => "[]", "args" => []}), do: []
+
   defp normalize_runtime_value(shape, value),
     do: coerce_runtime_scalar(value, shape)
 
   @spec coerce_runtime_scalar(Types.wire_input(), Types.wire_input()) :: Types.wire_input()
   defp coerce_runtime_scalar(value, shape) do
-    value = hydrate_static_runtime_value(value)
+    value =
+      value
+      |> hydrate_static_runtime_value()
+      |> unwrap_just_scalar(shape)
+      |> coerce_char_list_string(shape)
+      |> coerce_singleton_int_list(shape)
 
     cond do
       is_boolean(shape) -> normalize_boolean(value, shape)
@@ -4924,6 +4956,35 @@ defmodule Ide.Debugger do
       true -> value
     end
   end
+
+  @spec unwrap_just_scalar(term(), term()) :: term()
+  defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, %{"ctor" => "Just", "args" => [_]}),
+    do: %{"ctor" => "Just", "args" => [inner]}
+
+  defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, %{ctor: "Just", args: [_]}),
+    do: %{"ctor" => "Just", "args" => [inner]}
+
+  defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, _shape), do: inner
+
+  defp unwrap_just_scalar(value, _shape), do: value
+
+  @spec coerce_char_list_string(term(), term()) :: term()
+  defp coerce_char_list_string(value, shape) when is_binary(shape) and is_list(value) do
+    if char_list_string?(value), do: List.to_string(value), else: value
+  end
+
+  defp coerce_char_list_string(value, _shape), do: value
+
+  @spec coerce_singleton_int_list(term(), term()) :: term()
+  defp coerce_singleton_int_list([n], shape) when is_integer(shape) and is_integer(n), do: n
+  defp coerce_singleton_int_list(value, _shape), do: value
+
+  @spec char_list_string?(list()) :: boolean()
+  defp char_list_string?(list) when is_list(list) do
+    list != [] and Enum.all?(list, &((is_integer(&1) and &1 >= 32 and &1 <= 126) or &1 == 9))
+  end
+
+  defp char_list_string?(_list), do: false
 
   @spec maybe_put_device_preview(Types.app_model(), Types.device_request()) ::
           Types.app_model()
@@ -5441,6 +5502,23 @@ defmodule Ide.Debugger do
   @spec patch_watch_runtime_from_protocol_message(runtime_state(), Types.surface_target(), term()) ::
           runtime_state()
   defp patch_watch_runtime_from_protocol_message(state, :watch, message_value) do
+    ei = introspect_for(state, :watch)
+
+    patch =
+      case subscription_payload_model_patch(ei, message_value) do
+        patch when is_map(patch) and map_size(patch) > 0 -> patch
+        _ -> protocol_runtime_model_patch_from_message_value(ei, message_value)
+      end
+
+    state =
+      if map_size(patch) > 0 do
+        update_in(state, [:watch, :model], fn model ->
+          merge_protocol_runtime_model_patch(model, patch, ei)
+        end)
+      else
+        state
+      end
+
     case protocol_watch_online_from_message_value(message_value) do
       online when is_boolean(online) ->
         update_in(state, [:watch, :model, "runtime_model"], fn runtime_model ->
@@ -5455,21 +5533,148 @@ defmodule Ide.Debugger do
 
   defp patch_watch_runtime_from_protocol_message(state, _recipient, _message_value), do: state
 
-  @spec merge_protocol_runtime_model_patch(map(), map()) :: map()
-  defp merge_protocol_runtime_model_patch(model, patch) when is_map(model) and is_map(patch) and patch != %{} do
-    update_in(model, ["runtime_model"], fn runtime_model ->
-      Map.merge(if(is_map(runtime_model), do: runtime_model, else: %{}), patch)
+  @spec merge_protocol_runtime_model_patch(map(), map(), map() | nil) :: map()
+  defp merge_protocol_runtime_model_patch(model, patch, introspect) when is_map(model) do
+    if is_map(patch) and patch != %{} and not noop_provide_position_patch?(patch) do
+      patch =
+        patch
+        |> promote_protocol_result_record_patch()
+        |> align_protocol_patch_to_init_model(introspect)
+        |> wrap_protocol_patch_fields_to_init_model(introspect)
+
+      update_in(model, ["runtime_model"], fn runtime_model ->
+        Map.merge(if(is_map(runtime_model), do: runtime_model, else: %{}), patch)
+      end)
+    else
+      model
+    end
+  end
+
+  @spec noop_provide_position_patch?(map()) :: boolean()
+  defp noop_provide_position_patch?(%{
+         "latitudeE6" => 0,
+         "longitudeE6" => 0,
+         "accuracyM" => 0
+       }),
+       do: true
+
+  defp noop_provide_position_patch?(_patch), do: false
+
+  @spec align_protocol_patch_to_init_model(map(), map() | nil) :: map()
+  defp align_protocol_patch_to_init_model(patch, introspect) when is_map(patch) and is_map(introspect) do
+    init_keys = Map.keys(Map.get(introspect, "init_model") || %{})
+    patch = remap_geolocation_patch_keys(patch)
+
+    Enum.reduce(patch, patch, fn {key, value}, acc ->
+      case model_field_for_patch_field(key, init_keys) do
+        target when is_binary(target) -> Map.put(acc, target, value)
+        _ -> acc
+      end
     end)
   end
 
-  defp merge_protocol_runtime_model_patch(model, _patch) when is_map(model), do: model
+  defp align_protocol_patch_to_init_model(patch, _introspect), do: remap_geolocation_patch_keys(patch)
+
+  @spec remap_geolocation_patch_keys(map()) :: map()
+  defp remap_geolocation_patch_keys(patch) when is_map(patch) do
+    patch
+    |> maybe_remap_patch_key("latitude", "latitudeE6", &latitude_to_microdegrees/1)
+    |> maybe_remap_patch_key("longitude", "longitudeE6", &longitude_to_microdegrees/1)
+    |> maybe_remap_patch_key("accuracy", "accuracyM", &round_float/1)
+  end
+
+  defp remap_geolocation_patch_keys(patch), do: patch
+
+  @spec maybe_remap_patch_key(map(), String.t(), String.t(), (term() -> term())) :: map()
+  defp maybe_remap_patch_key(patch, from, to, converter) when is_map(patch) and is_binary(from) and is_binary(to) do
+    case Map.fetch(patch, from) do
+      {:ok, value} -> patch |> Map.delete(from) |> Map.put(to, converter.(value))
+      :error -> patch
+    end
+  end
+
+  @spec latitude_to_microdegrees(term()) :: integer()
+  defp latitude_to_microdegrees(value) when is_integer(value) and value > 1_000_000, do: value
+
+  defp latitude_to_microdegrees(value) when is_integer(value),
+    do: round(value * 1_000_000)
+
+  defp latitude_to_microdegrees(value) when is_float(value),
+    do: round(value * 1_000_000)
+
+  defp latitude_to_microdegrees(value), do: value
+
+  @spec longitude_to_microdegrees(term()) :: integer()
+  defp longitude_to_microdegrees(value) when is_integer(value) and abs(value) > 1_000_000, do: value
+
+  defp longitude_to_microdegrees(value) when is_integer(value),
+    do: round(value * 1_000_000)
+
+  defp longitude_to_microdegrees(value) when is_float(value),
+    do: round(value * 1_000_000)
+
+  defp longitude_to_microdegrees(value), do: value
+
+  @spec round_float(term()) :: term()
+  defp round_float(value) when is_float(value), do: round(value)
+  defp round_float(value) when is_integer(value), do: value
+  defp round_float(value), do: value
+
+  @spec model_field_for_patch_field(String.t(), [String.t()]) :: String.t() | nil
+  defp model_field_for_patch_field(patch_key, init_keys) when is_binary(patch_key) and is_list(init_keys) do
+    suffix =
+      patch_key
+      |> String.split("_")
+      |> Enum.map_join("", &String.capitalize/1)
+
+    Enum.find(init_keys, fn model_key ->
+      is_binary(model_key) and model_key != patch_key and String.ends_with?(model_key, suffix)
+    end)
+  end
+
+  defp model_field_for_patch_field(_patch_key, _init_keys), do: nil
 
   @spec protocol_runtime_model_patch_from_message_value(map() | nil, term()) :: map()
-  defp protocol_runtime_model_patch_from_message_value(introspect, message_value)
-       when is_map(introspect) and is_map(message_value) do
-    with %{"ctor" => callback, "args" => [inner | _]} <- message_value,
-         %{"ctor" => ctor, "args" => args} <- inner,
-         true <- is_binary(callback) and is_binary(ctor) and is_list(args),
+  defp protocol_runtime_model_patch_from_message_value(introspect, %{"ctor" => "FromPhone", "args" => [inner | _]})
+       when is_map(introspect) and is_map(inner) do
+    protocol_runtime_model_patch_from_message_value(introspect, inner)
+  end
+
+  defp protocol_runtime_model_patch_from_message_value(introspect, %{ctor: "FromPhone", args: [inner | _]})
+       when is_map(introspect) and is_map(inner) do
+    protocol_runtime_model_patch_from_message_value(introspect, %{"ctor" => "FromPhone", "args" => [inner]})
+  end
+
+  defp protocol_runtime_model_patch_from_message_value(introspect, %{"ctor" => ctor, "args" => args})
+       when is_map(introspect) and is_binary(ctor) and is_list(args) do
+    with names when length(names) == length(args) <-
+           protocol_ctor_binding_names(introspect, ctor) do
+      names
+      |> Enum.zip(args)
+      |> Map.new(fn {key, value} -> {key, wrap_protocol_patch_value(introspect, key, value)} end)
+      |> promote_protocol_result_record_patch()
+      |> apply_update_branch_field_aliases(introspect, ctor)
+    else
+      _ ->
+        case protocol_provide_ctor_patch(introspect, %{"ctor" => ctor, "args" => args}) do
+          patch when is_map(patch) and map_size(patch) > 0 ->
+            patch
+
+          _ ->
+            protocol_runtime_model_patch_from_ok_payload(introspect, args)
+        end
+    end
+  end
+
+  defp protocol_runtime_model_patch_from_message_value(introspect, %{ctor: ctor, args: args})
+       when is_map(introspect) and is_binary(ctor) and is_list(args) do
+    protocol_runtime_model_patch_from_message_value(introspect, %{"ctor" => ctor, "args" => args})
+  end
+
+  defp protocol_runtime_model_patch_from_message_value(introspect, %{"ctor" => callback, "args" => [inner | _]})
+       when is_map(introspect) and is_binary(callback) and is_map(inner) do
+    with %{"ctor" => ctor, "args" => args} <- inner,
+         true <- is_binary(ctor) and is_list(args),
          names when length(names) == length(args) <-
            protocol_update_binding_names(introspect, callback, ctor) do
       names
@@ -5481,6 +5686,243 @@ defmodule Ide.Debugger do
   end
 
   defp protocol_runtime_model_patch_from_message_value(_introspect, _message_value), do: %{}
+
+  @spec protocol_provide_ctor_patch(map(), map()) :: map()
+  defp protocol_provide_ctor_patch(introspect, %{"ctor" => "ProvidePosition", "args" => args})
+       when is_map(introspect) and is_list(args) do
+    case args do
+      [lat, lon, acc | _] when is_number(lat) and is_number(lon) and is_number(acc) ->
+        %{
+          "latitudeE6" => protocol_position_microdegrees(lat),
+          "longitudeE6" => protocol_position_microdegrees(lon),
+          "accuracyM" => round(acc)
+        }
+        |> align_protocol_patch_to_init_model(introspect)
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp protocol_provide_ctor_patch(introspect, %{"ctor" => ctor, "args" => args})
+       when is_map(introspect) and is_binary(ctor) and is_list(args) do
+    if String.starts_with?(ctor, "Provide") do
+      case provide_ctor_model_field(ctor) do
+        field when is_binary(field) ->
+          value =
+            case args do
+              [one] -> wrap_protocol_patch_value(introspect, field, one)
+              _ -> wrap_protocol_patch_value(introspect, field, args)
+            end
+
+          %{field => value}
+          |> mirror_related_runtime_model_fields(introspect)
+
+        _ ->
+          %{}
+      end
+    else
+      %{}
+    end
+  end
+
+  defp protocol_provide_ctor_patch(_introspect, _message_value), do: %{}
+
+  @spec mirror_related_runtime_model_fields(map(), map()) :: map()
+  defp mirror_related_runtime_model_fields(patch, introspect) when is_map(patch) and is_map(introspect) do
+    init = Map.get(introspect, "init_model") || %{}
+
+    Enum.reduce(
+      [
+        {"condition", "displayedCondition"},
+        {"temperature", "displayedTemperature"}
+      ],
+      patch,
+      fn {source_key, target_key}, acc ->
+        case {Map.get(acc, source_key), Map.has_key?(init, target_key)} do
+          {value, true} when not is_nil(value) ->
+            Map.put(acc, target_key, value)
+
+          _ ->
+            acc
+        end
+      end
+    )
+  end
+
+  defp mirror_related_runtime_model_fields(patch, _introspect), do: patch
+
+  @spec provide_ctor_model_field(String.t()) :: String.t() | nil
+  defp provide_ctor_model_field("ProvideTemperature"), do: "temperature"
+  defp provide_ctor_model_field("ProvideCondition"), do: "condition"
+  defp provide_ctor_model_field("ProvideConnectivity"), do: "online"
+  defp provide_ctor_model_field("ProvideBattery"), do: "batteryPercent"
+  defp provide_ctor_model_field("ProvideLocale"), do: "locale"
+  defp provide_ctor_model_field(_), do: nil
+
+  @spec protocol_position_microdegrees(number()) :: integer()
+  defp protocol_position_microdegrees(value) when is_integer(value) and abs(value) > 1_000_000,
+    do: value
+
+  defp protocol_position_microdegrees(value) when is_integer(value),
+    do: round(value * 1_000_000)
+
+  defp protocol_position_microdegrees(value) when is_float(value),
+    do: round(value * 1_000_000)
+
+  @spec wrap_protocol_patch_value(map(), String.t(), term()) :: term()
+  defp wrap_protocol_patch_value(introspect, field, value) when is_map(introspect) and is_binary(field) do
+    case value do
+      %{"ctor" => ctor, "args" => _} when ctor in ["Just", "Nothing", "Ok", "Err"] ->
+        value
+
+      %{ctor: ctor, args: _} when ctor in ["Just", "Nothing", "Ok", "Err"] ->
+        %{"ctor" => to_string(ctor), "args" => Map.get(value, :args) || []}
+
+      _ ->
+        wrap_protocol_patch_value_for_init(introspect, field, value)
+    end
+  end
+
+  defp wrap_protocol_patch_value(_introspect, _field, value), do: value
+
+  @spec wrap_protocol_patch_value_for_init(map(), String.t(), term()) :: term()
+  defp wrap_protocol_patch_value_for_init(introspect, field, value) when is_map(introspect) and is_binary(field) do
+    init = Map.get(introspect, "init_model") || %{}
+
+    case Map.get(init, field) do
+      %{"ctor" => "Just"} -> %{"ctor" => "Just", "args" => [value]}
+      %{ctor: "Just"} -> %{"ctor" => "Just", "args" => [value]}
+      %{"$ctor" => "Just"} -> %{"ctor" => "Just", "args" => [value]}
+      %{"$ctor" => "Nothing"} -> %{"ctor" => "Just", "args" => [value]}
+      %{ctor: "Nothing"} -> %{"ctor" => "Just", "args" => [value]}
+      _ -> value
+    end
+  end
+
+  defp wrap_protocol_patch_value_for_init(_introspect, _field, value), do: value
+
+  @spec wrap_protocol_patch_fields_to_init_model(map(), map() | nil) :: map()
+  defp wrap_protocol_patch_fields_to_init_model(patch, introspect) when is_map(patch) and is_map(introspect) do
+    Map.new(patch, fn {key, value} ->
+      {key, wrap_protocol_patch_value(introspect, key, value)}
+    end)
+  end
+
+  defp wrap_protocol_patch_fields_to_init_model(patch, _introspect), do: patch
+
+  @spec subscription_payload_model_patch(map() | nil, term()) :: map()
+  defp subscription_payload_model_patch(introspect, %{"ctor" => _ctor, "args" => args})
+       when is_map(introspect) and is_list(args) do
+    protocol_runtime_model_patch_from_ok_payload(introspect, args)
+  end
+
+  defp subscription_payload_model_patch(introspect, %{ctor: _ctor, args: args})
+       when is_map(introspect) and is_list(args) do
+    subscription_payload_model_patch(introspect, %{"ctor" => "Msg", "args" => args})
+  end
+
+  defp subscription_payload_model_patch(_introspect, _message_value), do: %{}
+
+  @spec protocol_runtime_model_patch_from_ok_payload(map(), list()) :: map()
+  defp protocol_runtime_model_patch_from_ok_payload(introspect, [%{"ctor" => "Ok", "args" => [record | _]} | _])
+       when is_map(introspect) and is_map(record) do
+    record
+    |> promote_protocol_result_record_patch()
+    |> align_protocol_patch_to_init_model(introspect)
+  end
+
+  defp protocol_runtime_model_patch_from_ok_payload(introspect, [%{ctor: "Ok", args: [record | _]} | _])
+       when is_map(introspect) and is_map(record) do
+    protocol_runtime_model_patch_from_ok_payload(introspect, [
+      %{"ctor" => "Ok", "args" => [record]}
+    ])
+  end
+
+  defp protocol_runtime_model_patch_from_ok_payload(_introspect, _args), do: %{}
+
+  @spec apply_update_branch_field_aliases(map(), map(), String.t()) :: map()
+  defp apply_update_branch_field_aliases(patch, introspect, ctor)
+       when is_map(patch) and is_map(introspect) and is_binary(ctor) do
+    aliases = update_branch_field_aliases(introspect, ctor)
+
+    Map.new(patch, fn {key, value} ->
+      {Map.get(aliases, key, key), value}
+    end)
+  end
+
+  defp apply_update_branch_field_aliases(patch, _introspect, _ctor), do: patch
+
+  @spec update_branch_field_aliases(map(), String.t()) :: %{String.t() => String.t()}
+  defp update_branch_field_aliases(introspect, ctor) when is_map(introspect) and is_binary(ctor) do
+    introspect
+    |> Map.get("update_case_branches", [])
+    |> Enum.find_value(fn branch ->
+      if is_binary(branch) and String.contains?(branch, ctor <> " ") do
+        parse_update_branch_field_aliases(branch)
+      end
+    end)
+    |> case do
+      aliases when is_map(aliases) -> aliases
+      _ -> %{}
+    end
+  end
+
+  @spec parse_update_branch_field_aliases(String.t()) :: %{String.t() => String.t()}
+  defp parse_update_branch_field_aliases(branch) when is_binary(branch) do
+    ~r/([a-z][A-Za-z0-9_]*)\s*=\s*([a-z][A-Za-z0-9_]*)\.([a-z][A-Za-z0-9_]*)/u
+    |> Regex.scan(branch)
+    |> Map.new(fn [_full, target, _binding, source] -> {source, target} end)
+  end
+
+  @spec promote_protocol_result_record_patch(map()) :: map()
+  defp promote_protocol_result_record_patch(patch) when is_map(patch) do
+    case patch do
+      %{"info" => wrapper} ->
+        promote_protocol_result_wrapper(wrapper, Map.delete(patch, "info"))
+
+      %{"value" => wrapper} ->
+        promote_protocol_result_wrapper(wrapper, Map.delete(patch, "value"))
+
+      patch ->
+        Enum.reduce(patch, patch, fn {key, value}, acc ->
+          case promote_protocol_result_wrapper(value, %{}) do
+            extra when map_size(extra) > 0 -> Map.merge(Map.delete(acc, key), extra)
+            _ -> acc
+          end
+        end)
+    end
+  end
+
+  defp promote_protocol_result_record_patch(patch), do: patch
+
+  @spec promote_protocol_result_wrapper(term(), map()) :: map()
+  defp promote_protocol_result_wrapper(%{"ctor" => ctor, "args" => [record | _]}, extra)
+       when ctor in ["Ok", "Err"] and is_map(record) do
+    if maybe_runtime_ctor?(record), do: extra, else: Map.merge(extra, record)
+  end
+
+  defp promote_protocol_result_wrapper(%{ctor: ctor, args: [record | _]}, extra)
+       when ctor in ["Ok", "Err"] and is_map(record) do
+    if maybe_runtime_ctor?(record), do: extra, else: Map.merge(extra, record)
+  end
+
+  defp promote_protocol_result_wrapper(_wrapper, extra), do: extra
+
+  @spec protocol_ctor_binding_names(map(), String.t()) :: [String.t()]
+  defp protocol_ctor_binding_names(introspect, ctor) when is_map(introspect) and is_binary(ctor) do
+    introspect
+    |> Map.get("update_case_branches", [])
+    |> Enum.find_value(fn branch ->
+      if is_binary(branch) and String.contains?(branch, ctor) do
+        parse_update_branch_binding_names(branch, ctor)
+      end
+    end)
+    |> case do
+      names when is_list(names) -> names
+      _ -> []
+    end
+  end
 
   @spec protocol_update_binding_names(map(), String.t(), String.t()) :: [String.t()]
   defp protocol_update_binding_names(introspect, callback, ctor)
@@ -5500,14 +5942,27 @@ defmodule Ide.Debugger do
 
   @spec parse_update_branch_binding_names(String.t(), String.t()) :: [String.t()]
   defp parse_update_branch_binding_names(branch, ctor) when is_binary(branch) and is_binary(ctor) do
-    case Regex.run(~r/#{Regex.escape(ctor)}\s*\((.*)\)\s*$/u, String.trim(branch)) do
-      [_, inner] ->
-        ~r/[a-z][A-Za-z0-9_]*/
+    trimmed = String.trim(branch)
+
+    cond do
+      String.starts_with?(trimmed, ctor <> " ") ->
+        trimmed
+        |> String.replace_prefix(ctor, "")
+        |> String.trim()
+        |> String.split(~r/\s+/, trim: true)
+        |> Enum.reject(&(&1 in ["Ok", "Err", "Nothing", "Just"] or &1 == ctor))
+
+      true ->
+        inner =
+          case Regex.run(~r/#{Regex.escape(ctor)}\s*\(([^)]*)\)/u, trimmed) do
+            [_, captured] -> captured
+            _ -> trimmed |> String.replace_prefix(ctor, "") |> String.trim()
+          end
+
+        ~r/[A-Za-z][A-Za-z0-9_]*/
         |> Regex.scan(inner)
         |> List.flatten()
-
-      _ ->
-        []
+        |> Enum.reject(&(&1 in ["Ok", "Err", "Nothing", "Just"] or &1 == ctor))
     end
   end
 
@@ -6287,6 +6742,113 @@ defmodule Ide.Debugger do
   end
 
   defp deliver_simulator_weather_to_watch(state), do: state
+
+  @spec deliver_simulator_position_to_watch(runtime_state()) :: runtime_state()
+  defp deliver_simulator_position_to_watch(state) when is_map(state) do
+    settings = simulator_settings_from_state(state)
+
+    row =
+      state
+      |> trigger_candidates(:watch)
+      |> Enum.find(fn candidate ->
+        trigger = Map.get(candidate, :trigger) || Map.get(candidate, "trigger")
+        trigger in ["phone_to_watch", "on_phone_to_watch"]
+      end)
+
+    if is_map(row) and subscription_model_active?(state, :watch, row) do
+      case watch_geolocation_from_phone_message_value(settings) do
+        %{} = message_value ->
+          {lat_e6, lon_e6, accuracy_m} = geolocation_wire_triplet(settings)
+
+          apply_step_once(
+            state,
+            :watch,
+            "FromPhone (ProvidePosition #{lat_e6} #{lon_e6} #{accuracy_m})",
+            message_value,
+            "simulator_settings",
+            "simulator_settings"
+          )
+
+        _ ->
+          state
+      end
+    else
+      state
+    end
+  end
+
+  defp deliver_simulator_position_to_watch(state), do: state
+
+  @spec geolocation_wire_triplet(map()) :: {integer(), integer(), integer()}
+  defp geolocation_wire_triplet(settings) when is_map(settings) do
+    {lat, lon, accuracy} = SimulatorSettings.geolocation(settings)
+
+    {
+      protocol_position_microdegrees(lat),
+      protocol_position_microdegrees(lon),
+      round_float(accuracy) || 0
+    }
+  end
+
+  @spec watch_geolocation_from_phone_message_value(map()) :: map() | nil
+  defp watch_geolocation_from_phone_message_value(settings) when is_map(settings) do
+    {lat_e6, lon_e6, accuracy_m} = geolocation_wire_triplet(settings)
+
+    %{
+      "ctor" => "FromPhone",
+      "args" => [
+        %{
+          "ctor" => "ProvidePosition",
+          "args" => [lat_e6, lon_e6, accuracy_m]
+        }
+      ]
+    }
+  end
+
+  defp watch_geolocation_from_phone_message_value(_settings), do: nil
+
+  @weather_init_field_keys ~w(
+    condition
+    temperature
+    displayedCondition
+    displayedTemperature
+  )
+
+  @spec maybe_deliver_simulator_weather_after_watch_introspect(runtime_state(), atom()) ::
+          runtime_state()
+  defp maybe_deliver_simulator_weather_after_watch_introspect(state, :watch) when is_map(state) do
+    if init_model_weather_fields_unset?(state, :watch) do
+      state
+    else
+      deliver_simulator_weather_to_watch(state)
+    end
+  end
+
+  defp maybe_deliver_simulator_weather_after_watch_introspect(state, _target), do: state
+
+  @spec init_model_weather_fields_unset?(runtime_state(), Types.surface_target()) :: boolean()
+  defp init_model_weather_fields_unset?(state, :watch) when is_map(state) do
+    case introspect_for(state, :watch) do
+      %{"init_model" => init} when is_map(init) ->
+        present =
+          @weather_init_field_keys
+          |> Enum.filter(&Map.has_key?(init, &1))
+
+        present != [] and Enum.all?(present, &init_model_value_is_nothing?(Map.get(init, &1)))
+
+      _ ->
+        false
+    end
+  end
+
+  defp init_model_weather_fields_unset?(_state, _target), do: false
+
+  @spec init_model_value_is_nothing?(term()) :: boolean()
+  defp init_model_value_is_nothing?(%{"ctor" => "Nothing"}), do: true
+  defp init_model_value_is_nothing?(%{"$ctor" => "Nothing"}), do: true
+  defp init_model_value_is_nothing?(%{ctor: :Nothing}), do: true
+  defp init_model_value_is_nothing?(%{"$ctor" => ctor}) when ctor in ["Nothing", :Nothing], do: true
+  defp init_model_value_is_nothing?(_value), do: false
 
   @spec maybe_inject_watch_subscription_trigger(runtime_state(), String.t()) :: runtime_state()
   defp maybe_inject_watch_subscription_trigger(state, trigger) when is_map(state) and is_binary(trigger) do
@@ -7640,11 +8202,109 @@ defmodule Ide.Debugger do
 
   @spec preferred_runtime_view_output(list(), list()) :: [map()]
   defp preferred_runtime_view_output(primary, fallback) do
-    case normalize_view_output(primary) do
-      [] -> normalize_view_output(fallback)
-      rows -> rows
+    choose_runtime_view_output(primary, fallback)
+  end
+
+  @spec choose_runtime_view_output(list(), list()) :: [map()]
+  defp choose_runtime_view_output(primary, supplemental) do
+    primary_rows = normalize_view_output(primary)
+    supplemental_rows = normalize_view_output(supplemental)
+
+    cond do
+      supplemental_rows == [] ->
+        primary_rows
+
+      primary_rows == [] ->
+        supplemental_rows
+
+      vector_rows?(supplemental_rows) and not vector_rows?(primary_rows) ->
+        supplemental_rows
+
+      length(supplemental_rows) > length(primary_rows) ->
+        supplemental_rows
+
+      true ->
+        primary_rows
     end
   end
+
+  defp vector_rows?(rows) when is_list(rows),
+    do: Enum.any?(rows, &(is_map(&1) and Map.get(&1, "kind") == "vector_at"))
+
+  @spec supplement_parser_runtime_view_output(Types.execution_model(), map(), map()) :: [map()]
+  defp supplement_parser_runtime_view_output(execution_model, view_tree, runtime_model)
+       when is_map(execution_model) and is_map(view_tree) and is_map(runtime_model) do
+    view_tree = introspect_parser_view_tree(execution_model, view_tree)
+
+    if map_size(view_tree) == 0 do
+      []
+    else
+      eval_context =
+        execution_model
+        |> RuntimeArtifacts.vector_resource_indices()
+        |> then(fn indices ->
+          base = %{}
+
+          base =
+            if map_size(indices) > 0,
+              do: Map.put(base, :vector_resource_indices, indices),
+              else: base
+
+          case RuntimeArtifacts.introspect(execution_model) do
+            %{} = ei -> Map.put(base, :elm_introspect, ei)
+            _ -> base
+          end
+        end)
+
+      preview_model =
+        runtime_model
+        |> Map.merge(screen_dimensions_for_view_preview(execution_model))
+
+      ElmExecutor.Runtime.SemanticExecutor.derive_view_output_preview(
+        view_tree,
+        preview_model,
+        eval_context
+      )
+    end
+  end
+
+  @spec introspect_parser_view_tree(Types.execution_model(), map()) :: map()
+  defp introspect_parser_view_tree(execution_model, view_tree) when is_map(execution_model) do
+    case introspect_view_tree(RuntimeArtifacts.introspect(execution_model)) do
+      %{} = tree ->
+        tree
+
+      _ ->
+        case view_tree do
+          %{"type" => type} = tree when is_binary(type) and type not in ["root", "unknown", "previewUnavailable"] ->
+            tree
+
+          _ ->
+            %{}
+        end
+    end
+  end
+
+  defp introspect_view_tree(%{} = introspect), do: Map.get(introspect, "view_tree") || %{}
+  defp introspect_view_tree(_), do: %{}
+
+  @spec screen_dimensions_for_view_preview(map()) :: map()
+  defp screen_dimensions_for_view_preview(execution_model) when is_map(execution_model) do
+    %{
+      "screenW" =>
+        Map.get(execution_model, "screen_width") || Map.get(execution_model, "screenW"),
+      "screenH" =>
+        Map.get(execution_model, "screen_height") || Map.get(execution_model, "screenH")
+    }
+    |> Enum.reject(fn {_key, value} -> not is_integer(value) end)
+    |> Map.new()
+  end
+
+  defp screen_dimensions_for_view_preview(_execution_model), do: %{}
+
+  defp introspect_parser_view_tree(_execution_model, view_tree), do: view_tree
+
+  defp supplement_parser_runtime_view_output(_execution_model, _view_tree, _runtime_model), do: []
 
   @spec render_view_after_update(map() | nil, map() | nil, Types.surface_target(), String.t(), String.t(), map()) :: map()
   defp render_view_after_update(
@@ -7658,19 +8318,20 @@ defmodule Ide.Debugger do
        when target in [:watch, :companion, :phone] and is_binary(message) and is_binary(trigger) and
               is_map(model) do
     output_view_tree = runtime_view_output_tree(model, target)
+    ei = RuntimeArtifacts.require_introspect(model)
 
     base =
       cond do
         is_map(output_view_tree) ->
           output_view_tree
 
-        concrete_runtime_view_tree?(runtime_view_tree) ->
+        concrete_runtime_view_tree?(runtime_view_tree, ei) ->
           runtime_view_tree
 
-        parser_expression_view_tree?(runtime_view_tree) ->
+        parser_expression_view_tree?(runtime_view_tree, ei) ->
           preview_unavailable_view_tree(target, "runtime view did not produce drawable output")
 
-        concrete_runtime_view_tree?(previous_view_tree) ->
+        concrete_runtime_view_tree?(previous_view_tree, ei) ->
           previous_view_tree
 
         true ->
@@ -9254,9 +9915,29 @@ defmodule Ide.Debugger do
     case {ctor, args} do
       {"True", []} -> true
       {"False", []} -> false
+      {"[]", []} -> []
+      {"::", [head, tail]} -> [hydrate_static_runtime_value(head) | elm_list_wire_to_elixir(tail)]
       _ -> %{"ctor" => ctor, "args" => args}
     end
   end
+
+  @spec elm_list_wire_to_elixir(term()) :: list()
+  defp elm_list_wire_to_elixir([]), do: []
+
+  defp elm_list_wire_to_elixir(%{"ctor" => "[]", "args" => []}), do: []
+
+  defp elm_list_wire_to_elixir(%{"ctor" => "::", "args" => [head, tail]}) do
+    [hydrate_static_runtime_value(head) | elm_list_wire_to_elixir(tail)]
+  end
+
+  defp elm_list_wire_to_elixir(%{ctor: "[]", args: []}), do: []
+
+  defp elm_list_wire_to_elixir(%{ctor: "::", args: [head, tail]}) do
+    [hydrate_static_runtime_value(head) | elm_list_wire_to_elixir(tail)]
+  end
+
+  defp elm_list_wire_to_elixir(list) when is_list(list), do: Enum.map(list, &hydrate_static_runtime_value/1)
+  defp elm_list_wire_to_elixir(value), do: [hydrate_static_runtime_value(value)]
 
   @spec normalize_runtime_boolean_string(String.t()) :: boolean() | String.t()
   defp normalize_runtime_boolean_string(value) when is_binary(value) do
@@ -9831,10 +10512,12 @@ defmodule Ide.Debugger do
 
           next_state = put_in(state, [target, :model], next_model)
 
+          ei = RuntimeArtifacts.require_introspect(next_model)
+
           runtime_view_tree =
             case runtime_view_output_tree(next_model, target) do
               %{} = output_tree ->
-                if introspect_view_usable?(output_tree), do: output_tree, else: nil
+                if introspect_view_usable?(output_tree, ei), do: output_tree, else: nil
 
               _ ->
                 nil
@@ -9848,11 +10531,12 @@ defmodule Ide.Debugger do
                   Map.get(payload, :view_tree),
                   view_tree,
                   view_tree,
-                  runtime_view_output
+                  runtime_view_output,
+                  ei
                 )
             end
 
-          if introspect_view_usable?(runtime_view_tree) do
+          if introspect_view_usable?(runtime_view_tree, ei) do
             put_in(next_state, [target, :view_tree], runtime_view_tree)
           else
             next_state
@@ -9862,9 +10546,28 @@ defmodule Ide.Debugger do
           state
       end
     else
-      state
+      supplement_runtime_preview_without_executor(state, target, execution_model, introspect)
     end
   end
+
+  @spec supplement_runtime_preview_without_executor(map(), atom(), map(), map() | nil) :: map()
+  defp supplement_runtime_preview_without_executor(state, target, execution_model, introspect)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_map(execution_model) and
+              is_map(introspect) do
+    model = get_in(state, [target, :model]) || %{}
+    runtime_model = RuntimeArtifacts.inner_runtime_model(model)
+
+    view_output =
+      supplement_parser_runtime_view_output(execution_model, Map.get(introspect, "view_tree") || %{}, runtime_model)
+
+    if view_output == [] do
+      state
+    else
+      put_in(state, [target, :model, "runtime_view_output"], view_output)
+    end
+  end
+
+  defp supplement_runtime_preview_without_executor(state, _target, _execution_model, _introspect), do: state
 
   @spec merge_latest_runtime_render_inputs(map(), map()) :: map()
   defp merge_latest_runtime_render_inputs(snapshot_model, latest_model)
@@ -9886,7 +10589,9 @@ defmodule Ide.Debugger do
 
   @spec maybe_put_debugger_view_tree(map(), map() | nil) :: map()
   defp maybe_put_debugger_view_tree(runtime, runtime_view_tree) when is_map(runtime) do
-    if introspect_view_usable?(runtime_view_tree) do
+    ei = RuntimeArtifacts.introspect(runtime) || %{}
+
+    if introspect_view_usable?(runtime_view_tree, ei) do
       Map.put(runtime, :view_tree, runtime_view_tree)
     else
       runtime
@@ -9897,43 +10602,44 @@ defmodule Ide.Debugger do
           map() | nil,
           map() | nil,
           map() | nil,
-          Types.runtime_view_nodes()
+          Types.runtime_view_nodes(),
+          Types.elm_introspect()
         ) :: map() | nil
   defp choose_runtime_preview_view_tree(
          runtime_view_tree,
          latest_view_tree,
          snapshot_view_tree,
-         _view_output
-       ) do
+         _view_output,
+         ei
+       )
+       when is_map(ei) do
     cond do
-      concrete_runtime_view_tree?(runtime_view_tree) ->
+      concrete_runtime_view_tree?(runtime_view_tree, ei) ->
         runtime_view_tree
 
-      concrete_runtime_view_tree?(latest_view_tree) and
-          parser_expression_view_tree?(runtime_view_tree) ->
+      concrete_runtime_view_tree?(latest_view_tree, ei) and
+          parser_expression_view_tree?(runtime_view_tree, ei) ->
         latest_view_tree
 
       true ->
-        if concrete_runtime_view_tree?(snapshot_view_tree), do: snapshot_view_tree, else: nil
+        if concrete_runtime_view_tree?(snapshot_view_tree, ei),
+          do: snapshot_view_tree,
+          else: nil
     end
   end
 
-  @spec concrete_runtime_view_tree?(map()) :: boolean()
-  defp concrete_runtime_view_tree?(%{"type" => type} = tree) when is_binary(type) do
-    introspect_view_usable?(tree) and not parser_expression_root_type?(type)
+  @spec concrete_runtime_view_tree?(map(), map()) :: boolean()
+  defp concrete_runtime_view_tree?(%{"type" => _} = tree, ei) when is_map(ei) do
+    introspect_view_usable?(tree, ei) and not parser_expression_view_tree?(tree, ei)
   end
 
-  defp concrete_runtime_view_tree?(_tree), do: false
+  defp concrete_runtime_view_tree?(_tree, _ei), do: false
 
-  @spec parser_expression_view_tree?(map()) :: boolean()
-  defp parser_expression_view_tree?(%{"type" => type}) when is_binary(type),
-    do: parser_expression_root_type?(type)
+  @spec parser_expression_view_tree?(map(), map()) :: boolean()
+  defp parser_expression_view_tree?(tree, ei) when is_map(tree) and is_map(ei),
+    do: Ide.Debugger.ElmIntrospect.parser_expression_view_tree_node?(tree, ei)
 
-  defp parser_expression_view_tree?(_tree), do: false
-
-  @spec parser_expression_root_type?(String.t()) :: boolean()
-  defp parser_expression_root_type?(type),
-    do: Ide.Debugger.ElmIntrospect.parser_expression_combinator_type?(type)
+  defp parser_expression_view_tree?(_tree, _ei), do: false
 
   @spec normalize_source_root(map()) :: String.t()
   defp normalize_source_root(attrs) do
@@ -10032,6 +10738,14 @@ defmodule Ide.Debugger do
             |> maybe_apply_init_protocol_events(introspect_target_key(source_root))
             |> maybe_apply_init_geolocation_response(introspect_target_key(source_root))
             |> maybe_apply_init_companion_bridge_commands(introspect_target_key(source_root))
+            |> maybe_deliver_simulator_weather_after_watch_introspect(introspect_target_key(source_root))
+            |> then(fn reloaded ->
+              if introspect_target_key(source_root) == :watch do
+                refresh_runtime_preview_for_target(reloaded, :watch)
+              else
+                reloaded
+              end
+            end)
 
           payload =
             if introspect_event_worth_logging?(ei) do
@@ -10039,7 +10753,7 @@ defmodule Ide.Debugger do
                 ei,
                 rel_path,
                 source_root,
-                introspect_view_usable?(Map.get(ei, "view_tree") || %{})
+                introspect_view_usable?(Map.get(ei, "view_tree") || %{}, ei)
               )
             else
               nil
@@ -10050,6 +10764,7 @@ defmodule Ide.Debugger do
         _ ->
           {state, nil}
       end
+      |> then(fn {st, payload} -> {apply_simulator_settings_to_surfaces(st), payload} end)
     else
       {state, nil}
     end
@@ -10248,7 +10963,7 @@ defmodule Ide.Debugger do
     init != nil or msgs != [] or branches != [] or vbr != [] or ibr != [] or sbr != [] or
       subs != [] or icmd != [] or
       ucmd != [] or prts != [] or imps != [] or is_map(mp) or params? or port_mod or
-      introspect_view_usable?(vt)
+      introspect_view_usable?(vt, ei)
   end
 
 
@@ -10364,25 +11079,28 @@ defmodule Ide.Debugger do
       |> put_in([target, :model], model)
       |> put_in([target, :shell], next_shell)
 
+    parser_view? = Ide.Debugger.ElmIntrospect.parser_expression_view?(%{"elm_introspect" => ei})
+
     state =
       cond do
-        introspect_view_usable?(output_vt) ->
+        introspect_view_usable?(output_vt, ei) ->
           put_in(state, [target, :view_tree], output_vt)
 
-        introspect_view_usable?(runtime_vt) ->
+        introspect_view_usable?(runtime_vt, ei) and runtime_preview_has_drawable_output?(model) ->
           put_in(state, [target, :view_tree], runtime_vt)
 
-        parser_expression_view_tree?(runtime_vt) ->
+        parser_view? and not introspect_view_usable?(output_vt, ei) and
+            not introspect_view_usable?(runtime_vt, ei) ->
           put_in(
             state,
             [target, :view_tree],
             preview_unavailable_view_tree(target, "runtime view did not produce drawable output")
           )
 
-        introspect_view_usable?(vt) ->
+        introspect_view_usable?(vt, ei) ->
           put_in(state, [target, :view_tree], vt)
 
-        parser_expression_view_tree?(vt) ->
+        parser_expression_view_tree?(vt, ei) ->
           put_in(
             state,
             [target, :view_tree],
@@ -10419,31 +11137,39 @@ defmodule Ide.Debugger do
 
   defp current_model_for_introspect_execution(_model), do: %{}
 
-  @spec introspect_view_usable?(map()) :: boolean()
-  defp introspect_view_usable?(%{"type" => "unknown", "children" => []}), do: false
+  @spec introspect_view_usable?(map(), Types.elm_introspect()) :: boolean()
+  defp introspect_view_usable?(%{"type" => "unknown", "children" => []}, _ei), do: false
 
-  defp introspect_view_usable?(%{"type" => type} = tree) when is_binary(type) do
+  defp introspect_view_usable?(%{"type" => type} = tree, ei) when is_binary(type) do
     type not in ["root", "unknown", "previewUnavailable"] and
-      not unresolved_parser_view_root?(tree)
+      not unresolved_parser_view_root?(tree, ei)
   end
 
-  defp introspect_view_usable?(%{"children" => children})
+  defp introspect_view_usable?(%{"children" => children}, _ei)
        when is_list(children) and children != [],
        do: true
 
-  defp introspect_view_usable?(_), do: false
+  defp introspect_view_usable?(_tree, _ei), do: false
 
-  @spec unresolved_parser_view_root?(map()) :: boolean()
-  defp unresolved_parser_view_root?(%{"type" => type, "qualified_target" => _})
-       when is_binary(type) do
-    not Ide.Debugger.ElmIntrospect.runtime_drawable_view_root_type?(type)
+  @spec unresolved_parser_view_root?(map(), Types.elm_introspect()) :: boolean()
+  defp unresolved_parser_view_root?(tree, ei) when is_map(tree) and is_map(ei),
+    do: Ide.Debugger.ElmIntrospect.parser_expression_view_tree_node?(tree, ei)
+
+  defp unresolved_parser_view_root?(_tree, _ei), do: false
+
+  @spec runtime_preview_has_drawable_output?(map()) :: boolean()
+  defp runtime_preview_has_drawable_output?(model) when is_map(model) do
+    model
+    |> Map.get("runtime_view_output", [])
+    |> List.wrap()
+    |> Enum.any?(fn
+      %{"kind" => kind} when is_binary(kind) and kind not in ["clear", ""] -> true
+      %{kind: kind} when is_binary(kind) and kind not in ["clear", ""] -> true
+      _ -> false
+    end)
   end
 
-  defp unresolved_parser_view_root?(%{"type" => type}) when is_binary(type) do
-    Ide.Debugger.ElmIntrospect.parser_expression_combinator_type?(type)
-  end
-
-  defp unresolved_parser_view_root?(_), do: false
+  defp runtime_preview_has_drawable_output?(_model), do: false
 
   @spec preview_unavailable_view_tree(:watch | :companion | :phone, String.t()) :: map()
   defp preview_unavailable_view_tree(target, reason) do

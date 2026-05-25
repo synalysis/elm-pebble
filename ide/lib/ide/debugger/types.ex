@@ -45,7 +45,6 @@ defmodule Ide.Debugger.Types do
     RuntimeStatusEventPayload,
     ReloadAttrs,
     SaveConfigurationAttrs,
-    RuntimeEventAppend,
     RuntimeEventPayload,
     SessionAttrs,
     SnapshotContinueAttrs,

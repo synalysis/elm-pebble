@@ -678,9 +678,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         normalize_rendered_tree(tree)
 
       _ ->
+        ei = Ide.Debugger.RuntimeArtifacts.require_introspect(model)
+
         model
         |> parser_view_tree()
-        |> discard_parser_expression_view_tree()
+        |> discard_parser_expression_view_tree(ei)
     end
   end
 
@@ -696,7 +698,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       output_tree != nil ->
         output_tree
 
-      concrete_rendered_view_tree?(view_tree) ->
+      concrete_rendered_view_tree?(view_tree, RuntimeArtifacts.require_introspect(model)) ->
         view_tree
 
       true ->
@@ -706,37 +708,30 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
   defp runtime_rendered_tree(_runtime, _model), do: nil
 
-  @spec concrete_rendered_view_tree?(view_tree()) :: boolean()
-  defp concrete_rendered_view_tree?(%{"type" => "tuple2"} = tree),
+  @spec concrete_rendered_view_tree?(view_tree(), map()) :: boolean()
+  defp concrete_rendered_view_tree?(%{"type" => "tuple2"} = tree, _ei),
     do: match?({:ok, _node}, normalize_rendered_ui_value(tree))
 
-  defp concrete_rendered_view_tree?(tree) when is_map(tree) and map_size(tree) > 0,
-    do: not parser_expression_view_tree?(tree)
+  defp concrete_rendered_view_tree?(tree, ei) when is_map(tree) and map_size(tree) > 0,
+    do: not parser_expression_view_tree?(tree, ei)
 
-  defp concrete_rendered_view_tree?(_tree), do: false
+  defp concrete_rendered_view_tree?(_tree, _ei), do: false
 
-  @spec discard_parser_expression_view_tree(view_tree()) :: map() | nil
-  defp discard_parser_expression_view_tree(tree) when is_map(tree) do
-    if parser_expression_view_tree?(tree), do: nil, else: tree
+  @spec discard_parser_expression_view_tree(view_tree(), map()) :: map() | nil
+  defp discard_parser_expression_view_tree(tree, ei) when is_map(tree) do
+    if parser_expression_view_tree?(tree, ei), do: nil, else: tree
   end
 
-  defp discard_parser_expression_view_tree(_tree), do: nil
+  defp discard_parser_expression_view_tree(_tree, _ei), do: nil
 
-  @spec parser_expression_view_tree?(view_tree()) :: boolean()
-  defp parser_expression_view_tree?(%{"type" => "tuple2"} = tree),
+  @spec parser_expression_view_tree?(view_tree(), map()) :: boolean()
+  defp parser_expression_view_tree?(%{"type" => "tuple2"} = tree, _ei),
     do: not match?({:ok, _node}, normalize_rendered_ui_value(tree))
 
-  defp parser_expression_view_tree?(%{"type" => type}) when is_binary(type),
-    do: parser_expression_root_type?(type)
+  defp parser_expression_view_tree?(tree, ei) when is_map(tree) and is_map(ei),
+    do: Ide.Debugger.ElmIntrospect.parser_expression_view_tree_node?(tree, ei)
 
-  defp parser_expression_view_tree?(%{type: type}) when is_binary(type),
-    do: parser_expression_root_type?(type)
-
-  defp parser_expression_view_tree?(_tree), do: false
-
-  @spec parser_expression_root_type?(String.t()) :: boolean()
-  defp parser_expression_root_type?(type),
-    do: Ide.Debugger.ElmIntrospect.parser_expression_combinator_type?(type)
+  defp parser_expression_view_tree?(_tree, _ei), do: false
 
   @spec runtime_view_output_tree(map()) :: map() | nil
   defp runtime_view_output_tree(model) when is_map(model) do

@@ -2590,26 +2590,21 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     core_ir = %{
       "modules" => [
         %{
-          "name" => "Pebble.Ui",
+          "name" => "Main",
           "declarations" => [
             %{
               "kind" => "function",
               "name" => "toUiNode",
               "args" => ["ops"],
               "expr" => to_ui_node_body
-            }
-          ]
-        },
-        %{
-          "name" => "Main",
-          "declarations" => [
+            },
             %{
               "kind" => "function",
               "name" => "view",
               "args" => ["model"],
               "expr" => %{
                 "op" => :qualified_call,
-                "target" => "PebbleUi.toUiNode",
+                "target" => "Main.toUiNode",
                 "args" => [
                   %{
                     "op" => :list_literal,
@@ -2651,10 +2646,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
       rel_path: "watch/src/Main.elm",
       source: "",
       introspect: %{"view_tree" => %{"type" => "root", "children" => []}},
-      current_model: %{"runtime_model" => %{"time" => "08:41"}},
+      current_model: %{"runtime_model" => %{"time" => "08:41", "ops" => []}},
       current_view_tree: %{},
-      message: "Tick",
-      update_branches: ["Tick"],
+      message: nil,
+      update_branches: [],
       elm_executor_core_ir: core_ir
     }
 

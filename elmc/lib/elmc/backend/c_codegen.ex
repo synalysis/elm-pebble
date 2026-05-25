@@ -3159,15 +3159,15 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp compile_expr(%{op: :record_literal, fields: fields}, env, counter) do
-    sorted_fields = Enum.sort_by(fields, & &1.name)
-    field_count = length(sorted_fields)
+    ordered_fields = fields
+    field_count = length(ordered_fields)
 
     names_array =
-      sorted_fields |> Enum.map(fn f -> "\"#{escape_c_string(f.name)}\"" end) |> Enum.join(", ")
+      ordered_fields |> Enum.map(fn f -> "\"#{escape_c_string(f.name)}\"" end) |> Enum.join(", ")
 
-    if field_count > 0 and Enum.all?(sorted_fields, &native_int_expr?(&1.expr, env)) do
+    if field_count > 0 and Enum.all?(ordered_fields, &native_int_expr?(&1.expr, env)) do
       {field_code, field_refs, counter} =
-        Enum.reduce(sorted_fields, {"", [], counter}, fn field, {code_acc, refs_acc, c} ->
+        Enum.reduce(ordered_fields, {"", [], counter}, fn field, {code_acc, refs_acc, c} ->
           {code, ref, c2} = compile_native_int_expr(field.expr, env, c)
           {code_acc <> "\n  " <> code, refs_acc ++ [ref], c2}
         end)
@@ -3186,7 +3186,7 @@ defmodule Elmc.Backend.CCodegen do
       {code, out, next}
     else
       {field_code, field_vars, counter} =
-        Enum.reduce(sorted_fields, {"", [], counter}, fn field, {code_acc, vars_acc, c} ->
+        Enum.reduce(ordered_fields, {"", [], counter}, fn field, {code_acc, vars_acc, c} ->
           {code, var, c2} = compile_expr(field.expr, env, c)
           {code_acc <> "\n  " <> code, vars_acc ++ [{field.name, var}], c2}
         end)
@@ -3208,10 +3208,10 @@ defmodule Elmc.Backend.CCodegen do
 
   defp compile_expr(%{op: :record_update, base: base, fields: fields}, env, counter) do
     {base_code, base_var, counter} = compile_expr(base, env, counter)
-    sorted_fields = Enum.sort_by(fields, & &1.name)
+    ordered_fields = fields
 
     {update_code, current_var, counter} =
-      Enum.reduce(sorted_fields, {"", base_var, counter}, fn field, {code_acc, current, c} ->
+      Enum.reduce(ordered_fields, {"", base_var, counter}, fn field, {code_acc, current, c} ->
         {field_code, field_var, c2} = compile_expr(field.expr, env, c)
         next = c2 + 1
         out = "tmp_#{next}"
@@ -3901,7 +3901,7 @@ defmodule Elmc.Backend.CCodegen do
       |> Enum.flat_map(fn decl ->
         case Map.get(decl, :expr) do
           %{op: :record_alias, fields: fields} when is_list(fields) ->
-            shape = Enum.sort(Enum.map(fields, &to_string/1))
+            shape = Enum.map(fields, &to_string/1)
             [{{mod.name, decl.name}, shape}]
 
           _ ->
@@ -9193,6 +9193,12 @@ defmodule Elmc.Backend.CCodegen do
   defp special_value_from_target("Json.Decode.map5", [f, d1, d2, d3, d4, d5]),
     do: %{op: :runtime_call, function: "elmc_json_decode_map5", args: [f, d1, d2, d3, d4, d5]}
 
+  defp special_value_from_target("Json.Decode.map6", [f, d1, d2, d3, d4, d5, d6]),
+    do: %{op: :runtime_call, function: "elmc_json_decode_map6", args: [f, d1, d2, d3, d4, d5, d6]}
+
+  defp special_value_from_target("Json.Decode.map7", [f, d1, d2, d3, d4, d5, d6, d7]),
+    do: %{op: :runtime_call, function: "elmc_json_decode_map7", args: [f, d1, d2, d3, d4, d5, d6, d7]}
+
   defp special_value_from_target("Json.Decode.succeed", [value]),
     do: %{op: :runtime_call, function: "elmc_json_decode_succeed", args: [value]}
 
@@ -10152,9 +10158,7 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp record_shape(%{op: :record_literal, fields: fields}, _env) when is_list(fields) do
-    fields
-    |> Enum.map(& &1.name)
-    |> Enum.sort()
+    Enum.map(fields, & &1.name)
   end
 
   defp record_shape(%{op: :record_update, base: base}, env), do: record_shape(base, env)

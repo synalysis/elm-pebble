@@ -84,7 +84,10 @@ defmodule Ide.Debugger.ElmIntrospect do
   defp build_snapshot(%Module{} = mod, source_path_override \\ nil) do
     init_params = function_param_names(find_function_definition(mod, "init"))
     init_e = find_init_expr(mod)
-    init_model = map_expr(init_e, &expr_to_json_value(init_model_expr(&1), 0, 8), nil)
+    init_model =
+      map_expr(init_e, fn expr ->
+        expr |> init_model_expr() |> expr_to_json_value(0, 12, mod)
+      end, nil)
 
     view_params = function_param_names(find_function_definition(mod, "view"))
     view_e = find_view_expr(mod)
@@ -198,19 +201,35 @@ defmodule Ide.Debugger.ElmIntrospect do
   def parser_expression_view?(introspect) when is_map(introspect) do
     ei = Map.get(introspect, "elm_introspect") || introspect
     root = Map.get(ei, "view_tree") || %{}
-    type = Map.get(root, "type")
+    parser_expression_view_tree_node?(root, ei)
+  end
+
+  def parser_expression_view?(_), do: false
+
+  @doc """
+  Returns true when a parser-derived view tree node is still an unevaluated view expression.
+
+  Uses declared return types and structural shapes from introspection metadata, not helper names.
+  """
+  @spec parser_expression_view_tree_node?(map(), map()) :: boolean()
+  def parser_expression_view_tree_node?(node, ei) when is_map(node) and is_map(ei) do
+    type = Map.get(node, "type")
 
     cond do
       runtime_drawable_view_root_type?(type) ->
         false
 
-      ui_node_type_signature?(Map.get(ei, "view_return_type")) ->
+      parser_expression_structural_type?(type) ->
         true
 
-      root_call_returns_ui_node?(root, ei) ->
+      view_tree_call_returns_ui_node?(node, ei) ->
         true
 
-      is_binary(type) and parser_expression_combinator_type?(type) ->
+      ui_node_type_signature?(Map.get(ei, "view_return_type")) and
+          not runtime_drawable_view_root_type?(type) ->
+        true
+
+      parser_expression_wrapper_with_unevaluated_children?(node, ei) ->
         true
 
       true ->
@@ -218,7 +237,19 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  def parser_expression_view?(_), do: false
+  @spec parser_expression_wrapper_with_unevaluated_children?(map(), map()) :: boolean()
+  defp parser_expression_wrapper_with_unevaluated_children?(node, ei) when is_map(node) and is_map(ei) do
+    type = Map.get(node, "type")
+
+    type in ["toUiNode", "call", "expr"] and
+      Enum.any?(List.wrap(Map.get(node, "children")), fn child ->
+        is_map(child) and parser_expression_view_tree_node?(child, ei)
+      end)
+  end
+
+  defp parser_expression_wrapper_with_unevaluated_children?(_, _), do: false
+
+  def parser_expression_view_tree_node?(_, _), do: false
 
   @doc false
   @spec runtime_drawable_view_root_type?(String.t() | nil) :: boolean()
@@ -237,8 +268,23 @@ defmodule Ide.Debugger.ElmIntrospect do
   def ui_node_type_signature?(_), do: false
 
   @doc false
-  @spec parser_expression_combinator_type?(String.t()) :: boolean()
-  def parser_expression_combinator_type?(type)
+  @spec parser_expression_combinator_type?(String.t(), map()) :: boolean()
+  def parser_expression_combinator_type?(type, introspect \\ %{})
+
+  def parser_expression_combinator_type?(type, introspect)
+      when is_binary(type) and is_map(introspect) and map_size(introspect) > 0 do
+    ei = Map.get(introspect, "elm_introspect") || introspect
+    parser_expression_view_tree_node?(%{"type" => type}, ei)
+  end
+
+  def parser_expression_combinator_type?(type, _introspect) when is_binary(type),
+    do: parser_expression_structural_type?(type)
+
+  def parser_expression_combinator_type?(_, _), do: false
+
+  @doc false
+  @spec parser_expression_structural_type?(String.t() | nil) :: boolean()
+  def parser_expression_structural_type?(type)
       when type in [
              "append",
              "CanvasLayer",
@@ -253,7 +299,7 @@ defmodule Ide.Debugger.ElmIntrospect do
            ],
       do: true
 
-  def parser_expression_combinator_type?(_), do: false
+  def parser_expression_structural_type?(_), do: false
 
   @spec map_expr(Types.ast_expr() | nil, (Types.ast_expr() -> term()), term()) :: term()
   defp map_expr(nil, _fun, fallback), do: fallback
@@ -428,7 +474,7 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   @spec find_function_declaration(Types.module_ref(), String.t()) :: Types.ast_declaration() | nil
   defp find_function_declaration(%Module{declarations: decls}, name) when is_binary(name) do
-    Enum.find_value([:function_definition, :function_signature], fn kind ->
+    Enum.find_value([:function_signature, :function_definition], fn kind ->
       Enum.find(decls, fn decl ->
         Map.get(decl, :kind) == kind and Map.get(decl, :name) == name
       end)
@@ -513,22 +559,61 @@ defmodule Ide.Debugger.ElmIntrospect do
     |> max(0)
   end
 
-  @spec root_call_returns_ui_node?(map(), map()) :: boolean()
-  defp root_call_returns_ui_node?(root, ei) when is_map(root) and is_map(ei) do
-    with target when is_binary(target) <- Map.get(root, "qualified_target"),
+  @spec view_tree_call_returns_ui_node?(map(), map()) :: boolean()
+  defp view_tree_call_returns_ui_node?(node, ei) when is_map(node) and is_map(ei) do
+    with target when is_binary(target) <- view_tree_call_target(node),
          types when is_map(types) <- Map.get(ei, "function_types"),
-         {module_name, function_name} <-
-           resolve_source_call(target, introspect_call_resolution(ei)),
-         key <- function_type_key(module_name, function_name, call_tree_arity(root)),
+         {module_name, function_name} <- resolve_view_tree_call_target(target, ei),
+         key <- function_type_key(module_name, function_name, call_tree_arity(node)),
          type when is_binary(type) <-
            Map.get(types, key) || find_function_type_signature(types, module_name, function_name) do
-      ui_node_type_signature?(return_type_from_signature(type))
+      ui_node_type_signature?(return_type_from_signature(type)) or
+        render_ops_to_ui_node_signature?(type)
     else
       _ -> false
     end
   end
 
-  defp root_call_returns_ui_node?(_, _), do: false
+  defp view_tree_call_returns_ui_node?(_, _), do: false
+
+  @spec view_tree_call_target(map()) :: String.t() | nil
+  defp view_tree_call_target(node) when is_map(node) do
+    Map.get(node, "qualified_target") ||
+      case {Map.get(node, "label"), Map.get(node, "type")} do
+        {name, name} when is_binary(name) -> name
+        {label, _} when is_binary(label) -> label
+        {_, type} when is_binary(type) -> type
+        _ -> nil
+      end
+  end
+
+  @spec resolve_view_tree_call_target(String.t(), map()) :: {String.t(), String.t()} | nil
+  defp resolve_view_tree_call_target(target, ei) when is_binary(target) and is_map(ei) do
+    resolution = introspect_call_resolution(ei)
+
+    case resolve_source_call(target, resolution) do
+      {module_name, function_name} when is_binary(module_name) and is_binary(function_name) ->
+        {module_name, function_name}
+
+      _ ->
+        module_name = Map.get(ei, "module")
+
+        if is_binary(module_name) and not String.contains?(target, ".") do
+          {module_name, target}
+        end
+    end
+  end
+
+  @spec render_ops_to_ui_node_signature?(String.t()) :: boolean()
+  defp render_ops_to_ui_node_signature?(type) when is_binary(type) do
+    type
+    |> String.replace(~r/\s+/, "")
+    |> String.downcase()
+    |> then(fn normalized ->
+      String.match?(normalized, ~r/listrenderop->.*uinode$/) or
+        String.match?(normalized, ~r/\(.*listrenderop.*\)->.*uinode$/)
+    end)
+  end
 
   @spec introspect_call_resolution(map()) :: map()
   defp introspect_call_resolution(ei) when is_map(ei) do
@@ -2022,68 +2107,78 @@ defmodule Ide.Debugger.ElmIntrospect do
 
   defp inline_let_bindings(expr, _bindings, _seen, _depth), do: expr
 
-  @spec expr_to_json_value(Types.ast_expr(), non_neg_integer(), non_neg_integer()) :: Types.json_value()
-  defp expr_to_json_value(%{op: :record_literal, fields: fields}, depth, max) when depth < max do
+  @spec expr_to_json_value(Types.ast_expr(), non_neg_integer(), non_neg_integer(), Types.module_ref() | nil) ::
+          Types.json_value()
+  defp expr_to_json_value(expr, depth, max, mod \\ nil)
+
+  defp expr_to_json_value(%{op: :record_literal, fields: fields}, depth, max, mod) when depth < max do
     Enum.into(fields, %{}, fn %{name: n, expr: e} ->
-      {n, expr_to_json_value(e, depth + 1, max)}
+      {n, expr_to_json_value(e, depth + 1, max, mod)}
     end)
   end
 
-  defp expr_to_json_value(%{op: :int_literal, value: v}, _, _), do: v
+  defp expr_to_json_value(%{op: :int_literal, value: v}, _, _, _), do: v
 
-  defp expr_to_json_value(%{op: :string_literal, value: v}, _, _), do: v
+  defp expr_to_json_value(%{op: :string_literal, value: v}, _, _, _), do: v
 
-  defp expr_to_json_value(%{op: :char_literal, value: v}, _, _), do: v
+  defp expr_to_json_value(%{op: :char_literal, value: v}, _, _, _), do: v
 
-  defp expr_to_json_value(%{op: :constructor_call, target: t, args: args}, depth, max)
+  defp expr_to_json_value(%{op: :constructor_call, target: t, args: args}, depth, max, mod)
        when depth < max do
     %{
       "$ctor" => t,
-      "$args" => Enum.map(args, &expr_to_json_value(&1, depth + 1, max))
+      "$args" => Enum.map(args, &expr_to_json_value(&1, depth + 1, max, mod))
     }
   end
 
-  defp expr_to_json_value(%{op: :qualified_call, target: t, args: args}, depth, max)
+  defp expr_to_json_value(%{op: :qualified_call, target: t, args: args}, depth, max, mod)
        when depth < max do
-    %{"$call" => t, "$args" => Enum.map(args, &expr_to_json_value(&1, depth + 1, max))}
+    %{"$call" => t, "$args" => Enum.map(args, &expr_to_json_value(&1, depth + 1, max, mod))}
   end
 
-  defp expr_to_json_value(%{op: :call, name: name, args: args}, depth, max)
+  defp expr_to_json_value(%{op: :call, name: name, args: args}, depth, max, mod)
        when is_binary(name) and depth < max do
-    %{"$call" => name, "$args" => Enum.map(args, &expr_to_json_value(&1, depth + 1, max))}
+    %{"$call" => name, "$args" => Enum.map(args, &expr_to_json_value(&1, depth + 1, max, mod))}
   end
 
-  defp expr_to_json_value(%{op: :var, name: n}, _, _), do: %{"$var" => n}
+  defp expr_to_json_value(%{op: :var, name: n}, depth, max, %Module{} = mod) do
+    case find_function_definition(mod, n) do
+      %{expr: expr} when is_map(expr) -> expr_to_json_value(expr, depth, max, mod)
+      _ -> %{"$var" => n}
+    end
+  end
 
-  defp expr_to_json_value(%{op: :field_access, arg: arg, field: field}, depth, max)
+  defp expr_to_json_value(%{op: :var, name: n}, _, _, _), do: %{"$var" => n}
+
+  defp expr_to_json_value(%{op: :field_access, arg: arg, field: field}, depth, max, mod)
        when is_binary(field) and depth < max do
     on_expr =
       cond do
         is_binary(arg) -> %{"$var" => arg}
-        is_map(arg) -> expr_to_json_value(arg, depth + 1, max)
+        is_map(arg) -> expr_to_json_value(arg, depth + 1, max, mod)
         true -> %{"$opaque" => true}
       end
 
     %{"$field" => field, "$on" => on_expr}
   end
 
-  defp expr_to_json_value(%{op: :cmd_none}, _, _), do: %{"$ctor" => "Cmd.none", "$args" => []}
+  defp expr_to_json_value(%{op: :cmd_none}, _, _, _), do: %{"$ctor" => "Cmd.none", "$args" => []}
 
-  defp expr_to_json_value(%{op: :list_literal, items: items}, depth, max) when depth < max do
-    Enum.map(items, &expr_to_json_value(&1, depth + 1, max))
+  defp expr_to_json_value(%{op: :list_literal, items: items}, depth, max, mod) when depth < max do
+    Enum.map(items, &expr_to_json_value(&1, depth + 1, max, mod))
   end
 
-  defp expr_to_json_value(%{op: :tuple2, left: l, right: r}, depth, max) when depth < max do
-    [expr_to_json_value(l, depth + 1, max), expr_to_json_value(r, depth + 1, max)]
+  defp expr_to_json_value(%{op: :tuple2, left: l, right: r}, depth, max, mod) when depth < max do
+    [expr_to_json_value(l, depth + 1, max, mod), expr_to_json_value(r, depth + 1, max, mod)]
   end
 
-  defp expr_to_json_value(%{op: :unsupported, source: s}, _, _) when is_binary(s) do
+  defp expr_to_json_value(%{op: :unsupported, source: s}, _, _, _) when is_binary(s) do
     %{"$opaque" => true, "preview" => String.slice(s, 0, 120)}
   end
 
-  defp expr_to_json_value(%{op: op}, _, _), do: %{"$opaque" => true, "op" => to_string(op)}
+  defp expr_to_json_value(%{op: op}, _, _, _), do: %{"$opaque" => true, "op" => to_string(op)}
 
-  defp expr_to_json_value(_, _, _), do: %{"$opaque" => true}
+  defp expr_to_json_value(_, _, _, _), do: %{"$opaque" => true}
 
   @spec expr_to_view_tree(Types.ast_expr() | nil, non_neg_integer(), non_neg_integer(), map()) :: Types.view_tree()
   defp expr_to_view_tree(nil, _, _, _api_metadata), do: view_tree_unknown()
@@ -2158,7 +2253,7 @@ defmodule Ide.Debugger.ElmIntrospect do
   defp expr_to_view_tree(%{op: :call, name: name, args: args}, d, max, api_metadata)
        when d < max do
     %{
-      "type" => "call",
+      "type" => internal_arithmetic_view_type(name),
       "label" => name,
       "arg_names" => source_call_arg_names(name, length(args), api_metadata),
       "children" => Enum.map(args, &expr_to_view_tree(&1, d + 1, max, api_metadata))
@@ -2527,6 +2622,10 @@ defmodule Ide.Debugger.ElmIntrospect do
   end
 
   defp view_output_source_locations(_api_metadata), do: %{}
+
+  @spec internal_arithmetic_view_type(String.t()) :: String.t()
+  defp internal_arithmetic_view_type(name) when name in ["__add__", "__sub__"], do: "call"
+  defp internal_arithmetic_view_type(name), do: view_type_name(name)
 
   @spec view_type_name(Types.ast_expr() | String.t()) :: String.t()
   defp view_type_name(target) when is_binary(target) do

@@ -6,7 +6,7 @@ import Json.Decode as Decode
 import Pebble.Cmd as PebbleCmd
 import Pebble.Events as Events
 import Pebble.Platform as Platform
-import Pebble.Ui as Ui
+import Pebble.Ui as Ui exposing (Point)
 import Pebble.Ui.Color as Color
 import Pebble.Ui.Resources as Resources
 
@@ -25,10 +25,10 @@ type alias Model =
 type alias DownloadedPiece =
     { index : Int
     , vertexCount : Int
-    , p1 : Ui.Point
-    , p2 : Ui.Point
-    , p3 : Ui.Point
-    , p4 : Ui.Point
+    , p1 : Point
+    , p2 : Point
+    , p3 : Point
+    , p4 : Point
     }
 
 
@@ -200,7 +200,7 @@ figureOriginOffsetY =
     58
 
 
-vectorDrawOrigin : Int -> Ui.Point -> Ui.Point
+vectorDrawOrigin : Int -> Point -> Point
 vectorDrawOrigin scale base =
     { x = base.x - scaled scale figureOriginOffsetX
     , y = base.y - scaled scale figureOriginOffsetY
@@ -230,7 +230,7 @@ downloadedTangram colorMode scale cx cy hour minute figure pieces =
         |> List.concatMap (\piece -> tangramPiece (displayColor colorMode (pieceColor piece.index)) (shapeAt scale base (piecePoints piece)))
 
 
-piecePoints : DownloadedPiece -> List Ui.Point
+piecePoints : DownloadedPiece -> List Point
 piecePoints piece =
     if piece.vertexCount == 3 then
         [ piece.p1, piece.p2, piece.p3 ]
@@ -303,13 +303,13 @@ displayColor colorMode color =
         Color.black
 
 
-tangramPiece : Color.Color -> List Ui.Point -> List Ui.RenderOp
+tangramPiece : Color.Color -> List Point -> List Ui.RenderOp
 tangramPiece color points =
     polygonLines color points
         ++ hatchLines color points
 
 
-polygonLines : Color.Color -> List Ui.Point -> List Ui.RenderOp
+polygonLines : Color.Color -> List Point -> List Ui.RenderOp
 polygonLines color points =
     case points of
         a :: b :: c :: [] ->
@@ -322,7 +322,7 @@ polygonLines color points =
             []
 
 
-hatchLines : Color.Color -> List Ui.Point -> List Ui.RenderOp
+hatchLines : Color.Color -> List Point -> List Ui.RenderOp
 hatchLines color points =
     case points of
         a :: b :: c :: [] ->
@@ -340,17 +340,17 @@ hatchLines color points =
             []
 
 
-shapeAt : Int -> Ui.Point -> List Ui.Point -> List Ui.Point
+shapeAt : Int -> Point -> List Point -> List Point
 shapeAt scale anchor points =
     List.map (\point -> { x = anchor.x + scaled scale point.x, y = anchor.y + scaled scale point.y }) points
 
 
-nudgePoint : Ui.Point -> Ui.Point -> Ui.Point
+nudgePoint : Point -> Point -> Point
 nudgePoint point nudge =
     { x = point.x + nudge.x, y = point.y + nudge.y }
 
 
-scalePoint : Int -> Ui.Point -> Ui.Point
+scalePoint : Int -> Point -> Point
 scalePoint scale point =
     { x = scaled scale point.x, y = scaled scale point.y }
 
@@ -365,22 +365,22 @@ layoutScale model =
     clampInt 100 130 ((min model.screenW model.screenH * 100) // 156)
 
 
-o : Int -> Int -> Ui.Point
+o : Int -> Int -> Point
 o x y =
     { x = x, y = y }
 
 
-midpoint : Ui.Point -> Ui.Point -> Ui.Point
+midpoint : Point -> Point -> Point
 midpoint a b =
     { x = (a.x + b.x) // 2, y = (a.y + b.y) // 2 }
 
 
-p : Int -> Int -> Int -> Int -> Ui.Point
+p : Int -> Int -> Int -> Int -> Point
 p cx cy x y =
     { x = cx + x, y = cy + y }
 
 
-formOrigin : Int -> Int -> Int -> Int -> Int -> Int -> Ui.Point
+formOrigin : Int -> Int -> Int -> Int -> Int -> Int -> Point
 formOrigin scale cx cy hour minute figure =
     let
         drift =
@@ -471,7 +471,7 @@ figureCount =
     6
 
 
-figureNudge : Int -> Ui.Point
+figureNudge : Int -> Point
 figureNudge figure =
     case modBy 8 (figure // figureCount) of
         0 ->
@@ -499,7 +499,7 @@ figureNudge figure =
             o 0 -8
 
 
-minutePoint : Int -> Int -> Int -> Int -> Ui.Point
+minutePoint : Int -> Int -> Int -> Int -> Point
 minutePoint cx cy minute radius =
     let
         slot =
@@ -519,12 +519,12 @@ minutePoint cx cy minute radius =
     }
 
 
-minuteAnchor : Int -> Int -> Int -> Int -> Int -> Ui.Point
+minuteAnchor : Int -> Int -> Int -> Int -> Int -> Point
 minuteAnchor cx cy minute offset radius =
     nudgePoint (clockPoint cx cy ((minute // 5) + offset) radius) (minuteNudge minute)
 
 
-minuteNudge : Int -> Ui.Point
+minuteNudge : Int -> Point
 minuteNudge minute =
     case modBy 5 minute of
         0 ->
@@ -543,7 +543,7 @@ minuteNudge minute =
             o -1 4
 
 
-clockPoint : Int -> Int -> Int -> Int -> Ui.Point
+clockPoint : Int -> Int -> Int -> Int -> Point
 clockPoint cx cy slot radius =
     let
         scaled =
@@ -628,7 +628,7 @@ timeTextHeight =
     22
 
 
-timeTextPosition : Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Ui.Point
+timeTextPosition : Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Point
 timeTextPosition screenW screenH scale cx cy hour minute figure =
     let
         hourRadius =
@@ -664,7 +664,7 @@ timeTextPosition screenW screenH scale cx cy hour minute figure =
         |> clampTextPosition screenW screenH
 
 
-bestTextCandidate : Int -> Ui.Point -> Ui.Point -> Ui.Point -> Ui.Point -> Ui.Point -> Ui.Point -> Rect -> List Ui.Point -> Ui.Point
+bestTextCandidate : Int -> Point -> Point -> Point -> Point -> Point -> Point -> Rect -> List Point -> Point
 bestTextCandidate cy hourMarker minuteMarker topMarker rightMarker bottomMarker leftMarker figureRect candidates =
     case candidates of
         first :: rest ->
@@ -682,7 +682,7 @@ bestTextCandidate cy hourMarker minuteMarker topMarker rightMarker bottomMarker 
             o 0 0
 
 
-textCandidateScore : Int -> Ui.Point -> Ui.Point -> Ui.Point -> Ui.Point -> Ui.Point -> Ui.Point -> Rect -> Ui.Point -> Int
+textCandidateScore : Int -> Point -> Point -> Point -> Point -> Point -> Point -> Rect -> Point -> Int
 textCandidateScore cy hourMarker minuteMarker topMarker rightMarker bottomMarker leftMarker figureRect position =
     let
         rect =
@@ -726,7 +726,7 @@ rectOverlapPenalty ax ay aw ah bx by bw bh =
         0
 
 
-tangramBounds : Int -> Ui.Point -> Rect
+tangramBounds : Int -> Point -> Rect
 tangramBounds scale origin =
     { x = origin.x - scaled scale figureOriginOffsetX
     , y = origin.y - scaled scale figureOriginOffsetY
@@ -735,7 +735,7 @@ tangramBounds scale origin =
     }
 
 
-clampTextPosition : Int -> Int -> Ui.Point -> Ui.Point
+clampTextPosition : Int -> Int -> Point -> Point
 clampTextPosition screenW screenH position =
     { x = clampInt 8 (screenW - timeTextWidth - 8) position.x
     , y = clampInt 8 (screenH - timeTextHeight - 8) position.y

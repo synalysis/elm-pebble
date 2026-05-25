@@ -1614,6 +1614,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
       },
       model: %{
         "elm_introspect" => %{
+          "view_return_type" => "Ui.UiNode",
           "view_tree" => %{
             "type" => "toUiNode",
             "qualified_target" => "PebbleUi.toUiNode",
@@ -1660,6 +1661,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
           }
         ],
         "elm_introspect" => %{
+          "view_return_type" => "Ui.UiNode",
           "view_tree" => %{
             "type" => "toUiNode",
             "qualified_target" => "Ui.toUiNode",

@@ -40,6 +40,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd do
   defp normalize_timer_message(%{ctor: ctor, args: args}) when is_binary(ctor),
     do: {ctor, %{ctor: ctor, args: args || []}}
 
+  defp normalize_timer_message({:function_ref, name}) when is_binary(name),
+    do: {name, %{"ctor" => name, "args" => []}}
+
   defp normalize_timer_message({tag, payload}) when is_integer(tag),
     do: {"tag:#{tag}", {tag, payload}}
 

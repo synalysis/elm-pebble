@@ -454,7 +454,9 @@ defmodule Ide.CompanionPebbleApisTest do
              })
 
     runtime_model = get_in(triggered, [:companion, :model, "runtime_model"]) || %{}
+
     assert runtime_model["batteryPercent"] == 55
+    assert runtime_model["charging"] == true
     assert runtime_model["charging"] == true
   end
 

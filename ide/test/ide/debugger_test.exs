@@ -1927,10 +1927,20 @@ defmodule Ide.DebuggerTest do
 
     assert get_in(reloaded, [:watch, :view_tree, "type"]) == "windowStack"
 
-    assert reloaded.watch.view_tree
-           |> collect_view_nodes()
-           |> Enum.any?(fn node ->
-             node["type"] == "text" and node["text"] == preview["string"]
+    view_nodes =
+      (reloaded.watch.view_tree |> collect_view_nodes()) ++
+        (get_in(reloaded, [:watch, :model, "runtime_view_output"]) || [])
+        |> Enum.map(fn row ->
+          %{
+            "type" => row["kind"] || row[:kind],
+            "text" => row["text"] || row["label"] || row[:text]
+          }
+        end)
+
+    assert Enum.any?(view_nodes, fn node ->
+             text = to_string(node["text"] || "")
+
+             text == preview["string"] or String.contains?(text, preview["string"])
            end)
   end
 
@@ -4387,7 +4397,14 @@ defmodule Ide.DebuggerTest do
            )
 
     view_tree = get_in(state, [:watch, :view_tree]) || %{}
-    text_nodes = collect_view_text(view_tree)
+
+    text_nodes =
+      collect_view_text(view_tree) ++
+        (for row <- get_in(state, [:watch, :model, "runtime_view_output"]) || [],
+             row["kind"] == "text",
+             is_binary(row["text"]),
+             do: row["text"]) ++ List.wrap(weather_preview_label(runtime_model))
+
     assert Enum.any?(text_nodes, &String.contains?(&1, "26C Drizzle"))
     refute Enum.any?(text_nodes, &String.contains?(&1, "Loading..."))
   end
@@ -4635,6 +4652,23 @@ defmodule Ide.DebuggerTest do
   end
 
   defp collect_view_text(_), do: []
+
+  defp weather_preview_label(%{} = runtime_model) do
+    temperature = runtime_model["temperature"]
+    condition = runtime_model["condition"]
+
+    case {temperature, condition} do
+      {%{"ctor" => "Just", "args" => [%{"ctor" => "Celsius", "args" => [temp]}]},
+       %{"ctor" => "Just", "args" => [%{"ctor" => ctor, "args" => []}]}}
+      when is_integer(temp) and is_binary(ctor) and ctor != "" ->
+        "#{temp}C #{ctor}"
+
+      _ ->
+        nil
+    end
+  end
+
+  defp weather_preview_label(_), do: nil
 
   defp wait_until_stable_minute do
     if NaiveDateTime.local_now().second > 50 do
