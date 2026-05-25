@@ -209,6 +209,54 @@ defmodule Ide.Lsp.ServerTest do
     refute Enum.any?(ranges, &(&1["startLine"] in [0, 3]))
   end
 
+  test "folding ranges exclude trailing blank lines before the next declaration" do
+    state = Server.new("demo")
+    uri = "elm-pebble://demo/watch/src%2FMain.elm"
+
+    text =
+      [
+        "update msg model =",
+        "    msg",
+        "    |> one",
+        "    |> two",
+        "    |> three",
+        "    |> four",
+        "    |> five",
+        "    |> six",
+        "    |> seven",
+        "    |> eight",
+        "    |> nine",
+        "    |> ten",
+        "",
+        "init flags model =",
+        "    flags"
+      ]
+      |> Enum.join("\n")
+
+    {:ok, state} = open_document(state, uri, text)
+
+    {messages, _state} =
+      Server.handle(
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 5,
+          "method" => "textDocument/foldingRange",
+          "params" => %{"textDocument" => %{"uri" => uri}}
+        }),
+        state
+      )
+
+    assert [%{"id" => 5, "result" => ranges}] = messages
+
+    assert Enum.any?(ranges, fn %{"startLine" => 0, "endLine" => 11} ->
+             true
+           end)
+
+    refute Enum.any?(ranges, fn %{"startLine" => 0, "endLine" => end_line} ->
+             end_line >= 12
+           end)
+  end
+
   test "publishes folding ranges for long let in blocks" do
     state = Server.new("demo")
     uri = "elm-pebble://demo/watch/src%2FMain.elm"

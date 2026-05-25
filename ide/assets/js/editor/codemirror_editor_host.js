@@ -401,7 +401,7 @@ export class CodeMirrorEditorHost {
         if (!match) return null
 
         const from = state.doc.line(match.start_line).to
-        const to = state.doc.line(match.end_line).to
+        const to = state.doc.line(Math.min(match.end_line, state.doc.lines)).to
         return to > from ? {from, to} : null
       }),
       indentService.of((context, pos) => this.indentColumnForLine(context, pos)),

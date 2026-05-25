@@ -387,7 +387,13 @@ defmodule Ide.Lsp.Server do
         let_start_line?(trimmed) ->
           case matching_in_line(lines, idx + 1, indent) do
             in_idx when is_integer(in_idx) and in_idx - idx > @min_fold_span_lines ->
-              [%{"startLine" => idx, "endLine" => in_idx - 1}]
+              case folding_end_line(lines, idx, in_idx) do
+                end_line when is_integer(end_line) and end_line > idx ->
+                  [%{"startLine" => idx, "endLine" => end_line}]
+
+                _ ->
+                  []
+              end
 
             _ ->
               []
@@ -397,7 +403,13 @@ defmodule Ide.Lsp.Server do
           String.starts_with?(trimmed, "type ") or String.starts_with?(trimmed, "case ") ->
           case next_less_or_equal_indent(lines, idx + 1, indent) do
             end_idx when is_integer(end_idx) and end_idx - idx > @min_fold_span_lines ->
-              [%{"startLine" => idx, "endLine" => end_idx - 1}]
+              case folding_end_line(lines, idx, end_idx) do
+                end_line when is_integer(end_line) and end_line > idx ->
+                  [%{"startLine" => idx, "endLine" => end_line}]
+
+                _ ->
+                  []
+              end
 
             _ ->
               []
@@ -454,6 +466,23 @@ defmodule Ide.Lsp.Server do
 
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
+  end
+
+  # `end_idx` is the 0-based line of the next boundary (`in`, next decl, etc.), not folded.
+  @spec folding_end_line([String.t()], non_neg_integer(), pos_integer()) :: non_neg_integer() | nil
+  defp folding_end_line(lines, start_idx, end_idx)
+       when is_list(lines) and is_integer(start_idx) and is_integer(end_idx) and end_idx > start_idx do
+    last_idx = min(end_idx - 1, max(length(lines) - 1, 0))
+
+    if last_idx < start_idx do
+      nil
+    else
+      start_idx..last_idx
+      |> Enum.reverse()
+      |> Enum.find(fn line_idx ->
+        lines |> Enum.at(line_idx, "") |> String.trim() != ""
+      end)
+    end
   end
 
   defp response(id, result), do: %{"jsonrpc" => "2.0", "id" => id, "result" => result}
