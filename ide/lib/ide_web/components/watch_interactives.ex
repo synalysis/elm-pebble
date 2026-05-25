@@ -8,12 +8,22 @@ defmodule IdeWeb.WatchInteractives do
 
   @interactive_caps ~w(
     watch_accel
+    watch_accel_tap
     watch_compass
     watch_app_focus
     watch_dictation
     watch_data_log
     watch_vibes
   )
+
+  @doc false
+  @spec show_accel_tap?(map() | nil, map() | nil, :debugger | :emulator, list(), list()) :: boolean()
+  def show_accel_tap?(project, debugger_state, mode, watch_trigger_buttons \\ [], disabled_subscriptions \\ []) do
+    caps = SimulatorSettings.capabilities_for(project, debugger_state, mode)
+
+    MapSet.member?(caps, "watch_accel_tap") or
+      tap_control?(watch_trigger_buttons, disabled_subscriptions)
+  end
 
   @type assigns :: map()
   @type rendered :: Rendered.t()
@@ -37,7 +47,16 @@ defmodule IdeWeb.WatchInteractives do
       |> assign(:caps, caps)
       |> assign(:settings, settings)
       |> assign(:accel_control, accel_control(assigns.watch_trigger_buttons, assigns.disabled_subscriptions))
-      |> assign(:show_tap?, tap_control?(assigns.watch_trigger_buttons, assigns.disabled_subscriptions))
+      |> assign(
+        :show_tap?,
+        show_accel_tap?(
+          assigns.project,
+          assigns.debugger_state,
+          assigns.mode,
+          assigns.watch_trigger_buttons,
+          assigns.disabled_subscriptions
+        )
+      )
       |> assign(:active?, interactive_active?(caps))
 
     ~H"""
@@ -66,7 +85,7 @@ defmodule IdeWeb.WatchInteractives do
       />
 
       <.watch_tap_button
-        :if={MapSet.member?(@caps, "watch_accel") and @show_tap? and @mode == :debugger}
+        :if={@show_tap? and @mode == :debugger}
         control={@accel_control}
         running={@running}
       />
@@ -160,6 +179,32 @@ defmodule IdeWeb.WatchInteractives do
 
   attr :control, :map, default: nil
   attr :running, :boolean, default: true
+
+  attr :show?, :boolean, required: true
+  attr :data_tap, :string, default: "emulator-tap", values: ["emulator-tap", "wasm-tap"]
+
+  @spec emulator_display_tap_button(assigns()) :: rendered()
+  def emulator_display_tap_button(assigns) do
+    assigns = assign(assigns, :tap_attrs, tap_button_data_attrs(assigns.data_tap))
+
+    ~H"""
+    <button
+      :if={@show?}
+      type="button"
+      {@tap_attrs}
+      class={[
+        "absolute bottom-1 left-1 z-10 rounded px-2 py-1 text-[11px] font-semibold shadow-sm ring-1",
+        "bg-zinc-100/95 text-zinc-900 ring-zinc-300 hover:bg-white"
+      ]}
+    >
+      Tap
+    </button>
+    """
+  end
+
+  @spec tap_button_data_attrs(String.t()) :: map()
+  defp tap_button_data_attrs("wasm-tap"), do: %{"data-wasm-tap" => ""}
+  defp tap_button_data_attrs(_data_tap), do: %{"data-emulator-tap" => ""}
 
   @spec watch_tap_button(assigns()) :: rendered()
   defp watch_tap_button(assigns) do

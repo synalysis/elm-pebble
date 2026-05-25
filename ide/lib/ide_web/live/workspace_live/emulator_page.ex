@@ -17,6 +17,21 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   @spec render(assigns()) :: rendered()
   def render(assigns) do
+    assigns =
+      assigns
+      |> assign_new(:debugger_watch_trigger_buttons, fn -> [] end)
+      |> assign_new(:debugger_disabled_subscriptions, fn -> [] end)
+      |> assign(
+        :show_accel_tap?,
+        IdeWeb.WatchInteractives.show_accel_tap?(
+          assigns.project,
+          assigns.debugger_state,
+          :emulator,
+          assigns.debugger_watch_trigger_buttons,
+          assigns.debugger_disabled_subscriptions
+        )
+      )
+
     ~H"""
     <section
       class={[
@@ -133,13 +148,16 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               >
                 Back
               </button>
-              <div
-                id="embedded-emulator-display"
-                data-emulator-canvas
-                phx-update="ignore"
-                class="shrink-0 overflow-hidden rounded bg-zinc-950"
-                style={emulator_canvas_style(@selected_emulator_target)}
-              >
+              <div class="relative shrink-0">
+                <div
+                  id="embedded-emulator-display"
+                  data-emulator-canvas
+                  phx-update="ignore"
+                  class="overflow-hidden rounded bg-zinc-950"
+                  style={emulator_canvas_style(@selected_emulator_target)}
+                >
+                </div>
+                <.emulator_display_tap_button show?={@show_accel_tap?} data_tap="emulator-tap" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <button
@@ -186,16 +204,9 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               debugger_state={@debugger_state}
               mode={:emulator}
               running={true}
+              watch_trigger_buttons={@debugger_watch_trigger_buttons}
+              disabled_subscriptions={@debugger_disabled_subscriptions}
             />
-            <div class="rounded bg-white p-3 text-xs text-zinc-700">
-              <button
-                type="button"
-                data-emulator-tap
-                class="rounded bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 shadow-sm hover:bg-zinc-200"
-              >
-                Tap
-              </button>
-            </div>
           </div>
           <div class="flex min-h-0 flex-col rounded border border-zinc-200 bg-white p-3">
             <div class="flex items-start justify-between gap-2">
@@ -358,8 +369,21 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               >
                 Back
               </button>
-              <div class="flex h-[260px] w-[230px] items-center justify-center rounded bg-zinc-950 p-4 text-center text-xs text-zinc-300">
+              <div class="relative flex h-[260px] w-[230px] items-center justify-center rounded bg-zinc-950 p-4 text-center text-xs text-zinc-300">
                 External Pebble SDK emulator window
+                <button
+                  :if={@show_accel_tap?}
+                  type="button"
+                  phx-click="external-emulator-control"
+                  phx-value-control="tap"
+                  phx-value-direction="z+"
+                  class={[
+                    "absolute bottom-1 left-1 z-10 rounded px-2 py-1 text-[11px] font-semibold shadow-sm ring-1",
+                    "bg-zinc-100/95 text-zinc-900 ring-zinc-300 hover:bg-white"
+                  ]}
+                >
+                  Tap
+                </button>
               </div>
               <div class="flex flex-col gap-2">
                 <button
@@ -383,18 +407,6 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             <p class="rounded bg-white px-3 py-2 text-xs text-zinc-700">
               Control status: {check_status_label(@emulator_stop_status)}
             </p>
-            <div class="rounded bg-white p-3 text-xs text-zinc-700">
-              <p class="font-semibold text-zinc-900">Watch controls</p>
-              <button
-                type="button"
-                phx-click="external-emulator-control"
-                phx-value-control="tap"
-                phx-value-direction="z+"
-                class="mt-3 rounded bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 shadow-sm hover:bg-zinc-200"
-              >
-                Tap
-              </button>
-            </div>
             <.simulator_settings_form
               id="external-emulator-simulator-settings"
               project={@project}
@@ -408,6 +420,8 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               debugger_state={@debugger_state}
               mode={:emulator}
               running={true}
+              watch_trigger_buttons={@debugger_watch_trigger_buttons}
+              disabled_subscriptions={@debugger_disabled_subscriptions}
             />
           </div>
         </div>
@@ -483,13 +497,16 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               >
                 Back
               </button>
-              <iframe
-                id="wasm-emulator-frame"
-                data-wasm-frame
-                title="Pebble WASM Emulator"
-                class="h-[260px] w-[230px] rounded border-0 bg-zinc-950"
-              >
-              </iframe>
+              <div class="relative">
+                <iframe
+                  id="wasm-emulator-frame"
+                  data-wasm-frame
+                  title="Pebble WASM Emulator"
+                  class="h-[260px] w-[230px] rounded border-0 bg-zinc-950"
+                >
+                </iframe>
+                <.emulator_display_tap_button show?={@show_accel_tap?} data_tap="wasm-tap" />
+              </div>
               <div class="flex flex-col gap-2">
                 <button
                   type="button"
@@ -544,13 +561,6 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               <label class="mt-2 flex items-center gap-2">
                 <input data-wasm-peek type="checkbox" /> Timeline peek
               </label>
-              <button
-                type="button"
-                data-wasm-tap
-                class="mt-3 rounded bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 shadow-sm hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Tap
-              </button>
             </div>
             <div data-wasm-progress class="hidden rounded bg-white px-3 py-2 text-xs text-zinc-700">
               <div class="flex items-center justify-between gap-3">
@@ -793,9 +803,17 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   @spec emulator_simulator_settings_json(Project.t() | map() | nil, map() | nil) :: String.t()
   defp emulator_simulator_settings_json(project, debugger_state) do
+    caps = SimulatorSettings.capabilities_for(project, debugger_state, :emulator)
+
+    keys =
+      Enum.reject(@emulator_simulator_setting_keys, fn
+        "weather" -> not MapSet.member?(caps, "weather")
+        _ -> false
+      end)
+
     project
     |> SimulatorSettings.values_for(debugger_state)
-    |> Map.take(@emulator_simulator_setting_keys)
+    |> Map.take(keys)
     |> Jason.encode!()
   end
 end

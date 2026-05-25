@@ -45,6 +45,7 @@ defmodule Ide.SimulatorCapabilities.Detect do
     |> maybe_put("watch_battery", watch_battery?(introspect))
     |> maybe_put("watch_connection", watch_connection?(introspect))
     |> maybe_put("watch_time", watch_time?(introspect))
+    |> maybe_put("watch_accel_tap", watch_accel_tap?(introspect))
     |> add_watch_module_caps(introspect)
   end
 
@@ -61,38 +62,13 @@ defmodule Ide.SimulatorCapabilities.Detect do
 
   @spec companion_caps(Types.elm_introspect() | nil) :: MapSet.t(String.t())
   def companion_caps(introspect) when is_map(introspect) do
-    caps =
-      for {cap, module_name} <- @companion_modules,
-          companion_module?(introspect, module_name),
-          into: MapSet.new(),
-          do: cap
-
-    if companion_http_cmds?(introspect) do
-      MapSet.put(caps, "weather")
-    else
-      caps
-    end
+    for {cap, module_name} <- @companion_modules,
+        companion_module?(introspect, module_name),
+        into: MapSet.new(),
+        do: cap
   end
 
   def companion_caps(_), do: MapSet.new()
-
-  @spec companion_http_cmds?(Types.elm_introspect()) :: boolean()
-  defp companion_http_cmds?(introspect) when is_map(introspect) do
-    introspect
-    |> cmd_calls()
-    |> Enum.any?(&http_cmd_call?/1)
-  end
-
-  @spec http_cmd_call?(map()) :: boolean()
-  defp http_cmd_call?(row) when is_map(row) do
-    target = call_target(row) |> String.downcase()
-    name = call_name(row) |> String.downcase()
-
-    String.starts_with?(target, "http.") or target in ["http.get", "http.post", "http.request"] or
-      name in ["get", "post", "request"] and String.contains?(target, "http")
-  end
-
-  defp http_cmd_call?(_row), do: false
 
   @spec add_watch_module_caps(MapSet.t(String.t()), Types.elm_introspect()) :: MapSet.t(String.t())
   defp add_watch_module_caps(set, introspect) do
@@ -153,6 +129,25 @@ defmodule Ide.SimulatorCapabilities.Detect do
       Enum.any?(cmd_calls(introspect), &watch_name_match?(&1, @watch_time_names)) or
       imported_module?(introspect, "Pebble.Events")
   end
+
+  @spec watch_accel_tap?(Types.elm_introspect()) :: boolean()
+  defp watch_accel_tap?(introspect) do
+    Enum.any?(subscription_calls(introspect), &accel_tap_subscription?/1)
+  end
+
+  @spec accel_tap_subscription?(map()) :: boolean()
+  defp accel_tap_subscription?(row) when is_map(row) do
+    name = call_name(row)
+    target = call_target(row)
+
+    name in ["onTap", "onAccelTap"] or
+      String.ends_with?(target, ".onTap") or
+      String.contains?(target, "onAccelTap") or
+      String.contains?(target, "Pebble.Accel.onTap") or
+      String.contains?(target, "PebbleWatch.onAccelTap")
+  end
+
+  defp accel_tap_subscription?(_row), do: false
 
   @spec companion_module?(Types.elm_introspect(), String.t()) :: boolean()
   defp companion_module?(introspect, module_name) when is_binary(module_name) do

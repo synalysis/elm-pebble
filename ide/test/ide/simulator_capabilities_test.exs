@@ -149,7 +149,7 @@ defmodule Ide.SimulatorCapabilitiesTest do
     assert MapSet.member?(caps, "emulator_timeline_peek")
   end
 
-  test "detects weather capability from companion Http commands" do
+  test "does not treat companion Http usage as weather simulator capability" do
     {:ok, phone} =
       Ide.Debugger.ElmIntrospect.analyze_source(
         """
@@ -160,13 +160,34 @@ defmodule Ide.SimulatorCapabilitiesTest do
         import Platform
 
         type Msg
-            = WeatherReceived (Result Http.Error Int)
+            = CatalogReceived (Result Http.Error String)
 
         fetch _ =
             Http.get
-                { url = "https://example.test/weather"
-                , expect = Http.expectJson WeatherReceived Decode.int
+                { url = "https://example.test/catalog"
+                , expect = Http.expectString CatalogReceived
                 }
+        """,
+        "CompanionApp.elm"
+      )
+
+    caps = Detect.companion_caps(Map.fetch!(phone, "elm_introspect"))
+    refute MapSet.member?(caps, "weather")
+  end
+
+  test "detects weather capability from Pebble.Companion.Weather" do
+    {:ok, phone} =
+      Ide.Debugger.ElmIntrospect.analyze_source(
+        """
+        module CompanionApp exposing (main)
+
+        import Pebble.Companion.Weather as Weather
+
+        subscriptions _ =
+            Sub.batch
+                [ Weather.onWeather GotWeather
+                , Weather.current GotWeather
+                ]
         """,
         "CompanionApp.elm"
       )
@@ -177,5 +198,64 @@ defmodule Ide.SimulatorCapabilitiesTest do
 
   test "infer returns empty set for missing project" do
     assert SimulatorCapabilities.infer(nil, nil) == MapSet.new()
+  end
+
+  test "detects accel tap capability from Pebble.Accel.onTap subscription" do
+    {:ok, watch} =
+      Ide.Debugger.ElmIntrospect.analyze_source(
+        """
+        module Main exposing (main)
+
+        import Pebble.Accel as Accel
+
+        type Msg
+            = AccelTap
+
+        subscriptions _ =
+            Accel.onTap AccelTap
+        """,
+        "Main.elm"
+      )
+
+    caps = Detect.watch_caps(Map.fetch!(watch, "elm_introspect"))
+    assert MapSet.member?(caps, "watch_accel_tap")
+  end
+
+  test "tangram watchface hides accel tap control" do
+    source =
+      File.read!(
+        Path.join(["priv", "project_templates", "watchface_tangram_time", "src", "Main.elm"])
+      )
+
+    {:ok, watch} = Ide.Debugger.ElmIntrospect.analyze_source(source, "Main.elm")
+    refute MapSet.member?(Detect.watch_caps(Map.fetch!(watch, "elm_introspect")), "watch_accel_tap")
+  end
+
+  test "tangram companion hides weather simulator settings" do
+    source =
+      File.read!(
+        Path.join([
+          "priv",
+          "project_templates",
+          "watchface_tangram_time",
+          "phone",
+          "src",
+          "CompanionApp.elm"
+        ])
+      )
+
+    {:ok, phone} = Ide.Debugger.ElmIntrospect.analyze_source(source, "CompanionApp.elm")
+    introspect = Map.fetch!(phone, "elm_introspect")
+
+    refute MapSet.member?(Detect.companion_caps(introspect), "weather")
+
+    debugger_state = %{
+      companion: %{model: %{"elm_introspect" => introspect}, shell: %{"elm_introspect" => introspect}}
+    }
+
+    groups = SimulatorSettings.active_groups(nil, debugger_state, :debugger)
+    titles = Enum.map(groups, fn {_id, title, _fields} -> title end)
+
+    refute "Weather" in titles
   end
 end

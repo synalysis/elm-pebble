@@ -14,7 +14,7 @@ module PackageDocs.View exposing
     )
 
 import Dict exposing (Dict)
-import Html exposing (Html, a, code, div, h1, h2, h3, li, p, pre, section, span, text, ul)
+import Html exposing (Html, a, code, div, h1, h2, h3, li, p, pre, section, span, strong, text, ul)
 import Html.Attributes exposing (class, href, id, rel, target)
 import PackageDocs exposing (AliasDoc, ElmJson, ModuleDoc, NativeApiLink, PackageData, PackageRoute, UnionDoc, ValueDoc)
 import Route
@@ -525,6 +525,79 @@ takeWhile predicate list =
                 ( [], list )
 
 
+renderParagraphInlines : List String -> List (Html msg)
+renderParagraphInlines lines =
+    let
+        trimmed =
+            lines
+                |> List.map String.trim
+                |> List.filter ((/=) "")
+    in
+    case trimmed of
+        [] ->
+            [ text "" ]
+
+        _ ->
+            let
+                lineCount =
+                    List.length trimmed
+            in
+            trimmed
+                |> List.indexedMap
+                    (\index line ->
+                        if index + 1 == lineCount then
+                            [ renderInlineText line ]
+
+                        else
+                            [ renderInlineText line, text " " ]
+                    )
+                |> List.concat
+
+
+renderInlineText : String -> Html msg
+renderInlineText line =
+    span [] (renderCodeSegments (String.split "`" line))
+
+
+renderCodeSegments : List String -> List (Html msg)
+renderCodeSegments parts =
+    List.concatMap
+        (\( index, part ) ->
+            if part == "" then
+                []
+
+            else if modBy 2 index == 1 then
+                [ inlineCode part ]
+
+            else
+                renderBoldSegments (String.split "**" part)
+        )
+        (List.indexedMap (\index part -> ( index, part )) parts)
+
+
+inlineCode : String -> Html msg
+inlineCode content =
+    code
+        [ class "rounded bg-slate-100 px-1.5 py-0.5 font-mono text-sm text-slate-900 dark:bg-slate-800 dark:text-slate-100" ]
+        [ text content ]
+
+
+renderBoldSegments : List String -> List (Html msg)
+renderBoldSegments parts =
+    List.concatMap
+        (\( index, part ) ->
+            if part == "" then
+                []
+
+            else if modBy 2 index == 1 then
+                [ strong [] [ text part ] ]
+
+            else
+                [ text part ]
+        )
+        (List.indexedMap (\index part -> ( index, part )) parts)
+
+
 renderBlock : CommentBlock -> Html msg
 renderBlock block =
     case block of
@@ -532,7 +605,7 @@ renderBlock block =
             h2 [ class "pt-4 text-xl font-bold tracking-tight text-slate-950 dark:text-white" ] [ text title ]
 
         Paragraph lines ->
-            p [ class "text-base text-gray-700 dark:text-gray-300" ] [ text (String.join " " (List.map String.trim lines)) ]
+            p [ class "text-base text-gray-700 dark:text-gray-300" ] (renderParagraphInlines lines)
 
         CodeBlock lines ->
             pre [ class "overflow-x-auto rounded-lg bg-slate-950 p-4 text-sm text-slate-100" ]
