@@ -8,12 +8,7 @@ defmodule ElmEx.CoreIR do
   alias ElmEx.CoreIR.Types
   alias ElmEx.CoreIR.Validate
 
-  @type t :: %__MODULE__{
-          version: String.t(),
-          modules: [Types.module_t()],
-          diagnostics: [Types.diagnostic()],
-          deterministic_sha256: String.t()
-        }
+  @type t :: Types.t()
 
   @enforce_keys [:version, :modules, :diagnostics, :deterministic_sha256]
   defstruct [:version, :modules, :diagnostics, :deterministic_sha256]

@@ -32,7 +32,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   def evaluate_view_tree_value(_node, _runtime_model, _eval_context), do: nil
 
-  @spec execute(map()) :: {:ok, map()} | {:error, SemTypes.exec_error()}
+  @spec execute(SemTypes.execution_request() | map()) ::
+          {:ok, SemTypes.execution_result()} | {:error, SemTypes.exec_error()}
   def execute(request) when is_map(request) do
     source_root = map_value(request, :source_root) || "watch"
     rel_path = map_value(request, :rel_path)
@@ -1575,68 +1576,16 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp flatten_constructor_payload(_value, _remaining, _acc), do: :error
 
-  @spec evaluator_context(map(), String.t() | nil) :: map()
+  @spec evaluator_context(map(), String.t() | nil) :: SemTypes.eval_context()
   defp evaluator_context(core_ir, module_override) do
     module_name =
       case module_override do
         value when is_binary(value) and value != "" -> value
-        _ -> evaluator_entry_module(core_ir)
+        _ -> CoreIREvaluator.entry_module(core_ir)
       end
 
-    %{
-      module: module_name,
-      source_module: module_name,
-      functions: CoreIREvaluator.index_functions(core_ir),
-      record_aliases: CoreIREvaluator.index_record_aliases(core_ir),
-      record_alias_field_types: CoreIREvaluator.index_record_alias_field_types(core_ir),
-      constructor_tags: CoreIREvaluator.index_constructor_tags(core_ir)
-    }
+    CoreIREvaluator.build_eval_context(core_ir, module_name)
   end
-
-  @spec evaluator_entry_module(map()) :: String.t()
-  defp evaluator_entry_module(core_ir) when is_map(core_ir) do
-    modules = generic_map_value(core_ir, "modules")
-
-    modules
-    |> List.wrap()
-    |> Enum.find_value(&module_name_with_decl(&1, "init"))
-    |> case do
-      name when is_binary(name) and name != "" ->
-        name
-
-      _ ->
-        modules
-        |> List.wrap()
-        |> Enum.find_value(&module_name/1)
-        |> case do
-          name when is_binary(name) and name != "" -> name
-          _ -> "Main"
-        end
-    end
-  end
-
-  defp evaluator_entry_module(_core_ir), do: "Main"
-
-  @spec module_name_with_decl(map(), String.t()) :: String.t() | nil
-  defp module_name_with_decl(module, declaration_name) when is_map(module) do
-    declarations = generic_map_value(module, "declarations") || []
-
-    if Enum.any?(declarations, &(generic_map_value(&1, "name") == declaration_name)) do
-      module_name(module)
-    end
-  end
-
-  defp module_name_with_decl(_module, _declaration_name), do: nil
-
-  @spec module_name(map()) :: String.t() | nil
-  defp module_name(module) when is_map(module) do
-    case generic_map_value(module, "name") do
-      name when is_binary(name) and name != "" -> name
-      _ -> nil
-    end
-  end
-
-  defp module_name(_module), do: nil
 
   @spec normalize_runtime_model_by_declared_type(map(), map()) :: map()
   defp normalize_runtime_model_by_declared_type(runtime_model, eval_context)

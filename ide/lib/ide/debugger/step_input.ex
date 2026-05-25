@@ -63,28 +63,23 @@ defmodule Ide.Debugger.StepInput do
   def with_message_value(%__MODULE__{} = input, message_value) do
     %{input | message_value: message_value}
   end
-end
 
-defmodule Ide.Debugger.StepResult do
-  @moduledoc """
-  Result of a single debugger runtime step: updated session state and surface.
-  """
+  @spec to_executor_request(t(), keyword()) :: Ide.Debugger.RuntimeExecutor.Request.t()
+  def to_executor_request(%__MODULE__{} = step, opts \\ []) when is_list(opts) do
+    update_branches = Keyword.get(opts, :update_branches, [])
 
-  alias Ide.Debugger.Surface
-
-  @enforce_keys [:state, :surface]
-  defstruct [:state, :surface]
-
-  @type t :: %__MODULE__{
-          state: map(),
-          surface: Surface.t()
-        }
-
-  @spec new(map(), Surface.t()) :: t()
-  def new(state, %Surface{} = surface) when is_map(state) do
-    %__MODULE__{state: state, surface: surface}
+    Ide.Debugger.RuntimeExecutor.Request.build(
+      surface: step.surface,
+      view_tree: step.view_tree,
+      message: step.message,
+      message_value: step.message_value,
+      update_branches: update_branches,
+      source_root: Keyword.get(opts, :source_root) || source_root_for_target(step.target)
+    )
   end
 
-  @spec state(t()) :: map()
-  def state(%__MODULE__{state: state}), do: state
+  @spec source_root_for_target(Types.surface_target()) :: String.t()
+  defp source_root_for_target(:watch), do: "watch"
+  defp source_root_for_target(:companion), do: "phone"
+  defp source_root_for_target(:phone), do: "phone"
 end

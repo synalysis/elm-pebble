@@ -25,7 +25,14 @@ jobs:
 
       - name: Test
         working-directory: elm_ex
-        run: mix test
+        run: |
+          mix test test/ast_contract_types_test.exs
+          mix test test/ast_contract_declaration_test.exs
+          mix test test/import_entry_types_test.exs
+          mix test test/ir_types_test.exs
+          mix test test/core_ir_shape_error_test.exs
+          mix test test/core_ir_types_hub_test.exs
+          mix test
 
       - name: Dialyzer
         working-directory: elm_ex
@@ -47,14 +54,105 @@ jobs:
         working-directory: elm_executor
         run: mix deps.get
 
-      - name: Test Core IR contract
+      - name: Test contract and semantic types
         working-directory: elm_executor
         run: |
           mix test test/core_ir_contract_test.exs
+          mix test test/semantic_types_contract_test.exs
+          mix test test/pebble_ui_to_ui_node_test.exs
+          mix test test/runtime_semantic_executor_test.exs:1102
+          mix test test/runtime_semantic_executor_test.exs:902
           mix test test/runtime_semantic_executor_test.exs:3199
           mix test test/runtime_semantic_executor_test.exs:3234
           mix test test/runtime_core_ir_evaluator_test.exs:6
+          mix test test/eval_context_types_test.exs
+          mix test test/build_eval_context_test.exs
+          mix test test/execution_result_types_test.exs
 
       - name: Dialyzer
         working-directory: elm_executor
         run: mix dialyzer --format short
+
+  ide:
+    name: ide debugger protocol and introspect types
+    runs-on: ubuntu-latest
+    needs: elm_executor
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.1"
+          elixir-version: "1.17.3"
+
+      - name: Install dependencies
+        working-directory: ide
+        run: mix deps.get
+
+      - name: Test debugger type contracts
+        working-directory: ide
+        run: |
+          mix test test/ide/debugger/protocol_schema_test.exs
+          mix test test/ide/debugger/protocol_resolution_ctx_test.exs
+          mix test test/ide/debugger/elm_introspect_payload_test.exs
+          mix test test/ide/debugger/runtime_step_result_test.exs
+          mix test test/ide/debugger/runtime_step_result_builders_test.exs
+          mix test test/ide/debugger/runtime_artifacts_test.exs
+          mix test test/ide/debugger/simulator_settings_types_test.exs
+          mix test test/ide/debugger/step_input_test.exs
+          mix test test/ide/debugger/shell_app_model_types_test.exs
+          mix test test/ide/debugger/launch_context_test.exs
+          mix test test/ide/debugger/auto_tick_types_test.exs
+          mix test test/ide/debugger/trigger_candidate_types_test.exs
+          mix test test/ide/debugger/compile_ingest_types_test.exs
+          mix test test/ide/debugger/device_request_types_test.exs
+          mix test test/ide/debugger/cmd_call_introspect_test.exs
+          mix test test/ide/debugger/elmc_diagnostic_preview_types_test.exs
+          mix test test/ide/debugger/companion_bridge_request_test.exs
+          mix test test/ide/debugger/watch_profile_types_test.exs
+          mix test test/ide/debugger/runtime_event_payload_types_test.exs
+          mix test test/ide/debugger/replay_snapshot_types_test.exs
+          mix test test/ide/debugger/protocol_tx_rx_payload_test.exs
+          mix test test/ide/debugger/result_normalizer_test.exs
+          mix test test/ide/debugger/hot_reload_event_types_test.exs
+          mix test test/ide/debugger/import_trace_types_test.exs
+          mix test test/ide/debugger/export_trace_types_test.exs
+          mix test test/ide/debugger/runtime_exec_event_types_test.exs
+          mix test test/ide/debugger/runtime_status_event_types_test.exs
+          mix test test/ide/debugger/runtime_event_kind_test.exs
+          mix test test/ide/debugger/message_in_event_types_test.exs
+          mix test test/ide/debugger/session_lifecycle_event_types_test.exs
+          mix test test/ide/debugger/elm_introspect_event_types_test.exs
+          mix test test/ide/debugger/runtime_event_contract_test.exs
+          mix test test/ide/debugger/elmc_surface_fields_test.exs
+          mix test test/ide/debugger/runtime_surface_merge_test.exs
+          mix test test/ide/debugger/compile_ingest_bridge_test.exs
+          mix test test/ide/debugger/step_execution_contract_test.exs
+          mix test test/ide/debugger/elmc_cli_ingest_bridge_test.exs
+          mix test test/ide/debugger/runtime_executor_request_test.exs
+          mix test test/ide/debugger/compile_ingest_test.exs
+          mix test test/ide/debugger/runtime_event_append_test.exs
+          mix test test/ide/compiler_elmc_ingest_test.exs
+
+  elmc:
+    name: elmc runtime executor types
+    runs-on: ubuntu-latest
+    needs: elm_executor
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.1"
+          elixir-version: "1.17.3"
+
+      - name: Install dependencies
+        working-directory: elmc
+        run: mix deps.get
+
+      - name: Test execution result contract
+        working-directory: elmc
+        run: |
+          mix test test/runtime_executor_test.exs
+          mix test test/execution_result_types_test.exs
+          mix test test/cli_types_test.exs

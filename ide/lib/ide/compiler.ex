@@ -1,6 +1,7 @@
 defmodule Ide.Compiler do
   alias Ide.Compiler.Cache
   alias Ide.Compiler.Diagnostics
+  alias Ide.Debugger.Types.ElmcCliIngestBridge
   alias Ide.Compiler.ManifestCache
   alias Ide.PebbleToolchain
   alias ElmEx.CoreIR
@@ -321,8 +322,10 @@ defmodule Ide.Compiler do
 
   @spec run_elmc_check(String.t()) :: {:ok, check_result()} | {:error, compiler_error()}
   defp run_elmc_check(project_dir) do
-    %{status: status, output: output} = Elmc.CLI.check_project(project_dir)
-    build_check_result(project_dir, status, output)
+    project_dir
+    |> Elmc.CLI.check_project()
+    |> ElmcCliIngestBridge.to_check_result(checked_path: project_dir)
+    |> then(&{:ok, &1})
   rescue
     error -> {:error, error}
   end
@@ -481,21 +484,11 @@ defmodule Ide.Compiler do
   @spec run_elmc_compile(String.t(), String.t()) :: {:ok, compile_result()} | {:error, compiler_error()}
   defp run_elmc_compile(project_dir, revision) do
     out_dir = Path.join(project_dir, ".elmc-build")
-    %{status: status, output: output} = Elmc.CLI.compile_project(project_dir, out_dir)
 
-    diagnostics = parse_diagnostics(status, output) |> Diagnostics.normalize_list()
-    counts = Diagnostics.summary(diagnostics)
-
-    result = %{
-      status: status,
-      compiled_path: out_dir,
-      revision: revision,
-      cached?: false,
-      output: output,
-      diagnostics: diagnostics,
-      error_count: counts.error_count,
-      warning_count: counts.warning_count
-    }
+    result =
+      project_dir
+      |> Elmc.CLI.compile_project(out_dir)
+      |> ElmcCliIngestBridge.to_compile_result(compiled_path: out_dir, revision: revision)
 
     {:ok, maybe_attach_elm_executor_artifacts(result, project_dir)}
   rescue
@@ -580,119 +573,31 @@ defmodule Ide.Compiler do
   @spec run_elmc_manifest(String.t(), String.t(), boolean()) ::
           {:ok, manifest_result()} | {:error, compiler_error()}
   defp run_elmc_manifest(project_dir, revision, strict?) do
-    %{status: status, output: output, manifest: manifest} = Elmc.CLI.manifest_project(project_dir)
-    {normalized_manifest, manifest_diagnostics} = normalize_manifest_payload(manifest)
+    run = Elmc.CLI.manifest_project(project_dir)
+    {normalized_manifest, manifest_diagnostics} = normalize_manifest_payload(run.manifest)
 
-    diagnostics =
-      (parse_diagnostics(status, output) ++ manifest_diagnostics)
-      |> Diagnostics.normalize_list()
+    base =
+      ElmcCliIngestBridge.to_manifest_result(run,
+        manifest_path: project_dir,
+        revision: revision,
+        strict?: strict?,
+        extra_diagnostics: manifest_diagnostics,
+        manifest: normalized_manifest
+      )
 
-    {status, diagnostics} = apply_manifest_strict_mode(status, diagnostics, strict?)
+    {status, diagnostics} = apply_manifest_strict_mode(base.status, base.diagnostics, strict?)
     counts = Diagnostics.summary(diagnostics)
 
     {:ok,
      %{
-       status: status,
-       manifest_path: project_dir,
-       revision: revision,
-       cached?: false,
-       strict?: strict?,
-       manifest: normalized_manifest,
-       output: output,
-       diagnostics: diagnostics,
-       error_count: counts.error_count,
-       warning_count: counts.warning_count
+       base
+       | status: status,
+         diagnostics: diagnostics,
+         error_count: counts.error_count,
+         warning_count: counts.warning_count
      }}
   rescue
     error -> {:error, error}
-  end
-
-  @spec build_check_result(String.t(), :ok | :error, String.t()) ::
-          {:ok, check_result()} | {:error, compiler_error()}
-  defp build_check_result(project_dir, status, output) do
-    diagnostics = parse_diagnostics(status, output) |> Diagnostics.normalize_list()
-    counts = Diagnostics.summary(diagnostics)
-
-    {:ok,
-     %{
-       status: status,
-       checked_path: project_dir,
-       output: output,
-       diagnostics: diagnostics,
-       error_count: counts.error_count,
-       warning_count: counts.warning_count
-     }}
-  end
-
-  @spec parse_diagnostics(:ok | :error, String.t()) :: [diagnostic()]
-  defp parse_diagnostics(:ok, output) do
-    info = %{
-      severity: "info",
-      source: "elmc",
-      message: String.trim(output) |> empty_fallback("check: ok"),
-      file: nil,
-      line: nil,
-      column: nil
-    }
-
-    warnings =
-      output
-      |> extract_embedded_warnings()
-      |> Enum.map(&warning_to_diagnostic/1)
-
-    [
-      %{
-        info
-        | message:
-            info.message
-            |> String.split("\n")
-            |> Enum.reject(&String.starts_with?(&1, "ELMC_WARNINGS_JSON:"))
-            |> Enum.join("\n")
-            |> String.trim()
-            |> empty_fallback("check: ok")
-      }
-      | warnings
-    ]
-  end
-
-  defp parse_diagnostics(:error, output) do
-    embedded =
-      output
-      |> extract_embedded_warnings()
-      |> Enum.map(&warning_to_diagnostic/1)
-
-    compiler_errors =
-      output
-      |> String.split(~r/\n(?=-- )/, trim: true)
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.reject(&skip_compiler_error_chunk?/1)
-      |> Enum.map(&chunk_to_diagnostic/1)
-
-    case embedded ++ compiler_errors do
-      [] ->
-        [
-          %{
-            severity: "error",
-            source: "elmc",
-            message: "Compiler check failed without formatted diagnostics.",
-            file: nil,
-            line: nil,
-            column: nil
-          }
-        ]
-
-      diagnostics ->
-        diagnostics
-    end
-  end
-
-  @spec skip_compiler_error_chunk?(String.t()) :: boolean()
-  defp skip_compiler_error_chunk?(chunk) when is_binary(chunk) do
-    String.starts_with?(chunk, "check:") or
-      String.match?(chunk, ~r/^modules: \d+(\n|$)/) or
-      String.starts_with?(chunk, "ELMC_WARNINGS_JSON:") or
-      String.starts_with?(chunk, "-- LOWERER WARNING")
   end
 
   @spec elm_check_result(:ok | :error, String.t(), String.t(), [diagnostic()]) :: check_result()
@@ -864,83 +769,6 @@ defmodule Ide.Compiler do
   @spec normalize_json_integer(String.t() | integer() | nil) :: integer() | nil
   defp normalize_json_integer(value) when is_integer(value), do: value
   defp normalize_json_integer(_), do: nil
-
-  @spec extract_embedded_warnings(String.t()) :: [map()]
-  defp extract_embedded_warnings(output) when is_binary(output) do
-    output
-    |> String.split("\n", trim: true)
-    |> Enum.map(&String.trim/1)
-    |> Enum.filter(&String.starts_with?(&1, "ELMC_WARNINGS_JSON:"))
-    |> Enum.flat_map(fn line ->
-      payload = String.replace_prefix(line, "ELMC_WARNINGS_JSON:", "")
-
-      case Jason.decode(payload) do
-        {:ok, list} when is_list(list) -> list
-        {:ok, map} when is_map(map) -> [map]
-        _ -> []
-      end
-    end)
-  end
-
-  @spec warning_to_diagnostic(map()) :: map()
-  defp warning_to_diagnostic(warning) when is_map(warning) do
-    line = warning["line"]
-    column = warning["column"]
-
-    %{
-      severity: warning["severity"] || "warning",
-      source: normalize_warning_source(warning["source"]),
-      message: warning["message"] || inspect(warning),
-      file: warning["file"],
-      line: if(is_integer(line), do: line, else: nil),
-      column: if(is_integer(column), do: column, else: nil),
-      warning_type: warning["type"],
-      warning_code: warning["code"],
-      warning_constructor: warning["constructor"],
-      warning_expected_kind: warning["expected_kind"],
-      warning_has_arg_pattern: warning["has_arg_pattern"]
-    }
-  end
-
-  defp warning_to_diagnostic(_other) do
-    %{
-      severity: "warning",
-      source: "elmc/lowerer",
-      message: "Unstructured lowerer warning.",
-      file: nil,
-      line: nil,
-      column: nil
-    }
-  end
-
-  @spec normalize_warning_source(String.t() | nil) :: String.t()
-  defp normalize_warning_source(nil), do: "elmc/lowerer"
-
-  defp normalize_warning_source(source) when is_binary(source) do
-    if String.starts_with?(source, "elmc/"), do: source, else: "elmc/" <> source
-  end
-
-  @spec chunk_to_diagnostic(String.t()) :: diagnostic()
-  defp chunk_to_diagnostic(chunk) do
-    lines = String.split(chunk, "\n", trim: true)
-    title = List.first(lines) || "-- COMPILER ERROR --"
-    location = Enum.find(lines, &String.match?(&1, ~r/^.+:\d+:\d+$/))
-
-    {file, line, column} =
-      case Regex.run(~r/^(.+):(\d+):(\d+)$/, location || "") do
-        [_, file, line, column] -> {file, String.to_integer(line), String.to_integer(column)}
-        _ -> {nil, nil, nil}
-      end
-
-    %{
-      severity: "error",
-      source: "elmc",
-      message: String.trim(title <> "\n\n" <> Enum.join(lines, "\n")),
-      file: file,
-      line: line,
-      column: column
-    }
-  end
 
   @spec detect_check_path(String.t(), [String.t()] | nil) :: String.t() | nil
   defp detect_check_path(workspace_root, source_roots) do

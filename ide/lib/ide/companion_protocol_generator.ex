@@ -1,28 +1,12 @@
 defmodule Ide.CompanionProtocolGenerator do
   @moduledoc false
 
-  @type schema :: %{
-          enums: %{optional(String.t()) => [String.t()]},
-          payload_unions: %{optional(String.t()) => [constructor()]},
-          watch_to_phone: [message()],
-          phone_to_watch: [message()],
-          key_ids: %{optional(String.t()) => pos_integer()}
-        }
-  @type constructor :: %{
-          name: String.t(),
-          args: [String.t()]
-        }
-  @type message :: %{
-          name: String.t(),
-          tag: pos_integer(),
-          fields: [field()]
-        }
-  @type field :: %{
-          name: String.t(),
-          key: String.t(),
-          type: String.t(),
-          wire_type: :int | :bool | :string | {:enum, String.t()} | {:union, String.t()}
-        }
+  alias Ide.Debugger.Protocol.Schema
+
+  @type schema :: Schema.t()
+  @type constructor :: Schema.constructor()
+  @type message :: Schema.message()
+  @type field :: Schema.field()
 
   @type generator_error :: {:missing_union, String.t()} | File.posix()
 

@@ -8,10 +8,16 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmcAdapter do
 
   @behaviour Ide.Debugger.RuntimeExecutor
 
+  alias Ide.Debugger.RuntimeExecutor.ResultNormalizer
+  alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.Types
 
   @type execution_input :: Ide.Debugger.RuntimeExecutor.execution_input()
   @type execution_result :: Ide.Debugger.RuntimeExecutor.execution_result()
+
+  @type elmc_wire_result :: ExecutorTypes.executor_wire_result() | map()
+
+  @type executor_result :: {:ok, execution_result()} | {:error, Types.execution_error()}
 
   @default_candidates [
     {Elmc.Runtime.Executor, :execute, 1},
@@ -99,80 +105,15 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmcAdapter do
 
   defp maybe_put_optional_context(request, _key, _value) when is_map(request), do: request
 
-  @spec normalize_result(map(), execution_input()) :: execution_result()
+  @spec normalize_result(elmc_wire_result(), execution_input()) :: execution_result()
   defp normalize_result(payload, input) do
-    if Map.has_key?(payload, :model_patch) or Map.has_key?(payload, "model_patch") do
-      view_output = list_field(payload, :view_output)
+    result =
+      if Map.has_key?(payload, :model_patch) or Map.has_key?(payload, "model_patch") do
+        ResultNormalizer.normalize(payload)
+      else
+        ResultNormalizer.normalize_elmc_loose(payload, input)
+      end
 
-      %{
-        model_patch: payload |> map_field(:model_patch) |> put_runtime_view_output(view_output),
-        view_tree: map_or_nil_field(payload, :view_tree),
-        view_output: view_output,
-        runtime: map_field(payload, :runtime),
-        protocol_events: list_field(payload, :protocol_events),
-        followup_messages: list_field(payload, :followup_messages)
-      }
-    else
-      runtime_model = map_field(payload, :runtime_model)
-      runtime_view_tree = map_or_nil_field(payload, :view_tree)
-      view_output = list_field(payload, :view_output)
-
-      runtime =
-        map_field(payload, :runtime)
-        |> Map.put_new("engine", "elmc_runtime_adapter_v0")
-        |> Map.put_new("source_root", Map.get(input, :source_root))
-        |> Map.put_new("rel_path", Map.get(input, :rel_path))
-
-      %{
-        model_patch:
-          %{
-            "runtime_model" => runtime_model,
-            "elm_executor_mode" => "runtime_executed",
-            "runtime_model_source" => "elmc_runtime",
-            "elm_executor" => runtime
-          }
-          |> put_runtime_view_output(view_output),
-        view_tree: runtime_view_tree,
-        view_output: view_output,
-        runtime: runtime,
-        protocol_events: list_field(payload, :protocol_events),
-        followup_messages: list_field(payload, :followup_messages)
-      }
-    end
+    %{result | model_patch: ResultNormalizer.put_runtime_view_output(result.model_patch, result.view_output)}
   end
-
-  @spec map_field(map(), atom()) :: map()
-  defp map_field(map, key) when is_map(map) and is_atom(key) do
-    value =
-      Map.get(map, key) ||
-        Map.get(map, Atom.to_string(key))
-
-    if is_map(value), do: value, else: %{}
-  end
-
-  @spec map_or_nil_field(map(), atom()) :: map() | nil
-  defp map_or_nil_field(map, key) when is_map(map) and is_atom(key) do
-    value =
-      Map.get(map, key) ||
-        Map.get(map, Atom.to_string(key))
-
-    if is_map(value), do: value, else: nil
-  end
-
-  @spec list_field(map(), atom()) :: list()
-  defp list_field(map, key) when is_map(map) and is_atom(key) do
-    value =
-      Map.get(map, key) ||
-        Map.get(map, Atom.to_string(key))
-
-    if is_list(value), do: value, else: []
-  end
-
-  @spec put_runtime_view_output(map(), list()) :: map()
-  defp put_runtime_view_output(model_patch, [_ | _] = view_output) when is_map(model_patch) do
-    Map.put_new(model_patch, "runtime_view_output", view_output)
-  end
-
-  defp put_runtime_view_output(model_patch, _view_output) when is_map(model_patch),
-    do: model_patch
 end

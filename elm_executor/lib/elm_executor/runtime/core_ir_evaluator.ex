@@ -63,22 +63,64 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   @max_function_recursion_depth 128
 
-  @type function_def :: %{
-          module: String.t(),
-          name: String.t(),
-          params: [String.t()],
-          body: map()
-        }
+  @type context :: EvalTypes.ops_context()
 
-  @type context :: %{
-          optional(:functions) => %{
-            optional({String.t(), String.t(), non_neg_integer()}) => function_def()
-          },
-          optional(:module) => String.t(),
-          optional(:source_module) => String.t()
-        }
+  @spec build_eval_context(EvalTypes.core_ir() | nil, String.t()) :: context()
+  def build_eval_context(core_ir, module_name) when is_binary(module_name) do
+    %{
+      module: module_name,
+      source_module: module_name,
+      functions: index_functions(core_ir),
+      record_aliases: index_record_aliases(core_ir),
+      record_alias_field_types: index_record_alias_field_types(core_ir),
+      constructor_tags: index_constructor_tags(core_ir)
+    }
+  end
 
-  @spec evaluate(EvalTypes.expr(), EvalTypes.env(), map()) :: EvalTypes.eval_result()
+  @spec entry_module(EvalTypes.core_ir() | nil) :: String.t()
+  def entry_module(core_ir) when is_map(core_ir) do
+    modules = generic_map_value(core_ir, "modules") || generic_map_value(core_ir, :modules)
+
+    modules
+    |> List.wrap()
+    |> Enum.find_value(&module_name_with_decl(&1, "init"))
+    |> case do
+      name when is_binary(name) and name != "" ->
+        name
+
+      _ ->
+        modules
+        |> List.wrap()
+        |> Enum.find_value(&evaluator_module_name/1)
+        |> case do
+          name when is_binary(name) and name != "" -> name
+          _ -> "Main"
+        end
+    end
+  end
+
+  def entry_module(_), do: "Main"
+
+  @spec module_name_with_decl(map(), String.t()) :: String.t() | nil
+  defp module_name_with_decl(module, declaration_name) when is_map(module) do
+    declarations = generic_map_value(module, "declarations") || []
+
+    if Enum.any?(declarations, &(generic_map_value(&1, "name") == declaration_name)) do
+      evaluator_module_name(module)
+    end
+  end
+
+  defp module_name_with_decl(_module, _declaration_name), do: nil
+
+  @spec evaluator_module_name(map()) :: String.t() | nil
+  defp evaluator_module_name(module) when is_map(module) do
+    case generic_map_value(module, "name") do
+      name when is_binary(name) and name != "" -> name
+      _ -> nil
+    end
+  end
+
+  @spec evaluate(EvalTypes.expr(), EvalTypes.env(), context()) :: EvalTypes.eval_result()
   def evaluate(expr, env \\ %{}, context \\ %{})
       when is_map(expr) and is_map(env) and is_map(context) do
     do_evaluate(expr, env, context, [])
@@ -93,7 +135,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     )
   end
 
-  @spec index_functions(EvalTypes.core_ir() | nil) :: map()
+  @spec index_functions(EvalTypes.core_ir() | nil) :: EvalTypes.function_index()
   def index_functions(%CoreIR{} = core_ir),
     do: index_functions(%{modules: core_ir.modules})
 
@@ -131,7 +173,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   def index_functions(_), do: %{}
 
-  @spec index_record_aliases(map() | nil) :: map()
+  @spec index_record_aliases(EvalTypes.core_ir() | nil) :: EvalTypes.record_aliases()
   def index_record_aliases(%{modules: modules}) when is_list(modules),
     do: index_record_aliases(%{"modules" => modules})
 
@@ -157,7 +199,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   def index_record_aliases(_), do: %{}
 
-  @spec index_record_alias_field_types(map() | nil) :: map()
+  @spec index_record_alias_field_types(EvalTypes.core_ir() | nil) :: EvalTypes.record_alias_field_types()
   def index_record_alias_field_types(%{modules: modules}) when is_list(modules),
     do: index_record_alias_field_types(%{"modules" => modules})
 
@@ -183,7 +225,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   def index_record_alias_field_types(_), do: %{}
 
-  @spec index_constructor_tags(map() | nil) :: [map()]
+  @spec index_constructor_tags(EvalTypes.core_ir() | nil) :: EvalTypes.constructor_tags()
   def index_constructor_tags(%{modules: modules}) when is_list(modules),
     do: index_constructor_tags(%{"modules" => modules})
 
@@ -1752,7 +1794,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     }
   end
 
-  @spec http_response_ops(map()) :: map()
+  @spec http_response_ops(context()) :: context()
   defp http_response_ops(context) do
     %{
       call: &call_callable(&1, &2, %{}, context, []),
@@ -3917,9 +3959,41 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       end
     end)
     |> case do
-      nil -> {:error, {:unknown_function, {module_name, function_name, length(values)}}}
-      result -> result
+      nil ->
+        unknown = {:error, {:unknown_function, {module_name, function_name, length(values)}}}
+
+        case try_pebble_ui_to_ui_node_fallback(module_name, function_name, values) do
+          {:ok, value} -> {:ok, value}
+          :error -> unknown
+        end
+
+      {:error, {:unknown_function, {module_name, function_name, _arity}}} = unknown ->
+        case try_pebble_ui_to_ui_node_fallback(module_name, function_name, values) do
+          {:ok, value} -> {:ok, value}
+          :error -> unknown
+        end
+
+      result ->
+        result
     end
+  end
+
+  @spec try_pebble_ui_to_ui_node_fallback(String.t(), String.t(), EvalTypes.runtime_values()) ::
+          {:ok, EvalTypes.ui_node_map()} | :error
+  defp try_pebble_ui_to_ui_node_fallback(module_name, "toUiNode", [ops])
+       when is_binary(module_name) do
+    if pebble_ui_module_name?(module_name) and is_list(ops) do
+      wrap_render_ops_list_as_ui_node(ops)
+    else
+      :error
+    end
+  end
+
+  defp try_pebble_ui_to_ui_node_fallback(_module_name, _function_name, _values), do: :error
+
+  @spec pebble_ui_module_name?(String.t()) :: boolean()
+  defp pebble_ui_module_name?(module_name) when is_binary(module_name) do
+    compact_module_name(module_name) in ["pebbleui", "ui"]
   end
 
   @spec apply_indexed_function_in_module(

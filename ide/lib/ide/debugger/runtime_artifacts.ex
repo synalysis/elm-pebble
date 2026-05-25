@@ -7,6 +7,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   """
 
   alias ElmEx.CoreIR
+  alias Ide.Debugger.RuntimeArtifacts.Types, as: ArtifactTypes
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
   alias Ide.Projects
@@ -68,7 +69,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def partition_fields(_fields), do: {%{}, %{}}
 
-  @spec shell_map(map()) :: map()
+  @spec shell_map(map()) :: shell()
   def shell_map(%Surface{} = surface), do: shell_map(Surface.to_map(surface))
 
   def shell_map(surface) when is_map(surface) do
@@ -120,7 +121,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def introspect(_), do: nil
 
-  @spec require_introspect(map()) :: map()
+  @spec require_introspect(map()) :: Types.elm_introspect()
   def require_introspect(surface_or_execution_model) when is_map(surface_or_execution_model) do
     case introspect(surface_or_execution_model) do
       ei when is_map(ei) -> ei
@@ -206,7 +207,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def bitmap_resource_indices(_model), do: %{}
 
-  @spec execution_artifacts(execution_model() | map()) :: Types.runtime_artifacts()
+  @spec execution_artifacts(execution_model() | map()) :: ArtifactTypes.t()
   def execution_artifacts(model) when is_map(model) do
     metadata = Map.get(model, "elm_executor_metadata")
     core_ir = decode_core_ir(model)

@@ -6,31 +6,14 @@ defmodule Ide.Debugger.RuntimeExecutor do
   and provides a single place to swap in a fuller interpreter-backed engine.
   """
 
+  alias Ide.Debugger.RuntimeExecutor.Request
+  alias Ide.Debugger.RuntimeExecutor.ResultNormalizer
+  alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
+  alias Ide.Debugger.RuntimeExecutor.Types.RuntimeMode
   alias Ide.Debugger.Types
 
-  @type execution_input :: %{
-          source_root: String.t(),
-          rel_path: String.t() | nil,
-          source: String.t(),
-          introspect: Types.elm_introspect(),
-          current_model: Types.app_model(),
-          current_view_tree: Types.view_output_tree(),
-          message: String.t() | nil,
-          message_value: Types.protocol_message() | map() | nil,
-          update_branches: [String.t()] | nil,
-          elm_executor_core_ir: map() | nil,
-          elm_executor_metadata: map() | nil
-        }
-
-  @type execution_result :: %{
-          model_patch: map(),
-          view_tree: Types.view_output_tree() | nil,
-          view_output: Types.runtime_view_nodes(),
-          runtime: map(),
-          protocol_events: [Types.protocol_event()],
-          followup_messages: [map()]
-        }
-
+  @type execution_input :: ExecutorTypes.execution_input()
+  @type execution_result :: ExecutorTypes.execution_result()
   @type execute_request :: execution_input()
 
   @type fallback_reason :: Types.execution_fallback_reason()
@@ -38,6 +21,8 @@ defmodule Ide.Debugger.RuntimeExecutor do
   @callback execute(execution_input()) :: {:ok, execution_result()} | {:error, Types.execution_error()}
 
   @spec execute(execution_input()) :: {:ok, execution_result()} | {:error, Types.execution_error()}
+  def execute(%Request{} = input), do: execute(Request.to_map(input))
+
   def execute(input) when is_map(input) do
     case runtime_mode() do
       :legacy ->
@@ -248,16 +233,10 @@ defmodule Ide.Debugger.RuntimeExecutor do
     end
   end
 
-  @spec normalize_execution_result(map()) :: execution_result()
+  @spec normalize_execution_result(ExecutorTypes.executor_wire_result() | map()) ::
+          execution_result()
   defp normalize_execution_result(result) when is_map(result) do
-    %{
-      model_patch: map_field(result, :model_patch),
-      view_tree: map_or_nil_field(result, :view_tree),
-      view_output: list_field(result, :view_output),
-      runtime: map_field(result, :runtime),
-      protocol_events: list_field(result, :protocol_events),
-      followup_messages: list_field(result, :followup_messages)
-    }
+    ResultNormalizer.normalize(result)
   end
 
   @spec maybe_external_error_or_fallback(fallback_reason()) ::
@@ -274,62 +253,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
           execution_result()
   defp annotate_execution_backend(payload, backend, reason \\ nil)
        when is_map(payload) and is_binary(backend) do
-    runtime = map_field(payload, :runtime)
-    model_patch = map_field(payload, :model_patch)
-
-    runtime =
-      runtime
-      |> Map.put("execution_backend", backend)
-      |> Map.put("runtime_mode", Atom.to_string(runtime_mode()))
-      |> maybe_put_external_fallback_reason(reason)
-
-    model_patch =
-      model_patch
-      |> Map.put("elm_executor", runtime)
-      |> maybe_put_external_fallback_reason(reason)
-
-    %{
-      model_patch: model_patch,
-      view_tree: map_or_nil_field(payload, :view_tree),
-      view_output: list_field(payload, :view_output),
-      runtime: runtime,
-      protocol_events: list_field(payload, :protocol_events),
-      followup_messages: list_field(payload, :followup_messages)
-    }
-  end
-
-  @spec maybe_put_external_fallback_reason(map(), fallback_reason() | nil) :: map()
-  defp maybe_put_external_fallback_reason(map, nil) when is_map(map), do: map
-
-  defp maybe_put_external_fallback_reason(map, reason) when is_map(map) do
-    Map.put(map, "external_fallback_reason", inspect(reason))
-  end
-
-  @spec map_field(map(), atom()) :: map()
-  defp map_field(map, key) when is_map(map) and is_atom(key) do
-    value =
-      Map.get(map, key) ||
-        Map.get(map, Atom.to_string(key))
-
-    if is_map(value), do: value, else: %{}
-  end
-
-  @spec map_or_nil_field(map(), atom()) :: map() | nil
-  defp map_or_nil_field(map, key) when is_map(map) and is_atom(key) do
-    value =
-      Map.get(map, key) ||
-        Map.get(map, Atom.to_string(key))
-
-    if is_map(value), do: value, else: nil
-  end
-
-  @spec list_field(map(), atom()) :: list()
-  defp list_field(map, key) when is_map(map) and is_atom(key) do
-    value =
-      Map.get(map, key) ||
-        Map.get(map, Atom.to_string(key))
-
-    if is_list(value), do: value, else: []
+    ResultNormalizer.annotate_backend(payload, backend, reason)
   end
 
   @spec external_executor_module() :: module() | nil
@@ -344,7 +268,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
     |> Keyword.get(:external_executor_strict, false)
   end
 
-  @spec runtime_mode() :: :legacy | :hybrid | :runtime_first
+  @spec runtime_mode() :: RuntimeMode.t()
   defp runtime_mode do
     mode =
       Application.get_env(:ide, __MODULE__, [])

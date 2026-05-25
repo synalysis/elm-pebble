@@ -8,23 +8,8 @@ defmodule Elmc.Runtime.Executor do
 
   alias Elmc.Runtime.Executor.Types
 
-  @type request :: %{
-          optional(:source_root) => String.t() | nil,
-          optional(:rel_path) => String.t() | nil,
-          optional(:source) => String.t() | nil,
-          optional(:introspect) => map() | nil,
-          optional(:current_model) => map() | nil,
-          optional(:current_view_tree) => map() | nil,
-          optional(:message) => String.t() | nil,
-          optional(:update_branches) => [String.t()] | nil
-        }
-
-  @type response :: %{
-          model_patch: map(),
-          view_tree: map() | nil,
-          runtime: map(),
-          protocol_events: [map()]
-        }
+  @type request :: Types.execution_request()
+  @type response :: Types.execution_result()
 
   @dialyzer :no_match
   @spec execute(request()) :: {:ok, response()} | {:error, Types.execute_error()}
@@ -103,8 +88,10 @@ defmodule Elmc.Runtime.Executor do
          "elm_executor" => runtime
        },
        view_tree: if(map_size(runtime_view_tree) > 0, do: runtime_view_tree, else: nil),
+       view_output: [],
        runtime: runtime,
-       protocol_events: []
+       protocol_events: [],
+       followup_messages: []
      }}
   end
 

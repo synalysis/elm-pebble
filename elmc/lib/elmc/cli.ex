@@ -4,22 +4,14 @@ defmodule Elmc.CLI do
   """
 
   alias ElmEx.DiagnosticFormatter
+  alias Elmc.CLI.Types
 
   @blocked_package_families ~w(elm/core elm/browser elm/bytes elm/file elm/html elm/http)
 
-  @type cli_diagnostic :: map()
-  @type run_status :: :ok | :error
-  @type project_run :: %{
-          status: run_status(),
-          output: String.t(),
-          warnings: [map()]
-        }
-  @type manifest_run :: %{
-          status: run_status(),
-          output: String.t(),
-          warnings: [map()],
-          manifest: map() | nil
-        }
+  @type cli_diagnostic :: Types.cli_diagnostic()
+  @type run_status :: Types.run_status()
+  @type project_run :: Types.project_run()
+  @type manifest_run :: Types.manifest_run()
   @type warning_dedupe_key ::
           {String.t(), String.t() | nil, String.t(), String.t() | nil, String.t() | nil,
            integer() | nil, String.t() | nil, String.t() | nil, boolean() | nil,

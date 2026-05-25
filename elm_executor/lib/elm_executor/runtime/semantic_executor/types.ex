@@ -5,6 +5,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types do
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.SemanticExecutor.Types.{
     CommandMap,
+    EvalContext,
+    ExecutionRequest,
+    ExecutionResult,
+    IntrospectPayload,
     ViewOutputRow,
     ViewTreeNode
   }
@@ -13,9 +17,9 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types do
 
   @type core_ir :: EvalTypes.core_ir()
 
-  @type eval_context :: map()
+  @type eval_context :: EvalContext.t()
 
-  @type runtime_model :: %{optional(String.t()) => term(), optional(atom()) => term()}
+  @type runtime_model :: ExecutionRequest.runtime_model()
 
   @type view_tree_node :: ViewTreeNode.t()
 
@@ -23,11 +27,13 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types do
 
   @type command_map :: CommandMap.t()
 
-  @type introspect :: map()
+  @type introspect :: IntrospectPayload.wire_payload()
 
-  @type launch_context :: map()
+  @type launch_context :: EvalContext.launch_context()
 
-  @type execution_request :: map()
+  @type execution_request :: ExecutionRequest.t()
+
+  @type execution_result :: ExecutionResult.t() | ExecutionResult.wire_map()
 
   @type exec_error ::
           atom()

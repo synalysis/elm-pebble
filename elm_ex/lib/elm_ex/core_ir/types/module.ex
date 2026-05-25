@@ -2,8 +2,9 @@ defmodule ElmEx.CoreIR.Types.Module do
   @moduledoc false
 
   alias ElmEx.CoreIR.Types.Declaration
+  alias ElmEx.IR.Types.UnionEntry
 
-  @type unions :: %{String.t() => map()}
+  @type unions :: %{String.t() => UnionEntry.t() | map()}
 
   @type t :: %{
           required(:name) => String.t(),

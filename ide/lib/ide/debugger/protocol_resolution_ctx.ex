@@ -3,6 +3,7 @@ defmodule Ide.Debugger.ProtocolResolutionCtx do
   Typed context for resolving companion protocol constructor arguments.
   """
 
+  alias Ide.Debugger.Protocol.Schema
   alias Ide.Debugger.Types
 
   @enforce_keys [:direction, :runtime_model, :simulator_settings]
@@ -12,7 +13,9 @@ defmodule Ide.Debugger.ProtocolResolutionCtx do
     :arg_index,
     :runtime_model,
     :simulator_settings,
-    :message_value
+    :message_value,
+    :schema,
+    :message_fields
   ]
 
   @type direction :: :watch_to_phone | :phone_to_watch
@@ -23,8 +26,16 @@ defmodule Ide.Debugger.ProtocolResolutionCtx do
           arg_index: non_neg_integer() | nil,
           runtime_model: Types.inner_runtime_model(),
           simulator_settings: Types.simulator_settings(),
-          message_value: Types.protocol_message() | map() | nil
+          message_value: Types.protocol_message() | map() | nil,
+          schema: Schema.t() | Schema.wire_schema() | nil,
+          message_fields: [Schema.field()] | nil
         }
+
+  @spec with_message_resolution(t(), Schema.wire_schema(), String.t(), [Schema.field()]) :: t()
+  def with_message_resolution(%__MODULE__{} = ctx, schema, ctor, fields)
+      when is_map(schema) and is_binary(ctor) and is_list(fields) do
+    %{ctx | schema: schema, protocol_ctor: ctor, message_fields: fields}
+  end
 
   @spec new(keyword()) :: t()
   def new(opts) when is_list(opts) do
@@ -44,7 +55,15 @@ defmodule Ide.Debugger.ProtocolResolutionCtx do
       simulator_settings: ctx.simulator_settings,
       protocol_ctor: ctx.protocol_ctor,
       arg_index: ctx.arg_index,
-      direction: ctx.direction
+      direction: ctx.direction,
+      schema: ctx.schema,
+      message_fields: ctx.message_fields
     }
   end
+
+  @spec schema(t()) :: Schema.t() | Schema.wire_schema() | nil
+  def schema(%__MODULE__{schema: schema}), do: schema
+
+  @spec message_fields(t()) :: [Schema.field()] | nil
+  def message_fields(%__MODULE__{message_fields: fields}), do: fields
 end

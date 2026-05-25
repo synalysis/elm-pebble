@@ -5,110 +5,200 @@ defmodule Ide.Debugger.Types do
 
   alias ElmEx.CoreIR
   alias ElmEx.CoreIR.Types, as: CoreIRTypes
+  alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewOutputRow
+  alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewTreeNode
+  alias Ide.Debugger.ElmIntrospect.Payload
+  alias Ide.Debugger.Protocol.{ConstructorValue, Event, Schema}
+  alias Ide.Debugger.RuntimeArtifacts.Types, as: RuntimeArtifactsTypes
+  alias Ide.Debugger.Types.{
+    AppModel,
+    AutoTick,
+    CmdCall,
+    CompanionBridgeRequest,
+    CompileIngestAttrs,
+    CompileIngestBridge,
+    ElmcCliIngestBridge,
+    StepExecutionContract,
+    DebuggerTimelineRow,
+    DeviceRequest,
+    DisabledSubscription,
+    ElmIntrospectEventPayload,
+    ElmcDiagnosticPreview,
+    ElmcEventPayload,
+    ElmcSurfaceFields,
+    HotReloadEventPayload,
+    MessageInEventPayload,
+    PackageCmdEventPayload,
+    PackageCmdErrorEventPayload,
+    ImportTraceBody,
+    ExecutionModel,
+    ExecutionRuntimeSnapshot,
+    ExportTraceOpts,
+    ExportTraceResult,
+    InnerRuntimeModel,
+    InjectTriggerAttrs,
+    LaunchContext,
+    ProtocolTxRxPayload,
+    ReplayAttrs,
+    ReplayRow,
+    RuntimeExecEventPayload,
+    RuntimeStatusEventPayload,
+    ReloadAttrs,
+    SaveConfigurationAttrs,
+    RuntimeEventAppend,
+    RuntimeEventPayload,
+    SessionAttrs,
+    SnapshotContinueAttrs,
+    StepAttrs,
+    RuntimeState,
+    RuntimeStepResult,
+    Shell,
+    SimulatorSettings,
+    SnapshotOpts,
+    SubscriptionRow,
+    TrackedHttpCommand,
+    TriggerCandidate,
+    WatchProfile
+  }
 
   @type core_ir :: CoreIR.t() | CoreIRTypes.wire_map() | map() | nil
   @type core_ir_expr :: CoreIRTypes.Expr.t() | CoreIRTypes.Expr.wire_expr()
+  @type introspect_snapshot :: Payload.snapshot()
 
-  @type simulator_settings :: %{
-          optional(String.t()) => term()
-        }
+  @type launch_context :: LaunchContext.t() | LaunchContext.wire_map()
 
-  @type watch_profile :: %{
-          required(String.t()) => String.t() | integer() | boolean() | nil,
-          optional(atom()) => term()
-        }
+  @type runtime_state :: RuntimeState.t() | RuntimeState.wire_map()
 
-  @type timeline_row :: %{
-          required(:seq) => non_neg_integer(),
-          required(:raw_seq) => non_neg_integer(),
-          required(:type) => String.t(),
-          required(:target) => String.t(),
-          required(:message) => String.t(),
-          optional(:message_source) => String.t() | nil,
-          optional(:watch) => map(),
-          optional(:companion) => map(),
-          optional(:phone) => map()
-        }
+  @type runtime_event :: RuntimeState.runtime_event()
 
-  @type subscription_row :: %{
-          optional(String.t()) => String.t() | integer() | boolean() | nil,
-          optional(atom()) => term()
-        }
+  @type debugger_event :: RuntimeState.debugger_event()
 
-  @type trigger_candidate :: %{
-          optional(String.t()) => term(),
-          optional(atom()) => term()
-        }
+  @type simulator_settings :: SimulatorSettings.t() | SimulatorSettings.wire_map()
 
-  @type compile_ingest_attrs :: %{
-          optional(:status) => :ok | :error | String.t(),
-          optional(:compiled_path) => String.t(),
-          optional(:checked_path) => String.t(),
-          optional(:manifest_path) => String.t(),
-          optional(:revision) => String.t(),
-          optional(:cached) => boolean(),
-          optional(:cached?) => boolean(),
-          optional(:strict) => boolean(),
-          optional(:strict?) => boolean(),
-          optional(:error_count) => non_neg_integer(),
-          optional(:warning_count) => non_neg_integer(),
-          optional(:detail) => String.t(),
-          optional(:source_root) => String.t(),
-          optional(:schema_version) => term(),
-          optional(:diagnostics) => list(),
-          optional(:elm_executor_core_ir_b64) => String.t(),
-          optional(:elm_executor_metadata) => map(),
-          optional(:elm_executor_core_ir) => core_ir(),
-          optional(String.t()) => term()
-        }
+  @type watch_profile :: WatchProfile.profile() | WatchProfile.wire_profile()
 
-  @type cmd_call :: %{
-          optional(String.t()) => String.t() | [term()] | map() | nil,
-          optional(atom()) => String.t() | [term()] | map() | nil,
-          optional(:kind) => String.t()
-        }
+  @type watch_profile_list_item :: WatchProfile.list_item() | WatchProfile.wire_list_item()
 
-  @type companion_bridge_request :: %{
-          required(:api) => String.t(),
-          required(:op) => String.t(),
-          optional(:key) => String.t() | nil,
-          optional(:value) => term()
-        }
+  @type watch_profiles_map :: %{optional(String.t()) => watch_profile()}
 
-  @type protocol_event :: %{
-          optional(:type) => String.t(),
-          optional(:payload) => map(),
-          optional(String.t()) => String.t() | map() | term(),
-          optional(atom()) => String.t() | map() | term()
-        }
+  @type timeline_row :: DebuggerTimelineRow.t()
 
-  @type device_request :: %{
-          required(:kind) => String.t(),
-          required(:response_message) => String.t(),
-          optional(:preview) => term(),
-          optional(String.t()) => term()
-        }
+  @type subscription_row :: SubscriptionRow.t() | SubscriptionRow.wire_map()
+
+  @type trigger_candidate :: TriggerCandidate.t() | TriggerCandidate.wire_map()
+
+  @type event_payload :: RuntimeEventPayload.t()
+
+  @type session_attrs :: SessionAttrs.t() | SessionAttrs.wire_map()
+
+  @type reload_attrs :: ReloadAttrs.t() | ReloadAttrs.wire_map()
+
+  @type step_attrs :: StepAttrs.t() | StepAttrs.wire_map()
+
+  @type inject_trigger_attrs :: InjectTriggerAttrs.t() | InjectTriggerAttrs.wire_map()
+
+  @type replay_attrs :: ReplayAttrs.t() | ReplayAttrs.wire_map()
+
+  @type snapshot_continue_attrs :: SnapshotContinueAttrs.t() | SnapshotContinueAttrs.wire_map()
+
+  @type protocol_tx_rx_payload :: ProtocolTxRxPayload.t() | ProtocolTxRxPayload.wire_map()
+
+  @type replay_row :: ReplayRow.t() | ReplayRow.wire_map()
+
+  @type save_configuration_attrs :: SaveConfigurationAttrs.t() | SaveConfigurationAttrs.wire_map()
+
+  @type import_trace_input :: ImportTraceBody.input()
+
+  @type import_trace_body :: ImportTraceBody.t() | ImportTraceBody.wire_map()
+
+  @type elm_introspect_event_payload ::
+          ElmIntrospectEventPayload.t() | ElmIntrospectEventPayload.wire_map()
+
+  @type hot_reload_event_payload :: HotReloadEventPayload.t() | HotReloadEventPayload.wire_map()
+
+  @type runtime_exec_event_payload ::
+          RuntimeExecEventPayload.t() | RuntimeExecEventPayload.wire_map()
+
+  @type runtime_status_event_payload ::
+          RuntimeStatusEventPayload.t() | RuntimeStatusEventPayload.wire_map()
+
+  @type message_in_event_payload :: MessageInEventPayload.t() | MessageInEventPayload.wire_map()
+
+  @type package_cmd_event_payload ::
+          PackageCmdEventPayload.t() | PackageCmdEventPayload.wire_map()
+
+  @type package_cmd_error_event_payload ::
+          PackageCmdErrorEventPayload.t() | PackageCmdErrorEventPayload.wire_map()
+
+  @type runtime_event_kind :: RuntimeEventPayload.event_kind()
+
+  @type snapshot_opt :: SnapshotOpts.opt()
+
+  @type snapshot_opts :: SnapshotOpts.opts()
+
+  @type export_trace_opt :: ExportTraceOpts.opt()
+
+  @type export_trace_opts :: ExportTraceOpts.opts()
+
+  @type export_trace_result :: ExportTraceResult.t()
+
+  @type execution_runtime_snapshot ::
+          ExecutionRuntimeSnapshot.t() | ExecutionRuntimeSnapshot.wire_map()
+
+  @type compile_ingest_attrs :: CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()
+
+  @type step_executor_request :: StepExecutionContract.executor_request()
+
+  @type step_executor_result :: StepExecutionContract.executor_result()
+
+  @type elmc_cli_project_run :: Elmc.CLI.Types.project_run()
+
+  @type elmc_cli_manifest_run :: Elmc.CLI.Types.manifest_run()
+
+  @type elmc_cli_ingest_opts :: ElmcCliIngestBridge.ingest_opts()
+
+  @type runtime_event_wire :: String.t()
+
+  @type compiler_check_result :: CompileIngestBridge.check_result()
+
+  @type compiler_compile_result :: CompileIngestBridge.compile_result()
+
+  @type compiler_manifest_result :: CompileIngestBridge.manifest_result()
+
+  @type elmc_event_payload :: ElmcEventPayload.t()
+
+  @type elmc_surface_fields :: ElmcSurfaceFields.wire_map()
+
+  @type cmd_call :: CmdCall.t() | CmdCall.wire_map()
+
+  @type elmc_diagnostic_preview :: ElmcDiagnosticPreview.preview()
+
+  @type elmc_diagnostic_row :: ElmcDiagnosticPreview.row() | ElmcDiagnosticPreview.wire_row()
+
+  @type auto_tick :: AutoTick.t() | AutoTick.wire_map()
+
+  @type disabled_subscription :: DisabledSubscription.t() | DisabledSubscription.wire_map()
+
+  @type companion_bridge_request ::
+          CompanionBridgeRequest.t() | CompanionBridgeRequest.wire_map()
+
+  @type tracked_http_command :: TrackedHttpCommand.t() | TrackedHttpCommand.wire_map()
+
+  @type protocol_event :: Event.t()
+
+  @type device_request :: DeviceRequest.t() | DeviceRequest.wire_map()
 
   @type device_data_request :: device_request()
 
-  @type protocol_schema :: map()
+  @type protocol_schema :: Schema.t() | Schema.wire_schema()
 
   @type protocol_error :: atom() | String.t() | tuple()
 
-  @type protocol_wire_type ::
-          :int | :bool | :string | {:enum, String.t()} | {:union, String.t()}
+  @type protocol_wire_type :: Schema.wire_type()
 
-  @type protocol_ctor_value :: %{
-          optional(String.t()) => term(),
-          optional(:ctor) => String.t(),
-          optional(:args) => list()
-        }
+  @type protocol_ctor_value :: ConstructorValue.t() | ConstructorValue.wire_value()
 
-  @type protocol_schema_message :: %{
-          optional(:name) => String.t(),
-          optional(:fields) => [map()],
-          optional(atom()) => term()
-        }
+  @type protocol_schema_message :: Schema.message() | map()
 
   @type protocol_message_wire_value :: protocol_ctor_value() | map() | String.t() | nil
 
@@ -121,29 +211,15 @@ defmodule Ide.Debugger.Types do
 
   @type init_model_values :: %{optional(String.t()) => term()}
 
-  @type elm_introspect :: %{
-          optional(String.t()) => term(),
-          optional(atom()) => term()
-        }
+  @type elm_introspect :: Payload.wire_payload()
 
-  @type inner_runtime_model :: %{
-          optional(String.t()) => term()
-        }
+  @type inner_runtime_model :: InnerRuntimeModel.t() | InnerRuntimeModel.wire_map()
 
-  @type app_model :: %{
-          optional(String.t()) => term()
-        }
+  @type app_model :: AppModel.t() | AppModel.wire_map()
 
-  @type shell :: %{
-          optional(String.t()) => term(),
-          optional(:elm_introspect) => elm_introspect(),
-          optional(:elm_executor_core_ir) => core_ir(),
-          optional(:elm_executor_core_ir_b64) => String.t(),
-          optional(:elm_executor_metadata) => map(),
-          optional(:vector_resource_indices) => map()
-        }
+  @type shell :: Shell.t() | Shell.wire_map()
 
-  @type execution_model :: map()
+  @type execution_model :: ExecutionModel.t() | ExecutionModel.wire_map()
 
   @type protocol_message :: protocol_ctor_value()
 
@@ -166,24 +242,13 @@ defmodule Ide.Debugger.Types do
 
   @type subscription_payload :: map() | protocol_ctor_value() | wire_scalar()
 
-  @type view_output_node :: map()
+  @type view_output_node :: ViewOutputRow.t() | ViewOutputRow.wire_row()
 
-  @type view_output_tree :: map()
+  @type view_output_tree :: ViewTreeNode.view_tree() | ViewTreeNode.t()
 
-  @type runtime_step_result :: %{
-          optional(:model_patch) => map(),
-          optional(:view_tree) => map() | nil,
-          optional(:view_output) => runtime_view_nodes(),
-          optional(:protocol_events) => list(),
-          optional(:followup_messages) => list(),
-          optional(String.t()) => term()
-        }
+  @type runtime_step_result :: RuntimeStepResult.t() | RuntimeStepResult.wire_result()
 
-  @type replay_step_message :: %{
-          required(:seq) => non_neg_integer(),
-          required(:target) => surface_target(),
-          required(:message) => String.t()
-        }
+  @type replay_step_message :: ReplayRow.t()
 
   @type runtime_fingerprint :: %{optional(String.t()) => term()}
 
@@ -197,9 +262,9 @@ defmodule Ide.Debugger.Types do
 
   @type runtime_entrypoint :: {String.t(), String.t()}
 
-  @type runtime_artifacts :: map()
+  @type runtime_artifacts :: RuntimeArtifactsTypes.t()
 
-  @type rendered_tree :: map()
+  @type rendered_tree :: view_output_tree()
 
   @type simulator_setting_keys ::
           :platform_target

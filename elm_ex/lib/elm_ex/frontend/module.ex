@@ -3,15 +3,17 @@ defmodule ElmEx.Frontend.Module do
   Lightweight canonical-like module representation used by the backend.
   """
 
+  alias ElmEx.Frontend.AstContract.Types.Declaration
+  alias ElmEx.Frontend.Types.ImportEntry
   alias ElmEx.Types
 
   @type t() :: %__MODULE__{
           name: String.t(),
           path: String.t(),
           imports: [String.t()],
-          declarations: [map()],
+          declarations: [Declaration.t() | map()],
           module_exposing: Types.module_exposing(),
-          import_entries: [map()],
+          import_entries: [ImportEntry.t() | ImportEntry.wire_map()],
           port_module: boolean(),
           ports: [map()]
         }

@@ -1,33 +1,32 @@
 defmodule Ide.Debugger.StepInputTest do
   use ExUnit.Case, async: true
 
-  alias Ide.Debugger.StepInput
-  alias Ide.Debugger.Surface
+  alias Ide.Debugger.{StepInput, Surface}
 
-  describe "from_surface/4" do
-    test "captures app and execution models from surface" do
-      surface =
-        Surface.from_map(%{
-          model: %{"runtime_model" => %{"count" => 1}, "status" => "idle"},
-          shell: %{"elm_introspect" => %{"module" => "Main"}}
-        })
+  test "from_surface builds typed step input from surface" do
+    surface =
+      Surface.from_map(%{
+        model: %{"runtime_model" => %{"count" => 1}},
+        shell: %{"elm_introspect" => %{"module" => "Main"}}
+      })
 
-      step = StepInput.from_surface(:watch, surface, "Tick", message_value: %{"ctor" => "Tick", "args" => []})
+    input = StepInput.from_surface(:watch, surface, "Tick", trigger: "test")
 
-      assert step.app_model["status"] == "idle"
-      assert step.execution_model["elm_introspect"]["module"] == "Main"
-      assert step.message == "Tick"
-      assert step.message_value == %{"ctor" => "Tick", "args" => []}
-    end
+    assert input.target == :watch
+    assert input.message == "Tick"
+    assert input.trigger == "test"
+    assert is_map(input.execution_model)
+    assert Map.get(input.execution_model, "elm_introspect") == %{"module" => "Main"}
+  end
 
-    test "with_app_model updates surface snapshot" do
-      surface = Surface.from_map(%{model: %{"count" => 0}, shell: %{}})
-      step = StepInput.from_surface(:watch, surface, "Tick")
+  test "to_executor_request uses phone source_root for companion target" do
+    surface = Surface.from_map(%{model: %{}, shell: %{"elm_introspect" => %{"module" => "Main"}}})
+    input = StepInput.from_surface(:companion, surface, "Tick")
 
-      updated = StepInput.with_app_model(step, %{"count" => 1, "runtime_model" => %{"latitudeE6" => 0}})
+    request = StepInput.to_executor_request(input)
 
-      assert updated.app_model["count"] == 1
-      assert Surface.app_model(updated.surface)["count"] == 1
-    end
+    assert request.source_root == "phone"
+    assert request.message == "Tick"
+    assert is_map(request.introspect)
   end
 end

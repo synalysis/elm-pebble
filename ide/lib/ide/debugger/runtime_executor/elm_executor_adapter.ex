@@ -5,11 +5,14 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter do
 
   @behaviour Ide.Debugger.RuntimeExecutor
 
+  alias Ide.Debugger.RuntimeExecutor.ResultNormalizer
+  alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.Types
 
   @type execution_input :: Ide.Debugger.RuntimeExecutor.execution_input()
   @type execution_result :: Ide.Debugger.RuntimeExecutor.execution_result()
-  @type executor_result :: {:ok, map()} | {:error, Types.execution_error()}
+
+  @type executor_result :: {:ok, ExecutorTypes.executor_wire_result()} | {:error, Types.execution_error()}
   @type compiled_module_result :: {:ok, module()} | :none | {:error, Types.execution_error()}
 
   @impl true
@@ -19,15 +22,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter do
 
     case execute_via_compiled_module_or_runtime(request) do
       {:ok, payload} when is_map(payload) ->
-        {:ok,
-         %{
-           model_patch: map_field(payload, :model_patch),
-           view_tree: map_or_nil_field(payload, :view_tree),
-           view_output: list_field(payload, :view_output),
-           runtime: map_field(payload, :runtime),
-           protocol_events: list_field(payload, :protocol_events),
-           followup_messages: list_field(payload, :followup_messages)
-         }}
+        {:ok, ResultNormalizer.normalize(payload)}
 
       {:error, _} = err ->
         err
@@ -75,23 +70,5 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter do
       true ->
         :none
     end
-  end
-
-  @spec map_field(map(), atom()) :: map()
-  defp map_field(map, key) when is_map(map) and is_atom(key) do
-    value = Map.get(map, key) || Map.get(map, Atom.to_string(key))
-    if is_map(value), do: value, else: %{}
-  end
-
-  @spec map_or_nil_field(map(), atom()) :: map() | nil
-  defp map_or_nil_field(map, key) when is_map(map) and is_atom(key) do
-    value = Map.get(map, key) || Map.get(map, Atom.to_string(key))
-    if is_map(value), do: value, else: nil
-  end
-
-  @spec list_field(map(), atom()) :: list()
-  defp list_field(map, key) when is_map(map) and is_atom(key) do
-    value = Map.get(map, key) || Map.get(map, Atom.to_string(key))
-    if is_list(value), do: value, else: []
   end
 end

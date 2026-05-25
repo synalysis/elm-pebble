@@ -6,14 +6,9 @@ defmodule ElmEx.IR.Validation do
   """
 
   alias ElmEx.IR
+  alias ElmEx.IR.Types.Diagnostic
 
-  @type diagnostic :: %{
-          severity: :error | :warning,
-          code: atom(),
-          module: String.t(),
-          function: String.t() | nil,
-          message: String.t()
-        }
+  @type diagnostic :: Diagnostic.t()
 
   @typep expr() :: map()
 

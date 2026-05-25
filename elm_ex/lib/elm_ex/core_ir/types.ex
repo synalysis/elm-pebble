@@ -3,11 +3,14 @@ defmodule ElmEx.CoreIR.Types do
   Shared types for backend-stable normalized Core IR (`elm_ex.core_ir.v1`).
   """
 
-  alias ElmEx.CoreIR.Types.{Declaration, Diagnostic, Expr, Module}
+  alias ElmEx.CoreIR.Types.{CoreIR, Declaration, Diagnostic, Expr, Module, ShapeError, UnionEntry}
 
+  @type t :: CoreIR.t()
   @type diagnostic :: Diagnostic.t()
   @type declaration :: Declaration.t()
   @type module_t :: Module.t()
+  @type union_entry :: UnionEntry.t()
+  @type shape_error :: ShapeError.t()
   @type expr :: Expr.t()
 
   @type normalized_module :: module_t()

@@ -3,8 +3,13 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Types do
 
   alias ElmEx.CoreIR
   alias ElmEx.CoreIR.Types, as: CoreIRTypes
-  alias ElmExecutor.Runtime.CoreIREvaluator.Types.CtorMap
+  alias ElmExecutor.Runtime.CoreIREvaluator.Types.{
+    ConstructorTagEntry,
+    CtorMap,
+    RecordAliasIndex
+  }
   alias ElmExecutor.Runtime.SemanticExecutor.Types.CommandMap
+  alias ElmExecutor.Runtime.SemanticExecutor.Types.EvalContext
 
   @type runtime_scalar ::
           number() | boolean() | String.t() | :nan | :infinity | :neg_infinity
@@ -25,7 +30,26 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Types do
 
   @type builtin_eval_result :: eval_result() | :no_builtin
 
-  @type ops_context :: map()
+  @type function_index_key :: {String.t(), String.t(), non_neg_integer()}
+
+  @type function_entry :: %{
+          optional(:module) => String.t(),
+          optional(:name) => String.t(),
+          optional(:params) => [String.t()],
+          optional(:body) => expr() | map() | nil,
+          optional(:type) => String.t() | nil,
+          optional(atom()) => term()
+        }
+
+  @type function_index :: %{optional(function_index_key()) => function_entry()}
+
+  @type record_aliases :: RecordAliasIndex.t()
+
+  @type record_alias_field_types :: %{optional(RecordAliasIndex.key()) => map()}
+
+  @type constructor_tags :: [ConstructorTagEntry.t()]
+
+  @type ops_context :: EvalContext.t() | map()
 
   @type expr :: CoreIRTypes.Expr.t() | CoreIRTypes.Expr.wire_expr()
 

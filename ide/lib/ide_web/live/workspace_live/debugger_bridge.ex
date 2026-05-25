@@ -2,6 +2,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
   @moduledoc false
 
   alias Ide.Compiler.Diagnostics
+  alias Ide.Debugger.Types.CompileIngestBridge
   alias Ide.Projects
   alias IdeWeb.WorkspaceLive.DebuggerSupport
 
@@ -19,13 +20,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
           counts = Diagnostics.summary(diagnostics)
 
           {:ok, _} =
-            Ide.Debugger.ingest_elmc_check(session_key, %{
-              status: result.status,
-              checked_path: result.checked_path,
-              error_count: counts.error_count,
-              warning_count: counts.warning_count,
-              diagnostics: diagnostics
-            })
+            Ide.Debugger.ingest_elmc_check(
+              session_key,
+              result
+              |> Map.put(:error_count, counts.error_count)
+              |> Map.put(:warning_count, counts.warning_count)
+              |> Map.put(:diagnostics, diagnostics)
+              |> CompileIngestBridge.from_compiler_check_result()
+            )
 
           DebuggerSupport.refresh(socket)
         else
@@ -72,22 +74,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
           counts = Diagnostics.summary(diagnostics)
 
           {:ok, _} =
-            Ide.Debugger.ingest_elmc_compile(project_session_key(project), %{
-              status: result.status,
-              compiled_path: result.compiled_path,
-              source_root: compile_result_source_root(socket, result),
-              revision: result.revision,
-              cached: result.cached? == true,
-              error_count: counts.error_count,
-              warning_count: counts.warning_count,
-              diagnostics: diagnostics,
-              elm_executor_core_ir_b64:
-                Map.get(result, :elm_executor_core_ir_b64) ||
-                  Map.get(result, "elm_executor_core_ir_b64"),
-              elm_executor_metadata:
-                Map.get(result, :elm_executor_metadata) ||
-                  Map.get(result, "elm_executor_metadata")
-            })
+            Ide.Debugger.ingest_elmc_compile(
+              project_session_key(project),
+              result
+              |> Map.put(:source_root, compile_result_source_root(socket, result))
+              |> Map.put(:error_count, counts.error_count)
+              |> Map.put(:warning_count, counts.warning_count)
+              |> Map.put(:diagnostics, diagnostics)
+              |> CompileIngestBridge.from_compiler_compile_result()
+            )
 
           DebuggerSupport.refresh(socket)
         else
@@ -139,17 +134,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
           schema_version = manifest_schema_version_from_result(result)
 
           {:ok, _} =
-            Ide.Debugger.ingest_elmc_manifest(project_session_key(project), %{
-              status: result.status,
-              manifest_path: result.manifest_path,
-              revision: result.revision,
-              strict: result[:strict?] == true,
-              cached: result[:cached?] == true,
-              error_count: counts.error_count,
-              warning_count: counts.warning_count,
-              schema_version: schema_version,
-              diagnostics: diagnostics
-            })
+            Ide.Debugger.ingest_elmc_manifest(
+              project_session_key(project),
+              result
+              |> Map.put(:strict?, result[:strict?] == true)
+              |> Map.put(:cached?, result[:cached?] == true)
+              |> Map.put(:error_count, counts.error_count)
+              |> Map.put(:warning_count, counts.warning_count)
+              |> Map.put(:schema_version, schema_version)
+              |> Map.put(:diagnostics, diagnostics)
+              |> CompileIngestBridge.from_compiler_manifest_result()
+            )
 
           DebuggerSupport.refresh(socket)
         else
@@ -171,18 +166,22 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBridge do
           strict? = socket.assigns[:manifest_strict_mode] == true
 
           {:ok, _} =
-            Ide.Debugger.ingest_elmc_manifest(project_session_key(project), %{
-              status: :error,
-              manifest_path: workspace,
-              revision: "—",
-              strict: strict?,
-              cached: false,
-              error_count: 1,
-              warning_count: 0,
-              schema_version: nil,
-              detail: String.slice(message, 0, 240),
-              diagnostics: async_task_failure_diagnostics("manifest: #{message}")
-            })
+            Ide.Debugger.ingest_elmc_manifest(
+              project_session_key(project),
+              %{
+                status: :error,
+                manifest_path: workspace,
+                revision: "—",
+                strict?: strict?,
+                cached?: false,
+                error_count: 1,
+                warning_count: 0,
+                schema_version: nil,
+                detail: String.slice(message, 0, 240),
+                diagnostics: async_task_failure_diagnostics("manifest: #{message}")
+              }
+              |> CompileIngestBridge.from_compiler_manifest_result()
+            )
 
           DebuggerSupport.refresh(socket)
         else

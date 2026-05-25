@@ -3,14 +3,9 @@ defmodule ElmEx.CoreIR.Validate do
 
   alias ElmEx.CoreIR
   alias ElmEx.CoreIR.Types
-  alias ElmEx.CoreIR.Types.Expr
+  alias ElmEx.CoreIR.Types.{Expr, ShapeError}
 
-  @type shape_error :: %{
-          required(:code) => String.t(),
-          required(:message) => String.t(),
-          required(:path) => [String.t() | integer()],
-          optional(:op) => String.t()
-        }
+  @type shape_error :: ShapeError.t()
 
   @spec validate_shape(Types.wire_core_ir()) :: {:ok, CoreIR.t()} | {:error, [shape_error()]}
   def validate_shape(%CoreIR{} = core_ir) do

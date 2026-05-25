@@ -1,0 +1,54 @@
+defmodule Ide.Debugger.Types.StepExecutionContract do
+  @moduledoc """
+  Typed seam for one debugger runtime step:
+
+  `StepInput` → `RuntimeExecutor.Request` → `execution_result` → `RuntimeStepResult`.
+  """
+
+  alias Ide.Debugger.RuntimeExecutor.Request
+  alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
+  alias Ide.Debugger.StepInput
+  alias Ide.Debugger.Types.RuntimeStepResult
+
+  @type executor_request :: Request.t()
+  @type executor_request_wire :: ExecutorTypes.execution_input_map()
+  @type executor_result :: ExecutorTypes.execution_result()
+  @type step_result :: RuntimeStepResult.t()
+
+  @spec request_from(StepInput.t(), keyword()) :: executor_request()
+  def request_from(%StepInput{} = step, opts \\ []) when is_list(opts) do
+    StepInput.to_executor_request(step, opts)
+  end
+
+  @spec step_result_from_executor(executor_result()) :: step_result()
+  def step_result_from_executor(%{} = result) do
+    RuntimeStepResult.from_executor_result(result)
+  end
+
+  @spec step_result_from_wire(map()) :: step_result()
+  def step_result_from_wire(wire) when is_map(wire) do
+    RuntimeStepResult.from_executor_wire(wire)
+  end
+
+  @spec step_result_from_local_fallback(RuntimeStepResult.model_patch(), map(), keyword()) ::
+          step_result()
+  def step_result_from_local_fallback(model_patch, view_tree, opts \\ [])
+      when is_map(model_patch) and is_map(view_tree) and is_list(opts) do
+    RuntimeStepResult.from_local_fallback(
+      model_patch,
+      view_tree,
+      Keyword.get(opts, :view_output, []),
+      Keyword.get(opts, :protocol_events, []),
+      Keyword.get(opts, :followup_messages, [])
+    )
+  end
+
+  @spec merge_model_patch(map(), RuntimeStepResult.model_patch()) :: map()
+  def merge_model_patch(model, patch) when is_map(model) and is_map(patch) do
+    Enum.reduce(patch, model, fn
+      {key, value}, acc when is_binary(key) -> Map.put(acc, key, value)
+      {key, value}, acc when is_atom(key) -> Map.put(acc, Atom.to_string(key), value)
+      _, acc -> acc
+    end)
+  end
+end

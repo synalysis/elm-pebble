@@ -11,7 +11,8 @@ defmodule ElmExecutor.Runtime.Executor do
 
   @type exec_error :: SemTypes.exec_error() | :invalid_execution_request
 
-  @spec execute(map(), map(), map()) :: {:ok, map()} | {:error, exec_error()}
+  @spec execute(SemTypes.execution_request() | map(), SemTypes.core_ir(), map()) ::
+          {:ok, map()} | {:error, exec_error()}
   def execute(request, core_ir, metadata)
       when is_map(request) and is_map(core_ir) and is_map(metadata) do
     request =
@@ -28,7 +29,7 @@ defmodule ElmExecutor.Runtime.Executor do
     end
   end
 
-  @spec execute(map()) :: {:ok, map()} | {:error, exec_error()}
+  @spec execute(SemTypes.execution_request() | map()) :: {:ok, map()} | {:error, exec_error()}
   def execute(request) when is_map(request) do
     metadata =
       case Map.get(request, :elm_executor_metadata) || Map.get(request, "elm_executor_metadata") do
