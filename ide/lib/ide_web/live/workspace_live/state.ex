@@ -4,7 +4,6 @@ defmodule IdeWeb.WorkspaceLive.State do
   import Phoenix.Component, only: [assign: 3, to_form: 2]
   import Phoenix.LiveView, only: [allow_upload: 3]
 
-  alias Ide.ProjectCapabilities
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.Settings
@@ -230,6 +229,58 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> DebuggerSupport.assign_defaults()
   end
 
+  @doc """
+  Returns true when the workspace already has `project` loaded and only the pane route changed.
+  """
+  @spec pane_only_navigation?(socket(), Project.t()) :: boolean()
+  def pane_only_navigation?(socket, %Project{} = project) do
+    case socket.assigns[:project] do
+      %Project{slug: slug} when is_binary(slug) -> slug == project.slug
+      _ -> false
+    end
+  end
+
+  @doc """
+  Updates pane-specific assigns without reloading project workspace data.
+  """
+  @spec assign_pane_switch(socket(), Project.t(), atom() | nil) :: socket()
+  def assign_pane_switch(socket, %Project{} = project, previous_pane) do
+    pane = socket.assigns.live_action
+
+    socket
+    |> assign(:pane, pane)
+    |> assign(:page_title, "#{project.name} · #{Atom.to_string(pane)}")
+    |> assign(:detected_capabilities, detected_capabilities_from_project(project))
+    |> maybe_reset_debugger_auto_fire_schedule(previous_pane, pane)
+  end
+
+  @spec maybe_reset_debugger_auto_fire_schedule(socket(), atom() | nil, atom()) :: socket()
+  defp maybe_reset_debugger_auto_fire_schedule(socket, previous, current)
+       when previous == current do
+    socket
+  end
+
+  defp maybe_reset_debugger_auto_fire_schedule(socket, _previous, :debugger) do
+    assign(socket, :debugger_auto_fire_refresh_scheduled, false)
+  end
+
+  defp maybe_reset_debugger_auto_fire_schedule(socket, :debugger, _current) do
+    assign(socket, :debugger_auto_fire_refresh_scheduled, false)
+  end
+
+  defp maybe_reset_debugger_auto_fire_schedule(socket, _previous, _current), do: socket
+
+  @doc """
+  Package capability labels persisted on the project (no Elm source scan).
+  """
+  @spec detected_capabilities_from_project(Project.t()) :: [String.t()]
+  def detected_capabilities_from_project(%Project{} = project) do
+    project
+    |> Map.get(:release_defaults, %{})
+    |> Map.get("capabilities")
+    |> capabilities_form_value()
+  end
+
   @spec assign_project(Phoenix.LiveView.Socket.t(), Project.t(), settings(), project_assign_data()) ::
           Phoenix.LiveView.Socket.t()
   def assign_project(socket, %Project{} = project, settings, data) when is_map(data) do
@@ -278,10 +329,7 @@ defmodule IdeWeb.WorkspaceLive.State do
       :project_settings_form,
       to_form(project_settings_form_data(project), as: :project_settings)
     )
-    |> assign(
-      :detected_capabilities,
-      ProjectCapabilities.package_capabilities(Projects.project_workspace_path(project))
-    )
+    |> assign(:detected_capabilities, detected_capabilities_from_project(project))
     |> assign(:github_push_status, :idle)
     |> assign(:github_push_output, nil)
     |> assign(:store_listing_sync_status, :idle)

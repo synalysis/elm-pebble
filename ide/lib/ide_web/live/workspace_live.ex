@@ -80,56 +80,65 @@ defmodule IdeWeb.WorkspaceLive do
          |> push_navigate(to: ~p"/projects")}
 
       project ->
-        settings = Settings.current()
         previous_pane = socket.assigns[:pane]
-        _ = Projects.ensure_bitmap_generated(project)
 
-        project =
-          case Projects.sync_detected_capabilities(project) do
-            {:ok, updated} -> updated
-            _ -> project
-          end
-
-        tree = Projects.list_source_tree(project)
-        bitmap_resources = load_bitmap_resources(project)
-        vector_resources = load_vector_resources(project)
-        font_sources = load_font_sources(project)
-        font_resources = load_font_resources(project)
-        screenshots = load_screenshots(project)
-        screenshot_groups = group_screenshots(screenshots)
-
-        publish_readiness = PublishFlow.publish_readiness(project, screenshots)
-
-        selected_emulator_target = project_emulator_target(project)
-        emulator_mode = project_emulator_mode(project)
-
-        project_data = %{
-          tree: tree,
-          bitmap_resources: bitmap_resources,
-          vector_resources: vector_resources,
-          font_sources: font_sources,
-          font_resources: font_resources,
-          screenshots: screenshots,
-          screenshot_groups: screenshot_groups,
-          publish_readiness: publish_readiness,
-          selected_emulator_target: selected_emulator_target,
-          emulator_mode: emulator_mode,
-          packages_target_root: preferred_packages_target_root(socket, project),
-          debugger_timeline_mode: project_debugger_timeline_mode(project),
-          companion_app_present: Projects.companion_app_present?(project)
-        }
-
-        {:noreply,
-         socket
-         |> State.assign_project(project, settings, project_data)
-         |> maybe_initialize_forms(project)
-         |> maybe_open_editor_default_file(project, previous_pane)
-         |> refresh_editor_dependencies()
-         |> maybe_refresh_debugger()
-         |> maybe_check_emulator_installation()
-         |> maybe_schedule_debugger_auto_fire_refresh()
-         |> refresh_github_repo_status()}
+        if State.pane_only_navigation?(socket, project) do
+          {:noreply,
+           socket
+           |> State.assign_pane_switch(project, previous_pane)
+           |> maybe_open_editor_default_file(project, previous_pane)
+           |> maybe_refresh_debugger()
+           |> maybe_check_emulator_installation()
+           |> maybe_schedule_debugger_auto_fire_refresh()}
+        else
+          {:noreply, load_workspace_project(socket, project, previous_pane)}
+        end
     end
+  end
+
+  @spec load_workspace_project(socket(), Projects.Project.t(), pane() | nil) :: socket()
+  defp load_workspace_project(socket, project, previous_pane) do
+    settings = Settings.current()
+    _ = Projects.ensure_bitmap_generated(project)
+
+    tree = Projects.list_source_tree(project)
+    bitmap_resources = load_bitmap_resources(project)
+    vector_resources = load_vector_resources(project)
+    font_sources = load_font_sources(project)
+    font_resources = load_font_resources(project)
+    screenshots = load_screenshots(project)
+    screenshot_groups = group_screenshots(screenshots)
+
+    publish_readiness = PublishFlow.publish_readiness(project, screenshots)
+
+    selected_emulator_target = project_emulator_target(project)
+    emulator_mode = project_emulator_mode(project)
+
+    project_data = %{
+      tree: tree,
+      bitmap_resources: bitmap_resources,
+      vector_resources: vector_resources,
+      font_sources: font_sources,
+      font_resources: font_resources,
+      screenshots: screenshots,
+      screenshot_groups: screenshot_groups,
+      publish_readiness: publish_readiness,
+      selected_emulator_target: selected_emulator_target,
+      emulator_mode: emulator_mode,
+      packages_target_root: preferred_packages_target_root(socket, project),
+      debugger_timeline_mode: project_debugger_timeline_mode(project),
+      companion_app_present: Projects.companion_app_present?(project)
+    }
+
+    socket
+    |> State.assign_project(project, settings, project_data)
+    |> maybe_initialize_forms(project)
+    |> maybe_open_editor_default_file(project, previous_pane)
+    |> refresh_editor_dependencies()
+    |> maybe_refresh_debugger()
+    |> maybe_check_emulator_installation()
+    |> maybe_schedule_debugger_auto_fire_refresh()
+    |> refresh_github_repo_status()
   end
 
   @impl true
@@ -5357,7 +5366,6 @@ defmodule IdeWeb.WorkspaceLive do
 
   defp refresh_detected_capabilities(socket) do
     project = socket.assigns.project
-    workspace_root = Projects.project_workspace_path(project)
 
     project =
       case Projects.sync_detected_capabilities(project) do
@@ -5367,7 +5375,7 @@ defmodule IdeWeb.WorkspaceLive do
 
     socket
     |> assign(:project, project)
-    |> assign(:detected_capabilities, Ide.ProjectCapabilities.package_capabilities(workspace_root))
+    |> assign(:detected_capabilities, State.detected_capabilities_from_project(project))
     |> assign(
       :project_settings_form,
       to_form(State.project_settings_form_data(project), as: :project_settings)
