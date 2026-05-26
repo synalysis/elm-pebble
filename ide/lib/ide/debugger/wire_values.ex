@@ -21,4 +21,26 @@ defmodule Ide.Debugger.WireValues do
   end
 
   def map_get_first_present(_map, _keys), do: nil
+
+  @spec map_value(map(), String.t() | atom()) :: Types.wire_input() | nil
+  def map_value(map, key) when is_map(map) do
+    if Map.has_key?(map, key) do
+      Map.get(map, key)
+    else
+      atom_key =
+        if is_binary(key) do
+          try do
+            String.to_existing_atom(key)
+          rescue
+            ArgumentError -> nil
+          end
+        else
+          nil
+        end
+
+      if is_atom(atom_key) and Map.has_key?(map, atom_key), do: Map.get(map, atom_key), else: nil
+    end
+  end
+
+  def map_value(_map, _key), do: nil
 end

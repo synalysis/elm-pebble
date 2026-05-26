@@ -1,0 +1,181 @@
+defmodule Ide.Debugger.RuntimeStatusEvents do
+  @moduledoc false
+
+  alias Ide.Debugger.IntrospectAccess
+  alias Ide.Debugger.StepExecution
+  alias Ide.Debugger.Types
+
+  @type append_event_fn :: (map(), String.t(), map() -> map())
+
+  @type append_debugger_event_fn ::
+          (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map())
+
+  @spec append_runtime_exec(
+          map(),
+          Types.surface_target(),
+          map(),
+          append_event_fn(),
+          (Types.surface_target() -> String.t())
+        ) :: map()
+  def append_runtime_exec(state, target, extra, append_event, source_root_for_target)
+      when target in [:watch, :companion, :phone] and is_map(extra) and is_function(append_event, 3) and
+             is_function(source_root_for_target, 1) do
+    runtime = get_in(state, [target, :model, "elm_executor"])
+
+    if is_map(runtime) and map_size(runtime) > 0 do
+      payload =
+        Types.RuntimeExecEventPayload.from_runtime(
+          runtime,
+          source_root_for_target.(target),
+          extra
+        )
+
+      append_event.(state, "debugger.runtime_exec", payload)
+    else
+      state
+    end
+  end
+
+  def append_runtime_exec(state, _target, _extra, _append_event, _source_root_for_target), do: state
+
+  @spec append_runtime_exec_for_source_root(
+          map(),
+          String.t(),
+          append_event_fn(),
+          (Types.surface_target() -> String.t()),
+          (String.t() -> Types.surface_target())
+        ) :: map()
+  def append_runtime_exec_for_source_root(state, source_root, append_event, source_root_for_target, target_key)
+      when is_binary(source_root) do
+    append_runtime_exec(state, target_key.(source_root), %{}, append_event, source_root_for_target)
+  end
+
+  @spec maybe_append_simple_status(
+          map(),
+          Types.surface_target(),
+          append_debugger_event_fn()
+        ) :: map()
+  def maybe_append_simple_status(state, target, append_debugger_event)
+      when target in [:watch, :companion, :phone] and is_function(append_debugger_event, 5) do
+    runtime = get_in(state, [target, :model, "elm_executor"])
+
+    case status_message(runtime) do
+      nil -> state
+      message -> append_debugger_event.(state, "runtime", target, message, "runtime_status")
+    end
+  end
+
+  def maybe_append_simple_status(state, _target, _append_debugger_event), do: state
+
+  @spec maybe_append_after_execution(
+          map(),
+          Types.surface_target(),
+          map(),
+          map(),
+          append_event_fn(),
+          append_debugger_event_fn(),
+          (Types.surface_target() -> String.t())
+        ) :: map()
+  def maybe_append_after_execution(
+        state,
+        target,
+        execution,
+        introspect,
+        append_event,
+        append_debugger_event,
+        source_root_for_target
+      )
+      when target in [:watch, :companion, :phone] and is_map(execution) do
+    runtime =
+      case Map.get(execution, :runtime) || Map.get(execution, "runtime") do
+        value when is_map(value) -> value
+        _ -> get_in(state, [target, :model, "elm_executor"]) || %{}
+      end
+      |> Map.put("init_cmd_count", meaningful_init_cmd_count(introspect))
+      |> Map.put(
+        "followup_message_count",
+        execution
+        |> followup_messages()
+        |> StepExecution.normalize_followup_messages()
+        |> length()
+      )
+
+    case status_message(runtime) do
+      nil ->
+        state
+
+      message ->
+        state
+        |> append_event.(
+          "debugger.runtime_status",
+          Types.RuntimeStatusEventPayload.from_runtime(
+            runtime,
+            source_root_for_target.(target),
+            message
+          )
+        )
+        |> append_debugger_event.("runtime", target, message, "runtime_status")
+    end
+  end
+
+  def maybe_append_after_execution(state, _target, _execution, _introspect, _, _, _), do: state
+
+  @spec followup_messages(map()) :: list()
+  def followup_messages(execution) when is_map(execution) do
+    case Map.get(execution, :followup_messages) || Map.get(execution, "followup_messages") do
+      messages when is_list(messages) -> messages
+      _ -> []
+    end
+  end
+
+  @spec meaningful_init_cmd_count(map()) :: non_neg_integer()
+  def meaningful_init_cmd_count(introspect) when is_map(introspect) do
+    introspect
+    |> IntrospectAccess.cmd_calls("init_cmd_calls")
+    |> Enum.count(&meaningful_init_cmd_call?/1)
+  end
+
+  def meaningful_init_cmd_count(_), do: 0
+
+  @spec status_message(map()) :: String.t() | nil
+  def status_message(runtime) when is_map(runtime) do
+    backend = runtime["execution_backend"]
+    reason = runtime["external_fallback_reason"]
+    followup_count = runtime["followup_message_count"]
+    init_cmd_count = runtime["init_cmd_count"]
+
+    cond do
+      is_binary(reason) and reason != "" ->
+        "runtime fallback #{backend || "unknown"}: #{reason}"
+
+      backend in ["fallback_default", "legacy_default", "default"] ->
+        "runtime fallback #{backend}"
+
+      init_execution?(runtime) and is_integer(init_cmd_count) and init_cmd_count > 0 and
+          followup_count in [0, nil] ->
+        "runtime no followups for #{init_cmd_count} init cmd(s)"
+
+      true ->
+        nil
+    end
+  end
+
+  def status_message(_runtime), do: nil
+
+  @spec init_execution?(map()) :: boolean()
+  def init_execution?(runtime) when is_map(runtime) do
+    runtime["operation_source"] in ["init_model", nil] and
+      runtime["runtime_model_source"] in ["init_model", nil]
+  end
+
+  def init_execution?(_runtime), do: false
+
+  @spec meaningful_init_cmd_call?(map()) :: boolean()
+  def meaningful_init_cmd_call?(call) when is_map(call) do
+    target = Map.get(call, "target") || Map.get(call, :target)
+    name = Map.get(call, "name") || Map.get(call, :name)
+    not (target in ["Cmd.none", "Platform.Cmd.none"] or name in ["none", "None", nil])
+  end
+
+  def meaningful_init_cmd_call?(_call), do: false
+end

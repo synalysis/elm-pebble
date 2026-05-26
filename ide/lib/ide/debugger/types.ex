@@ -12,6 +12,7 @@ defmodule Ide.Debugger.Types do
   alias Ide.Debugger.RuntimeArtifacts.Types, as: RuntimeArtifactsTypes
   alias Ide.Debugger.Types.{
     AppModel,
+    AvailableTriggersAttrs,
     AutoTick,
     CmdCall,
     CompanionBridgeRequest,
@@ -95,6 +96,8 @@ defmodule Ide.Debugger.Types do
   @type step_attrs :: StepAttrs.t() | StepAttrs.wire_map()
 
   @type inject_trigger_attrs :: InjectTriggerAttrs.t() | InjectTriggerAttrs.wire_map()
+
+  @type available_triggers_attrs :: AvailableTriggersAttrs.t() | AvailableTriggersAttrs.wire_map()
 
   @type replay_attrs :: ReplayAttrs.t() | ReplayAttrs.wire_map()
 

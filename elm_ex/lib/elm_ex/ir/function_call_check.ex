@@ -149,7 +149,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
       |> Map.get(:import_entries, [])
       |> ensure_default_import_entries()
 
-    {alias_map, import_unqualified_map, _wildcard_modules, _type_unqualified_map} =
+    {alias_map, import_unqualified_map, _wildcard_modules, type_unqualified_map} =
       build_import_resolution(import_entries, project_module_exports)
 
     local_call_names =
@@ -162,6 +162,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
     %{
       alias_map: alias_map,
       import_unqualified_map: import_unqualified_map,
+      type_unqualified_map: type_unqualified_map,
       local_call_names: local_call_names,
       current_module: Map.get(frontend_module, :name)
     }
@@ -364,7 +365,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
                 expected when is_binary(expected) ->
                   inferred = infer_expr_type(arg, import_lookup, signature_lookup, type_alias_lookup, binding_types)
 
-                  if incompatible_types?(expected, inferred, type_alias_lookup) do
+                  if incompatible_types?(expected, inferred, import_lookup, type_alias_lookup, target) do
                     [
                       diagnostic(
                         "error",
@@ -669,15 +670,24 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   @primitive_types ~w(Int Float String Bool Char Order)
 
-  @spec incompatible_types?(String.t(), String.t() | nil, map()) :: boolean()
-  defp incompatible_types?(_expected, nil, _type_alias_lookup), do: false
+  @spec incompatible_types?(String.t(), String.t() | nil, map(), map(), String.t() | nil) ::
+          boolean()
+  defp incompatible_types?(_expected, nil, _import_lookup, _type_alias_lookup, _target), do: false
 
-  defp incompatible_types?(expected, inferred, type_alias_lookup) do
+  defp incompatible_types?(expected, inferred, import_lookup, type_alias_lookup, target) do
     expected = normalize_type(expected)
     inferred = normalize_type(inferred)
+    callee_module = callee_module_from_target(target)
+
+    expected_ctx = %{declaring_module: callee_module}
+    caller_ctx = import_lookup
 
     cond do
       expected == inferred -> false
+      canonical_type_identity(expected, expected_ctx, type_alias_lookup) ==
+          canonical_type_identity(inferred, caller_ctx, type_alias_lookup) ->
+        false
+
       TypeSignature.type_variable?(expected) -> false
       TypeSignature.type_variable?(inferred) -> false
       primitive_type?(expected) and primitive_type?(inferred) -> expected != inferred
@@ -688,8 +698,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
         not alias_compatible_with_record?(expected, inferred, type_alias_lookup)
 
       alias_type?(expected, type_alias_lookup) and alias_type?(inferred, type_alias_lookup) ->
-        normalize_alias_name(expected, type_alias_lookup) !=
-          normalize_alias_name(inferred, type_alias_lookup)
+        canonical_type_identity(expected, expected_ctx, type_alias_lookup) !=
+          canonical_type_identity(inferred, caller_ctx, type_alias_lookup)
 
       alias_type?(inferred, type_alias_lookup) and primitive_type?(expected) ->
         true
@@ -705,14 +715,125 @@ defmodule ElmEx.IR.FunctionCallCheck do
   @spec primitive_type?(String.t()) :: boolean()
   defp primitive_type?(type), do: type in @primitive_types
 
+  @spec callee_module_from_target(String.t() | nil) :: String.t() | nil
+  defp callee_module_from_target(target) when is_binary(target) do
+    case String.split(target, ".") do
+      [_] -> nil
+      parts -> parts |> Enum.drop(-1) |> Enum.join(".")
+    end
+  end
+
+  defp callee_module_from_target(_), do: nil
+
+  @spec canonical_type_identity(String.t(), map(), map()) :: String.t()
+  defp canonical_type_identity(type, context, type_alias_lookup) do
+    type
+    |> resolve_type_reference(context)
+    |> type_identity_key(type_alias_lookup)
+  end
+
+  @spec resolve_type_reference(String.t(), map()) :: String.t()
+  defp resolve_type_reference(type, context) when is_binary(type) do
+    alias_map = Map.get(context, :alias_map, %{})
+    type_map = Map.get(context, :type_unqualified_map, %{})
+    declaring_module = Map.get(context, :declaring_module)
+    current_module = Map.get(context, :current_module)
+
+    case split_qualified_type_name(type) do
+      {:qualified, module_prefix, name} ->
+        "#{resolve_module_prefix(module_prefix, alias_map)}.#{name}"
+
+      {:unqualified, name} ->
+        resolve_unqualified_type(name, declaring_module, type_map, current_module)
+    end
+  end
+
+  @spec split_qualified_type_name(String.t()) :: {:qualified, String.t(), String.t()} | {:unqualified, String.t()}
+  defp split_qualified_type_name(type) when is_binary(type) do
+    case String.split(type, ".") do
+      [single] ->
+        {:unqualified, single}
+
+      parts ->
+        name = List.last(parts)
+        module_prefix = parts |> Enum.drop(-1) |> Enum.join(".")
+        {:qualified, module_prefix, name}
+    end
+  end
+
+  @spec resolve_unqualified_type(String.t(), String.t() | nil, map(), String.t() | nil) :: String.t()
+  defp resolve_unqualified_type(name, declaring_module, type_map, current_module)
+       when is_binary(name) do
+    cond do
+      is_binary(declaring_module) and declaring_module != "" ->
+        "#{declaring_module}.#{name}"
+
+      true ->
+        case match_unqualified_type_export(name, type_map) do
+          exported when is_binary(exported) ->
+            exported
+
+          _ ->
+            if is_binary(current_module) and current_module != "" do
+              "#{current_module}.#{name}"
+            else
+              name
+            end
+        end
+    end
+  end
+
+  @spec match_unqualified_type_export(String.t(), map()) :: String.t() | nil
+  defp match_unqualified_type_export(name, type_map) when is_binary(name) and is_map(type_map) do
+    case Map.get(type_map, name) do
+      module when is_binary(module) -> "#{module}.#{name}"
+      _ -> nil
+    end
+  end
+
+  @spec resolve_module_prefix(String.t(), map()) :: String.t()
+  defp resolve_module_prefix(prefix, alias_map) when is_binary(prefix) and is_map(alias_map) do
+    case String.split(prefix, ".", parts: 2) do
+      [head, rest] ->
+        Map.get(alias_map, head, head) <> "." <> rest
+
+      [single] ->
+        Map.get(alias_map, single, single)
+    end
+  end
+
+  @spec type_identity_key(String.t(), map()) :: String.t()
+  defp type_identity_key(resolved, type_alias_lookup) when is_binary(resolved) do
+    lookup_name =
+      if Map.has_key?(type_alias_lookup, resolved) do
+        resolved
+      else
+        case String.split(resolved, ".", parts: 2) do
+          [_module, name] -> name
+          _ -> resolved
+        end
+      end
+
+    normalize_alias_name(lookup_name, type_alias_lookup)
+  end
+
+  @spec unqualified_type_name(String.t()) :: String.t()
+  defp unqualified_type_name(type) do
+    case String.split(type, ".", parts: 2) do
+      [_module, name] -> name
+      _ -> type
+    end
+  end
+
   @spec normalize_alias_name(String.t(), map()) :: String.t()
   defp normalize_alias_name(type, type_alias_lookup) do
     fields = alias_fields(type, type_alias_lookup)
+    key = unqualified_type_name(type)
 
     if fields == [] do
-      type
+      key
     else
-      type <> "{" <> Enum.join(Enum.sort(fields), ",") <> "}"
+      key <> "{" <> Enum.join(Enum.sort(fields), ",") <> "}"
     end
   end
 

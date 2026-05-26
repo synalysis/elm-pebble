@@ -119,6 +119,134 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
     assert Enum.any?(diagnostics, &(&1.code == "function_call_arity"))
   end
 
+  test "qualified alias types match unqualified imported signatures" do
+    diagnostics =
+      FunctionCallCheck.collect_project_diagnostics(
+        [
+          ui_module_with_line(),
+          %FrontendModule{
+            name: "Main",
+            path: "/tmp/src/Main.elm",
+            imports: ["Pebble.Ui"],
+            import_entries: [%{"module" => "Pebble.Ui", "as" => "Ui", "exposing" => nil}],
+            module_exposing: "main",
+            declarations: [
+              %{
+                kind: :function_signature,
+                name: "midpoint",
+                type: "Ui.Point -> Ui.Point -> Ui.Point",
+                span: %{start_line: 4, end_line: 4}
+              },
+              %{
+                kind: :function_definition,
+                name: "midpoint",
+                args: ["a", "b"],
+                expr: %{
+                  op: :record_literal,
+                  fields: [
+                    %{name: "x", expr: %{op: :int_literal, value: 0}},
+                    %{name: "y", expr: %{op: :int_literal, value: 0}}
+                  ]
+                },
+                span: %{start_line: 5, end_line: 6}
+              },
+              %{
+                kind: :function_definition,
+                name: "view",
+                args: ["a", "b", "c"],
+                type: "Ui.Point -> Ui.Point -> Ui.Point -> List Ui.RenderOp",
+                expr: %{
+                  op: :qualified_call,
+                  target: "Ui.line",
+                  args: [
+                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "a"}, %{op: :var, name: "b"}]},
+                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "b"}, %{op: :var, name: "c"}]},
+                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "c"}, %{op: :var, name: "a"}]}
+                  ]
+                },
+                span: %{start_line: 10, end_line: 10}
+              }
+            ]
+          }
+        ],
+        %{
+          "Pebble.Ui" => %{
+            names: ["line"],
+            types: ["Point"],
+            union_constructors: %{}
+          }
+        },
+        "/tmp",
+        ["src"]
+      )
+
+    refute Enum.any?(diagnostics, &(&1.code == "function_call_type"))
+  end
+
+  test "custom import aliases resolve to the same type identity as callee signatures" do
+    diagnostics =
+      FunctionCallCheck.collect_project_diagnostics(
+        [
+          ui_module_with_line(),
+          %FrontendModule{
+            name: "Main",
+            path: "/tmp/src/Main.elm",
+            imports: ["Pebble.Ui"],
+            import_entries: [%{"module" => "Pebble.Ui", "as" => "Gfx", "exposing" => nil}],
+            module_exposing: "main",
+            declarations: [
+              %{
+                kind: :function_signature,
+                name: "midpoint",
+                type: "Gfx.Point -> Gfx.Point -> Gfx.Point",
+                span: %{start_line: 4, end_line: 4}
+              },
+              %{
+                kind: :function_definition,
+                name: "midpoint",
+                args: ["a", "b"],
+                expr: %{
+                  op: :record_literal,
+                  fields: [
+                    %{name: "x", expr: %{op: :int_literal, value: 0}},
+                    %{name: "y", expr: %{op: :int_literal, value: 0}}
+                  ]
+                },
+                span: %{start_line: 5, end_line: 6}
+              },
+              %{
+                kind: :function_definition,
+                name: "view",
+                args: ["a", "b", "c"],
+                type: "Gfx.Point -> Gfx.Point -> Gfx.Point -> List Gfx.RenderOp",
+                expr: %{
+                  op: :qualified_call,
+                  target: "Gfx.line",
+                  args: [
+                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "a"}, %{op: :var, name: "b"}]},
+                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "b"}, %{op: :var, name: "c"}]},
+                    %{op: :call, name: "midpoint", args: [%{op: :var, name: "c"}, %{op: :var, name: "a"}]}
+                  ]
+                },
+                span: %{start_line: 10, end_line: 10}
+              }
+            ]
+          }
+        ],
+        %{
+          "Pebble.Ui" => %{
+            names: ["line"],
+            types: ["Point", "RenderOp"],
+            union_constructors: %{}
+          }
+        },
+        "/tmp",
+        ["src"]
+      )
+
+    refute Enum.any?(diagnostics, &(&1.code == "function_call_type"))
+  end
+
   test "call-site line numbers follow source file lines when function bodies contain blank lines" do
     tmp_dir = Path.join(System.tmp_dir!(), "function-call-line-#{System.unique_integer([:positive])}")
     src_dir = Path.join(tmp_dir, "src")
@@ -193,6 +321,20 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
 
     assert [%{line: 11, code: "function_call_arity"}] =
              Enum.filter(diagnostics, &(&1.code == "function_call_arity"))
+  end
+
+  defp ui_module_with_line do
+    Map.update!(ui_module(), :declarations, fn decls ->
+      decls ++
+        [
+          %{
+            kind: :function_signature,
+            name: "line",
+            type: "Point -> Point -> Point -> RenderOp",
+            span: %{start_line: 5, end_line: 5}
+          }
+        ]
+    end)
   end
 
   defp ui_module do

@@ -876,17 +876,30 @@ defmodule Ide.ProjectTemplates do
     obsolete = MapSet.new(phone_obsolete_source_dirs())
 
     Enum.reject(source_dirs, fn dir ->
-      is_binary(dir) and MapSet.member?(obsolete, Path.expand(dir))
+      is_binary(dir) and
+        (MapSet.member?(obsolete, Path.expand(dir)) or legacy_build_bundled_companion_dir?(dir))
     end)
+  end
+
+  @spec legacy_build_bundled_companion_dir?(String.t()) :: boolean()
+  defp legacy_build_bundled_companion_dir?(dir) when is_binary(dir) do
+    expanded = Path.expand(dir)
+
+    String.contains?(expanded, "/_build/") and
+      String.contains?(expanded, "/priv/bundled_elm/pebble-companion-")
   end
 
   @spec phone_obsolete_source_dirs() :: [String.t()]
   defp phone_obsolete_source_dirs do
+    repo = Ide.Paths.repo_root()
+
     [
       InternalPackages.phone_pebble_stubs_elm_src_abs(),
       InternalPackages.elm_random_elm_src_abs(),
       InternalPackages.pebble_elm_src_abs(),
-      Ide.Paths.bundled_elm_path("shared-elm-companion", "shared/elm-companion")
+      Ide.Paths.bundled_elm_path("shared-elm-companion", "shared/elm-companion"),
+      Path.join(repo, "packages/elm-pebble-companion-core/src"),
+      Path.join(repo, "packages/elm-pebble-companion-preferences/src")
     ]
     |> Enum.map(&Path.expand/1)
   end
