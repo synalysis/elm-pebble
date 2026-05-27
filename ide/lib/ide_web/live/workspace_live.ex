@@ -4509,25 +4509,7 @@ defmodule IdeWeb.WorkspaceLive do
       project = socket.assigns.project
       emulator_target = socket.assigns.selected_emulator_target
 
-      controls = [
-        %{
-          "control" => "battery",
-          "percent" => to_string(settings["battery_percent"] || 0),
-          "charging" => if(settings["charging"], do: "true", else: "false")
-        },
-        %{
-          "control" => "bluetooth",
-          "connected" => if(settings["connected"], do: "true", else: "false")
-        },
-        %{
-          "control" => "time_format",
-          "enabled" => if(settings["clock_24h"], do: "true", else: "false")
-        },
-        %{
-          "control" => "timeline_quick_view",
-          "enabled" => if(settings["timeline_peek"], do: "true", else: "false")
-        }
-      ]
+      controls = Ide.Emulator.QemuControl.external_cli_commands(settings)
 
       start_async(socket, :external_emulator_control, fn ->
         Enum.each(controls, fn params ->

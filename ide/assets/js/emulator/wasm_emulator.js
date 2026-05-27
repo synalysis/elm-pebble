@@ -1,11 +1,6 @@
+import {encodeBattery, QEMU} from "./qemu_control.js"
+
 const MAX_LOG_LINES = 200
-const QEMU = {
-  tap: 2,
-  bluetooth: 3,
-  battery: 5,
-  timeFormat: 9,
-  timelinePeek: 10
-}
 
 const csrfToken = () => document.querySelector("meta[name='csrf-token']")?.getAttribute("content") || ""
 
@@ -403,7 +398,7 @@ export class WasmEmulatorHost {
   }
 
   setBattery(percent, charging) {
-    this.sendQemu(QEMU.battery, [Math.max(0, Math.min(100, percent || 0)), charging ? 1 : 0])
+    this.sendQemu(QEMU.battery, encodeBattery(percent, charging))
   }
 
   sendQemu(protocol, payload) {

@@ -5,7 +5,7 @@ defmodule Ide.Emulator.Session do
 
   require Logger
 
-  alias Ide.Emulator.{PBW, PBWInstaller, SdkImages, SlotLimiter, Types, VncReady}
+  alias Ide.Emulator.{PBW, PBWInstaller, QemuControl, SdkImages, SlotLimiter, Types, VncReady}
   alias Ide.Emulator.PebbleProtocol.Router
   alias Ide.WatchModels
 
@@ -23,9 +23,6 @@ defmodule Ide.Emulator.Session do
     "flint" => 500,
     "gabbro" => 500
   }
-
-  @qemu_control_accel 11
-  @qemu_control_compass 12
 
   @type state :: %{
           id: String.t(),
@@ -633,7 +630,7 @@ defmodule Ide.Emulator.Session do
   def handle_call({:local_port, :phone}, _from, state), do: {:reply, state.phone_ws_port, state}
 
   def handle_call({:control, protocol, payload}, _from, state) do
-    with :ok <- validate_control_payload(protocol, payload) do
+    with :ok <- QemuControl.validate_payload(protocol, payload) do
       if live_pid?(state.protocol_router_pid) do
         {:reply, Router.send_qemu_packet(state.protocol_router_pid, protocol, payload), state}
       else
@@ -1380,18 +1377,7 @@ defmodule Ide.Emulator.Session do
     start_processes?() and live_pid?(state.pypkjs_pid) and tcp_port_open?(state.phone_ws_port)
   end
 
-  defp supported_controls do
-    ~w(button_up button_select button_down button_back tap battery bluetooth time_24h timeline_peek accel compass set_time install logs screenshot)
-  end
-
-  @spec validate_control_payload(non_neg_integer(), binary()) :: :ok | {:error, atom()}
-  defp validate_control_payload(@qemu_control_accel, payload) when byte_size(payload) == 6, do: :ok
-  defp validate_control_payload(@qemu_control_accel, _payload), do: {:error, :invalid_qemu_payload}
-
-  defp validate_control_payload(@qemu_control_compass, payload) when byte_size(payload) == 3, do: :ok
-  defp validate_control_payload(@qemu_control_compass, _payload), do: {:error, :invalid_qemu_payload}
-
-  defp validate_control_payload(_protocol, _payload), do: :ok
+  defp supported_controls, do: QemuControl.supported_controls()
 
   defp allocate_ports(count) do
     ports =

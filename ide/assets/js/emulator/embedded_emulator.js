@@ -1,14 +1,11 @@
-const BUTTONS = {back: 0, up: 1, select: 2, down: 3}
-const QEMU = {
-  tap: 2,
-  bluetooth: 3,
-  battery: 5,
-  button: 8,
-  timeFormat: 9,
-  timelinePeek: 10,
-  accel: 11,
-  compass: 12
-}
+import {
+  applySimulatorSettingsToQemu,
+  BUTTONS,
+  encodeAccel,
+  encodeBattery,
+  encodeCompass,
+  QEMU
+} from "./qemu_control.js"
 const CONFIG_RETURN_PATH = "/api/emulator/config-return"
 const MAX_LOG_LINES = 300
 const MAX_LOG_CHARS = 40000
@@ -449,6 +446,7 @@ export class EmbeddedEmulatorHost {
       })
     }
     if (this.sessionAlive) this.schedulePingAfterDisplayConnect()
+    this.reapplySimulatorSettingsToQemu({source: "session_resume", quiet: true})
   }
 
   destroy(removeListeners = true) {
@@ -567,6 +565,7 @@ export class EmbeddedEmulatorHost {
       } else {
         this.setStatus("Embedded emulator backend disabled; launch API is in dry-run mode")
       }
+      this.reapplySimulatorSettingsToQemu({source: "after_launch", quiet: true})
     } catch (error) {
       this.setStatus(`Embedded emulator failed: ${error.message}`)
     } finally {
@@ -1802,29 +1801,32 @@ export class EmbeddedEmulatorHost {
   }
 
   setBattery(percent, charging) {
-    this.sendQemu(QEMU.battery, [Math.max(0, Math.min(100, percent || 0)), charging ? 1 : 0])
-  }
-
-  signedInt16Bytes(value) {
-    const clamped = Math.max(-32768, Math.min(32767, value | 0))
-    const unsigned = clamped < 0 ? clamped + 65536 : clamped
-    return [(unsigned >> 8) & 0xff, unsigned & 0xff]
+    this.sendQemu(QEMU.battery, encodeBattery(percent, charging))
   }
 
   sendAccelSample(x, y, z) {
-    const payload = [
-      ...this.signedInt16Bytes(x),
-      ...this.signedInt16Bytes(y),
-      ...this.signedInt16Bytes(z)
-    ]
-    this.sendQemu(QEMU.accel, payload)
+    this.sendQemu(QEMU.accel, encodeAccel(x, y, z))
   }
 
   sendCompassSample(settings = this.simulatorSettings || {}) {
-    const degrees = Math.max(0, Math.min(360, Number(settings.compass_heading_deg ?? 0)))
-    const valid = settings.compass_valid ? 1 : 0
-    const degInt = Math.round(degrees)
-    this.sendQemu(QEMU.compass, [(degInt >> 8) & 0xff, degInt & 0xff, valid])
+    this.sendQemu(QEMU.compass, encodeCompass(settings))
+  }
+
+  reapplySimulatorSettingsToQemu(options = {}) {
+    if (!this.emulatorSessionActive()) return
+
+    if (!this.simulatorSettings) {
+      this.refreshSimulatorSettingsFromDataset()
+    }
+
+    const settings = this.simulatorSettings
+    if (!settings || typeof settings !== "object") return
+
+    this.applySimulatorSettings(settings, {
+      source: options.source || "session_ready",
+      quiet: options.quiet ?? true,
+      syncCompanion: options.syncCompanion ?? false
+    })
   }
 
   applyInitialSimulatorSettings() {
@@ -1928,25 +1930,7 @@ export class EmbeddedEmulatorHost {
     this.simulatorSettingsAppliedAt = Date.now()
 
     if (this.emulatorSessionActive()) {
-      if (settings.battery_percent != null || settings.charging != null) {
-        this.setBattery(settings.battery_percent ?? 88, !!settings.charging)
-      }
-
-      if (settings.connected != null) {
-        this.sendQemu(QEMU.bluetooth, [settings.connected ? 1 : 0])
-      }
-
-      if (settings.clock_24h != null) {
-        this.sendQemu(QEMU.timeFormat, [settings.clock_24h ? 1 : 0])
-      }
-
-      if (settings.timeline_peek != null) {
-        this.sendQemu(QEMU.timelinePeek, [settings.timeline_peek ? 1 : 0])
-      }
-
-      if (settings.compass_heading_deg != null || settings.compass_valid != null) {
-        this.sendCompassSample(settings)
-      }
+      applySimulatorSettingsToQemu((protocol, payload) => this.sendQemu(protocol, payload), settings)
     }
 
     if (this.shouldSyncCompanionSimulator(options)) {

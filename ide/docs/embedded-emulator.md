@@ -173,26 +173,33 @@ The browser may fall back to **phone-bridge install** if the native install path
 }
 ```
 
-`protocol` is `0..255`. `payload` is a JSON array of byte values `0..255`; the server converts it to a binary QEMU control packet via `Ide.Emulator.PebbleProtocol.Router`.
+`protocol` is `0..255`. `payload` is a JSON array of byte values `0..255`; the server validates via `Ide.Emulator.QemuControl` and forwards through `Ide.Emulator.PebbleProtocol.Router`.
 
-**Browser mapping** (`embedded_emulator.js`):
+**Canonical mapping** (shared by `assets/js/emulator/qemu_control.js` and `lib/ide/emulator/qemu_control.ex`):
 
 | UI / API name | `protocol` | `payload` (typical) |
 |---------------|------------|---------------------|
 | Buttons (bitmask) | `8` | `[buttonState]` — bits: back=1, up=2, select=4, down=8 |
 | Tap | `2` | `[0, 1]` press, `[0, 0]` release |
 | Battery | `5` | `[percent, charging_flag]` |
-| Bluetooth | `3` | (varies) |
-| 24h time format | `9` | |
-| Timeline peek | `10` | |
+| Bluetooth | `3` | `[connected]` — `0` or `1` |
+| 24h time format | `9` | `[enabled]` — `0` or `1` |
+| Timeline peek | `10` | `[enabled]` — `0` or `1` |
 | Accelerometer | `11` | 6 bytes: int16 x, y, z big-endian |
 | Compass | `12` | 3 bytes: heading high/low, valid flag |
-| Set time | (via simulator settings / phone debug) | |
+
+**Simulator settings → QEMU:** changing the emulator page “Simulator settings” form pushes `simulator_settings_applied` to the browser, which calls `applySimulatorSettingsToQemu/2`. Settings are re-applied automatically after **Launch** and when resuming a persisted session (so defaults reach QEMU even if the form was loaded before QEMU started).
+
+**Simulated date/time** (`use_simulated_time`, `simulated_date`, `simulated_time`) is handled by the **Elm debugger runtime** (`Ide.Debugger.DeviceData`), not QEMU control packets.
+
+**External SDK emulator:** the same settings map to `pebble emu-*` CLI commands via `QemuControl.external_cli_commands/1`.
 
 **Elixir:**
 
 ```elixir
 :ok = Ide.Emulator.control(session_id, 8, <<0>>)  # release all buttons
+
+commands = Ide.Emulator.QemuControl.commands_from_simulator_settings(settings)
 ```
 
 ### 6. Phone bridge WebSocket
@@ -329,5 +336,7 @@ Tests often set `start_processes: false` on `Ide.Emulator.Session` to avoid spaw
 | `lib/ide_web/channels/emulator_vnc_channel.ex` | VNC channel relay |
 | `lib/ide_web/controllers/emulator_controller.ex` | HTTP API |
 | `lib/ide/emulator/session.ex` | Session GenServer |
+| `lib/ide/emulator/qemu_control.ex` | QEMU protocol IDs, encoders, simulator-settings mapping |
+| `assets/js/emulator/qemu_control.js` | Browser-side QEMU encoders (embedded + WASM) |
 | `lib/ide_web/emulator_proxy_socket.ex` | TCP ↔ WebSocket proxy |
 | `test/ide_web/emulator_vnc_channel_handshake_test.exs` | Channel + VNC handshake tests |
