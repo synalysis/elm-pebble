@@ -4,6 +4,7 @@ defmodule Ide.Debugger.RuntimeApi do
   alias Ide.Debugger.AgentSession
   alias Ide.Debugger.DebuggerStep
   alias Ide.Debugger.HotReloadSession
+  alias Ide.Debugger.PendingHttpFollowups
   alias Ide.Debugger.RuntimeExecutorConfig
   alias Ide.Debugger.RuntimePreview
   alias Ide.Debugger.Types
@@ -23,14 +24,22 @@ defmodule Ide.Debugger.RuntimeApi do
   @spec reload(String.t(), Types.reload_attrs()) :: {:ok, runtime_state()}
   def reload(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
     AgentSession.with_hosts(fn hosts ->
-      AgentSession.mutate(project_slug, &HotReloadSession.apply(&1, project_slug, attrs, hosts.hot_reload))
+      with {:ok, state} <-
+             AgentSession.mutate(project_slug, &HotReloadSession.apply(&1, project_slug, attrs, hosts.hot_reload)) do
+        PendingHttpFollowups.maybe_schedule_drain(project_slug, state)
+        {:ok, state}
+      end
     end)
   end
 
   @spec step(String.t(), Types.step_attrs()) :: {:ok, runtime_state()}
   def step(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
     AgentSession.with_hosts(fn hosts ->
-      AgentSession.mutate(project_slug, &DebuggerStep.apply(&1, attrs, hosts.step))
+      with {:ok, state} <-
+             AgentSession.mutate(project_slug, &DebuggerStep.apply(&1, attrs, hosts.step)) do
+        PendingHttpFollowups.maybe_schedule_drain(project_slug, state)
+        {:ok, state}
+      end
     end)
   end
 end

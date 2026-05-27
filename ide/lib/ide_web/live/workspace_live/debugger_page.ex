@@ -68,16 +68,25 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         <button
           type="button"
           phx-click="debugger-start"
-          class="rounded bg-zinc-800 px-2 py-1 text-xs font-medium text-white hover:bg-zinc-700"
+          disabled={debugger_bootstrap_busy?(@debugger_bootstrap_status)}
+          class={[
+            "rounded px-2 py-1 text-xs font-medium text-white",
+            debugger_bootstrap_busy?(@debugger_bootstrap_status) &&
+              "cursor-not-allowed bg-zinc-400" || "bg-zinc-800 hover:bg-zinc-700"
+          ]}
         >
-          {if debugger_state_running?(@debugger_state), do: "Restart", else: "Start"}
+          {debugger_start_button_label(@debugger_state, @debugger_bootstrap_status)}
         </button>
         <form class="flex items-center gap-2" phx-change="debugger-set-watch-profile">
           <label class="flex items-center gap-2 text-xs text-zinc-600">
             <span class="shrink-0">Watch model</span>
             <select
               name="watch_profile_id"
-              class="min-w-[12rem] max-w-full rounded border border-zinc-300 bg-white py-1 pl-2 pr-8 text-xs"
+              disabled={debugger_bootstrap_busy?(@debugger_bootstrap_status)}
+              class={[
+                "min-w-[12rem] max-w-full rounded border border-zinc-300 bg-white py-1 pl-2 pr-8 text-xs",
+                debugger_bootstrap_busy?(@debugger_bootstrap_status) && "cursor-not-allowed opacity-60"
+              ]}
             >
               <option
                 :for={profile <- Ide.Debugger.watch_profiles()}
@@ -92,6 +101,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
             </select>
           </label>
         </form>
+      </div>
+      <div
+        :if={debugger_bootstrap_busy?(@debugger_bootstrap_status)}
+        class="mt-2 w-full max-w-xl"
+        data-testid="debugger-bootstrap-progress"
+      >
+        <p class="text-xs text-zinc-600">
+          {@debugger_bootstrap_progress || "Starting debugger…"}
+        </p>
+        <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200" role="progressbar" aria-busy="true">
+          <div class="h-full w-1/3 animate-pulse rounded-full bg-zinc-600" />
+        </div>
       </div>
       <div class="mt-3 grid min-h-0 flex-1 grid-cols-12 gap-3">
         <div class="col-span-12 flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2 lg:col-span-3">
@@ -2109,6 +2130,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   @spec debugger_state_running?(map() | nil) :: boolean()
   defp debugger_state_running?(%{running: true}), do: true
   defp debugger_state_running?(_), do: false
+
+  defp debugger_bootstrap_busy?(:running), do: true
+  defp debugger_bootstrap_busy?(_), do: false
+
+  defp debugger_start_button_label(_debugger_state, :running), do: "Starting…"
+
+  defp debugger_start_button_label(debugger_state, _status) do
+    if debugger_state_running?(debugger_state), do: "Restart", else: "Start"
+  end
 
   @spec debugger_visible_timeline_mode(String.t(), boolean()) :: String.t()
   def debugger_visible_timeline_mode(_mode, false), do: "watch"

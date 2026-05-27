@@ -27,8 +27,14 @@ defmodule Ide.Debugger.CompanionConfiguration do
         update_in(state, [:companion, :model], &drop_from_model/1)
 
       configuration ->
+        state_values = values_from_state(state)
+
         configuration =
-          put_values_in_configuration(configuration, values_from_state(state))
+          if map_size(state_values) > 0 do
+            put_values_in_configuration(configuration, state_values)
+          else
+            configuration
+          end
 
         state
         |> put_in([:companion, :model, "configuration"], configuration)

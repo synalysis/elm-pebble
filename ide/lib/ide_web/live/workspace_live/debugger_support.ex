@@ -111,6 +111,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     |> Component.assign(:debugger_watch_runtime, nil)
     |> Component.assign(:debugger_companion_runtime, nil)
     |> Component.assign(:debugger_watch_view_runtime, nil)
+    |> Component.assign(:debugger_bootstrap_status, :idle)
+    |> Component.assign(:debugger_bootstrap_progress, nil)
+    |> Component.assign(:debugger_bootstrap_token, nil)
   end
 
   @spec refresh(socket()) :: socket()

@@ -40,6 +40,7 @@ defmodule IdeWeb.WorkspaceLive do
   alias IdeWeb.WorkspaceLive.ResourcesFlow
   alias IdeWeb.WorkspaceLive.PackagesFlow
   alias IdeWeb.WorkspaceLive.DebuggerSupport
+  alias IdeWeb.WorkspaceLive.DebuggerBootstrapFlow
   alias IdeWeb.WorkspaceLive.DebuggerPage
   alias IdeWeb.WorkspaceLive.State
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
@@ -56,8 +57,6 @@ defmodule IdeWeb.WorkspaceLive do
   @type assigns :: map()
   @type wire_input :: String.t() | integer() | float() | boolean() | nil | [wire_input()]
   @type pane :: atom()
-  @type bootstrap_source ::
-          {:ok, String.t(), String.t(), String.t()} | :error
   @type dependency_row :: map()
 
   @impl true
@@ -1700,39 +1699,15 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   def handle_event("debugger-start", _params, socket) do
-    case socket.assigns.project do
-      nil ->
+    cond do
+      is_nil(socket.assigns.project) ->
         {:noreply, socket}
 
-      project ->
-        {:ok, _state} =
-          Ide.Debugger.start_session(Projects.scope_key(project), %{
-            watch_profile_id: project_debugger_watch_profile_id(project)
-          })
+      socket.assigns[:debugger_bootstrap_status] == :running ->
+        {:noreply, socket}
 
-        :ok = Projects.ensure_compiler_workspace(project)
-
-        socket =
-          socket
-          |> DebuggerSupport.refresh()
-          |> warm_debugger_compile_context(project)
-
-        {socket, message} = bootstrap_debugger_preview(socket, project)
-        apply_project_auto_fire_settings(project)
-
-        socket =
-          socket
-          |> DebuggerSupport.refresh()
-          |> maybe_schedule_debugger_auto_fire_refresh()
-
-        socket =
-          if debugger_session_active?(socket) do
-            schedule_compiler_check(socket)
-          else
-            socket
-          end
-
-        {:noreply, put_flash(socket, :info, message)}
+      true ->
+        {:noreply, begin_debugger_bootstrap(socket, socket.assigns.project)}
     end
   end
 
@@ -3078,6 +3053,24 @@ defmodule IdeWeb.WorkspaceLive do
      |> assign(:capture_all_output, "Capture-all task exited: #{inspect(reason)}")}
   end
 
+  def handle_async(:debugger_bootstrap, {:ok, {:ok, result}}, socket) do
+    {:noreply, complete_debugger_bootstrap(socket, result)}
+  end
+
+  def handle_async(:debugger_bootstrap, {:ok, {:error, message}}, socket) when is_binary(message) do
+    {:noreply,
+     socket
+     |> clear_debugger_bootstrap_busy()
+     |> put_flash(:error, message)}
+  end
+
+  def handle_async(:debugger_bootstrap, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> clear_debugger_bootstrap_busy()
+     |> put_flash(:error, "Debugger start failed: #{inspect(reason)}")}
+  end
+
   def handle_async(:prepare_release, {:ok, {:ok, result}}, socket) do
     warnings =
       PublishFlow.publish_warnings(result.project, result.readiness, result.release_summary)
@@ -3539,6 +3532,44 @@ defmodule IdeWeb.WorkspaceLive do
 
   @impl true
   @spec handle_info(Types.info_message() | Types.liveview_system_message(), socket()) :: lv_noreply()
+  def handle_info({:companion_debugger_bootstrapped, scope_key, result}, socket) do
+    project = socket.assigns[:project]
+
+    cond do
+      not match?(%Project{}, project) ->
+        {:noreply, socket}
+
+      Projects.scope_key(project) != scope_key ->
+        {:noreply, socket}
+
+      true ->
+        socket =
+          case result do
+            {:error, message} when is_binary(message) ->
+              put_flash(socket, :error, message)
+
+            _ ->
+              socket
+          end
+
+        apply_project_auto_fire_settings(project)
+
+        {:noreply,
+         socket
+         |> DebuggerSupport.refresh()
+         |> maybe_schedule_debugger_auto_fire_refresh()
+         |> clear_debugger_bootstrap_busy()}
+    end
+  end
+
+  def handle_info({:debugger_bootstrap_progress, token, message}, socket) do
+    if socket.assigns[:debugger_bootstrap_token] == token do
+      {:noreply, assign(socket, :debugger_bootstrap_progress, message)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info({:debugger_auto_fire_refresh, project_slug}, socket) do
     socket = assign(socket, :debugger_auto_fire_refresh_scheduled, false)
     project = socket.assigns[:project]
@@ -4113,84 +4144,118 @@ defmodule IdeWeb.WorkspaceLive do
   defp debugger_state_running?(%{running: true}), do: true
   defp debugger_state_running?(_), do: false
 
-  @spec bootstrap_debugger_preview(Phoenix.LiveView.Socket.t(), Projects.Project.t()) ::
-          {Phoenix.LiveView.Socket.t(), String.t()}
-  defp bootstrap_debugger_preview(socket, project) do
-    case debugger_bootstrap_elm_source(project, socket) do
-      {:ok, rel_path, content, source_root} ->
-        case Ide.Debugger.reload(Projects.scope_key(project), %{
-               rel_path: rel_path,
-               source: content,
-               reason: "debugger_bootstrap",
-               source_root: source_root
-             }) do
-          {:ok, _} ->
-            # Load companion after watch so init protocol (e.g. ProvideFigure) does not
-            # bootstrap the watch via protocol_rx before the deliberate watch reload.
-            maybe_bootstrap_companion_debugger(project)
+  @spec begin_debugger_bootstrap(socket(), Project.t()) :: socket()
+  defp begin_debugger_bootstrap(socket, project) do
+    token = System.unique_integer([:positive])
+    lv = self()
+    bootstrap_tab = debugger_bootstrap_tab_snapshot(socket)
+    watch_profile_id = project_debugger_watch_profile_id(project)
 
-            {DebuggerSupport.refresh(socket),
-             "Debugger started. Loaded #{editor_source_display_path(rel_path)}; watch preview uses parser snapshots when the view outline parses."}
-        end
+    socket =
+      socket
+      |> assign(:debugger_bootstrap_status, :running)
+      |> assign(:debugger_bootstrap_progress, "Starting debugger...")
+      |> assign(:debugger_bootstrap_token, token)
 
-      :error ->
-        {socket,
-         "Debugger started. Open an Elm tab or add Main.elm under the watch source tree, then save a file to load the sample preview."}
+    run_opts = [
+      progress: fn msg -> send(lv, {:debugger_bootstrap_progress, token, msg}) end,
+      bootstrap_tab: bootstrap_tab,
+      watch_profile_id: watch_profile_id
+    ]
+
+    if debugger_sync_bootstrap?() do
+      case DebuggerBootstrapFlow.run(project, run_opts) do
+        {:ok, result} -> complete_debugger_bootstrap(socket, result)
+        {:error, message} -> socket |> clear_debugger_bootstrap_busy() |> put_flash(:error, message)
+      end
+    else
+      start_async(socket, :debugger_bootstrap, fn ->
+        DebuggerBootstrapFlow.run(project, run_opts)
+      end)
     end
   end
 
-  @spec maybe_bootstrap_companion_debugger(Projects.Project.t()) :: :ok
-  defp maybe_bootstrap_companion_debugger(project) do
-    case Projects.read_source_file(project, "phone", "src/CompanionApp.elm") do
-      {:ok, content} ->
-        _ =
-          Ide.Debugger.reload(Projects.scope_key(project), %{
-            rel_path: "src/CompanionApp.elm",
-            source: content,
-            reason: "debugger_companion_bootstrap",
-            source_root: "phone"
-          })
+  @spec complete_debugger_bootstrap(socket(), DebuggerBootstrapFlow.result()) :: socket()
+  defp complete_debugger_bootstrap(socket, result) do
+    project = socket.assigns.project
 
-        :ok
+    socket =
+      socket
+      |> BuildFlow.apply_warm_compile_results(result.compile_results, result.primary)
+      |> DebuggerSupport.refresh()
 
-      {:error, _} ->
-        :ok
+    socket =
+      if result.companion_async? do
+        schedule_companion_debugger_bootstrap(project, socket)
+
+        socket
+        |> assign(:debugger_bootstrap_progress, "Compiling companion app...")
+        |> put_flash(:info, result.message)
+      else
+        apply_project_auto_fire_settings(project)
+
+        socket
+        |> DebuggerSupport.refresh()
+        |> maybe_schedule_debugger_auto_fire_refresh()
+        |> clear_debugger_bootstrap_busy()
+        |> put_flash(:info, result.message)
+      end
+
+    if debugger_session_active?(socket) do
+      schedule_compiler_check(socket)
+    else
+      socket
     end
   end
 
-  @spec debugger_bootstrap_elm_source(Project.t(), socket()) :: bootstrap_source()
-  defp debugger_bootstrap_elm_source(project, socket) do
+  @spec clear_debugger_bootstrap_busy(socket()) :: socket()
+  defp clear_debugger_bootstrap_busy(socket) do
+    socket
+    |> assign(:debugger_bootstrap_status, :idle)
+    |> assign(:debugger_bootstrap_progress, nil)
+    |> assign(:debugger_bootstrap_token, nil)
+  end
+
+  @spec debugger_bootstrap_tab_snapshot(socket()) :: DebuggerBootstrapFlow.bootstrap_tab()
+  defp debugger_bootstrap_tab_snapshot(socket) do
     case active_tab(socket) do
-      %{rel_path: rel_path, content: content, source_root: "watch"} = tab ->
-        if elm_bootstrap_tab?(tab) do
-          {:ok, rel_path, content, "watch"}
-        else
-          try_read_watch_main_elm(project)
-        end
+      %{rel_path: rel_path, content: content, source_root: source_root}
+      when is_binary(rel_path) and is_binary(content) and is_binary(source_root) ->
+        %{rel_path: rel_path, content: content, source_root: source_root}
 
       _ ->
-        try_read_watch_main_elm(project)
+        nil
     end
   end
 
-  @spec elm_bootstrap_tab?(map()) :: boolean()
-  defp elm_bootstrap_tab?(%{rel_path: p, content: c})
-       when is_binary(p) and is_binary(c) do
-    String.ends_with?(p, ".elm")
+  @spec debugger_sync_bootstrap?() :: boolean()
+  defp debugger_sync_bootstrap? do
+    Application.get_env(:ide, :debugger_sync_bootstrap, false)
   end
 
-  defp elm_bootstrap_tab?(_), do: false
+  @spec schedule_companion_debugger_bootstrap(Projects.Project.t(), socket()) :: :ok
+  defp schedule_companion_debugger_bootstrap(project, socket) do
+    if DebuggerBootstrapFlow.companion_bootstrap_async?() do
+      scope_key = Projects.scope_key(project)
+      parent = self()
+      token = socket.assigns[:debugger_bootstrap_token]
 
-  @spec try_read_watch_main_elm(Project.t()) :: bootstrap_source()
-  defp try_read_watch_main_elm(project) do
-    candidates = [{"watch", "src/Main.elm"}, {"watch", "Main.elm"}]
+      Task.start(fn ->
+        result =
+          DebuggerBootstrapFlow.run_companion_bootstrap(project,
+            progress: fn msg ->
+              if token, do: send(parent, {:debugger_bootstrap_progress, token, msg}), else: :ok
+            end
+          )
 
-    Enum.reduce_while(candidates, :error, fn {root, path}, _ ->
-      case Projects.read_source_file(project, root, path) do
-        {:ok, content} -> {:halt, {:ok, path, content, root}}
-        {:error, _} -> {:cont, :error}
-      end
-    end)
+        send(parent, {:companion_debugger_bootstrapped, scope_key, result})
+      end)
+
+      :ok
+    else
+      _ = DebuggerBootstrapFlow.run_companion_bootstrap(project)
+      :ok
+    end
   end
 
   @spec merge_publish_submit_options(map(), map()) :: map()

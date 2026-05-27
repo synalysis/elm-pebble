@@ -327,14 +327,23 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec warm_debugger_compile_context(socket(), Project.t()) :: socket()
-  def warm_debugger_compile_context(socket, project) do
+  @type warm_compile_results :: [
+          {String.t(), {:ok, map()} | {:error, term()}}
+        ]
+  @type warm_compile_primary :: {String.t(), {:ok, map()} | {:error, term()}} | nil
+
+  @spec warm_debugger_compile_context_work(Project.t(), keyword()) ::
+          {:ok, warm_compile_results(), warm_compile_primary()}
+  def warm_debugger_compile_context_work(project, opts \\ []) do
+    skip_roots = MapSet.new(Keyword.get(opts, :skip_roots, []))
+
     :ok = Projects.ensure_compiler_workspace(project)
     workspace_root = Projects.project_workspace_path(project)
 
     results =
       workspace_root
       |> build_roots(project.source_roots || [])
+      |> Enum.reject(fn {label, _root_path} -> MapSet.member?(skip_roots, label) end)
       |> Enum.map(fn {label, root_path} ->
         {label,
          Compiler.compile(Projects.compiler_cache_key(project, label),
@@ -347,6 +356,12 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       Enum.find(results, fn {label, _result} -> label == "watch" end) ||
         List.first(results)
 
+    {:ok, results, primary}
+  end
+
+  @spec apply_warm_compile_results(socket(), warm_compile_results(), warm_compile_primary()) ::
+          socket()
+  def apply_warm_compile_results(socket, results, primary) do
     socket =
       Enum.reduce(results, socket, fn
         {label, {:ok, result}}, acc ->
@@ -370,6 +385,12 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       nil ->
         socket
     end
+  end
+
+  @spec warm_debugger_compile_context(socket(), Project.t()) :: socket()
+  def warm_debugger_compile_context(socket, project) do
+    {:ok, results, primary} = warm_debugger_compile_context_work(project)
+    apply_warm_compile_results(socket, results, primary)
   end
 
   @spec run_build_pipeline(Project.t(), String.t(), boolean()) ::

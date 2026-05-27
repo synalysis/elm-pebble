@@ -6,9 +6,11 @@ defmodule Ide.Debugger.RuntimeFollowups do
   alias Ide.Debugger.DeviceDataResponses
   alias Ide.Debugger.HttpExecutor
   alias Ide.Debugger.IntrospectAccess
+  alias Ide.Debugger.PendingHttpFollowups
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.Surface
+  alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
 
   @type apply_ctx :: %{
@@ -82,6 +84,17 @@ defmodule Ide.Debugger.RuntimeFollowups do
       command = Map.get(row, "command") || Map.get(row, :command)
 
       cond do
+        package == "elm/http" and is_map(command) and PendingHttpFollowups.async?() ->
+          acc
+          |> track_http_command(command)
+          |> PendingHttpFollowups.enqueue(
+            target,
+            target_name,
+            package,
+            command,
+            followup_message
+          )
+
         package == "elm/http" and is_map(command) ->
           apply_runtime_http_followup(acc, target, target_name, package, command, followup_message, ctx)
 
@@ -262,24 +275,40 @@ defmodule Ide.Debugger.RuntimeFollowups do
     %{"ctor" => "Offset", "args" => [utc_offset_minutes_now()]}
   end
 
-  @spec apply_runtime_http_followup(
+  @spec execute_http_command(Types.runtime_state(), Types.surface_target(), map(), apply_ctx()) ::
+          {:ok, map()} | {:error, term()}
+  def execute_http_command(state, target, command, ctx)
+      when is_map(state) and target in [:watch, :companion, :phone] and is_map(command) and is_map(ctx) do
+    model = Surface.app_model(Surface.from_state(state, target))
+    eval_context = http_eval_context(model, ctx.simulator_settings.(state))
+    HttpExecutor.execute(command, eval_context)
+  end
+
+  @spec apply_http_executor_result(
           Types.runtime_state(),
           Types.surface_target(),
           String.t(),
           String.t(),
           map(),
           String.t() | nil,
+          {:ok, map()} | {:error, term()},
           apply_ctx()
         ) :: Types.runtime_state()
-  defp apply_runtime_http_followup(state, target, target_name, package, command, followup_message, ctx)
-       when target in [:watch, :companion, :phone] and is_map(command) and is_map(ctx) do
-    model = Surface.app_model(Surface.from_state(state, target))
-    eval_context = http_eval_context(model, ctx.simulator_settings.(state))
-
-    case HttpExecutor.execute(command, eval_context) do
-      {:ok, result} when is_map(result) ->
-        response_message = Map.get(result, "message") || followup_message || "elm/http"
-        message_value = Map.get(result, "message_value")
+  def apply_http_executor_result(
+        state,
+        target,
+        target_name,
+        package,
+        command,
+        followup_message,
+        result,
+        ctx
+      )
+      when target in [:watch, :companion, :phone] and is_map(command) and is_map(ctx) do
+    case result do
+      {:ok, payload} when is_map(payload) ->
+        response_message = Map.get(payload, "message") || followup_message || "elm/http"
+        message_value = Map.get(payload, "message_value")
 
         state
         |> ctx.track_http_command.(command)
@@ -290,8 +319,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
             package,
             response_message,
             http_command_event(command),
-            Map.get(result, "response"),
-            simulated_http_response?(Map.get(result, "response")),
+            Map.get(payload, "response"),
+            simulated_http_response?(Map.get(payload, "response")),
             followup_message
           )
         )
@@ -315,6 +344,31 @@ defmodule Ide.Debugger.RuntimeFollowups do
           )
         )
     end
+  end
+
+  @spec apply_runtime_http_followup(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t(),
+          map(),
+          String.t() | nil,
+          apply_ctx()
+        ) :: Types.runtime_state()
+  defp apply_runtime_http_followup(state, target, target_name, package, command, followup_message, ctx)
+       when target in [:watch, :companion, :phone] and is_map(command) and is_map(ctx) do
+    result = execute_http_command(state, target, command, ctx)
+
+    apply_http_executor_result(
+      state,
+      target,
+      target_name,
+      package,
+      command,
+      followup_message,
+      result,
+      ctx
+    )
   end
 
   defp apply_runtime_http_followup(state, _target, _target_name, _package, _command, _message, _ctx),

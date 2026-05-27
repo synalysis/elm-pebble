@@ -36,6 +36,15 @@ config :phoenix, :plug_init_mode, :runtime
 
 config :ide, Ide.Packages, index_disk_cache: false
 
+# Keep companion bootstrap synchronous in tests (assertions run immediately after debugger-start).
+config :ide, :debugger_async_companion_bootstrap, false
+
+# Run debugger start inline in tests so LiveView assertions see a finished bootstrap.
+config :ide, :debugger_sync_bootstrap, true
+
+# Apply HTTP follow-ups synchronously in tests (deterministic Agent state).
+config :ide, :debugger_async_http_followups, false
+
 # Enable helpful, but potentially expensive runtime checks
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true

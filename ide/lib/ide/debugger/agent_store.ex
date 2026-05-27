@@ -5,7 +5,8 @@ defmodule Ide.Debugger.AgentStore do
   alias Ide.Debugger.Types
 
   @default_agent Ide.Debugger
-  @default_timeout_ms 30_000
+  # Must cover long `get_and_update` reloads and `get` reads queued behind them (Agent default is 5s).
+  @default_timeout_ms 120_000
 
   @type store :: %{optional(String.t()) => Types.runtime_state()}
   @type prepare_fn :: (Types.runtime_state() -> Types.runtime_state())
@@ -46,29 +47,37 @@ defmodule Ide.Debugger.AgentStore do
   @spec fetch(String.t(), keyword()) :: Types.runtime_state()
   def fetch(project_slug, opts \\ []) when is_binary(project_slug) do
     agent = Keyword.get(opts, :agent, @default_agent)
+    timeout = Keyword.get(opts, :timeout, @default_timeout_ms)
     prepare = Keyword.get(opts, :prepare, &SessionDefaults.ensure_phone_state/1)
     default_state = Keyword.get(opts, :default_state, &SessionDefaults.default_state/1)
     transform = Keyword.get(opts, :transform, & &1)
 
     :ok = ensure_started(agent)
 
-    Agent.get(agent, fn store ->
-      store
-      |> fetch_or_default(project_slug, default_state)
-      |> prepare.()
-      |> transform.()
-    end)
+    Agent.get(
+      agent,
+      fn store ->
+        store
+        |> fetch_or_default(project_slug, default_state)
+        |> prepare.()
+        |> transform.()
+      end,
+      timeout
+    )
   end
 
   @spec put(String.t(), Types.runtime_state(), keyword()) :: Types.runtime_state()
   def put(session_key, state, opts \\ []) when is_binary(session_key) and is_map(state) do
     agent = Keyword.get(opts, :agent, @default_agent)
+    timeout = Keyword.get(opts, :timeout, @default_timeout_ms)
     prepare = Keyword.get(opts, :prepare, &SessionDefaults.ensure_phone_state/1)
     on_previous = Keyword.get(opts, :on_previous, fn _previous -> :ok end)
 
     :ok = ensure_started(agent)
 
-    Agent.get_and_update(agent, fn store ->
+    Agent.get_and_update(
+      agent,
+      fn store ->
       case Map.get(store, session_key) do
         previous when is_map(previous) -> on_previous.(previous)
         _ -> :ok
@@ -76,7 +85,9 @@ defmodule Ide.Debugger.AgentStore do
 
       prepared = prepare.(state)
       {prepared, Map.put(store, session_key, prepared)}
-    end)
+    end,
+      timeout
+    )
   end
 
   @spec forget(String.t(), keyword()) :: :ok

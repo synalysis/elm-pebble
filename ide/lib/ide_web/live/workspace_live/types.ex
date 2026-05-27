@@ -144,6 +144,7 @@ defmodule IdeWeb.WorkspaceLive.Types do
 
   @type info_message ::
           {:debugger_auto_fire_refresh, String.t()}
+          | {:debugger_bootstrap_progress, pos_integer(), String.t()}
           | {:capture_all_progress, pos_integer(), Screenshots.progress_payload()}
           | {:packages_search_progress, reference(), PackagesFlow.search_progress()}
 

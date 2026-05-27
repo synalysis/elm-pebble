@@ -28,23 +28,17 @@ defmodule Ide.Debugger.ElmIntrospect do
   end
 
   @doc """
-  Writes `source` to a temp file, parses it, then deletes the file.
+  Parses in-memory Elm `source` using the virtual path for module name resolution.
   """
   @spec analyze_source(String.t(), String.t()) :: {:ok, Types.introspect_snapshot()} | {:error, Types.parse_error()}
   def analyze_source(source, virtual_path \\ "Main.elm")
       when is_binary(source) and is_binary(virtual_path) do
-    dir = System.tmp_dir!()
-    path = Path.join(dir, "ide_elm_introspect_#{:erlang.unique_integer([:positive])}.elm")
+    case GeneratedParser.parse_source(virtual_path, source) do
+      {:ok, %Module{} = mod} ->
+        {:ok, build_snapshot(mod, source_display_path(virtual_path), source)}
 
-    try do
-      File.write!(path, source)
-
-      case GeneratedParser.parse_file(path) do
-        {:ok, %Module{} = mod} -> {:ok, build_snapshot(mod, source_display_path(virtual_path))}
-        {:error, _} = err -> err
-      end
-    after
-      _ = File.rm(path)
+      {:error, _} = err ->
+        err
     end
   end
 
@@ -83,8 +77,8 @@ defmodule Ide.Debugger.ElmIntrospect do
     Enum.find(values, &(!is_nil(&1)))
   end
 
-  @spec build_snapshot(Module.t(), String.t() | nil) :: Types.introspect_snapshot()
-  defp build_snapshot(%Module{} = mod, source_path_override \\ nil) do
+  @spec build_snapshot(Module.t(), String.t() | nil, String.t() | nil) :: Types.introspect_snapshot()
+  defp build_snapshot(%Module{} = mod, source_path_override \\ nil, source_text_override \\ nil) do
     init_params = function_param_names(find_function_definition(mod, "init"))
     init_e = find_init_expr(mod)
     init_model = map_expr(init_e, &EffectAnalysis.init_model_value(&1, mod), nil)
@@ -100,7 +94,7 @@ defmodule Ide.Debugger.ElmIntrospect do
       mod
       |> SourceIndex.api_metadata(import_entries)
       |> Map.put(:source_path, source_path_override || source_display_path(mod))
-      |> Map.put(:source_lines, source_lines(mod))
+      |> Map.put(:source_lines, source_lines(mod, source_text_override))
       |> Map.put(:module, mod.name)
       |> Map.put(:module_ref, mod)
       |> Map.put(:function_types, function_types)
@@ -148,7 +142,7 @@ defmodule Ide.Debugger.ElmIntrospect do
       EffectAnalysis.scrutinee_case_analysis(sub_e, subscriptions_params)
 
     {ports, port_module, module_exposing, import_entries, source_byte_size, source_line_count} =
-      module_source_scan(mod)
+      module_source_scan(mod, source_text_override)
 
     imported_modules = explicit_imports(mod)
     {type_aliases, unions, functions} = declaration_names(mod)
@@ -254,15 +248,21 @@ defmodule Ide.Debugger.ElmIntrospect do
     im |> Enum.reject(&(&1 in @implicit_core_imports))
   end
 
-  @spec module_source_scan(Types.module_ref()) :: Types.module_scan()
-  defp module_source_scan(%Module{} = mod) do
+  @spec module_source_scan(Types.module_ref(), String.t() | nil) :: Types.module_scan()
+  defp module_source_scan(%Module{} = mod, source_text_override \\ nil) do
     source_stats =
-      case File.read(mod.path) do
-        {:ok, source} ->
-          {byte_size(source), source_line_count(source)}
+      cond do
+        is_binary(source_text_override) ->
+          {byte_size(source_text_override), source_line_count(source_text_override)}
 
-        {:error, _} ->
-          {nil, nil}
+        true ->
+          case File.read(mod.path) do
+            {:ok, source} ->
+              {byte_size(source), source_line_count(source)}
+
+            {:error, _} ->
+              {nil, nil}
+          end
       end
 
     {source_byte_size, source_line_count} = source_stats
@@ -277,15 +277,31 @@ defmodule Ide.Debugger.ElmIntrospect do
     }
   end
 
-  @spec source_lines(Module.t()) :: [String.t()]
-  defp source_lines(%Module{path: path}) when is_binary(path) do
-    case File.read(path) do
-      {:ok, source} -> String.split(source, "\n", trim: false)
-      {:error, _} -> []
+  @spec source_lines(Module.t(), String.t() | nil) :: [String.t()]
+  defp source_lines(%Module{} = mod, source_text_override \\ nil) do
+    source =
+      cond do
+        is_binary(source_text_override) ->
+          source_text_override
+
+        true ->
+          case mod do
+            %Module{path: path} when is_binary(path) ->
+              case File.read(path) do
+                {:ok, file_source} -> file_source
+                {:error, _} -> nil
+              end
+
+            _ ->
+              nil
+          end
+      end
+
+    case source do
+      text when is_binary(text) -> String.split(text, "\n", trim: false)
+      _ -> []
     end
   end
-
-  defp source_lines(_mod), do: []
 
   @spec source_display_path(Module.t()) :: String.t()
   defp source_display_path(%Module{path: path}) when is_binary(path) do
