@@ -34,8 +34,9 @@ defmodule IdeWeb.EmulatorProxySocket do
   def init(%{target: url}) when is_binary(url), do: init_url(url)
   def init(%{url: url}) when is_binary(url), do: init_url(url)
 
-  @spec init_url(String.t()) :: {:ok, proxy_state()} | {:stop, term(), proxy_state()}
-  defp init_url(url) do
+  @spec init_url(String.t()) ::
+          {:ok, proxy_state()} | {:stop, {:ws_connect_failed, term()}, proxy_state()}
+  defp init_url(url) when is_binary(url) do
     owner = self()
 
     case IdeWeb.EmulatorProxyClient.start_link(url, owner) do
@@ -62,13 +63,13 @@ defmodule IdeWeb.EmulatorProxySocket do
     end
   end
 
-  def handle_in({data, [opcode: :binary]}, state) do
-    send_frame(state.client, {:binary, data})
+  def handle_in({data, [opcode: :binary]}, %{client: client} = state) when is_pid(client) do
+    send_frame(client, {:binary, data})
     {:ok, state}
   end
 
-  def handle_in({data, [opcode: :text]}, state) do
-    send_frame(state.client, {:text, data})
+  def handle_in({data, [opcode: :text]}, %{client: client} = state) when is_pid(client) do
+    send_frame(client, {:text, data})
     {:ok, state}
   end
 
@@ -108,6 +109,7 @@ defmodule IdeWeb.EmulatorProxySocket do
   def handle_info(_message, state), do: {:ok, state}
 
   @impl true
+  @spec terminate(term(), proxy_state()) :: :ok
   def terminate(_reason, state) do
     if is_port(state[:tcp]) do
       :gen_tcp.close(state.tcp)
@@ -120,6 +122,6 @@ defmodule IdeWeb.EmulatorProxySocket do
     :ok
   end
 
+  @spec send_frame(pid(), {:binary | :text, binary()}) :: :ok
   defp send_frame(pid, frame) when is_pid(pid), do: WebSockex.send_frame(pid, frame)
-  defp send_frame(_pid, _frame), do: :ok
 end

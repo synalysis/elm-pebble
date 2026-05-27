@@ -3,6 +3,7 @@ import {loadRFB} from "./emulator_vnc.js"
 
 /**
  * HTTP session API for the embedded emulator (launch, stop, ping, native install).
+ * Session JSON shape: see `EmulatorSessionInfo` in `embedded_emulator.js`.
  */
 export class EmulatorSessionClient {
   constructor(host) {

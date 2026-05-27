@@ -5,6 +5,7 @@ defmodule IdeWeb.EmulatorPhoneProxyIntegrationTest do
 
   alias Ide.Emulator
   alias Ide.Emulator.Session
+  alias Ide.Emulator.Session.ProcessHost
   alias Ide.TestSupport.EmulatorSessionEnv
   alias Ide.TestSupport.EmulatorLaunch
   alias Ide.Emulator.VncHandshake
@@ -27,7 +28,7 @@ defmodule IdeWeb.EmulatorPhoneProxyIntegrationTest do
       try do
         {:ok, pid} = Emulator.lookup(info.id)
         port = Session.local_port(pid, :phone)
-        assert Session.tcp_port_open?(port)
+        assert ProcessHost.tcp_port_open?(port)
         assert ws_connects?(port, @connect_timeout_ms)
       after
         assert :ok = Emulator.kill(info.id)
@@ -122,7 +123,7 @@ defmodule IdeWeb.EmulatorPhoneProxyIntegrationTest do
         {:ok, pid} = Emulator.lookup(info.id)
         assert info.display_ready == true
         port = Session.local_port(pid, :vnc)
-        assert Session.tcp_port_open?(port)
+        assert ProcessHost.tcp_port_open?(port)
         assert {:ok, socket} = :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 5_000)
 
         try do
@@ -136,7 +137,7 @@ defmodule IdeWeb.EmulatorPhoneProxyIntegrationTest do
     end)
   end
 
-  test "EmulatorProxyClient async_connect reaches pypkjs within #{@connect_timeout_ms}ms" do
+  test "EmulatorProxyClient reaches pypkjs within #{@connect_timeout_ms}ms" do
     EmulatorSessionEnv.run_live(fn ->
       assert {:ok, info} =
                EmulatorLaunch.launch(

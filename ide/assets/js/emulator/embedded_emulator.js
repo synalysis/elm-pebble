@@ -1,3 +1,22 @@
+/**
+ * Embedded Pebble emulator browser host (QEMU + Phoenix VNC channel).
+ *
+ * @typedef {Object} EmulatorSessionInfo
+ * @property {string} id
+ * @property {string} platform
+ * @property {string} artifact_path
+ * @property {string} install_path
+ * @property {string} ping_path
+ * @property {string} kill_path
+ * @property {string} vnc_path
+ * @property {string} phone_path
+ * @property {boolean} display_ready
+ * @property {boolean} phone_bridge_ready
+ * @property {boolean} backend_enabled
+ * @property {{width: number, height: number}} screen
+ * @property {string[]} controls
+ */
+
 import {postJSON, websocketURL} from "./emulator_http.js"
 import {EmulatorVnc} from "./emulator_vnc.js"
 import {EmulatorSessionClient} from "./emulator_session_client.js"

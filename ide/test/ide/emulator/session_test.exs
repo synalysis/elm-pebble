@@ -3,6 +3,7 @@ defmodule Ide.Emulator.SessionTest do
 
   alias Ide.Emulator
   alias Ide.Emulator.Session
+  alias Ide.Emulator.Session.{Pypkjs, Qemu, RuntimeSetup}
   alias Ide.TestSupport.{EmulatorLaunch, EmulatorSessionEnv}
 
   test "launch creates an unguessable session with websocket paths and controls" do
@@ -184,10 +185,10 @@ defmodule Ide.Emulator.SessionTest do
       qemu_features: legacy_features
     }
 
-    args = Session.qemu_args(state)
+    args = Qemu.args(state)
 
     assert ["-machine", "pebble-snowy-bb", "-cpu", "cortex-m4"] ==
-             Enum.take(Session.machine_args("basalt", "/tmp/spi.bin", legacy_features), 4)
+             Enum.take(Qemu.machine_args("basalt", "/tmp/spi.bin", legacy_features), 4)
 
     assert "-pflash" in args or "-kernel" in args
     assert "-L" in args
@@ -208,7 +209,7 @@ defmodule Ide.Emulator.SessionTest do
       spi_image_path: "/tmp/spi.bin"
     }
 
-    args = Session.qemu_args(state)
+    args = Qemu.args(state)
 
     assert "tcp:127.0.0.1:12000,server=on,wait=off" in args
     assert ":7" in args
@@ -217,7 +218,7 @@ defmodule Ide.Emulator.SessionTest do
 
   test "emery qemu args match the SDK emulator launcher" do
     legacy_features = %{new_qemu?: false, machines: MapSet.new()}
-    args = Session.machine_args("emery", "/tmp/spi.bin", legacy_features)
+    args = Qemu.machine_args("emery", "/tmp/spi.bin", legacy_features)
 
     assert ["-machine", "pebble-snowy-emery-bb", "-cpu", "cortex-m4"] == Enum.take(args, 4)
     assert "-pflash" in args
@@ -227,29 +228,29 @@ defmodule Ide.Emulator.SessionTest do
 
   test "emulator launch waits for bluetooth ready console marker before pypkjs" do
     assert Ide.Emulator.Session.Qemu.boot_markers() == ["Ready for communication"]
-    source = File.read!("lib/ide/emulator/session.ex")
-    refute source =~ "maybe_wait_for_install_ready"
+    startup = File.read!("lib/ide/emulator/session/startup.ex")
+    refute startup =~ "maybe_wait_for_install_ready"
     install_prep = File.read!("lib/ide/emulator/install_prep.ex")
     assert install_prep =~ ~S/ensure_min_time_since_boot/
-    assert source =~ ~S/InstallPrep.wait_before_reuse_install/
-    assert source =~ "Do not open a second console session for the same marker"
-    refute source =~ ~S/<SDK Home>/
-    assert source =~ ~S/pypkjs unavailable/
+    install_calls = File.read!("lib/ide/emulator/session/install_calls.ex")
+    assert install_calls =~ "InstallPrep.reset_needed?"
+    refute startup =~ ~S/<SDK Home>/
+    assert startup =~ ~S/pypkjs unavailable/
   end
 
   test "launch waits for VNC RFB banner after TCP port is open" do
-    source = File.read!("lib/ide/emulator/session.ex")
+    startup = File.read!("lib/ide/emulator/session/startup.ex")
     vnc = File.read!("lib/ide/emulator/session/vnc.ex")
 
-    assert source =~ "Vnc.capture_rfb_connection"
+    assert startup =~ "Vnc.capture_rfb_connection"
     assert vnc =~ "VncReady.capture_banner_open"
-    assert source =~ "vnc_banner_ready: true"
-    assert source =~ "vnc_banner_ready: false"
+    assert startup =~ "vnc_banner_ready: true"
+    assert startup =~ "vnc_banner_ready: false"
   end
 
   test "pypkjs arguments include qemu bridge, websocket port, and persist dir" do
     args =
-      Session.pypkjs_args(%{
+      Pypkjs.args(%{
         platform: "basalt",
         bt_port: 12_000,
         phone_ws_port: 12_001,
@@ -275,7 +276,7 @@ defmodule Ide.Emulator.SessionTest do
 
   test "pypkjs arguments use protocol proxy port when present" do
     args =
-      Session.pypkjs_args(%{
+      Pypkjs.args(%{
         platform: "basalt",
         bt_port: 12_000,
         protocol_proxy_port: 12_099,
@@ -293,7 +294,7 @@ defmodule Ide.Emulator.SessionTest do
 
     File.write!(script, "#!#{python}\n")
 
-    assert {:ok, ^python, [wrapper]} = Session.pypkjs_command(script)
+    assert {:ok, ^python, [wrapper]} = Pypkjs.command(script)
     assert String.ends_with?(wrapper, "priv/python/embedded_pypkjs.py")
 
     File.rm(script)
@@ -328,20 +329,20 @@ defmodule Ide.Emulator.SessionTest do
   end
 
   test "phone websocket proxy waits long enough for pypkjs cold start" do
-    source = File.read!("lib/ide/emulator/session.ex")
+    startup = File.read!("lib/ide/emulator/session/startup.ex")
     pypkjs = File.read!("lib/ide/emulator/session/pypkjs.ex")
 
     assert pypkjs =~ "local_port_call_timeout(:phone)"
     assert pypkjs =~ "pypkjs_ready_timeout_ms"
-    assert source =~ "maybe_start_pypkjs_if_needed"
-    refute source =~ "maybe_start_pypkjs_if_needed(%{has_phone_companion: true}"
+    assert startup =~ "maybe_start_pypkjs_if_needed"
+    refute startup =~ "maybe_start_pypkjs_if_needed(%{has_phone_companion: true}"
   end
 
   test "companion installs keep pypkjs alive for phone bridge" do
-    source = File.read!("lib/ide/emulator/session.ex")
+    install_calls = File.read!("lib/ide/emulator/session/install_calls.ex")
 
-    assert source =~ ~S/if Map.get(state, :has_phone_companion, false) do/
-    assert source =~ "def handle_call(:install_context, _from, state)"
+    assert install_calls =~ ~S/if Map.get(state, :has_phone_companion, false) do/
+    assert install_calls =~ "def install_context("
   end
 
   test "runtime status reports disabled embedded emulator before launch" do
@@ -349,7 +350,7 @@ defmodule Ide.Emulator.SessionTest do
     Application.put_env(:ide, Ide.Emulator.Session, enabled: false)
 
     try do
-      status = Session.runtime_status("basalt")
+      status = RuntimeSetup.runtime_status("basalt")
 
       assert status.status == :warning
 
@@ -387,7 +388,7 @@ defmodule Ide.Emulator.SessionTest do
     )
 
     try do
-      status = Session.runtime_status("basalt")
+      status = RuntimeSetup.runtime_status("basalt")
 
       assert %{id: :qemu, status: :ok, detail: ^qemu_bin} =
                Enum.find(status.components, &(&1.id == :qemu))
@@ -432,7 +433,7 @@ defmodule Ide.Emulator.SessionTest do
     )
 
     try do
-      status = Session.runtime_status("basalt")
+      status = RuntimeSetup.runtime_status("basalt")
 
       assert status.status == :warning
 
@@ -476,7 +477,7 @@ defmodule Ide.Emulator.SessionTest do
     )
 
     try do
-      status = Session.runtime_status("basalt")
+      status = RuntimeSetup.runtime_status("basalt")
 
       assert %{id: :qemu, status: :missing, installable: false, detail: detail} =
                Enum.find(status.components, &(&1.id == :qemu))
@@ -513,7 +514,7 @@ defmodule Ide.Emulator.SessionTest do
     )
 
     try do
-      status = Session.runtime_status("basalt")
+      status = RuntimeSetup.runtime_status("basalt")
 
       assert %{id: :pebble_sdk_python_env, status: :missing, installable: true} =
                Enum.find(status.components, &(&1.id == :pebble_sdk_python_env))
@@ -547,7 +548,7 @@ defmodule Ide.Emulator.SessionTest do
     )
 
     try do
-      status = Session.runtime_status("basalt")
+      status = RuntimeSetup.runtime_status("basalt")
 
       assert %{id: :pebble_sdk_node_modules, status: :missing, installable: true} =
                Enum.find(status.components, &(&1.id == :pebble_sdk_node_modules))
@@ -582,7 +583,7 @@ defmodule Ide.Emulator.SessionTest do
     )
 
     try do
-      status = Session.runtime_status("basalt")
+      status = RuntimeSetup.runtime_status("basalt")
       expected = Path.join(root, "SDKs/4.9.169/toolchain/arm-none-eabi/bin/arm-none-eabi-gcc")
 
       assert %{id: :pebble_arm_gcc, status: :missing, installable: true, detail: ^expected} =
@@ -641,7 +642,7 @@ defmodule Ide.Emulator.SessionTest do
     )
 
     try do
-      assert {:ok, result} = Session.install_runtime_dependencies("basalt")
+      assert {:ok, result} = RuntimeSetup.install_runtime_dependencies("basalt")
 
       assert Enum.map(result.results, & &1.name) == [
                :pebble_tool,
@@ -709,7 +710,7 @@ defmodule Ide.Emulator.SessionTest do
     )
 
     try do
-      assert {:ok, result} = Session.install_runtime_dependencies("basalt")
+      assert {:ok, result} = RuntimeSetup.install_runtime_dependencies("basalt")
 
       assert Enum.map(result.results, & &1.name) == [
                :pebble_tool,
@@ -769,7 +770,7 @@ defmodule Ide.Emulator.SessionTest do
     )
 
     try do
-      assert {:ok, result} = Session.install_runtime_dependencies("basalt")
+      assert {:ok, result} = RuntimeSetup.install_runtime_dependencies("basalt")
 
       assert [%{name: :pebble_tool, status: :error}] = result.results
 

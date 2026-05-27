@@ -32,9 +32,12 @@ defmodule Ide.Emulator.SessionInstallPrepareTest do
   end
 
   test "session delegates QEMU payload validation to QemuControl" do
-    source = File.read!("lib/ide/emulator/session.ex")
+    session = File.read!("lib/ide/emulator/session.ex")
+    control = File.read!("lib/ide/emulator/session/control.ex")
+    info = File.read!("lib/ide/emulator/session/info.ex")
 
-    assert source =~ "QemuControl.validate_payload"
-    assert source =~ "QemuControl.supported_controls"
+    assert session =~ "Control.handle_qemu_packet"
+    assert control =~ "QemuControl.validate_payload"
+    assert info =~ "QemuControl.supported_controls"
   end
 end

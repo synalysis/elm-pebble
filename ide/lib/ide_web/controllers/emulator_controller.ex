@@ -5,6 +5,8 @@ defmodule IdeWeb.EmulatorController do
 
   alias Ide.Debugger.SimulatorSettings
   alias Ide.Emulator
+  alias Ide.Emulator.Session
+  alias Ide.Emulator.Session.ProcessHost
   alias Ide.PebblePreferences
   alias Ide.Projects
   alias Ide.WatchModels
@@ -290,8 +292,8 @@ defmodule IdeWeb.EmulatorController do
 
   defp proxy_target(%{id: id}, :vnc) do
     with {:ok, pid} <- Emulator.lookup(id),
-         port when is_integer(port) <- Ide.Emulator.Session.local_port(pid, :vnc),
-         true <- Ide.Emulator.Session.tcp_port_open?(port) do
+         port when is_integer(port) <- Session.local_port(pid, :vnc),
+         true <- ProcessHost.tcp_port_open?(port) do
       {:ok, {:tcp, "127.0.0.1", port}}
     else
       false -> {:error, :emulator_vnc_not_ready}
@@ -301,8 +303,8 @@ defmodule IdeWeb.EmulatorController do
 
   defp proxy_target(%{id: id}, :phone) do
     with {:ok, pid} <- Emulator.lookup(id),
-         port when is_integer(port) <- Ide.Emulator.Session.local_port(pid, :phone),
-         true <- Ide.Emulator.Session.tcp_port_open?(port) do
+         port when is_integer(port) <- Session.local_port(pid, :phone),
+         true <- ProcessHost.tcp_port_open?(port) do
       {:ok, "ws://127.0.0.1:#{port}/"}
     else
       false -> {:error, :emulator_phone_not_ready}

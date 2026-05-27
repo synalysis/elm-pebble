@@ -4,6 +4,8 @@ defmodule Ide.Emulator.StartupCheck do
   require Logger
 
   alias Ide.Emulator
+  alias Ide.Emulator.Session.Config
+  alias Ide.Emulator.Types
 
   @spec log() :: :ok
   def log do
@@ -25,12 +27,10 @@ defmodule Ide.Emulator.StartupCheck do
 
   @spec default_emulator_target() :: String.t()
   defp default_emulator_target do
-    Application.get_env(:ide, Ide.Emulator.Session, [])
-    |> Keyword.get(:emulator_target, "basalt")
-    |> to_string()
+    Config.config(:emulator_target, "basalt") |> to_string()
   end
 
-  @spec summary(map()) :: String.t()
+  @spec summary(Types.runtime_status()) :: String.t()
   defp summary(%{status: :ok, platform: platform}),
     do: "all dependencies present for #{platform}"
 

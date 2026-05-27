@@ -3,15 +3,9 @@ defmodule Ide.Emulator do
   Runtime boundary for embedded Pebble emulator sessions.
   """
 
-  alias Ide.Emulator.{Session, SlotLimiter, Types}
+  alias Ide.Emulator.{Screenshot, Session, Session.RuntimeSetup, SlotLimiter, Types}
 
-  @type launch_opts :: [
-          project_slug: String.t(),
-          platform: String.t(),
-          artifact_path: String.t() | nil,
-          has_phone_companion: boolean(),
-          has_companion_preferences: boolean()
-        ]
+  @type launch_opts :: Types.launch_opts()
 
   @spec launch(launch_opts()) :: {:ok, Types.session_info()} | {:error, Types.emulator_error()}
   def launch(opts) do
@@ -59,11 +53,11 @@ defmodule Ide.Emulator do
   def slot_status, do: SlotLimiter.status()
 
   @spec runtime_status(String.t() | nil) :: Types.runtime_status()
-  def runtime_status(platform \\ nil), do: Session.runtime_status(platform)
+  def runtime_status(platform \\ nil), do: RuntimeSetup.runtime_status(platform)
 
   @spec install_runtime_dependencies(String.t() | nil) :: {:ok, Types.install_dependencies_result()}
   def install_runtime_dependencies(platform \\ nil),
-    do: Session.install_runtime_dependencies(platform)
+    do: RuntimeSetup.install_runtime_dependencies(platform)
 
   @spec lookup(String.t()) :: {:ok, pid()} | {:error, :not_found}
   def lookup(id) when is_binary(id) do
@@ -120,42 +114,12 @@ defmodule Ide.Emulator do
     end
   end
 
-  @spec screenshot(String.t(), keyword()) :: {:ok, binary()} | {:error, Types.emulator_error()}
+  @spec screenshot(String.t(), Types.screenshot_capture_opts()) ::
+          {:ok, binary()} | {:error, Types.emulator_error()}
   def screenshot(id, opts \\ []) when is_binary(id) do
     with {:ok, pid} <- lookup(id),
          {:ok, %{platform: platform}} <- info(id) do
-      timeout = screenshot_capture_timeout(platform, opts)
-
-      case Ide.Emulator.FirmwareScreenshot.capture(pid, platform, timeout: timeout) do
-        {:ok, png} when is_binary(png) ->
-          {:ok, png}
-
-        {:error, reason} ->
-          require Logger
-          Logger.warning("firmware screenshot failed, falling back to VNC: #{inspect(reason)}")
-          capture_vnc_screenshot(pid, platform, timeout)
-      end
-    end
-  end
-
-  defp screenshot_capture_timeout(platform, opts) do
-    Keyword.get_lazy(opts, :timeout, fn ->
-      Ide.Emulator.FirmwareScreenshot.capture_timeout_ms(platform)
-    end)
-  end
-
-  defp capture_vnc_screenshot(pid, platform, firmware_timeout) do
-    vnc_timeout = min(firmware_timeout, 30_000)
-
-    with port when is_integer(port) and port > 0 <- Session.local_port(pid, :vnc),
-         {:ok, png} when is_binary(png) <-
-           Ide.Emulator.VncScreenshot.capture(port,
-             platform: platform,
-             timeout: vnc_timeout
-           ) do
-      {:ok, png}
-    else
-      {:error, reason} -> {:error, reason}
+      Screenshot.capture(pid, platform, opts)
     end
   end
 

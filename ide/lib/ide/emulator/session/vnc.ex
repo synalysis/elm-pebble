@@ -27,7 +27,7 @@ defmodule Ide.Emulator.Session.Vnc do
     end
   end
 
-  @spec reset_connection(state) :: state when state: map()
+  @spec reset_connection(state) :: state when state: Types.session_state()
   def reset_connection(state) do
     close_tcp_port(state.vnc_tcp)
 
@@ -47,7 +47,7 @@ defmodule Ide.Emulator.Session.Vnc do
     :gen_tcp.close(tcp)
   end
 
-  @spec append_tcp_buffer(state, binary()) :: state when state: map()
+  @spec append_tcp_buffer(Types.session_state(), binary()) :: Types.session_state()
   def append_tcp_buffer(%{vnc_tcp_buffer: buffer} = state, data) when is_binary(data) do
     %{state | vnc_tcp_buffer: buffer <> data}
   end

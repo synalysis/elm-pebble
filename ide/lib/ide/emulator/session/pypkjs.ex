@@ -4,7 +4,7 @@ defmodule Ide.Emulator.Session.Pypkjs do
   alias Ide.Emulator.Session.{Bins, Config, ProcessHost, Qemu}
   alias Ide.Emulator.Types
 
-  @spec args(map()) :: [String.t()]
+  @spec args(Types.pypkjs_args_state()) :: [String.t()]
   def args(state) do
     [
       "--qemu",
@@ -37,9 +37,11 @@ defmodule Ide.Emulator.Session.Pypkjs do
 
   def local_port_call_timeout(_kind), do: 5_000
 
-  @spec maybe_start(state) :: {:ok, state} | {:error, Types.session_error()} when state: map()
+  @spec maybe_start(Types.session_state() | Types.pypkjs_start_state()) ::
+          {:ok, Types.session_state() | Types.pypkjs_start_state()}
+          | {:error, Types.session_error()}
   def maybe_start(%{pypkjs_pid: pid} = state) when is_pid(pid) do
-    if ProcessHost.live_pid?(pid), do: {:ok, state}, else: maybe_start(%{state | pypkjs_pid: nil})
+    if ProcessHost.live_pid?(pid), do: {:ok, state}, else: maybe_start(Map.put(state, :pypkjs_pid, nil))
   end
 
   def maybe_start(state) do
@@ -54,7 +56,7 @@ defmodule Ide.Emulator.Session.Pypkjs do
                state.phone_ws_port,
                Config.config(:pypkjs_ready_timeout_ms, 30_000)
              ) do
-        {:ok, %{state | pypkjs_pid: pid}}
+        {:ok, Map.put(state, :pypkjs_pid, pid)}
       end
     else
       {:ok, state}
@@ -70,6 +72,17 @@ defmodule Ide.Emulator.Session.Pypkjs do
       args
     end
   end
+
+  @spec handle_local_port(Types.session_state()) ::
+          {:reply, pos_integer() | {:error, term()}, Types.session_state()}
+  def handle_local_port(%{pypkjs_pid: nil} = state) do
+    case maybe_start(state) do
+      {:ok, state} -> {:reply, state.phone_ws_port, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_local_port(state), do: {:reply, state.phone_ws_port, state}
 
   defp python_from_shebang(pypkjs_bin) do
     with {:ok, <<"#!", rest::binary>>} <- File.read(pypkjs_bin),

@@ -13,11 +13,21 @@ defmodule IdeWeb.EmulatorVncChannel do
 
   alias Ide.Emulator
   alias Ide.Emulator.{Session, VncReady}
+  alias IdeWeb.EmulatorVncChannel.State, as: ChannelState
 
   @vnc_connect_timeout 250
   @read_banner_ms 1_000
 
+  @type channel_state :: ChannelState.t()
+  @type join_reply :: %{required(:initial) => String.t()}
+
+  @type join_error :: %{required(:reason) => String.t()}
+
   @impl true
+  @spec join(String.t(), map(), Phoenix.Socket.t()) ::
+          {:ok, join_reply(), Phoenix.Socket.t()}
+          | {:error, join_error()}
+          | {:ok, Phoenix.Socket.t()}
   def join("emulator_vnc:" <> session_id, _payload, socket) do
     Logger.info("emulator vnc channel join session_id=#{session_id}")
 
@@ -33,11 +43,14 @@ defmodule IdeWeb.EmulatorVncChannel do
         "emulator vnc channel join opened fresh tcp (#{byte_size(initial)} initial byte(s))"
       )
 
-      {:ok, %{initial: Base.encode64(initial)},
-       socket
-       |> assign(:session_id, session_id)
-       |> assign(:session_pid, pid)
-       |> assign(:tcp, tcp)}
+      channel =
+        %{
+          session_id: session_id,
+          session_pid: pid,
+          tcp: tcp
+        }
+
+      {:ok, %{initial: Base.encode64(initial)}, ChannelState.assign(socket, channel)}
     else
       {:error, reason} ->
         Logger.warning(
@@ -56,6 +69,10 @@ defmodule IdeWeb.EmulatorVncChannel do
   end
 
   @impl true
+  @spec handle_in(String.t(), map() | {:binary, binary()}, Phoenix.Socket.t()) ::
+          {:reply, {:ok, map()}, Phoenix.Socket.t()}
+          | {:stop, term(), Phoenix.Socket.t()}
+          | {:noreply, Phoenix.Socket.t()}
   def handle_in("frame", %{"b64" => encoded}, socket) when is_binary(encoded) do
     case Base.decode64(encoded) do
       {:ok, data} -> handle_in("frame", {:binary, data}, socket)
@@ -63,7 +80,9 @@ defmodule IdeWeb.EmulatorVncChannel do
     end
   end
 
-  def handle_in("frame", {:binary, data}, %{assigns: %{tcp: tcp}} = socket) when is_binary(data) do
+  def handle_in("frame", {:binary, data}, socket) when is_binary(data) do
+    %{tcp: tcp} = ChannelState.from_socket(socket)
+
     Logger.debug("emulator vnc channel recv #{byte_size(data)} byte(s) from client")
 
     case :gen_tcp.send(tcp, data) do
@@ -72,33 +91,39 @@ defmodule IdeWeb.EmulatorVncChannel do
     end
   end
 
-  def handle_in("frame", data, socket) when is_binary(data) do
-    handle_in("frame", {:binary, data}, socket)
-  end
-
   @impl true
-  def handle_info({:tcp, tcp, data}, %{assigns: %{tcp: tcp}} = socket) when is_binary(data) do
+  @spec handle_info(term(), Phoenix.Socket.t()) ::
+          {:noreply, Phoenix.Socket.t()} | {:stop, term(), Phoenix.Socket.t()}
+  def handle_info({:tcp, tcp, data}, socket) when is_binary(data) do
+    %{tcp: expected} = ChannelState.from_socket(socket)
+    true = tcp == expected
     Logger.debug("emulator vnc channel push #{byte_size(data)} byte(s) to client")
     push_frame(socket, data)
     {:noreply, socket}
   end
 
-  def handle_info({:tcp_closed, tcp}, %{assigns: %{tcp: tcp}} = socket) do
+  def handle_info({:tcp_closed, tcp}, socket) do
+    %{tcp: expected} = ChannelState.from_socket(socket)
+    true = tcp == expected
     {:stop, :normal, socket}
   end
 
-  def handle_info({:tcp_error, tcp, reason}, %{assigns: %{tcp: tcp}} = socket) do
+  def handle_info({:tcp_error, tcp, reason}, socket) do
+    %{tcp: expected} = ChannelState.from_socket(socket)
+    true = tcp == expected
     Logger.warning("emulator vnc channel tcp error: #{inspect(reason)}")
     {:stop, {:tcp_error, reason}, socket}
   end
 
   @impl true
-  def terminate(_reason, %{assigns: %{tcp: tcp}}) when is_port(tcp) do
-    :gen_tcp.close(tcp)
+  def terminate(_reason, socket) do
+    case socket.assigns[:tcp] do
+      tcp when is_port(tcp) -> :gen_tcp.close(tcp)
+      _ -> :ok
+    end
+
     :ok
   end
-
-  def terminate(_reason, _socket), do: :ok
 
   defp push_frame(socket, data) when is_binary(data) do
     push(socket, "frame", %{b64: Base.encode64(data)})

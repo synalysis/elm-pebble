@@ -8,17 +8,9 @@ defmodule Ide.Emulator.Session.Qemu do
 
   @type features :: %{required(:new_qemu?) => boolean(), required(:machines) => MapSet.t()}
 
-  @type state_slice :: %{
-          required(:platform) => String.t(),
-          required(:bt_port) => pos_integer(),
-          required(:console_port) => pos_integer(),
-          required(:vnc_display) => non_neg_integer(),
-          optional(:spi_image_path) => String.t() | nil,
-          optional(:persist_dir) => String.t() | nil,
-          optional(:qemu_features) => features()
-        }
+  @type state_slice :: Types.qemu_args_state()
 
-  @spec features() :: features()
+  @spec features() :: Types.qemu_features()
   def features do
     case Bins.qemu_bin() do
       {:ok, qemu_bin} ->
@@ -32,7 +24,7 @@ defmodule Ide.Emulator.Session.Qemu do
     end
   end
 
-  @spec args(map()) :: [String.t()]
+  @spec args(state_slice() | Types.session_state()) :: [String.t()]
   def args(state) do
     image_dir = image_dir(state.platform)
     micro_flash = Path.join(image_dir, "qemu_micro_flash.bin")

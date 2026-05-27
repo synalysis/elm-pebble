@@ -37,8 +37,8 @@ defmodule Ide.Emulator.PBW do
           platform: String.t(),
           variant: String.t(),
           uuid: String.t(),
-          appinfo: map(),
-          manifest: map(),
+          appinfo: Types.pbw_appinfo(),
+          manifest: Types.pbw_manifest(),
           app_metadata: app_metadata(),
           parts: [part()]
         }

@@ -88,7 +88,7 @@ defmodule IdeWeb.EmulatorVncHttpWsTest do
   defp vnc_port_open?(id) do
     with {:ok, pid} <- Emulator.lookup(id),
          port when is_integer(port) <- Ide.Emulator.Session.local_port(pid, :vnc) do
-      Ide.Emulator.Session.tcp_port_open?(port)
+      Ide.Emulator.Session.ProcessHost.tcp_port_open?(port)
     else
       _ -> false
     end

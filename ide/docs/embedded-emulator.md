@@ -34,6 +34,13 @@ flowchart LR
     SessionPypkjs[Session.Pypkjs]
     SessionRuntime[Session.RuntimeSetup]
     SessionInstall[Session.Install]
+    SessionInfo[Session.Info]
+    SessionHealth[Session.Health]
+    SessionControl[Session.Control]
+    SessionVncH[Session.VncHandlers]
+    SessionStartup[Session.Startup]
+    SessionInstallCalls[Session.InstallCalls]
+    SessionLifecycle[Session.Lifecycle]
   end
 
   session --> session_modules
@@ -62,9 +69,24 @@ flowchart LR
 | `Ide.Emulator.Session.Pypkjs` | pypkjs argv and process start |
 | `Ide.Emulator.Session.RuntimeSetup` | `runtime_status/1`, dependency install, init validation |
 | `Ide.Emulator.Session.Install` | PBW install orchestration and QEMU reset retries |
+| `Ide.Emulator.Session.Info` | `session_info` map for HTTP/API (`public_info`, readiness flags) |
+| `Ide.Emulator.Session.Health` | Ping/health checks, child `EXIT` handling |
+| `Ide.Emulator.Session.Control` | QEMU control packets and simulator settings batch apply |
+| `Ide.Emulator.Session.VncHandlers` | GenServer VNC TCP claim/return/discard and buffer relay |
+| `Ide.Emulator.Session.Startup` | Initial state, QEMU/router/pypkjs boot, install reset |
+| `Ide.Emulator.Session.InstallCalls` | GenServer install/prepare/reset `handle_call` replies |
+| `Ide.Emulator.Session.Lifecycle` | Session ids, idle timeout, ping timestamps |
 | `Ide.Emulator.PBWInstaller.Putbytes` | PutBytes chunking and ack handling |
+| `Ide.Emulator.PBWInstaller.BlobDb` | BlobDB insert/delete before AppFetch |
+| `Ide.Emulator.PBWInstaller.AppFetch` | AppFetch handshake and UUID verification |
+| `Ide.Emulator.PBWInstaller.Parts` | PutBytes init/put/commit/install per PBW part |
+| `Ide.Emulator.PBWInstaller.PostInstall` | Post-install probe, frame observation, payload enrichment |
+| `Ide.Emulator.Screenshot` | Firmware screenshot with VNC fallback (`Ide.Emulator.screenshot/2` delegates here) |
+| `Ide.Emulator.FirmwareScreenshot` | Endpoint 8000 framebuffer capture |
+| `Ide.Emulator.VncScreenshot` | RFB framebuffer read (fallback path) |
 | `IdeWeb.EmulatorController` | Launch, ping, install, control, kill; serves PBW artifact |
 | `IdeWeb.EmulatorVncChannel` | Relays RFB bytes between browser and QEMU over Phoenix channel `emulator_vnc:<session_id>` |
+| `IdeWeb.EmulatorVncChannel.State` | Typed channel assigns (`session_id`, `session_pid`, `tcp`) |
 | `IdeWeb.EmulatorProxySocket` | Raw WebSocket proxy to local TCP (used for `/ws/phone` and legacy `/ws/vnc`) |
 | `embedded_emulator.js` | Thin browser orchestrator (toolbar, state, feedback) |
 | `emulator_http.js` | Shared `postJSON`, CSRF, WebSocket URL helpers |
@@ -74,12 +96,26 @@ flowchart LR
 | `qemu_control.js` | QEMU protocol encoders (shared with WASM emulator) |
 | `install_prep.ex` | Install pacing, reuse settle, reset-needed checks |
 
+`IdeWeb.EmulatorProxyClient` uses `WebSockex.start_link/3` (no custom options); the browser phone bridge opens via `EmulatorProxySocket` or the channel path above.
+
+### Browser modules (`ide/assets/js/emulator/`)
+
+| File | Role |
+|------|------|
+| `embedded_emulator.js` | `EmbeddedEmulatorHost`: toolbar, lifecycle, event log, display/phone orchestration |
+| `emulator_session_client.js` | Launch, ping, kill, native install HTTP |
+| `emulator_vnc.js` | Phoenix `emulator_vnc:*` channel + noVNC |
+| `emulator_simulator_delivery.js` | Simulator settings, weather, phone-bridge install |
+| `emulator_http.js` | `postJSON`, CSRF, WebSocket URL helpers |
+| `qemu_control.js` | QEMU packet encoders (shared with WASM emulator) |
+
 ### Elixir types (server)
 
 | Module | Role |
 |--------|------|
 | `Ide.WatchModels` / `Ide.WatchModels.Profile` | Canonical watch catalog (`profile_for/1`, `profile_screen/1`); string-key maps at runtime |
-| `Ide.Emulator.Types` | Session API contracts: `session_info`, `runtime_status`, `simulator_settings`, `install_context`, `qemu_features`, `putbytes_phase_meta`, errors |
+| `Ide.Emulator.Types` | Session API contracts: `session_state`, `qemu_args_state`, `launch_opts`, `session_info`, `runtime_status`, `simulator_settings`, `install_context`, `qemu_features`, `putbytes_phase_meta`, `screenshot_capture_opts`, errors |
+| `Ide.Emulator.Session.Config` | Shared `Application.get_env(:ide, Session, …)` for Session, InstallPrep, StartupCheck |
 | `Ide.Emulator.QemuControl` | QEMU `command/0` and `external_cli_command/0` encoders |
 | `Ide.Debugger.Types.SimulatorSettings` | Normalized simulator settings (shared with debugger; used by `apply_simulator_settings`) |
 

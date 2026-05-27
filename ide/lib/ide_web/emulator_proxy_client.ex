@@ -3,16 +3,16 @@ defmodule IdeWeb.EmulatorProxyClient do
 
   use WebSockex
 
-  @spec start_link(String.t(), pid()) :: GenServer.on_start()
+  @type client_state :: %{required(:owner) => pid()}
+
+  @spec start_link(String.t(), pid()) :: {:ok, pid()} | {:error, term()}
   def start_link(url, owner) when is_binary(url) and is_pid(owner) do
-    # Do not block the browser upgrade on pypkjs/gevent accepting the upstream socket.
-    case WebSockex.start_link(url, __MODULE__, %{owner: owner}, async_connect: true) do
-      {:ok, pid} -> {:ok, pid}
-      {:error, _} = error -> error
-    end
+    WebSockex.start_link(url, __MODULE__, %{owner: owner})
   end
 
   @impl true
+  @spec handle_frame({:binary, binary()} | {:text, binary()}, client_state()) ::
+          {:ok, client_state()}
   def handle_frame({:binary, data}, state) do
     send(state.owner, {:emulator_proxy_frame, {:binary, data}})
     {:ok, state}
@@ -24,15 +24,18 @@ defmodule IdeWeb.EmulatorProxyClient do
   end
 
   @impl WebSockex
+  @spec handle_connect(term(), client_state()) :: {:ok, client_state()}
   def handle_connect(_conn, state) do
     send(state.owner, :emulator_proxy_upstream_connected)
     {:ok, state}
   end
 
   @impl true
+  @spec handle_cast(:close, client_state()) :: {:close, client_state()}
   def handle_cast(:close, state), do: {:close, state}
 
   @impl true
+  @spec terminate(term(), client_state()) :: :ok
   def terminate(reason, state) do
     send(state.owner, {:emulator_proxy_closed, reason})
     :ok

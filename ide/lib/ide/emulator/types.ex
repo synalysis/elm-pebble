@@ -7,6 +7,66 @@ defmodule Ide.Emulator.Types do
 
   @type qemu_features :: Qemu.features()
 
+  @type qemu_args_state :: %{
+          required(:platform) => String.t(),
+          required(:bt_port) => pos_integer(),
+          required(:console_port) => pos_integer(),
+          required(:vnc_display) => non_neg_integer(),
+          optional(:spi_image_path) => String.t() | nil,
+          optional(:persist_dir) => String.t() | nil,
+          optional(:qemu_features) => qemu_features()
+        }
+
+  @type pypkjs_args_state :: %{
+          required(:platform) => String.t(),
+          required(:bt_port) => pos_integer(),
+          required(:phone_ws_port) => pos_integer(),
+          required(:persist_dir) => String.t(),
+          optional(:protocol_proxy_port) => pos_integer()
+        }
+
+  @type pypkjs_start_state :: %{
+          required(:id) => String.t(),
+          required(:platform) => String.t(),
+          required(:bt_port) => pos_integer(),
+          required(:phone_ws_port) => pos_integer(),
+          required(:persist_dir) => String.t(),
+          optional(:protocol_proxy_port) => pos_integer(),
+          optional(:pypkjs_pid) => pid() | nil
+        }
+
+  @type session_state :: %{
+          required(:id) => String.t(),
+          required(:token) => String.t(),
+          required(:project_slug) => String.t(),
+          required(:platform) => String.t(),
+          required(:artifact_path) => String.t() | nil,
+          required(:app_uuid) => String.t() | nil,
+          required(:has_phone_companion) => boolean(),
+          required(:has_companion_preferences) => boolean(),
+          required(:console_port) => pos_integer(),
+          required(:bt_port) => pos_integer(),
+          required(:protocol_proxy_port) => pos_integer(),
+          required(:phone_ws_port) => pos_integer(),
+          required(:vnc_port) => pos_integer(),
+          required(:vnc_display) => non_neg_integer(),
+          required(:vnc_ws_port) => pos_integer(),
+          required(:protocol_router_pid) => pid() | nil,
+          required(:qemu_pid) => pid() | nil,
+          required(:pypkjs_pid) => pid() | nil,
+          required(:spi_image_path) => String.t() | nil,
+          required(:persist_dir) => String.t() | nil,
+          required(:last_ping_ms) => integer(),
+          required(:last_boot_ms) => integer(),
+          required(:idle_timeout_ms) => pos_integer(),
+          required(:vnc_banner_ready) => boolean(),
+          required(:vnc_rfb_banner) => binary() | nil,
+          required(:vnc_tcp) => port() | nil,
+          required(:vnc_tcp_buffer) => binary(),
+          required(:installing?) => boolean(),
+          required(:qemu_features) => qemu_features()
+        }
+
   @type install_context :: %{
           required(:protocol_router_pid) => pid(),
           required(:artifact_path) => String.t(),
@@ -34,6 +94,8 @@ defmodule Ide.Emulator.Types do
           optional(:crc) => non_neg_integer()
         }
 
+  @type screenshot_capture_opts :: [timeout: timeout()]
+
   @type screenshot_header :: %{
           required(:version) => non_neg_integer(),
           required(:width) => pos_integer(),
@@ -41,14 +103,17 @@ defmodule Ide.Emulator.Types do
           required(:expected_bytes) => non_neg_integer()
         }
 
-  @type session_launch_opts :: [
-          {:id, String.t()}
+  @type launch_opts :: [
+          {:project_slug, String.t()}
           | {:platform, String.t()}
-          | {:project_slug, String.t()}
-          | {:artifact_path, String.t()}
+          | {:artifact_path, String.t() | nil}
           | {:has_phone_companion, boolean()}
           | {:has_companion_preferences, boolean()}
+          | {:id, String.t()}
+          | {:slot_acquire_timeout_ms, pos_integer()}
         ]
+
+  @type session_launch_opts :: launch_opts()
 
   @type simulator_settings :: DebuggerTypes.simulator_settings()
 
@@ -138,6 +203,20 @@ defmodule Ide.Emulator.Types do
           optional(:bt_port) => pos_integer(),
           optional(:last_boot_ms) => integer()
         }
+
+  @type install_prep_session :: install_prep_context() | session_state()
+
+  @type pbw_json_value ::
+          String.t()
+          | boolean()
+          | non_neg_integer()
+          | integer()
+          | float()
+          | [pbw_json_value()]
+          | %{String.t() => pbw_json_value()}
+
+  @type pbw_appinfo :: %{String.t() => pbw_json_value()}
+  @type pbw_manifest :: %{String.t() => pbw_json_value()}
 
   @type install_part_sent :: %{
           required(:kind) => atom(),
