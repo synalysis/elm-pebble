@@ -175,6 +175,25 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
     assert {:ok, 16} = CoreIREvaluator.evaluate(expr)
   end
 
+  test "constructor bind does not match messages without payloads" do
+    expr = %{
+      "op" => :case,
+      "subject" => %{"ctor" => "CurrentTimeString", "args" => []},
+      "branches" => [
+        %{
+          "pattern" => %{
+            "kind" => :constructor,
+            "name" => "CurrentTimeString",
+            "bind" => "value"
+          },
+          "expr" => %{"op" => :var, "name" => "value"}
+        }
+      ]
+    }
+
+    assert {:error, :no_case_branch_match} = CoreIREvaluator.evaluate(expr)
+  end
+
   test "supports module-qualified function dispatch with indexed definitions" do
     core_ir = %{
       "modules" => [

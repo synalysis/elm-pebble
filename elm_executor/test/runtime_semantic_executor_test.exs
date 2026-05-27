@@ -1441,6 +1441,21 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert Enum.any?(updated.view_output, fn row ->
              row["kind"] == "text_label" and row["text"] == "20:33"
            end)
+
+    no_payload_request =
+      Map.merge(request, %{
+        current_model: Map.put(request.current_model, "runtime_model", updated_model),
+        message: "CurrentTimeString"
+      })
+
+    assert {:ok, no_payload} = SemanticExecutor.execute(no_payload_request)
+    no_payload_model = no_payload.model_patch["runtime_model"]
+
+    assert no_payload_model["timeString"] == "20:33"
+
+    assert Enum.any?(no_payload.view_output, fn row ->
+             row["kind"] == "text_label" and row["text"] == "20:33"
+           end)
   end
 
   test "runtime resolves launch screen colorMode custom type for monochrome profiles" do

@@ -4731,6 +4731,9 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       is_binary(bind_name) and bind_name != "" and length(args) == 1 ->
         {:ok, %{bind_name => hd(args)}}
 
+      is_binary(bind_name) and bind_name != "" ->
+        :nomatch
+
       true ->
         arg_patterns = pattern["args"] || pattern[:args] || []
         match_pattern_list(arg_patterns, args, context)
