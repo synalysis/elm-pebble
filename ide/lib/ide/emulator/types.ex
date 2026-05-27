@@ -2,7 +2,53 @@ defmodule Ide.Emulator.Types do
   @moduledoc false
 
   alias Ide.Debugger.Types, as: DebuggerTypes
+  alias Ide.Emulator.Session.Qemu
   alias Ide.WatchModels.Profile, as: WatchProfile
+
+  @type qemu_features :: Qemu.features()
+
+  @type install_context :: %{
+          required(:protocol_router_pid) => pid(),
+          required(:artifact_path) => String.t(),
+          required(:platform) => String.t(),
+          required(:console_port) => pos_integer()
+        }
+
+  @type putbytes_phase ::
+          :init
+          | :put
+          | :commit
+          | :install
+          | :install_transition
+          | :abort_after_commit_nack
+
+  @type putbytes_phase_meta :: %{
+          required(:phase) => putbytes_phase(),
+          optional(:kind) => atom(),
+          optional(:cookie) => non_neg_integer(),
+          optional(:offset) => non_neg_integer(),
+          optional(:chunk_size) => pos_integer(),
+          optional(:size) => non_neg_integer(),
+          optional(:app_id) => non_neg_integer(),
+          optional(:bytes_sent) => non_neg_integer(),
+          optional(:crc) => non_neg_integer()
+        }
+
+  @type screenshot_header :: %{
+          required(:version) => non_neg_integer(),
+          required(:width) => pos_integer(),
+          required(:height) => pos_integer(),
+          required(:expected_bytes) => non_neg_integer()
+        }
+
+  @type session_launch_opts :: [
+          {:id, String.t()}
+          | {:platform, String.t()}
+          | {:project_slug, String.t()}
+          | {:artifact_path, String.t()}
+          | {:has_phone_companion, boolean()}
+          | {:has_companion_preferences, boolean()}
+        ]
 
   @type simulator_settings :: DebuggerTypes.simulator_settings()
 
@@ -203,7 +249,7 @@ defmodule Ide.Emulator.Types do
           | pbw_error()
           | packet_decode_error()
           | :timeout
-          | {:putbytes_failed, map(), packet_decode_error() | :timeout | {:timeout, map() | non_neg_integer()}}
+          | {:putbytes_failed, putbytes_phase_meta(), packet_decode_error() | :timeout | {:timeout, map() | non_neg_integer()}}
           | {:blob_insert_failed, non_neg_integer()}
           | {:wrong_blob_token, non_neg_integer(), non_neg_integer()}
           | {:wrong_app_fetch_uuid, String.t(), String.t()}

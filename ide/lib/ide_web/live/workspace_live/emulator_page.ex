@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   import IdeWeb.WatchInteractives
 
+  alias Ide.Emulator.Types, as: EmulatorTypes
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.SimulatorSettings
@@ -847,6 +848,9 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
     project
     |> SimulatorSettings.values_for(debugger_state)
     |> Map.take(keys)
-    |> Jason.encode!()
+    |> encode_simulator_settings()
   end
+
+  @spec encode_simulator_settings(EmulatorTypes.simulator_settings()) :: String.t()
+  defp encode_simulator_settings(settings), do: Jason.encode!(settings)
 end

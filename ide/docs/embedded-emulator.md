@@ -21,11 +21,22 @@ flowchart LR
     VncProxy[EmulatorProxySocket]
   end
 
-  subgraph session [Emulator.Session]
+  subgraph session [Emulator.Session facade]
     QEMU[QEMU Pebble]
     Router[Pebble protocol router]
     Pypkjs[pypkjs phone bridge]
   end
+
+  subgraph session_modules [Session.* helpers]
+    SessionQemu[Session.Qemu]
+    SessionHost[Session.ProcessHost]
+    SessionVnc[Session.Vnc]
+    SessionPypkjs[Session.Pypkjs]
+    SessionRuntime[Session.RuntimeSetup]
+    SessionInstall[Session.Install]
+  end
+
+  session --> session_modules
 
   UI --> API
   UI --> Phoenix
@@ -44,7 +55,14 @@ flowchart LR
 
 | Component | Role |
 |-----------|------|
-| `Ide.Emulator.Session` | One GenServer per session: QEMU, VNC port, phone WS port, PBW artifact, flash image |
+| `Ide.Emulator.Session` | GenServer facade per session: orchestrates QEMU, VNC, phone bridge, install |
+| `Ide.Emulator.Session.Qemu` | QEMU argv, flash images, boot markers, machine args |
+| `Ide.Emulator.Session.ProcessHost` | Daemon spawn, port allocation, boot/TCP waits |
+| `Ide.Emulator.Session.Vnc` | VNC TCP readiness and RFB banner capture |
+| `Ide.Emulator.Session.Pypkjs` | pypkjs argv and process start |
+| `Ide.Emulator.Session.RuntimeSetup` | `runtime_status/1`, dependency install, init validation |
+| `Ide.Emulator.Session.Install` | PBW install orchestration and QEMU reset retries |
+| `Ide.Emulator.PBWInstaller.Putbytes` | PutBytes chunking and ack handling |
 | `IdeWeb.EmulatorController` | Launch, ping, install, control, kill; serves PBW artifact |
 | `IdeWeb.EmulatorVncChannel` | Relays RFB bytes between browser and QEMU over Phoenix channel `emulator_vnc:<session_id>` |
 | `IdeWeb.EmulatorProxySocket` | Raw WebSocket proxy to local TCP (used for `/ws/phone` and legacy `/ws/vnc`) |
@@ -61,7 +79,7 @@ flowchart LR
 | Module | Role |
 |--------|------|
 | `Ide.WatchModels` / `Ide.WatchModels.Profile` | Canonical watch catalog (`profile_for/1`, `profile_screen/1`); string-key maps at runtime |
-| `Ide.Emulator.Types` | Session API contracts: `session_info`, `runtime_status`, `simulator_settings`, `pbw_install_result`, errors |
+| `Ide.Emulator.Types` | Session API contracts: `session_info`, `runtime_status`, `simulator_settings`, `install_context`, `qemu_features`, `putbytes_phase_meta`, errors |
 | `Ide.Emulator.QemuControl` | QEMU `command/0` and `external_cli_command/0` encoders |
 | `Ide.Debugger.Types.SimulatorSettings` | Normalized simulator settings (shared with debugger; used by `apply_simulator_settings`) |
 

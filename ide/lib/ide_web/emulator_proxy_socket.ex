@@ -7,8 +7,14 @@ defmodule IdeWeb.EmulatorProxySocket do
 
   @type init_arg :: %{:target => {:tcp, String.t(), char()} | String.t()} | %{:url => String.t()}
 
+  @type proxy_state :: %{
+          optional(:client) => pid() | nil,
+          optional(:tcp) => port() | nil,
+          optional(:relay_logged) => boolean()
+        }
+
   @impl true
-  @spec init(init_arg()) :: {:ok, map()} | {:stop, term(), map()}
+  @spec init(init_arg()) :: {:ok, proxy_state()} | {:stop, term(), proxy_state()}
   def init(%{target: {:tcp, host, port}}) do
     case :gen_tcp.connect(String.to_charlist(host), port, [:binary, active: false], 5_000) do
       {:ok, socket} ->
@@ -28,7 +34,7 @@ defmodule IdeWeb.EmulatorProxySocket do
   def init(%{target: url}) when is_binary(url), do: init_url(url)
   def init(%{url: url}) when is_binary(url), do: init_url(url)
 
-  @spec init_url(String.t()) :: {:ok, map()} | {:stop, term(), map()}
+  @spec init_url(String.t()) :: {:ok, proxy_state()} | {:stop, term(), proxy_state()}
   defp init_url(url) do
     owner = self()
 

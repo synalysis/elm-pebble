@@ -120,7 +120,7 @@ defmodule Ide.Emulator.FirmwareScreenshot do
   # libpebble2 `Uint32` fields use network (big-endian) byte order.
   @doc false
   @spec parse_header_payload(binary()) ::
-          {:ok, map(), binary()} | {:error, Types.screenshot_error()}
+          {:ok, Types.screenshot_header(), binary()} | {:error, Types.screenshot_error()}
   def parse_header_payload(payload), do: parse_header(payload)
 
   defp parse_header(

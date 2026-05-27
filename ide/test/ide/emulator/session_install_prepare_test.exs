@@ -28,7 +28,7 @@ defmodule Ide.Emulator.SessionInstallPrepareTest do
 
     assert source =~ ~S/platform_putbytes_pacing(platform) when platform in ["emery", "flint", "gabbro"]/
     assert source =~ "chunk_size: config(:pbw_chunk_size, 256)"
-    assert File.read!("lib/ide/emulator/session.ex") =~ "InstallPrep.pacing_opts"
+    assert File.read!("lib/ide/emulator/session/install.ex") =~ "InstallPrep.pacing_opts"
   end
 
   test "session delegates QEMU payload validation to QemuControl" do

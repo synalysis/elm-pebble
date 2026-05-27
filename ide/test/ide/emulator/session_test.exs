@@ -172,21 +172,24 @@ defmodule Ide.Emulator.SessionTest do
   end
 
   test "qemu arguments declare platform-specific machine and local websocket vnc" do
+    legacy_features = %{new_qemu?: false, machines: MapSet.new()}
+
     state = %{
       platform: "basalt",
       bt_port: 12_000,
       console_port: 12_001,
       vnc_display: 7,
       vnc_ws_port: 12_002,
-      spi_image_path: "/tmp/spi.bin"
+      spi_image_path: "/tmp/spi.bin",
+      qemu_features: legacy_features
     }
 
     args = Session.qemu_args(state)
 
     assert ["-machine", "pebble-snowy-bb", "-cpu", "cortex-m4"] ==
-             Enum.take(Session.machine_args("basalt", "/tmp/spi.bin"), 4)
+             Enum.take(Session.machine_args("basalt", "/tmp/spi.bin", legacy_features), 4)
 
-    assert "-pflash" in args
+    assert "-pflash" in args or "-kernel" in args
     assert "-L" in args
     assert "-vnc" in args
     assert ":7" in args
@@ -213,7 +216,8 @@ defmodule Ide.Emulator.SessionTest do
   end
 
   test "emery qemu args match the SDK emulator launcher" do
-    args = Session.machine_args("emery", "/tmp/spi.bin")
+    legacy_features = %{new_qemu?: false, machines: MapSet.new()}
+    args = Session.machine_args("emery", "/tmp/spi.bin", legacy_features)
 
     assert ["-machine", "pebble-snowy-emery-bb", "-cpu", "cortex-m4"] == Enum.take(args, 4)
     assert "-pflash" in args
@@ -222,9 +226,8 @@ defmodule Ide.Emulator.SessionTest do
   end
 
   test "emulator launch waits for bluetooth ready console marker before pypkjs" do
+    assert Ide.Emulator.Session.Qemu.boot_markers() == ["Ready for communication"]
     source = File.read!("lib/ide/emulator/session.ex")
-
-    assert source =~ ~S/qemu_boot_markers(_state), do: ["Ready for communication"]/
     refute source =~ "maybe_wait_for_install_ready"
     install_prep = File.read!("lib/ide/emulator/install_prep.ex")
     assert install_prep =~ ~S/ensure_min_time_since_boot/
@@ -236,9 +239,10 @@ defmodule Ide.Emulator.SessionTest do
 
   test "launch waits for VNC RFB banner after TCP port is open" do
     source = File.read!("lib/ide/emulator/session.ex")
+    vnc = File.read!("lib/ide/emulator/session/vnc.ex")
 
-    assert source =~ "capture_vnc_rfb_connection"
-    assert source =~ "VncReady.capture_banner_open"
+    assert source =~ "Vnc.capture_rfb_connection"
+    assert vnc =~ "VncReady.capture_banner_open"
     assert source =~ "vnc_banner_ready: true"
     assert source =~ "vnc_banner_ready: false"
   end
@@ -325,9 +329,10 @@ defmodule Ide.Emulator.SessionTest do
 
   test "phone websocket proxy waits long enough for pypkjs cold start" do
     source = File.read!("lib/ide/emulator/session.ex")
+    pypkjs = File.read!("lib/ide/emulator/session/pypkjs.ex")
 
-    assert source =~ "local_port_call_timeout(:phone)"
-    assert source =~ "pypkjs_ready_timeout_ms"
+    assert pypkjs =~ "local_port_call_timeout(:phone)"
+    assert pypkjs =~ "pypkjs_ready_timeout_ms"
     assert source =~ "maybe_start_pypkjs_if_needed"
     refute source =~ "maybe_start_pypkjs_if_needed(%{has_phone_companion: true}"
   end

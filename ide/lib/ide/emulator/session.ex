@@ -6,7 +6,17 @@ defmodule Ide.Emulator.Session do
   require Logger
 
   alias Ide.Debugger.SimulatorSettings
-  alias Ide.Emulator.{InstallPrep, PBW, PBWInstaller, QemuControl, SdkImages, SlotLimiter, Types, VncReady}
+  alias Ide.Emulator.{InstallPrep, PBW, QemuControl, SlotLimiter, Types}
+  alias Ide.Emulator.Session.{
+    Bins,
+    Config,
+    Install,
+    ProcessHost,
+    Pypkjs,
+    Qemu,
+    RuntimeSetup,
+    Vnc
+  }
   alias Ide.Emulator.PebbleProtocol.Router
   alias Ide.WatchModels
 
@@ -40,19 +50,20 @@ defmodule Ide.Emulator.Session do
           vnc_rfb_banner: binary() | nil,
           vnc_tcp: port() | nil,
           vnc_tcp_buffer: binary(),
-          installing?: boolean()
+          installing?: boolean(),
+          qemu_features: Qemu.features()
         }
 
   @spec generate_id() :: String.t()
   def generate_id, do: random_id()
 
-  @spec start_link(keyword()) :: GenServer.on_start()
+  @spec start_link(Types.session_launch_opts()) :: GenServer.on_start()
   def start_link(opts) do
     id = Keyword.get(opts, :id) || random_id()
     GenServer.start_link(__MODULE__, Keyword.put(opts, :id, id), name: via(id))
   end
 
-  @spec child_spec(keyword()) :: Supervisor.child_spec()
+  @spec child_spec(Types.session_launch_opts()) :: Supervisor.child_spec()
   def child_spec(opts) do
     %{
       id: {__MODULE__, Keyword.get(opts, :id, make_ref())},
@@ -71,7 +82,7 @@ defmodule Ide.Emulator.Session do
   def install(pid) do
     try do
       with :ok <- GenServer.call(pid, :prepare_for_install, 90_000) do
-        do_install(pid, config(:native_install_retries, 4))
+        Install.do_install(pid, config(:native_install_retries, 4))
       end
     after
       _ = GenServer.call(pid, :install_finished, 5_000)
@@ -169,163 +180,12 @@ defmodule Ide.Emulator.Session do
       :ok
   end
 
-  defp do_install(pid, retries_left) do
-    with {:ok, context} <- GenServer.call(pid, :install_context, 5_000) do
-      case install_with_router(context) do
-        {:ok, result} ->
-          {:ok, result}
-
-        {:error, reason} = error ->
-    
-          maybe_retry_install(pid, reason, retries_left, error)
-      end
-    end
-  end
-
-  defp install_with_router(context) do
-    PBWInstaller.install(
-      context.protocol_router_pid,
-      context.artifact_path,
-      context.platform,
-      InstallPrep.pacing_opts(context.platform)
-    )
-  end
-
-  defp maybe_retry_install(pid, reason, retries_left, error) when retries_left > 0 do
-    if retryable_install_error?(reason) do
-      Logger.debug(
-        "embedded emulator install failed with retryable error #{inspect(reason)}; resetting QEMU and retrying"
-      )
-
-      Process.sleep(500)
-
-      case GenServer.call(pid, :reset_for_install_retry, 90_000) do
-        :ok ->
-          do_install(pid, retries_left - 1)
-
-        {:error, reset_reason} ->
-          Logger.debug(
-            "embedded emulator install retry reset failed #{inspect(reset_reason)} after #{inspect(reason)}"
-          )
-
-          _ = GenServer.call(pid, :restart_protocol_router, 10_000)
-          {:error, {:install_retry_reset_failed, reset_reason, reason}}
-      end
-    else
-      _ = GenServer.call(pid, :restart_protocol_router, 10_000)
-      error
-    end
-  end
-
-  defp maybe_retry_install(pid, _reason, _retries_left, error) do
-    _ = GenServer.call(pid, :restart_protocol_router, 10_000)
-    error
-  end
-
-  defp retryable_install_error?({:putbytes_failed, _meta, :timeout}), do: true
-  defp retryable_install_error?({:putbytes_failed, _meta, {:timeout, _observed}}), do: true
-  defp retryable_install_error?({:blob_insert_failed, _response}), do: true
-
-  defp retryable_install_error?(_reason), do: false
-
-  @spec runtime_status(String.t() | nil) :: Types.runtime_status()
-  def runtime_status(platform \\ nil) do
-    platform = normalize_platform(platform)
-    sdk_root = preferred_sdk_root()
-    sdk_toolchain_root = sdk_version_root(config(:sdk_core_version, "4.9.169"))
-
-    components = [
-      component(
-        :embedded_emulator,
-        "Embedded emulator",
-        enabled?(),
-        if(enabled?(), do: "enabled", else: "disabled by configuration"),
-        false
-      ),
-      command_component(:pebble_cli, "Pebble CLI", pebble_bin(), true),
-      component(
-        :pebble_sdk_python_env,
-        "Pebble SDK Python env",
-        SdkImages.sdk_python_env_present?(sdk_root),
-        Path.join(sdk_root, ".venv"),
-        true
-      ),
-      component(
-        :pebble_sdk_node_modules,
-        "Pebble SDK JS dependencies",
-        SdkImages.sdk_node_modules_present?(sdk_root),
-        Path.join(sdk_root, "node_modules"),
-        true
-      ),
-      component(
-        :pebble_arm_gcc,
-        "Pebble ARM GCC",
-        File.exists?(
-          Path.join(sdk_toolchain_root, "toolchain/arm-none-eabi/bin/arm-none-eabi-gcc")
-        ),
-        Path.join(sdk_toolchain_root, "toolchain/arm-none-eabi/bin/arm-none-eabi-gcc"),
-        true
-      ),
-      qemu_component(qemu_bin()),
-      command_component(:pypkjs, "pypkjs bridge", pypkjs_bin(), true),
-      component(
-        :qemu_micro_flash,
-        "QEMU micro flash image",
-        qemu_micro_flash_path(platform),
-        qemu_image_dir(platform),
-        true
-      ),
-      component(
-        :qemu_spi_flash,
-        "QEMU SPI flash image",
-        qemu_spi_flash_available?(platform),
-        qemu_image_dir(platform),
-        true
-      )
-    ]
-
-    missing = Enum.filter(components, &(&1.status == :missing))
-
-    %{
-      status: if(missing == [], do: :ok, else: :warning),
-      platform: platform,
-      components: components,
-      missing: missing,
-      installable: Enum.any?(missing, & &1.installable)
-    }
-  end
-
-  @spec install_runtime_dependencies(String.t() | nil) :: {:ok, Types.install_dependencies_result()}
-  def install_runtime_dependencies(platform \\ nil) do
-    platform = normalize_platform(platform)
-    before_status = runtime_status(platform)
-
-    steps =
-      before_status.missing
-      |> Enum.map(& &1.id)
-      |> Enum.uniq()
-      |> Enum.flat_map(&install_steps_for_component(&1, platform))
-      |> Enum.uniq_by(& &1.name)
-
-    results = run_install_steps(steps)
-    after_status = runtime_status(platform)
-
-    {:ok,
-     %{
-       platform: platform,
-       before: before_status,
-       after: after_status,
-       results: results,
-       output: render_install_results(results, after_status)
-     }}
-  end
-
   @impl true
   def init(opts) do
     Process.flag(:trap_exit, true)
-    platform = normalize_platform(Keyword.get(opts, :platform))
+    platform = RuntimeSetup.normalize_platform(Keyword.get(opts, :platform))
 
-    with :ok <- validate_runtime_requirements(platform),
+    with :ok <- RuntimeSetup.validate_runtime_requirements(platform),
          {:ok, state} <- build_state(Keyword.put(opts, :platform, platform)),
          {:ok, state} <- maybe_start_qemu(state),
          {:ok, state} <- maybe_start_protocol_router(state),
@@ -355,7 +215,7 @@ defmodule Ide.Emulator.Session do
       if Map.get(state, :has_phone_companion, false) do
         state
       else
-        cleanup_process(state.pypkjs_pid)
+        ProcessHost.cleanup_process(state.pypkjs_pid)
         %{state | pypkjs_pid: nil}
       end
 
@@ -373,8 +233,8 @@ defmodule Ide.Emulator.Session do
     do: {:reply, {:error, :embedded_protocol_router_not_started}, state}
 
   def handle_call(:direct_install_context, _from, state) do
-    cleanup_process(state.pypkjs_pid)
-    cleanup_process(state.protocol_router_pid)
+    ProcessHost.cleanup_process(state.pypkjs_pid)
+    ProcessHost.cleanup_process(state.protocol_router_pid)
 
     {:reply,
      {:ok,
@@ -388,7 +248,7 @@ defmodule Ide.Emulator.Session do
 
   def handle_call(:protocol_router_pid, _from, %{protocol_router_pid: pid} = state)
       when is_pid(pid) do
-    if live_pid?(pid) do
+    if ProcessHost.live_pid?(pid) do
       {:reply, {:ok, pid}, state}
     else
       {:reply, {:error, :embedded_protocol_router_not_started}, %{state | protocol_router_pid: nil}}
@@ -448,7 +308,7 @@ defmodule Ide.Emulator.Session do
 
   def handle_call({:control, protocol, payload}, _from, state) do
     with :ok <- QemuControl.validate_payload(protocol, payload) do
-      if live_pid?(state.protocol_router_pid) do
+      if ProcessHost.live_pid?(state.protocol_router_pid) do
         {:reply, Router.send_qemu_packet(state.protocol_router_pid, protocol, payload), state}
       else
         {:reply, {:error, :embedded_protocol_router_not_started},
@@ -464,7 +324,7 @@ defmodule Ide.Emulator.Session do
 
     commands = QemuControl.commands_from_simulator_settings(normalized)
 
-    if live_pid?(state.protocol_router_pid) do
+    if ProcessHost.live_pid?(state.protocol_router_pid) do
       result =
         Enum.reduce_while(commands, :ok, fn %{protocol: protocol, payload: payload}, :ok ->
           with :ok <- QemuControl.validate_payload(protocol, payload),
@@ -542,7 +402,7 @@ defmodule Ide.Emulator.Session do
     state = %{state | installing?: false, last_ping_ms: now_ms()}
 
     state =
-      if Map.get(state, :has_phone_companion, false) and not live_pid?(state.pypkjs_pid) do
+      if Map.get(state, :has_phone_companion, false) and not ProcessHost.live_pid?(state.pypkjs_pid) do
         case maybe_start_pypkjs(state) do
           {:ok, state} -> state
           {:error, _reason} -> state
@@ -603,43 +463,6 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  defp prepare_running_session_for_install(state) do
-    state = %{state | installing?: true, last_ping_ms: now_ms()}
-
-    with {:ok, state} <- ensure_protocol_router(state),
-         {:ok, state} <- maybe_start_pypkjs(state) do
-      :ok = InstallPrep.wait_before_reuse_install(state)
-      {:ok, state}
-    end
-  end
-
-  defp ensure_protocol_router(%{protocol_router_pid: pid} = state) when is_pid(pid) do
-    if live_pid?(pid), do: {:ok, state}, else: maybe_start_protocol_router(%{state | protocol_router_pid: nil})
-  end
-
-  defp ensure_protocol_router(state), do: maybe_start_protocol_router(state)
-
-  defp reset_for_install(state) do
-    state = reset_vnc_connection(state)
-    cleanup_process(state.pypkjs_pid)
-    cleanup_process(state.protocol_router_pid)
-    cleanup_process(state.qemu_pid)
-
-    with {:ok, _path} <- reset_spi_image(state.platform, state.spi_image_path),
-         {:ok, state} <-
-           maybe_start_qemu(%{
-             state
-             | pypkjs_pid: nil,
-               protocol_router_pid: nil,
-               qemu_pid: nil,
-               installing?: true
-           }),
-         {:ok, state} <- maybe_start_protocol_router(state) do
-      Process.sleep(config(:post_reset_settle_ms, 2_000))
-      {:ok, state}
-    end
-  end
-
   @impl true
   def handle_info(:idle_check, state) do
     if now_ms() - state.last_ping_ms > state.idle_timeout_ms do
@@ -672,142 +495,52 @@ defmodule Ide.Emulator.Session do
   end
 
   def handle_info({:tcp, tcp, data}, %{vnc_tcp: tcp} = state) when is_binary(data) do
-    buffer = Map.get(state, :vnc_tcp_buffer, <<>>)
-    {:noreply, %{state | vnc_tcp_buffer: buffer <> data}}
+    {:noreply, Vnc.append_tcp_buffer(state, data)}
   end
 
   def handle_info(_message, state), do: {:noreply, state}
-
   @impl true
   def terminate(_reason, state) do
-    close_vnc_tcp_port(state.vnc_tcp)
-    cleanup_process(state.qemu_pid)
-    cleanup_process(state.pypkjs_pid)
-    cleanup_process(state.protocol_router_pid)
+    Vnc.close_tcp_port(state.vnc_tcp)
+    ProcessHost.cleanup_process(state.qemu_pid)
+    ProcessHost.cleanup_process(state.pypkjs_pid)
+    ProcessHost.cleanup_process(state.protocol_router_pid)
     SlotLimiter.release(state.id)
     :ok
   end
 
   @spec qemu_args(map()) :: [String.t()]
-  def qemu_args(state) do
-    image_dir = qemu_image_dir(state.platform)
-    micro_flash = Path.join(image_dir, "qemu_micro_flash.bin")
-    qemu_features = Map.get(state, :qemu_features) || %{new_qemu?: false, machines: MapSet.new()}
-    tcp_opts = "server=on,wait=off"
-
-    firmware_args =
-      if qemu_features.new_qemu?, do: ["-kernel", micro_flash], else: ["-pflash", micro_flash]
-
-    pc_bios_args =
-      if qemu_features.new_qemu?,
-        do: qemu_keymap_args(state),
-        else: ["-L", pc_bios_dir()]
-
-    base =
-      [
-        "-rtc",
-        "base=localtime",
-        "-serial",
-        "null",
-        "-serial",
-        "tcp:127.0.0.1:#{state.bt_port},#{tcp_opts}",
-        "-serial",
-        "tcp:127.0.0.1:#{state.console_port},#{tcp_opts}"
-      ] ++
-        firmware_args ++
-        [
-          "-monitor",
-          "stdio"
-        ] ++
-        pc_bios_args ++
-        [
-          "-vnc",
-          ":#{state.vnc_display}"
-        ]
-
-    base ++ machine_args(state.platform, state.spi_image_path, qemu_features)
-  end
+  def qemu_args(state), do: Qemu.args(state)
 
   @spec pypkjs_args(map()) :: [String.t()]
-  def pypkjs_args(state) do
-    [
-      "--qemu",
-      "127.0.0.1:#{Map.get(state, :protocol_proxy_port, state.bt_port)}",
-      "--port",
-      Integer.to_string(state.phone_ws_port),
-      "--persist",
-      state.persist_dir
-    ]
-    |> maybe_append_layout_arg(state)
-  end
+  def pypkjs_args(state), do: Pypkjs.args(state)
 
-  @spec machine_args(String.t(), String.t() | nil, map()) :: [String.t()]
-  def machine_args(
-        platform,
-        spi_image_path,
-        qemu_features \\ %{new_qemu?: false, machines: MapSet.new()}
-      ) do
-    spi_pflash =
-      if qemu_features.new_qemu? do
-        ["-drive", "if=none,id=spi-flash,file=#{spi_image_path},format=raw"]
-      else
-        ["-pflash", spi_image_path]
-      end
+  @spec machine_args(String.t(), String.t() | nil, Qemu.features()) :: [String.t()]
+  def machine_args(platform, spi_image_path, qemu_features \\ %{new_qemu?: false, machines: MapSet.new()}),
+    do: Qemu.machine_args(platform, spi_image_path, qemu_features)
 
-    new_mtd_flash = ["-drive", "if=mtd,format=raw,file=#{spi_image_path}"]
+  @spec pypkjs_command(String.t()) ::
+          {:ok, String.t(), [String.t()]} | {:error, Types.session_atom_error()}
+  def pypkjs_command(pypkjs_bin), do: Pypkjs.command(pypkjs_bin)
 
-    new_board? =
-      qemu_features.new_qemu? and MapSet.member?(qemu_features.machines, "pebble-emery")
+  @spec tcp_port_open?(pos_integer()) :: boolean()
+  def tcp_port_open?(port), do: ProcessHost.tcp_port_open?(port)
 
-    audio_none = if new_board?, do: ["-audio", "driver=none,id=audio0"], else: []
+  @spec runtime_status(String.t() | nil) :: Types.runtime_status()
+  def runtime_status(platform \\ nil), do: RuntimeSetup.runtime_status(platform)
 
-    case platform do
-      "aplite" ->
-        ["-machine", "pebble-bb2", "-mtdblock", spi_image_path, "-cpu", "cortex-m3"]
-
-      "basalt" ->
-        ["-machine", "pebble-snowy-bb", "-cpu", "cortex-m4"] ++ spi_pflash
-
-      "chalk" ->
-        ["-machine", "pebble-s4-bb", "-cpu", "cortex-m4"] ++ spi_pflash
-
-      "diorite" ->
-        ["-machine", "pebble-silk-bb", "-mtdblock", spi_image_path, "-cpu", "cortex-m4"]
-
-      "emery" ->
-        if new_board? do
-          ["-machine", "pebble-emery", "-cpu", "cortex-m33"] ++ new_mtd_flash ++ audio_none
-        else
-          ["-machine", "pebble-snowy-emery-bb", "-cpu", "cortex-m4"] ++ spi_pflash
-        end
-
-      "flint" ->
-        if new_board? do
-          ["-machine", "pebble-flint", "-cpu", "cortex-m4"] ++ new_mtd_flash ++ audio_none
-        else
-          ["-machine", "pebble-silk-bb", "-cpu", "cortex-m4", "-mtdblock", spi_image_path]
-        end
-
-      "gabbro" ->
-        if new_board? do
-          ["-machine", "pebble-gabbro", "-cpu", "cortex-m33"] ++ new_mtd_flash ++ audio_none
-        else
-          ["-machine", "pebble-snowy-emery-bb", "-cpu", "cortex-m4"] ++ spi_pflash
-        end
-
-      _ ->
-        machine_args(WatchModels.default_id(), spi_image_path, qemu_features)
-    end
-  end
+  @spec install_runtime_dependencies(String.t() | nil) :: {:ok, Types.install_dependencies_result()}
+  def install_runtime_dependencies(platform \\ nil),
+    do: RuntimeSetup.install_runtime_dependencies(platform)
 
   defp build_state(opts) do
     platform = Keyword.fetch!(opts, :platform)
     project_slug = Keyword.get(opts, :project_slug, "")
     artifact_path = Keyword.get(opts, :artifact_path)
 
-    with {:ok, ports} <- allocate_ports(6),
-         {:ok, spi_image_path} <- make_spi_image(platform, project_slug),
-         {:ok, persist_dir} <- make_persist_dir(platform, project_slug) do
+    with {:ok, ports} <- ProcessHost.allocate_ports(6),
+         {:ok, spi_image_path} <- Qemu.make_spi_image(platform, project_slug),
+         {:ok, persist_dir} <- Qemu.make_persist_dir(platform, project_slug) do
       [console_port, bt_port, protocol_proxy_port, phone_ws_port, vnc_port, vnc_ws_port] = ports
 
       {:ok,
@@ -830,13 +563,13 @@ defmodule Ide.Emulator.Session do
          protocol_router_pid: nil,
          qemu_pid: nil,
          pypkjs_pid: nil,
-         qemu_features: qemu_features(),
+         qemu_features: Qemu.features(),
          spi_image_path: spi_image_path,
          persist_dir: persist_dir,
          installing?: false,
          last_ping_ms: now_ms(),
          last_boot_ms: 0,
-         idle_timeout_ms: config(:idle_timeout_ms, @default_idle_timeout_ms),
+         idle_timeout_ms: Config.config(:idle_timeout_ms, @default_idle_timeout_ms),
          vnc_banner_ready: false,
          vnc_rfb_banner: nil,
          vnc_tcp: nil,
@@ -845,24 +578,22 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  defp maybe_start_qemu(state) do
-    maybe_start_qemu(state, true)
-  end
+  defp maybe_start_qemu(state), do: maybe_start_qemu(state, true)
 
   defp maybe_start_qemu(state, allow_flash_reset?) do
-    if start_processes?() do
-      with {:ok, qemu_bin} <- qemu_bin(),
-           {:ok, pid} <- start_daemon(qemu_bin, qemu_args(state), "qemu:#{state.id}") do
-        case wait_for_qemu_boot(pid, state, 60_000) do
+    if Config.start_processes?() do
+      with {:ok, qemu_bin} <- Bins.qemu_bin(),
+           {:ok, pid} <- ProcessHost.start_daemon(qemu_bin, qemu_args(state), "qemu:#{state.id}") do
+        case ProcessHost.wait_for_qemu_boot(pid, state.console_port, 60_000) do
           :ok ->
-            # wait_for_qemu_boot already blocks on qemu_boot_markers ("Ready for communication").
+            # wait_for_qemu_boot already blocks on Qemu.boot_markers/0 ("Ready for communication").
             # Do not open a second console session for the same marker — it will never reappear and
             # adds a full install_ready_console_timeout_ms stall to every launch.
-            with :ok <- wait_for_tcp_port(state.vnc_port, config(:vnc_ready_timeout_ms, 30_000)),
+            with :ok <- Vnc.wait_for_tcp_port(state.vnc_port, Config.config(:vnc_ready_timeout_ms, 30_000)),
                  {:ok, vnc_rfb_banner, vnc_tcp} <-
-                   capture_vnc_rfb_connection(
+                   Vnc.capture_rfb_connection(
                      state.vnc_port,
-                     config(:vnc_rfb_ready_timeout_ms, 15_000)
+                     Config.config(:vnc_rfb_ready_timeout_ms, 15_000)
                    ) do
               {:ok,
                %{
@@ -876,19 +607,19 @@ defmodule Ide.Emulator.Session do
                }}
             else
               {:error, reason} ->
-                cleanup_process(pid)
+                ProcessHost.cleanup_process(pid)
                 {:error, reason}
             end
 
           {:error, {:qemu_boot_firmware_failure, _tail}} when allow_flash_reset? ->
-            cleanup_process(pid)
+            ProcessHost.cleanup_process(pid)
 
-            with {:ok, _path} <- reset_spi_image(state.platform, state.spi_image_path) do
+            with {:ok, _path} <- Qemu.reset_spi_image(state.platform, state.spi_image_path) do
               maybe_start_qemu(state, false)
             end
 
           {:error, reason} ->
-            cleanup_process(pid)
+            ProcessHost.cleanup_process(pid)
             {:error, reason}
         end
       end
@@ -898,7 +629,7 @@ defmodule Ide.Emulator.Session do
   end
 
   defp maybe_start_protocol_router(state) do
-    if start_processes?() do
+    if Config.start_processes?() do
       case Router.start_link(qemu_port: state.bt_port, proxy_port: state.protocol_proxy_port) do
         {:ok, pid} -> {:ok, %{state | protocol_router_pid: pid}}
         {:error, reason} -> {:error, {:protocol_router_start_failed, reason}}
@@ -908,11 +639,9 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  # The browser always opens the phone websocket (AppLog, install handoff, controls).
-  # Start pypkjs during session init so the proxy is not racing a 10s client timeout.
   defp maybe_start_pypkjs_if_needed(state) do
-    if start_processes?() do
-      case maybe_start_pypkjs(state) do
+    if Config.start_processes?() do
+      case Pypkjs.maybe_start(state) do
         {:ok, state} ->
           {:ok, state}
 
@@ -925,223 +654,9 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  defp maybe_start_pypkjs(%{pypkjs_pid: pid} = state) when is_pid(pid) do
-    if live_pid?(pid), do: {:ok, state}, else: maybe_start_pypkjs(%{state | pypkjs_pid: nil})
-  end
+  defp maybe_start_pypkjs(state), do: Pypkjs.maybe_start(state)
 
-  defp maybe_start_pypkjs(state) do
-    if start_processes?() do
-      with {:ok, pypkjs_bin} <- pypkjs_bin(),
-           {:ok, command, args_prefix} <- pypkjs_command(pypkjs_bin),
-           {:ok, pid} <-
-             start_daemon(command, args_prefix ++ pypkjs_args(state), "pypkjs:#{state.id}"),
-           :ok <-
-             wait_for_daemon(pid, state.phone_ws_port, config(:pypkjs_ready_timeout_ms, 30_000)) do
-        {:ok, %{state | pypkjs_pid: pid}}
-      end
-    else
-      {:ok, state}
-    end
-  end
-
-  defp local_port_call_timeout(:phone) do
-    config(:phone_local_port_timeout_ms, config(:pypkjs_ready_timeout_ms, 30_000) + 5_000)
-  end
-
-  defp local_port_call_timeout(_kind), do: 5_000
-
-  defp start_daemon(command, args, prefix) do
-    case MuonTrap.Daemon.start_link(command, args,
-           log_output: :debug,
-           log_prefix: prefix,
-           stderr_to_stdout: true
-         ) do
-      {:ok, pid} -> {:ok, pid}
-      {:error, reason} -> {:error, {:daemon_start_failed, command, reason}}
-    end
-  end
-
-  defp wait_for_daemon(pid, port, timeout_ms) do
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    wait_for_daemon(pid, port, deadline, nil)
-  end
-
-  defp wait_for_qemu_boot(pid, %{console_port: console_port} = state, timeout_ms) do
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    markers = qemu_boot_markers(state)
-
-    with {:ok, socket} <- wait_for_tcp_socket(pid, console_port, deadline) do
-      wait_for_qemu_boot_marker(pid, socket, deadline, <<>>, markers)
-    end
-  end
-
-  # pypkjs connects over the BT proxy during init; earlier console markers only mean
-  # the launcher UI is up, not that libpebble2 can complete fetch_watch_info/0.
-  defp qemu_boot_markers(_state), do: ["Ready for communication"]
-
-  defp wait_for_tcp_socket(pid, port, deadline) do
-    cond do
-      not Process.alive?(pid) ->
-        {:error, {:daemon_exited_before_ready, port}}
-
-      System.monotonic_time(:millisecond) >= deadline ->
-        {:error, {:daemon_not_ready, port, :not_ready}}
-
-      true ->
-        case :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 250) do
-          {:ok, socket} ->
-            {:ok, socket}
-
-          {:error, _reason} ->
-            Process.sleep(100)
-            wait_for_tcp_socket(pid, port, deadline)
-        end
-    end
-  end
-
-  defp wait_for_qemu_boot_marker(pid, socket, deadline, received, markers) do
-    cond do
-      boot_marker?(received, markers) ->
-        :gen_tcp.close(socket)
-        :ok
-
-      not Process.alive?(pid) ->
-        :gen_tcp.close(socket)
-        {:error, :qemu_exited_before_boot}
-
-      System.monotonic_time(:millisecond) >= deadline ->
-        :gen_tcp.close(socket)
-
-        reason =
-          if qemu_firmware_failure?(received) do
-            {:qemu_boot_firmware_failure, console_tail(received)}
-          else
-            {:qemu_boot_timeout, console_tail(received)}
-          end
-
-        {:error, reason}
-
-      true ->
-        case :gen_tcp.recv(socket, 0, 250) do
-          {:ok, data} ->
-            wait_for_qemu_boot_marker(pid, socket, deadline, received <> data, markers)
-
-          {:error, :timeout} ->
-            wait_for_qemu_boot_marker(pid, socket, deadline, received, markers)
-
-          {:error, reason} ->
-            :gen_tcp.close(socket)
-            {:error, {:qemu_console_closed, reason}}
-        end
-    end
-  end
-
-  defp boot_marker?(data, markers) do
-    Enum.any?(markers, fn marker ->
-      :binary.match(data, marker) != :nomatch
-    end)
-  end
-
-  defp qemu_firmware_failure?(data) do
-    Enum.any?(["Invalid firmware description", "SAD WATCH"], fn marker ->
-      :binary.match(data, marker) != :nomatch
-    end)
-  end
-
-  defp console_tail(data) when is_binary(data) do
-    size = byte_size(data)
-    tail_size = min(size, 256)
-    tail = binary_part(data, size - tail_size, tail_size)
-
-    if String.valid?(tail) do
-      tail
-    else
-      "base16:" <> Base.encode16(tail, case: :lower)
-    end
-  end
-
-  defp wait_for_daemon(pid, port, deadline, last_error) do
-    cond do
-      not Process.alive?(pid) ->
-        {:error, {:daemon_exited_before_ready, port}}
-
-      tcp_port_open?(port) ->
-        :ok
-
-      System.monotonic_time(:millisecond) >= deadline ->
-        {:error, {:daemon_not_ready, port, last_error}}
-
-      true ->
-        Process.sleep(100)
-        wait_for_daemon(pid, port, deadline, :not_ready)
-    end
-  end
-
-  @spec tcp_port_open?(pos_integer()) :: boolean()
-  def tcp_port_open?(port) when is_integer(port) do
-    case :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 250) do
-      {:ok, socket} ->
-        :gen_tcp.close(socket)
-        true
-
-      {:error, _reason} ->
-        false
-    end
-  end
-
-  defp wait_for_tcp_port(port, timeout_ms) when is_integer(port) and is_integer(timeout_ms) do
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    wait_for_tcp_port_loop(port, deadline)
-  end
-
-  defp wait_for_tcp_port_loop(port, deadline) do
-    cond do
-      tcp_port_open?(port) ->
-        :ok
-
-      System.monotonic_time(:millisecond) >= deadline ->
-        {:error, {:port_not_ready, :vnc, port}}
-
-      true ->
-        Process.sleep(50)
-        wait_for_tcp_port_loop(port, deadline)
-    end
-  end
-
-  defp capture_vnc_rfb_connection(port, timeout_ms) do
-    case VncReady.capture_banner_open(port, timeout_ms) do
-      {:ok, banner, tcp} -> {:ok, banner, tcp}
-      {:error, reason} -> {:error, {:port_not_ready, :vnc_rfb, port, reason}}
-    end
-  end
-
-  defp reset_vnc_connection(state) do
-    close_vnc_tcp_port(state.vnc_tcp)
-
-    %{
-      state
-      | vnc_tcp: nil,
-        vnc_tcp_buffer: <<>>,
-        vnc_rfb_banner: nil,
-        vnc_banner_ready: false
-    }
-  end
-
-  defp close_vnc_tcp_port(nil), do: :ok
-
-  defp close_vnc_tcp_port(tcp) when is_port(tcp) do
-    :gen_tcp.close(tcp)
-  end
-
-  defp maybe_append_layout_arg(args, state) do
-    layout_path = Path.join(qemu_image_dir(state.platform), "layouts.json")
-
-    if File.exists?(layout_path) do
-      args ++ ["--layout", layout_path]
-    else
-      args
-    end
-  end
+  defp local_port_call_timeout(kind), do: Pypkjs.local_port_call_timeout(kind)
 
   @spec public_info(state()) :: Types.session_info()
   defp public_info(state) do
@@ -1164,7 +679,7 @@ defmodule Ide.Emulator.Session do
       kill_path: "/api/emulator/#{state.id}/kill",
       screen: screen,
       controls: supported_controls(),
-      backend_enabled: enabled?(),
+      backend_enabled: Config.enabled?(),
       display_ready: display_ready?(state),
       phone_bridge_ready: phone_bridge_ready?(state),
       installing: Map.get(state, :installing?, false)
@@ -1172,68 +687,16 @@ defmodule Ide.Emulator.Session do
   end
 
   defp display_ready?(state) do
-    start_processes?() and live_pid?(state.qemu_pid) and Map.get(state, :vnc_banner_ready, false)
+    Config.start_processes?() and ProcessHost.live_pid?(state.qemu_pid) and
+      Map.get(state, :vnc_banner_ready, false)
   end
 
   defp phone_bridge_ready?(state) do
-    start_processes?() and live_pid?(state.pypkjs_pid) and tcp_port_open?(state.phone_ws_port)
+    Config.start_processes?() and ProcessHost.live_pid?(state.pypkjs_pid) and
+      tcp_port_open?(state.phone_ws_port)
   end
 
   defp supported_controls, do: QemuControl.supported_controls()
-
-  defp allocate_ports(count) do
-    ports =
-      Enum.map(1..count, fn _ ->
-        {:ok, socket} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
-        {:ok, port} = :inet.port(socket)
-        :gen_tcp.close(socket)
-        port
-      end)
-
-    {:ok, ports}
-  rescue
-    error -> {:error, {:port_allocation_failed, error}}
-  end
-
-  defp make_spi_image(platform, project_slug) do
-    source_dir = qemu_image_dir(platform)
-    raw = Path.join(source_dir, "qemu_spi_flash.bin")
-    bz2 = raw <> ".bz2"
-    path = Path.join(emulator_state_dir(project_slug, platform), "qemu_spi_flash.bin")
-
-    with :ok <- File.mkdir_p(Path.dirname(path)) do
-
-      cond do
-        File.exists?(raw) ->
-          File.cp(raw, path)
-          {:ok, path}
-
-        File.exists?(bz2) ->
-          decompress_bzip2(bz2, path)
-
-        start_processes?() ->
-          {:error, {:qemu_flash_image_not_found, source_dir}}
-
-        true ->
-          File.touch(path)
-          {:ok, path}
-      end
-    end
-  end
-
-  defp reset_spi_image(platform, path) do
-    source_dir = qemu_image_dir(platform)
-    raw = Path.join(source_dir, "qemu_spi_flash.bin")
-    bz2 = raw <> ".bz2"
-
-    with :ok <- File.mkdir_p(Path.dirname(path)) do
-      cond do
-        File.exists?(raw) -> with :ok <- File.cp(raw, path), do: {:ok, path}
-        File.exists?(bz2) -> decompress_bzip2(bz2, path)
-        true -> {:error, {:qemu_flash_image_not_found, source_dir}}
-      end
-    end
-  end
 
   defp app_uuid(path, platform) when is_binary(path) do
     case PBW.load(path, platform) do
@@ -1248,862 +711,76 @@ defmodule Ide.Emulator.Session do
 
   defp app_uuid(_path, _platform), do: nil
 
-  defp make_persist_dir(platform, project_slug) do
-    dir = Path.join(emulator_state_dir(project_slug, platform), "pypkjs")
+  defp prepare_running_session_for_install(state) do
+    state = %{state | installing?: true, last_ping_ms: now_ms()}
 
-    case File.mkdir_p(dir) do
-      :ok -> {:ok, dir}
-      {:error, reason} -> {:error, {:persist_dir_failed, reason}}
+    with {:ok, state} <- ensure_protocol_router(state),
+         {:ok, state} <- maybe_start_pypkjs(state) do
+      :ok = InstallPrep.wait_before_reuse_install(state)
+      {:ok, state}
     end
   end
 
-  @spec emulator_state_dir(String.t(), String.t()) :: String.t()
-  defp emulator_state_dir(session_key, platform) do
-    root = config(:state_root, Path.join(System.tmp_dir!(), "elm-pebble-emulator-state"))
-
-    Path.join([
-      root,
-      safe_path_fragment(session_key, "project"),
-      safe_path_fragment(platform, "platform")
-    ])
+  defp ensure_protocol_router(%{protocol_router_pid: pid} = state) when is_pid(pid) do
+    if ProcessHost.live_pid?(pid),
+      do: {:ok, state},
+      else: maybe_start_protocol_router(%{state | protocol_router_pid: nil})
   end
 
-  defp safe_path_fragment(value, fallback) do
-    value
-    |> to_string()
-    |> String.trim()
-    |> then(fn
-      "" -> fallback
-      text -> text
-    end)
-    |> String.replace(~r/[^A-Za-z0-9_.-]+/, "-")
-  end
+  defp ensure_protocol_router(state), do: maybe_start_protocol_router(state)
 
-  defp decompress_bzip2(source, target) do
-    case System.find_executable("bzip2") || System.find_executable("bunzip2") do
-      nil ->
-        {:error, :bzip2_not_found}
+  defp reset_for_install(%{} = state) do
+    Vnc.close_tcp_port(state.vnc_tcp)
 
-      bin ->
-        {data, exit_code} = System.cmd(bin, ["-dc", source], stderr_to_stdout: true)
+    state = %{
+      state
+      | vnc_tcp: nil,
+        vnc_tcp_buffer: <<>>,
+        vnc_rfb_banner: nil,
+        vnc_banner_ready: false
+    }
+    ProcessHost.cleanup_process(state.pypkjs_pid)
+    ProcessHost.cleanup_process(state.protocol_router_pid)
+    ProcessHost.cleanup_process(state.qemu_pid)
 
-        if exit_code == 0 do
-          File.write(target, data)
-          {:ok, target}
-        else
-          {:error, {:bzip2_failed, data}}
-        end
+    with {:ok, _path} <- Qemu.reset_spi_image(state.platform, state.spi_image_path),
+         {:ok, state} <-
+           maybe_start_qemu(%{
+             state
+             | pypkjs_pid: nil,
+               protocol_router_pid: nil,
+               qemu_pid: nil,
+               installing?: true
+           }),
+         {:ok, state} <- maybe_start_protocol_router(state) do
+      Process.sleep(Config.config(:post_reset_settle_ms, 2_000))
+      {:ok, state}
     end
   end
-
-  defp qemu_features do
-    case qemu_bin() do
-      {:ok, qemu_bin} ->
-        %{
-          new_qemu?: qemu_major_version(qemu_bin) >= 7,
-          machines: qemu_machines(qemu_bin)
-        }
-
-      {:error, _reason} ->
-        %{new_qemu?: false, machines: MapSet.new()}
-    end
-  end
-
-  defp qemu_major_version(qemu_bin) do
-    case System.cmd(qemu_bin, ["--version"], stderr_to_stdout: true) do
-      {output, 0} ->
-        case Regex.run(~r/version\s+(\d+)\./, output) do
-          [_, major] -> String.to_integer(major)
-          _ -> 0
-        end
-
-      {_output, _exit_code} ->
-        0
-    end
-  rescue
-    _ -> 0
-  end
-
-  defp qemu_machines(qemu_bin) do
-    case System.cmd(qemu_bin, ["-machine", "help"], stderr_to_stdout: true) do
-      {output, 0} ->
-        output
-        |> String.split("\n")
-        |> Enum.map(fn line ->
-          line |> String.trim() |> String.split(~r/\s+/, parts: 2) |> List.first()
-        end)
-        |> Enum.reject(&(&1 in [nil, "", "Supported"]))
-        |> MapSet.new()
-
-      {_output, _exit_code} ->
-        MapSet.new()
-    end
-  rescue
-    _ -> MapSet.new()
-  end
-
-  defp qemu_keymap_args(state) do
-    root = Path.join(Map.get(state, :persist_dir) || System.tmp_dir!(), "qemu-pc-bios")
-    keymap_dir = Path.join(root, "keymaps")
-    target = Path.join(keymap_dir, "en-us")
-
-    with :ok <- File.mkdir_p(keymap_dir),
-         {:ok, content} <- qemu_keymap_content(),
-         :ok <- File.write(target, content) do
-      ["-L", root]
-    else
-      _ -> []
-    end
-  end
-
-  defp qemu_keymap_content do
-    source = Path.join(pc_bios_dir(), "keymaps/en-us")
-
-    case File.read(source) do
-      {:ok, content} ->
-        content =
-          content
-          |> String.split("\n")
-          |> Enum.reject(&(String.trim(&1) |> String.starts_with?("include ")))
-          |> Enum.join("\n")
-
-        {:ok, content}
-
-      {:error, _reason} ->
-        {:ok, "map 0x409\n"}
-    end
-  end
-
-  defp qemu_image_dir(platform) do
-    qemu_image_roots()
-    |> Enum.find(fn root -> SdkImages.images_present?(root, platform) end)
-    |> case do
-      root when is_binary(root) -> Path.join([root, platform, "qemu"])
-      nil -> Path.join([preferred_qemu_image_root(), platform, "qemu"])
-    end
-  end
-
-  defp pc_bios_dir do
-    Enum.find_value(qemu_data_roots(), fn root ->
-      if File.exists?(Path.join(root, "keymaps/en-us")), do: root
-    end) || ""
-  end
-
-  defp qemu_data_roots do
-    configured_root = config(:qemu_data_root, nil)
-
-    configured_roots =
-      if is_binary(configured_root) and configured_root != "", do: [configured_root], else: []
-
-    sdk_roots =
-      Enum.map(sdk_roots(), fn root ->
-        path = Path.join(root, "toolchain/lib/pc-bios")
-        path
-      end)
-
-    qemu_sdk_roots =
-      case qemu_bin() do
-        {:ok, path} ->
-          case qemu_bin_sdk_root(path) do
-            root when is_binary(root) -> [Path.join(root, "toolchain/lib/pc-bios")]
-            nil -> []
-          end
-
-        {:error, _reason} ->
-          []
-      end
-
-    system_roots = ["/usr/share/qemu", "/usr/local/share/qemu"]
-
-    configured_roots ++ qemu_sdk_roots ++ sdk_roots ++ system_roots
-  end
-
-  defp qemu_bin do
-    resolve_bin(
-      config(:qemu_bin, nil),
-      ["qemu-pebble", "qemu-system-arm"],
-      qemu_pebble_candidates(),
-      :qemu_not_found
-    )
-  end
-
-  defp pypkjs_bin do
-    resolve_bin(config(:pypkjs_bin, nil), ["pypkjs"], pypkjs_candidates(), :pypkjs_not_found)
-  end
-
-  defp pebble_bin do
-    resolve_bin(config(:pebble_bin, nil), ["pebble"], pebble_candidates(), :pebble_cli_not_found)
-  end
-
-  defp resolve_bin(configured, fallbacks, candidates, error) do
-    cond do
-      executable_file?(configured) ->
-        {:ok, configured}
-
-      bin = find_executable(fallbacks) ->
-        {:ok, bin}
-
-      bin = Enum.find(candidates, &executable_file?/1) ->
-        {:ok, bin}
-
-      true ->
-        {:error, error}
-    end
-  end
-
-  defp find_executable(fallbacks) do
-    Enum.find_value(fallbacks, &System.find_executable/1)
-  end
-
-  defp executable_file?(path) when is_binary(path) and path != "" do
-    File.exists?(path) and not File.dir?(path)
-  end
-
-  defp executable_file?(_), do: false
-
-  defp qemu_pebble_candidates do
-    sdk_roots()
-    |> Enum.map(&Path.join(&1, "toolchain/bin/qemu-pebble"))
-  end
-
-  defp pypkjs_candidates do
-    [
-      Path.expand(".local/share/uv/tools/pebble-tool/bin/pypkjs", System.user_home!()),
-      "/opt/pipx/venvs/pebble-tool/bin/pypkjs",
-      "/usr/local/bin/pypkjs"
-    ]
-  end
-
-  defp pebble_candidates do
-    [
-      Path.expand(".local/share/uv/tools/pebble-tool/bin/pebble", System.user_home!()),
-      Path.expand(".local/bin/pebble", System.user_home!()),
-      "/opt/pipx/venvs/pebble-tool/bin/pebble",
-      "/usr/local/bin/pebble"
-    ]
-  end
-
-  @spec pypkjs_command(String.t()) ::
-          {:ok, String.t(), [String.t()]} | {:error, Types.session_atom_error()}
-  def pypkjs_command(pypkjs_bin) do
-    wrapper_path = Path.expand("../../../priv/python/embedded_pypkjs.py", __DIR__)
-
-    with {:ok, python} <- pypkjs_python(pypkjs_bin),
-         true <- File.exists?(wrapper_path) do
-      {:ok, python, [wrapper_path]}
-    else
-      false -> {:ok, pypkjs_bin, []}
-      {:error, _reason} -> {:ok, pypkjs_bin, []}
-    end
-  end
-
-  defp pypkjs_python(pypkjs_bin) do
-    with {:ok, <<"#!", rest::binary>>} <- File.read(pypkjs_bin),
-         [first_line | _] <- String.split(rest, "\n", parts: 2),
-         python when python != "" <- String.trim(first_line),
-         true <- executable_file?(python) do
-      {:ok, python}
-    else
-      _ -> {:error, :pypkjs_python_not_found}
-    end
-  end
-
-  defp sdk_roots do
-    case config(:sdk_roots, nil) do
-      roots when is_list(roots) ->
-        Enum.filter(roots, &is_binary/1)
-
-      _ ->
-        home = System.user_home!()
-
-        sdk_roots_for_os(home)
-    end
-  end
-
-  defp sdk_roots_for_os(home) do
-    linux_roots = [
-      Path.expand(".pebble-sdk/SDKs/current", home),
-      Path.expand(".pebble-sdk/SDKs/4.9.169", home),
-      Path.expand(".pebble-sdk/SDKs/4.9.148", home)
-    ]
-
-    mac_roots = [
-      Path.expand("Library/Application Support/Pebble SDK/SDKs/current", home),
-      Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.169", home),
-      Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.148", home),
-      Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.77", home)
-    ]
-
-    case :os.type() do
-      {:unix, :darwin} -> mac_roots ++ linux_roots
-      _ -> linux_roots ++ mac_roots
-    end
-  end
-
-  defp validate_runtime_requirements(platform) do
-    cond do
-      not enabled?() ->
-        {:error, :embedded_emulator_disabled}
-
-      config(:validate_runtime, true) == false ->
-        :ok
-
-      true ->
-        case maybe_download_qemu_images(platform) do
-          :ok ->
-            missing =
-              platform
-              |> runtime_status()
-              |> Map.fetch!(:missing)
-              |> Enum.map(&component_missing_detail/1)
-
-            case missing do
-              [] -> :ok
-              missing -> {:error, {:embedded_emulator_unavailable, Enum.reverse(missing)}}
-            end
-
-          {:error, reason} ->
-            {:error, {:embedded_emulator_image_download_failed, reason}}
-        end
-    end
-  end
-
-  defp component_missing_detail(%{label: label, detail: detail})
-       when is_binary(label) and is_binary(detail) do
-    "#{label}: #{detail}"
-  end
-
-  defp component_missing_detail(%{label: label}) when is_binary(label), do: label
-  defp component_missing_detail(component), do: inspect(component)
-
-  defp component(id, label, true, detail, installable),
-    do: %{id: id, label: label, status: :ok, detail: detail, installable: installable}
-
-  defp component(id, label, _present, detail, installable),
-    do: %{id: id, label: label, status: :missing, detail: detail, installable: installable}
-
-  defp command_component(id, label, {:ok, path}, installable),
-    do: component(id, label, true, path, installable)
-
-  defp command_component(id, label, {:error, reason}, installable),
-    do: component(id, label, false, inspect(reason), installable)
-
-  defp qemu_component({:ok, path}) do
-    case qemu_health(path) do
-      :ok ->
-        component(:qemu, "Pebble QEMU", true, path, true)
-
-      {:error, detail} ->
-        component(:qemu, "Pebble QEMU", false, detail, false)
-    end
-  end
-
-  defp qemu_component({:error, reason}) do
-    component(:qemu, "Pebble QEMU", false, inspect(reason), true)
-  end
-
-  defp qemu_health(path) do
-    case System.cmd(path, ["--version"], stderr_to_stdout: true) do
-      {_output, 0} ->
-        :ok
-
-      {output, exit_code} ->
-        {:error, qemu_health_detail(path, output, exit_code)}
-    end
-  rescue
-    error -> {:error, "not runnable: #{Exception.message(error)}"}
-  end
-
-  defp qemu_health_detail(path, output, exit_code) do
-    output = String.trim(output || "")
-
-    cond do
-      String.contains?(output, "libpixman-1.0.dylib") ->
-        "#{path} is not runnable: missing x86_64 Homebrew pixman at /usr/local/opt/pixman. " <>
-          "Install Rosetta and x86_64 Homebrew pixman with: arch -x86_64 /usr/local/bin/brew install pixman"
-
-      String.contains?(output, "libSDL2-2.0.0.dylib") ->
-        "#{path} is not runnable: missing x86_64 Homebrew sdl2 at /usr/local/opt/sdl2. " <>
-          "Install Rosetta and x86_64 Homebrew sdl2 with: arch -x86_64 /usr/local/bin/brew install sdl2"
-
-      String.contains?(output, "libgthread-2.0.0.dylib") ->
-        "#{path} is not runnable: missing x86_64 Homebrew glib at /usr/local/opt/glib. " <>
-          "Install Rosetta and x86_64 Homebrew glib with: arch -x86_64 /usr/local/bin/brew install glib"
-
-      String.contains?(output, "Library not loaded") ->
-        "#{path} is not runnable: #{single_line(output)}"
-
-      library = missing_linux_shared_library(output) ->
-        linux_shared_library_detail(path, library)
-
-      output != "" ->
-        "#{path} exited with #{exit_code}: #{single_line(output)}"
-
-      true ->
-        "#{path} exited with #{exit_code}"
-    end
-  end
-
-  defp single_line(output) do
-    output
-    |> String.split("\n", trim: true)
-    |> Enum.map(&String.trim/1)
-    |> Enum.join(" ")
-  end
-
-  defp missing_linux_shared_library(output) do
-    case Regex.run(~r/error while loading shared libraries: ([^:]+):/, output) do
-      [_match, library] -> library
-      _ -> nil
-    end
-  end
-
-  defp linux_shared_library_detail(path, "libsndio.so.7") do
-    "#{path} is not runnable: missing Linux shared library libsndio.so.7. " <>
-      "Debian/Ubuntu: install libsndio7.0. " <>
-      "Fedora: sndio is not currently in the standard Fedora repositories; install a compatible sndio package from a trusted source or build sndio from source, then recheck."
-  end
-
-  defp linux_shared_library_detail(path, "libpixman-1.so.0") do
-    "#{path} is not runnable: missing Linux shared library libpixman-1.so.0. " <>
-      "Debian/Ubuntu: install libpixman-1-0 (Docker: rebuild the IDE image with qemu-system-common). " <>
-      "Fedora: install pixman, then recheck."
-  end
-
-  defp linux_shared_library_detail(path, "libSDL2-2.0.so.0") do
-    "#{path} is not runnable: missing Linux shared library libSDL2-2.0.so.0. " <>
-      "Debian/Ubuntu: install libsdl2-2.0-0, then recheck."
-  end
-
-  defp linux_shared_library_detail(path, library) do
-    "#{path} is not runnable: missing Linux shared library #{library}. " <>
-      "Install the OS package that provides #{library}, then recheck."
-  end
-
-  defp install_steps_for_component(id, platform)
-       when id in [:qemu, :qemu_micro_flash, :qemu_spi_flash] do
-    [
-      %{name: :pebble_tool, fun: &install_pebble_tool/0},
-      %{name: :pebble_sdk, fun: fn -> install_pebble_sdk() end},
-      %{name: :qemu_images, fun: fn -> install_qemu_images(platform) end}
-    ]
-  end
-
-  defp install_steps_for_component(:pypkjs, _platform) do
-    [%{name: :pebble_tool, fun: &install_pebble_tool/0}]
-  end
-
-  defp install_steps_for_component(:pebble_cli, _platform) do
-    [%{name: :pebble_tool, fun: &install_pebble_tool/0}]
-  end
-
-  defp install_steps_for_component(:pebble_sdk_python_env, _platform) do
-    [%{name: :pebble_sdk, fun: fn -> install_pebble_sdk() end}]
-  end
-
-  defp install_steps_for_component(:pebble_sdk_node_modules, _platform) do
-    [%{name: :pebble_sdk, fun: fn -> install_pebble_sdk() end}]
-  end
-
-  defp install_steps_for_component(:pebble_arm_gcc, _platform) do
-    [
-      %{name: :pebble_tool, fun: &install_pebble_tool/0},
-      %{name: :pebble_sdk, fun: fn -> install_pebble_sdk() end}
-    ]
-  end
-
-  defp install_steps_for_component(_id, _platform), do: []
-
-  defp run_install_steps(steps) do
-    Enum.reduce_while(steps, [], fn step, results ->
-      result = run_install_step(step)
-      results = results ++ [result]
-
-      case result.status do
-        :ok -> {:cont, results}
-        :error -> {:halt, results}
-      end
-    end)
-  end
-
-  defp run_install_step(%{name: name, fun: fun}) do
-    case fun.() do
-      {:ok, output} -> %{name: name, status: :ok, output: output}
-      {:error, reason} -> %{name: name, status: :error, output: inspect(reason)}
-    end
-  rescue
-    error -> %{name: name, status: :error, output: Exception.message(error)}
-  end
-
-  defp install_pebble_sdk do
-    version = config(:sdk_core_version, "4.9.169")
-    sdk_root = sdk_version_root(version)
-    preferred_root = preferred_sdk_root()
-
-    opts =
-      [
-        sdk_version: version,
-        python: pebble_tool_python()
-      ]
-      |> maybe_put_metadata_url(config(:sdk_core_metadata_url, nil))
-      |> maybe_put_archive_path(config(:sdk_core_archive_path, nil))
-      |> maybe_put_toolchain_archive_path(config(:sdk_toolchain_archive_path, nil))
-
-    case ensure_sdk_roots_with_toolchain([sdk_root, preferred_root], opts) do
-      :ok -> {:ok, "Pebble SDK #{version} is available in #{sdk_root}."}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp ensure_sdk_roots_with_toolchain(roots, opts) do
-    roots
-    |> Enum.uniq()
-    |> Enum.reduce_while(:ok, fn root, :ok ->
-      case ensure_sdk_with_toolchain(root, opts) do
-        :ok -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
-  end
-
-  defp ensure_sdk_with_toolchain(sdk_root, opts) do
-    with :ok <- SdkImages.ensure_sdk_core(sdk_root, opts),
-         :ok <- SdkImages.ensure_toolchain(sdk_root, opts) do
-      :ok
-    end
-  end
-
-  defp install_qemu_images(platform) do
-    image_root = preferred_qemu_image_root()
-
-    opts =
-      [
-        image_root: image_root,
-        sdk_version: config(:sdk_core_version, "4.9.169")
-      ]
-      |> maybe_put_metadata_url(config(:sdk_core_metadata_url, nil))
-      |> maybe_put_archive_path(config(:sdk_core_archive_path, nil))
-
-    case SdkImages.ensure_platform_images(platform, opts) do
-      :ok -> {:ok, "QEMU images are available in #{Path.join(image_root, platform)}."}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp install_pebble_tool do
-    cond do
-      uv = System.find_executable("uv") ->
-        install_pebble_tool_with_uv(uv)
-
-      pipx = System.find_executable("pipx") ->
-        case pebble_tool_python_bin() do
-          {:ok, python} ->
-            run_command(pipx, ["install", "--force", "--python", python, "pebble-tool"])
-
-          {:error, reason} ->
-            {:error, reason}
-        end
-
-      true ->
-        {:error, :uv_or_pipx_not_found}
-    end
-  end
-
-  defp install_pebble_tool_with_uv(uv) do
-    tool_args = ["tool", "install", "--force", "--python", pebble_tool_python(), "pebble-tool"]
-
-    case run_command(uv, tool_args) do
-      {:ok, output} ->
-        {:ok, output}
-
-      {:error, %{output: output} = reason} ->
-        if uv_python_missing?(output) do
-          install_uv_python_and_retry_tool(uv, tool_args)
-        else
-          {:error, reason}
-        end
-    end
-  end
-
-  defp install_uv_python_and_retry_tool(uv, tool_args) do
-    with {:ok, python_output} <- run_command(uv, ["python", "install", pebble_tool_python()]),
-         {:ok, tool_output} <- run_command(uv, tool_args) do
-      {:ok, String.trim(python_output <> "\n" <> tool_output)}
-    else
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp uv_python_missing?(output) when is_binary(output) do
-    String.contains?(output, "No interpreter found for Python") and
-      String.contains?(output, "uv python install")
-  end
-
-  defp uv_python_missing?(_output), do: false
-
-  defp pebble_tool_python do
-    case config(:pebble_tool_python, "3.13") do
-      python when is_binary(python) and python != "" -> python
-      _ -> "3.13"
-    end
-  end
-
-  defp pebble_tool_python_bin do
-    pebble_tool_python_candidates()
-    |> Enum.find_value(fn candidate ->
-      resolve_python_candidate(candidate)
-    end)
-    |> case do
-      {:ok, path} -> {:ok, path}
-      nil -> {:error, {:compatible_python_not_found, pebble_tool_python_candidates()}}
-    end
-  end
-
-  defp resolve_python_candidate("/" <> _ = candidate) do
-    if executable_file?(candidate), do: {:ok, candidate}
-  end
-
-  defp resolve_python_candidate(candidate) do
-    case System.find_executable(candidate) do
-      nil -> nil
-      path -> {:ok, path}
-    end
-  end
-
-  defp pebble_tool_python_candidates do
-    configured = pebble_tool_python()
-
-    cond do
-      String.starts_with?(configured, "/") ->
-        [configured]
-
-      String.starts_with?(configured, "python") ->
-        [configured]
-
-      true ->
-        ["python#{configured}", configured]
-    end
-  end
-
-  defp run_command(command, args) do
-    {output, exit_code} = System.cmd(command, args, stderr_to_stdout: true)
-
-    if exit_code == 0 do
-      {:ok, output}
-    else
-      {:error, %{command: Enum.join([command | args], " "), exit_code: exit_code, output: output}}
-    end
-  end
-
-  defp render_install_results(results, after_status) do
-    result_lines =
-      Enum.map(results, fn result ->
-        "[#{result.status}] #{result.name}\n#{String.trim(result.output || "")}"
-      end)
-
-    missing_lines =
-      after_status.missing
-      |> Enum.map(&"- #{&1.label}: #{&1.detail}")
-
-    """
-    #{Enum.join(result_lines, "\n\n")}
-
-    Current status: #{after_status.status}
-    #{if missing_lines == [], do: "All embedded emulator dependencies are present.", else: "Still missing:\n" <> Enum.join(missing_lines, "\n")}
-    """
-    |> String.trim()
-  end
-
-  defp maybe_download_qemu_images(platform) do
-    image_root = preferred_qemu_image_root()
-
-    cond do
-      config(:download_images, true) != true ->
-        :ok
-
-      Enum.any?(qemu_image_roots(), &SdkImages.images_present?(&1, platform)) ->
-        :ok
-
-      true ->
-        opts =
-          [
-            image_root: image_root,
-            sdk_version: config(:sdk_core_version, "4.9.169")
-          ]
-          |> maybe_put_metadata_url(config(:sdk_core_metadata_url, nil))
-          |> maybe_put_archive_path(config(:sdk_core_archive_path, nil))
-
-        SdkImages.ensure_platform_images(platform, opts)
-    end
-  end
-
-  defp maybe_put_metadata_url(opts, url) when is_binary(url) and url != "",
-    do: Keyword.put(opts, :metadata_url, url)
-
-  defp maybe_put_metadata_url(opts, _url), do: opts
-
-  defp maybe_put_archive_path(opts, path) when is_binary(path) and path != "",
-    do: Keyword.put(opts, :archive_path, path)
-
-  defp maybe_put_archive_path(opts, _path), do: opts
-
-  defp maybe_put_toolchain_archive_path(opts, path) when is_binary(path) and path != "",
-    do: Keyword.put(opts, :toolchain_archive_path, path)
-
-  defp maybe_put_toolchain_archive_path(opts, _path), do: opts
-
-  defp qemu_micro_flash_path(platform),
-    do: File.exists?(Path.join(qemu_image_dir(platform), "qemu_micro_flash.bin"))
-
-  defp qemu_spi_flash_available?(platform) do
-    raw = Path.join(qemu_image_dir(platform), "qemu_spi_flash.bin")
-    File.exists?(raw) or File.exists?(raw <> ".bz2")
-  end
-
-  defp qemu_image_roots do
-    configured_root = config(:qemu_image_root, nil)
-
-    configured_roots =
-      if is_binary(configured_root) and configured_root != "", do: [configured_root], else: []
-
-    sdk_roots = Enum.map(sdk_roots(), &Path.join(&1, "sdk-core/pebble"))
-
-    (qemu_bin_image_roots() ++ configured_roots ++ sdk_roots)
-    |> Enum.uniq()
-  end
-
-  defp preferred_qemu_image_root do
-    case config(:qemu_image_root, nil) do
-      root when is_binary(root) and root != "" ->
-        root
-
-      _ ->
-        qemu_image_roots()
-        |> List.first()
-        |> case do
-          root when is_binary(root) -> root
-          nil -> ""
-        end
-    end
-  end
-
-  defp preferred_sdk_root do
-    case config(:sdk_install_root, nil) do
-      root when is_binary(root) and root != "" ->
-        root
-
-      _ ->
-        sdk_roots()
-        |> List.first()
-        |> case do
-          root when is_binary(root) -> root
-          nil -> Path.expand(".pebble-sdk/SDKs/current", System.user_home!())
-        end
-    end
-  end
-
-  defp sdk_version_root(version) do
-    case config(:sdk_install_root, nil) do
-      root when is_binary(root) and root != "" ->
-        root
-
-      _ ->
-        preferred_sdk_root()
-        |> Path.dirname()
-        |> Path.join(version)
-    end
-  end
-
-  defp qemu_bin_image_roots do
-    case qemu_bin() do
-      {:ok, path} ->
-        path
-        |> qemu_bin_sdk_root()
-        |> case do
-          nil -> []
-          root -> [Path.join(root, "sdk-core/pebble")]
-        end
-
-      {:error, _reason} ->
-        []
-    end
-  end
-
-  defp qemu_bin_sdk_root(path) when is_binary(path) do
-    marker = "/toolchain/bin/"
-
-    case String.split(path, marker, parts: 2) do
-      [root, _bin] when root != "" -> root
-      _ -> nil
-    end
-  end
-
-  defp normalize_platform(platform) when is_binary(platform) do
-    platform = platform |> String.downcase() |> String.trim()
-
-    if platform in WatchModels.ordered_ids() do
-      platform
-    else
-      WatchModels.default_id()
-    end
-  end
-
-  defp normalize_platform(_), do: WatchModels.default_id()
 
   defp via(id), do: {:via, Registry, {Ide.Emulator.Registry, id}}
 
   defp schedule_idle_check(state),
     do: Process.send_after(self(), :idle_check, min(state.idle_timeout_ms, 60_000))
 
-  defp cleanup_process(nil), do: :ok
-
-  defp cleanup_process(pid) when is_pid(pid) do
-    if Process.alive?(pid) do
-      stop_process(pid, 1_000)
-    else
-      :ok
-    end
-  end
-
-  defp stop_process(pid, timeout) do
-    GenServer.stop(pid, :normal, timeout)
-    :ok
-  catch
-    :exit, _reason ->
-      Process.exit(pid, :kill)
-      wait_for_process_exit(pid, timeout)
-  end
-
-  defp wait_for_process_exit(pid, timeout) do
-    ref = Process.monitor(pid)
-
-    receive do
-      {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
-    after
-      timeout ->
-        Process.demonitor(ref, [:flush])
-        :ok
-    end
-  end
-
   defp session_health(state) do
     cond do
-      not start_processes?() ->
+      not Config.start_processes?() ->
         :ok
 
-      not live_pid?(state.qemu_pid) ->
+      not ProcessHost.live_pid?(state.qemu_pid) ->
         {:error, {:child_not_running, :qemu}}
 
       Map.get(state, :installing?, false) ->
         :ok
 
-      not live_pid?(state.protocol_router_pid) ->
+      not ProcessHost.live_pid?(state.protocol_router_pid) ->
         {:error, {:child_not_running, :protocol_router}}
 
       not tcp_port_open?(state.vnc_port) ->
         {:error, {:port_not_ready, :vnc, state.vnc_port}}
 
-      live_pid?(state.pypkjs_pid) and not tcp_port_open?(state.phone_ws_port) ->
+      ProcessHost.live_pid?(state.pypkjs_pid) and not tcp_port_open?(state.phone_ws_port) ->
         {:error, {:port_not_ready, :phone, state.phone_ws_port}}
 
       true ->
@@ -2131,16 +808,10 @@ defmodule Ide.Emulator.Session do
     end)
   end
 
-  defp live_pid?(pid) when is_pid(pid), do: Process.alive?(pid)
-  defp live_pid?(_pid), do: false
-
   defp random_id, do: Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
   defp random_token, do: Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)
   defp now_ms, do: System.monotonic_time(:millisecond)
 
-  defp config(key, default),
-    do: Application.get_env(:ide, __MODULE__, []) |> Keyword.get(key, default)
-
-  defp enabled?, do: config(:enabled, true) == true
-  defp start_processes?, do: config(:start_processes, true) == true
+  defp config(key, default), do: Config.config(key, default)
 end
+

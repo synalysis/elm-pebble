@@ -4,6 +4,7 @@ defmodule Ide.Emulator.PBWInstaller do
   require Logger
 
   alias Ide.Emulator.PBW
+  alias Ide.Emulator.PBWInstaller.Putbytes
   alias Ide.Emulator.Types
   alias Ide.Emulator.PebbleProtocol.CRC32
   alias Ide.Emulator.PebbleProtocol.Packets
@@ -401,7 +402,7 @@ defmodule Ide.Emulator.PBWInstaller do
         )
 
         _ =
-          send_putbytes(
+          Putbytes.send_putbytes(
             router,
             Packets.putbytes_abort(cookie),
             nil,
@@ -451,7 +452,7 @@ defmodule Ide.Emulator.PBWInstaller do
     )
 
     with {:ok, init} <-
-           send_putbytes(
+           Putbytes.send_putbytes(
              router,
              {init_endpoint, init_payload},
              nil,
@@ -462,7 +463,7 @@ defmodule Ide.Emulator.PBWInstaller do
          cookie <- init.cookie,
          _ <- Logger.debug("native pbw install part cookie kind=#{part.kind} cookie=#{cookie}"),
          {:ok, bytes_sent} <-
-           send_chunks(
+           Putbytes.send_chunks(
              router,
              part.kind,
              part.data,
@@ -478,7 +479,7 @@ defmodule Ide.Emulator.PBWInstaller do
              "native pbw install part commit kind=#{part.kind} bytes=#{bytes_sent} crc=#{crc}"
            ),
          {:ok, _commit} <-
-           send_putbytes(
+           Putbytes.send_putbytes(
              router,
              Packets.putbytes_commit(cookie, crc),
              nil,
@@ -520,7 +521,7 @@ defmodule Ide.Emulator.PBWInstaller do
     expected_cookies = [cookie, 0]
 
     with {:ok, _} <-
-           send_putbytes(
+           Putbytes.send_putbytes(
              router,
              Packets.putbytes_install(cookie),
              expected_cookies,
@@ -543,7 +544,7 @@ defmodule Ide.Emulator.PBWInstaller do
        ) do
     Logger.debug("native pbw install transition part install kind=#{kind} cookie=#{cookie}")
 
-    case send_putbytes(
+    case Putbytes.send_putbytes(
            router,
            Packets.putbytes_install(cookie),
            nil,
@@ -573,116 +574,12 @@ defmodule Ide.Emulator.PBWInstaller do
     end
   end
 
-  defp send_chunks(
-         router,
-         kind,
-         data,
-         cookie,
-         chunk_size,
-         timeout,
-         putbytes_retries,
-         chunk_delay_ms
-       ) do
-    data
-    |> chunks(chunk_size)
-    |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, sent} ->
-
-      case send_putbytes(
-             router,
-             Packets.putbytes_put(cookie, chunk),
-             nil,
-             %{
-               phase: :put,
-               kind: kind,
-               cookie: cookie,
-               offset: sent,
-               chunk_size: byte_size(chunk)
-             },
-             timeout,
-             putbytes_retries
-           ) do
-        {:ok, _ack} ->
-          if chunk_delay_ms > 0, do: Process.sleep(chunk_delay_ms)
-    
-          {:cont, {:ok, sent + byte_size(chunk)}}
-
-        {:error, reason} ->
-    
-          {:halt, {:error, reason}}
-      end
-    end)
-  end
-
   defp maybe_delay_between_parts(0, _delay_ms), do: :ok
   defp maybe_delay_between_parts(_index, delay_ms) when delay_ms <= 0, do: :ok
 
   defp maybe_delay_between_parts(_index, delay_ms) do
     Logger.debug("native pbw install waiting #{delay_ms}ms before next part")
     Process.sleep(delay_ms)
-  end
-
-  defp chunks(data, chunk_size) do
-    chunks(data, chunk_size, [])
-  end
-
-  defp chunks(<<>>, _chunk_size, acc), do: Enum.reverse(acc)
-
-  defp chunks(data, chunk_size, acc) when byte_size(data) <= chunk_size do
-    Enum.reverse([data | acc])
-  end
-
-  defp chunks(data, chunk_size, acc) do
-    chunk = binary_part(data, 0, chunk_size)
-    rest = binary_part(data, chunk_size, byte_size(data) - chunk_size)
-    chunks(rest, chunk_size, [chunk | acc])
-  end
-
-  defp send_putbytes(router, packet, expected_cookie, meta, timeout, retries_left) do
-    do_send_putbytes(router, packet, expected_cookie, meta, timeout, retries_left)
-  end
-
-  defp do_send_putbytes(
-         router,
-         {endpoint, payload} = packet,
-         expected_cookie,
-         meta,
-         timeout,
-         retries_left
-       ) do
-    if meta.phase != :put do
-    end
-
-    result =
-      with {:ok, frame} <-
-             Router.send_and_await(
-               router,
-               endpoint,
-               payload,
-               &(&1.endpoint == Packets.endpoint(:put_bytes)),
-               timeout
-             ),
-           {:ok, response} <- Packets.decode_putbytes_response(frame.payload),
-           :ok <- Packets.putbytes_ack?(response, expected_cookie) do
-        {:ok, response}
-      end
-
-    case result do
-      {:error, {:nack, cookie}} when meta.phase != :commit and retries_left > 0 ->
-  
-        Logger.debug(
-          "native pbw install PutBytes NACK phase=#{meta.phase} kind=#{Map.get(meta, :kind)} cookie=#{cookie}; retrying"
-        )
-
-        Process.sleep(50)
-        do_send_putbytes(router, packet, expected_cookie, meta, timeout, retries_left - 1)
-
-      {:error, reason} ->
-  
-        {:error, {:putbytes_failed, meta, reason}}
-
-      {:ok, _} = ok ->
-        ok
-    end
   end
 
   defp observe_post_install_frame(router, _kind) do

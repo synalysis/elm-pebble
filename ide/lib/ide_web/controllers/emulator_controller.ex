@@ -10,7 +10,7 @@ defmodule IdeWeb.EmulatorController do
   alias Ide.WatchModels
   alias IdeWeb.WorkspaceLive.BuildFlow
 
-  @spec launch(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  @spec launch(Plug.Conn.t(), %{required(String.t()) => term()}) :: Plug.Conn.t()
   def launch(conn, %{"slug" => slug} = params) do
     platform = Map.get(params, "platform")
 
