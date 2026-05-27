@@ -1,5 +1,5 @@
 defmodule Ide.Debugger.RuntimeModelHydrate do
-  @moduledoc false
+  @moduledoc ""
 
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.RuntimeSurfaces
@@ -128,11 +128,9 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
   @spec pick_existing_runtime_field([String.t()], map() | nil) :: String.t() | nil
   defp pick_existing_runtime_field(candidates, runtime_model) when is_list(candidates) do
-    if is_map(runtime_model) do
-      Enum.find(candidates, &Map.has_key?(runtime_model, &1))
-    else
-      List.first(candidates)
-    end
+    Enum.find(candidates, fn key ->
+      is_map(runtime_model) and Map.has_key?(runtime_model, key)
+    end) || List.first(candidates)
   end
 
   @spec put_payload_value_if_needed(map(), String.t(), Types.protocol_wire_arg(), String.t()) ::

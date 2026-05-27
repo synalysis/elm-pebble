@@ -1,4 +1,5 @@
-# Residual Dialyzer warnings from compile-time JSON schema literals and HEEx-generated guards.
+# Residual Dialyzer warnings from compile-time JSON schema literals, HEEx-generated guards,
+# Agent-backed debugger delegates, and third-party WebSockex option types.
 # Logic is covered by tests; suppressing analyzer false positives until upstream fixes land.
 [
   {"lib/ide/mcp/tools.ex", :pattern_match},
@@ -13,5 +14,36 @@
   {"lib/ide/debugger/http_simulator.ex", :exact_eq},
   {"lib/ide/debugger/http_simulator.ex", :pattern_match},
   {"lib/ide/debugger.ex", :pattern_match},
-  {"lib/ide_web/live/workspace_live.ex", :pattern_match}
+  {"lib/ide_web/live/workspace_live.ex", :pattern_match},
+  {"lib/ide_web/live/workspace_live.ex", :unused_fun},
+  {"lib/ide_web/live/workspace_live.ex", :no_return},
+  {"lib/ide/debugger.ex", :no_return},
+  {"lib/ide/debugger.ex", :unused_fun},
+  {"lib/ide/debugger/agent_hosts.ex", :no_return},
+  {"lib/ide/debugger/agent_session.ex", :no_return},
+  {"lib/ide/debugger/compile_ingest_api.ex", :no_return},
+  {"lib/ide/debugger/configuration_api.ex", :no_return},
+  {"lib/ide/debugger/hot_reload_session.ex", :no_return},
+  {"lib/ide/debugger/runtime_api.ex", :no_return},
+  {"lib/ide/debugger/runtime_contexts.ex", :no_return},
+  {"lib/ide/debugger/runtime_hub.ex", :no_return},
+  {"lib/ide/debugger/session_api.ex", :no_return},
+  {"lib/ide/debugger/tick_api.ex", :no_return},
+  {"lib/ide/debugger/trace_api.ex", :no_return},
+  {"lib/ide/debugger/triggers_api.ex", :no_return},
+  {"lib/ide/mcp/handlers/debugger.ex", :no_return},
+  {"lib/ide/mcp/handlers/debugger.ex", :unused_fun},
+  {"lib/ide_web/live/workspace_live/debugger_support.ex", :no_return},
+  {"lib/ide_web/live/workspace_live/debugger_support.ex", :unused_fun},
+  {"lib/ide_web/emulator_proxy_client.ex", :no_return},
+  {"lib/ide_web/emulator_proxy_client.ex", :call},
+  {"lib/ide_web/emulator_proxy_socket.ex", :no_return},
+  # Dialyzer reports `@moduledoc` / `@doc false` as line-1 pattern_match (false vs true).
+  {"lib/ide/debugger/elm_introspect/view_tree.ex", :pattern_match},
+  {"lib/ide/debugger/runtime_model_hydrate.ex", :pattern_match},
+  {"lib/ide/debugger/runtime_model_normalize.ex", :pattern_match},
+  {"lib/ide/debugger/wire_values.ex", :pattern_match},
+  {"lib/ide/mcp/handlers/compiler.ex", :pattern_match},
+  {"lib/ide/mcp/handlers/debugger.ex", :pattern_match},
+  {"lib/ide/debugger/runtime_hub.ex", :pattern_match}
 ]

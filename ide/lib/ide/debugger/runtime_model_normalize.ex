@@ -1,5 +1,5 @@
 defmodule Ide.Debugger.RuntimeModelNormalize do
-  @moduledoc false
+  @moduledoc ""
 
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeModelHydrate

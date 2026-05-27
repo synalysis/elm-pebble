@@ -158,7 +158,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
          {:ok, _project} <- ToolSupport.fetch_project(slug),
          {:ok, state} <- Debugger.snapshot(ToolSupport.project_session_key(slug), event_limit: 1),
          {:ok, runtime} <- debugger_surface_runtime(state, target_atom),
-         %{} = tree <- DebuggerSupport.rendered_tree(runtime) do
+         {:ok, tree} <- debugger_render_tree(runtime) do
       screen = debugger_surface_screen(state, runtime, target_atom)
       nodes = flatten_rendered_nodes(tree, screen.width, screen.height)
 
@@ -172,8 +172,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
          include_tree?
        )}
     else
-      nil -> {:error, "debugger render_tree failed: :no_rendered_tree"}
-      {:error, reason} -> {:error, "debugger render_tree failed: #{inspect(reason)}"}
+      {:error, reason} ->
+        {:error, "debugger render_tree failed: #{debugger_render_tree_error(reason)}"}
     end
   end
 
@@ -583,8 +583,11 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   def call("debugger.import_trace", %{"slug" => slug, "export_json" => json} = args)
        when is_binary(json) do
-    strict? = Map.get(args, "strict_slug", true)
-    strict? = if strict? in [false, "false"], do: false, else: true
+    strict? =
+      case Map.get(args, "strict_slug", true) do
+        value when value in [false, "false"] -> false
+        _ -> true
+      end
 
     opts = if strict?, do: [strict_slug: true], else: [strict_slug: false]
     expected_sha = Map.get(args, "expected_sha256")
@@ -1040,6 +1043,17 @@ defmodule Ide.Mcp.Handlers.Debugger do
   end
 
   defp debugger_surface_runtime(_state, _target), do: {:error, :invalid_target}
+
+  @spec debugger_render_tree(map()) :: {:ok, map()} | {:error, :no_rendered_tree}
+  defp debugger_render_tree(runtime) when is_map(runtime) do
+    case DebuggerSupport.rendered_tree(runtime) do
+      tree when is_map(tree) -> {:ok, tree}
+      _ -> {:error, :no_rendered_tree}
+    end
+  end
+
+  defp debugger_render_tree_error(:no_rendered_tree), do: ":no_rendered_tree"
+  defp debugger_render_tree_error(reason), do: inspect(reason)
 
   @spec surface_model_payload(map(), Ide.Debugger.Types.surface_target(), boolean()) ::
           ToolTypes.debugger_surface_model_entry()

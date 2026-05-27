@@ -5,13 +5,15 @@ defmodule IdeWeb.EmulatorProxySocket do
 
   require Logger
 
+  @type init_arg :: %{:target => {:tcp, String.t(), char()} | String.t()} | %{:url => String.t()}
+
   @impl true
+  @spec init(init_arg()) :: {:ok, map()} | {:stop, term(), map()}
   def init(%{target: {:tcp, host, port}}) do
     case :gen_tcp.connect(String.to_charlist(host), port, [:binary, active: false], 5_000) do
       {:ok, socket} ->
         :inet.setopts(socket, active: true, nodelay: true, packet: :raw)
 
-  
         {:ok, %{client: nil, tcp: socket, relay_logged: false}}
 
       {:error, reason} ->
@@ -19,14 +21,15 @@ defmodule IdeWeb.EmulatorProxySocket do
           "embedded emulator proxy tcp connect failed #{host}:#{port}: #{inspect(reason)}"
         )
 
-  
         {:stop, {:tcp_connect_failed, reason}, %{client: nil, tcp: nil}}
     end
   end
 
-  def init(%{target: url}) when is_binary(url), do: init(%{url: url})
+  def init(%{target: url}) when is_binary(url), do: init_url(url)
+  def init(%{url: url}) when is_binary(url), do: init_url(url)
 
-  def init(%{url: url}) do
+  @spec init_url(String.t()) :: {:ok, map()} | {:stop, term(), map()}
+  defp init_url(url) do
     owner = self()
 
     case IdeWeb.EmulatorProxyClient.start_link(url, owner) do

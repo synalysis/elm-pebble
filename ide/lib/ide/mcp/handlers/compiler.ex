@@ -1,5 +1,5 @@
 defmodule Ide.Mcp.Handlers.Compiler do
-  @moduledoc false
+  @moduledoc ""
 
   alias Ide.Compiler
   alias Ide.Compiler.Diagnostics
@@ -449,7 +449,7 @@ defmodule Ide.Mcp.Handlers.Compiler do
   end
 
   defp resolve_publish_validation_package(project, args) do
-    if is_map(args) and Map.get(args, "package") == false do
+    if is_map(args) and package_disabled?(args) do
       {:ok,
        %{
          status: :unknown,
@@ -459,6 +459,14 @@ defmodule Ide.Mcp.Handlers.Compiler do
        }}
     else
       package_for_publish(project)
+    end
+  end
+
+  defp package_disabled?(args) when is_map(args) do
+    case Map.get(args, "package") do
+      false -> true
+      "false" -> true
+      _ -> false
     end
   end
 

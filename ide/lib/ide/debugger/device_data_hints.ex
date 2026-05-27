@@ -1,5 +1,5 @@
 defmodule Ide.Debugger.DeviceDataHints do
-  @moduledoc false
+  @moduledoc ""
 
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeModelMessages
@@ -134,7 +134,11 @@ defmodule Ide.Debugger.DeviceDataHints do
     init_model = RuntimeModelNormalize.init_model(model)
 
     device_kind
-    |> then(fn kind -> if is_binary(kind), do: Map.get(@device_kind_runtime_fields, kind, []), else: [] end)
+    |> then(fn device_kind_key ->
+      if is_binary(device_kind_key),
+        do: Map.get(@device_kind_runtime_fields, device_kind_key, []),
+        else: []
+    end)
     |> Enum.filter(fn key ->
       Map.has_key?(runtime_model, key) and scalar_kind?(Map.get(init_model, key), kind)
     end)
@@ -190,10 +194,7 @@ defmodule Ide.Debugger.DeviceDataHints do
 
   defp unique_scalar_runtime_model_key(_model, _runtime_model, _kind), do: :error
 
-  @spec scalar_kind?(Types.wire_input(), scalar_kind()) :: boolean()
   defp scalar_kind?(value, :string), do: is_binary(value)
-  defp scalar_kind?(value, :integer), do: is_integer(value)
-  defp scalar_kind?(value, :boolean), do: is_boolean(value)
 
   @spec maybe_put_device_preview(Types.app_model(), Types.device_request()) :: Types.app_model()
   defp maybe_put_device_preview(model, req) when is_map(model) and is_map(req) do

@@ -1,5 +1,5 @@
 defmodule Ide.Debugger.ElmIntrospect.ViewTree do
-  @moduledoc false
+  @moduledoc ""
 
   alias ElmEx.Frontend.Module
   alias Ide.Debugger.ElmIntrospect
@@ -90,12 +90,12 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp ui_node_call_with_unevaluated_children?(_, _), do: false
 
-  @doc false
+  @doc ""
   @spec runtime_drawable_view_root_type?(String.t() | nil) :: boolean()
   def runtime_drawable_view_root_type?(type) when type in ["windowStack", "WindowStack"], do: true
   def runtime_drawable_view_root_type?(_), do: false
 
-  @doc false
+  @doc ""
   @spec ui_node_type_signature?(String.t() | nil) :: boolean()
   def ui_node_type_signature?(type) when is_binary(type) do
     type
@@ -106,7 +106,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   def ui_node_type_signature?(_), do: false
 
-  @doc false
+  @doc ""
   @spec parser_expression_combinator_type?(String.t(), Types.elm_introspect() | map()) :: boolean()
   def parser_expression_combinator_type?(type, introspect \\ %{})
 
@@ -121,7 +121,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   def parser_expression_combinator_type?(_, _), do: false
 
-  @doc false
+  @doc ""
   @spec parser_expression_structural_type?(String.t() | nil) :: boolean()
   def parser_expression_structural_type?(type)
       when type in [

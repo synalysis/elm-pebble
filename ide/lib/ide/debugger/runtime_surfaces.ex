@@ -74,7 +74,6 @@ defmodule Ide.Debugger.RuntimeSurfaces do
   def ensure_protocol_runtime_model(state, surface) when is_map(state) do
     Surface.update_in_state(state, surface, fn s ->
       model = Surface.app_model(s)
-      model = if is_map(model), do: model, else: %{}
       runtime_model = Map.get(model, "runtime_model") || %{}
       runtime_model = if is_map(runtime_model), do: runtime_model, else: %{}
       protocol_messages = s.protocol_messages

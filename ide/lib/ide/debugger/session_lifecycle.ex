@@ -9,8 +9,6 @@ defmodule Ide.Debugger.SessionLifecycle do
   alias Ide.Debugger.SimulatorSettings, as: DebuggerSimulatorSettings
   alias Ide.Debugger.SimulatorSurfaceSettings
   alias Ide.Debugger.Types
-  alias Ide.WatchModels
-
   @type launch_bundle :: %{
           watch_profile_id: String.t(),
           launch_context: map(),
@@ -34,8 +32,7 @@ defmodule Ide.Debugger.SessionLifecycle do
   @spec launch_bundle(String.t() | nil, String.t(), Types.simulator_settings() | map() | nil) ::
           launch_bundle()
   def launch_bundle(requested_profile_id, launch_reason, simulator_settings \\ nil) do
-    watch_profile_id =
-      RuntimeSurfaces.parse_watch_profile_id(requested_profile_id) || WatchModels.default_id()
+    watch_profile_id = RuntimeSurfaces.parse_watch_profile_id(requested_profile_id)
 
     build_launch_bundle(
       watch_profile_id,

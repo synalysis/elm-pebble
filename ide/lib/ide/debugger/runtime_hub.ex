@@ -38,24 +38,35 @@ defmodule Ide.Debugger.RuntimeHub do
 
   @spec contexts(config()) :: RuntimeContexts.t()
   def contexts(%{} = config) do
-    RuntimeContexts.build(RuntimeHost.build(runtime_host_callbacks(config)))
+    stub_ctx =
+      config
+      |> then(&runtime_host_callbacks_impl(&1, :stub))
+      |> RuntimeHost.build()
+      |> RuntimeContexts.build()
+
+    config
+    |> then(&runtime_host_callbacks_impl(&1, {:built, stub_ctx}))
+    |> RuntimeHost.build()
+    |> RuntimeContexts.build()
   end
 
   @spec operation_deps(config()) :: OperationHosts.deps()
   def operation_deps(%{} = config) do
+    ctx = contexts(config)
+
     %{
       apply_step_once: fn st, target, message, message_value, source, trigger ->
-        apply_step_once(config, st, target, message, message_value, source, trigger, [])
+        apply_step_once(config, st, target, message, message_value, source, trigger, [], ctx)
       end,
       append_event: config.append_event,
       normalize_target: &SurfaceTargets.normalize/1,
       replay_label: &SurfaceTargets.replay_label/1,
       source_root_for_target: &SurfaceTargets.source_root/1,
       tick_message_for_surface: fn state, target ->
-        tick_message_for_surface(config, state, target)
+        tick_message_for_surface(ctx, state, target)
       end,
       update: config.update,
-      contexts: fn -> contexts(config) end,
+      contexts: fn -> ctx end,
       merge_runtime_artifacts: &RuntimeArtifactMerge.maybe_merge/3,
       refresh_from_artifacts: &Ide.Debugger.RuntimeExecutorConfig.refresh_from_artifacts/1
     }
@@ -86,6 +97,34 @@ defmodule Ide.Debugger.RuntimeHub do
         ) :: Types.runtime_state()
   def apply_step_once(config, state, target, requested_message, message_value, source_override, trigger, opts)
       when target in [:watch, :companion, :phone] and is_list(opts) do
+    apply_step_once(config, state, target, requested_message, message_value, source_override, trigger, opts,
+      contexts(config)
+    )
+  end
+
+  @spec apply_step_once(
+          config(),
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t() | nil,
+          Types.subscription_payload() | nil,
+          String.t() | nil,
+          String.t(),
+          keyword(),
+          RuntimeContexts.t()
+        ) :: Types.runtime_state()
+  def apply_step_once(
+        _config,
+        state,
+        target,
+        requested_message,
+        message_value,
+        source_override,
+        trigger,
+        opts,
+        %{step_apply: step_apply}
+      )
+      when target in [:watch, :companion, :phone] and is_list(opts) do
     StepApply.apply(
       state,
       target,
@@ -94,7 +133,7 @@ defmodule Ide.Debugger.RuntimeHub do
       source_override,
       trigger,
       opts,
-      contexts(config).step_apply
+      step_apply
     )
   end
 
@@ -105,19 +144,30 @@ defmodule Ide.Debugger.RuntimeHub do
           String.t(),
           String.t() | nil
         ) :: String.t()
-  def trigger_message_for_surface(config, state, target, trigger, requested_message) do
-    TriggerSurface.trigger_message(
-      state,
-      target,
-      trigger,
-      requested_message,
-      contexts(config).tick_resolution
-    )
+  def trigger_message_for_surface(%{append_event: _} = config, state, target, trigger, requested_message) do
+    trigger_message_for_surface(contexts(config), state, target, trigger, requested_message)
+  end
+
+  @spec trigger_message_for_surface(
+          RuntimeContexts.t(),
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t() | nil
+        ) :: String.t()
+  def trigger_message_for_surface(%{step_apply: _} = ctx, state, target, trigger, requested_message) do
+    context_trigger_message({:built, ctx}, state, target, trigger, requested_message)
   end
 
   @spec tick_message_for_surface(config(), Types.runtime_state(), Types.surface_target()) :: String.t()
-  def tick_message_for_surface(config, state, target) when is_map(state) do
-    TriggerSurface.tick_message(state, target, contexts(config).tick_resolution)
+  def tick_message_for_surface(%{append_event: _} = config, state, target) when is_map(state) do
+    tick_message_for_surface(contexts(config), state, target)
+  end
+
+  @spec tick_message_for_surface(RuntimeContexts.t(), Types.runtime_state(), Types.surface_target()) ::
+          String.t()
+  def tick_message_for_surface(%{step_apply: _} = ctx, state, target) when is_map(state) do
+    TriggerSurface.tick_message(state, target, ctx.tick_resolution)
   end
 
   @spec attach_subscription_payload(
@@ -127,14 +177,19 @@ defmodule Ide.Debugger.RuntimeHub do
           String.t(),
           String.t()
         ) :: String.t()
-  def attach_subscription_payload(config, state, target, message, trigger) do
-    TriggerMessageSurface.attach_payload(
-      state,
-      target,
-      message,
-      trigger,
-      contexts(config).subscription_payload
-    )
+  def attach_subscription_payload(%{append_event: _} = config, state, target, message, trigger) do
+    attach_subscription_payload(contexts(config), state, target, message, trigger)
+  end
+
+  @spec attach_subscription_payload(
+          RuntimeContexts.t(),
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t()
+        ) :: String.t()
+  def attach_subscription_payload(%{step_apply: _} = ctx, state, target, message, trigger) do
+    context_attach_subscription({:built, ctx}, state, target, message, trigger)
   end
 
   @spec apply_subscription_ok_response(
@@ -146,16 +201,29 @@ defmodule Ide.Debugger.RuntimeHub do
           String.t(),
           String.t()
         ) :: Types.runtime_state()
-  def apply_subscription_ok_response(config, state, target, callback, payload, source, trigger) do
-    SubscriptionResponses.apply_ok(
-      state,
-      target,
-      callback,
-      payload,
-      source,
-      trigger,
-      contexts(config).subscription_responses
-    )
+  def apply_subscription_ok_response(
+        %{append_event: _} = config,
+        state,
+        target,
+        callback,
+        payload,
+        source,
+        trigger
+      ) do
+    apply_subscription_ok_response(contexts(config), state, target, callback, payload, source, trigger)
+  end
+
+  @spec apply_subscription_ok_response(
+          RuntimeContexts.t(),
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          Types.subscription_payload(),
+          String.t(),
+          String.t()
+        ) :: Types.runtime_state()
+  def apply_subscription_ok_response(%{step_apply: _} = ctx, state, target, callback, payload, source, trigger) do
+    context_apply_subscription_ok({:built, ctx}, state, target, callback, payload, source, trigger)
   end
 
   @spec maybe_attach_compile_artifacts_for_parser_view(
@@ -164,8 +232,18 @@ defmodule Ide.Debugger.RuntimeHub do
           Types.surface_target(),
           map()
         ) :: Types.runtime_state()
-  def maybe_attach_compile_artifacts_for_parser_view(config, state, target, _ei) do
-    SurfaceCompileArtifacts.maybe_attach_for_parser_view(state, target, contexts(config).surface_compile)
+  def maybe_attach_compile_artifacts_for_parser_view(%{append_event: _} = config, state, target, ei) do
+    maybe_attach_compile_artifacts_for_parser_view(contexts(config), state, target, ei)
+  end
+
+  @spec maybe_attach_compile_artifacts_for_parser_view(
+          RuntimeContexts.t(),
+          Types.runtime_state(),
+          Types.surface_target(),
+          map()
+        ) :: Types.runtime_state()
+  def maybe_attach_compile_artifacts_for_parser_view(%{step_apply: _} = ctx, state, target, ei) do
+    context_attach_compile_artifacts({:built, ctx}, state, target, ei)
   end
 
   @spec simulator_settings_from_state(Types.runtime_state()) :: Types.simulator_settings()
@@ -181,21 +259,21 @@ defmodule Ide.Debugger.RuntimeHub do
   @spec session_key_from_state(Types.runtime_state()) :: String.t() | nil
   def session_key_from_state(state), do: SessionDefaults.session_key_from_state(state)
 
-  defp runtime_host_callbacks(%{} = config) do
+  defp runtime_host_callbacks_impl(%{} = config, ctx_ref) do
     status = %{
       append_event: config.append_event,
       append_debugger_event: config.append_debugger_event,
       source_root_for_target: &SurfaceTargets.source_root/1
     }
 
+    apply_step = apply_step_callback(config, ctx_ref)
+
     RuntimeHostCallbacks.build(%{
       append_event: config.append_event,
       append_debugger_event: config.append_debugger_event,
-      apply_step_once: fn st, target, message, message_value, source, trigger ->
-        apply_step_once(config, st, target, message, message_value, source, trigger, [])
-      end,
+      apply_step_once: apply_step,
       apply_step_without_value: fn st, target, message, source, trigger ->
-        apply_step_once(config, st, target, message, nil, source, trigger, [])
+        apply_step.(st, target, message, nil, source, trigger)
       end,
       source_root_for_target: &SurfaceTargets.source_root/1,
       session_key_from_state: &session_key_from_state/1,
@@ -204,17 +282,17 @@ defmodule Ide.Debugger.RuntimeHub do
       surface_app_model: &SurfaceAccess.app_model/2,
       normalize_step_target: &SurfaceTargets.normalize/1,
       trigger_message_for_surface: fn state, target, trigger, requested_message ->
-        trigger_message_for_surface(config, state, target, trigger, requested_message)
+        context_trigger_message(ctx_ref, state, target, trigger, requested_message)
       end,
       attach_subscription_payload: fn state, target, message, trigger ->
-        attach_subscription_payload(config, state, target, message, trigger)
+        context_attach_subscription(ctx_ref, state, target, message, trigger)
       end,
       merge_runtime_artifacts: &RuntimeArtifactMerge.maybe_merge/3,
       apply_subscription_ok_response: fn state, target, callback, payload, source, trigger ->
-        apply_subscription_ok_response(config, state, target, callback, payload, source, trigger)
+        context_apply_subscription_ok(ctx_ref, state, target, callback, payload, source, trigger)
       end,
       maybe_attach_compile_artifacts: fn state, target, ei ->
-        maybe_attach_compile_artifacts_for_parser_view(config, state, target, ei)
+        context_attach_compile_artifacts(ctx_ref, state, target, ei)
       end,
       maybe_append_runtime_status: fn state, target ->
         RuntimeStatusFacades.maybe_append_simple_status(status, state, target)
@@ -237,5 +315,58 @@ defmodule Ide.Debugger.RuntimeHub do
       simulator_now: &simulator_now_for_target/2,
       default_auto_fire_interval_ms: config.default_auto_fire_interval_ms
     })
+  end
+
+  defp apply_step_callback(_config, :stub) do
+    fn state, _target, _message, _message_value, _source, _trigger ->
+      state
+    end
+  end
+
+  defp apply_step_callback(_config, {:built, %{step_apply: step_apply}}) do
+    fn state, target, message, message_value, source, trigger ->
+      StepApply.apply(state, target, message, message_value, source, trigger, [], step_apply)
+    end
+  end
+
+  defp context_trigger_message(:stub, _state, _target, _trigger, _requested_message), do: ""
+
+  defp context_trigger_message({:built, %{tick_resolution: tick_resolution}}, state, target, trigger, requested_message) do
+    TriggerSurface.trigger_message(state, target, trigger, requested_message, tick_resolution)
+  end
+
+  defp context_attach_subscription(:stub, _state, _target, _message, _trigger), do: ""
+
+  defp context_attach_subscription({:built, %{subscription_payload: subscription_payload}}, state, target, message, trigger) do
+    TriggerMessageSurface.attach_payload(state, target, message, trigger, subscription_payload)
+  end
+
+  defp context_apply_subscription_ok(:stub, state, _target, _callback, _payload, _source, _trigger),
+    do: state
+
+  defp context_apply_subscription_ok(
+         {:built, %{subscription_responses: subscription_responses}},
+         state,
+         target,
+         callback,
+         payload,
+         source,
+         trigger
+       ) do
+    SubscriptionResponses.apply_ok(
+      state,
+      target,
+      callback,
+      payload,
+      source,
+      trigger,
+      subscription_responses
+    )
+  end
+
+  defp context_attach_compile_artifacts(:stub, state, _target, _ei), do: state
+
+  defp context_attach_compile_artifacts({:built, %{surface_compile: surface_compile}}, state, target, _ei) do
+    SurfaceCompileArtifacts.maybe_attach_for_parser_view(state, target, surface_compile)
   end
 end
