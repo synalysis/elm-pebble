@@ -88,26 +88,41 @@ flowchart LR
 | `IdeWeb.EmulatorVncChannel` | Relays RFB bytes between browser and QEMU over Phoenix channel `emulator_vnc:<session_id>` |
 | `IdeWeb.EmulatorVncChannel.State` | Typed channel assigns (`session_id`, `session_pid`, `tcp`) |
 | `IdeWeb.EmulatorProxySocket` | Raw WebSocket proxy to local TCP (used for `/ws/phone` and legacy `/ws/vnc`) |
-| `embedded_emulator.js` | Thin browser orchestrator (toolbar, state, feedback) |
-| `emulator_http.js` | Shared `postJSON`, CSRF, WebSocket URL helpers |
-| `emulator_session_client.js` | Launch, stop, ping, install HTTP session API |
-| `emulator_vnc.js` | Phoenix VNC channel + noVNC display |
-| `emulator_simulator_delivery.js` | Simulator settings → QEMU batch API, phone bridge, weather |
-| `qemu_control.js` | QEMU protocol encoders (shared with WASM emulator) |
+| `embedded_emulator.ts` | Thin browser orchestrator (toolbar, state, feedback) |
+| `emulator_http.ts` | Shared `postJSON`, CSRF, WebSocket URL helpers |
+| `emulator_session_client.ts` | Launch, stop, ping, install HTTP session API |
+| `emulator_vnc.ts` | Phoenix VNC channel + noVNC display |
+| `emulator_simulator_delivery.ts` | Simulator settings → QEMU batch API, phone bridge, weather |
+| `qemu_control.ts` | QEMU protocol encoders (shared with WASM emulator) |
 | `install_prep.ex` | Install pacing, reuse settle, reset-needed checks |
 
 `IdeWeb.EmulatorProxyClient` uses `WebSockex.start_link/3` (no custom options); the browser phone bridge opens via `EmulatorProxySocket` or the channel path above.
 
-### Browser modules (`ide/assets/js/emulator/`)
+### Browser modules (`ide/assets/js/`)
+
+IDE frontend sources are **TypeScript** (esbuild bundles to `priv/static/assets/*.js`). Shared API types live in [`ide/assets/js/types/emulator.ts`](../assets/js/types/emulator.ts) (`EmulatorSessionInfo`, launch/ping payloads).
 
 | File | Role |
 |------|------|
-| `embedded_emulator.js` | `EmbeddedEmulatorHost`: toolbar, lifecycle, event log, display/phone orchestration |
-| `emulator_session_client.js` | Launch, ping, kill, native install HTTP |
-| `emulator_vnc.js` | Phoenix `emulator_vnc:*` channel + noVNC |
-| `emulator_simulator_delivery.js` | Simulator settings, weather, phone-bridge install |
-| `emulator_http.js` | `postJSON`, CSRF, WebSocket URL helpers |
-| `qemu_control.js` | QEMU packet encoders (shared with WASM emulator) |
+| `app.ts` | LiveView `Hooks`, Firebase auth, entry bundle |
+| `user_socket.ts` | Shared Phoenix `/socket` for VNC + LSP |
+| `editor/codemirror_editor_host.ts` | CodeMirror 6 + LSP editor host |
+| `emulator/embedded_emulator.ts` | `EmbeddedEmulatorHost`: toolbar, lifecycle, event log, display/phone orchestration |
+| `emulator/emulator_session_client.ts` | Launch, ping, kill, native install HTTP |
+| `emulator/emulator_vnc.ts` | Phoenix `emulator_vnc:*` channel + noVNC |
+| `emulator/emulator_simulator_delivery.ts` | Simulator settings, weather, phone-bridge install |
+| `emulator/emulator_http.ts` | `postJSON`, CSRF, WebSocket URL helpers |
+| `emulator/qemu_control.ts` | QEMU packet encoders (shared with WASM emulator) |
+| `emulator/wasm_emulator.ts` | WASM emulator LiveView host |
+
+**Frontend checks** (from repo root):
+
+```bash
+cd ide/assets && npm ci && npm run typecheck
+cd ide && mix assets.build
+```
+
+Docker production builds run `npm run typecheck` before `mix assets.deploy`.
 
 ### Elixir types (server)
 
@@ -139,7 +154,7 @@ mix phx.server
 
 Open a project emulator page: `http://localhost:4000/projects/<slug>/emulator`.
 
-After frontend changes: `mix assets.build` and hard-refresh the page. The event log includes a **UI build** string (e.g. `v22-refactor`) to confirm the loaded client bundle.
+After frontend changes: `npm run typecheck --prefix assets` (optional but enforced in Docker), `mix assets.build`, and hard-refresh the page. The event log includes a **UI build** string (e.g. `v23-typescript`) to confirm the loaded client bundle.
 
 ## Browser workflow
 

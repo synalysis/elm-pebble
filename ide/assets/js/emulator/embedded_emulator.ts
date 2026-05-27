@@ -1,26 +1,9 @@
-/**
- * Embedded Pebble emulator browser host (QEMU + Phoenix VNC channel).
- *
- * @typedef {Object} EmulatorSessionInfo
- * @property {string} id
- * @property {string} platform
- * @property {string} artifact_path
- * @property {string} install_path
- * @property {string} ping_path
- * @property {string} kill_path
- * @property {string} vnc_path
- * @property {string} phone_path
- * @property {boolean} display_ready
- * @property {boolean} phone_bridge_ready
- * @property {boolean} backend_enabled
- * @property {{width: number, height: number}} screen
- * @property {string[]} controls
- */
+/** Embedded Pebble emulator browser host (QEMU + Phoenix VNC channel). */
 
-import {postJSON, websocketURL} from "./emulator_http.js"
-import {EmulatorVnc} from "./emulator_vnc.js"
-import {EmulatorSessionClient} from "./emulator_session_client.js"
-import {EmulatorSimulatorDelivery} from "./emulator_simulator_delivery.js"
+import {postJSON, websocketURL} from "./emulator_http"
+import {EmulatorVnc} from "./emulator_vnc"
+import {EmulatorSessionClient} from "./emulator_session_client"
+import {EmulatorSimulatorDelivery} from "./emulator_simulator_delivery"
 import {
   applySimulatorSettingsToQemu,
   BUTTONS,
@@ -28,15 +11,27 @@ import {
   encodeBattery,
   encodeCompass,
   QEMU
-} from "./qemu_control.js"
+} from "./qemu_control"
+import {disconnectUserSocket, getUserSocket, waitForUserSocketOpen} from "../user_socket"
+import type {HookContext} from "../types/liveview_hook"
+import type {
+  DataLogEntry,
+  EmbeddedEmulatorRuntimeState,
+  PendingPypkjsInstall,
+  StorageEntry
+} from "../types/embedded_emulator_state"
+import type {EmulatorScreen, EmulatorSessionInfo, SimulatorSettings} from "../types/emulator"
+import type {AppendLogOptions, EmulatorVncHost} from "../types/emulator_host"
+import type {QuietOptions, SimulatorSettingsOptions, WeatherSimulatorSettings} from "../types/emulator_options"
+import type {SimulatorDeliveryHost} from "../types/simulator_host"
+import {errMessage} from "../types/errors"
+import type RFB from "@novnc/novnc"
 const CONFIG_RETURN_PATH = "/api/emulator/config-return"
 const MAX_LOG_LINES = 300
 const MAX_LOG_CHARS = 40000
 const PUTBYTES_SUMMARY_INTERVAL = 25
 const SYSTEM_LOG_SUMMARY_INTERVAL = 50
 const PHONE_BRIDGE_INSTALL_TIMEOUT_MS = 120000
-const DISPLAY_READY_TIMEOUT_MS = 90_000
-const DISPLAY_READY_POLL_MS = 50
 const VNC_WS_OPEN_TIMEOUT_MS = 10_000
 const VNC_CONNECT_TIMEOUT_MS = 12_000
 const VNC_RECONNECT_BASE_MS = 150
@@ -78,9 +73,7 @@ const WEATHER_CONDITION_WIRE_CODES = {
   unknownweather: 9
 }
 
-import {disconnectUserSocket, getUserSocket, waitForUserSocketOpen} from "../user_socket"
-
-const EMBEDDED_EMULATOR_UI_BUILD = "v22-refactor"
+const EMBEDDED_EMULATOR_UI_BUILD = "v24-display-ready"
 const PHOENIX_SOCKET_OPEN_TIMEOUT_MS = 10_000
 const VNC_CHANNEL_JOIN_TIMEOUT_MS = 10_000
 
@@ -109,11 +102,11 @@ const persistedStateFields = [
 ]
 const embeddedEmulatorStates = window.__elmPebbleEmbeddedEmulatorStates ||= new Map()
 
-function emulatorStateKey(el) {
+function emulatorStateKey(el: HTMLElement): string {
   return el.dataset.projectSlug || "default"
 }
 
-function defaultEmulatorState(key) {
+function defaultEmulatorState(key: string): EmbeddedEmulatorRuntimeState {
   return {
     key,
     session: null,
@@ -144,28 +137,122 @@ function defaultEmulatorState(key) {
   }
 }
 
-function emulatorStateFor(el) {
+function emulatorStateFor(el: HTMLElement): EmbeddedEmulatorRuntimeState {
   const key = emulatorStateKey(el)
   if (!embeddedEmulatorStates.has(key)) embeddedEmulatorStates.set(key, defaultEmulatorState(key))
-  return embeddedEmulatorStates.get(key)
+  return embeddedEmulatorStates.get(key)!
 }
 
-function definePersistedState(host) {
-  persistedStateFields.forEach(field => {
+type PersistedStateField = (typeof persistedStateFields)[number]
+
+function definePersistedState(host: EmbeddedEmulatorHost): void {
+  persistedStateFields.forEach((field: PersistedStateField) => {
     Object.defineProperty(host, field, {
-      get() {
-        return this.state[field]
+      get(this: EmbeddedEmulatorHost) {
+        return this.state[field as keyof EmbeddedEmulatorRuntimeState]
       },
-      set(value) {
-        this.state[field] = value
+      set(this: EmbeddedEmulatorHost, value: EmbeddedEmulatorRuntimeState[keyof EmbeddedEmulatorRuntimeState]) {
+        ;(this.state as Record<PersistedStateField, unknown>)[field] = value
       }
     })
   })
 }
 
+type EmulatorButtonName = keyof typeof BUTTONS
 
-export class EmbeddedEmulatorHost {
-  constructor(hook) {
+
+export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncHost {
+  hook: HookContext
+  el: HTMLElement
+  state: EmbeddedEmulatorRuntimeState
+  session!: EmulatorSessionInfo | null
+  buttonState!: number
+  launching!: boolean
+  installing!: boolean
+  appInstalled!: boolean
+  stopping!: boolean
+  pendingPypkjsInstall!: PendingPypkjsInstall | null
+  currentStatus!: string | null
+  logLines!: string[]
+  storageEntries!: Map<string, StorageEntry>
+  suppressedPutBytesFrames!: number
+  suppressedSystemLogFrames!: number
+  sessionEnded!: boolean
+  sessionAlive!: boolean
+  displayConnected!: boolean
+  phoneBridgeReady!: boolean
+  phoneBridgeActive!: boolean
+  dataLogEntries!: DataLogEntry[]
+  rfb!: RFB | null
+  rfbCanvas!: HTMLElement | null
+  vncConnecting!: boolean
+  reconnectingVnc!: boolean
+  vncReconnectTimer!: ReturnType<typeof setTimeout> | null
+  vncReconnectAttempts!: number
+  destroyed = false
+  phoneSocket: WebSocket | null = null
+  pingTimer: ReturnType<typeof setInterval> | null = null
+  pingAfterDisplayTimer: ReturnType<typeof setTimeout> | null = null
+  configUrl: string | null = null
+  configPopupTimer: ReturnType<typeof setInterval> | null = null
+  phoneOpenedAt = 0
+  logFlushScheduled = false
+  simulatorDelivery: EmulatorSimulatorDelivery
+  sessionClient: EmulatorSessionClient
+  vnc: EmulatorVnc
+  lastQemuSettingsApply: SimulatorDeliveryHost["lastQemuSettingsApply"] = null
+  simulatorSettings: SimulatorSettings | null = null
+  lastAppliedSimulatorSettingsJson: string | null = null
+  simulatorSettingsSource: string | null = null
+  simulatorSettingsAppliedAt = 0
+  weatherInjectTimers: ReturnType<typeof setTimeout>[] = []
+  weatherPushTimer: ReturnType<typeof setTimeout> | null = null
+  weatherPushRetryTimers: ReturnType<typeof setTimeout>[] = []
+  weatherDebugQueue: SimulatorDeliveryHost["weatherDebugQueue"] = []
+  weatherDebugInFlight = false
+  weatherDebugInFlightAt = 0
+  weatherDebugAckTimer: ReturnType<typeof setTimeout> | null = null
+  weatherDebugFallbackTimer: ReturnType<typeof setTimeout> | null = null
+  pendingWeatherRetry: WeatherSimulatorSettings | null = null
+  lastSentWeatherJson: string | null = null
+  vncViewportConfigKey: string | null = null
+  vncViewportConfigTimer: ReturnType<typeof setTimeout> | null = null
+  vncSocket: WebSocket | null = null
+  vncChannel: EmulatorVncHost["vncChannel"] = null
+  vncPhoenixSocket: EmulatorVncHost["vncPhoenixSocket"] = null
+  vncPendingFrames: ArrayBuffer[] = []
+  vncFrameSink: ((data: ArrayBuffer) => void) | null = null
+  vncJoinInitial: ArrayBuffer | null = null
+  vncLoggedFirstSend = false
+  vncWsDiag: EmulatorVncHost["vncWsDiag"] = null
+  vncSessionProbe: EmulatorVncHost["vncSessionProbe"] = null
+  _simulatorCapabilities?: Set<string>
+  boundEmulatorButtons = new WeakSet<Element>()
+  boundControlElements = new WeakSet<Element>()
+  syncStateToDom: () => void
+  handlePageVisible: () => void
+  handleConfigKeyDown: (event: KeyboardEvent) => void
+  handleRootClick: (event: MouseEvent) => void
+  canvas: HTMLElement | null = null
+  status: HTMLElement | null = null
+  log: HTMLElement | null = null
+  configPanel: HTMLElement | null = null
+  configDialog: HTMLElement | null = null
+  configFrame: HTMLIFrameElement | null = null
+  configUrlLabel: HTMLElement | null = null
+  launchButton: HTMLButtonElement | null = null
+  installButton: HTMLButtonElement | null = null
+  preferencesButton: HTMLButtonElement | null = null
+  screenshotButton: HTMLButtonElement | null = null
+  storageRows: HTMLElement | null = null
+  storageResetButton: HTMLButtonElement | null = null
+  storageAddButton: HTMLButtonElement | null = null
+  storageNewKey: HTMLInputElement | null = null
+  storageNewType: HTMLSelectElement | null = null
+  storageNewValue: HTMLInputElement | null = null
+  dataLogRows: HTMLElement | null = null
+
+  constructor(hook: HookContext) {
     this.hook = hook
     this.el = hook.el
     this.state = emulatorStateFor(this.el)
@@ -208,83 +295,85 @@ export class EmbeddedEmulatorHost {
       this.updateControlButtons()
     }
     this.handlePageVisible = () => this.ensureVncAttached()
-    this.handleConfigKeyDown = event => {
+    this.handleConfigKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && this.configPanel && !this.configPanel.classList.contains("hidden")) {
         this.cancelConfig()
       }
     }
-    this.handleRootClick = event => {
+    this.handleRootClick = (event: MouseEvent) => {
       if (this.destroyed) return
-      if (event.target.closest("[data-emulator-launch]")) {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest("[data-emulator-launch]")) {
         event.preventDefault()
         this.toggleLaunch()
         return
       }
-      if (event.target.closest("[data-emulator-install]")) {
+      if (target.closest("[data-emulator-install]")) {
         event.preventDefault()
         void this.install()
         return
       }
-      if (event.target.closest("[data-emulator-preferences]")) {
+      if (target.closest("[data-emulator-preferences]")) {
         event.preventDefault()
         void this.loadCompanionPreferences()
         return
       }
-      if (event.target.closest("[data-emulator-screenshot]")) {
+      if (target.closest("[data-emulator-screenshot]")) {
         event.preventDefault()
         void this.captureScreenshot()
         return
       }
-      if (event.target.closest("[data-emulator-copy-feedback]")) {
+      if (target.closest("[data-emulator-copy-feedback]")) {
         event.preventDefault()
         void this.copyFeedbackReport()
         return
       }
-      if (event.target.closest("[data-emulator-storage-reset]")) {
+      if (target.closest("[data-emulator-storage-reset]")) {
         event.preventDefault()
         void this.resetStorage()
         return
       }
-      if (event.target.closest("[data-emulator-storage-add]")) {
+      if (target.closest("[data-emulator-storage-add]")) {
         event.preventDefault()
         void this.saveNewStorageEntry()
         return
       }
-      if (event.target.closest("[data-emulator-config-cancel]")) {
+      if (target.closest("[data-emulator-config-cancel]")) {
         event.preventDefault()
         this.cancelConfig()
         return
       }
-      if (event.target.closest("[data-emulator-tap]")) {
+      if (target.closest("[data-emulator-tap]")) {
         event.preventDefault()
         this.sendQemu(QEMU.tap, [0, 1])
         return
       }
-      if (event.target.closest("[data-emulator-compass-send]")) {
+      if (target.closest("[data-emulator-compass-send]")) {
         event.preventDefault()
         this.sendCompassSample()
       }
     }
   }
 
-  mount() {
+  mount(): void {
     this.canvas = this.el.querySelector("[data-emulator-canvas]")
     this.status = this.el.querySelector("[data-emulator-status]")
     this.log = this.el.querySelector("[data-emulator-log]")
     this.configPanel = this.el.querySelector("[data-emulator-config-panel]")
     this.configDialog = this.el.querySelector("[data-emulator-config-dialog]")
-    this.configFrame = this.el.querySelector("[data-emulator-config-frame]")
+    this.configFrame = this.el.querySelector<HTMLIFrameElement>("[data-emulator-config-frame]")
     this.configUrlLabel = this.el.querySelector("[data-emulator-config-url]")
-    this.launchButton = this.el.querySelector("[data-emulator-launch]")
-    this.installButton = this.el.querySelector("[data-emulator-install]")
-    this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
-    this.screenshotButton = this.el.querySelector("[data-emulator-screenshot]")
+    this.launchButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-launch]")
+    this.installButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-install]")
+    this.preferencesButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-preferences]")
+    this.screenshotButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-screenshot]")
     this.storageRows = this.el.querySelector("[data-emulator-storage-rows]")
-    this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
-    this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
-    this.storageNewKey = this.el.querySelector("[data-emulator-storage-new-key]")
-    this.storageNewType = this.el.querySelector("[data-emulator-storage-new-type]")
-    this.storageNewValue = this.el.querySelector("[data-emulator-storage-new-value]")
+    this.storageResetButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-storage-reset]")
+    this.storageAddButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-storage-add]")
+    this.storageNewKey = this.el.querySelector<HTMLInputElement>("[data-emulator-storage-new-key]")
+    this.storageNewType = this.el.querySelector<HTMLSelectElement>("[data-emulator-storage-new-type]")
+    this.storageNewValue = this.el.querySelector<HTMLInputElement>("[data-emulator-storage-new-value]")
     this.dataLogRows = this.el.querySelector("[data-emulator-data-log-rows]")
     document.addEventListener("keydown", this.handleConfigKeyDown)
     this.el.addEventListener("click", this.handleRootClick)
@@ -307,19 +396,19 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  updated() {
+  updated(): void {
     const previousCanvas = this.canvas
     this.refreshSimulatorCapabilities()
     this.canvas = this.el.querySelector("[data-emulator-canvas]")
     this.status = this.el.querySelector("[data-emulator-status]")
     this.log = this.el.querySelector("[data-emulator-log]")
-    this.launchButton = this.el.querySelector("[data-emulator-launch]")
-    this.installButton = this.el.querySelector("[data-emulator-install]")
-    this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
-    this.screenshotButton = this.el.querySelector("[data-emulator-screenshot]")
+    this.launchButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-launch]")
+    this.installButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-install]")
+    this.preferencesButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-preferences]")
+    this.screenshotButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-screenshot]")
     this.storageRows = this.el.querySelector("[data-emulator-storage-rows]")
-    this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
-    this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
+    this.storageResetButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-storage-reset]")
+    this.storageAddButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-storage-add]")
 
     if (this.status && this.currentStatus) {
       this.status.textContent = this.currentStatus
@@ -339,7 +428,7 @@ export class EmbeddedEmulatorHost {
     this.ensureVncAttached()
   }
 
-  async initializePersistedSession() {
+  async initializePersistedSession(): Promise<void> {
     if (!this.session) {
       this.updateControlButtons()
       return
@@ -356,11 +445,11 @@ export class EmbeddedEmulatorHost {
     this.updateControlButtons()
   }
 
-  validatePersistedSession(...args) {
-    return this.sessionClient.validatePersistedSession(...args)
+  validatePersistedSession(): ReturnType<InstanceType<typeof EmulatorSessionClient>["validatePersistedSession"]> {
+    return this.sessionClient.validatePersistedSession()
   }
 
-  resumeExistingSession() {
+  resumeExistingSession(): void {
     if (!this.session) return
 
     this.sessionEnded = false
@@ -368,7 +457,7 @@ export class EmbeddedEmulatorHost {
     if (this.session.backend_enabled && !(this.rfb && this.rfbCanvas === this.canvas)) {
       this.connectDisplay().catch(error => {
         if (this.session && !this.stopping && !this.destroyed) {
-          this.scheduleVncReconnect(`Embedded emulator display reconnect failed: ${error.message}`)
+          this.scheduleVncReconnect(`Embedded emulator display reconnect failed: ${errMessage(error)}`)
         }
       })
     }
@@ -376,7 +465,7 @@ export class EmbeddedEmulatorHost {
     this.reapplySimulatorSettingsToQemu({source: "session_resume", quiet: true})
   }
 
-  destroy(removeListeners = true) {
+  destroy(removeListeners = true): void {
     this.destroyed = true
     this.state.listeners.delete(this.syncStateToDom)
     this.stopPingAfterDisplayTimer()
@@ -388,9 +477,9 @@ export class EmbeddedEmulatorHost {
       this.vncViewportConfigTimer = null
     }
     this.vncViewportConfigKey = null
-    this.weatherInjectTimers.forEach(timerId => window.clearTimeout(timerId))
+    this.weatherInjectTimers.forEach((timerId: ReturnType<typeof setTimeout>) => window.clearTimeout(timerId))
     this.weatherInjectTimers = []
-    this.weatherPushRetryTimers.forEach(timerId => window.clearTimeout(timerId))
+    this.weatherPushRetryTimers.forEach((timerId: ReturnType<typeof setTimeout>) => window.clearTimeout(timerId))
     this.weatherPushRetryTimers = []
     if (this.weatherDebugFallbackTimer != null) {
       window.clearTimeout(this.weatherDebugFallbackTimer)
@@ -421,11 +510,11 @@ export class EmbeddedEmulatorHost {
     if (this.phoneSocket) this.phoneSocket.close()
   }
 
-  notifyStateChanged() {
-    this.state.listeners.forEach(listener => listener())
+  notifyStateChanged(): void {
+    this.state.listeners.forEach((listener: () => void) => listener())
   }
 
-  toggleLaunch() {
+  toggleLaunch(): void {
     if (this.launching || this.stopping) return
     if (this.session && this.sessionAlive && !this.sessionEnded) {
       void this.stop()
@@ -440,48 +529,121 @@ export class EmbeddedEmulatorHost {
     void this.launch()
   }
 
-  async launch(...args) {
-    return this.sessionClient.launch(...args)
+  async launch(): ReturnType<InstanceType<typeof EmulatorSessionClient>["launch"]> {
+    return this.sessionClient.launch()
   }
 
-  async stop(...args) {
-    return this.sessionClient.stop(...args)
+  async stop(): ReturnType<InstanceType<typeof EmulatorSessionClient>["stop"]> {
+    return this.sessionClient.stop()
   }
 
-  resolveCanvas(...args) { return this.vnc.resolveCanvas(...args) }
-  waitForDisplayReady(...args) { return this.vnc.waitForDisplayReady(...args) }
-  connectDisplay(...args) { return this.vnc.connectDisplay(...args) }
-  closeVncSocket(...args) { return this.vnc.closeVncSocket(...args) }
-  closeVncChannel(...args) { return this.vnc.closeVncChannel(...args) }
-  disconnectRfb(...args) { return this.vnc.disconnectRfb(...args) }
-  ensurePhoenixSocket(...args) { return this.vnc.ensurePhoenixSocket(...args) }
-  decodeChannelBinary(...args) { return this.vnc.decodeChannelBinary(...args) }
-  base64ToArrayBuffer(...args) { return this.vnc.base64ToArrayBuffer(...args) }
-  vncBytes(...args) { return this.vnc.vncBytes(...args) }
-  bytesToBase64(...args) { return this.vnc.bytesToBase64(...args) }
-  pushVncFrame(...args) { return this.vnc.pushVncFrame(...args) }
-  resetVncFramePipeline(...args) { return this.vnc.resetVncFramePipeline(...args) }
-  enqueueVncChannelFrame(...args) { return this.vnc.enqueueVncChannelFrame(...args) }
-  bindVncFrameSink(...args) { return this.vnc.bindVncFrameSink(...args) }
-  deliverVncJoinInitial(...args) { return this.vnc.deliverVncJoinInitial(...args) }
-  joinVncChannel(...args) { return this.vnc.joinVncChannel(...args) }
-  createVncChannelTransport(...args) { return this.vnc.createVncChannelTransport(...args) }
-  resetVncWsDiag(...args) { return this.vnc.resetVncWsDiag(...args) }
-  attachVncWebSocketDiagnostics(...args) { return this.vnc.attachVncWebSocketDiagnostics(...args) }
-  probeEmulatorSession(...args) { return this.vnc.probeEmulatorSession(...args) }
-  openVncWebSocket(...args) { return this.vnc.openVncWebSocket(...args) }
-  connectVnc(...args) { return this.vnc.connectVnc(...args) }
-  reconnectVncAfterDomPatch(...args) { return this.vnc.reconnectVncAfterDomPatch(...args) }
-  ensureVncAttached(...args) { return this.vnc.ensureVncAttached(...args) }
-  scheduleVncReconnect(...args) { return this.vnc.scheduleVncReconnect(...args) }
-  stopVncReconnect(...args) { return this.vnc.stopVncReconnect(...args) }
-  readVncBackingSize(...args) { return this.vnc.readVncBackingSize(...args) }
-  readVncFramebufferSize(...args) { return this.vnc.readVncFramebufferSize(...args) }
-  scheduleVncViewportConfig(...args) { return this.vnc.scheduleVncViewportConfig(...args) }
-  configureVncDisplay(...args) { return this.vnc.configureVncDisplay(...args) }
-  scheduleVncCanvasSample(...args) { return this.vnc.scheduleVncCanvasSample(...args) }
-  logVncCanvasSample(...args) { return this.vnc.logVncCanvasSample(...args) }
-  connectPhone() {
+  resolveCanvas(): ReturnType<InstanceType<typeof EmulatorVnc>["resolveCanvas"]> {
+    return this.vnc.resolveCanvas()
+  }
+  waitForDisplayReady(timeoutMs?: number): ReturnType<InstanceType<typeof EmulatorVnc>["waitForDisplayReady"]> {
+    return this.vnc.waitForDisplayReady(timeoutMs)
+  }
+  connectDisplay(): ReturnType<InstanceType<typeof EmulatorVnc>["connectDisplay"]> {
+    return this.vnc.connectDisplay()
+  }
+  closeVncSocket(): void {
+    return this.vnc.closeVncSocket()
+  }
+  closeVncChannel(): void {
+    return this.vnc.closeVncChannel()
+  }
+  disconnectRfb(rfb: RFB | null | undefined, options?: {reconnecting?: boolean}): void {
+    return this.vnc.disconnectRfb(rfb, options)
+  }
+  ensurePhoenixSocket(): ReturnType<InstanceType<typeof EmulatorVnc>["ensurePhoenixSocket"]> {
+    return this.vnc.ensurePhoenixSocket()
+  }
+  decodeChannelBinary(
+    payload: Parameters<InstanceType<typeof EmulatorVnc>["decodeChannelBinary"]>[0]
+  ): ReturnType<InstanceType<typeof EmulatorVnc>["decodeChannelBinary"]> {
+    return this.vnc.decodeChannelBinary(payload)
+  }
+  base64ToArrayBuffer(encoded: string): ArrayBuffer {
+    return this.vnc.base64ToArrayBuffer(encoded)
+  }
+  vncBytes(data: ArrayBuffer | ArrayBufferView): Uint8Array {
+    return this.vnc.vncBytes(data)
+  }
+  bytesToBase64(bytes: Uint8Array): string {
+    return this.vnc.bytesToBase64(bytes)
+  }
+  pushVncFrame(
+    channel: Parameters<InstanceType<typeof EmulatorVnc>["pushVncFrame"]>[0],
+    data: ArrayBuffer | ArrayBufferView
+  ): void {
+    return this.vnc.pushVncFrame(channel, data)
+  }
+  resetVncFramePipeline(): void {
+    return this.vnc.resetVncFramePipeline()
+  }
+  enqueueVncChannelFrame(payload: unknown): void {
+    return this.vnc.enqueueVncChannelFrame(payload)
+  }
+  bindVncFrameSink(deliver: (data: ArrayBuffer) => void): void {
+    return this.vnc.bindVncFrameSink(deliver)
+  }
+  deliverVncJoinInitial(rfb: RFB): void {
+    return this.vnc.deliverVncJoinInitial(rfb)
+  }
+  joinVncChannel(): ReturnType<InstanceType<typeof EmulatorVnc>["joinVncChannel"]> {
+    return this.vnc.joinVncChannel()
+  }
+  createVncChannelTransport(
+    channel: Parameters<InstanceType<typeof EmulatorVnc>["createVncChannelTransport"]>[0]
+  ): ReturnType<InstanceType<typeof EmulatorVnc>["createVncChannelTransport"]> {
+    return this.vnc.createVncChannelTransport(channel)
+  }
+  resetVncWsDiag(): void {
+    return this.vnc.resetVncWsDiag()
+  }
+  attachVncWebSocketDiagnostics(ws: WebSocket): void {
+    return this.vnc.attachVncWebSocketDiagnostics(ws)
+  }
+  probeEmulatorSession(pingPath: string): ReturnType<InstanceType<typeof EmulatorVnc>["probeEmulatorSession"]> {
+    return this.vnc.probeEmulatorSession(pingPath)
+  }
+  openVncWebSocket(url: string): ReturnType<InstanceType<typeof EmulatorVnc>["openVncWebSocket"]> {
+    return this.vnc.openVncWebSocket(url)
+  }
+  connectVnc(): ReturnType<InstanceType<typeof EmulatorVnc>["connectVnc"]> {
+    return this.vnc.connectVnc()
+  }
+  reconnectVncAfterDomPatch(): void {
+    return this.vnc.reconnectVncAfterDomPatch()
+  }
+  ensureVncAttached(): void {
+    return this.vnc.ensureVncAttached()
+  }
+  scheduleVncReconnect(message: string): void {
+    return this.vnc.scheduleVncReconnect(message)
+  }
+  stopVncReconnect(): void {
+    return this.vnc.stopVncReconnect()
+  }
+  readVncBackingSize(): ReturnType<InstanceType<typeof EmulatorVnc>["readVncBackingSize"]> {
+    return this.vnc.readVncBackingSize()
+  }
+  readVncFramebufferSize(rfb: RFB): ReturnType<InstanceType<typeof EmulatorVnc>["readVncFramebufferSize"]> {
+    return this.vnc.readVncFramebufferSize(rfb)
+  }
+  scheduleVncViewportConfig(rfb: RFB, reason: string, delayMs?: number): void {
+    return this.vnc.scheduleVncViewportConfig(rfb, reason, delayMs)
+  }
+  configureVncDisplay(rfb: RFB, reason?: string): void {
+    return this.vnc.configureVncDisplay(rfb, reason)
+  }
+  scheduleVncCanvasSample(label: string, delayMs?: number): void {
+    return this.vnc.scheduleVncCanvasSample(label, delayMs)
+  }
+  logVncCanvasSample(label: string): void {
+    return this.vnc.logVncCanvasSample(label)
+  }
+  connectPhone(): void {
     if (this.destroyed || !this.session?.backend_enabled) return
     const oldPhoneSocket = this.phoneSocket
     this.phoneBridgeActive = true
@@ -515,9 +677,11 @@ export class EmbeddedEmulatorHost {
     })
   }
 
-  async install() {
+  async install(): Promise<void> {
     if (this.installing || !this.installReady()) return
-    const installSessionId = this.session.id
+    const session = this.session
+    if (!session) return
+    const installSessionId = session.id
     this.installing = true
     this.updateControlButtons()
 
@@ -531,7 +695,7 @@ export class EmbeddedEmulatorHost {
           this.enableAppLogs()
         } catch (error) {
           if (this.session?.id === installSessionId) {
-            this.appendLog(`phone bridge connect failed: ${error.message}`)
+            this.appendLog(`phone bridge connect failed: ${errMessage(error)}`)
           }
         }
       }
@@ -542,13 +706,13 @@ export class EmbeddedEmulatorHost {
           await this.installPbwViaPhoneBridge()
         } catch (error) {
           if (this.session?.id === installSessionId) {
-            this.appendLog(`phone bridge companion cache refresh failed: ${error.message}`)
+            this.appendLog(`phone bridge companion cache refresh failed: ${errMessage(error)}`)
           }
         }
       }
     } catch (error) {
       if (this.session?.id === installSessionId && !this.stopping) {
-        this.setStatus(`PBW install failed: ${error.message}`)
+        this.setStatus(`PBW install failed: ${errMessage(error)}`)
       }
     } finally {
       if (this.session?.id === installSessionId) {
@@ -558,11 +722,13 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  installPbwViaNativeInstaller(...args) {
-    return this.sessionClient.installPbwViaNativeInstaller(...args)
+  installPbwViaNativeInstaller(
+    installSessionId?: string
+  ): ReturnType<InstanceType<typeof EmulatorSessionClient>["installPbwViaNativeInstaller"]> {
+    return this.sessionClient.installPbwViaNativeInstaller(installSessionId)
   }
 
-  async ensurePhoneBridge(timeoutMs = 35_000) {
+  async ensurePhoneBridge(timeoutMs = 35_000): Promise<boolean> {
     if (!this.session?.backend_enabled) return false
     if (this.phoneSocket?.readyState !== WebSocket.OPEN) {
       this.connectPhone()
@@ -571,10 +737,10 @@ export class EmbeddedEmulatorHost {
     return true
   }
 
-  waitForPhoneBridge(timeoutMs = 35_000) {
+  waitForPhoneBridge(timeoutMs = 35_000): Promise<void> {
     if (this.phoneSocket?.readyState === WebSocket.OPEN) return Promise.resolve()
 
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const startedAt = Date.now()
       let lastReconnectAt = 0
       const check = () => {
@@ -598,7 +764,7 @@ export class EmbeddedEmulatorHost {
     })
   }
 
-  async loadCompanionPreferences() {
+  async loadCompanionPreferences(): Promise<void> {
     if (!this.companionPreferencesReady()) {
       this.setStatus("This companion app does not declare preferences or configuration.")
       return
@@ -612,7 +778,7 @@ export class EmbeddedEmulatorHost {
     this.setStatus("Requested companion configuration from phone bridge")
   }
 
-  async handlePhoneMessage(event) {
+  async handlePhoneMessage(event: MessageEvent<ArrayBuffer | Blob | string>): Promise<void> {
     const data = new Uint8Array(await this.messageBytes(event.data))
     if (data.length === 0) return
 
@@ -672,7 +838,9 @@ export class EmbeddedEmulatorHost {
           if (this.pendingWeatherRetry) {
             const weather = this.pendingWeatherRetry
             const timerId = window.setTimeout(() => {
-              this.weatherPushRetryTimers = this.weatherPushRetryTimers.filter(id => id !== timerId)
+              this.weatherPushRetryTimers = this.weatherPushRetryTimers.filter(
+                (id: ReturnType<typeof setTimeout>) => id !== timerId
+              )
               this.enqueueWeatherDebugPush(weather, {quiet: true, force: true})
             }, 800)
             this.weatherPushRetryTimers.push(timerId)
@@ -705,7 +873,7 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  logPhoneBridgeFrame(data) {
+  logPhoneBridgeFrame(data: Uint8Array): void {
     const opcode = data[0]
 
     if (opcode === 0x02) {
@@ -741,62 +909,63 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  async messageBytes(data) {
+  async messageBytes(data: ArrayBuffer | Blob | string): Promise<ArrayBuffer> {
     if (data instanceof ArrayBuffer) return data
     if (data instanceof Blob) return data.arrayBuffer()
     if (typeof data === "string") return new TextEncoder().encode(data).buffer
     return new ArrayBuffer(0)
   }
 
-  pressButton(name, down) {
+  pressButton(name: EmulatorButtonName, down: boolean): void {
     if (!(name in BUTTONS)) return
     const bit = 1 << BUTTONS[name]
     this.buttonState = down ? (this.buttonState | bit) : (this.buttonState & ~bit)
     this.sendQemu(QEMU.button, [this.buttonState])
   }
 
-  bindControl(element, eventName, handler) {
+  bindControl(element: Element | null, eventName: string, handler: EventListener): void {
     if (!element || this.boundControlElements.has(element)) return
     this.boundControlElements.add(element)
     element.addEventListener(eventName, handler)
   }
 
-  bindControlButtons() {
-    this.launchButton = this.el.querySelector("[data-emulator-launch]")
-    this.installButton = this.el.querySelector("[data-emulator-install]")
-    this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
-    this.screenshotButton = this.el.querySelector("[data-emulator-screenshot]")
-    this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
-    this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
+  bindControlButtons(): void {
+    this.launchButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-launch]")
+    this.installButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-install]")
+    this.preferencesButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-preferences]")
+    this.screenshotButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-screenshot]")
+    this.storageResetButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-storage-reset]")
+    this.storageAddButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-storage-add]")
     this.configPanel = this.el.querySelector("[data-emulator-config-panel]")
-    this.configFrame = this.el.querySelector("[data-emulator-config-frame]")
+    this.configFrame = this.el.querySelector<HTMLIFrameElement>("[data-emulator-config-frame]")
 
     if (this.configPanel && !this.boundControlElements.has(this.configPanel)) {
       this.boundControlElements.add(this.configPanel)
-      this.configPanel.addEventListener("click", event => {
+      this.configPanel.addEventListener("click", (event: MouseEvent) => {
         if (event.target === this.configPanel) this.cancelConfig()
       })
     }
 
     if (this.configFrame && !this.boundControlElements.has(this.configFrame)) {
       this.boundControlElements.add(this.configFrame)
-      this.configFrame.addEventListener("load", () => this.maybeHandleConfigReturn(this.configFrame.contentWindow))
+      this.configFrame.addEventListener("load", () => this.maybeHandleConfigReturn(this.configFrame?.contentWindow ?? null))
     }
   }
 
-  bindEmulatorButtons() {
-    this.el.querySelectorAll("[data-emulator-button]").forEach(button => {
+  bindEmulatorButtons(): void {
+    this.el.querySelectorAll<HTMLElement>("[data-emulator-button]").forEach(button => {
       if (this.boundEmulatorButtons.has(button)) return
       this.boundEmulatorButtons.add(button)
 
-      const name = button.dataset.emulatorButton
-      button.addEventListener("pointerdown", event => {
+      const name = button.dataset.emulatorButton as EmulatorButtonName | undefined
+      if (!name || !(name in BUTTONS)) return
+      button.addEventListener("pointerdown", (event: PointerEvent) => {
         event.preventDefault()
         button.setPointerCapture?.(event.pointerId)
         this.pressButton(name, true)
       })
 
-      const release = event => {
+      const release = (event: PointerEvent) => {
         if (button.hasPointerCapture?.(event.pointerId)) {
           button.releasePointerCapture(event.pointerId)
         }
@@ -810,63 +979,142 @@ export class EmbeddedEmulatorHost {
     })
   }
 
-  releaseAllButtons() {
+  releaseAllButtons(): void {
     if (this.buttonState === 0) return
     this.buttonState = 0
     this.sendQemu(QEMU.button, [0])
   }
 
-  setBattery(percent, charging) {
+  setBattery(percent: number, charging: boolean): void {
     this.sendQemu(QEMU.battery, encodeBattery(percent, charging))
   }
 
-  sendAccelSample(x, y, z) {
+  sendAccelSample(x: number, y: number, z: number): void {
     this.sendQemu(QEMU.accel, encodeAccel(x, y, z))
   }
 
-  sendCompassSample(settings = this.simulatorSettings || {}) {
+  sendCompassSample(settings: SimulatorSettings = this.simulatorSettings || {}): void {
     this.sendQemu(QEMU.compass, encodeCompass(settings))
   }
 
-  reapplySimulatorSettingsToQemu(...args) { return this.simulatorDelivery.reapplySimulatorSettingsToQemu(...args) }
-  applyInitialSimulatorSettings(...args) { return this.simulatorDelivery.applyInitialSimulatorSettings(...args) }
-  parseSimulatorCapabilities(...args) { return this.simulatorDelivery.parseSimulatorCapabilities(...args) }
-  simulatorCapabilities(...args) { return this.simulatorDelivery.simulatorCapabilities(...args) }
-  simulatorWeatherEnabled(...args) { return this.simulatorDelivery.simulatorWeatherEnabled(...args) }
-  refreshSimulatorCapabilities(...args) { return this.simulatorDelivery.refreshSimulatorCapabilities(...args) }
-  companionSimulatorEnabled(...args) { return this.simulatorDelivery.companionSimulatorEnabled(...args) }
-  emulatorSessionActive(...args) { return this.simulatorDelivery.emulatorSessionActive(...args) }
-  shouldSyncCompanionSimulator(...args) { return this.simulatorDelivery.shouldSyncCompanionSimulator(...args) }
-  simulatorSettingsWeatherKey(...args) { return this.simulatorDelivery.simulatorSettingsWeatherKey(...args) }
-  syncSimulatorSettingsFromDataset(...args) { return this.simulatorDelivery.syncSimulatorSettingsFromDataset(...args) }
-  refreshSimulatorSettingsFromDataset(...args) { return this.simulatorDelivery.refreshSimulatorSettingsFromDataset(...args) }
-  applySimulatorSettings(...args) { return this.simulatorDelivery.applySimulatorSettings(...args) }
-  simulatorSettingsPayload(...args) { return this.simulatorDelivery.simulatorSettingsPayload(...args) }
-  pushSimulatorSettingsToPhoneBridgeNow(...args) { return this.simulatorDelivery.pushSimulatorSettingsToPhoneBridgeNow(...args) }
-  scheduleWeatherPush(...args) { return this.simulatorDelivery.scheduleWeatherPush(...args) }
-  scheduleWeatherDebugFallback(...args) { return this.simulatorDelivery.scheduleWeatherDebugFallback(...args) }
-  scheduleWeatherDebugAckTimeout(...args) { return this.simulatorDelivery.scheduleWeatherDebugAckTimeout(...args) }
-  weatherDebugQueueKey(...args) { return this.simulatorDelivery.weatherDebugQueueKey(...args) }
-  enqueueWeatherDebugPush(...args) { return this.simulatorDelivery.enqueueWeatherDebugPush(...args) }
-  drainWeatherDebugQueue(...args) { return this.simulatorDelivery.drainWeatherDebugQueue(...args) }
-  logWeatherTrace(...args) { return this.simulatorDelivery.logWeatherTrace(...args) }
-  resetWeatherDebugQueueIfStuck(...args) { return this.simulatorDelivery.resetWeatherDebugQueueIfStuck(...args) }
-  weatherConditionWireCode(...args) { return this.simulatorDelivery.weatherConditionWireCode(...args) }
-  parseSimulatorTemperatureC(...args) { return this.simulatorDelivery.parseSimulatorTemperatureC(...args) }
-  resolveWeatherSimulatorSettings(...args) { return this.simulatorDelivery.resolveWeatherSimulatorSettings(...args) }
-  scheduleWeatherSimulatorInject(...args) { return this.simulatorDelivery.scheduleWeatherSimulatorInject(...args) }
-  injectWeatherSimulatorSettings(...args) { return this.simulatorDelivery.injectWeatherSimulatorSettings(...args) }
-  pushWeatherDebugAppMessage(...args) { return this.simulatorDelivery.pushWeatherDebugAppMessage(...args) }
-  sendWeatherSimulatorSettings(...args) { return this.simulatorDelivery.sendWeatherSimulatorSettings(...args) }
-  sendSimulatorSettingsToPhoneBridge(...args) { return this.simulatorDelivery.sendSimulatorSettingsToPhoneBridge(...args) }
-
-  sendQemu(protocol, payload) {
-    if (!this.session?.id) return
-    postJSON(`/api/emulator/${encodeURIComponent(this.session.id)}/control`, {protocol, payload})
-      .catch(error => this.appendLog(`embedded control failed: ${error.message}`))
+  reapplySimulatorSettingsToQemu(options?: SimulatorSettingsOptions): void {
+    void this.simulatorDelivery.reapplySimulatorSettingsToQemu(options)
+  }
+  applyInitialSimulatorSettings(): void {
+    return this.simulatorDelivery.applyInitialSimulatorSettings()
+  }
+  parseSimulatorCapabilities(): Set<string> {
+    return this.simulatorDelivery.parseSimulatorCapabilities()
+  }
+  simulatorCapabilities(): Set<string> {
+    return this.simulatorDelivery.simulatorCapabilities()
+  }
+  simulatorWeatherEnabled(): boolean {
+    return this.simulatorDelivery.simulatorWeatherEnabled()
+  }
+  refreshSimulatorCapabilities(): void {
+    return this.simulatorDelivery.refreshSimulatorCapabilities()
+  }
+  companionSimulatorEnabled(): boolean {
+    return this.simulatorDelivery.companionSimulatorEnabled()
+  }
+  emulatorSessionActive(): boolean {
+    return this.simulatorDelivery.emulatorSessionActive()
+  }
+  shouldSyncCompanionSimulator(options?: SimulatorSettingsOptions): boolean {
+    return this.simulatorDelivery.shouldSyncCompanionSimulator(options)
+  }
+  simulatorSettingsWeatherKey(settings?: SimulatorSettings | null): string {
+    return this.simulatorDelivery.simulatorSettingsWeatherKey(settings)
+  }
+  syncSimulatorSettingsFromDataset(): void {
+    return this.simulatorDelivery.syncSimulatorSettingsFromDataset()
+  }
+  refreshSimulatorSettingsFromDataset(): void {
+    return this.simulatorDelivery.refreshSimulatorSettingsFromDataset()
+  }
+  applySimulatorSettings(
+    settings: SimulatorSettings,
+    options?: SimulatorSettingsOptions
+  ): ReturnType<InstanceType<typeof EmulatorSimulatorDelivery>["applySimulatorSettings"]> {
+    return this.simulatorDelivery.applySimulatorSettings(settings, options)
+  }
+  simulatorSettingsPayload(
+    settings?: SimulatorSettings | null
+  ): ReturnType<InstanceType<typeof EmulatorSimulatorDelivery>["simulatorSettingsPayload"]> {
+    return this.simulatorDelivery.simulatorSettingsPayload(settings)
+  }
+  pushSimulatorSettingsToPhoneBridgeNow(options?: QuietOptions): boolean {
+    return this.simulatorDelivery.pushSimulatorSettingsToPhoneBridgeNow(options)
+  }
+  scheduleWeatherPush(options?: SimulatorSettingsOptions): void {
+    return this.simulatorDelivery.scheduleWeatherPush(options)
+  }
+  scheduleWeatherDebugFallback(weather: WeatherSimulatorSettings, options?: QuietOptions): void {
+    return this.simulatorDelivery.scheduleWeatherDebugFallback(weather, options)
+  }
+  scheduleWeatherDebugAckTimeout(): void {
+    return this.simulatorDelivery.scheduleWeatherDebugAckTimeout()
+  }
+  weatherDebugQueueKey(weather: WeatherSimulatorSettings | null | undefined): string {
+    return this.simulatorDelivery.weatherDebugQueueKey(weather)
+  }
+  enqueueWeatherDebugPush(
+    weather: WeatherSimulatorSettings,
+    options?: QuietOptions & {force?: boolean}
+  ): boolean {
+    return this.simulatorDelivery.enqueueWeatherDebugPush(weather, options)
+  }
+  drainWeatherDebugQueue(): boolean {
+    return this.simulatorDelivery.drainWeatherDebugQueue()
+  }
+  logWeatherTrace(bytes: ArrayBuffer): void {
+    return this.simulatorDelivery.logWeatherTrace(bytes)
+  }
+  resetWeatherDebugQueueIfStuck(reason: string): boolean {
+    return this.simulatorDelivery.resetWeatherDebugQueueIfStuck(reason)
+  }
+  weatherConditionWireCode(condition: string | undefined): number {
+    return this.simulatorDelivery.weatherConditionWireCode(condition)
+  }
+  parseSimulatorTemperatureC(value: unknown): number | null {
+    return this.simulatorDelivery.parseSimulatorTemperatureC(value)
+  }
+  resolveWeatherSimulatorSettings(
+    settings?: SimulatorSettings | null
+  ): ReturnType<InstanceType<typeof EmulatorSimulatorDelivery>["resolveWeatherSimulatorSettings"]> {
+    return this.simulatorDelivery.resolveWeatherSimulatorSettings(settings)
+  }
+  scheduleWeatherSimulatorInject(reason: string): void {
+    return this.simulatorDelivery.scheduleWeatherSimulatorInject(reason)
+  }
+  injectWeatherSimulatorSettings(reason: string): void {
+    return this.simulatorDelivery.injectWeatherSimulatorSettings(reason)
+  }
+  pushWeatherDebugAppMessage(
+    weather: WeatherSimulatorSettings,
+    options?: QuietOptions
+  ): boolean {
+    return this.simulatorDelivery.pushWeatherDebugAppMessage(weather, options)
+  }
+  sendWeatherSimulatorSettings(
+    weather: WeatherSimulatorSettings,
+    options?: QuietOptions
+  ): boolean {
+    return this.simulatorDelivery.sendWeatherSimulatorSettings(weather, options)
+  }
+  sendSimulatorSettingsToPhoneBridge(options?: QuietOptions): boolean {
+    return this.simulatorDelivery.sendSimulatorSettingsToPhoneBridge(options)
   }
 
-  sendPebbleFrame(endpoint, payload) {
+  sendQemu(protocol: number, payload: number[]): void {
+    if (!this.session?.id) return
+    postJSON(`/api/emulator/${encodeURIComponent(this.session.id)}/control`, {protocol, payload}).catch(error =>
+      this.appendLog(`embedded control failed: ${errMessage(error)}`)
+    )
+  }
+
+  sendPebbleFrame(endpoint: number, payload: Uint8Array): boolean {
     if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) return false
     const frame = new Uint8Array(5 + payload.length)
     const view = new DataView(frame.buffer)
@@ -878,7 +1126,7 @@ export class EmbeddedEmulatorHost {
     return true
   }
 
-  enableAppLogs() {
+  enableAppLogs(): void {
     const sent = this.sendPebbleFrame(ENDPOINT_APP_LOG, new Uint8Array([1]))
     if (sent) {
       this.appendLog("requested watch AppLog shipping")
@@ -888,18 +1136,18 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  requestStorageSnapshot() {
+  requestStorageSnapshot(): void {
     if (!this.sendDebugAppMessage([{key: DEBUG_STORAGE.op, type: "uint", value: DEBUG_STORAGE.opSnapshot}], {quiet: true})) {
       return
     }
     this.appendLog("requested watch storage snapshot")
   }
 
-  phoneBridgeSimulatorSettings() {
+  phoneBridgeSimulatorSettings(): ReturnType<InstanceType<typeof EmulatorSimulatorDelivery>["simulatorSettingsPayload"]> {
     return this.simulatorSettingsPayload()
   }
 
-  async installPbwViaPhoneBridge() {
+  async installPbwViaPhoneBridge(): Promise<void> {
     if (!this.session?.artifact_path) return
     if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) {
       this.appendLog("skipped phone bridge PBW install: phone websocket is not open")
@@ -929,16 +1177,16 @@ export class EmbeddedEmulatorHost {
     this.sendSimulatorSettingsToPhoneBridge()
   }
 
-  waitForPypkjsInstall() {
+  waitForPypkjsInstall(): Promise<void> {
     if (this.pendingPypkjsInstall) return this.pendingPypkjsInstall.promise
 
-    let pending
-    const promise = new Promise((resolve, reject) => {
+    let pending!: PendingPypkjsInstall
+    const promise = new Promise<void>((resolve, reject) => {
       const timeoutId = window.setTimeout(() => {
         this.pendingPypkjsInstall = null
         reject(new Error("Timed out waiting for phone bridge PBW install"))
       }, PHONE_BRIDGE_INSTALL_TIMEOUT_MS)
-      pending = {resolve, reject, timeoutId, promise: null}
+      pending = {resolve, reject, timeoutId, promise: null!}
       this.pendingPypkjsInstall = pending
     })
 
@@ -946,7 +1194,7 @@ export class EmbeddedEmulatorHost {
     return promise
   }
 
-  finishPypkjsInstall(success) {
+  finishPypkjsInstall(success: boolean): void {
     if (!this.pendingPypkjsInstall) return
     const pending = this.pendingPypkjsInstall
     this.pendingPypkjsInstall = null
@@ -959,7 +1207,7 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  appendPebbleFrameLog(direction, frame) {
+  appendPebbleFrameLog(direction: string, frame: Uint8Array): void {
     if (this.pebbleFrameEndpoint(frame) === 0xbeef) {
       this.compactPutBytesFrame()
       return
@@ -976,36 +1224,36 @@ export class EmbeddedEmulatorHost {
     if (message) this.appendLog(message)
   }
 
-  pebbleFrameEndpoint(frame) {
+  pebbleFrameEndpoint(frame: Uint8Array): number | null {
     if (frame.length < 4) return null
     return new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint16(2, false)
   }
 
-  compactPutBytesFrame() {
+  compactPutBytesFrame(): void {
     this.suppressedPutBytesFrames += 1
     if (this.suppressedPutBytesFrames >= PUTBYTES_SUMMARY_INTERVAL) this.flushPutBytesSummary()
   }
 
-  flushPutBytesSummary() {
+  flushPutBytesSummary(): void {
     if (this.suppressedPutBytesFrames === 0) return
     const count = this.suppressedPutBytesFrames
     this.suppressedPutBytesFrames = 0
     this.appendLog(`suppressed ${count} PutBytes transfer frame${count === 1 ? "" : "s"}`, {flushTransfers: false})
   }
 
-  compactSystemLogFrame() {
+  compactSystemLogFrame(): void {
     this.suppressedSystemLogFrames = (this.suppressedSystemLogFrames || 0) + 1
     if (this.suppressedSystemLogFrames >= SYSTEM_LOG_SUMMARY_INTERVAL) this.flushSystemLogSummary()
   }
 
-  flushSystemLogSummary() {
+  flushSystemLogSummary(): void {
     if (!this.suppressedSystemLogFrames) return
     const count = this.suppressedSystemLogFrames
     this.suppressedSystemLogFrames = 0
     this.appendLog(`suppressed ${count} Pebble system log frame${count === 1 ? "" : "s"}`, {flushSystemLogs: false})
   }
 
-  describePebbleFrame(direction, frame) {
+  describePebbleFrame(direction: string, frame: Uint8Array): string | null {
     if (frame.length < 4) return `${direction} Pebble frame (${frame.length} bytes) ${this.hexPreview(frame)}`
 
     const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength)
@@ -1020,11 +1268,11 @@ export class EmbeddedEmulatorHost {
     return `${direction} ${endpointName} endpoint=0x${endpoint.toString(16).padStart(4, "0")} payload=${length} bytes ${this.hexPreview(payload)}`
   }
 
-  describeAppLogFrame(direction, payload) {
+  describeAppLogFrame(direction: string, payload: Uint8Array): string {
     if (payload.length >= 40) {
       const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
-      const level = this.appLogLevelName(payload[20])
-      const messageLength = payload[21]
+      const level = this.appLogLevelName(payload[20] ?? 0)
+      const messageLength = payload[21] ?? 0
       const line = view.getUint16(22, false)
       const filename = this.cString(payload.slice(24, 40))
       const message = this.cString(payload.slice(40, 40 + messageLength))
@@ -1037,7 +1285,7 @@ export class EmbeddedEmulatorHost {
     return `${direction} AppLog: ${text}`
   }
 
-  describeDataLoggingPayload(payload) {
+  describeDataLoggingPayload(payload: Uint8Array): DataLogEntry {
     if (payload.length < 29) return {payloadPrefix: this.hexPreview(payload)}
 
     const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
@@ -1052,13 +1300,13 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  uuidFromBytes(bytes) {
+  uuidFromBytes(bytes: Uint8Array): string {
     if (bytes.length !== 16) return this.hexPreview(bytes)
     const hex = [...bytes].map(byte => byte.toString(16).padStart(2, "0"))
     return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`
   }
 
-  appLogLevelName(level) {
+  appLogLevelName(level: number): string {
     switch (level) {
       case 1:
         return "error"
@@ -1079,9 +1327,9 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  printableStrings(bytes) {
-    const strings = []
-    let current = []
+  printableStrings(bytes: Uint8Array): string[] {
+    const strings: string[] = []
+    let current: number[] = []
 
     const flush = () => {
       if (current.length >= 2) strings.push(new TextDecoder().decode(new Uint8Array(current)))
@@ -1100,13 +1348,13 @@ export class EmbeddedEmulatorHost {
     return strings
   }
 
-  cString(bytes) {
+  cString(bytes: Uint8Array): string {
     const end = bytes.indexOf(0)
     const slice = end >= 0 ? bytes.slice(0, end) : bytes
     return new TextDecoder().decode(slice).trim()
   }
 
-  endpointName(endpoint) {
+  endpointName(endpoint: number): string {
     switch (endpoint) {
       case 0x0030:
         return "AppMessage"
@@ -1129,16 +1377,16 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  async waitForPhoneBridgeSettle() {
+  async waitForPhoneBridgeSettle(): Promise<void> {
     const minimumSettleMs = 5000
     const remaining = minimumSettleMs - (Date.now() - this.phoneOpenedAt)
     if (remaining <= 0) return
 
     this.setStatus("Waiting for phone bridge to settle before install...")
-    await new Promise(resolve => window.setTimeout(resolve, remaining))
+    await new Promise<void>(resolve => window.setTimeout(resolve, remaining))
   }
 
-  handleConfigFrame(data) {
+  handleConfigFrame(data: Uint8Array): void {
     if (data[1] !== 0x01 || data.length < 6) {
       this.appendLog(`configuration bridge frame ignored: opcode=${data[1] ?? "missing"} bytes=${data.length}`)
       return
@@ -1149,7 +1397,7 @@ export class EmbeddedEmulatorHost {
     this.showConfigPage(url)
   }
 
-  showConfigPage(url) {
+  showConfigPage(url: string): void {
     this.configUrl = this.withConfigReturnUrl(url)
     if (this.configUrlLabel) {
       this.configUrlLabel.textContent = this.configUrlSummary(this.configUrl)
@@ -1162,7 +1410,7 @@ export class EmbeddedEmulatorHost {
     this.setStatus("Companion configuration requested")
   }
 
-  configUrlSummary(url) {
+  configUrlSummary(url: string): string {
     if (!url) return ""
     if (url.startsWith("data:text/html")) {
       return `Generated HTML configuration page (${this.formatBytes(url.length)})`
@@ -1176,7 +1424,7 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  compactPhoneLog(message) {
+  compactPhoneLog(message: string): string {
     if (!message) return message
     const configPrefix = "opening companion configuration "
     const configIndex = message.indexOf(configPrefix)
@@ -1186,7 +1434,7 @@ export class EmbeddedEmulatorHost {
     return message
   }
 
-  formatBytes(bytes) {
+  formatBytes(bytes: number): string {
     if (!Number.isFinite(bytes) || bytes < 1024) return `${bytes || 0} bytes`
     const kib = bytes / 1024
     if (kib < 1024) return `${kib.toFixed(kib >= 10 ? 0 : 1)} KiB`
@@ -1194,14 +1442,14 @@ export class EmbeddedEmulatorHost {
     return `${mib.toFixed(mib >= 10 ? 0 : 1)} MiB`
   }
 
-  withConfigReturnUrl(url) {
+  withConfigReturnUrl(url: string): string {
     const normalizedUrl = url.startsWith("data:") ? url.replaceAll("#", "%23") : url
     const target = new URL(normalizedUrl, window.location.href)
     target.searchParams.set("return_to", `${window.location.origin}${CONFIG_RETURN_PATH}?`)
     return target.toString()
   }
 
-  maybeHandleConfigReturn(contentWindow) {
+  maybeHandleConfigReturn(contentWindow: Window | null): void {
     if (!contentWindow) return
 
     try {
@@ -1214,7 +1462,7 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  completeConfig(query) {
+  completeConfig(query: string): void {
     const response = this.configurationResponseFromQuery(query)
     const bytes = new TextEncoder().encode(response)
     const out = new Uint8Array(6 + bytes.length)
@@ -1232,13 +1480,13 @@ export class EmbeddedEmulatorHost {
     this.setStatus("Sent companion configuration response")
   }
 
-  cancelConfig() {
+  cancelConfig(): void {
     this.phoneSocket?.send(new Uint8Array([0x0a, 0x03]))
     this.hideConfigPage()
     this.setStatus("Cancelled companion configuration")
   }
 
-  hideConfigPage() {
+  hideConfigPage(): void {
     this.stopConfigPopupPolling()
     this.configUrl = null
     if (this.configFrame) this.configFrame.removeAttribute("src")
@@ -1250,17 +1498,17 @@ export class EmbeddedEmulatorHost {
     this.configPanel?.classList.remove("flex")
   }
 
-  stopConfigPopupPolling() {
+  stopConfigPopupPolling(): void {
     if (this.configPopupTimer) window.clearInterval(this.configPopupTimer)
     this.configPopupTimer = null
   }
 
-  storageKeyFromInput(input) {
+  storageKeyFromInput(input: HTMLInputElement | null): number | null {
     const key = parseInt(input?.value || "", 10)
     return Number.isInteger(key) && key >= 0 ? key : null
   }
 
-  saveNewStorageEntry() {
+  saveNewStorageEntry(): void {
     const key = this.storageKeyFromInput(this.storageNewKey)
     if (key === null) {
       this.setStatus("Storage key must be a non-negative integer.")
@@ -1271,20 +1519,20 @@ export class EmbeddedEmulatorHost {
     this.saveStorageEntry(key, type, value)
   }
 
-  saveStorageEntry(key, type, value) {
+  saveStorageEntry(key: number, type: "string" | "int", value: string): void {
     if (!this.sendDebugStorageWrite(key, type, value)) return
     this.upsertStorageEntry({key, type, value: type === "int" ? String(parseInt(value || "0", 10) || 0) : value})
     this.setStatus(`Saved storage key ${key}`)
   }
 
-  deleteStorageEntry(key) {
+  deleteStorageEntry(key: number): void {
     if (!this.sendDebugStorageDelete(key)) return
     this.storageEntries.delete(String(key))
     this.renderStorage()
     this.setStatus(`Deleted storage key ${key}`)
   }
 
-  resetStorage() {
+  resetStorage(): void {
     const keys = Array.from(this.storageEntries.keys())
     if (keys.length === 0) return
     let sent = 0
@@ -1298,8 +1546,8 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  sendDebugStorageWrite(key, type, value) {
-    const entries = [
+  sendDebugStorageWrite(key: number, type: "string" | "int", value: string): boolean {
+    const entries: Array<{key: number; type: string; value: number | string}> = [
       {key: DEBUG_STORAGE.op, type: "uint", value: DEBUG_STORAGE.opWrite},
       {key: DEBUG_STORAGE.key, type: "uint", value: key},
       {key: DEBUG_STORAGE.type, type: "uint", value: type === "int" ? DEBUG_STORAGE.typeInt : DEBUG_STORAGE.typeString}
@@ -1312,7 +1560,7 @@ export class EmbeddedEmulatorHost {
     return this.sendDebugAppMessage(entries)
   }
 
-  sendDebugStorageDelete(key, options = {}) {
+  sendDebugStorageDelete(key: number, options: QuietOptions = {}): boolean {
     return this.sendDebugAppMessage(
       [
         {key: DEBUG_STORAGE.op, type: "uint", value: DEBUG_STORAGE.opDelete},
@@ -1322,7 +1570,10 @@ export class EmbeddedEmulatorHost {
     )
   }
 
-  sendDebugAppMessage(entries, options = {}) {
+  sendDebugAppMessage(
+    entries: Array<{key: number; type: string; value: number | string}>,
+    options: QuietOptions = {}
+  ): boolean {
     if (!this.session?.app_uuid) {
       if (!options.quiet) this.setStatus("Storage editing needs a launched PBW with an app UUID.")
       return false
@@ -1340,7 +1591,7 @@ export class EmbeddedEmulatorHost {
     return true
   }
 
-  upsertStorageEntry(entry) {
+  upsertStorageEntry(entry: {key: number; type?: "string" | "int"; value?: string}): void {
     this.storageEntries.set(String(entry.key), {
       key: entry.key,
       type: entry.type || "string",
@@ -1350,17 +1601,15 @@ export class EmbeddedEmulatorHost {
     this.renderStorage()
   }
 
-  storageLogBody(message) {
-    if (typeof message !== "string") return ""
+  storageLogBody(message: string): string {
     const appLog = message.match(/AppLog(?:\s+\S+)*\s+[^:]+:\s*(.+)$/)
-    return appLog ? appLog[1] : message
+    return appLog?.[1] ?? message
   }
 
-  observeStorageLog(message) {
+  observeStorageLog(message: string): void {
     const body = this.storageLogBody(message)
     const match = body.match(/(?:cmd|debug) storage_(read|write)(?:_string)? key=(\d+)(?: value=(.*?)(?:\s+status=|\s+rc=|$))?/)
-    if (match) {
-      const operation = match[1]
+    if (match?.[2]) {
       const key = parseInt(match[2], 10)
       const stringLike = body.includes("storage_read_string") || body.includes("storage_write_string")
       const value = typeof match[3] === "string" ? match[3] : ""
@@ -1369,13 +1618,13 @@ export class EmbeddedEmulatorHost {
     }
 
     const deleted = body.match(/(?:cmd|debug) storage_delete key=(\d+)/)
-    if (deleted) {
+    if (deleted?.[1]) {
       this.storageEntries.delete(deleted[1])
       this.renderStorage()
     }
   }
 
-  renderStorage() {
+  renderStorage(): void {
     if (!this.storageRows) return
     const entries = Array.from(this.storageEntries.values()).sort((a, b) => a.key - b.key)
     if (entries.length === 0) {
@@ -1388,13 +1637,13 @@ export class EmbeddedEmulatorHost {
     this.updateControlButtons()
   }
 
-  recordDataLogEntry(entry) {
+  recordDataLogEntry(entry: DataLogEntry): void {
     if (!entry || entry.payloadPrefix) return
     this.dataLogEntries = [{...entry, recordedAt: Date.now()}, ...this.dataLogEntries].slice(0, 50)
     this.renderDataLog()
   }
 
-  renderDataLog() {
+  renderDataLog(): void {
     if (!this.dataLogRows) {
       this.dataLogRows = this.el.querySelector("[data-emulator-data-log-rows]")
     }
@@ -1408,7 +1657,7 @@ export class EmbeddedEmulatorHost {
     this.dataLogRows.replaceChildren(...this.dataLogEntries.map(entry => this.dataLogRow(entry)))
   }
 
-  dataLogRow(entry) {
+  dataLogRow(entry: DataLogEntry): HTMLTableRowElement {
     const row = document.createElement("tr")
     row.className = "border-b border-zinc-100 last:border-0"
     row.innerHTML = `
@@ -1416,13 +1665,16 @@ export class EmbeddedEmulatorHost {
       <td class="px-2 py-1 text-zinc-700"></td>
       <td class="px-2 py-1 text-zinc-700"></td>
     `
-    row.children[0].textContent = entry.tagHex || "—"
-    row.children[1].textContent = String(entry.itemType ?? "—")
-    row.children[2].textContent = String(entry.itemSize ?? "—")
+    const tagCell = row.children.item(0)
+    const typeCell = row.children.item(1)
+    const sizeCell = row.children.item(2)
+    if (tagCell) tagCell.textContent = entry.tagHex || "—"
+    if (typeCell) typeCell.textContent = String(entry.itemType ?? "—")
+    if (sizeCell) sizeCell.textContent = String(entry.itemSize ?? "—")
     return row
   }
 
-  storageRow(entry) {
+  storageRow(entry: StorageEntry): HTMLTableRowElement {
     const row = document.createElement("tr")
     row.className = "border-b border-zinc-100 last:border-0"
     row.innerHTML = `
@@ -1431,25 +1683,29 @@ export class EmbeddedEmulatorHost {
       <td class="py-2 pr-2"></td>
       <td class="py-2 text-right"></td>
     `
-    row.children[0].textContent = String(entry.key)
+    const keyCell = row.children.item(0)
+    const typeCell = row.children.item(1)
+    const valueCell = row.children.item(2)
+    const actionsCell = row.children.item(3)
+    if (keyCell) keyCell.textContent = String(entry.key)
 
     const type = document.createElement("select")
     type.className = "ide-select min-w-[5.5rem] w-full rounded border border-zinc-300 bg-white py-1 pl-2 text-xs"
     type.innerHTML = `<option value="string">String</option><option value="int">Int</option>`
     type.value = entry.type
-    row.children[1].append(type)
+    if (typeCell) typeCell.append(type)
 
     const value = document.createElement("input")
     value.type = "text"
     value.value = entry.value
     value.className = "w-full rounded border border-zinc-300 px-2 py-1 text-xs"
-    row.children[2].append(value)
+    if (valueCell) valueCell.append(value)
 
     const save = document.createElement("button")
     save.type = "button"
     save.className = "rounded bg-zinc-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
     save.textContent = "Save"
-    save.addEventListener("click", () => this.saveStorageEntry(entry.key, type.value, value.value))
+    save.addEventListener("click", () => this.saveStorageEntry(entry.key, type.value as "string" | "int", value.value))
 
     const del = document.createElement("button")
     del.type = "button"
@@ -1457,11 +1713,11 @@ export class EmbeddedEmulatorHost {
     del.textContent = "Delete"
     del.addEventListener("click", () => this.deleteStorageEntry(entry.key))
 
-    row.children[3].append(save, del)
+    if (actionsCell) actionsCell.append(save, del)
     return row
   }
 
-  async copyFeedbackReport() {
+  async copyFeedbackReport(): Promise<void> {
     const lines = [
       "# Elm Pebble embedded emulator — feedback report",
       "",
@@ -1494,7 +1750,7 @@ export class EmbeddedEmulatorHost {
         const info = await postJSON(this.session.ping_path)
         lines.push(JSON.stringify(this.redactSession(info), null, 2))
       } catch (error) {
-        lines.push(`Ping failed: ${error.message}`)
+        lines.push(`Ping failed: ${errMessage(error)}`)
       }
       lines.push("")
     } else if (this.session) {
@@ -1523,11 +1779,11 @@ export class EmbeddedEmulatorHost {
         flushSystemLogs: false
       })
     } catch (error) {
-      this.setStatus(`Could not copy feedback report: ${error.message}`)
+      this.setStatus(`Could not copy feedback report: ${errMessage(error)}`)
     }
   }
 
-  formatInstallationStatus() {
+  formatInstallationStatus(): string {
     const raw = this.el.dataset.emulatorInstallationStatus
     if (!raw) return "(installation status not available on page)"
 
@@ -1562,23 +1818,23 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  formatVncSessionProbeState() {
+  formatVncSessionProbeState(): string {
     const probe = this.vncSessionProbe
     if (!probe) return "(none)"
     if (!probe.ok) return `failed in ${probe.ms}ms (${probe.error})`
     return `ok in ${probe.ms}ms (alive=${probe.alive}, display_ready=${probe.display_ready})`
   }
 
-  formatLastQemuSettingsApply() {
+  formatLastQemuSettingsApply(): string {
     const apply = this.lastQemuSettingsApply
     if (!apply) return "(none)"
     const names = Array.isArray(apply.protocols)
-      ? apply.protocols.map(p => p?.name || p).filter(Boolean).join(", ")
+      ? apply.protocols.map(p => String(p)).join(", ")
       : ""
     return `count=${apply.count ?? 0}, source=${apply.source ?? "?"}` + (names ? `, protocols=${names}` : "")
   }
 
-  formatVncWebSocketState() {
+  formatVncWebSocketState(): string {
     const diag = this.vncWsDiag
     if (!diag) return "(none)"
     const state = diag.readyStateLabel || "unknown"
@@ -1592,7 +1848,7 @@ export class EmbeddedEmulatorHost {
     return state
   }
 
-  formatClientState() {
+  formatClientState(): string {
     const screen = this.expectedScreenSize()
     const vncBacking = this.readVncBackingSize()
     const phoneState =
@@ -1625,14 +1881,14 @@ export class EmbeddedEmulatorHost {
     ].join("\n")
   }
 
-  redactSession(session) {
+  redactSession(session: unknown): unknown {
     if (!session || typeof session !== "object") return session
-    const copy = {...session}
+    const copy = {...(session as Record<string, unknown>)}
     if (copy.token) copy.token = "(redacted)"
     return copy
   }
 
-  async captureScreenshot() {
+  async captureScreenshot(): Promise<void> {
     if (!this.canvas) return
     const canvas = this.canvas.querySelector("canvas")
     if (!canvas) {
@@ -1651,7 +1907,10 @@ export class EmbeddedEmulatorHost {
           ? this.cropCanvasToScreen(canvas, screen)
           : canvas.toDataURL("image/png")
 
-      const result = await postJSON(`/api/wasm-emulator/projects/${encodeURIComponent(this.el.dataset.projectSlug)}/screenshot`, {
+      const slug = this.el.dataset.projectSlug ?? "default"
+      const result = await postJSON<{screenshot?: string}>(
+        `/api/wasm-emulator/projects/${encodeURIComponent(slug)}/screenshot`,
+        {
         platform: this.el.dataset.emulatorTarget || "embedded",
         image
       })
@@ -1662,39 +1921,39 @@ export class EmbeddedEmulatorHost {
 
       this.setStatus("Saved embedded emulator screenshot")
     } catch (error) {
-      this.setStatus(`Could not save embedded emulator screenshot: ${error.message}`)
+      this.setStatus(`Could not save embedded emulator screenshot: ${errMessage(error)}`)
     }
   }
 
-  schedulePingAfterDisplayConnect(...args) {
-    return this.sessionClient.schedulePingAfterDisplayConnect(...args)
+  schedulePingAfterDisplayConnect(): void {
+    return this.sessionClient.schedulePingAfterDisplayConnect()
   }
 
-  stopPingAfterDisplayTimer() {
+  stopPingAfterDisplayTimer(): void {
     if (this.pingAfterDisplayTimer) window.clearTimeout(this.pingAfterDisplayTimer)
     this.pingAfterDisplayTimer = null
   }
 
-  startPing(...args) {
-    return this.sessionClient.startPing(...args)
+  startPing(): void {
+    return this.sessionClient.startPing()
   }
 
-  stopPing() {
+  stopPing(): void {
     if (this.pingTimer) window.clearInterval(this.pingTimer)
     this.pingTimer = null
   }
 
-  async pingSession(...args) {
-    return this.sessionClient.pingSession(...args)
+  async pingSession(): Promise<void> {
+    return this.sessionClient.pingSession()
   }
 
-  targetScreenSize() {
+  targetScreenSize(): EmulatorScreen {
     const width = parseInt(this.el.dataset.emulatorScreenWidth || "144", 10)
     const height = parseInt(this.el.dataset.emulatorScreenHeight || "168", 10)
     return {width, height}
   }
 
-  expectedScreenSize() {
+  expectedScreenSize(): EmulatorScreen {
     const target = this.targetScreenSize()
     const sessionScreen = this.session?.screen
     if (!sessionScreen?.width || !sessionScreen?.height) return target
@@ -1702,17 +1961,18 @@ export class EmbeddedEmulatorHost {
     return {width: sessionScreen.width, height: sessionScreen.height}
   }
 
-  cropCanvasToScreen(canvas, screen) {
+  cropCanvasToScreen(canvas: HTMLCanvasElement, screen: EmulatorScreen): string {
     const crop = document.createElement("canvas")
     crop.width = screen.width
     crop.height = screen.height
     const ctx = crop.getContext("2d")
+    if (!ctx) return canvas.toDataURL("image/png")
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, screen.width, screen.height)
     return crop.toDataURL("image/png")
   }
 
-  warnSessionScreenMismatch() {
+  warnSessionScreenMismatch(): void {
     const target = this.targetScreenSize()
     const sessionScreen = this.session?.screen
     if (!sessionScreen?.width || !sessionScreen?.height) return
@@ -1722,17 +1982,17 @@ export class EmbeddedEmulatorHost {
     )
   }
 
-  logEmulatorPlatform() {
+  logEmulatorPlatform(): void {
     const screen = this.expectedScreenSize()
     const platform = this.session?.platform || this.el.dataset.emulatorTarget || "unknown"
     this.appendLog(`Embedded emulator platform ${platform} (${screen.width}x${screen.height})`)
   }
 
-  applyCanvasSize() {
+  applyCanvasSize(): void {
     this.resizeCanvas(this.expectedScreenSize())
   }
 
-  resizeCanvas(screen) {
+  resizeCanvas(screen: EmulatorScreen): void {
     if (!this.canvas || !screen) return
     this.canvas.style.width = `${screen.width}px`
     this.canvas.style.height = `${screen.height}px`
@@ -1743,13 +2003,13 @@ export class EmbeddedEmulatorHost {
     if (innerCanvas) innerCanvas.style.imageRendering = "pixelated"
   }
 
-  setStatus(message) {
+  setStatus(message: string): void {
     this.currentStatus = message
     if (this.status) this.status.textContent = message
     this.appendLog(message)
   }
 
-  appendLog(message, options = {}) {
+  appendLog(message: string, options: AppendLogOptions = {}): void {
     if (options.flushTransfers !== false) this.flushPutBytesSummary()
     if (options.flushSystemLogs !== false) this.flushSystemLogSummary()
     this.observeStorageLog(message)
@@ -1764,7 +2024,7 @@ export class EmbeddedEmulatorHost {
     this.notifyStateChanged()
   }
 
-  scheduleLogFlush() {
+  scheduleLogFlush(): void {
     if (this.destroyed || !this.log || this.logFlushScheduled) return
     this.logFlushScheduled = true
     window.requestAnimationFrame(() => {
@@ -1773,11 +2033,11 @@ export class EmbeddedEmulatorHost {
     })
   }
 
-  renderLog() {
+  renderLog(): void {
     if (this.log) this.log.textContent = this.logLines.join("\n").slice(0, MAX_LOG_CHARS)
   }
 
-  clearLog() {
+  clearLog(): void {
     this.logLines = []
     this.suppressedPutBytesFrames = 0
     this.logFlushScheduled = false
@@ -1785,7 +2045,7 @@ export class EmbeddedEmulatorHost {
     this.notifyStateChanged()
   }
 
-  endSession(message) {
+  endSession(message: string): void {
     if (this.sessionEnded) return
     this.sessionEnded = true
     this.sessionAlive = false
@@ -1817,29 +2077,29 @@ export class EmbeddedEmulatorHost {
     this.updateControlButtons()
   }
 
-  configurationResponseFromQuery(query) {
+  configurationResponseFromQuery(query: string): string {
     const params = new URLSearchParams(query || "")
     const response = params.get("response")
     return response === null ? (query || "") : response
   }
 
-  hexPreview(bytes, max = 24) {
-    const shown = Array.from(bytes.slice(0, max), byte => byte.toString(16).padStart(2, "0")).join(" ")
+  hexPreview(bytes: Uint8Array, max = 24): string {
+    const shown = Array.from(bytes.slice(0, max), (byte: number) => byte.toString(16).padStart(2, "0")).join(" ")
     return bytes.length > max ? `${shown} ...` : shown
   }
 
-  truncate(value, max) {
+  truncate(value: string, max: number): string {
     if (value.length <= max) return value
     return `${value.slice(0, max)}...`
   }
 
-  updateControlButtons() {
-    this.launchButton = this.el.querySelector("[data-emulator-launch]")
-    this.installButton = this.el.querySelector("[data-emulator-install]")
-    this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
-    this.screenshotButton = this.el.querySelector("[data-emulator-screenshot]")
-    this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
-    this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
+  updateControlButtons(): void {
+    this.launchButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-launch]")
+    this.installButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-install]")
+    this.preferencesButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-preferences]")
+    this.screenshotButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-screenshot]")
+    this.storageResetButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-storage-reset]")
+    this.storageAddButton = this.el.querySelector<HTMLButtonElement>("[data-emulator-storage-add]")
 
     const hasSession = !!this.session
     this.setButtonDisabled(this.launchButton, this.launching || this.stopping)
@@ -1853,13 +2113,13 @@ export class EmbeddedEmulatorHost {
     if (this.installButton) this.installButton.textContent = this.installing ? "Sending..." : "Send PBW"
   }
 
-  launchButtonLabel() {
+  launchButtonLabel(): string {
     if (this.launching) return "Launching..."
     if (this.stopping) return "Stopping..."
     return this.session ? "Stop" : "Launch"
   }
 
-  installReady() {
+  installReady(): boolean {
     return !!(
       this.session?.backend_enabled &&
       this.session?.install_path &&
@@ -1870,15 +2130,15 @@ export class EmbeddedEmulatorHost {
     )
   }
 
-  companionPreferencesReady() {
+  companionPreferencesReady(): boolean {
     return !!(this.session?.has_companion_preferences && this.session?.backend_enabled)
   }
 
-  canCaptureScreenshot() {
+  canCaptureScreenshot(): boolean {
     return !!this.canvas?.querySelector("canvas")
   }
 
-  setButtonDisabled(button, disabled) {
+  setButtonDisabled(button: HTMLButtonElement | null, disabled: boolean): void {
     if (!button) return
     button.disabled = disabled
     button.setAttribute("aria-disabled", disabled ? "true" : "false")

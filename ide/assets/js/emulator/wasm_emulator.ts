@@ -1,29 +1,162 @@
-import {encodeBattery, QEMU} from "./qemu_control.js"
+import {encodeBattery, QEMU} from "./qemu_control"
+import {postJSON} from "./emulator_http"
+import type {HookContext} from "../types/liveview_hook"
+import {errMessage} from "../types/errors"
 
 const MAX_LOG_LINES = 200
 
-const csrfToken = () => document.querySelector("meta[name='csrf-token']")?.getAttribute("content") || ""
+type ApiErrorBody = {
+  error?: string
+}
 
-async function getJSON(url) {
+type ButtonName = "back" | "up" | "select" | "down"
+
+type FirmwareName = "sdk" | "full"
+
+type SdkFirmwareInfo = {
+  platforms?: Record<string, unknown>
+  platform?: string
+  legacy?: {platform?: string}
+}
+
+type FirmwareEntry = {
+  platform?: string
+}
+
+type WasmFirmwareCatalog = {
+  sdk?: SdkFirmwareInfo
+  full?: FirmwareEntry
+} & Record<string, FirmwareEntry | SdkFirmwareInfo | undefined>
+
+type WasmAssetStatus = {
+  available?: boolean
+  "available?"?: boolean
+  root?: string
+  firmware?: WasmFirmwareCatalog
+  install_bridge?: {
+    available?: boolean
+    "available?"?: boolean
+    required_api?: string
+  }
+  runtime_missing?: string[]
+  firmware_missing?: string[]
+  setup?: {
+    runtime_target?: string
+    build_command?: string
+    sdk_firmware_target?: string
+    upstream_url?: string
+  }
+}
+
+type InstallPlanPart = {
+  size?: number
+}
+
+type InstallPlan = {
+  parts?: InstallPlanPart[]
+  variant?: string
+}
+
+type ScreenshotResult = {
+  screenshot?: unknown
+}
+
+type ProgressState = {
+  label: string
+  percent: number
+}
+
+type StorageEntry = {
+  key: number
+  type: "string" | "int"
+  value: string
+  source: string
+}
+
+type FrameOutboundMessage =
+  | {type: "launch"; firmware: string | null}
+  | {type: "installPbw"; plan: InstallPlan}
+  | {type: "screenshot"}
+  | {type: "button"; name: string; pressed: boolean}
+  | {type: "qemuControl"; protocol: number; payload: number[]}
+
+type WasmFrameMessage = {
+  source: "elm-pebble-wasm-emulator"
+} & (
+  | {type: "loaded"; isolated?: boolean}
+  | {type: "runtime-ready"}
+  | {type: "ready"}
+  | {type: "status"; message: string}
+  | {type: "log"; message: string}
+  | {type: "watch-info"; platform?: string; version?: string}
+  | {type: "screenshot"; image: string}
+  | {type: "install-ok"}
+  | {type: "install-error"; error: string}
+  | {type: "progress"; label?: string; percent?: number}
+)
+
+const BUTTON_BITS: Record<ButtonName, number> = {
+  back: 1 << 0,
+  up: 1 << 1,
+  select: 1 << 2,
+  down: 1 << 3
+}
+
+async function getJSON<T>(url: string): Promise<T> {
   const response = await fetch(url)
-  const data = await response.json().catch(() => ({}))
+  const data = (await response.json().catch(() => ({}))) as T & ApiErrorBody
   if (!response.ok) throw new Error(data.error || response.statusText)
   return data
 }
 
-async function postJSON(url, body) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {"content-type": "application/json", "x-csrf-token": csrfToken()},
-    body: JSON.stringify(body)
-  })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data.error || response.statusText)
-  return data
+function inputTarget(event: Event): HTMLInputElement | null {
+  return event.target instanceof HTMLInputElement ? event.target : null
+}
+
+function projectSlug(el: HTMLElement): string {
+  return el.dataset.projectSlug ?? ""
 }
 
 export class WasmEmulatorHost {
-  constructor(hook) {
+  hook: HookContext
+  el: HTMLElement
+  logLines: string[]
+  frameLoaded: boolean
+  runtimeReady: boolean
+  watchReady: boolean
+  launching: boolean
+  installing: boolean
+  screenshotPending: boolean
+  wasmPlatform: string | null
+  watchPlatform: string | null
+  firmware: WasmFirmwareCatalog
+  selectedFirmware: FirmwareName | null
+  assetStatus: WasmAssetStatus | null
+  currentStatus: string | null
+  currentAssets: string | null
+  progressState: ProgressState | null
+  storageEntries: Map<string, StorageEntry>
+  handleMessage: (event: MessageEvent) => void
+  handleWindowBlur?: () => void
+  buttonState: number
+  assetsAvailable: boolean
+  installBridgeAvailable: boolean
+  frame: HTMLIFrameElement | null
+  status: HTMLElement | null
+  assets: HTMLElement | null
+  log: HTMLElement | null
+  launchButton: HTMLButtonElement | null
+  firmwareLabel: HTMLElement | null
+  installButton: HTMLButtonElement | null
+  screenshotButton: HTMLButtonElement | null
+  progress: HTMLElement | null
+  progressLabel: HTMLElement | null
+  progressPercent: HTMLElement | null
+  progressBar: HTMLElement | null
+  storageRows: HTMLTableSectionElement | null
+  tapButton: HTMLButtonElement | null
+
+  constructor(hook: HookContext) {
     this.hook = hook
     this.el = hook.el
     this.logLines = []
@@ -42,11 +175,27 @@ export class WasmEmulatorHost {
     this.currentAssets = null
     this.progressState = null
     this.storageEntries = new Map()
-    this.handleMessage = event => this.onMessage(event)
+    this.handleMessage = (event: MessageEvent) => this.onMessage(event)
     this.buttonState = 0
+    this.assetsAvailable = false
+    this.installBridgeAvailable = false
+    this.frame = null
+    this.status = null
+    this.assets = null
+    this.log = null
+    this.launchButton = null
+    this.firmwareLabel = null
+    this.installButton = null
+    this.screenshotButton = null
+    this.progress = null
+    this.progressLabel = null
+    this.progressPercent = null
+    this.progressBar = null
+    this.storageRows = null
+    this.tapButton = null
   }
 
-  mount() {
+  mount(): void {
     this.frame = this.el.querySelector("[data-wasm-frame]")
     this.status = this.el.querySelector("[data-wasm-status]")
     this.assets = this.el.querySelector("[data-wasm-assets]")
@@ -67,22 +216,36 @@ export class WasmEmulatorHost {
     this.installButton?.addEventListener("click", () => this.installPbw())
     this.screenshotButton?.addEventListener("click", () => this.requestScreenshot())
     this.el.querySelector("[data-wasm-battery]")?.addEventListener("input", event => {
-      this.setBattery(parseInt(event.target.value || "80", 10), this.el.querySelector("[data-wasm-charging]")?.checked)
+      const charging = this.el.querySelector<HTMLInputElement>("[data-wasm-charging]")?.checked ?? false
+      const target = inputTarget(event)
+      this.setBattery(parseInt(target?.value || "80", 10), charging)
     })
     this.el.querySelector("[data-wasm-charging]")?.addEventListener("change", event => {
-      const battery = parseInt(this.el.querySelector("[data-wasm-battery]")?.value || "80", 10)
-      this.setBattery(battery, event.target.checked)
+      const battery = parseInt(this.el.querySelector<HTMLInputElement>("[data-wasm-battery]")?.value || "80", 10)
+      const target = inputTarget(event)
+      this.setBattery(battery, target?.checked ?? false)
     })
-    this.el.querySelector("[data-wasm-bluetooth]")?.addEventListener("change", event => this.sendQemu(QEMU.bluetooth, [event.target.checked ? 1 : 0]))
-    this.el.querySelector("[data-wasm-24h]")?.addEventListener("change", event => this.sendQemu(QEMU.timeFormat, [event.target.checked ? 1 : 0]))
-    this.el.querySelector("[data-wasm-peek]")?.addEventListener("change", event => this.sendQemu(QEMU.timelinePeek, [event.target.checked ? 1 : 0]))
+    this.el.querySelector("[data-wasm-bluetooth]")?.addEventListener("change", event => {
+      const target = inputTarget(event)
+      this.sendQemu(QEMU.bluetooth, [target?.checked ? 1 : 0])
+    })
+    this.el.querySelector("[data-wasm-24h]")?.addEventListener("change", event => {
+      const target = inputTarget(event)
+      this.sendQemu(QEMU.timeFormat, [target?.checked ? 1 : 0])
+    })
+    this.el.querySelector("[data-wasm-peek]")?.addEventListener("change", event => {
+      const target = inputTarget(event)
+      this.sendQemu(QEMU.timelinePeek, [target?.checked ? 1 : 0])
+    })
     this.tapButton?.addEventListener("click", () => this.sendQemu(QEMU.tap, [0, 1]))
 
-    this.el.querySelectorAll("[data-wasm-button]").forEach(button => {
+    this.el.querySelectorAll<HTMLElement>("[data-wasm-button]").forEach(button => {
       const name = button.dataset.wasmButton
       button.addEventListener("pointerdown", event => {
         event.preventDefault()
-        button.setPointerCapture?.(event.pointerId)
+        if (event instanceof PointerEvent) {
+          button.setPointerCapture?.(event.pointerId)
+        }
         this.sendButton(name, true)
       })
       button.addEventListener("pointerup", () => this.sendButton(name, false))
@@ -99,7 +262,7 @@ export class WasmEmulatorHost {
     this.updateButtons()
   }
 
-  updated() {
+  updated(): void {
     this.mountRefs()
     this.syncSelectedFirmware()
     this.restorePanelState()
@@ -108,7 +271,7 @@ export class WasmEmulatorHost {
     this.updateButtons()
   }
 
-  mountRefs() {
+  mountRefs(): void {
     this.frame = this.el.querySelector("[data-wasm-frame]")
     this.status = this.el.querySelector("[data-wasm-status]")
     this.assets = this.el.querySelector("[data-wasm-assets]")
@@ -125,13 +288,13 @@ export class WasmEmulatorHost {
     this.tapButton = this.el.querySelector("[data-wasm-tap]")
   }
 
-  destroy() {
+  destroy(): void {
     window.removeEventListener("message", this.handleMessage)
     if (this.handleWindowBlur) window.removeEventListener("blur", this.handleWindowBlur)
     this.releaseButtons()
   }
 
-  ensureCrossOriginIsolation() {
+  ensureCrossOriginIsolation(): boolean {
     const reloadKey = `elm-pebble-wasm-isolation-reload:${window.location.pathname}`
     if (window.crossOriginIsolated) {
       sessionStorage.removeItem(reloadKey)
@@ -140,7 +303,7 @@ export class WasmEmulatorHost {
 
     const currentPath = window.location.pathname
     const loadedPath = (() => {
-      const navigation = performance.getEntriesByType?.("navigation")?.[0]
+      const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined
       if (!navigation?.name) return currentPath
       try {
         return new URL(navigation.name).pathname
@@ -162,11 +325,12 @@ export class WasmEmulatorHost {
     return false
   }
 
-  async checkAssets() {
+  async checkAssets(): Promise<void> {
     try {
-      const status = await getJSON("/api/wasm-emulator/status")
+      const status = await getJSON<WasmAssetStatus>("/api/wasm-emulator/status")
       const assetsAvailable = status.available === true || status["available?"] === true
-      const installBridgeAvailable = status.install_bridge?.available === true || status.install_bridge?.["available?"] === true
+      const installBridgeAvailable =
+        status.install_bridge?.available === true || status.install_bridge?.["available?"] === true
       this.assetStatus = status
       this.firmware = status.firmware || {}
       this.syncSelectedFirmware()
@@ -175,19 +339,21 @@ export class WasmEmulatorHost {
       this.installBridgeAvailable = installBridgeAvailable
       this.renderAssetsStatus()
     } catch (error) {
-      this.setAssets(`Could not check WASM assets: ${error.message}`)
+      this.setAssets(`Could not check WASM assets: ${errMessage(error)}`)
       this.assetsAvailable = false
       this.installBridgeAvailable = false
     }
     this.updateButtons()
   }
 
-  renderAssetsStatus() {
+  renderAssetsStatus(): void {
     const status = this.assetStatus
     if (!status) return
 
     if (this.assetsAvailable) {
-      const bridge = this.installBridgeAvailable ? "install bridge ready" : `install bridge missing: ${status.install_bridge?.required_api || "patched Pebble control bridge"}`
+      const bridge = this.installBridgeAvailable
+        ? "install bridge ready"
+        : `install bridge missing: ${status.install_bridge?.required_api || "patched Pebble control bridge"}`
       const firmware = this.firmwareSummary()
       this.setAssets(`Assets ready at ${status.root}; ${firmware}; ${bridge}`)
     } else {
@@ -195,25 +361,25 @@ export class WasmEmulatorHost {
     }
   }
 
-  installPlatform() {
+  installPlatform(): string {
     return this.watchPlatform || this.wasmPlatform || this.el.dataset.emulatorTarget || "emery"
   }
 
-  selectedTarget() {
+  selectedTarget(): string {
     return this.el.dataset.emulatorTarget || "emery"
   }
 
-  supportedFirmwareForTarget() {
+  supportedFirmwareForTarget(): FirmwareName {
     return this.selectedTarget() === "emery" ? "full" : "sdk"
   }
 
-  syncSelectedFirmware() {
+  syncSelectedFirmware(): void {
     this.selectedFirmware = this.supportedFirmwareForTarget()
     this.wasmPlatform = this.platformForFirmware(this.selectedFirmware)
     this.renderFirmwareLabel()
   }
 
-  renderFirmwareLabel() {
+  renderFirmwareLabel(): void {
     if (!this.firmwareLabel) return
     const target = this.selectedTarget()
     const name = this.supportedFirmwareForTarget()
@@ -222,17 +388,19 @@ export class WasmEmulatorHost {
       name === "full" ? "Emery currently boots the full firmware in the WASM UI." : "This model boots the SDK firmware."
   }
 
-  platformForFirmware(name) {
+  platformForFirmware(name: FirmwareName | string | null): string | null {
     if (name === "sdk") {
       const target = this.selectedTarget()
       if (this.firmware?.sdk?.platforms?.[target]) return target
       return this.firmware?.sdk?.platform || this.firmware?.sdk?.legacy?.platform || null
     }
 
-    return this.firmware?.[name]?.platform || (name === "full" ? "emery" : null)
+    const entry = name ? this.firmware[name] : undefined
+    const platform = entry && "platform" in entry ? entry.platform : undefined
+    return platform || (name === "full" ? "emery" : null)
   }
 
-  firmwareAssetPath(name) {
+  firmwareAssetPath(name: FirmwareName | string | null): string | null {
     if (name === "sdk") {
       const target = this.selectedTarget()
       if (this.firmware?.sdk?.platforms?.[target]) return `sdk/${target}`
@@ -240,14 +408,15 @@ export class WasmEmulatorHost {
       return null
     }
 
-    return this.firmware?.[name]?.platform ? name : null
+    const entry = name ? this.firmware[name] : undefined
+    return entry && "platform" in entry && entry.platform ? name : null
   }
 
-  launchReady() {
+  launchReady(): boolean {
     return this.assetsAvailable && !!this.firmwareAssetPath(this.selectedFirmware || this.supportedFirmwareForTarget())
   }
 
-  firmwareSummary() {
+  firmwareSummary(): string {
     const target = this.selectedTarget()
     const boot = this.supportedFirmwareForTarget()
     const sdkPlatforms = Object.keys(this.firmware?.sdk?.platforms || {})
@@ -255,11 +424,15 @@ export class WasmEmulatorHost {
 
     const sdk = (() => {
       if (sdkPlatforms.length > 0) {
-        return this.firmware?.sdk?.platforms?.[target] ? `SDK ${target}` : `SDK missing for ${target} (available: ${sdkPlatforms.join(", ")})`
+        return this.firmware?.sdk?.platforms?.[target]
+          ? `SDK ${target}`
+          : `SDK missing for ${target} (available: ${sdkPlatforms.join(", ")})`
       }
 
       if (legacyPlatform) {
-        return legacyPlatform === target ? `SDK ${legacyPlatform}` : `SDK ${legacyPlatform} legacy fallback for selected ${target}`
+        return legacyPlatform === target
+          ? `SDK ${legacyPlatform}`
+          : `SDK ${legacyPlatform} legacy fallback for selected ${target}`
       }
 
       return `SDK missing for ${target}`
@@ -269,7 +442,7 @@ export class WasmEmulatorHost {
     return `booting ${boot === "full" ? full : sdk}; available firmware ${sdk}; ${full}`
   }
 
-  toggleLaunch() {
+  toggleLaunch(): void {
     if (this.frameLoaded || this.runtimeReady) {
       this.stop()
     } else {
@@ -277,7 +450,7 @@ export class WasmEmulatorHost {
     }
   }
 
-  launch() {
+  launch(): void {
     if (this.launching) return
     if (!this.launchReady()) {
       this.setStatus("WASM firmware for the selected watch model is not available.")
@@ -289,20 +462,29 @@ export class WasmEmulatorHost {
     this.watchReady = false
     this.setStatus("Loading WASM emulator frame...")
     this.resetFrame()
-    this.frame.addEventListener("load", () => {
-      this.frameLoaded = true
-      this.syncSelectedFirmware()
-      this.watchPlatform = null
-      this.wasmPlatform = this.platformForFirmware(this.selectedFirmware)
-      this.postToFrame({type: "launch", firmware: this.firmwareAssetPath(this.selectedFirmware)})
+    const frame = this.frame
+    if (!frame) {
       this.launching = false
-      this.updateButtons()
-    }, {once: true})
-    this.frame.src = "/wasm-emulator"
+      return
+    }
+    frame.addEventListener(
+      "load",
+      () => {
+        this.frameLoaded = true
+        this.syncSelectedFirmware()
+        this.watchPlatform = null
+        this.wasmPlatform = this.platformForFirmware(this.selectedFirmware)
+        this.postToFrame({type: "launch", firmware: this.firmwareAssetPath(this.selectedFirmware)})
+        this.launching = false
+        this.updateButtons()
+      },
+      {once: true}
+    )
+    frame.src = "/wasm-emulator"
     this.updateButtons()
   }
 
-  stop() {
+  stop(): void {
     this.resetFrame()
     this.frameLoaded = false
     this.runtimeReady = false
@@ -315,16 +497,16 @@ export class WasmEmulatorHost {
     this.updateButtons()
   }
 
-  resetFrame() {
+  resetFrame(): void {
     if (!this.frame) return
 
-    const replacement = this.frame.cloneNode(false)
+    const replacement = this.frame.cloneNode(false) as HTMLIFrameElement
     replacement.removeAttribute("src")
     this.frame.replaceWith(replacement)
     this.frame = replacement
   }
 
-  async installPbw() {
+  async installPbw(): Promise<void> {
     if (this.installing) return
     if (!this.installReady()) {
       this.setStatus("Wait until the WASM watch communication is ready before installing a PBW.")
@@ -338,21 +520,21 @@ export class WasmEmulatorHost {
     try {
       const platform = this.installPlatform()
       const firmware = this.selectedFirmware || "sdk"
-      const url = `/api/wasm-emulator/projects/${encodeURIComponent(this.el.dataset.projectSlug)}/install-plan?platform=${encodeURIComponent(platform)}&firmware=${encodeURIComponent(firmware)}`
-      const plan = await getJSON(url)
-      const totalBytes = (plan.parts || []).reduce((sum, part) => sum + (part.size || 0), 0)
+      const url = `/api/wasm-emulator/projects/${encodeURIComponent(projectSlug(this.el))}/install-plan?platform=${encodeURIComponent(platform)}&firmware=${encodeURIComponent(firmware)}`
+      const plan = await getJSON<InstallPlan>(url)
+      const totalBytes = (plan.parts || []).reduce((sum: number, part: InstallPlanPart) => sum + (part.size || 0), 0)
       this.setProgress("Sending install plan", 10)
       this.setStatus(`Installing ${plan.variant || platform} PBW in WASM emulator (${Math.round(totalBytes / 1024)}KB)...`)
       this.postToFrame({type: "installPbw", plan})
     } catch (error) {
       this.installing = false
       this.hideProgress()
-      this.setStatus(`Could not install PBW: ${error.message}`)
+      this.setStatus(`Could not install PBW: ${errMessage(error)}`)
       this.updateButtons()
     }
   }
 
-  requestScreenshot() {
+  requestScreenshot(): void {
     if (!this.runtimeReady || this.screenshotPending) return
     this.screenshotPending = true
     this.postToFrame({type: "screenshot"})
@@ -360,60 +542,64 @@ export class WasmEmulatorHost {
     this.updateButtons()
   }
 
-  async saveScreenshot(image) {
+  async saveScreenshot(image: string): Promise<void> {
     try {
-      const result = await postJSON(`/api/wasm-emulator/projects/${encodeURIComponent(this.el.dataset.projectSlug)}/screenshot`, {
-        platform: this.installPlatform(),
-        image
-      })
+      const result = await postJSON<ScreenshotResult>(
+        `/api/wasm-emulator/projects/${encodeURIComponent(projectSlug(this.el))}/screenshot`,
+        {
+          platform: this.installPlatform(),
+          image
+        }
+      )
       if (result.screenshot) {
         this.hook.pushEvent("wasm-screenshot-saved", {screenshot: result.screenshot})
       }
       this.setStatus("Saved WASM emulator screenshot")
     } catch (error) {
-      this.setStatus(`Could not save screenshot: ${error.message}`)
+      this.setStatus(`Could not save screenshot: ${errMessage(error)}`)
     } finally {
       this.screenshotPending = false
       this.updateButtons()
     }
   }
 
-  sendButton(name, pressed) {
+  sendButton(name: string | undefined, pressed: boolean): void {
     if (!this.runtimeReady) return
-    const bits = {back: 1 << 0, up: 1 << 1, select: 1 << 2, down: 1 << 3}
-    const bit = bits[name]
-    if (!bit) return
-    const nextState = pressed ? (this.buttonState | bit) : (this.buttonState & ~bit)
+    if (!name || !(name in BUTTON_BITS)) return
+    const bit = BUTTON_BITS[name as ButtonName]
+    const nextState = pressed ? this.buttonState | bit : this.buttonState & ~bit
     if (nextState === this.buttonState) return
     this.buttonState = nextState
     this.postToFrame({type: "button", name, pressed})
   }
 
-  releaseButtons() {
+  releaseButtons(): void {
     if (!this.runtimeReady || this.buttonState === 0) return
-    for (const name of ["back", "up", "select", "down"]) {
+    for (const name of ["back", "up", "select", "down"] as const) {
       this.postToFrame({type: "button", name, pressed: false})
     }
     this.buttonState = 0
   }
 
-  setBattery(percent, charging) {
+  setBattery(percent: number, charging: boolean): void {
     this.sendQemu(QEMU.battery, encodeBattery(percent, charging))
   }
 
-  sendQemu(protocol, payload) {
+  sendQemu(protocol: number, payload: number[]): void {
     if (!this.runtimeReady) return
     this.postToFrame({type: "qemuControl", protocol, payload})
   }
 
-  postToFrame(message, transfer = []) {
+  postToFrame(message: FrameOutboundMessage, transfer: Transferable[] = []): void {
     this.frame?.contentWindow?.postMessage(message, window.location.origin, transfer)
   }
 
-  onMessage(event) {
+  onMessage(event: MessageEvent): void {
     if (event.origin !== window.location.origin) return
-    const message = event.data || {}
-    if (message.source !== "elm-pebble-wasm-emulator") return
+    const data = event.data
+    if (!data || typeof data !== "object") return
+    const message = data as Partial<WasmFrameMessage>
+    if (message.source !== "elm-pebble-wasm-emulator" || !message.type) return
 
     if (message.type === "loaded") {
       this.frameLoaded = true
@@ -425,16 +611,16 @@ export class WasmEmulatorHost {
       this.runtimeReady = true
       this.watchReady = true
       this.setStatus("WASM watch communication ready")
-    } else if (message.type === "status") {
+    } else if (message.type === "status" && typeof message.message === "string") {
       this.setStatus(message.message)
-    } else if (message.type === "log") {
+    } else if (message.type === "log" && typeof message.message === "string") {
       this.appendLog(message.message)
     } else if (message.type === "watch-info") {
       if (message.platform && message.platform !== "unknown") {
         this.watchPlatform = message.platform
         this.setStatus(`WASM watch reports ${message.platform} (${message.version || "unknown firmware"})`)
       }
-    } else if (message.type === "screenshot") {
+    } else if (message.type === "screenshot" && typeof message.image === "string") {
       this.saveScreenshot(message.image)
     } else if (message.type === "install-ok") {
       this.installing = false
@@ -443,25 +629,25 @@ export class WasmEmulatorHost {
     } else if (message.type === "install-error") {
       this.installing = false
       this.hideProgress()
-      this.setStatus(`WASM install failed: ${message.error}`)
+      this.setStatus(`WASM install failed: ${typeof message.error === "string" ? message.error : "unknown error"}`)
     } else if (message.type === "progress") {
       this.setProgress(message.label || "Installing PBW", message.percent || 0)
     }
     this.updateButtons()
   }
 
-  setStatus(message) {
+  setStatus(message: string): void {
     this.currentStatus = message
     if (this.status) this.status.textContent = message
     this.appendLog(message)
   }
 
-  setAssets(message) {
+  setAssets(message: string): void {
     this.currentAssets = message
     if (this.assets) this.assets.textContent = message
   }
 
-  setProgress(label, percent) {
+  setProgress(label: string, percent: number): void {
     const bounded = Math.max(0, Math.min(100, Math.round(percent)))
     this.progressState = {label, percent: bounded}
     if (this.progress) this.progress.classList.remove("hidden")
@@ -470,13 +656,13 @@ export class WasmEmulatorHost {
     if (this.progressBar) this.progressBar.style.width = `${bounded}%`
   }
 
-  hideProgress() {
+  hideProgress(): void {
     this.progressState = null
     if (this.progress) this.progress.classList.add("hidden")
     if (this.progressBar) this.progressBar.style.width = "0%"
   }
 
-  restorePanelState() {
+  restorePanelState(): void {
     if (this.currentStatus && this.status) this.status.textContent = this.currentStatus
     if (this.currentAssets && this.assets) this.assets.textContent = this.currentAssets
     if (this.log) this.log.textContent = this.logLines.join("\n")
@@ -492,14 +678,16 @@ export class WasmEmulatorHost {
     }
   }
 
-  missingAssetMessage(status) {
-    const parts = []
+  missingAssetMessage(status: WasmAssetStatus): string {
+    const parts: string[] = []
     if (status.runtime_missing?.length) {
       parts.push(`QEMU runtime missing: ${status.runtime_missing.join(", ")} -> ${status.setup?.runtime_target || status.root}`)
       parts.push(`Build once: ${status.setup?.build_command || "docker compose run --rm wasm-emulator-builder"}`)
     }
     if (status.firmware_missing?.length) {
-      parts.push(`SDK firmware missing: ${status.firmware_missing.map(path => path.replace(/^firmware\/sdk\//, "")).join(", ")} -> ${status.setup?.sdk_firmware_target || status.root}`)
+      parts.push(
+        `SDK firmware missing: ${status.firmware_missing.map((path: string) => path.replace(/^firmware\/sdk\//, "")).join(", ")} -> ${status.setup?.sdk_firmware_target || status.root}`
+      )
       parts.push("Restart the IDE after the Pebble SDK finishes installing; firmware is synced automatically on startup.")
     }
     if (parts.length === 0) parts.push("WASM assets are present, but the install bridge is not ready.")
@@ -507,7 +695,7 @@ export class WasmEmulatorHost {
     return parts.join(" | ")
   }
 
-  appendLog(message) {
+  appendLog(message: string): void {
     if (!message) return
     this.observeStorageLog(message)
     this.logLines.unshift(`${new Date().toLocaleTimeString()} ${message}`)
@@ -515,18 +703,17 @@ export class WasmEmulatorHost {
     if (this.log) this.log.textContent = this.logLines.join("\n")
   }
 
-  storageLogBody(message) {
-    if (typeof message !== "string") return ""
+  storageLogBody(message: string): string {
     const appLog = message.match(/AppLog(?:\s+\S+)*\s+[^:]+:\s*(.+)$/)
-    return appLog ? appLog[1] : message
+    return appLog?.[1] ?? message
   }
 
-  observeStorageLog(message) {
+  observeStorageLog(message: string): void {
     const body = this.storageLogBody(message)
     const match = body.match(/(?:cmd|debug) storage_(read|write)(?:_string)? key=(\d+)(?: value=(.*?)(?:\s+status=|\s+rc=|$))?/)
     if (match) {
       const operation = match[1]
-      const key = parseInt(match[2], 10)
+      const key = parseInt(match[2] ?? "0", 10)
       const stringLike = body.includes("storage_read_string") || body.includes("storage_write_string")
       const value = typeof match[3] === "string" ? match[3] : ""
       this.storageEntries.set(String(key), {
@@ -541,12 +728,12 @@ export class WasmEmulatorHost {
 
     const deleted = body.match(/(?:cmd|debug) storage_delete key=(\d+)/)
     if (deleted) {
-      this.storageEntries.delete(deleted[1])
+      this.storageEntries.delete(deleted[1] ?? "")
       this.renderStorage()
     }
   }
 
-  renderStorage() {
+  renderStorage(): void {
     if (!this.storageRows) return
     const entries = Array.from(this.storageEntries.values()).sort((a, b) => a.key - b.key)
     if (entries.length === 0) {
@@ -554,24 +741,26 @@ export class WasmEmulatorHost {
       return
     }
 
-    this.storageRows.replaceChildren(...entries.map(entry => {
-      const row = document.createElement("tr")
-      row.className = "border-b border-zinc-100 last:border-0"
-      row.innerHTML = `
+    this.storageRows.replaceChildren(
+      ...entries.map(entry => {
+        const row = document.createElement("tr")
+        row.className = "border-b border-zinc-100 last:border-0"
+        row.innerHTML = `
         <td class="py-2 pr-2 font-mono text-zinc-800"></td>
         <td class="py-2 pr-2"></td>
         <td class="py-2 pr-2"></td>
         <td class="py-2 text-right text-zinc-500"></td>
       `
-      row.children[0].textContent = String(entry.key)
-      row.children[1].textContent = entry.type
-      row.children[2].textContent = entry.value
-      row.children[3].textContent = entry.source || "app log"
-      return row
-    }))
+        row.children[0]!.textContent = String(entry.key)
+        row.children[1]!.textContent = entry.type
+        row.children[2]!.textContent = entry.value
+        row.children[3]!.textContent = entry.source || "app log"
+        return row
+      })
+    )
   }
 
-  updateButtons() {
+  updateButtons(): void {
     const running = this.frameLoaded || this.runtimeReady
     if (this.launchButton) this.launchButton.textContent = running ? "Stop" : "Launch"
     this.setDisabled(this.launchButton, (!this.launchReady() && !running) || this.launching)
@@ -580,11 +769,11 @@ export class WasmEmulatorHost {
     this.setDisabled(this.tapButton, !this.runtimeReady)
   }
 
-  setDisabled(button, disabled) {
+  setDisabled(button: HTMLButtonElement | null, disabled: boolean): void {
     if (button) button.disabled = disabled
   }
 
-  installReady() {
+  installReady(): boolean {
     return this.watchReady && this.installBridgeAvailable && !this.installing
   }
 }

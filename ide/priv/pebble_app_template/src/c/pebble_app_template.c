@@ -426,6 +426,7 @@ static TimeUnits subscribed_time_units(void) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
 static GFont system_font_for_height(int64_t requested_height) {
   GFont font = NULL;
   if (requested_height <= 18) font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
@@ -437,6 +438,7 @@ static GFont system_font_for_height(int64_t requested_height) {
   if (!font) font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
   return font;
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
 static GFont font_from_id(int64_t font_id, bool *should_unload) {
@@ -450,6 +452,7 @@ static GFont font_from_id(int64_t font_id, bool *should_unload) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
 static GFont font_from_id_for_height(int64_t font_id, int64_t requested_height, bool *should_unload) {
   uint32_t resource_id = elm_pebble_font_resource_id(font_id);
 
@@ -461,6 +464,7 @@ static GFont font_from_id_for_height(int64_t font_id, int64_t requested_height, 
   if (should_unload) *should_unload = true;
   return fonts_load_custom_font(resource_get_handle(resource_id));
 }
+#endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_WATCH_MODEL
 static int64_t watch_model_to_elm_tag(WatchInfoModel model);
 #endif
@@ -1356,6 +1360,10 @@ static void apply_draw_style(GContext *ctx, const DrawStyleState *style) {
   graphics_context_set_stroke_width(ctx, style->stroke_width > 0 ? style->stroke_width : 1);
 }
 
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_RECT || \
+    ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT || ELMC_PEBBLE_FEATURE_DRAW_ARC || \
+    ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL || ELMC_PEBBLE_FEATURE_DRAW_TEXT || \
+    ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT
 static bool rect_params_are_valid(int64_t w, int64_t h) {
   return w > 0 && h > 0;
 }
@@ -1363,6 +1371,7 @@ static bool rect_params_are_valid(int64_t w, int64_t h) {
 static GRect rect_from_params(int64_t x, int64_t y, int64_t w, int64_t h) {
   return GRect((int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h);
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
 static GRect text_point_rect(GRect bounds, int64_t x, int64_t y) {

@@ -17,6 +17,7 @@ RUN mix deps.get --only prod
 RUN mix deps.compile
 RUN mix compile
 RUN npm ci --prefix assets
+RUN npm run typecheck --prefix assets
 RUN mix assets.deploy
 RUN mix release
 

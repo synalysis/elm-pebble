@@ -5,45 +5,89 @@ import {
   Prec,
   RangeSetBuilder,
   StateEffect,
-  StateField
+  StateField,
+  type Line,
+  type Text
 } from "@codemirror/state"
 import {getUserSocket} from "../user_socket"
-import {Decoration, EditorView, keymap, lineNumbers, highlightActiveLine} from "@codemirror/view"
+import type {HookContext} from "../types/liveview_hook"
+import {Channel, Socket} from "phoenix"
+import {
+  Decoration,
+  EditorView,
+  keymap,
+  lineNumbers,
+  highlightActiveLine,
+  type ViewUpdate
+} from "@codemirror/view"
 import {defaultKeymap, history, historyKeymap, indentLess, indentSelection} from "@codemirror/commands"
 import {searchKeymap} from "@codemirror/search"
 import {completionKeymap, startCompletion} from "@codemirror/autocomplete"
-import {codeFolding, foldGutter, foldKeymap, foldService, indentService, indentUnit} from "@codemirror/language"
-import {lintGutter, setDiagnostics} from "@codemirror/lint"
+import {codeFolding, foldGutter, foldKeymap, foldService, indentService, indentUnit, IndentContext} from "@codemirror/language"
+import {lintGutter, setDiagnostics, type Diagnostic} from "@codemirror/lint"
 import {LSPClient, formatKeymap, hoverTooltips, serverCompletion, serverDiagnostics} from "@codemirror/lsp-client"
 import {getCM, Vim, vim} from "@replit/codemirror-vim"
 
+type EditorTheme = "dark" | "light" | "system"
+type EditorMode = "vim" | "regular"
+type FoldRange = {start_line: number; end_line: number}
+type TokenHighlight = {line: number; column: number; length: number; class?: string}
+type CompletionItem = {label?: string; insert_text?: string}
+type CompletionState = {
+  items: CompletionItem[]
+  selectedIndex: number
+  from: number
+  to: number
+  visible: boolean
+}
+type EditorRestoreState = {cursor_offset: number; scroll_top: number; scroll_left: number}
+type LintRow = {
+  line?: number
+  column?: number
+  end_line?: number
+  end_column?: number
+  severity?: string
+  message?: string
+  source?: string
+}
+type LintSeverity = Diagnostic["severity"]
+type LspChannelPayload = {message?: string}
+type LspFoldingRange = {startLine?: number; endLine?: number}
+
 const INDENT_WIDTH = 4
 const MIN_FOLD_SPAN_LINES = 10
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
-const safeLower = value => (typeof value === "string" ? value.toLowerCase() : "")
-const parseBooleanDataset = (value, fallback) =>
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value))
+const safeLower = (value: unknown): string =>
+  typeof value === "string" ? value.toLowerCase() : ""
+const parseBooleanDataset = (value: string | undefined, fallback: boolean): boolean =>
   typeof value === "string" ? value === "true" : fallback
-const parseEditorTheme = value => {
+const parseEditorTheme = (value: string | undefined): EditorTheme => {
   const normalized = safeLower(value)
   if (normalized === "dark" || normalized === "light") return normalized
   return "system"
 }
-const resolvedEditorTheme = theme => {
+const resolvedEditorTheme = (theme: EditorTheme): "dark" | "light" => {
   if (theme === "dark" || theme === "light") return theme
   if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark"
   return "light"
 }
 
-const hasPrimaryModifier = event => event.metaKey || event.ctrlKey
-const isSaveKey = event => hasPrimaryModifier(event) && safeLower(event.key) === "s"
-const isManualCompletionKey = event =>
+const hasPrimaryModifier = (event: KeyboardEvent): boolean => event.metaKey || event.ctrlKey
+const isSaveKey = (event: KeyboardEvent): boolean =>
+  hasPrimaryModifier(event) && safeLower(event.key) === "s"
+const isManualCompletionKey = (event: KeyboardEvent): boolean =>
   hasPrimaryModifier(event) && (event.key === " " || event.code === "Space")
-const nextIndentStop = column => {
+const nextIndentStop = (column: number): number => {
   const remainder = column % INDENT_WIDTH
   return column + (remainder === 0 ? INDENT_WIDTH : INDENT_WIDTH - remainder)
 }
 
-function leadingIndentColumns(text) {
+function clearAppTimeout(timer: ReturnType<typeof setTimeout> | null): void {
+  if (timer != null) clearTimeout(timer)
+}
+
+function leadingIndentColumns(text: string): number {
   let column = 0
 
   for (const char of text) {
@@ -59,7 +103,7 @@ function leadingIndentColumns(text) {
   return column
 }
 
-function previousNonBlankLine(doc, lineNumber) {
+function previousNonBlankLine(doc: Text, lineNumber: number): Line | null {
   for (let number = lineNumber - 1; number >= 1; number -= 1) {
     const line = doc.line(number)
     if (line.text.trim() !== "") return line
@@ -67,7 +111,7 @@ function previousNonBlankLine(doc, lineNumber) {
   return null
 }
 
-function nextNonBlankLine(doc, lineNumber) {
+function nextNonBlankLine(doc: Text, lineNumber: number): Line | null {
   for (let number = lineNumber + 1; number <= doc.lines; number += 1) {
     const line = doc.line(number)
     if (line.text.trim() !== "") return line
@@ -75,43 +119,47 @@ function nextNonBlankLine(doc, lineNumber) {
   return null
 }
 
-function startsWithClosingDelimiter(text) {
+function startsWithClosingDelimiter(text: string): boolean {
   return /^[}\])]/.test(text.trim())
 }
 
-function isSingleOpeningDelimiter(text) {
+function isSingleOpeningDelimiter(text: string): boolean {
   const trimmed = text.trim()
   return trimmed === "{" || trimmed === "[" || trimmed === "("
 }
 
-function opensIndentedBlock(text) {
+function opensIndentedBlock(text: string): boolean {
   const trimmed = text.trim()
   if (trimmed === "") return false
   if (/^(let|then|else|of)\b/.test(trimmed)) return true
   return /(?:=|->|[({[])\s*$/.test(trimmed)
 }
 
-function csrfToken() {
+function csrfToken(): string {
   const meta = document.querySelector("meta[name='csrf-token']")
-  return meta && meta.getAttribute("content")
+  return meta?.getAttribute("content") ?? ""
 }
 
-function lspUri(projectSlug, sourceRoot, relPath) {
+function lspUri(projectSlug: string | undefined, sourceRoot: string | undefined, relPath: string | undefined): string {
   return `elm-pebble://${encodeURIComponent(projectSlug || "project")}/${encodeURIComponent(
     sourceRoot || "watch"
   )}/${encodeURIComponent(relPath || "src/Main.elm")}`
 }
 
 class PhoenixLspTransport {
-  constructor(projectSlug) {
-    this.handlers = new Set()
-    this.queue = []
-    this.joined = false
+  handlers = new Set<(message: string) => void>()
+  queue: string[] = []
+  joined = false
+  socket: Socket
+  channel: Channel
+
+  constructor(projectSlug: string | undefined) {
     this.socket = getUserSocket()
     this.channel = this.socket.channel(`lsp:${projectSlug || "project"}`, {})
-    this.channel.on("message", payload => {
-      if (payload && typeof payload.message === "string") {
-        for (const handler of this.handlers) handler(payload.message)
+    this.channel.on("message", (payload: unknown) => {
+      const data = payload as LspChannelPayload
+      if (typeof data.message === "string") {
+        for (const handler of this.handlers) handler(data.message)
       }
     })
     this.channel
@@ -124,7 +172,7 @@ class PhoenixLspTransport {
       .receive("error", response => console.warn("[lsp] channel join failed", response))
   }
 
-  send(message) {
+  send(message: string): void {
     if (!this.joined) {
       this.queue.push(message)
       return
@@ -132,23 +180,23 @@ class PhoenixLspTransport {
     this.channel.push("message", {message})
   }
 
-  subscribe(handler) {
+  subscribe(handler: (message: string) => void): void {
     this.handlers.add(handler)
   }
 
-  unsubscribe(handler) {
+  unsubscribe(handler: (message: string) => void): void {
     this.handlers.delete(handler)
   }
 
-  destroy() {
+  destroy(): void {
     this.handlers.clear()
     this.channel.leave()
     this.socket.disconnect()
   }
 }
 
-const setTokenHighlightsEffect = StateEffect.define()
-const setFoldRangesEffect = StateEffect.define()
+const setTokenHighlightsEffect = StateEffect.define<TokenHighlight[]>()
+const setFoldRangesEffect = StateEffect.define<FoldRange[]>()
 
 const tokenHighlightField = StateField.define({
   create() {
@@ -170,7 +218,7 @@ const tokenHighlightField = StateField.define({
   provide: field => EditorView.decorations.from(field)
 })
 
-const foldRangesField = StateField.define({
+const foldRangesField = StateField.define<FoldRange[]>({
   create() {
     return []
   },
@@ -188,7 +236,7 @@ const foldRangesField = StateField.define({
   }
 })
 
-function normalizeFoldRanges(ranges, maxLines) {
+function normalizeFoldRanges(ranges: unknown, maxLines: number): FoldRange[] {
   if (!Array.isArray(ranges) || ranges.length === 0) return []
   const unique = new Set()
   const normalized = []
@@ -209,14 +257,14 @@ function normalizeFoldRanges(ranges, maxLines) {
   return normalized
 }
 
-function sanitizeTokenClass(value) {
+function sanitizeTokenClass(value: unknown): string {
   return `cm-tok-${String(value || "plain").replace(/[^a-zA-Z0-9_-]/g, "-")}`
 }
 
-function buildTokenHighlights(state, tokens) {
+function buildTokenHighlights(state: EditorState, tokens: TokenHighlight[]) {
   if (!Array.isArray(tokens) || tokens.length === 0) return Decoration.none
 
-  const builder = new RangeSetBuilder()
+  const builder = new RangeSetBuilder<Decoration>()
   const docLength = state.doc.length
 
   for (const token of tokens) {
@@ -240,7 +288,7 @@ function buildTokenHighlights(state, tokens) {
 
 let cmVisibilityStyleInjected = false
 let vimWriteCommandRegistered = false
-const vimHostByCm = new WeakMap()
+const vimHostByCm = new WeakMap<object, CodeMirrorEditorHost>()
 
 function ensureVimWriteCommandRegistered() {
   if (vimWriteCommandRegistered) return
@@ -281,11 +329,57 @@ function ensureVisibilityOverrideStyle() {
 }
 
 export class CodeMirrorEditorHost {
-  constructor(hook) {
+  hook: HookContext
+  el: HTMLElement
+  root: Element | null
+  hiddenInput: HTMLInputElement | null
+  form: HTMLFormElement | null
+  modeBadge: HTMLElement | null
+  completionPanel: HTMLElement | null
+  editorMode: EditorMode
+  editorTheme: EditorTheme
+  editorLineNumbers: boolean
+  editorActiveLineHighlight: boolean
+  readOnly: boolean
+  idleEvent: string | undefined
+  focusNextEvent: string | undefined
+  focusPrevEvent: string | undefined
+  saveEvent: string | undefined
+  formatEvent: string | undefined
+  contextMenuEvent: string | undefined
+  tabId: string | undefined
+  projectSlug: string | undefined
+  sourceRoot: string | undefined
+  relPath: string | undefined
+  lspUri: string
+  lspTransport: PhoenixLspTransport
+  lspClient: LSPClient
+  idleTimer: ReturnType<typeof setTimeout> | null = null
+  changeTimer: ReturnType<typeof setTimeout> | null = null
+  autoCompletionTimer: ReturnType<typeof setTimeout> | null = null
+  lspFoldTimer: ReturnType<typeof setTimeout> | null = null
+  scrollStateTimer: ReturnType<typeof setTimeout> | null = null
+  pendingEnterIndent = false
+  restoringState = false
+  modeCompartment = new Compartment()
+  themeCompartment = new Compartment()
+  lineNumbersCompartment = new Compartment()
+  activeLineCompartment = new Compartment()
+  completionState: CompletionState = {items: [], selectedIndex: 0, from: 0, to: 0, visible: false}
+  view?: EditorView
+  onKeydown?: (event: KeyboardEvent) => void
+  onContextMenu?: (event: MouseEvent) => void
+  onClick?: (event: MouseEvent) => void
+  onFocusIn?: () => void
+  onFocusOut?: () => void
+  onScroll?: () => void
+  onSubmit?: () => void
+
+  constructor(hook: HookContext) {
     this.hook = hook
     this.el = hook.el
     this.root = this.el.querySelector("[data-role='cm-root']")
-    this.hiddenInput = this.el.querySelector("[data-role='input']")
+    this.hiddenInput = this.el.querySelector<HTMLInputElement>("[data-role='input']")
     this.form = this.el.closest("form")
     this.modeBadge = this.el.querySelector("[data-role='mode-badge']")
     this.completionPanel = this.el.querySelector("[data-role='completion-panel']")
@@ -439,7 +533,7 @@ export class CodeMirrorEditorHost {
         },
         {
           key: "Shift-Alt-f",
-          run: view => this.requestFormatDocument(view)
+          run: () => this.requestFormatDocument()
         }
       ])
     )
@@ -592,7 +686,7 @@ export class CodeMirrorEditorHost {
     vimHostByCm.set(cm, this)
   }
 
-  onUpdate(update) {
+  onUpdate(update: ViewUpdate): void {
     this.ensureNoFatCursor()
 
     if (this.view) this.view.dom.classList.add("cm-force-visible-text")
@@ -611,7 +705,7 @@ export class CodeMirrorEditorHost {
     }
   }
 
-  updateInsertedNewline(update) {
+  updateInsertedNewline(update: ViewUpdate): boolean {
     let insertedNewline = false
     update.changes.iterChanges((_fromA, _toA, _fromB, _toB, inserted) => {
       if (inserted.toString().includes("\n")) insertedNewline = true
@@ -619,13 +713,15 @@ export class CodeMirrorEditorHost {
     return insertedNewline
   }
 
-  bindDomEvents() {
+  bindDomEvents(): void {
+    const view = this.view
+    if (!view) return
+
     this.onKeydown = event => this.handleKeydown(event)
     this.onContextMenu = event => this.handleContextMenu(event)
     this.onClick = event => this.handleClick(event)
     this.onFocusIn = () => {
-      if (!this.view) return
-      this.view.dom.classList.add("cm-force-visible-text")
+      view.dom.classList.add("cm-force-visible-text")
       this.ensureNoFatCursor()
     }
     this.onFocusOut = () => {}
@@ -635,24 +731,26 @@ export class CodeMirrorEditorHost {
       this.syncHiddenInput()
     }
 
-    this.view.dom.addEventListener("keydown", this.onKeydown)
-    this.view.dom.addEventListener("contextmenu", this.onContextMenu)
-    this.view.dom.addEventListener("click", this.onClick)
-    this.view.dom.addEventListener("focusin", this.onFocusIn)
-    this.view.dom.addEventListener("focusout", this.onFocusOut)
-    this.view.scrollDOM.addEventListener("scroll", this.onScroll, {passive: true})
+    view.dom.addEventListener("keydown", this.onKeydown)
+    view.dom.addEventListener("contextmenu", this.onContextMenu)
+    view.dom.addEventListener("click", this.onClick)
+    view.dom.addEventListener("focusin", this.onFocusIn)
+    view.dom.addEventListener("focusout", this.onFocusOut)
+    view.scrollDOM.addEventListener("scroll", this.onScroll, {passive: true})
     if (this.form) this.form.addEventListener("submit", this.onSubmit)
   }
 
-  unbindDomEvents() {
-    if (!this.view) return
-    this.view.dom.removeEventListener("keydown", this.onKeydown)
-    this.view.dom.removeEventListener("contextmenu", this.onContextMenu)
-    this.view.dom.removeEventListener("click", this.onClick)
-    this.view.dom.removeEventListener("focusin", this.onFocusIn)
-    this.view.dom.removeEventListener("focusout", this.onFocusOut)
-    this.view.scrollDOM.removeEventListener("scroll", this.onScroll)
-    if (this.form) this.form.removeEventListener("submit", this.onSubmit)
+  unbindDomEvents(): void {
+    const view = this.view
+    if (!view) return
+    const {onKeydown, onContextMenu, onClick, onFocusIn, onFocusOut, onScroll, onSubmit} = this
+    if (onKeydown) view.dom.removeEventListener("keydown", onKeydown)
+    if (onContextMenu) view.dom.removeEventListener("contextmenu", onContextMenu)
+    if (onClick) view.dom.removeEventListener("click", onClick)
+    if (onFocusIn) view.dom.removeEventListener("focusin", onFocusIn)
+    if (onFocusOut) view.dom.removeEventListener("focusout", onFocusOut)
+    if (onScroll) view.scrollDOM.removeEventListener("scroll", onScroll)
+    if (this.form && onSubmit) this.form.removeEventListener("submit", onSubmit)
   }
 
   ensureNoFatCursor() {
@@ -699,17 +797,18 @@ export class CodeMirrorEditorHost {
     if (this.hiddenInput) this.hiddenInput.value = this.getValue()
   }
 
-  pushEditorChangeDebounced() {
-    clearTimeout(this.changeTimer)
+  pushEditorChangeDebounced(): void {
+    clearAppTimeout(this.changeTimer)
     this.changeTimer = setTimeout(() => {
       this.hook.pushEvent("editor-change", {content: this.getValue()})
     }, 80)
   }
 
-  scheduleCompilerTokenize() {
+  scheduleCompilerTokenize(): void {
     if (!this.idleEvent) return
-    clearTimeout(this.idleTimer)
-    this.idleTimer = setTimeout(() => this.hook.pushEvent(this.idleEvent, {}), 650)
+    const idleEvent = this.idleEvent
+    clearAppTimeout(this.idleTimer)
+    this.idleTimer = setTimeout(() => this.hook.pushEvent(idleEvent, {}), 650)
   }
 
   reportEditorState() {
@@ -723,13 +822,13 @@ export class CodeMirrorEditorHost {
     })
   }
 
-  reportEditorStateDebounced() {
+  reportEditorStateDebounced(): void {
     if (this.restoringState) return
-    clearTimeout(this.scrollStateTimer)
+    clearAppTimeout(this.scrollStateTimer)
     this.scrollStateTimer = setTimeout(() => this.reportEditorState(), 80)
   }
 
-  applyTokenHighlights({tokens}) {
+  applyTokenHighlights({tokens}: {tokens?: TokenHighlight[]}): void {
     if (!this.view) return
 
     this.view.dispatch({
@@ -737,7 +836,7 @@ export class CodeMirrorEditorHost {
     })
   }
 
-  applyFoldRanges({ranges}) {
+  applyFoldRanges({ranges}: {ranges?: FoldRange[]}): void {
     if (this.lspClient && this.lspClient.connected) return
     if (!this.view) return
 
@@ -746,9 +845,9 @@ export class CodeMirrorEditorHost {
     })
   }
 
-  requestLspFoldRangesDebounced() {
+  requestLspFoldRangesDebounced(): void {
     if (!this.lspClient || !this.lspClient.connected || !this.view) return
-    clearTimeout(this.lspFoldTimer)
+    clearAppTimeout(this.lspFoldTimer)
     this.lspFoldTimer = setTimeout(() => this.requestLspFoldRanges(), 250)
   }
 
@@ -759,7 +858,7 @@ export class CodeMirrorEditorHost {
       .request("textDocument/foldingRange", {textDocument: {uri: this.lspUri}})
       .then(ranges => {
         if (!this.view || !Array.isArray(ranges)) return
-        const converted = ranges.map(range => ({
+        const converted = (ranges as LspFoldingRange[]).map(range => ({
           start_line: Number(range.startLine) + 1,
           end_line: Number(range.endLine) + 1
         }))
@@ -768,11 +867,11 @@ export class CodeMirrorEditorHost {
       .catch(error => console.warn("[lsp] foldingRange failed", error))
   }
 
-  applyLintDiagnostics({diagnostics}) {
+  applyLintDiagnostics({diagnostics}: {diagnostics?: LintRow[]}): void {
     if (!this.view) return
 
     const rows = Array.isArray(diagnostics) ? diagnostics : []
-    const mapped = []
+    const mapped: Diagnostic[] = []
 
     for (const row of rows) {
       const line = Number(row && row.line)
@@ -808,14 +907,14 @@ export class CodeMirrorEditorHost {
     this.view.dispatch(setDiagnostics(this.view.state, mapped))
   }
 
-  mapLintSeverity(value) {
+  mapLintSeverity(value: unknown): LintSeverity {
     const normalized = safeLower(value)
     if (normalized === "error") return "error"
     if (normalized === "warning" || normalized === "warn") return "warning"
     return "info"
   }
 
-  requestSemanticEdit(key, shiftKey) {
+  requestSemanticEdit(key: string, shiftKey: boolean): boolean {
     if (!this.view || this.readOnly) return false
     const value = this.getValue()
     const {start, end} = this.getSelection()
@@ -848,8 +947,8 @@ export class CodeMirrorEditorHost {
     return true
   }
 
-  cancelPendingEditorChange() {
-    clearTimeout(this.changeTimer)
+  cancelPendingEditorChange(): void {
+    clearAppTimeout(this.changeTimer)
     this.changeTimer = null
   }
 
@@ -865,7 +964,7 @@ export class CodeMirrorEditorHost {
     const beforeCursor = state.doc.sliceString(line.from, main.head)
     if (!/^\s*$/.test(beforeCursor)) return
 
-    const desiredIndent = this.indentColumnForLine({state, lineAt: pos => state.doc.lineAt(pos)}, line.from)
+    const desiredIndent = this.indentColumnForLine(new IndentContext(state), line.from)
     const currentIndent = beforeCursor.length
     if (desiredIndent === currentIndent) return
 
@@ -876,14 +975,15 @@ export class CodeMirrorEditorHost {
     })
   }
 
-  indentColumnForLine(context, pos) {
-    const doc = context.state ? context.state.doc : this.view && this.view.state.doc
+  indentColumnForLine(context: IndentContext, pos: number): number {
+    const doc = context.state.doc
     const line = context.lineAt(pos)
+    const lineNumber = doc.lineAt(line.from).number
     const currentIndent = leadingIndentColumns(line.text)
     const trimmed = line.text.trim()
 
     if (trimmed === "" && doc) {
-      const previous = previousNonBlankLine(doc, line.number)
+      const previous = previousNonBlankLine(doc, lineNumber)
       if (previous && startsWithClosingDelimiter(previous.text)) {
         return Math.max(0, leadingIndentColumns(previous.text) - INDENT_WIDTH)
       }
@@ -896,7 +996,7 @@ export class CodeMirrorEditorHost {
         return leadingIndentColumns(previous.text) + INDENT_WIDTH
       }
 
-      const next = nextNonBlankLine(doc, line.number)
+      const next = nextNonBlankLine(doc, lineNumber)
       if (next && leadingIndentColumns(next.text) <= currentIndent) {
         return leadingIndentColumns(next.text)
       }
@@ -910,7 +1010,7 @@ export class CodeMirrorEditorHost {
     return currentIndent
   }
 
-  runTabIndent(view, outdent) {
+  runTabIndent(view: EditorView, outdent: boolean): boolean {
     if (this.readOnly) return false
 
     if (this.completionState.visible) {
@@ -935,7 +1035,7 @@ export class CodeMirrorEditorHost {
     return true
   }
 
-  runManualCompletion(view) {
+  runManualCompletion(view: EditorView): boolean {
     if (this.readOnly) return false
     startCompletion(view)
     return true
@@ -956,10 +1056,10 @@ export class CodeMirrorEditorHost {
     })
   }
 
-  scheduleAutoCompletions() {
+  scheduleAutoCompletions(): void {
     if (!this.view || this.readOnly) return
     if (this.editorMode === "vim") return
-    clearTimeout(this.autoCompletionTimer)
+    clearAppTimeout(this.autoCompletionTimer)
 
     const main = this.view.state.selection.main
     if (!main.empty) return
@@ -979,7 +1079,15 @@ export class CodeMirrorEditorHost {
     return match ? match[1] : ""
   }
 
-  showCompletions({items, replace_from, replace_to}) {
+  showCompletions({
+    items,
+    replace_from,
+    replace_to
+  }: {
+    items?: CompletionItem[]
+    replace_from?: number
+    replace_to?: number
+  }): void {
     if (this.lspClient && this.lspClient.connected) return
     if (!Array.isArray(items) || items.length === 0) {
       this.dismissCompletions()
@@ -1004,15 +1112,16 @@ export class CodeMirrorEditorHost {
     this.completionPanel.innerHTML = ""
   }
 
-  renderCompletionPanel() {
-    if (!this.completionPanel) return
+  renderCompletionPanel(): void {
+    const panel = this.completionPanel
+    if (!panel) return
     if (!this.completionState.visible || this.completionState.items.length === 0) {
       this.dismissCompletions()
       return
     }
 
-    this.completionPanel.classList.remove("hidden")
-    this.completionPanel.innerHTML = ""
+    panel.classList.remove("hidden")
+    panel.innerHTML = ""
 
     this.completionState.items.forEach((item, index) => {
       const row = document.createElement("button")
@@ -1025,18 +1134,18 @@ export class CodeMirrorEditorHost {
         event.preventDefault()
         this.acceptCompletion(index)
       })
-      this.completionPanel.appendChild(row)
+      panel.appendChild(row)
     })
   }
 
-  moveCompletionSelection(delta) {
+  moveCompletionSelection(delta: number): void {
     if (!this.completionState.visible || this.completionState.items.length === 0) return
     const len = this.completionState.items.length
     this.completionState.selectedIndex = (this.completionState.selectedIndex + delta + len) % len
     this.renderCompletionPanel()
   }
 
-  acceptCompletion(index = this.completionState.selectedIndex) {
+  acceptCompletion(index: number = this.completionState.selectedIndex): void {
     if (!this.view || !this.completionState.visible) return
     const item = this.completionState.items[index]
     if (!item) return
@@ -1048,21 +1157,21 @@ export class CodeMirrorEditorHost {
     this.dismissCompletions()
   }
 
-  cursorOffsetFromEvent(event) {
+  cursorOffsetFromEvent(event: MouseEvent): number {
     if (!this.view) return 0
     const pos = this.view.posAtCoords({x: event.clientX, y: event.clientY})
     if (typeof pos === "number") return pos
     return this.view.state.selection.main.head
   }
 
-  handleContextMenu(event) {
+  handleContextMenu(event: MouseEvent): void {
     if (!this.contextMenuEvent || !this.view) return
     event.preventDefault()
     const offset = this.cursorOffsetFromEvent(event)
     this.hook.pushEvent(this.contextMenuEvent, {x: event.clientX, y: event.clientY, offset})
   }
 
-  handleClick(event) {
+  handleClick(event: MouseEvent): void {
     if (!this.view) return
     if (this.contextMenuEvent && event.ctrlKey) {
       event.preventDefault()
@@ -1073,7 +1182,7 @@ export class CodeMirrorEditorHost {
     this.reportEditorState()
   }
 
-  handleKeydown(event) {
+  handleKeydown(event: KeyboardEvent): void {
     if (isSaveKey(event) && this.saveEvent) {
       event.preventDefault()
       this.pushSaveEvent()
@@ -1123,14 +1232,14 @@ export class CodeMirrorEditorHost {
     }
   }
 
-  handleSemanticDomKeydown(event) {
+  handleSemanticDomKeydown(event: KeyboardEvent): boolean {
     if (this.readOnly || event.defaultPrevented) return false
     if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return false
 
     return false
   }
 
-  focusPosition({line, column}) {
+  focusPosition({line, column}: {line: number; column: number}): void {
     if (!this.view || !Number.isInteger(line) || !Number.isInteger(column)) return
     const doc = this.view.state.doc
     const safeLine = clamp(line, 1, doc.lines)
@@ -1142,7 +1251,7 @@ export class CodeMirrorEditorHost {
     this.view.focus()
   }
 
-  restoreState({cursor_offset, scroll_top, scroll_left}) {
+  restoreState({cursor_offset, scroll_top, scroll_left}: EditorRestoreState): void {
     if (!this.view) return
     const len = this.view.state.doc.length
     const offset = clamp(Number(cursor_offset || 0), 0, len)
@@ -1151,7 +1260,7 @@ export class CodeMirrorEditorHost {
     this.restoreScrollPosition(scroll_top, scroll_left)
   }
 
-  restoreScrollPosition(scrollTop, scrollLeft) {
+  restoreScrollPosition(scrollTop: number, scrollLeft: number): void {
     const top = Math.max(0, Number(scrollTop || 0))
     const left = Math.max(0, Number(scrollLeft || 0))
     let attempts = 0
@@ -1159,6 +1268,7 @@ export class CodeMirrorEditorHost {
       if (!this.view) return
       attempts += 1
       this.view.requestMeasure({
+        read: () => null,
         write: () => {
           if (!this.view) return
           this.view.scrollDOM.scrollTop = top
@@ -1176,7 +1286,7 @@ export class CodeMirrorEditorHost {
     window.requestAnimationFrame(apply)
   }
 
-  restoreStateFromDataset(docLength = 0) {
+  restoreStateFromDataset(docLength = 0): EditorRestoreState {
     const len = Math.max(0, Number(docLength || 0))
     return {
       cursor_offset: clamp(Number(this.el.dataset.restoreCursorOffset || 0), 0, len),
@@ -1231,7 +1341,19 @@ export class CodeMirrorEditorHost {
     this.bindVimInstance()
   }
 
-  applyServerEdit({replace_from, replace_to, inserted_text, cursor_start, cursor_end}) {
+  applyServerEdit({
+    replace_from,
+    replace_to,
+    inserted_text,
+    cursor_start,
+    cursor_end
+  }: {
+    replace_from: number
+    replace_to: number
+    inserted_text: string
+    cursor_start?: number
+    cursor_end?: number
+  }): void {
     if (!this.view) return
     if (!Number.isInteger(replace_from) || !Number.isInteger(replace_to)) return
     if (typeof inserted_text !== "string") return
@@ -1251,12 +1373,12 @@ export class CodeMirrorEditorHost {
     this.syncHiddenInput()
   }
 
-  destroy() {
-    clearTimeout(this.idleTimer)
-    clearTimeout(this.changeTimer)
-    clearTimeout(this.autoCompletionTimer)
-    clearTimeout(this.lspFoldTimer)
-    clearTimeout(this.scrollStateTimer)
+  destroy(): void {
+    clearAppTimeout(this.idleTimer)
+    clearAppTimeout(this.changeTimer)
+    clearAppTimeout(this.autoCompletionTimer)
+    clearAppTimeout(this.lspFoldTimer)
+    clearAppTimeout(this.scrollStateTimer)
     this.reportEditorState()
     this.unbindDomEvents()
     this.dismissCompletions()

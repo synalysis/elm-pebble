@@ -1,12 +1,20 @@
-import {postJSON} from "./emulator_http.js"
-import {loadRFB} from "./emulator_vnc.js"
+import {postJSON} from "./emulator_http"
+import {errMessage} from "../types/errors"
+import {loadRFB} from "./emulator_vnc"
+import type {EmbeddedEmulatorHostSurface} from "../types/emulator_host"
+import type {EmulatorSessionInfo, PingResponse} from "../types/emulator"
+
+type InstallResponse = {
+  result?: {parts?: Array<{kind: string}>}
+}
 
 /**
  * HTTP session API for the embedded emulator (launch, stop, ping, native install).
- * Session JSON shape: see `EmulatorSessionInfo` in `embedded_emulator.js`.
  */
 export class EmulatorSessionClient {
-  constructor(host) {
+  host: EmbeddedEmulatorHostSurface
+
+  constructor(host: EmbeddedEmulatorHostSurface) {
     this.host = host
   }
 
@@ -18,7 +26,7 @@ export class EmulatorSessionClient {
     this.host.phoneBridgeReady = false
 
     try {
-      const response = await postJSON(this.host.session.ping_path)
+      const response = await postJSON<PingResponse>(this.host.session.ping_path)
       if (response?.alive !== true) {
         this.host.endSession("Previous emulator session has ended")
         return
@@ -51,7 +59,7 @@ export class EmulatorSessionClient {
       this.host.appInstalled = false
       this.host.setStatus("Launching embedded emulator...")
       void loadRFB().catch(() => {})
-      this.host.session = await postJSON("/api/emulator/launch", {slug, platform})
+      this.host.session = await postJSON<EmulatorSessionInfo>("/api/emulator/launch", {slug, platform})
       this.host.sessionAlive = true
       this.host.displayConnected = false
       this.host.phoneBridgeReady = false
@@ -76,7 +84,7 @@ export class EmulatorSessionClient {
       }
       this.host.reapplySimulatorSettingsToQemu({source: "after_launch", quiet: true})
     } catch (error) {
-      this.host.setStatus(`Embedded emulator failed: ${error.message}`)
+      this.host.setStatus(`Embedded emulator failed: ${errMessage(error)}`)
     } finally {
       this.host.launching = false
       this.host.notifyStateChanged()
@@ -93,7 +101,7 @@ export class EmulatorSessionClient {
       await postJSON(session.kill_path)
       this.host.endSession("Embedded emulator stopped")
     } catch (error) {
-      this.host.setStatus(`Could not stop embedded emulator: ${error.message}`)
+      this.host.setStatus(`Could not stop embedded emulator: ${errMessage(error)}`)
     } finally {
       this.host.stopping = false
       this.host.notifyStateChanged()
@@ -108,7 +116,7 @@ export class EmulatorSessionClient {
 
     this.host.setStatus("Installing PBW on embedded emulator via fallback installer...")
     this.host.appendLog("native PBW install started (this can take a few minutes on large apps)")
-    const response = await postJSON(this.host.session.install_path, {}, {timeoutMs: 300_000})
+    const response = await postJSON<InstallResponse>(this.host.session.install_path, {}, {timeoutMs: 300_000})
     if (this.host.session?.id !== installSessionId) return
     const parts = response.result?.parts?.map(part => part.kind).join(", ")
     this.host.appInstalled = true

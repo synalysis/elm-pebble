@@ -386,7 +386,7 @@ defmodule IdeWeb.WorkspaceLive do
       true ->
         {:noreply,
          socket
-         |> update_tab(fn tab -> %{tab | content: content, dirty: true} end)
+         |> update_tab(&apply_editor_content(&1, content))
          |> assign_tokenization(content, active_rel_path)
          |> clear_editor_check(active)}
     end
@@ -406,7 +406,7 @@ defmodule IdeWeb.WorkspaceLive do
       true ->
         {:noreply,
          socket
-         |> update_tab(fn tab -> %{tab | content: content, dirty: true} end)
+         |> update_tab(&apply_editor_content(&1, content))
          |> assign_tokenization(content, active_rel_path)
          |> clear_editor_check(active)}
     end
@@ -440,7 +440,7 @@ defmodule IdeWeb.WorkspaceLive do
 
       {:noreply,
        socket
-       |> update_tab(fn tab -> %{tab | content: next_content, dirty: true} end)
+       |> update_tab(&apply_editor_content(&1, next_content))
        |> assign_tokenization(next_content, active_rel_path)
        |> clear_editor_check(active)
        |> push_event("token-editor-apply-edit", edit_result)}
@@ -588,7 +588,7 @@ defmodule IdeWeb.WorkspaceLive do
 
               socket =
                 socket
-                |> update_tab(fn active -> %{active | dirty: false, content: content_to_save} end)
+                |> update_tab(fn active -> mark_editor_content_saved(active, content_to_save) end)
                 |> assign(:format_output, format_output)
                 |> assign(:auto_format_last_result, auto_format_last_result)
                 |> assign_tokenization(content_to_save, tab.rel_path, mode: :compiler)
@@ -2768,6 +2768,7 @@ defmodule IdeWeb.WorkspaceLive do
         source_root: source_root,
         rel_path: rel_path,
         content: contents,
+        saved_content: contents,
         dirty: false,
         read_only: ResourceStore.read_only_generated_module?(source_root, rel_path),
         editor_state: editor_state
@@ -2930,7 +2931,7 @@ defmodule IdeWeb.WorkspaceLive do
       |> assign(:format_output, render_format_output(result))
       |> update_tab(fn active ->
         if active.id == tab.id do
-          %{active | content: result.formatted_source, dirty: false}
+          mark_editor_content_saved(active, result.formatted_source)
         else
           active
         end
@@ -3678,7 +3679,7 @@ defmodule IdeWeb.WorkspaceLive do
         tabs =
           Enum.map(socket.assigns.tabs, fn
             %{source_root: "phone", rel_path: ^rel_path} = tab ->
-              %{tab | content: content, dirty: false, read_only: true}
+              mark_editor_content_saved(%{tab | read_only: true}, content)
 
             tab ->
               tab
@@ -3858,6 +3859,8 @@ defmodule IdeWeb.WorkspaceLive do
   defdelegate maybe_open_editor_default_file(socket, project, previous_pane), to: EditorSupport
   defdelegate default_editor_state(), to: EditorSupport
   defdelegate tab_id(source_root, rel_path), to: EditorSupport
+  defdelegate apply_editor_content(tab, content), to: EditorSupport
+  defdelegate mark_editor_content_saved(tab, content), to: EditorSupport
   defdelegate tree_dir_key(source_root, rel_path), to: EditorSupport
   defdelegate maybe_put_kw(opts, key, value), to: EditorSupport
   defdelegate apply_text_patch(content, edit_patch), to: EditorSupport

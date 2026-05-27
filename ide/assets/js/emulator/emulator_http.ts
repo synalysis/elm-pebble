@@ -1,8 +1,18 @@
-export function csrfToken() {
+import type {ApiErrorBody} from "../types/emulator"
+
+export function csrfToken(): string {
   return document.querySelector("meta[name='csrf-token']")?.getAttribute("content") || ""
 }
 
-export async function postJSON(url, body = {}, {timeoutMs} = {}) {
+export type PostJSONOptions = {
+  timeoutMs?: number
+}
+
+export async function postJSON<T = Record<string, unknown>>(
+  url: string,
+  body: Record<string, unknown> = {},
+  {timeoutMs}: PostJSONOptions = {}
+): Promise<T> {
   const controller = timeoutMs ? new AbortController() : null
   const timer =
     controller &&
@@ -17,11 +27,14 @@ export async function postJSON(url, body = {}, {timeoutMs} = {}) {
       body: JSON.stringify(body),
       signal: controller?.signal
     })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(data.error || response.statusText)
+    const data = (await response.json().catch(() => ({}))) as T & ApiErrorBody
+    if (!response.ok) {
+      const err = data as ApiErrorBody
+      throw new Error(err.error || response.statusText)
+    }
     return data
   } catch (error) {
-    if (controller?.signal.aborted) {
+    if (controller?.signal.aborted && timeoutMs) {
       throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`)
     }
 
@@ -31,7 +44,7 @@ export async function postJSON(url, body = {}, {timeoutMs} = {}) {
   }
 }
 
-export function websocketURL(path) {
+export function websocketURL(path: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
   return `${protocol}//${window.location.host}${path}`
 }

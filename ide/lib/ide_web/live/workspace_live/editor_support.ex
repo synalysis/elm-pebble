@@ -323,6 +323,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
                 source_root: source_root,
                 rel_path: rel_path,
                 content: contents,
+                saved_content: contents,
                 dirty: false,
                 read_only: ResourceStore.read_only_generated_module?(source_root, rel_path),
                 editor_state: editor_state
@@ -377,6 +378,24 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   @spec tab_id(String.t(), String.t()) :: String.t()
   def tab_id(source_root, rel_path), do: "#{source_root}:#{rel_path}"
+
+  @spec editor_content_baseline(EditorTypes.tab()) :: String.t()
+  def editor_content_baseline(tab), do: Map.get(tab, :saved_content, tab.content)
+
+  @spec editor_content_dirty?(EditorTypes.tab(), String.t()) :: boolean()
+  def editor_content_dirty?(tab, content) when is_binary(content) do
+    content != editor_content_baseline(tab)
+  end
+
+  @spec apply_editor_content(EditorTypes.tab(), String.t()) :: EditorTypes.tab()
+  def apply_editor_content(tab, content) when is_binary(content) do
+    %{tab | content: content, dirty: editor_content_dirty?(tab, content)}
+  end
+
+  @spec mark_editor_content_saved(EditorTypes.tab(), String.t()) :: EditorTypes.tab()
+  def mark_editor_content_saved(tab, content) when is_binary(content) do
+    %{tab | content: content, saved_content: content, dirty: false}
+  end
 
   @spec tree_dir_key(String.t(), String.t()) :: String.t()
   def tree_dir_key(source_root, rel_path), do: "#{source_root}:#{rel_path}"

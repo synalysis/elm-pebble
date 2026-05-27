@@ -91,6 +91,7 @@ defmodule Ide.MixProject do
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "ide.boundary_check", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["tailwind ide", "esbuild ide"],
+      "assets.typecheck": ["cmd npm run typecheck --prefix assets"],
       "assets.deploy": [
         "tailwind ide --minify",
         "esbuild ide --minify",

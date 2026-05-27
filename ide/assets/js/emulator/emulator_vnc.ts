@@ -1,29 +1,90 @@
-import {disconnectUserSocket, getUserSocket, waitForUserSocketOpen} from "../user_socket.js"
-import {websocketURL} from "./emulator_http.js"
+import type {Channel} from "phoenix"
+import type RFB from "@novnc/novnc"
+import {getUserSocket, waitForUserSocketOpen} from "../user_socket"
+import {postJSON} from "./emulator_http"
+import type {EmulatorVncHost, VncSessionProbe} from "../types/emulator_host"
+import type {EmulatorSessionInfo, PingResponse} from "../types/emulator"
+import {errMessage} from "../types/errors"
+
+export type {EmulatorVncHost}
 
 const PHOENIX_SOCKET_OPEN_TIMEOUT_MS = 10_000
 const VNC_CHANNEL_JOIN_TIMEOUT_MS = 10_000
+const VNC_WS_OPEN_TIMEOUT_MS = 10_000
+const VNC_CONNECT_TIMEOUT_MS = 12_000
+const VNC_RECONNECT_BASE_MS = 150
+const VNC_RECONNECT_MAX_MS = 3_000
+const DISPLAY_READY_TIMEOUT_MS = 90_000
+const DISPLAY_READY_POLL_MS = 50
 
-let rfbModulePromise = null
+type VncChannelJoinOk = {
+  initial?: string
+}
 
-function loadRFB() {
+type ChannelBinaryPayload =
+  | ArrayBuffer
+  | ArrayBufferView
+  | string
+  | {b64?: string}
+  | null
+  | undefined
+
+type VncFrameSink = (data: ArrayBuffer) => void
+
+type VncChannelTransport = {
+  binaryType: BinaryType
+  protocol: string
+  bufferedAmount: number
+  readyState: number
+  send: (data: ArrayBuffer | ArrayBufferView) => void
+  close: () => void
+  onopen: ((this: WebSocket, ev: Event) => unknown) | null
+  onmessage: ((this: WebSocket, ev: MessageEvent<ArrayBuffer>) => unknown) | null
+  onerror: ((this: WebSocket, ev: Event) => unknown) | null
+  onclose: ((this: WebSocket, ev: CloseEvent) => unknown) | null
+}
+
+type ScreenSize = {
+  width: number
+  height: number
+}
+
+type VncCanvasSample = {
+  label: string
+  sessionId: string | undefined
+  wrapperPresent: boolean
+  innerCanvasPresent: boolean
+  wrapperSize: ScreenSize | null
+  innerSize: ScreenSize | null
+  backingSize: ScreenSize | null
+  wrapperChildren: string[]
+  pixelSample?: number[][]
+  nonBlackSamples?: number
+  uniqueGridColors?: string[]
+  uniqueGridColorCount?: number
+  pixelError?: string
+}
+
+let rfbModulePromise: Promise<typeof RFB> | null = null
+
+export function loadRFB(): Promise<typeof RFB> {
   if (!rfbModulePromise) {
     rfbModulePromise = import("@novnc/novnc")
       .then(module => module.default)
-      .catch(error => {
+      .catch((error: unknown) => {
         rfbModulePromise = null
-        const blocked =
-          error?.message?.includes("Failed to fetch") || error?.name === "TypeError"
+        const message = errMessage(error)
+        const blocked = message.includes("Failed to fetch") || error instanceof TypeError
         const hint = blocked
           ? " (check browser console for COEP/CORP blocked script — hard refresh after server restart)"
           : ""
-        throw new Error(`Could not load noVNC display client${hint}: ${error?.message || error}`)
+        throw new Error(`Could not load noVNC display client${hint}: ${message}`)
       })
   }
   return rfbModulePromise
 }
 
-function vncWebSocketReadyStateLabel(readyState) {
+function vncWebSocketReadyStateLabel(readyState: number | null | undefined): string {
   switch (readyState) {
     case WebSocket.CONNECTING:
       return "CONNECTING"
@@ -39,15 +100,25 @@ function vncWebSocketReadyStateLabel(readyState) {
 }
 
 export class EmulatorVnc {
-  constructor(host) {
+  constructor(host: EmulatorVncHost) {
     this.host = host
   }
 
+  host: EmulatorVncHost
+
+  closeVncSocket(): void {
+    const ws = this.host.vncSocket
+    if (ws) {
+      try {
+        ws.close()
+      } catch {
+        // Socket may already be closed.
+      }
       this.host.vncSocket = null
     }
   }
 
-  closeVncChannel() {
+  closeVncChannel(): void {
     if (this.host.vncChannel) {
       try {
         this.host.vncChannel.leave()
@@ -60,7 +131,7 @@ export class EmulatorVnc {
     this.host.vncPhoenixSocket = null
   }
 
-  disconnectRfb(rfb, {reconnecting = false} = {}) {
+  disconnectRfb(rfb: RFB | null | undefined, {reconnecting = false}: {reconnecting?: boolean} = {}): void {
     if (reconnecting) this.host.reconnectingVnc = true
     if (rfb) {
       try {
@@ -73,19 +144,19 @@ export class EmulatorVnc {
     this.closeVncSocket()
   }
 
-  ensurePhoenixSocket() {
+  ensurePhoenixSocket(): ReturnType<typeof getUserSocket> {
     const socket = getUserSocket({onLog: message => this.host.appendLog(message)})
     this.host.vncPhoenixSocket = socket
     return socket
   }
 
-  decodeChannelBinary(payload) {
+  decodeChannelBinary(payload: ChannelBinaryPayload): ArrayBuffer | null {
     if (payload instanceof ArrayBuffer) return payload
     if (ArrayBuffer.isView(payload)) {
       return payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength)
     }
     if (payload && typeof payload === "object") {
-      const encoded = payload.b64 ?? payload["b64"]
+      const encoded = payload.b64
       if (typeof encoded === "string") return this.base64ToArrayBuffer(encoded)
     }
     if (typeof payload === "string") {
@@ -94,31 +165,31 @@ export class EmulatorVnc {
     return null
   }
 
-  base64ToArrayBuffer(encoded) {
+  base64ToArrayBuffer(encoded: string): ArrayBuffer {
     const binary = atob(encoded)
     const bytes = new Uint8Array(binary.length)
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
     return bytes.buffer
   }
 
-  vncBytes(data) {
+  vncBytes(data: ArrayBuffer | ArrayBufferView): Uint8Array {
     if (data instanceof ArrayBuffer) return new Uint8Array(data)
     if (ArrayBuffer.isView(data)) {
       return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
     }
-    throw new Error(`unsupported VNC frame data (${data?.constructor?.name || typeof data})`)
+    throw new Error(`unsupported VNC frame data (${typeof data})`)
   }
 
-  bytesToBase64(bytes) {
+  bytesToBase64(bytes: Uint8Array): string {
     let binary = ""
     const chunk = 0x8000
     for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
     }
     return btoa(binary)
   }
 
-  pushVncFrame(channel, data) {
+  pushVncFrame(channel: Channel, data: ArrayBuffer | ArrayBufferView): void {
     const bytes = this.vncBytes(data)
     if (!this.host.vncLoggedFirstSend) {
       this.host.vncLoggedFirstSend = true
@@ -127,23 +198,29 @@ export class EmulatorVnc {
     channel.push("frame", {b64: this.bytesToBase64(bytes)})
   }
 
-  resetVncFramePipeline() {
+  resetVncFramePipeline(): void {
     this.host.vncPendingFrames = []
     this.host.vncFrameSink = null
     this.host.vncJoinInitial = null
   }
 
-  enqueueVncChannelFrame(payload) {
-    const data = this.decodeChannelBinary(payload)
+  enqueueVncChannelFrame(payload: unknown): void {
+    const data = this.decodeChannelBinary(payload as ChannelBinaryPayload)
     if (!data) {
-      const kind = payload == null ? "null" : payload?.constructor?.name || typeof payload
+      const kind =
+        payload == null
+          ? "null"
+          : payload instanceof Object
+            ? payload.constructor.name
+            : typeof payload
       this.host.appendLog(`Embedded emulator VNC ignored frame payload (${kind})`)
       return
     }
     const chunkBytes = data.byteLength || 0
-    if (this.host.vncWsDiag) {
-      this.host.vncWsDiag.bytesReceived += chunkBytes
-      this.host.vncWsDiag.framesReceived += 1
+    const diag = this.host.vncWsDiag
+    if (diag) {
+      diag.bytesReceived = (diag.bytesReceived ?? 0) + chunkBytes
+      diag.framesReceived = (diag.framesReceived ?? 0) + 1
     }
     if (this.host.vncFrameSink) {
       this.host.vncFrameSink(data)
@@ -152,14 +229,14 @@ export class EmulatorVnc {
     }
   }
 
-  bindVncFrameSink(deliver) {
+  bindVncFrameSink(deliver: VncFrameSink): void {
     this.host.vncFrameSink = deliver
     const pending = this.host.vncPendingFrames
     this.host.vncPendingFrames = []
     for (const data of pending) deliver(data)
   }
 
-  deliverVncJoinInitial(rfb) {
+  deliverVncJoinInitial(rfb: RFB): void {
     const data = this.host.vncJoinInitial
     if (!data || !rfb?._sock?._recvMessage) return
 
@@ -168,9 +245,14 @@ export class EmulatorVnc {
     this.host.appendLog(`Embedded emulator delivered ${data.byteLength} byte(s) join initial to noVNC`)
   }
 
-  async joinVncChannel() {
+  async joinVncChannel(): Promise<Channel> {
+    const sessionId = this.host.session?.id
+    if (!sessionId) {
+      throw new Error("Cannot join VNC channel: no emulator session id")
+    }
+
     const socket = this.ensurePhoenixSocket()
-    const topic = `emulator_vnc:${this.host.session.id}`
+    const topic = `emulator_vnc:${sessionId}`
 
     this.host.appendLog(`Opening Phoenix user socket (state=${socket.connectionState()})`)
     await waitForUserSocketOpen(socket, PHOENIX_SOCKET_OPEN_TIMEOUT_MS, {
@@ -183,14 +265,15 @@ export class EmulatorVnc {
     // Register before join: the server may push the RFB banner as soon as the relay starts.
     channel.on("frame", payload => this.enqueueVncChannelFrame(payload))
 
-    return new Promise((resolve, reject) => {
+    return new Promise<Channel>((resolve, reject) => {
       let settled = false
-      const finish = (error, joinedChannel = null) => {
+      const finish = (error: Error | null, joinedChannel: Channel | null = null) => {
         if (settled) return
         settled = true
         window.clearTimeout(timer)
         if (error) reject(error)
-        else resolve(joinedChannel)
+        else if (joinedChannel) resolve(joinedChannel)
+        else reject(new Error("Phoenix channel join finished without a channel"))
       }
 
       const timer = window.setTimeout(() => {
@@ -204,20 +287,22 @@ export class EmulatorVnc {
       channel
         .join()
         .receive("ok", response => {
-          if (response?.initial) {
+          const joinResponse = response as VncChannelJoinOk
+          if (joinResponse.initial) {
             try {
-              const binary = atob(response.initial)
+              const binary = atob(joinResponse.initial)
               const bytes = new Uint8Array(binary.length)
               for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
               // Hold until noVNC has attached the transport and run _socketOpen(); feeding the
               // RFB banner earlier triggers "Unknown init state" and the handshake never starts.
               this.host.vncJoinInitial = bytes.buffer
-              if (this.host.vncWsDiag) this.host.vncWsDiag.bytesReceived += bytes.byteLength
+              const diag = this.host.vncWsDiag
+              if (diag) diag.bytesReceived = (diag.bytesReceived ?? 0) + bytes.byteLength
               this.host.appendLog(
                 `Embedded emulator VNC channel received ${bytes.byteLength} byte(s) in join reply (held for noVNC init)`
               )
-            } catch (error) {
-              this.host.appendLog(`Embedded emulator VNC join initial decode failed: ${error.message}`)
+            } catch (error: unknown) {
+              this.host.appendLog(`Embedded emulator VNC join initial decode failed: ${errMessage(error)}`)
             }
           }
           finish(null, channel)
@@ -229,37 +314,39 @@ export class EmulatorVnc {
     })
   }
 
-  createVncChannelTransport(channel) {
-    let onopen = null
-    let onmessage = null
-    let onerror = null
-    let onclose = null
-    const pendingForTransport = []
+  createVncChannelTransport(channel: Channel): VncChannelTransport {
+    let onopen: VncChannelTransport["onopen"] = null
+    let onmessage: VncChannelTransport["onmessage"] = null
+    let onerror: VncChannelTransport["onerror"] = null
+    let onclose: VncChannelTransport["onclose"] = null
+    const pendingForTransport: ArrayBuffer[] = []
 
-    const deliverToTransport = data => {
-      if (onmessage) onmessage({data})
+    const deliverToTransport = (data: ArrayBuffer) => {
+      if (onmessage) onmessage.call({} as WebSocket, {data} as MessageEvent<ArrayBuffer>)
       else pendingForTransport.push(data)
     }
 
     const flushPendingForTransport = () => {
       if (!onmessage || pendingForTransport.length === 0) return
       const pending = pendingForTransport.splice(0)
-      for (const data of pending) onmessage({data})
+      for (const data of pending) onmessage.call({} as WebSocket, {data} as MessageEvent<ArrayBuffer>)
     }
 
     this.bindVncFrameSink(deliverToTransport)
 
     channel.onError(() => {
-      if (this.host.vncWsDiag) this.host.vncWsDiag.error = "phoenix channel error"
-      if (onerror) onerror(new Event("error"))
+      const diag = this.host.vncWsDiag
+      if (diag) diag.error = "phoenix channel error"
+      if (onerror) onerror.call({} as WebSocket, new Event("error"))
     })
 
     channel.onClose(() => {
-      if (this.host.vncWsDiag) {
-        this.host.vncWsDiag.closed = true
-        this.host.vncWsDiag.open = false
+      const diag = this.host.vncWsDiag
+      if (diag) {
+        diag.closed = true
+        diag.open = false
       }
-      if (onclose) onclose(new CloseEvent("close"))
+      if (onclose) onclose.call({} as WebSocket, new CloseEvent("close"))
     })
 
     return {
@@ -267,7 +354,7 @@ export class EmulatorVnc {
       protocol: "",
       bufferedAmount: 0,
       readyState: WebSocket.OPEN,
-      send: data => {
+      send: (data: ArrayBuffer | ArrayBufferView) => {
         this.pushVncFrame(channel, data)
       },
       close: () => {
@@ -276,32 +363,32 @@ export class EmulatorVnc {
       get onopen() {
         return onopen
       },
-      set onopen(fn) {
+      set onopen(fn: VncChannelTransport["onopen"]) {
         onopen = fn
       },
       get onmessage() {
         return onmessage
       },
-      set onmessage(fn) {
+      set onmessage(fn: VncChannelTransport["onmessage"]) {
         onmessage = fn
         flushPendingForTransport()
       },
       get onerror() {
         return onerror
       },
-      set onerror(fn) {
+      set onerror(fn: VncChannelTransport["onerror"]) {
         onerror = fn
       },
       get onclose() {
         return onclose
       },
-      set onclose(fn) {
+      set onclose(fn: VncChannelTransport["onclose"]) {
         onclose = fn
       }
     }
   }
 
-  resetVncWsDiag() {
+  resetVncWsDiag(): void {
     this.host.vncLoggedFirstSend = false
     this.host.vncWsDiag = {
       url: null,
@@ -317,74 +404,78 @@ export class EmulatorVnc {
     }
   }
 
-  attachVncWebSocketDiagnostics(ws) {
+  attachVncWebSocketDiagnostics(ws: WebSocket): void {
     if (!ws || ws.__elmPebbleVncDiag) return
     ws.__elmPebbleVncDiag = true
 
+    const diag = this.host.vncWsDiag
+    if (!diag) return
+
     const refreshReadyState = () => {
-      this.host.vncWsDiag.readyState = ws.readyState
-      this.host.vncWsDiag.readyStateLabel = vncWebSocketReadyStateLabel(ws.readyState)
+      diag.readyState = ws.readyState
+      diag.readyStateLabel = vncWebSocketReadyStateLabel(ws.readyState)
     }
 
     refreshReadyState()
 
     ws.addEventListener("open", () => {
       refreshReadyState()
-      this.host.vncWsDiag.open = true
+      diag.open = true
       this.host.appendLog("Embedded emulator VNC websocket open")
     })
-    ws.addEventListener("message", event => {
+    ws.addEventListener("message", (event: MessageEvent<ArrayBuffer | string>) => {
       const chunkBytes =
         event.data instanceof ArrayBuffer
           ? event.data.byteLength
           : typeof event.data === "string"
             ? event.data.length
             : 0
-      this.host.vncWsDiag.bytesReceived += chunkBytes
-      this.host.vncWsDiag.framesReceived += 1
+      diag.bytesReceived = (diag.bytesReceived ?? 0) + chunkBytes
+      diag.framesReceived = (diag.framesReceived ?? 0) + 1
     })
     ws.addEventListener("error", () => {
       refreshReadyState()
-      this.host.vncWsDiag.error = "websocket error"
+      diag.error = "websocket error"
     })
-    ws.addEventListener("close", event => {
+    ws.addEventListener("close", (event: CloseEvent) => {
       refreshReadyState()
-      this.host.vncWsDiag.closed = true
-      this.host.vncWsDiag.closeCode = event.code
-      this.host.vncWsDiag.closeReason = event.reason || null
+      diag.closed = true
+      diag.closeCode = event.code
+      diag.closeReason = event.reason || null
     })
   }
 
-  async probeEmulatorSession(pingPath) {
+  async probeEmulatorSession(pingPath: string): Promise<VncSessionProbe> {
     const started = performance.now()
 
     try {
-      const info = await postJSON(pingPath)
+      const info = await postJSON<PingResponse>(pingPath)
       return {
         ok: true,
         ms: Math.round(performance.now() - started),
-        alive: info?.alive === true,
-        display_ready: info?.display_ready === true
+        alive: info.alive === true,
+        display_ready: info.display_ready === true
       }
-    } catch (error) {
+    } catch (error: unknown) {
       return {
         ok: false,
         ms: Math.round(performance.now() - started),
-        error: error?.message || String(error)
+        error: errMessage(error)
       }
     }
   }
 
-  openVncWebSocket(url) {
+  openVncWebSocket(url: string): Promise<WebSocket> {
     this.resetVncWsDiag()
-    this.host.vncWsDiag.url = url
+    const diag = this.host.vncWsDiag
+    if (diag) diag.url = url
     this.closeVncSocket()
 
-    return new Promise((resolve, reject) => {
+    return new Promise<WebSocket>((resolve, reject) => {
       let settled = false
-      let ws
+      let ws: WebSocket
 
-      const finish = (error, socket = null) => {
+      const finish = (error: Error | null, socket: WebSocket | null = null) => {
         if (settled) return
         settled = true
         window.clearInterval(stateTimer)
@@ -392,15 +483,17 @@ export class EmulatorVnc {
         if (error) {
           this.closeVncSocket()
           reject(error)
-        } else {
+        } else if (socket) {
           resolve(socket)
+        } else {
+          reject(new Error("WebSocket finished without a socket"))
         }
       }
 
       try {
         ws = new WebSocket(url)
-      } catch (error) {
-        finish(new Error(`WebSocket constructor failed: ${error.message}`))
+      } catch (error: unknown) {
+        finish(new Error(`WebSocket constructor failed: ${errMessage(error)}`))
         return
       }
 
@@ -409,9 +502,10 @@ export class EmulatorVnc {
       this.attachVncWebSocketDiagnostics(ws)
 
       const stateTimer = window.setInterval(() => {
-        if (!this.host.vncWsDiag || ws !== this.host.vncSocket) return
-        this.host.vncWsDiag.readyState = ws.readyState
-        this.host.vncWsDiag.readyStateLabel = vncWebSocketReadyStateLabel(ws.readyState)
+        const wsDiag = this.host.vncWsDiag
+        if (!wsDiag || ws !== this.host.vncSocket) return
+        wsDiag.readyState = ws.readyState
+        wsDiag.readyStateLabel = vncWebSocketReadyStateLabel(ws.readyState)
       }, 250)
 
       const openTimer = window.setTimeout(() => {
@@ -456,7 +550,64 @@ export class EmulatorVnc {
     })
   }
 
-  async connectVnc() {
+  resolveCanvas(): HTMLElement | null {
+    const canvas = this.host.el.querySelector<HTMLElement>("[data-emulator-canvas]")
+    this.host.canvas = canvas
+    return canvas
+  }
+
+  async waitForDisplayReady(timeoutMs = DISPLAY_READY_TIMEOUT_MS): Promise<boolean> {
+    if (!this.host.session?.backend_enabled) return true
+    if (this.host.session.display_ready) return true
+
+    const deadline = Date.now() + timeoutMs
+    const pingPath = this.host.session.ping_path
+
+    while (Date.now() < deadline) {
+      if (this.host.destroyed || !this.host.session) return false
+
+      try {
+        const info = await postJSON<EmulatorSessionInfo>(pingPath)
+        if (info.display_ready) {
+          Object.assign(this.host.session, info)
+          return true
+        }
+      } catch {
+        // Session may still be booting QEMU/VNC.
+      }
+
+      await new Promise(resolve => window.setTimeout(resolve, DISPLAY_READY_POLL_MS))
+    }
+
+    return !!this.host.session?.display_ready
+  }
+
+  async connectDisplay(): Promise<void> {
+    if (this.host.destroyed || !this.host.session?.backend_enabled) return
+
+    for (let attempt = 0; attempt < 20 && !this.resolveCanvas(); attempt += 1) {
+      await new Promise(resolve => window.requestAnimationFrame(resolve))
+    }
+
+    if (!this.host.canvas) {
+      this.host.appendLog("Embedded emulator display element not found in the page")
+      return
+    }
+
+    if (!this.host.session.display_ready) {
+      await this.waitForDisplayReady(15_000)
+    }
+
+    this.host.appendLog(`Connecting embedded emulator display (${this.host.session.vnc_path})`)
+
+    try {
+      await this.connectVnc()
+    } catch (error) {
+      this.host.appendLog(`Embedded emulator display failed: ${errMessage(error)}`)
+    }
+  }
+
+  async connectVnc(): Promise<void> {
     if (this.host.destroyed || !this.host.session?.backend_enabled || !this.host.canvas) return
     if (this.host.vncConnecting) return
     this.host.vncConnecting = true
@@ -470,9 +621,9 @@ export class EmulatorVnc {
       this.host.vncConnecting = false
       return
     }
-    let RFB
+    let RFBClass: typeof RFB
     try {
-      RFB = await loadRFB()
+      RFBClass = await loadRFB()
     } catch (error) {
       this.host.vncConnecting = false
       throw error
@@ -490,16 +641,18 @@ export class EmulatorVnc {
     } else {
       this.host.appendLog(`Embedded emulator session probe failed in ${sessionProbe.ms}ms: ${sessionProbe.error}`)
     }
-    this.host.appendLog(`Connecting embedded emulator display via Phoenix channel (emulator_vnc:${this.host.session.id})`)
+    this.host.appendLog(
+      `Connecting embedded emulator display via Phoenix channel (emulator_vnc:${this.host.session.id})`
+    )
     this.resetVncWsDiag()
-    let channel
+    let channel: Channel
     try {
       channel = await this.joinVncChannel()
       this.host.vncChannel = channel
       this.host.appendLog("Embedded emulator VNC channel joined")
-    } catch (error) {
+    } catch (error: unknown) {
       this.host.vncConnecting = false
-      this.host.appendLog(`Embedded emulator VNC channel failed: ${error.message}`)
+      this.host.appendLog(`Embedded emulator VNC channel failed: ${errMessage(error)}`)
       throw error
     }
     if (this.host.destroyed || !this.host.session?.backend_enabled || !this.host.canvas) {
@@ -508,23 +661,26 @@ export class EmulatorVnc {
       return
     }
     const transport = this.createVncChannelTransport(channel)
-    const bytesReceived = this.host.vncWsDiag?.bytesReceived || 0
-    const framesReceived = this.host.vncWsDiag?.framesReceived || 0
-    this.host.vncWsDiag.url = `phoenix:/socket/emulator_vnc:${this.host.session.id}`
-    Object.assign(this.host.vncWsDiag, {
-      readyState: WebSocket.OPEN,
-      readyStateLabel: "OPEN",
-      open: true,
-      closed: false,
-      closeCode: null,
-      closeReason: null,
-      error: null,
-      bytesReceived,
-      framesReceived
-    })
-    let rfb
+    const wsDiag = this.host.vncWsDiag
+    const bytesReceived = wsDiag?.bytesReceived ?? 0
+    const framesReceived = wsDiag?.framesReceived ?? 0
+    if (wsDiag) {
+      wsDiag.url = `phoenix:/socket/emulator_vnc:${this.host.session.id}`
+      Object.assign(wsDiag, {
+        readyState: WebSocket.OPEN,
+        readyStateLabel: "OPEN",
+        open: true,
+        closed: false,
+        closeCode: null,
+        closeReason: null,
+        error: null,
+        bytesReceived,
+        framesReceived
+      })
+    }
+    let rfb: RFB
     try {
-      rfb = new RFB(this.host.canvas, transport, {
+      rfb = new RFBClass(this.host.canvas, transport, {
         shared: true,
         credentials: {password: ""}
       })
@@ -544,17 +700,17 @@ export class EmulatorVnc {
     rfb.resizeSession = false
     const connectTimeout = window.setTimeout(() => {
       if (this.host.destroyed || rfb !== this.host.rfb || this.host.displayConnected) return
-      const diag = this.host.vncWsDiag || {}
-      const wsState = diag.readyStateLabel || "unknown"
-      const wsHint = diag.open
-        ? diag.bytesReceived > 0
+      const diag = this.host.vncWsDiag
+      const wsState = diag?.readyStateLabel || "unknown"
+      const wsHint = diag?.open
+        ? (diag.bytesReceived ?? 0) > 0
           ? `VNC transport received ${diag.bytesReceived} bytes in ${diag.framesReceived} frame(s) but noVNC did not finish the handshake`
-          : this.host.vncPendingFrames?.length > 0
+          : this.host.vncPendingFrames.length > 0
             ? `VNC transport has ${this.host.vncPendingFrames.length} buffered frame(s) waiting for noVNC`
             : "VNC transport open but no binary frames received from the server"
-        : diag.closed
+        : diag?.closed
           ? `VNC transport closed (code ${diag.closeCode ?? "?"}, state ${wsState})`
-          : diag.error
+          : diag?.error
             ? `${diag.error} (state ${wsState})`
             : `VNC transport did not open (state ${wsState})`
       this.host.appendLog(
@@ -569,14 +725,14 @@ export class EmulatorVnc {
       if (this.host.destroyed || rfb !== this.host.rfb) return
       try {
         rfb.sendCredentials({password: ""})
-      } catch (error) {
-        this.host.appendLog(`Embedded emulator display credentials failed: ${error.message}`)
+      } catch (error: unknown) {
+        this.host.appendLog(`Embedded emulator display credentials failed: ${errMessage(error)}`)
       }
     })
     rfb.addEventListener("securityfailure", event => {
       if (this.host.destroyed || rfb !== this.host.rfb) return
       window.clearTimeout(connectTimeout)
-      const reason = event?.detail?.reason || "security failure"
+      const reason = event.detail?.reason || "security failure"
       this.host.appendLog(`Embedded emulator display security failure: ${reason}`)
       this.disconnectRfb(rfb, {reconnecting: true})
       if (this.host.session && !this.host.stopping) {
@@ -586,7 +742,7 @@ export class EmulatorVnc {
     rfb.addEventListener("connectfailed", event => {
       if (this.host.destroyed || rfb !== this.host.rfb) return
       window.clearTimeout(connectTimeout)
-      const reason = event?.detail?.reason || "connect failed"
+      const reason = event.detail?.reason || "connect failed"
       this.host.appendLog(`Embedded emulator display connect failed: ${reason}`)
       this.disconnectRfb(rfb, {reconnecting: true})
       if (this.host.session && !this.host.stopping) {
@@ -623,8 +779,8 @@ export class EmulatorVnc {
       if (rfb !== this.host.rfb) return
       window.clearTimeout(connectTimeout)
       if (this.host.reconnectingVnc) return
-    
-      const detail = event?.detail
+
+      const detail = event.detail
       const status = detail?.status
       const clean = detail?.clean
       const reason = clean ? "clean disconnect" : `disconnect (status ${status ?? "?"})`
@@ -635,11 +791,11 @@ export class EmulatorVnc {
     })
   }
 
-  reconnectVncAfterDomPatch() {
+  reconnectVncAfterDomPatch(): void {
     this.scheduleVncReconnect("Embedded emulator display moved; reconnecting...")
   }
 
-  ensureVncAttached() {
+  ensureVncAttached(): void {
     if (this.host.destroyed || !this.host.session?.backend_enabled || !this.host.canvas || this.host.stopping) return
     if (document.visibilityState === "hidden") return
     if (this.host.rfb && this.host.rfbCanvas === this.host.canvas) return
@@ -647,7 +803,7 @@ export class EmulatorVnc {
     void this.connectDisplay()
   }
 
-  scheduleVncReconnect(message) {
+  scheduleVncReconnect(message: string): void {
     if (this.host.destroyed || !this.host.session?.backend_enabled || this.host.stopping || this.host.vncReconnectTimer) return
     this.host.setStatus(message)
     const delay = Math.min(VNC_RECONNECT_BASE_MS * 2 ** this.host.vncReconnectAttempts, VNC_RECONNECT_MAX_MS)
@@ -655,25 +811,27 @@ export class EmulatorVnc {
     this.host.vncReconnectAttempts += 1
     this.host.vncReconnectTimer = window.setTimeout(() => {
       this.host.vncReconnectTimer = null
-      this.connectDisplay().catch(error => {
+      this.connectDisplay().catch((error: unknown) => {
         this.host.reconnectingVnc = false
-        if (this.host.session && !this.host.stopping && !this.host.destroyed) this.scheduleVncReconnect(`Embedded emulator display reconnect failed: ${error.message}`)
+        if (this.host.session && !this.host.stopping && !this.host.destroyed) {
+          this.scheduleVncReconnect(`Embedded emulator display reconnect failed: ${errMessage(error)}`)
+        }
       })
     }, delay)
   }
 
-  stopVncReconnect() {
+  stopVncReconnect(): void {
     if (this.host.vncReconnectTimer) window.clearTimeout(this.host.vncReconnectTimer)
     this.host.vncReconnectTimer = null
   }
 
-  readVncBackingSize() {
+  readVncBackingSize(): ScreenSize | null {
     const innerCanvas = this.host.canvas?.querySelector("canvas")
     if (!innerCanvas?.width || !innerCanvas?.height) return null
     return {width: innerCanvas.width, height: innerCanvas.height}
   }
 
-  readVncFramebufferSize(rfb) {
+  readVncFramebufferSize(rfb: RFB): ScreenSize | null {
     const fbWidth = rfb?._fbWidth ?? 0
     const fbHeight = rfb?._fbHeight ?? 0
     if (fbWidth > 0 && fbHeight > 0) {
@@ -682,7 +840,7 @@ export class EmulatorVnc {
     return this.readVncBackingSize()
   }
 
-  scheduleVncViewportConfig(rfb, reason, delayMs = 100) {
+  scheduleVncViewportConfig(rfb: RFB, reason: string, delayMs = 100): void {
     window.setTimeout(() => {
       if (this.host.destroyed || rfb !== this.host.rfb) return
       window.requestAnimationFrame(() => {
@@ -693,7 +851,7 @@ export class EmulatorVnc {
     }, delayMs)
   }
 
-  configureVncDisplay(rfb, reason = "connect") {
+  configureVncDisplay(rfb: RFB, reason = "connect"): void {
     if (this.host.destroyed || !rfb || rfb !== this.host.rfb || !this.host.canvas) return
 
     const screen = this.host.expectedScreenSize()
@@ -727,7 +885,7 @@ export class EmulatorVnc {
     )
   }
 
-  scheduleVncCanvasSample(label, delayMs = 0) {
+  scheduleVncCanvasSample(label: string, delayMs = 0): void {
     const sample = () => {
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
@@ -742,11 +900,11 @@ export class EmulatorVnc {
     }
   }
 
-  logVncCanvasSample(label) {
+  logVncCanvasSample(label: string): void {
     const innerCanvas = this.host.canvas?.querySelector("canvas")
     const wrapperRect = this.host.canvas?.getBoundingClientRect?.()
     const innerRect = innerCanvas?.getBoundingClientRect?.()
-    const sample = {
+    const sample: VncCanvasSample = {
       label,
       sessionId: this.host.session?.id,
       wrapperPresent: !!this.host.canvas,
@@ -760,7 +918,8 @@ export class EmulatorVnc {
     if (innerCanvas?.width && innerCanvas?.height) {
       try {
         const context = innerCanvas.getContext("2d")
-        const points = [
+        if (!context) throw new Error("2d canvas context unavailable")
+        const points: Array<[number, number]> = [
           [Math.floor(innerCanvas.width / 2), Math.floor(innerCanvas.height / 2)],
           [1, 1],
           [Math.max(innerCanvas.width - 2, 0), 1],
@@ -770,7 +929,7 @@ export class EmulatorVnc {
         const pixels = points.map(([x, y]) => Array.from(context.getImageData(x, y, 1, 1).data))
         sample.pixelSample = pixels
         sample.nonBlackSamples = pixels.filter(([r, g, b, a]) => a !== 0 && (r !== 0 || g !== 0 || b !== 0)).length
-        const gridColors = []
+        const gridColors: string[] = []
         for (let y = 0; y < 5; y += 1) {
           for (let x = 0; x < 5; x += 1) {
             const px = Math.floor(((x + 0.5) * innerCanvas.width) / 5)
@@ -780,44 +939,12 @@ export class EmulatorVnc {
         }
         sample.uniqueGridColors = Array.from(new Set(gridColors)).slice(0, 12)
         sample.uniqueGridColorCount = new Set(gridColors).size
-      } catch (error) {
-        sample.pixelError = error.message
+      } catch (error: unknown) {
+        sample.pixelError = errMessage(error)
       }
     }
 
-  
+    this.host.appendLog(`VNC canvas sample ${label}: ${JSON.stringify(sample)}`)
   }
-
-  connectPhone() {
-    if (this.host.destroyed || !this.host.session?.backend_enabled) return
-    const oldPhoneSocket = this.host.phoneSocket
-    this.host.phoneBridgeActive = true
-    const socket = new WebSocket(websocketURL(this.host.session.phone_path))
-    this.host.phoneSocket = socket
-    if (oldPhoneSocket) oldPhoneSocket.close()
-    socket.binaryType = "arraybuffer"
-    socket.addEventListener("message", event => {
-      if (this.host.destroyed || socket !== this.host.phoneSocket) return
-      this.host.handlePhoneMessage(event)
-    })
-    socket.addEventListener("open", () => {
-      if (this.host.destroyed || socket !== this.host.phoneSocket) return
-      this.host.phoneOpenedAt = Date.now()
-      this.host.phoneBridgeReady = true
-      this.host.appendLog("phone websocket open")
-      if (this.host.buttonState !== 0) this.host.sendQemu(QEMU.button, [this.host.buttonState])
-    })
-    socket.addEventListener("error", () => {
-      if (this.host.destroyed || socket !== this.host.phoneSocket) return
-      this.host.appendLog("phone websocket error")
-    })
-    socket.addEventListener("close", event => {
-      if (this.host.destroyed || socket !== this.host.phoneSocket) return
-      this.host.appendLog(`phone websocket closed (code ${event.code || "?"})`)
-      this.host.phoneBridgeActive = false
-      this.host.phoneBridgeReady = false
-      if (this.host.session && !this.host.stopping && !this.host.installing && this.host.phoneOpenedAt > 0) {
-        this.host.endSession("Embedded emulator phone bridge disconnected")
-      }
-    })
 }
+
