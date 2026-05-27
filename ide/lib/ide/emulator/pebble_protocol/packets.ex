@@ -1,6 +1,7 @@
 defmodule Ide.Emulator.PebbleProtocol.Packets do
   @moduledoc false
 
+  alias Ide.Emulator.PBW
   alias Ide.Emulator.PebbleProtocol.Frame
   alias Ide.Emulator.Types
 
@@ -37,7 +38,7 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
   @spec app_run_state_request() :: {non_neg_integer(), binary()}
   def app_run_state_request, do: {@endpoint_app_run_state, <<0x03>>}
 
-  @spec blob_insert_app(non_neg_integer(), map()) :: {non_neg_integer(), binary()}
+  @spec blob_insert_app(non_neg_integer(), PBW.app_metadata()) :: {non_neg_integer(), binary()}
   def blob_insert_app(token, metadata) do
     key = uuid_bytes(metadata.uuid)
     value = app_metadata(metadata)
@@ -53,7 +54,7 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
     {@endpoint_blob_db, <<0x04, token::little-16, 0x02, byte_size(key), key::binary>>}
   end
 
-  @spec app_metadata(map()) :: binary()
+  @spec app_metadata(PBW.app_metadata()) :: binary()
   def app_metadata(metadata) do
     name = fixed_string(Map.fetch!(metadata, :app_name), 96)
 
@@ -107,8 +108,7 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
   def decode_blob_response(payload), do: {:error, {:unexpected_blob_response_payload, payload}}
 
   @spec decode_putbytes_response(binary()) ::
-          {:ok, %{ack?: boolean(), result: :ack | :nack, cookie: non_neg_integer()}}
-          | {:error, Types.packet_decode_error()}
+          {:ok, Types.putbytes_response()} | {:error, Types.packet_decode_error()}
   def decode_putbytes_response(<<@putbytes_ack, cookie::32>>) do
     {:ok, %{ack?: true, result: :ack, cookie: cookie}}
   end
@@ -119,7 +119,7 @@ defmodule Ide.Emulator.PebbleProtocol.Packets do
 
   def decode_putbytes_response(payload), do: {:error, {:unexpected_putbytes_payload, payload}}
 
-  @spec putbytes_ack?(map(), non_neg_integer() | [non_neg_integer()] | nil) ::
+  @spec putbytes_ack?(Types.putbytes_response(), non_neg_integer() | [non_neg_integer()] | nil) ::
           :ok | {:error, Types.packet_decode_error()}
   def putbytes_ack?(%{ack?: true, cookie: cookie}, expected_cookie)
       when is_nil(expected_cookie) or cookie == expected_cookie,

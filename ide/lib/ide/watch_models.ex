@@ -4,7 +4,18 @@ defmodule Ide.WatchModels do
 
   Capability fields mirror Pebble SDK compile-time defines (`PBL_RECT`, `PBL_ROUND`,
   `PBL_COLOR`, `PBL_BW`, `PBL_MICROPHONE`, `PBL_COMPASS`, `PBL_HEALTH`).
+
+  Typed shapes live in `Ide.WatchModels.Profile`; emulator APIs use
+  `Ide.Emulator.Types` for session and screenshot contracts.
   """
+
+  alias Ide.WatchModels.Profile
+
+  @type screen :: Profile.screen()
+  @type wire_screen :: Profile.wire_screen()
+  @type profile :: Profile.t()
+  @type wire_profile :: Profile.wire()
+  @type profiles_map :: %{String.t() => wire_profile()}
 
   @ordered_ids ~w(aplite basalt chalk diorite emery flint gabbro)
 
@@ -80,14 +91,26 @@ defmodule Ide.WatchModels do
   @spec default_id() :: String.t()
   def default_id, do: "basalt"
 
-  @spec profiles_map() :: map()
+  @spec profiles_map() :: profiles_map()
   def profiles_map, do: @profiles
 
-  @spec profile_for(String.t() | nil) :: map()
+  @spec profile_for(String.t() | nil) :: wire_profile()
   def profile_for(id) when is_binary(id) do
     normalized = String.downcase(String.trim(id))
     Map.get(@profiles, normalized, Map.fetch!(@profiles, default_id()))
   end
 
   def profile_for(_), do: Map.fetch!(@profiles, default_id())
+
+  @doc """
+  Screen dimensions from a catalog profile (string-key `"screen"` map).
+  """
+  @spec profile_screen(wire_profile()) :: wire_screen()
+  def profile_screen(%{"screen" => %{} = screen}), do: screen
+  def profile_screen(%{screen: %{} = screen}), do: screen
+
+  def profile_screen(_profile) do
+    default = Map.fetch!(@profiles, default_id())
+    Map.fetch!(default, "screen")
+  end
 end

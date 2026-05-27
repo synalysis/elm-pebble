@@ -14,7 +14,11 @@ defmodule Ide.Emulator.QemuControl do
   @protocol_accel 11
   @protocol_compass 12
 
-  @type command :: %{protocol: non_neg_integer(), payload: binary()}
+  alias Ide.Emulator.Types
+
+  @type command :: %{required(:protocol) => non_neg_integer(), required(:payload) => binary()}
+
+  @type external_cli_command :: %{required(:control) => String.t(), optional(String.t()) => String.t()}
 
   @doc """
   Control names exposed on the session API (browser toolbar / HTTP control).
@@ -43,7 +47,7 @@ defmodule Ide.Emulator.QemuControl do
   @doc """
   Maps normalized simulator settings to QEMU control commands for embedded sessions.
   """
-  @spec commands_from_simulator_settings(map()) :: [command()]
+  @spec commands_from_simulator_settings(Types.simulator_settings()) :: [command()]
   def commands_from_simulator_settings(settings) when is_map(settings) do
     []
     |> maybe_battery_command(settings)
@@ -59,7 +63,7 @@ defmodule Ide.Emulator.QemuControl do
   @doc """
   Maps simulator settings to Pebble CLI `emu-*` control params for external emulators.
   """
-  @spec external_cli_commands(map()) :: [map()]
+  @spec external_cli_commands(Types.simulator_settings()) :: [external_cli_command()]
   def external_cli_commands(settings) when is_map(settings) do
     []
     |> maybe_external_battery(settings)

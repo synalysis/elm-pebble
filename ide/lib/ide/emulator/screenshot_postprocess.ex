@@ -58,7 +58,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
   @opaque_white <<255, 255, 255, 255>>
   @transparent <<0, 0, 0, 0>>
 
-  @spec blank_bgrx_pixel(map()) :: <<_::32>>
+  @spec blank_bgrx_pixel(Types.watch_profile()) :: <<_::32>>
   def blank_bgrx_pixel(%{"color_mode" => "BlackWhite"}), do: @opaque_white
   def blank_bgrx_pixel(%{"is_color" => false}), do: @opaque_white
   def blank_bgrx_pixel(%{"shape" => "round"}), do: @transparent
@@ -138,7 +138,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
     end
   end
 
-  @spec apply_shape_mask(binary(), pos_integer(), pos_integer(), map()) ::
+  @spec apply_shape_mask(binary(), pos_integer(), pos_integer(), Types.watch_profile()) ::
           {:ok, binary()} | {:error, Types.screenshot_error()}
   def apply_shape_mask(pixels, width, height, %{"shape" => "round"} = profile) do
     {:ok, mask_round_bgrx(pixels, width, height, blank_bgrx_pixel(profile))}
@@ -218,7 +218,7 @@ defmodule Ide.Emulator.ScreenshotPostprocess do
   end
 
   @doc false
-  @spec trim_content_margins(binary(), pos_integer(), pos_integer(), map()) ::
+  @spec trim_content_margins(binary(), pos_integer(), pos_integer(), Types.watch_profile()) ::
           {:ok, binary(), pos_integer(), pos_integer()} | {:error, Types.screenshot_error()}
   def trim_content_margins(pixels, width, height, profile) do
     blank = blank_bgrx_pixel(profile)

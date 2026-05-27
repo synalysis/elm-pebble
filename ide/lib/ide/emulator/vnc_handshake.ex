@@ -1,11 +1,14 @@
 defmodule Ide.Emulator.VncHandshake do
   @moduledoc false
 
+  alias Ide.Emulator.Types
+
   @client_version "RFB 003.008\n"
   @connect_timeout 5_000
 
   @spec server_init(pos_integer(), timeout()) ::
-          {:ok, {non_neg_integer(), non_neg_integer()}} | {:error, term()}
+          {:ok, {non_neg_integer(), non_neg_integer()}}
+          | {:error, Types.vnc_error() | Types.screenshot_error()}
   def server_init(port, timeout \\ @connect_timeout) when is_integer(port) and port > 0 do
     with {:ok, socket} <-
            :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], @connect_timeout),

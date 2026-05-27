@@ -1,6 +1,117 @@
 defmodule Ide.Emulator.Types do
   @moduledoc false
 
+  alias Ide.Debugger.Types, as: DebuggerTypes
+  alias Ide.WatchModels.Profile, as: WatchProfile
+
+  @type simulator_settings :: DebuggerTypes.simulator_settings()
+
+  @type screen :: WatchProfile.wire_screen()
+  @type watch_profile :: WatchProfile.wire()
+
+  @type session_info :: %{
+          required(:id) => String.t(),
+          required(:token) => String.t(),
+          required(:project_slug) => String.t(),
+          required(:platform) => String.t(),
+          required(:artifact_path) => String.t(),
+          required(:app_uuid) => String.t() | nil,
+          required(:has_phone_companion) => boolean(),
+          required(:has_companion_preferences) => boolean(),
+          required(:install_path) => String.t(),
+          required(:vnc_path) => String.t(),
+          required(:phone_path) => String.t(),
+          required(:ping_path) => String.t(),
+          required(:kill_path) => String.t(),
+          required(:screen) => screen(),
+          required(:controls) => [String.t()],
+          required(:backend_enabled) => boolean(),
+          required(:display_ready) => boolean(),
+          required(:phone_bridge_ready) => boolean(),
+          required(:installing) => boolean()
+        }
+
+  @type apply_settings_result :: %{
+          required(:applied) => non_neg_integer(),
+          required(:protocols) => [non_neg_integer()]
+        }
+
+  @type apply_settings_error :: :invalid_qemu_payload
+
+  @type runtime_component_id ::
+          :embedded_emulator
+          | :pebble_cli
+          | :pebble_sdk_python_env
+          | :pebble_sdk_node_modules
+          | :pebble_arm_gcc
+          | :qemu
+          | :pypkjs
+          | :qemu_micro_flash
+          | :qemu_spi_flash
+
+  @type runtime_component_status :: :ok | :missing
+
+  @type runtime_component :: %{
+          required(:id) => runtime_component_id(),
+          required(:label) => String.t(),
+          required(:status) => runtime_component_status(),
+          required(:detail) => String.t(),
+          required(:installable) => boolean()
+        }
+
+  @type runtime_status_level :: :ok | :warning
+
+  @type runtime_status :: %{
+          required(:status) => runtime_status_level(),
+          required(:platform) => String.t(),
+          required(:components) => [runtime_component()],
+          required(:missing) => [runtime_component()],
+          required(:installable) => boolean()
+        }
+
+  @type install_step_name :: :pebble_tool | :pebble_sdk | :qemu_images
+
+  @type install_step_result :: %{
+          required(:name) => install_step_name(),
+          required(:status) => :ok | :error,
+          required(:output) => String.t()
+        }
+
+  @type install_dependencies_result :: %{
+          required(:platform) => String.t(),
+          required(:before) => runtime_status(),
+          required(:after) => runtime_status(),
+          required(:results) => [install_step_result()],
+          required(:output) => String.t()
+        }
+
+  @type install_prep_context :: %{
+          optional(:platform) => String.t(),
+          optional(:qemu_pid) => pid() | nil,
+          optional(:protocol_router_pid) => pid() | nil,
+          optional(:bt_port) => pos_integer(),
+          optional(:last_boot_ms) => integer()
+        }
+
+  @type install_part_sent :: %{
+          required(:kind) => atom(),
+          required(:name) => String.t(),
+          required(:cookie) => non_neg_integer(),
+          required(:bytes) => non_neg_integer(),
+          required(:crc) => non_neg_integer()
+        }
+
+  @type putbytes_response :: %{
+          required(:ack?) => boolean(),
+          required(:result) => :ack | :nack,
+          required(:cookie) => non_neg_integer()
+        }
+
+  @type vnc_error ::
+          :vnc_banner_timeout
+          | {:vnc_connect_failed, term()}
+          | {:vnc_probe_recv_failed, term()}
+
   @type session_atom_error ::
           :emulator_session_unresponsive
           | :emulator_session_unavailable
@@ -78,6 +189,7 @@ defmodule Ide.Emulator.Types do
           | {:vnc_unsupported_encoding, non_neg_integer()}
           | {:screenshot_failed, non_neg_integer()}
           | {:unknown_screenshot_version, integer()}
+          | vnc_error()
 
   @type packet_decode_error ::
           {:unexpected_app_fetch_payload, binary()}
@@ -110,5 +222,19 @@ defmodule Ide.Emulator.Types do
           session_atom_error() | session_tuple_error() | exit_reason()
 
   @type emulator_error ::
-          session_error() | pbw_error() | sdk_error() | screenshot_error() | router_error() | install_error() | :timeout
+          session_error()
+          | pbw_error()
+          | sdk_error()
+          | screenshot_error()
+          | router_error()
+          | install_error()
+          | apply_settings_error()
+          | :timeout
+
+  @type pbw_install_result :: %{
+          required(:uuid) => String.t(),
+          required(:variant) => String.t(),
+          required(:app_id) => non_neg_integer(),
+          required(:parts) => [install_part_sent()]
+        }
 end

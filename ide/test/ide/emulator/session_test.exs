@@ -226,7 +226,9 @@ defmodule Ide.Emulator.SessionTest do
 
     assert source =~ ~S/qemu_boot_markers(_state), do: ["Ready for communication"]/
     refute source =~ "maybe_wait_for_install_ready"
-    assert source =~ ~S/ensure_min_time_since_boot_for_install/
+    install_prep = File.read!("lib/ide/emulator/install_prep.ex")
+    assert install_prep =~ ~S/ensure_min_time_since_boot/
+    assert source =~ ~S/InstallPrep.wait_before_reuse_install/
     assert source =~ "Do not open a second console session for the same marker"
     refute source =~ ~S/<SDK Home>/
     assert source =~ ~S/pypkjs unavailable/

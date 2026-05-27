@@ -39,7 +39,8 @@ defmodule Ide.Emulator.Session do
           vnc_banner_ready: boolean(),
           vnc_rfb_banner: binary() | nil,
           vnc_tcp: port() | nil,
-          vnc_tcp_buffer: binary()
+          vnc_tcp_buffer: binary(),
+          installing?: boolean()
         }
 
   @spec generate_id() :: String.t()
@@ -60,13 +61,13 @@ defmodule Ide.Emulator.Session do
     }
   end
 
-  @spec info(pid()) :: map()
+  @spec info(pid()) :: Types.session_info()
   def info(pid), do: GenServer.call(pid, :info, 30_000)
 
   @spec artifact_file_path(pid()) :: String.t() | nil
   def artifact_file_path(pid), do: GenServer.call(pid, :artifact_file_path)
 
-  @spec install(pid()) :: {:ok, map()} | {:error, Types.session_error()}
+  @spec install(pid()) :: {:ok, Types.pbw_install_result()} | {:error, Types.session_error()}
   def install(pid) do
     try do
       with :ok <- GenServer.call(pid, :prepare_for_install, 90_000) do
@@ -81,7 +82,7 @@ defmodule Ide.Emulator.Session do
   end
 
   @doc false
-  @spec install_reset_needed?(map()) :: boolean()
+  @spec install_reset_needed?(state()) :: boolean()
   def install_reset_needed?(state), do: InstallPrep.reset_needed?(state)
 
   @spec local_port(pid(), :vnc | :phone) :: pos_integer()
@@ -96,7 +97,7 @@ defmodule Ide.Emulator.Session do
     :exit, _ -> {:error, :not_ready}
   end
 
-  @spec claim_vnc_tcp(pid()) :: {:ok, port(), binary()} | {:error, term()}
+  @spec claim_vnc_tcp(pid()) :: {:ok, port(), binary()} | {:error, Types.session_atom_error() | :not_ready}
   def claim_vnc_tcp(pid) do
     GenServer.call(pid, :claim_vnc_tcp, 5_000)
   catch
@@ -130,7 +131,8 @@ defmodule Ide.Emulator.Session do
     :exit, reason -> {:error, reason}
   end
 
-  @spec apply_simulator_settings(pid(), map()) :: {:ok, map()} | {:error, term()}
+  @spec apply_simulator_settings(pid(), Types.simulator_settings()) ::
+          {:ok, Types.apply_settings_result()} | {:error, Types.apply_settings_error()}
   def apply_simulator_settings(pid, settings) when is_map(settings) do
     GenServer.call(pid, {:apply_simulator_settings, settings}, 10_000)
   catch
@@ -138,7 +140,7 @@ defmodule Ide.Emulator.Session do
     :exit, _ -> {:error, :emulator_session_unavailable}
   end
 
-  @spec ping(pid()) :: {:ok, map()} | {:error, Types.session_atom_error()}
+  @spec ping(pid()) :: {:ok, Types.session_info()} | {:error, Types.session_atom_error()}
   def ping(pid) do
     GenServer.call(pid, :ping, config(:ping_timeout_ms, 5_000))
   catch
@@ -226,7 +228,7 @@ defmodule Ide.Emulator.Session do
 
   defp retryable_install_error?(_reason), do: false
 
-  @spec runtime_status(String.t() | nil) :: map()
+  @spec runtime_status(String.t() | nil) :: Types.runtime_status()
   def runtime_status(platform \\ nil) do
     platform = normalize_platform(platform)
     sdk_root = preferred_sdk_root()
@@ -293,7 +295,7 @@ defmodule Ide.Emulator.Session do
     }
   end
 
-  @spec install_runtime_dependencies(String.t() | nil) :: {:ok, map()}
+  @spec install_runtime_dependencies(String.t() | nil) :: {:ok, Types.install_dependencies_result()}
   def install_runtime_dependencies(platform \\ nil) do
     platform = normalize_platform(platform)
     before_status = runtime_status(platform)
@@ -1141,9 +1143,10 @@ defmodule Ide.Emulator.Session do
     end
   end
 
+  @spec public_info(state()) :: Types.session_info()
   defp public_info(state) do
     profile = WatchModels.profile_for(state.platform)
-    screen = Map.fetch!(profile, "screen")
+    screen = WatchModels.profile_screen(profile)
 
     %{
       id: state.id,

@@ -1,6 +1,7 @@
 defmodule Ide.Emulator.ScreenshotCaptureRepair do
   @moduledoc false
 
+  alias Ide.Emulator.Types
   alias Ide.ScreenshotDimensions
 
   @white <<255, 255, 255>>
@@ -32,7 +33,7 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
   @doc """
   Post-SDK touch-ups for emulator captures (after `correct_colours` and `roundify`).
   """
-  @spec repair_rgba(binary(), pos_integer(), pos_integer(), String.t() | map()) :: binary()
+  @spec repair_rgba(binary(), pos_integer(), pos_integer(), String.t() | Types.watch_profile()) :: binary()
   def repair_rgba(rgba, width, height, platform) when is_binary(platform) do
     profile = Ide.WatchModels.profile_for(platform)
 

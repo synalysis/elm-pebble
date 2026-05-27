@@ -13,7 +13,7 @@ defmodule Ide.Emulator do
           has_companion_preferences: boolean()
         ]
 
-  @spec launch(launch_opts()) :: {:ok, map()} | {:error, Types.emulator_error()}
+  @spec launch(launch_opts()) :: {:ok, Types.session_info()} | {:error, Types.emulator_error()}
   def launch(opts) do
     id = Keyword.get(opts, :id) || Session.generate_id()
     platform = Keyword.get(opts, :platform)
@@ -58,10 +58,10 @@ defmodule Ide.Emulator do
   @spec slot_status() :: Ide.Emulator.SlotLimiter.status()
   def slot_status, do: SlotLimiter.status()
 
-  @spec runtime_status(String.t() | nil) :: map()
+  @spec runtime_status(String.t() | nil) :: Types.runtime_status()
   def runtime_status(platform \\ nil), do: Session.runtime_status(platform)
 
-  @spec install_runtime_dependencies(String.t() | nil) :: {:ok, map()}
+  @spec install_runtime_dependencies(String.t() | nil) :: {:ok, Types.install_dependencies_result()}
   def install_runtime_dependencies(platform \\ nil),
     do: Session.install_runtime_dependencies(platform)
 
@@ -73,14 +73,14 @@ defmodule Ide.Emulator do
     end
   end
 
-  @spec info(String.t()) :: {:ok, map()} | {:error, Types.session_atom_error()}
+  @spec info(String.t()) :: {:ok, Types.session_info()} | {:error, Types.session_atom_error()}
   def info(id) when is_binary(id) do
     with {:ok, pid} <- lookup(id) do
       {:ok, Session.info(pid)}
     end
   end
 
-  @spec ping(String.t()) :: {:ok, map()} | {:error, Types.session_error()}
+  @spec ping(String.t()) :: {:ok, Types.session_info()} | {:error, Types.session_error()}
   def ping(id) when is_binary(id) do
     with {:ok, pid} <- lookup(id) do
       Session.ping(pid)
@@ -95,7 +95,7 @@ defmodule Ide.Emulator do
     end
   end
 
-  @spec install(String.t()) :: {:ok, map()} | {:error, Types.session_error()}
+  @spec install(String.t()) :: {:ok, Types.pbw_install_result()} | {:error, Types.session_error()}
   def install(id) when is_binary(id) do
     with {:ok, pid} <- lookup(id) do
       Session.install(pid)
@@ -110,10 +110,13 @@ defmodule Ide.Emulator do
     end
   end
 
-  @spec apply_simulator_settings(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  @spec apply_simulator_settings(String.t(), Types.simulator_settings()) ::
+          {:ok, Types.apply_settings_result()}
+          | {:error, Types.apply_settings_error() | Types.session_atom_error()}
   def apply_simulator_settings(id, settings) when is_binary(id) and is_map(settings) do
-    with {:ok, pid} <- lookup(id) do
-      Session.apply_simulator_settings(pid, settings)
+    case lookup(id) do
+      {:ok, pid} -> Session.apply_simulator_settings(pid, settings)
+      {:error, :not_found} = not_found -> not_found
     end
   end
 

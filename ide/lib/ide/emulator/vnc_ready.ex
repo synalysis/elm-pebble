@@ -1,6 +1,8 @@
 defmodule Ide.Emulator.VncReady do
   @moduledoc false
 
+  alias Ide.Emulator.Types
+
   @connect_timeout 250
   @min_version_line_bytes 8
 
@@ -9,7 +11,7 @@ defmodule Ide.Emulator.VncReady do
     wait_banner(port, 400) == :ok
   end
 
-  @spec wait_banner(pos_integer(), timeout()) :: :ok | {:error, term()}
+  @spec wait_banner(pos_integer(), timeout()) :: :ok | {:error, Types.vnc_error()}
   def wait_banner(port, timeout_ms) when is_integer(port) and port > 0 and is_integer(timeout_ms) do
     case capture_banner(port, timeout_ms) do
       {:ok, _banner} -> :ok
@@ -17,7 +19,7 @@ defmodule Ide.Emulator.VncReady do
     end
   end
 
-  @spec capture_banner(pos_integer(), timeout()) :: {:ok, binary()} | {:error, term()}
+  @spec capture_banner(pos_integer(), timeout()) :: {:ok, binary()} | {:error, Types.vnc_error()}
   def capture_banner(port, timeout_ms) when is_integer(port) and port > 0 and is_integer(timeout_ms) do
     case capture_banner_open(port, timeout_ms) do
       {:ok, banner, socket} ->
@@ -30,7 +32,7 @@ defmodule Ide.Emulator.VncReady do
   end
 
   @spec capture_banner_open(pos_integer(), timeout()) ::
-          {:ok, binary(), :gen_tcp.socket()} | {:error, term()}
+          {:ok, binary(), :gen_tcp.socket()} | {:error, Types.vnc_error()}
   def capture_banner_open(port, timeout_ms)
       when is_integer(port) and port > 0 and is_integer(timeout_ms) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms

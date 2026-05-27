@@ -56,6 +56,15 @@ flowchart LR
 | `qemu_control.js` | QEMU protocol encoders (shared with WASM emulator) |
 | `install_prep.ex` | Install pacing, reuse settle, reset-needed checks |
 
+### Elixir types (server)
+
+| Module | Role |
+|--------|------|
+| `Ide.WatchModels` / `Ide.WatchModels.Profile` | Canonical watch catalog (`profile_for/1`, `profile_screen/1`); string-key maps at runtime |
+| `Ide.Emulator.Types` | Session API contracts: `session_info`, `runtime_status`, `simulator_settings`, `pbw_install_result`, errors |
+| `Ide.Emulator.QemuControl` | QEMU `command/0` and `external_cli_command/0` encoders |
+| `Ide.Debugger.Types.SimulatorSettings` | Normalized simulator settings (shared with debugger; used by `apply_simulator_settings`) |
+
 ## Prerequisites
 
 On the machine running the IDE:

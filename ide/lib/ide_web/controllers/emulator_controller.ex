@@ -175,11 +175,6 @@ defmodule IdeWeb.EmulatorController do
       {:error, :not_found} ->
         conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
 
-      {:error, :embedded_protocol_router_not_started} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: "Embedded emulator protocol router is not running."})
-
       {:error, reason} ->
         conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
     end

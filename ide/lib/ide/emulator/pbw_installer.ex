@@ -21,15 +21,8 @@ defmodule Ide.Emulator.PBWInstaller do
   @default_post_install_probe_timeout_ms 0
   @default_blob_post_insert_settle_ms 750
 
-  @type install_result :: %{
-          uuid: String.t(),
-          variant: String.t(),
-          app_id: non_neg_integer(),
-          parts: [map()]
-        }
-
   @spec install(pid(), String.t(), String.t(), keyword()) ::
-          {:ok, install_result()} | {:error, Types.install_error()}
+          {:ok, Types.pbw_install_result()} | {:error, Types.install_error()}
   def install(router, pbw_path, platform, opts \\ [])
       when is_pid(router) and is_binary(pbw_path) and is_binary(platform) do
     chunk_size = Keyword.get(opts, :chunk_size, @default_chunk_size)

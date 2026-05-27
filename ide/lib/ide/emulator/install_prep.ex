@@ -2,6 +2,7 @@ defmodule Ide.Emulator.InstallPrep do
   @moduledoc false
 
   alias Ide.Emulator.Session
+  alias Ide.Emulator.Types
 
   @default_install_min_ms_after_boot_by_platform %{
     "emery" => 8_000,
@@ -19,7 +20,7 @@ defmodule Ide.Emulator.InstallPrep do
   Returns true when QEMU should be reset before the next PBW install instead of reusing
   the running session.
   """
-  @spec reset_needed?(map()) :: boolean()
+  @spec reset_needed?(Types.install_prep_context() | Session.state()) :: boolean()
   def reset_needed?(state) when is_map(state) do
     reuse_window_ms = config(:install_reuse_boot_window_ms, 120_000)
 
@@ -56,7 +57,7 @@ defmodule Ide.Emulator.InstallPrep do
   @doc """
   Sleeps until minimum time since boot and reuse settle have elapsed before PutBytes.
   """
-  @spec wait_before_reuse_install(map()) :: :ok
+  @spec wait_before_reuse_install(Types.install_prep_context() | Session.state()) :: :ok
   def wait_before_reuse_install(state) when is_map(state) do
     platform = Map.get(state, :platform, "")
     last_boot_ms = Map.get(state, :last_boot_ms, 0)
@@ -78,7 +79,7 @@ defmodule Ide.Emulator.InstallPrep do
     |> Map.get(platform, config(:install_min_ms_after_boot, 5_000))
   end
 
-  @spec qemu_and_router_healthy?(map()) :: boolean()
+  @spec qemu_and_router_healthy?(Types.install_prep_context() | Session.state()) :: boolean()
   def qemu_and_router_healthy?(state) when is_map(state) do
     live_pid?(Map.get(state, :qemu_pid)) and live_pid?(Map.get(state, :protocol_router_pid)) and
       Session.tcp_port_open?(Map.get(state, :bt_port, 0))
