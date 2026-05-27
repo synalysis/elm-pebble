@@ -88,20 +88,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     |> Component.assign(:debugger_event_limit, @default_event_limit)
     |> Component.assign(:debugger_since_seq, nil)
     |> Component.assign(:debugger_types, [])
-    |> Component.assign(:debugger_filter_form, filter_form([], nil))
     |> Component.assign(:debugger_cursor_seq, nil)
     |> Component.assign(:debugger_follow_latest, true)
-    |> Component.assign(:debugger_selected_event, nil)
-    |> Component.assign(:debugger_newer_event, nil)
-    |> Component.assign(:debugger_older_event, nil)
     |> Component.assign(:debugger_cursor_watch_runtime, nil)
     |> Component.assign(:debugger_cursor_companion_runtime, nil)
     |> Component.assign(:debugger_cursor_phone_runtime, nil)
-    |> Component.assign(:debugger_timeline_form, timeline_form(nil))
-    |> Component.assign(:debugger_timeline_kind, :all)
-    |> Component.assign(:debugger_timeline_limit, 30)
-    |> Component.assign(:debugger_timeline_query, "")
-    |> Component.assign(:debugger_advanced_debug_tools, false)
     |> Component.assign(:debugger_hovered_rendered_scope, nil)
     |> Component.assign(:debugger_hovered_rendered_path, nil)
     |> Component.assign(:debugger_trigger_buttons, [])
@@ -114,21 +105,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     |> Component.assign(:debugger_configuration_draft_values, %{})
     |> Component.assign(:debugger_trigger_modal_open, false)
     |> Component.assign(:debugger_trigger_form, Component.to_form(%{}, as: :debugger_trigger))
-    |> Component.assign(:debugger_replay_form, replay_form("1", "all", true, "frozen"))
-    |> Component.assign(:debugger_replay_preview, [])
-    |> Component.assign(:debugger_replay_preview_seq, nil)
-    |> Component.assign(:debugger_replay_live_warning, false)
-    |> Component.assign(:debugger_replay_live_drift, nil)
-    |> Component.assign(:debugger_last_replay, nil)
-    |> Component.assign(:debugger_replay_compare, nil)
-    |> Component.assign(:debugger_compare_baseline_seq, nil)
-    |> Component.assign(:debugger_compare_form, compare_form(nil))
-    |> Component.assign(:debugger_runtime_fingerprint_compare, nil)
-    |> Component.assign(:debugger_trace_export, nil)
-    |> Component.assign(:debugger_trace_export_context, nil)
-    |> Component.assign(:debugger_export_form, export_trace_form())
-    |> Component.assign(:debugger_import_form, import_trace_form())
-    |> Component.assign(:debugger_cursor_seq, nil)
     |> Component.assign(:debugger_rows, [])
     |> Component.assign(:debugger_timeline_mode, "mixed")
     |> Component.assign(:debugger_selected_row, nil)
@@ -137,106 +113,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     |> Component.assign(:debugger_watch_view_runtime, nil)
   end
 
-  @spec import_trace_form() :: Phoenix.HTML.Form.t()
-  def import_trace_form do
-    Component.to_form(%{"json" => ""}, as: :debugger_import)
-  end
-
-  @spec export_trace_form(maybe_non_neg_integer(), maybe_non_neg_integer()) ::
-          Phoenix.HTML.Form.t()
-  def export_trace_form(compare_cursor_seq \\ nil, baseline_cursor_seq \\ nil) do
-    compare_text =
-      if is_integer(compare_cursor_seq), do: Integer.to_string(compare_cursor_seq), else: ""
-
-    baseline_text =
-      if is_integer(baseline_cursor_seq), do: Integer.to_string(baseline_cursor_seq), else: ""
-
-    Component.to_form(
-      %{"compare_cursor_seq" => compare_text, "baseline_cursor_seq" => baseline_text},
-      as: :debugger_export
-    )
-  end
-
-  @spec set_export_form(socket(), map()) :: socket()
-  def set_export_form(socket, params) when is_map(params) do
-    compare_text = to_string(Map.get(params, "compare_cursor_seq", ""))
-    baseline_text = to_string(Map.get(params, "baseline_cursor_seq", ""))
-
-    Component.assign(
-      socket,
-      :debugger_export_form,
-      Component.to_form(
-        %{"compare_cursor_seq" => compare_text, "baseline_cursor_seq" => baseline_text},
-        as: :debugger_export
-      )
-    )
-  end
-
-  @spec export_trace_opts(socket(), map()) :: keyword()
-  def export_trace_opts(socket, params \\ %{}) when is_map(params) do
-    requested_compare_cursor = parse_optional_non_neg_int(Map.get(params, "compare_cursor_seq"))
-    requested_baseline_cursor = parse_optional_non_neg_int(Map.get(params, "baseline_cursor_seq"))
-    compare_cursor_seq = requested_compare_cursor || socket.assigns[:debugger_cursor_seq]
-
-    baseline_cursor_seq =
-      requested_baseline_cursor || socket.assigns[:debugger_compare_baseline_seq]
-
-    [event_limit: 500]
-    |> maybe_put_export_cursor_opt(:compare_cursor_seq, compare_cursor_seq)
-    |> maybe_put_export_cursor_opt(:baseline_cursor_seq, baseline_cursor_seq)
-  end
-
   @spec refresh(socket()) :: socket()
   def refresh(socket) do
     case socket.assigns[:project] do
       nil ->
-        socket
-        |> Component.assign(:debugger_state, nil)
-        |> Component.assign(:debugger_cursor_seq, nil)
-        |> Component.assign(:debugger_selected_event, nil)
-        |> Component.assign(:debugger_newer_event, nil)
-        |> Component.assign(:debugger_older_event, nil)
-        |> Component.assign(:debugger_cursor_watch_runtime, nil)
-        |> Component.assign(:debugger_cursor_companion_runtime, nil)
-        |> Component.assign(:debugger_cursor_phone_runtime, nil)
-        |> Component.assign(:debugger_timeline_form, timeline_form(nil))
-        |> Component.assign(:debugger_timeline_kind, :all)
-        |> Component.assign(:debugger_timeline_limit, 30)
-        |> Component.assign(:debugger_timeline_query, "")
-        |> Component.assign(:debugger_advanced_debug_tools, false)
-        |> Component.assign(:debugger_hovered_rendered_scope, nil)
-        |> Component.assign(:debugger_hovered_rendered_path, nil)
-        |> Component.assign(:debugger_trigger_buttons, [])
-        |> Component.assign(:debugger_watch_trigger_buttons, [])
-        |> Component.assign(:debugger_companion_trigger_buttons, [])
-        |> Component.assign(:debugger_watch_auto_fire, false)
-        |> Component.assign(:debugger_companion_auto_fire, false)
-        |> Component.assign(:debugger_auto_fire_subscriptions, [])
-        |> Component.assign(:debugger_disabled_subscriptions, [])
-        |> Component.assign(:debugger_configuration_draft_values, %{})
-        |> Component.assign(:debugger_trigger_modal_open, false)
-        |> Component.assign(:debugger_trigger_form, Component.to_form(%{}, as: :debugger_trigger))
-        |> Component.assign(:debugger_replay_form, replay_form("1", "all", true, "frozen"))
-        |> Component.assign(:debugger_replay_preview, [])
-        |> Component.assign(:debugger_replay_preview_seq, nil)
-        |> Component.assign(:debugger_replay_live_warning, false)
-        |> Component.assign(:debugger_replay_live_drift, nil)
-        |> Component.assign(:debugger_last_replay, nil)
-        |> Component.assign(:debugger_replay_compare, nil)
-        |> Component.assign(:debugger_compare_baseline_seq, nil)
-        |> Component.assign(:debugger_compare_form, compare_form(nil))
-        |> Component.assign(:debugger_runtime_fingerprint_compare, nil)
-        |> Component.assign(:debugger_trace_export, nil)
-        |> Component.assign(:debugger_trace_export_context, nil)
-        |> Component.assign(:debugger_export_form, export_trace_form())
-        |> Component.assign(:debugger_import_form, import_trace_form())
-        |> Component.assign(:debugger_cursor_seq, nil)
-        |> Component.assign(:debugger_rows, [])
-        |> Component.assign(:debugger_timeline_mode, "mixed")
-        |> Component.assign(:debugger_selected_row, nil)
-        |> Component.assign(:debugger_watch_runtime, nil)
-        |> Component.assign(:debugger_companion_runtime, nil)
-        |> Component.assign(:debugger_watch_view_runtime, nil)
+        assign_defaults(socket)
 
       project ->
         {:ok, debugger_state} =
@@ -264,14 +145,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec set_cursor_seq(socket(), wire_input()) :: socket()
-  def set_cursor_seq(socket, value) do
-    case parse_since_seq(value) do
-      nil -> socket
-      seq -> assign_cursor(socket, seq)
-    end
-  end
-
   @spec set_debugger_cursor_seq(socket(), wire_input()) :: socket()
   def set_debugger_cursor_seq(socket, value) do
     case parse_since_seq(value) do
@@ -283,42 +156,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         |> assign_debugger_cursor(seq)
         |> Component.assign(:debugger_follow_latest, false)
     end
-  end
-
-  @spec set_timeline_kind(socket(), String.t()) :: socket()
-  def set_timeline_kind(socket, value) do
-    kind =
-      case value do
-        "protocol" -> :protocol
-        "update" -> :update
-        "render" -> :render
-        "lifecycle" -> :lifecycle
-        "other" -> :other
-        _ -> :all
-      end
-
-    Component.assign(socket, :debugger_timeline_kind, kind)
-  end
-
-  @spec set_timeline_limit(socket(), wire_input()) :: socket()
-  def set_timeline_limit(socket, value) do
-    limit =
-      case Integer.parse(to_string(value || "")) do
-        {parsed, ""} when parsed in [10, 30, 100, 200] -> parsed
-        _ -> 30
-      end
-
-    Component.assign(socket, :debugger_timeline_limit, limit)
-  end
-
-  @spec set_timeline_query(socket(), wire_input()) :: socket()
-  def set_timeline_query(socket, value) do
-    query =
-      value
-      |> to_string()
-      |> String.trim()
-
-    Component.assign(socket, :debugger_timeline_query, query)
   end
 
   @spec set_debugger_timeline_mode(socket(), wire_input()) :: socket()
@@ -369,142 +206,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
         refresh(socket)
     end
-  end
-
-  @spec apply_filter_inputs(socket(), String.t(), String.t()) :: socket()
-  def apply_filter_inputs(socket, types_text, since_seq_text) do
-    debugger_types = parse_types(types_text)
-    debugger_since_seq = parse_since_seq(since_seq_text)
-
-    socket
-    |> Component.assign(:debugger_types, debugger_types)
-    |> Component.assign(:debugger_since_seq, debugger_since_seq)
-    |> Component.assign(:debugger_filter_form, filter_form(types_text, since_seq_text))
-    |> refresh()
-  end
-
-  @spec apply_type_filter(socket(), String.t()) :: socket()
-  def apply_type_filter(socket, type) do
-    types =
-      case type do
-        "" -> []
-        "*" -> []
-        value -> [value]
-      end
-
-    since_seq = socket.assigns[:debugger_since_seq]
-    since_seq_text = if is_integer(since_seq), do: Integer.to_string(since_seq), else: ""
-
-    socket
-    |> Component.assign(:debugger_types, types)
-    |> Component.assign(
-      :debugger_filter_form,
-      filter_form(Enum.join(types, ","), since_seq_text)
-    )
-    |> refresh()
-  end
-
-  @spec replay_recent(socket(), map()) :: socket()
-  def replay_recent(socket, params) when is_map(params) do
-    case socket.assigns[:project] do
-      nil ->
-        socket
-
-      project ->
-        count = parse_replay_count(Map.get(params, "count") || Map.get(params, :count))
-        target = parse_replay_target(Map.get(params, "target") || Map.get(params, :target))
-
-        cursor_bound? =
-          parse_replay_cursor_bound(
-            Map.get(params, "cursor_bound") || Map.get(params, :cursor_bound)
-          )
-
-        replay_mode = parse_replay_mode(Map.get(params, "mode") || Map.get(params, :mode))
-
-        cursor_seq =
-          if cursor_bound? do
-            socket.assigns[:debugger_cursor_seq]
-          else
-            nil
-          end
-
-        attrs_base = %{
-          count: count,
-          target: target,
-          cursor_seq: cursor_seq,
-          replay_mode: replay_mode,
-          replay_drift_seq: socket.assigns[:debugger_replay_live_drift]
-        }
-
-        attrs =
-          if replay_mode == "frozen" do
-            Map.put(attrs_base, :replay_rows, socket.assigns[:debugger_replay_preview] || [])
-          else
-            attrs_base
-          end
-
-        {:ok, _state} = Debugger.replay_recent(Projects.scope_key(project), attrs)
-
-        target_value = if is_binary(target), do: target, else: "all"
-
-        socket
-        |> Component.assign(
-          :debugger_replay_form,
-          replay_form(Integer.to_string(count), target_value, cursor_bound?, replay_mode)
-        )
-        |> refresh()
-    end
-  end
-
-  @spec set_replay_form(socket(), map()) :: socket()
-  def set_replay_form(socket, params) when is_map(params) do
-    count = parse_replay_count(Map.get(params, "count") || Map.get(params, :count))
-    target = parse_replay_target(Map.get(params, "target") || Map.get(params, :target))
-
-    cursor_bound? =
-      parse_replay_cursor_bound(Map.get(params, "cursor_bound") || Map.get(params, :cursor_bound))
-
-    replay_mode = parse_replay_mode(Map.get(params, "mode") || Map.get(params, :mode))
-    target_value = if is_binary(target), do: target, else: "all"
-
-    socket
-    |> Component.assign(
-      :debugger_replay_form,
-      replay_form(Integer.to_string(count), target_value, cursor_bound?, replay_mode)
-    )
-    |> assign_replay_preview(track_seq: true)
-  end
-
-  @spec set_compare_form(socket(), map()) :: socket()
-  def set_compare_form(socket, params) when is_map(params) do
-    baseline_seq = parse_optional_non_neg_int(Map.get(params, "baseline_seq"))
-
-    socket
-    |> Component.assign(:debugger_compare_baseline_seq, baseline_seq)
-    |> Component.assign(:debugger_compare_form, compare_form(baseline_seq))
-    |> assign_replay_preview()
-  end
-
-  @spec use_preview_as_compare_baseline(socket()) :: socket()
-  def use_preview_as_compare_baseline(socket) do
-    baseline_seq = socket.assigns[:debugger_replay_preview_seq]
-
-    socket
-    |> Component.assign(:debugger_compare_baseline_seq, baseline_seq)
-    |> Component.assign(:debugger_compare_form, compare_form(baseline_seq))
-    |> assign_replay_preview()
-  end
-
-  @spec replay_form_params(socket()) :: map()
-  def replay_form_params(socket) do
-    form = socket.assigns[:debugger_replay_form]
-
-    %{
-      "count" => form_value(form, :count) || "1",
-      "target" => form_value(form, :target) || "all",
-      "cursor_bound" => form_value(form, :cursor_bound) || "false",
-      "mode" => form_value(form, :mode) || "frozen"
-    }
   end
 
   @spec replay_preview_rows([map()], map()) :: [replay_preview_row()]
@@ -3493,17 +3194,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     end
   end
 
-  @spec parse_types(wire_input()) :: [String.t()]
-  defp parse_types(value) when is_binary(value) do
-    value
-    |> String.split(",", trim: true)
-    |> Enum.map(&String.trim/1)
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.uniq()
-  end
-
-  defp parse_types(_value), do: []
-
   @spec parse_since_seq(wire_input()) :: maybe_non_neg_integer()
   defp parse_since_seq(value) when is_integer(value) and value >= 0, do: value
 
@@ -3533,133 +3223,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     do: value
 
   defp parse_replay_target(_value), do: nil
-
-  @spec parse_replay_cursor_bound(wire_input()) :: boolean()
-  defp parse_replay_cursor_bound(value) when value in [true, "true", "on", 1, "1"], do: true
-  defp parse_replay_cursor_bound(_value), do: false
-
-  @spec parse_replay_mode(wire_input()) :: String.t()
-  defp parse_replay_mode("live"), do: "live"
-  defp parse_replay_mode(_), do: "frozen"
-
-  @spec filter_form(String.t(), String.t()) :: Phoenix.HTML.Form.t()
-  defp filter_form(types_text, since_seq_text)
-       when is_binary(types_text) and is_binary(since_seq_text) do
-    Component.to_form(%{"types" => types_text, "since_seq" => since_seq_text},
-      as: :debugger_filter
-    )
-  end
-
-  @spec filter_form([String.t()], maybe_non_neg_integer()) :: Phoenix.HTML.Form.t()
-  defp filter_form(types, since_seq) when is_list(types) do
-    since_seq_text = if is_integer(since_seq), do: Integer.to_string(since_seq), else: ""
-    filter_form(Enum.join(types, ","), since_seq_text)
-  end
-
-  @spec replay_form(String.t(), String.t(), boolean(), String.t()) :: Phoenix.HTML.Form.t()
-  defp replay_form(count_text, target, cursor_bound?, mode)
-       when is_binary(count_text) and is_binary(target) and is_boolean(cursor_bound?) and
-              is_binary(mode) do
-    Component.to_form(
-      %{
-        "count" => count_text,
-        "target" => target,
-        "cursor_bound" => if(cursor_bound?, do: "true", else: "false"),
-        "mode" => parse_replay_mode(mode)
-      },
-      as: :debugger_replay
-    )
-  end
-
-  @spec compare_form(maybe_non_neg_integer()) :: Phoenix.HTML.Form.t()
-  defp compare_form(seq) do
-    baseline_text = if is_integer(seq), do: Integer.to_string(seq), else: ""
-    Component.to_form(%{"baseline_seq" => baseline_text}, as: :debugger_compare)
-  end
-
-  @spec assign_replay_preview(socket(), keyword()) :: socket()
-  defp assign_replay_preview(socket, opts \\ []) do
-    events =
-      case socket.assigns[:debugger_state] do
-        %{events: list} when is_list(list) -> list
-        _ -> []
-      end
-
-    form = socket.assigns[:debugger_replay_form]
-    count = form_value(form, :count)
-    target = form_value(form, :target)
-    cursor_bound? = form_value(form, :cursor_bound) in ["true", true, "on", "1", 1]
-    cursor_seq = if cursor_bound?, do: socket.assigns[:debugger_cursor_seq], else: nil
-
-    preview =
-      replay_preview_rows(events, %{
-        count: count,
-        target: target,
-        cursor_seq: cursor_seq
-      })
-
-    compare = replay_compare(preview, socket.assigns[:debugger_last_replay])
-    track_seq? = Keyword.get(opts, :track_seq, false)
-
-    latest_seq =
-      case events do
-        [] -> nil
-        list -> list |> Enum.map(& &1.seq) |> Enum.max()
-      end
-
-    preview_seq =
-      if track_seq? do
-        latest_seq
-      else
-        socket.assigns[:debugger_replay_preview_seq]
-      end
-
-    mode = form_value(form, :mode) || "frozen"
-    live_warning = replay_live_warning?(mode, preview_seq, events)
-    live_drift = replay_live_drift(mode, preview_seq, events)
-
-    compare_baseline_seq = socket.assigns[:debugger_compare_baseline_seq]
-
-    runtime_compare =
-      runtime_fingerprint_compare_at_cursor(
-        events,
-        socket.assigns[:debugger_cursor_seq],
-        compare_baseline_seq
-      )
-
-    socket
-    |> Component.assign(:debugger_replay_preview, preview)
-    |> Component.assign(:debugger_replay_preview_seq, preview_seq)
-    |> Component.assign(:debugger_replay_live_warning, live_warning)
-    |> Component.assign(:debugger_replay_live_drift, live_drift)
-    |> Component.assign(:debugger_replay_compare, compare)
-    |> Component.assign(:debugger_compare_form, compare_form(compare_baseline_seq))
-    |> Component.assign(:debugger_runtime_fingerprint_compare, runtime_compare)
-  end
-
-  @spec form_value(map() | nil, atom() | String.t()) :: String.t() | boolean() | integer() | nil
-  defp form_value(nil, _field), do: nil
-
-  defp form_value(form, field) do
-    form[field].value
-  end
-
-  @spec maybe_put_export_cursor_opt(keyword(), atom(), maybe_non_neg_integer()) :: keyword()
-  defp maybe_put_export_cursor_opt(opts, _key, value) when not is_integer(value), do: opts
-  defp maybe_put_export_cursor_opt(opts, _key, value) when value < 0, do: opts
-  defp maybe_put_export_cursor_opt(opts, key, value), do: Keyword.put(opts, key, value)
-
-  @spec parse_optional_non_neg_int(wire_input()) :: maybe_non_neg_integer()
-  defp parse_optional_non_neg_int(value) when is_integer(value) and value >= 0, do: value
-
-  defp parse_optional_non_neg_int(value) when is_binary(value) do
-    case Integer.parse(String.trim(value)) do
-      {parsed, ""} when parsed >= 0 -> parsed
-      _ -> nil
-    end
-  end
-
-  defp parse_optional_non_neg_int(_), do: nil
 
   @spec normalize_replay_rows(list()) :: [replay_preview_row()]
   defp normalize_replay_rows(rows) when is_list(rows), do: Enum.map(rows, &normalize_replay_row/1)
@@ -3711,12 +3274,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defp preview_target_label("phone"), do: "phone"
   defp preview_target_label(_), do: "watch"
 
-  @spec timeline_form(maybe_non_neg_integer()) :: Phoenix.HTML.Form.t()
-  defp timeline_form(seq) do
-    seq_text = if is_integer(seq), do: Integer.to_string(seq), else: ""
-    Component.to_form(%{"seq" => seq_text}, as: :debugger_timeline)
-  end
-
   @spec assign_timeline(socket(), map()) :: socket()
   defp assign_timeline(socket, debugger_state) do
     events = Map.get(debugger_state, :events, [])
@@ -3724,17 +3281,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     cursor_seq =
       normalize_debugger_cursor_seq(debugger_state, events, socket.assigns[:debugger_cursor_seq])
 
-    compare_baseline_seq =
-      normalize_optional_cursor_seq(events, socket.assigns[:debugger_compare_baseline_seq])
-
-    {selected, newer, older} = selected_and_neighbors(events, cursor_seq)
-
     snapshot_runtime =
       events
       |> snapshot_runtime_at_cursor(cursor_seq)
       |> with_live_runtime_fallback(debugger_state)
-
-    last_replay = replay_metadata_at_cursor(events, cursor_seq)
 
     debug_mode = debug_mode_enabled?(socket)
 
@@ -3743,10 +3293,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
     socket
     |> Component.assign(:debugger_state, debugger_state)
-    |> Component.assign(:debugger_cursor_seq, cursor_seq)
-    |> Component.assign(:debugger_selected_event, selected)
-    |> Component.assign(:debugger_newer_event, newer)
-    |> Component.assign(:debugger_older_event, older)
     |> Component.assign(:debugger_cursor_watch_runtime, snapshot_runtime.watch)
     |> Component.assign(:debugger_cursor_companion_runtime, snapshot_runtime.companion)
     |> Component.assign(:debugger_cursor_phone_runtime, snapshot_runtime.phone)
@@ -3775,11 +3321,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       auto_fire_subscriptions(debugger_state)
     )
     |> Component.assign(:debugger_disabled_subscriptions, disabled_subscriptions(debugger_state))
-    |> Component.assign(:debugger_timeline_form, timeline_form(cursor_seq))
-    |> Component.assign(:debugger_compare_baseline_seq, compare_baseline_seq)
-    |> Component.assign(:debugger_compare_form, compare_form(compare_baseline_seq))
-    |> Component.assign(:debugger_last_replay, last_replay)
-    |> assign_replay_preview()
   end
 
   @spec assign_cursor(socket(), maybe_non_neg_integer()) :: socket()
@@ -3792,14 +3333,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
 
     normalized_cursor = normalize_cursor_seq(events, cursor_seq)
 
-    {selected, newer, older} = selected_and_neighbors(events, normalized_cursor)
-
     snapshot_runtime =
       events
       |> snapshot_runtime_at_cursor(normalized_cursor)
       |> with_live_runtime_fallback(socket.assigns[:debugger_state])
-
-    last_replay = replay_metadata_at_cursor(events, normalized_cursor)
 
     debug_mode = debug_mode_enabled?(socket)
 
@@ -3812,10 +3349,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
       )
 
     socket
-    |> Component.assign(:debugger_cursor_seq, normalized_cursor)
-    |> Component.assign(:debugger_selected_event, selected)
-    |> Component.assign(:debugger_newer_event, newer)
-    |> Component.assign(:debugger_older_event, older)
     |> Component.assign(:debugger_cursor_watch_runtime, snapshot_runtime.watch)
     |> Component.assign(:debugger_cursor_companion_runtime, snapshot_runtime.companion)
     |> Component.assign(:debugger_cursor_phone_runtime, snapshot_runtime.phone)
@@ -3825,9 +3358,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     |> Component.assign(:debugger_watch_runtime, debugger.watch_runtime)
     |> Component.assign(:debugger_companion_runtime, debugger.companion_runtime)
     |> Component.assign(:debugger_watch_view_runtime, debugger.watch_view_runtime)
-    |> Component.assign(:debugger_timeline_form, timeline_form(normalized_cursor))
-    |> Component.assign(:debugger_last_replay, last_replay)
-    |> assign_replay_preview()
   end
 
   @spec move_cursor(socket(), :back | :forward) :: socket()
@@ -4017,31 +3547,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
         |> CursorSeq.resolve_at_or_before(cursor_seq)
     end
   end
-
-  @spec normalize_optional_cursor_seq([map()], maybe_non_neg_integer()) :: maybe_non_neg_integer()
-  defp normalize_optional_cursor_seq(_events, nil), do: nil
-
-  defp normalize_optional_cursor_seq(events, cursor_seq) when is_integer(cursor_seq),
-    do: normalize_cursor_seq(events, cursor_seq)
-
-  defp normalize_optional_cursor_seq(_events, _cursor_seq), do: nil
-
-  @spec selected_and_neighbors([map()], maybe_non_neg_integer()) ::
-          {map() | nil, map() | nil, map() | nil}
-  defp selected_and_neighbors(events, cursor_seq) when is_integer(cursor_seq) do
-    case Enum.find_index(events, &(&1.seq == cursor_seq)) do
-      nil ->
-        {nil, nil, nil}
-
-      index ->
-        selected = Enum.at(events, index)
-        newer = if index > 0, do: Enum.at(events, index - 1), else: nil
-        older = Enum.at(events, index + 1)
-        {selected, newer, older}
-    end
-  end
-
-  defp selected_and_neighbors(_events, _cursor_seq), do: {nil, nil, nil}
 
   @spec snapshot_runtime_at_cursor([map()], maybe_non_neg_integer()) :: %{
           watch: map() | nil,

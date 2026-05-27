@@ -19,23 +19,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert String.contains?(outline, "child")
   end
 
-  test "assign_defaults includes replay form defaults" do
+  test "assign_defaults includes debugger timeline and trigger defaults" do
     socket = DebuggerSupport.assign_defaults(%Phoenix.LiveView.Socket{})
-    assert socket.assigns.debugger_replay_form[:count].value == "1"
-    assert socket.assigns.debugger_replay_form[:target].value == "all"
-    assert socket.assigns.debugger_replay_form[:cursor_bound].value == "true"
-    assert socket.assigns.debugger_replay_form[:mode].value == "frozen"
-    assert socket.assigns.debugger_replay_preview_seq == nil
-    assert socket.assigns.debugger_replay_live_warning == false
-    assert socket.assigns.debugger_replay_live_drift == nil
-    assert socket.assigns.debugger_last_replay == nil
-    assert socket.assigns.debugger_compare_baseline_seq == nil
-    assert socket.assigns.debugger_compare_form[:baseline_seq].value == ""
-    assert socket.assigns.debugger_runtime_fingerprint_compare == nil
-    assert socket.assigns.debugger_trace_export_context == nil
-    assert socket.assigns.debugger_export_form[:compare_cursor_seq].value == ""
-    assert socket.assigns.debugger_export_form[:baseline_cursor_seq].value == ""
-    assert socket.assigns.debugger_advanced_debug_tools == false
+    assert socket.assigns.debugger_state == nil
+    assert socket.assigns.debugger_cursor_seq == nil
+    assert socket.assigns.debugger_follow_latest == true
+    assert socket.assigns.debugger_rows == []
     assert socket.assigns.debugger_trigger_buttons == []
     assert socket.assigns.debugger_watch_trigger_buttons == []
     assert socket.assigns.debugger_companion_trigger_buttons == []
@@ -1591,17 +1580,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert DebuggerSupport.replay_live_drift_severity(11) == :high
   end
 
-  test "replay_form_params returns safe defaults" do
-    socket = DebuggerSupport.assign_defaults(%Phoenix.LiveView.Socket{})
-
-    assert %{
-             "count" => "1",
-             "target" => "all",
-             "cursor_bound" => "true",
-             "mode" => "frozen"
-           } = DebuggerSupport.replay_form_params(socket)
-  end
-
   test "view_tree_outline handles nil runtime" do
     assert DebuggerSupport.view_tree_outline(nil) == "(no snapshot)"
   end
@@ -2575,76 +2553,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert detail =~ "[reason"
     assert detail =~ "..."
     refute detail =~ "companion="
-  end
-
-  test "export_trace_opts uses cursor and explicit compare baseline anchors" do
-    socket =
-      DebuggerSupport.assign_defaults(%Phoenix.LiveView.Socket{})
-      |> Phoenix.Component.assign(:debugger_cursor_seq, 42)
-      |> Phoenix.Component.assign(:debugger_compare_baseline_seq, 30)
-
-    opts = DebuggerSupport.export_trace_opts(socket)
-    assert Keyword.get(opts, :event_limit) == 500
-    assert Keyword.get(opts, :compare_cursor_seq) == 42
-    assert Keyword.get(opts, :baseline_cursor_seq) == 30
-  end
-
-  test "export_trace_opts prefers explicit submit values and falls back on invalid input" do
-    socket =
-      DebuggerSupport.assign_defaults(%Phoenix.LiveView.Socket{})
-      |> Phoenix.Component.assign(:debugger_cursor_seq, 42)
-      |> Phoenix.Component.assign(:debugger_compare_baseline_seq, 30)
-
-    explicit_opts =
-      DebuggerSupport.export_trace_opts(socket, %{
-        "compare_cursor_seq" => "9",
-        "baseline_cursor_seq" => "2"
-      })
-
-    assert Keyword.get(explicit_opts, :compare_cursor_seq) == 9
-    assert Keyword.get(explicit_opts, :baseline_cursor_seq) == 2
-
-    fallback_opts =
-      DebuggerSupport.export_trace_opts(socket, %{
-        "compare_cursor_seq" => "bogus",
-        "baseline_cursor_seq" => "-3"
-      })
-
-    assert Keyword.get(fallback_opts, :compare_cursor_seq) == 42
-    assert Keyword.get(fallback_opts, :baseline_cursor_seq) == 30
-  end
-
-  test "set_compare_form updates explicit baseline cursor and allows clearing" do
-    socket = DebuggerSupport.assign_defaults(%Phoenix.LiveView.Socket{})
-    socket = DebuggerSupport.set_compare_form(socket, %{"baseline_seq" => "12"})
-    assert socket.assigns.debugger_compare_baseline_seq == 12
-    assert socket.assigns.debugger_compare_form[:baseline_seq].value == "12"
-
-    socket = DebuggerSupport.set_compare_form(socket, %{"baseline_seq" => ""})
-    assert socket.assigns.debugger_compare_baseline_seq == nil
-    assert socket.assigns.debugger_compare_form[:baseline_seq].value == ""
-  end
-
-  test "use_preview_as_compare_baseline copies replay preview seq explicitly" do
-    socket =
-      DebuggerSupport.assign_defaults(%Phoenix.LiveView.Socket{})
-      |> Phoenix.Component.assign(:debugger_replay_preview_seq, 27)
-      |> DebuggerSupport.use_preview_as_compare_baseline()
-
-    assert socket.assigns.debugger_compare_baseline_seq == 27
-    assert socket.assigns.debugger_compare_form[:baseline_seq].value == "27"
-  end
-
-  test "set_export_form stores latest raw cursor inputs" do
-    socket =
-      DebuggerSupport.assign_defaults(%Phoenix.LiveView.Socket{})
-      |> DebuggerSupport.set_export_form(%{
-        "compare_cursor_seq" => "17",
-        "baseline_cursor_seq" => ""
-      })
-
-    assert socket.assigns.debugger_export_form[:compare_cursor_seq].value == "17"
-    assert socket.assigns.debugger_export_form[:baseline_cursor_seq].value == ""
   end
 
   test "diagnostics_preview_at_cursor falls back to watch model when payload empty" do

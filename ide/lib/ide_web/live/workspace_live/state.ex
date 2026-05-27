@@ -291,10 +291,6 @@ defmodule IdeWeb.WorkspaceLive.State do
     socket
     |> assign(:project, project)
     |> DebuggerSupport.set_debugger_timeline_mode(Map.fetch!(data, :debugger_timeline_mode))
-    |> assign(:debugger_trace_export, nil)
-    |> assign(:debugger_trace_export_context, nil)
-    |> assign(:debugger_export_form, DebuggerSupport.export_trace_form())
-    |> assign(:debugger_import_form, DebuggerSupport.import_trace_form())
     |> assign(:pane, socket.assigns.live_action)
     |> assign(:tree, Map.fetch!(data, :tree))
     |> assign(:companion_app_present, Map.get(data, :companion_app_present, false))

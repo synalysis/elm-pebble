@@ -56,7 +56,6 @@ defmodule IdeWeb.WorkspaceLive do
   @type assigns :: map()
   @type wire_input :: String.t() | integer() | float() | boolean() | nil | [wire_input()]
   @type pane :: atom()
-  @type debugger_import_reason :: :invalid_json | :invalid_trace | :slug_mismatch
   @type bootstrap_source ::
           {:ok, String.t(), String.t(), String.t()} | :error
   @type dependency_row :: map()
@@ -1737,15 +1736,6 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  def handle_event("debugger-toggle-advanced", _params, socket) do
-    {:noreply,
-     assign(
-       socket,
-       :debugger_advanced_debug_tools,
-       !socket.assigns.debugger_advanced_debug_tools
-     )}
-  end
-
   def handle_event("debugger-set-timeline-mode", %{"mode" => mode}, socket) do
     mode =
       normalize_project_debugger_timeline_mode(
@@ -2086,39 +2076,6 @@ defmodule IdeWeb.WorkspaceLive do
     end
   end
 
-  def handle_event("debugger-continue-from-cursor", _params, socket) do
-    case socket.assigns.project do
-      nil ->
-        {:noreply, socket}
-
-      project ->
-        {:ok, _state} =
-          Ide.Debugger.continue_from_snapshot(Projects.scope_key(project), %{
-            cursor_seq: socket.assigns[:debugger_cursor_seq]
-          })
-
-        {:noreply,
-         socket
-         |> DebuggerSupport.refresh()
-         |> put_flash(:info, "Continued live runtime from selected cursor snapshot.")}
-    end
-  end
-
-  def handle_event("debugger-set-cursor", %{"debugger_timeline" => timeline}, socket)
-      when is_map(timeline) do
-    seq = Map.get(timeline, "seq") || Map.get(timeline, "range_seq")
-    {:noreply, DebuggerSupport.set_cursor_seq(socket, seq)}
-  end
-
-  def handle_event("debugger-set-compare-baseline", %{"debugger_compare" => compare}, socket)
-      when is_map(compare) do
-    {:noreply, DebuggerSupport.set_compare_form(socket, compare)}
-  end
-
-  def handle_event("debugger-select-event", %{"seq" => seq}, socket) do
-    {:noreply, DebuggerSupport.set_cursor_seq(socket, seq)}
-  end
-
   def handle_event("debugger-select-debugger-event", %{"seq" => seq}, socket) do
     {:noreply, DebuggerSupport.set_debugger_cursor_seq(socket, seq)}
   end
@@ -2138,124 +2095,12 @@ defmodule IdeWeb.WorkspaceLive do
      |> assign(:debugger_hovered_rendered_path, nil)}
   end
 
-  def handle_event("debugger-set-timeline-kind", %{"kind" => kind}, socket) do
-    {:noreply, DebuggerSupport.set_timeline_kind(socket, kind)}
-  end
-
-  def handle_event("debugger-set-timeline-limit", %{"timeline" => %{"limit" => limit}}, socket) do
-    {:noreply, DebuggerSupport.set_timeline_limit(socket, limit)}
-  end
-
-  def handle_event("debugger-set-timeline-search", %{"timeline" => %{"query" => query}}, socket) do
-    {:noreply, DebuggerSupport.set_timeline_query(socket, query)}
-  end
-
   def handle_event("debugger-keydown", %{"key" => "j"}, socket) do
     {:noreply, DebuggerSupport.step_back(socket)}
   end
 
   def handle_event("debugger-keydown", %{"key" => "k"}, socket) do
     {:noreply, DebuggerSupport.step_forward(socket)}
-  end
-
-  def handle_event(
-        "debugger-set-filters",
-        %{"debugger_filter" => %{"types" => types_text, "since_seq" => since_seq_text}},
-        socket
-      ) do
-    {:noreply, DebuggerSupport.apply_filter_inputs(socket, types_text, since_seq_text)}
-  end
-
-  def handle_event("debugger-filter-type", %{"type" => type}, socket) do
-    {:noreply, DebuggerSupport.apply_type_filter(socket, type)}
-  end
-
-  def handle_event("debugger-replay-recent", %{"debugger_replay" => replay}, socket)
-      when is_map(replay) do
-    socket = DebuggerSupport.replay_recent(socket, replay)
-    {:noreply, put_flash(socket, :info, "Replayed recent debugger messages.")}
-  end
-
-  def handle_event("debugger-replay-change", %{"debugger_replay" => replay}, socket)
-      when is_map(replay) do
-    {:noreply, DebuggerSupport.set_replay_form(socket, replay)}
-  end
-
-  def handle_event("debugger-replay-refresh-preview", _params, socket) do
-    params = DebuggerSupport.replay_form_params(socket)
-    {:noreply, DebuggerSupport.set_replay_form(socket, params)}
-  end
-
-  def handle_event("debugger-use-preview-baseline", _params, socket) do
-    {:noreply, DebuggerSupport.use_preview_as_compare_baseline(socket)}
-  end
-
-  def handle_event("debugger-export-trace", params, socket) do
-    export_params =
-      case params do
-        %{"debugger_export" => payload} when is_map(payload) -> payload
-        _ -> %{}
-      end
-
-    case socket.assigns.project do
-      nil ->
-        {:noreply, socket}
-
-      project ->
-        export_opts = DebuggerSupport.export_trace_opts(socket, export_params)
-        compare_cursor_seq = Keyword.get(export_opts, :compare_cursor_seq)
-        baseline_cursor_seq = Keyword.get(export_opts, :baseline_cursor_seq)
-        {:ok, export} = Ide.Debugger.export_trace(Projects.scope_key(project), export_opts)
-
-        {:noreply,
-         socket
-         |> DebuggerSupport.set_export_form(export_params)
-         |> assign(:debugger_trace_export, export)
-         |> assign(
-           :debugger_trace_export_context,
-           %{
-             compare_cursor_seq: compare_cursor_seq,
-             baseline_cursor_seq: baseline_cursor_seq
-           }
-         )
-         |> put_flash(
-           :info,
-           "Debugger trace export ready (#{export.byte_size} bytes, sha256 #{export.sha256})."
-         )}
-    end
-  end
-
-  def handle_event("debugger-import-trace", params, socket) do
-    json =
-      case params do
-        %{"debugger_import" => %{"json" => j}} when is_binary(j) -> String.trim(j)
-        _ -> ""
-      end
-
-    case socket.assigns.project do
-      nil ->
-        {:noreply, socket}
-
-      project ->
-        cond do
-          json == "" ->
-            {:noreply, put_flash(socket, :error, "Paste trace JSON before importing.")}
-
-          true ->
-            case Ide.Debugger.import_trace(Projects.scope_key(project), json) do
-              {:ok, _state} ->
-                {:noreply,
-                 socket
-                 |> assign(:debugger_import_form, DebuggerSupport.import_trace_form())
-                 |> assign(:debugger_trace_export_context, nil)
-                 |> DebuggerSupport.refresh()
-                 |> put_flash(:info, "Debugger trace imported; timeline restored from export.")}
-
-              {:error, reason} ->
-                {:noreply, put_flash(socket, :error, debugger_import_error(reason))}
-            end
-        end
-    end
   end
 
   defp handle_simulator_save_settings(socket, values) when is_map(values) do
@@ -3938,16 +3783,6 @@ defmodule IdeWeb.WorkspaceLive do
                 tokens
               ),
               to: EditorSupport
-
-  @spec debugger_import_error(debugger_import_reason()) :: String.t()
-  defp debugger_import_error(:invalid_json), do: "Trace import failed: invalid JSON."
-
-  defp debugger_import_error(:invalid_trace),
-    do:
-      "Trace import failed: not a valid export (need export_version 1, events, watch, companion, seq)."
-
-  defp debugger_import_error(:slug_mismatch),
-    do: "Trace import failed: project_slug in JSON does not match this project."
 
   @spec package_add_error(ProjectTypes.project_error()) :: String.t()
   defp package_add_error({:package_not_supported_for_phone, package}) do
