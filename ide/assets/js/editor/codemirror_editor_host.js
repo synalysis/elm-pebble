@@ -7,7 +7,7 @@ import {
   StateEffect,
   StateField
 } from "@codemirror/state"
-import {Socket} from "phoenix"
+import {getUserSocket} from "../user_socket"
 import {Decoration, EditorView, keymap, lineNumbers, highlightActiveLine} from "@codemirror/view"
 import {defaultKeymap, history, historyKeymap, indentLess, indentSelection} from "@codemirror/commands"
 import {searchKeymap} from "@codemirror/search"
@@ -107,8 +107,7 @@ class PhoenixLspTransport {
     this.handlers = new Set()
     this.queue = []
     this.joined = false
-    this.socket = new Socket("/socket", {params: {_csrf_token: csrfToken()}})
-    this.socket.connect()
+    this.socket = getUserSocket()
     this.channel = this.socket.channel(`lsp:${projectSlug || "project"}`, {})
     this.channel.on("message", payload => {
       if (payload && typeof payload.message === "string") {

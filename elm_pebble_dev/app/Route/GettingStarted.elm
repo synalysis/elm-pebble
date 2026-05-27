@@ -133,6 +133,17 @@ view _ _ =
                                 ]
                             ]
                             [ text "Read the watchface tutorial" ]
+                    , Route.FAQ
+                        |> Route.link
+                            [ classes
+                                [ Tw.mt s4
+                                , Tw.inline_flex
+                                , Tw.font_semibold
+                                , Tw.text_color (blue s600)
+                                , dark [ Tw.text_color (blue s400) ]
+                                ]
+                            ]
+                            [ text "Read the FAQ" ]
                     ]
                 , sectionBlock "Browse package docs"
                     [ paragraph "Watch code uses elm-pebble/elm-watch. Companion bridge code uses elm-pebble/companion-core and elm-pebble/companion-preferences. Regular Elm packages such as elm/http belong on the phone side when the stock Elm compiler supports them."

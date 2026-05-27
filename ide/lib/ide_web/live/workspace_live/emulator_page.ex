@@ -19,6 +19,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   def render(assigns) do
     assigns =
       assigns
+      |> assign_new(:debug_mode, fn -> false end)
       |> assign_new(:debugger_watch_trigger_buttons, fn -> [] end)
       |> assign_new(:debugger_disabled_subscriptions, fn -> [] end)
       |> assign(
@@ -98,6 +99,8 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
           emulator_simulator_capabilities_json(@project, @debugger_state)
         }
         data-emulator-simulator-settings={emulator_simulator_settings_json(@project, @debugger_state)}
+        data-emulator-installation-status={emulator_feedback_installation_json(@emulator_installation_status)}
+        data-emulator-ui-build="delegate-v4"
         class="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4"
       >
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -107,7 +110,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               CloudPebble-style noVNC display with phone bridge controls.
             </p>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
+          <div id="embedded-emulator-toolbar" phx-update="ignore" class="flex flex-wrap items-center gap-2">
             <button
               type="button"
               data-emulator-launch
@@ -138,6 +141,15 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               class="rounded bg-white px-3 py-2 text-xs font-semibold text-zinc-800 ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Save screenshot
+            </button>
+            <button
+              :if={@debug_mode}
+              type="button"
+              data-emulator-copy-feedback
+              class="rounded bg-white px-3 py-2 text-xs font-semibold text-zinc-800 ring-1 ring-zinc-200 hover:bg-zinc-50"
+              title="Copy session details and logs for bug reports"
+            >
+              Copy feedback
             </button>
           </div>
         </div>
@@ -763,6 +775,15 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   defp emulator_setup_needs_attention?(%{error: error}) when is_binary(error), do: true
   defp emulator_setup_needs_attention?(_), do: false
+
+  @spec emulator_feedback_installation_json(installation_status() | nil) :: String.t()
+  defp emulator_feedback_installation_json(status) when is_map(status) do
+    Jason.encode!(status)
+  rescue
+    _ -> "{}"
+  end
+
+  defp emulator_feedback_installation_json(_), do: "{}"
 
   defp embedded_emulator_mode?("external"), do: false
   defp embedded_emulator_mode?("wasm"), do: false

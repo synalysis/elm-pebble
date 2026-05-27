@@ -3,10 +3,14 @@ defmodule IdeWeb.EmulatorProxySocket do
 
   @behaviour WebSock
 
+  require Logger
+
   @impl true
   def init(%{target: {:tcp, host, port}}) do
-    case :gen_tcp.connect(String.to_charlist(host), port, [:binary, active: true], 5_000) do
+    case :gen_tcp.connect(String.to_charlist(host), port, [:binary, active: false], 5_000) do
       {:ok, socket} ->
+        :inet.setopts(socket, active: true, nodelay: true, packet: :raw)
+
         # region agent log
         Ide.AgentDebugLog.log(
           "initial",
@@ -20,9 +24,13 @@ defmodule IdeWeb.EmulatorProxySocket do
         )
 
         # endregion
-        {:ok, %{client: nil, tcp: socket}}
+        {:ok, %{client: nil, tcp: socket, relay_logged: false}}
 
       {:error, reason} ->
+        Logger.warning(
+          "embedded emulator proxy tcp connect failed #{host}:#{port}: #{inspect(reason)}"
+        )
+
         # region agent log
         Ide.AgentDebugLog.log(
           "initial",
@@ -37,8 +45,7 @@ defmodule IdeWeb.EmulatorProxySocket do
         )
 
         # endregion
-        send(self(), {:emulator_proxy_closed, reason})
-        {:ok, %{client: nil, tcp: nil}}
+        {:stop, {:tcp_connect_failed, reason}, %{client: nil, tcp: nil}}
     end
   end
 
@@ -52,20 +59,23 @@ defmodule IdeWeb.EmulatorProxySocket do
         {:ok, %{client: client}}
 
       {:error, reason} ->
-        send(self(), {:emulator_proxy_closed, reason})
-        {:ok, %{client: nil}}
+        {:stop, {:ws_connect_failed, reason}, %{client: nil, tcp: nil}}
     end
   end
 
   @impl true
   def handle_in({data, [opcode: :binary]}, %{tcp: socket} = state) when is_port(socket) do
-    _ = :gen_tcp.send(socket, data)
-    {:ok, state}
+    case :gen_tcp.send(socket, data) do
+      :ok -> {:ok, state}
+      {:error, reason} -> {:stop, {:tcp_send_failed, reason}, state}
+    end
   end
 
   def handle_in({data, [opcode: :text]}, %{tcp: socket} = state) when is_port(socket) do
-    _ = :gen_tcp.send(socket, data)
-    {:ok, state}
+    case :gen_tcp.send(socket, data) do
+      :ok -> {:ok, state}
+      {:error, reason} -> {:stop, {:tcp_send_failed, reason}, state}
+    end
   end
 
   def handle_in({data, [opcode: :binary]}, state) do
@@ -81,14 +91,20 @@ defmodule IdeWeb.EmulatorProxySocket do
   def handle_in(_message, state), do: {:ok, state}
 
   @impl true
-  def handle_info({:emulator_proxy_frame, {:binary, data}}, state),
-    do: {:push, {:binary, data}, state}
+  def handle_info({:tcp, socket, data}, %{tcp: socket} = state) when is_binary(data) do
+    state =
+      if state[:relay_logged] do
+        state
+      else
+        Logger.debug(
+          "embedded emulator vnc proxy relayed first #{byte_size(data)} bytes to websocket"
+        )
 
-  def handle_info({:emulator_proxy_frame, {:text, data}}, state),
-    do: {:push, {:text, data}, state}
+        %{state | relay_logged: true}
+      end
 
-  def handle_info({:tcp, socket, data}, %{tcp: socket} = state),
-    do: {:push, {:binary, data}, state}
+    {:push, {:binary, data}, state}
+  end
 
   def handle_info({:tcp_closed, socket}, %{tcp: socket} = state) do
     # region agent log
@@ -119,6 +135,12 @@ defmodule IdeWeb.EmulatorProxySocket do
     # endregion
     {:stop, :normal, state}
   end
+
+  def handle_info({:emulator_proxy_frame, {:binary, data}}, state),
+    do: {:push, {:binary, data}, state}
+
+  def handle_info({:emulator_proxy_frame, {:text, data}}, state),
+    do: {:push, {:text, data}, state}
 
   def handle_info({:emulator_proxy_closed, _reason}, state), do: {:stop, :normal, state}
   def handle_info(_message, state), do: {:ok, state}

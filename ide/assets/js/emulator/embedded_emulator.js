@@ -15,6 +15,12 @@ const MAX_LOG_CHARS = 40000
 const PUTBYTES_SUMMARY_INTERVAL = 25
 const SYSTEM_LOG_SUMMARY_INTERVAL = 50
 const PHONE_BRIDGE_INSTALL_TIMEOUT_MS = 120000
+const DISPLAY_READY_TIMEOUT_MS = 90_000
+const DISPLAY_READY_POLL_MS = 50
+const VNC_WS_OPEN_TIMEOUT_MS = 10_000
+const VNC_CONNECT_TIMEOUT_MS = 12_000
+const VNC_RECONNECT_BASE_MS = 150
+const VNC_RECONNECT_MAX_MS = 3_000
 const ENDPOINT_SYSTEM_LOG = 0x07d2
 const ENDPOINT_APP_LOG = 0x07d6
 const ENDPOINT_DATA_LOGGING = 0x1a7a
@@ -52,8 +58,32 @@ const WEATHER_CONDITION_WIRE_CODES = {
   unknownweather: 9
 }
 
-const csrfToken = () => document.querySelector("meta[name='csrf-token']")?.getAttribute("content") || ""
+import {disconnectUserSocket, getUserSocket, waitForUserSocketOpen} from "../user_socket"
+
+const EMBEDDED_EMULATOR_UI_BUILD = "2025-05-27-vnc-phoenix-channel-v21"
+const PHOENIX_SOCKET_OPEN_TIMEOUT_MS = 10_000
+const VNC_CHANNEL_JOIN_TIMEOUT_MS = 10_000
+
 let rfbModulePromise = null
+
+function loadRFB() {
+  if (!rfbModulePromise) {
+    rfbModulePromise = import("@novnc/novnc")
+      .then(module => module.default)
+      .catch(error => {
+        rfbModulePromise = null
+        const blocked =
+          error?.message?.includes("Failed to fetch") || error?.name === "TypeError"
+        const hint = blocked
+          ? " (check browser console for COEP/CORP blocked script — hard refresh after server restart)"
+          : ""
+        throw new Error(`Could not load noVNC display client${hint}: ${error?.message || error}`)
+      })
+  }
+  return rfbModulePromise
+}
+
+const csrfToken = () => document.querySelector("meta[name='csrf-token']")?.getAttribute("content") || ""
 const persistedStateFields = [
   "session",
   "buttonState",
@@ -99,6 +129,9 @@ function defaultEmulatorState(key) {
     suppressedPutBytesFrames: 0,
     suppressedSystemLogFrames: 0,
     sessionEnded: false,
+    sessionAlive: false,
+    displayConnected: false,
+    phoneBridgeReady: false,
     phoneBridgeActive: false,
     dataLogEntries: [],
     rfb: null,
@@ -138,28 +171,54 @@ function agentDebugLog(runId, hypothesisId, location, message, data = {}) {
   }).catch(() => {})
 }
 
-function loadRFB() {
-  if (!rfbModulePromise) {
-    rfbModulePromise = import("@novnc/novnc").then(module => module.default)
+async function postJSON(url, body = {}, {timeoutMs} = {}) {
+  const controller = timeoutMs ? new AbortController() : null
+  const timer =
+    controller &&
+    setTimeout(() => {
+      controller.abort()
+    }, timeoutMs)
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {"content-type": "application/json", "x-csrf-token": csrfToken()},
+      body: JSON.stringify(body),
+      signal: controller?.signal
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || response.statusText)
+    return data
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`)
+    }
+
+    throw error
+  } finally {
+    if (timer) clearTimeout(timer)
   }
-
-  return rfbModulePromise
-}
-
-async function postJSON(url, body = {}) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {"content-type": "application/json", "x-csrf-token": csrfToken()},
-    body: JSON.stringify(body)
-  })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data.error || response.statusText)
-  return data
 }
 
 function websocketURL(path) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+  // Must match the page origin (localhost vs 127.0.0.1 are different origins in browsers).
   return `${protocol}//${window.location.host}${path}`
+}
+
+function vncWebSocketReadyStateLabel(readyState) {
+  switch (readyState) {
+    case WebSocket.CONNECTING:
+      return "CONNECTING"
+    case WebSocket.OPEN:
+      return "OPEN"
+    case WebSocket.CLOSING:
+      return "CLOSING"
+    case WebSocket.CLOSED:
+      return "CLOSED"
+    default:
+      return readyState == null ? "missing" : String(readyState)
+  }
 }
 
 export class EmbeddedEmulatorHost {
@@ -192,6 +251,7 @@ export class EmbeddedEmulatorHost {
     this.vncViewportConfigKey = null
     this.vncViewportConfigTimer = null
     this.boundEmulatorButtons = new WeakSet()
+    this.boundControlElements = new WeakSet()
     this.syncStateToDom = () => {
       if (this.destroyed) return
       if (this.status && this.currentStatus) this.status.textContent = this.currentStatus
@@ -204,6 +264,58 @@ export class EmbeddedEmulatorHost {
     this.handleConfigKeyDown = event => {
       if (event.key === "Escape" && this.configPanel && !this.configPanel.classList.contains("hidden")) {
         this.cancelConfig()
+      }
+    }
+    this.handleRootClick = event => {
+      if (this.destroyed) return
+      if (event.target.closest("[data-emulator-launch]")) {
+        event.preventDefault()
+        this.toggleLaunch()
+        return
+      }
+      if (event.target.closest("[data-emulator-install]")) {
+        event.preventDefault()
+        void this.install()
+        return
+      }
+      if (event.target.closest("[data-emulator-preferences]")) {
+        event.preventDefault()
+        void this.loadCompanionPreferences()
+        return
+      }
+      if (event.target.closest("[data-emulator-screenshot]")) {
+        event.preventDefault()
+        void this.captureScreenshot()
+        return
+      }
+      if (event.target.closest("[data-emulator-copy-feedback]")) {
+        event.preventDefault()
+        void this.copyFeedbackReport()
+        return
+      }
+      if (event.target.closest("[data-emulator-storage-reset]")) {
+        event.preventDefault()
+        void this.resetStorage()
+        return
+      }
+      if (event.target.closest("[data-emulator-storage-add]")) {
+        event.preventDefault()
+        void this.saveNewStorageEntry()
+        return
+      }
+      if (event.target.closest("[data-emulator-config-cancel]")) {
+        event.preventDefault()
+        this.cancelConfig()
+        return
+      }
+      if (event.target.closest("[data-emulator-tap]")) {
+        event.preventDefault()
+        this.sendQemu(QEMU.tap, [0, 1])
+        return
+      }
+      if (event.target.closest("[data-emulator-compass-send]")) {
+        event.preventDefault()
+        this.sendCompassSample()
       }
     }
   }
@@ -227,31 +339,25 @@ export class EmbeddedEmulatorHost {
     this.storageNewType = this.el.querySelector("[data-emulator-storage-new-type]")
     this.storageNewValue = this.el.querySelector("[data-emulator-storage-new-value]")
     this.dataLogRows = this.el.querySelector("[data-emulator-data-log-rows]")
-    this.launchButton?.addEventListener("click", () => this.toggleLaunch())
-    this.installButton?.addEventListener("click", () => this.install())
-    this.preferencesButton?.addEventListener("click", () => this.loadCompanionPreferences())
-    this.storageResetButton?.addEventListener("click", () => this.resetStorage())
-    this.storageAddButton?.addEventListener("click", () => this.saveNewStorageEntry())
-    this.screenshotButton?.addEventListener("click", () => this.captureScreenshot())
-    this.el.querySelector("[data-emulator-config-cancel]")?.addEventListener("click", () => this.cancelConfig())
-    this.configPanel?.addEventListener("click", event => {
-      if (event.target === this.configPanel) this.cancelConfig()
-    })
-    this.configFrame?.addEventListener("load", () => this.maybeHandleConfigReturn(this.configFrame.contentWindow))
     document.addEventListener("keydown", this.handleConfigKeyDown)
+    this.el.addEventListener("click", this.handleRootClick)
 
+    this.bindControlButtons()
     this.bindEmulatorButtons()
-
-    this.el.querySelector("[data-emulator-tap]")?.addEventListener("click", () => this.sendQemu(QEMU.tap, [0, 1]))
-    this.el.querySelector("[data-emulator-compass-send]")?.addEventListener("click", () => this.sendCompassSample())
     this.state.listeners.add(this.syncStateToDom)
     window.addEventListener("focus", this.handlePageVisible)
     document.addEventListener("visibilitychange", this.handlePageVisible)
     this.applyInitialSimulatorSettings()
-    this.resumeExistingSession()
+    if (!this.session) {
+      this.launching = false
+      this.stopping = false
+    }
+    void this.initializePersistedSession()
     this.applyCanvasSize()
     this.syncStateToDom()
-    this.ensureVncAttached()
+    if (!window.isSecureContext) {
+      this.appendLog("Embedded emulator display requires a secure browser context (https:// or http://localhost)")
+    }
   }
 
   updated() {
@@ -274,6 +380,7 @@ export class EmbeddedEmulatorHost {
     this.renderLog()
     this.renderStorage()
     this.renderDataLog()
+    this.bindControlButtons()
     this.bindEmulatorButtons()
     this.updateControlButtons()
     this.applyCanvasSize()
@@ -292,25 +399,62 @@ export class EmbeddedEmulatorHost {
     this.ensureVncAttached()
   }
 
+  async initializePersistedSession() {
+    if (!this.session) {
+      this.updateControlButtons()
+      return
+    }
+
+    await this.validatePersistedSession()
+    if (!this.session) {
+      this.updateControlButtons()
+      return
+    }
+
+    this.resumeExistingSession()
+    this.ensureVncAttached()
+    this.updateControlButtons()
+  }
+
+  async validatePersistedSession() {
+    if (!this.session) return
+
+    this.sessionAlive = false
+    this.displayConnected = false
+    this.phoneBridgeReady = false
+
+    try {
+      const response = await postJSON(this.session.ping_path)
+      if (response?.alive !== true) {
+        this.endSession("Previous emulator session has ended")
+        return
+      }
+
+      this.sessionAlive = true
+    } catch (_error) {
+      this.endSession("Previous emulator session is unreachable")
+    }
+  }
+
   resumeExistingSession() {
     if (!this.session) return
 
     this.sessionEnded = false
     this.applyCanvasSize()
-    this.startPing()
     if (this.session.backend_enabled && !(this.rfb && this.rfbCanvas === this.canvas)) {
-      this.connectVnc().catch(error => {
+      this.connectDisplay().catch(error => {
         if (this.session && !this.stopping && !this.destroyed) {
           this.scheduleVncReconnect(`Embedded emulator display reconnect failed: ${error.message}`)
         }
       })
     }
-    if (this.phoneBridgeActive) this.connectPhone()
+    if (this.sessionAlive) this.schedulePingAfterDisplayConnect()
   }
 
   destroy(removeListeners = true) {
     this.destroyed = true
     this.state.listeners.delete(this.syncStateToDom)
+    this.stopPingAfterDisplayTimer()
     this.stopPing()
     this.stopVncReconnect()
     this.stopConfigPopupPolling()
@@ -341,12 +485,13 @@ export class EmbeddedEmulatorHost {
     window.removeEventListener("focus", this.handlePageVisible)
     document.removeEventListener("visibilitychange", this.handlePageVisible)
     if (removeListeners) document.removeEventListener("keydown", this.handleConfigKeyDown)
+    this.el.removeEventListener("click", this.handleRootClick)
     this.releaseAllButtons()
     if (this.rfb) {
       const oldRfb = this.rfb
       this.rfb = null
       this.rfbCanvas = null
-      oldRfb.disconnect()
+      this.disconnectRfb(oldRfb)
     }
     if (this.phoneSocket) this.phoneSocket.close()
   }
@@ -356,17 +501,33 @@ export class EmbeddedEmulatorHost {
   }
 
   toggleLaunch() {
-    if (this.session) {
-      this.stop()
-    } else {
-      this.launch()
+    if (this.launching || this.stopping) return
+    if (this.session && this.sessionAlive && !this.sessionEnded) {
+      void this.stop()
+      return
     }
+    if (this.session) {
+      this.session = null
+      this.sessionEnded = false
+      this.launching = false
+      this.stopping = false
+    }
+    void this.launch()
   }
 
   async launch() {
-    if (this.launching || this.session) return
+    if (this.launching) return
+    if (this.session) return
+
+    const slug = this.el.dataset.projectSlug
+    const platform = this.el.dataset.emulatorTarget
+    if (!slug || !platform) {
+      this.setStatus("Embedded emulator is missing project slug or watch model")
+      return
+    }
+
     this.launching = true
-    this.updateControlButtons()
+    this.notifyStateChanged()
 
     try {
       this.clearLog()
@@ -374,11 +535,12 @@ export class EmbeddedEmulatorHost {
       this.sessionEnded = false
       this.appInstalled = false
       this.setStatus("Launching embedded emulator...")
-      const payload = {
-        slug: this.el.dataset.projectSlug,
-        platform: this.el.dataset.emulatorTarget
-      }
+      void loadRFB().catch(() => {})
+      const payload = {slug, platform}
       this.session = await postJSON("/api/emulator/launch", payload)
+      this.sessionAlive = true
+      this.displayConnected = false
+      this.phoneBridgeReady = false
       // #region agent log
       agentDebugLog("initial", "H19,H20,H21", "embedded_emulator.js:launch:session", "emulator launch response received in browser", {
         sessionId: this.session?.id,
@@ -391,22 +553,25 @@ export class EmbeddedEmulatorHost {
         this.warnSessionScreenMismatch()
         this.logEmulatorPlatform()
         this.applyCanvasSize()
-        await this.connectVnc()
-        this.startPing()
+        const displayReady = await this.waitForDisplayReady()
+        if (!displayReady && this.session && !this.destroyed) {
+          this.appendLog("Embedded emulator VNC port was not ready before display connect timed out")
+        }
+        await this.connectDisplay()
+        if (this.session && !this.destroyed) this.schedulePingAfterDisplayConnect()
       }
-      this.setStatus(this.session.backend_enabled ? "Embedded emulator connected" : "Embedded emulator backend disabled; launch API is in dry-run mode")
-      if (this.session.backend_enabled) {
-        this.ensurePhoneBridge()
-          .then(() => {
-            if (this.appInstalled) this.enableAppLogs()
-          })
-          .catch(error => this.appendLog(`phone bridge connect failed: ${error.message}`))
+      if (this.session?.backend_enabled && this.displayConnected) {
+        this.setStatus("Embedded emulator display connected")
+      } else if (this.session?.backend_enabled) {
+        this.setStatus("Embedded emulator session started; connecting display...")
+      } else {
+        this.setStatus("Embedded emulator backend disabled; launch API is in dry-run mode")
       }
     } catch (error) {
       this.setStatus(`Embedded emulator failed: ${error.message}`)
     } finally {
       this.launching = false
-      this.updateControlButtons()
+      this.notifyStateChanged()
     }
   }
 
@@ -414,7 +579,7 @@ export class EmbeddedEmulatorHost {
     if (!this.session || this.stopping) return
     const session = this.session
     this.stopping = true
-    this.updateControlButtons()
+    this.notifyStateChanged()
 
     try {
       await postJSON(session.kill_path)
@@ -423,17 +588,499 @@ export class EmbeddedEmulatorHost {
       this.setStatus(`Could not stop embedded emulator: ${error.message}`)
     } finally {
       this.stopping = false
-      this.updateControlButtons()
+      this.notifyStateChanged()
     }
   }
 
+  resolveCanvas() {
+    this.canvas = this.el.querySelector("[data-emulator-canvas]")
+    return this.canvas
+  }
+
+  async waitForDisplayReady(timeoutMs = DISPLAY_READY_TIMEOUT_MS) {
+    if (!this.session?.backend_enabled) return true
+    if (this.session.display_ready) return true
+
+    const deadline = Date.now() + timeoutMs
+    const pingPath = this.session.ping_path
+
+    while (Date.now() < deadline) {
+      if (this.destroyed || !this.session) return false
+
+      try {
+        const info = await postJSON(pingPath)
+        if (info.display_ready) {
+          Object.assign(this.session, info)
+          return true
+        }
+      } catch (_error) {
+        // Session may still be booting QEMU/VNC.
+      }
+
+      await new Promise(resolve => window.setTimeout(resolve, DISPLAY_READY_POLL_MS))
+    }
+
+    return !!this.session?.display_ready
+  }
+
+  async connectDisplay() {
+    if (this.destroyed || !this.session?.backend_enabled) return
+
+    for (let attempt = 0; attempt < 20 && !this.resolveCanvas(); attempt += 1) {
+      await new Promise(resolve => window.requestAnimationFrame(resolve))
+    }
+
+    if (!this.canvas) {
+      this.appendLog("Embedded emulator display element not found in the page")
+      return
+    }
+
+    if (!this.session.display_ready) {
+      await this.waitForDisplayReady(15_000)
+    }
+
+    this.appendLog(`Connecting embedded emulator display (${this.session.vnc_path})`)
+
+    try {
+      await this.connectVnc()
+    } catch (error) {
+      this.appendLog(`Embedded emulator display failed: ${error.message}`)
+    }
+  }
+
+  closeVncSocket() {
+    if (this.vncSocket) {
+      try {
+        this.vncSocket.close()
+      } catch (_error) {
+        // Socket may already be closed.
+      }
+      this.vncSocket = null
+    }
+  }
+
+  closeVncChannel() {
+    if (this.vncChannel) {
+      try {
+        this.vncChannel.leave()
+      } catch (_error) {
+        // Channel may already be closed.
+      }
+      this.vncChannel = null
+    }
+    this.resetVncFramePipeline()
+    this.vncPhoenixSocket = null
+  }
+
+  disconnectRfb(rfb, {reconnecting = false} = {}) {
+    if (reconnecting) this.reconnectingVnc = true
+    if (rfb) {
+      try {
+        rfb.disconnect()
+      } catch (_error) {
+        // noVNC may already be disconnected.
+      }
+    }
+    this.closeVncChannel()
+    this.closeVncSocket()
+  }
+
+  ensurePhoenixSocket() {
+    const socket = getUserSocket({onLog: message => this.appendLog(message)})
+    this.vncPhoenixSocket = socket
+    return socket
+  }
+
+  decodeChannelBinary(payload) {
+    if (payload instanceof ArrayBuffer) return payload
+    if (ArrayBuffer.isView(payload)) {
+      return payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength)
+    }
+    if (payload && typeof payload === "object") {
+      const encoded = payload.b64 ?? payload["b64"]
+      if (typeof encoded === "string") return this.base64ToArrayBuffer(encoded)
+    }
+    if (typeof payload === "string") {
+      return this.base64ToArrayBuffer(payload)
+    }
+    return null
+  }
+
+  base64ToArrayBuffer(encoded) {
+    const binary = atob(encoded)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+    return bytes.buffer
+  }
+
+  vncBytes(data) {
+    if (data instanceof ArrayBuffer) return new Uint8Array(data)
+    if (ArrayBuffer.isView(data)) {
+      return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+    }
+    throw new Error(`unsupported VNC frame data (${data?.constructor?.name || typeof data})`)
+  }
+
+  bytesToBase64(bytes) {
+    let binary = ""
+    const chunk = 0x8000
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
+    }
+    return btoa(binary)
+  }
+
+  pushVncFrame(channel, data) {
+    const bytes = this.vncBytes(data)
+    if (!this.vncLoggedFirstSend) {
+      this.vncLoggedFirstSend = true
+      this.appendLog(`Embedded emulator VNC pushing ${bytes.length} byte(s) to channel`)
+    }
+    channel.push("frame", {b64: this.bytesToBase64(bytes)})
+  }
+
+  resetVncFramePipeline() {
+    this.vncPendingFrames = []
+    this.vncFrameSink = null
+    this.vncJoinInitial = null
+  }
+
+  enqueueVncChannelFrame(payload) {
+    const data = this.decodeChannelBinary(payload)
+    if (!data) {
+      const kind = payload == null ? "null" : payload?.constructor?.name || typeof payload
+      this.appendLog(`Embedded emulator VNC ignored frame payload (${kind})`)
+      return
+    }
+    const chunkBytes = data.byteLength || 0
+    if (this.vncWsDiag) {
+      this.vncWsDiag.bytesReceived += chunkBytes
+      this.vncWsDiag.framesReceived += 1
+    }
+    if (this.vncFrameSink) {
+      this.vncFrameSink(data)
+    } else {
+      this.vncPendingFrames.push(data)
+    }
+  }
+
+  bindVncFrameSink(deliver) {
+    this.vncFrameSink = deliver
+    const pending = this.vncPendingFrames
+    this.vncPendingFrames = []
+    for (const data of pending) deliver(data)
+  }
+
+  deliverVncJoinInitial(rfb) {
+    const data = this.vncJoinInitial
+    if (!data || !rfb?._sock?._recvMessage) return
+
+    this.vncJoinInitial = null
+    rfb._sock._recvMessage({data})
+    this.appendLog(`Embedded emulator delivered ${data.byteLength} byte(s) join initial to noVNC`)
+  }
+
+  async joinVncChannel() {
+    const socket = this.ensurePhoenixSocket()
+    const topic = `emulator_vnc:${this.session.id}`
+
+    this.appendLog(`Opening Phoenix user socket (state=${socket.connectionState()})`)
+    await waitForUserSocketOpen(socket, PHOENIX_SOCKET_OPEN_TIMEOUT_MS, {
+      onLog: message => this.appendLog(message)
+    })
+    this.appendLog("Phoenix user socket open; joining emulator VNC channel")
+
+    this.resetVncFramePipeline()
+    const channel = socket.channel(topic, {})
+    // Register before join: the server may push the RFB banner as soon as the relay starts.
+    channel.on("frame", payload => this.enqueueVncChannelFrame(payload))
+
+    return new Promise((resolve, reject) => {
+      let settled = false
+      const finish = (error, joinedChannel = null) => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timer)
+        if (error) reject(error)
+        else resolve(joinedChannel)
+      }
+
+      const timer = window.setTimeout(() => {
+        finish(
+          new Error(
+            `Phoenix channel join timed out after ${VNC_CHANNEL_JOIN_TIMEOUT_MS / 1000}s (socket=${socket.connectionState()})`
+          )
+        )
+      }, VNC_CHANNEL_JOIN_TIMEOUT_MS)
+
+      channel
+        .join()
+        .receive("ok", response => {
+          if (response?.initial) {
+            try {
+              const binary = atob(response.initial)
+              const bytes = new Uint8Array(binary.length)
+              for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+              // Hold until noVNC has attached the transport and run _socketOpen(); feeding the
+              // RFB banner earlier triggers "Unknown init state" and the handshake never starts.
+              this.vncJoinInitial = bytes.buffer
+              if (this.vncWsDiag) this.vncWsDiag.bytesReceived += bytes.byteLength
+              this.appendLog(
+                `Embedded emulator VNC channel received ${bytes.byteLength} byte(s) in join reply (held for noVNC init)`
+              )
+            } catch (error) {
+              this.appendLog(`Embedded emulator VNC join initial decode failed: ${error.message}`)
+            }
+          }
+          finish(null, channel)
+        })
+        .receive("error", response => {
+          finish(new Error(`Phoenix channel join failed: ${JSON.stringify(response)}`))
+        })
+        .receive("timeout", () => finish(new Error("Phoenix channel join timeout")))
+    })
+  }
+
+  createVncChannelTransport(channel) {
+    let onopen = null
+    let onmessage = null
+    let onerror = null
+    let onclose = null
+    const pendingForTransport = []
+
+    const deliverToTransport = data => {
+      if (onmessage) onmessage({data})
+      else pendingForTransport.push(data)
+    }
+
+    const flushPendingForTransport = () => {
+      if (!onmessage || pendingForTransport.length === 0) return
+      const pending = pendingForTransport.splice(0)
+      for (const data of pending) onmessage({data})
+    }
+
+    this.bindVncFrameSink(deliverToTransport)
+
+    channel.onError(() => {
+      if (this.vncWsDiag) this.vncWsDiag.error = "phoenix channel error"
+      if (onerror) onerror(new Event("error"))
+    })
+
+    channel.onClose(() => {
+      if (this.vncWsDiag) {
+        this.vncWsDiag.closed = true
+        this.vncWsDiag.open = false
+      }
+      if (onclose) onclose(new CloseEvent("close"))
+    })
+
+    return {
+      binaryType: "arraybuffer",
+      protocol: "",
+      bufferedAmount: 0,
+      readyState: WebSocket.OPEN,
+      send: data => {
+        this.pushVncFrame(channel, data)
+      },
+      close: () => {
+        channel.leave()
+      },
+      get onopen() {
+        return onopen
+      },
+      set onopen(fn) {
+        onopen = fn
+      },
+      get onmessage() {
+        return onmessage
+      },
+      set onmessage(fn) {
+        onmessage = fn
+        flushPendingForTransport()
+      },
+      get onerror() {
+        return onerror
+      },
+      set onerror(fn) {
+        onerror = fn
+      },
+      get onclose() {
+        return onclose
+      },
+      set onclose(fn) {
+        onclose = fn
+      }
+    }
+  }
+
+  resetVncWsDiag() {
+    this.vncLoggedFirstSend = false
+    this.vncWsDiag = {
+      url: null,
+      readyState: null,
+      readyStateLabel: "missing",
+      open: false,
+      closed: false,
+      closeCode: null,
+      closeReason: null,
+      error: null,
+      bytesReceived: 0,
+      framesReceived: 0
+    }
+  }
+
+  attachVncWebSocketDiagnostics(ws) {
+    if (!ws || ws.__elmPebbleVncDiag) return
+    ws.__elmPebbleVncDiag = true
+
+    const refreshReadyState = () => {
+      this.vncWsDiag.readyState = ws.readyState
+      this.vncWsDiag.readyStateLabel = vncWebSocketReadyStateLabel(ws.readyState)
+    }
+
+    refreshReadyState()
+
+    ws.addEventListener("open", () => {
+      refreshReadyState()
+      this.vncWsDiag.open = true
+      this.appendLog("Embedded emulator VNC websocket open")
+    })
+    ws.addEventListener("message", event => {
+      const chunkBytes =
+        event.data instanceof ArrayBuffer
+          ? event.data.byteLength
+          : typeof event.data === "string"
+            ? event.data.length
+            : 0
+      this.vncWsDiag.bytesReceived += chunkBytes
+      this.vncWsDiag.framesReceived += 1
+    })
+    ws.addEventListener("error", () => {
+      refreshReadyState()
+      this.vncWsDiag.error = "websocket error"
+    })
+    ws.addEventListener("close", event => {
+      refreshReadyState()
+      this.vncWsDiag.closed = true
+      this.vncWsDiag.closeCode = event.code
+      this.vncWsDiag.closeReason = event.reason || null
+    })
+  }
+
+  async probeEmulatorSession(pingPath) {
+    const started = performance.now()
+
+    try {
+      const info = await postJSON(pingPath)
+      return {
+        ok: true,
+        ms: Math.round(performance.now() - started),
+        alive: info?.alive === true,
+        display_ready: info?.display_ready === true
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        ms: Math.round(performance.now() - started),
+        error: error?.message || String(error)
+      }
+    }
+  }
+
+  openVncWebSocket(url) {
+    this.resetVncWsDiag()
+    this.vncWsDiag.url = url
+    this.closeVncSocket()
+
+    return new Promise((resolve, reject) => {
+      let settled = false
+      let ws
+
+      const finish = (error, socket = null) => {
+        if (settled) return
+        settled = true
+        window.clearInterval(stateTimer)
+        window.clearTimeout(openTimer)
+        if (error) {
+          this.closeVncSocket()
+          reject(error)
+        } else {
+          resolve(socket)
+        }
+      }
+
+      try {
+        ws = new WebSocket(url)
+      } catch (error) {
+        finish(new Error(`WebSocket constructor failed: ${error.message}`))
+        return
+      }
+
+      ws.binaryType = "arraybuffer"
+      this.vncSocket = ws
+      this.attachVncWebSocketDiagnostics(ws)
+
+      const stateTimer = window.setInterval(() => {
+        if (!this.vncWsDiag || ws !== this.vncSocket) return
+        this.vncWsDiag.readyState = ws.readyState
+        this.vncWsDiag.readyStateLabel = vncWebSocketReadyStateLabel(ws.readyState)
+      }, 250)
+
+      const openTimer = window.setTimeout(() => {
+        const label = vncWebSocketReadyStateLabel(ws.readyState)
+        finish(
+          new Error(
+            `WebSocket did not open within ${VNC_WS_OPEN_TIMEOUT_MS / 1000}s (${label}); check IDE server logs for emulator websocket proxy errors`
+          )
+        )
+      }, VNC_WS_OPEN_TIMEOUT_MS)
+
+      ws.addEventListener(
+        "open",
+        () => {
+          finish(null, ws)
+        },
+        {once: true}
+      )
+
+      ws.addEventListener(
+        "error",
+        () => {
+          const label = vncWebSocketReadyStateLabel(ws.readyState)
+          finish(new Error(`WebSocket error before open (${label})`))
+        },
+        {once: true}
+      )
+
+      ws.addEventListener(
+        "close",
+        event => {
+          if (ws.readyState === WebSocket.OPEN) return
+          const reason = event.reason ? `: ${event.reason}` : ""
+          finish(
+            new Error(
+              `WebSocket closed before open (code ${event.code}${reason}, state ${vncWebSocketReadyStateLabel(ws.readyState)})`
+            )
+          )
+        },
+        {once: true}
+      )
+    })
+  }
+
   async connectVnc() {
-    if (this.destroyed || !this.session.backend_enabled || !this.canvas) return
+    if (this.destroyed || !this.session?.backend_enabled || !this.canvas) return
     if (this.vncConnecting) return
     this.vncConnecting = true
     if (this.rfb) {
-      this.reconnectingVnc = true
-      this.rfb.disconnect()
+      const previousRfb = this.rfb
+      this.rfb = null
+      this.rfbCanvas = null
+      this.disconnectRfb(previousRfb, {reconnecting: this.displayConnected})
+    }
+    if (this.destroyed || !this.session?.backend_enabled || !this.canvas) {
+      this.vncConnecting = false
+      return
     }
     let RFB
     try {
@@ -446,11 +1093,57 @@ export class EmbeddedEmulatorHost {
       this.vncConnecting = false
       return
     }
-    let rfb
+    const sessionProbe = await this.probeEmulatorSession(this.session.ping_path)
+    this.vncSessionProbe = sessionProbe
+    if (sessionProbe.ok) {
+      this.appendLog(
+        `Embedded emulator session probe ok in ${sessionProbe.ms}ms (alive=${sessionProbe.alive}, display_ready=${sessionProbe.display_ready})`
+      )
+    } else {
+      this.appendLog(`Embedded emulator session probe failed in ${sessionProbe.ms}ms: ${sessionProbe.error}`)
+    }
+    this.appendLog(`Connecting embedded emulator display via Phoenix channel (emulator_vnc:${this.session.id})`)
+    this.resetVncWsDiag()
+    let channel
     try {
-      rfb = new RFB(this.canvas, websocketURL(this.session.vnc_path), {shared: true})
+      channel = await this.joinVncChannel()
+      this.vncChannel = channel
+      this.appendLog("Embedded emulator VNC channel joined")
     } catch (error) {
       this.vncConnecting = false
+      this.appendLog(`Embedded emulator VNC channel failed: ${error.message}`)
+      throw error
+    }
+    if (this.destroyed || !this.session?.backend_enabled || !this.canvas) {
+      this.vncConnecting = false
+      this.closeVncChannel()
+      return
+    }
+    const transport = this.createVncChannelTransport(channel)
+    const bytesReceived = this.vncWsDiag?.bytesReceived || 0
+    const framesReceived = this.vncWsDiag?.framesReceived || 0
+    this.vncWsDiag.url = `phoenix:/socket/emulator_vnc:${this.session.id}`
+    Object.assign(this.vncWsDiag, {
+      readyState: WebSocket.OPEN,
+      readyStateLabel: "OPEN",
+      open: true,
+      closed: false,
+      closeCode: null,
+      closeReason: null,
+      error: null,
+      bytesReceived,
+      framesReceived
+    })
+    let rfb
+    try {
+      rfb = new RFB(this.canvas, transport, {
+        shared: true,
+        credentials: {password: ""}
+      })
+      this.deliverVncJoinInitial(rfb)
+    } catch (error) {
+      this.vncConnecting = false
+      this.closeVncChannel()
       throw error
     }
     this.rfb = rfb
@@ -470,9 +1163,61 @@ export class EmbeddedEmulatorHost {
     })
     // #endregion
     rfb.resizeSession = false
+    const connectTimeout = window.setTimeout(() => {
+      if (this.destroyed || rfb !== this.rfb || this.displayConnected) return
+      const diag = this.vncWsDiag || {}
+      const wsState = diag.readyStateLabel || "unknown"
+      const wsHint = diag.open
+        ? diag.bytesReceived > 0
+          ? `VNC transport received ${diag.bytesReceived} bytes in ${diag.framesReceived} frame(s) but noVNC did not finish the handshake`
+          : this.vncPendingFrames?.length > 0
+            ? `VNC transport has ${this.vncPendingFrames.length} buffered frame(s) waiting for noVNC`
+            : "VNC transport open but no binary frames received from the server"
+        : diag.closed
+          ? `VNC transport closed (code ${diag.closeCode ?? "?"}, state ${wsState})`
+          : diag.error
+            ? `${diag.error} (state ${wsState})`
+            : `VNC transport did not open (state ${wsState})`
+      this.appendLog(
+        `Embedded emulator display connect timed out (no VNC response within ${VNC_CONNECT_TIMEOUT_MS / 1000}s; ${wsHint})`
+      )
+      this.disconnectRfb(rfb, {reconnecting: true})
+      if (this.session && !this.stopping) {
+        this.scheduleVncReconnect("Embedded emulator display timed out; reconnecting...")
+      }
+    }, VNC_CONNECT_TIMEOUT_MS)
+    rfb.addEventListener("credentialsrequired", () => {
+      if (this.destroyed || rfb !== this.rfb) return
+      try {
+        rfb.sendCredentials({password: ""})
+      } catch (error) {
+        this.appendLog(`Embedded emulator display credentials failed: ${error.message}`)
+      }
+    })
+    rfb.addEventListener("securityfailure", event => {
+      if (this.destroyed || rfb !== this.rfb) return
+      window.clearTimeout(connectTimeout)
+      const reason = event?.detail?.reason || "security failure"
+      this.appendLog(`Embedded emulator display security failure: ${reason}`)
+      this.disconnectRfb(rfb, {reconnecting: true})
+      if (this.session && !this.stopping) {
+        this.scheduleVncReconnect(`Embedded emulator display security failure; reconnecting...`)
+      }
+    })
+    rfb.addEventListener("connectfailed", event => {
+      if (this.destroyed || rfb !== this.rfb) return
+      window.clearTimeout(connectTimeout)
+      const reason = event?.detail?.reason || "connect failed"
+      this.appendLog(`Embedded emulator display connect failed: ${reason}`)
+      this.disconnectRfb(rfb, {reconnecting: true})
+      if (this.session && !this.stopping) {
+        this.scheduleVncReconnect(`Embedded emulator display connect failed; reconnecting...`)
+      }
+    })
     rfb.addEventListener("connect", () => {
       if (this.destroyed) return
       if (rfb !== this.rfb) return
+      window.clearTimeout(connectTimeout)
       this.stopVncReconnect()
       this.vncReconnectAttempts = 0
       // #region agent log
@@ -489,7 +1234,13 @@ export class EmbeddedEmulatorHost {
       this.scheduleVncViewportConfig(rfb, "connect_3s", 3000)
       this.scheduleVncCanvasSample("after_connect")
       this.scheduleVncCanvasSample("after_connect_1s", 1000)
-      if (this.session && !this.stopping) this.setStatus("Embedded emulator display connected")
+      if (this.session && !this.stopping) {
+        this.displayConnected = true
+        this.setStatus("Embedded emulator display connected")
+        this.stopPingAfterDisplayTimer()
+        if (!this.destroyed && !this.pingTimer) this.startPing()
+        this.connectPhone()
+      }
     })
     rfb.addEventListener("framebufferresize", () => {
       if (this.destroyed) return
@@ -499,6 +1250,7 @@ export class EmbeddedEmulatorHost {
     rfb.addEventListener("disconnect", event => {
       if (this.destroyed) return
       if (rfb !== this.rfb) return
+      window.clearTimeout(connectTimeout)
       if (this.reconnectingVnc) return
       // #region agent log
       agentDebugLog("initial", "H19,H20", "embedded_emulator.js:vnc:disconnect", "noVNC disconnected", {
@@ -508,7 +1260,14 @@ export class EmbeddedEmulatorHost {
         stopping: this.stopping
       })
       // #endregion
-      if (this.session && !this.stopping) this.scheduleVncReconnect("Embedded emulator display disconnected; reconnecting...")
+      const detail = event?.detail
+      const status = detail?.status
+      const clean = detail?.clean
+      const reason = clean ? "clean disconnect" : `disconnect (status ${status ?? "?"})`
+      if (this.session && !this.stopping) {
+        this.appendLog(`Embedded emulator display ${reason}`)
+        this.scheduleVncReconnect("Embedded emulator display disconnected; reconnecting...")
+      }
     })
   }
 
@@ -521,13 +1280,13 @@ export class EmbeddedEmulatorHost {
     if (document.visibilityState === "hidden") return
     if (this.rfb && this.rfbCanvas === this.canvas) return
     if (this.vncReconnectTimer || this.reconnectingVnc || this.vncConnecting) return
-    this.scheduleVncReconnect("Embedded emulator display unavailable; reconnecting...")
+    void this.connectDisplay()
   }
 
   scheduleVncReconnect(message) {
     if (this.destroyed || !this.session?.backend_enabled || this.stopping || this.vncReconnectTimer) return
     this.setStatus(message)
-    const delay = Math.min(500 * 2 ** this.vncReconnectAttempts, 5_000)
+    const delay = Math.min(VNC_RECONNECT_BASE_MS * 2 ** this.vncReconnectAttempts, VNC_RECONNECT_MAX_MS)
     // #region agent log
     agentDebugLog("initial", "H19,H20", "embedded_emulator.js:vnc:reconnect_scheduled", "scheduled noVNC reconnect", {
       sessionId: this.session?.id,
@@ -539,7 +1298,7 @@ export class EmbeddedEmulatorHost {
     this.vncReconnectAttempts += 1
     this.vncReconnectTimer = window.setTimeout(() => {
       this.vncReconnectTimer = null
-      this.connectVnc().catch(error => {
+      this.connectDisplay().catch(error => {
         this.reconnectingVnc = false
         if (this.session && !this.stopping && !this.destroyed) this.scheduleVncReconnect(`Embedded emulator display reconnect failed: ${error.message}`)
       })
@@ -675,7 +1434,7 @@ export class EmbeddedEmulatorHost {
   }
 
   connectPhone() {
-    if (this.destroyed || !this.session.backend_enabled) return
+    if (this.destroyed || !this.session?.backend_enabled) return
     const oldPhoneSocket = this.phoneSocket
     this.phoneBridgeActive = true
     const socket = new WebSocket(websocketURL(this.session.phone_path))
@@ -689,14 +1448,20 @@ export class EmbeddedEmulatorHost {
     socket.addEventListener("open", () => {
       if (this.destroyed || socket !== this.phoneSocket) return
       this.phoneOpenedAt = Date.now()
+      this.phoneBridgeReady = true
       this.appendLog("phone websocket open")
       if (this.buttonState !== 0) this.sendQemu(QEMU.button, [this.buttonState])
     })
-    socket.addEventListener("close", () => {
+    socket.addEventListener("error", () => {
       if (this.destroyed || socket !== this.phoneSocket) return
-      this.appendLog("phone websocket closed")
+      this.appendLog("phone websocket error")
+    })
+    socket.addEventListener("close", event => {
+      if (this.destroyed || socket !== this.phoneSocket) return
+      this.appendLog(`phone websocket closed (code ${event.code || "?"})`)
       this.phoneBridgeActive = false
-      if (this.session && !this.stopping && !this.installing) {
+      this.phoneBridgeReady = false
+      if (this.session && !this.stopping && !this.installing && this.phoneOpenedAt > 0) {
         this.endSession("Embedded emulator phone bridge disconnected")
       }
     })
@@ -752,7 +1517,8 @@ export class EmbeddedEmulatorHost {
     }
 
     this.setStatus("Installing PBW on embedded emulator via fallback installer...")
-    const response = await postJSON(this.session.install_path)
+    this.appendLog("native PBW install started (this can take a few minutes on large apps)")
+    const response = await postJSON(this.session.install_path, {}, {timeoutMs: 300_000})
     if (this.session?.id !== installSessionId) return
     const parts = response.result?.parts?.map(part => part.kind).join(", ")
     this.appInstalled = true
@@ -765,7 +1531,7 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  async ensurePhoneBridge(timeoutMs = 10_000) {
+  async ensurePhoneBridge(timeoutMs = 35_000) {
     if (!this.session?.backend_enabled) return false
     if (this.phoneSocket?.readyState !== WebSocket.OPEN) {
       this.connectPhone()
@@ -774,11 +1540,12 @@ export class EmbeddedEmulatorHost {
     return true
   }
 
-  waitForPhoneBridge(timeoutMs = 10_000) {
+  waitForPhoneBridge(timeoutMs = 35_000) {
     if (this.phoneSocket?.readyState === WebSocket.OPEN) return Promise.resolve()
 
     return new Promise((resolve, reject) => {
       const startedAt = Date.now()
+      let lastReconnectAt = 0
       const check = () => {
         if (!this.session) {
           reject(new Error("Emulator session ended before phone bridge opened"))
@@ -787,6 +1554,11 @@ export class EmbeddedEmulatorHost {
         } else if (Date.now() - startedAt >= timeoutMs) {
           reject(new Error("Timed out waiting for phone bridge"))
         } else {
+          const state = this.phoneSocket?.readyState
+          if ((state === WebSocket.CLOSED || state === WebSocket.CLOSING) && Date.now() - lastReconnectAt >= 400) {
+            lastReconnectAt = Date.now()
+            this.connectPhone()
+          }
           window.setTimeout(check, 100)
         }
       }
@@ -966,6 +1738,35 @@ export class EmbeddedEmulatorHost {
     const bit = 1 << BUTTONS[name]
     this.buttonState = down ? (this.buttonState | bit) : (this.buttonState & ~bit)
     this.sendQemu(QEMU.button, [this.buttonState])
+  }
+
+  bindControl(element, eventName, handler) {
+    if (!element || this.boundControlElements.has(element)) return
+    this.boundControlElements.add(element)
+    element.addEventListener(eventName, handler)
+  }
+
+  bindControlButtons() {
+    this.launchButton = this.el.querySelector("[data-emulator-launch]")
+    this.installButton = this.el.querySelector("[data-emulator-install]")
+    this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
+    this.screenshotButton = this.el.querySelector("[data-emulator-screenshot]")
+    this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
+    this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
+    this.configPanel = this.el.querySelector("[data-emulator-config-panel]")
+    this.configFrame = this.el.querySelector("[data-emulator-config-frame]")
+
+    if (this.configPanel && !this.boundControlElements.has(this.configPanel)) {
+      this.boundControlElements.add(this.configPanel)
+      this.configPanel.addEventListener("click", event => {
+        if (event.target === this.configPanel) this.cancelConfig()
+      })
+    }
+
+    if (this.configFrame && !this.boundControlElements.has(this.configFrame)) {
+      this.boundControlElements.add(this.configFrame)
+      this.configFrame.addEventListener("load", () => this.maybeHandleConfigReturn(this.configFrame.contentWindow))
+    }
   }
 
   bindEmulatorButtons() {
@@ -2049,6 +2850,165 @@ export class EmbeddedEmulatorHost {
     return row
   }
 
+  async copyFeedbackReport() {
+    const lines = [
+      "# Elm Pebble embedded emulator — feedback report",
+      "",
+      `Generated: ${new Date().toISOString()}`,
+      `UI build: ${EMBEDDED_EMULATOR_UI_BUILD}`,
+      "",
+      "## Environment",
+      `Page: ${window.location.href}`,
+      `User agent: ${navigator.userAgent}`,
+      `Secure context: ${window.isSecureContext}`,
+      `Viewport: ${window.innerWidth}x${window.innerHeight}`,
+      "",
+      "## Project",
+      `Slug: ${this.el.dataset.projectSlug || "(missing)"}`,
+      `Platform: ${this.el.dataset.emulatorTarget || "(missing)"}`,
+      `Screen (page): ${this.el.dataset.emulatorScreenWidth || "?"}x${this.el.dataset.emulatorScreenHeight || "?"}`,
+      `Phone companion in project: ${this.el.dataset.emulatorHasPhoneCompanion || "?"}`,
+      "",
+      "## Runtime dependencies (IDE check)",
+      this.formatInstallationStatus(),
+      "",
+      "## Client state",
+      this.formatClientState(),
+      ""
+    ]
+
+    if (this.session?.ping_path) {
+      lines.push("## Session (live ping)")
+      try {
+        const info = await postJSON(this.session.ping_path)
+        lines.push(JSON.stringify(this.redactSession(info), null, 2))
+      } catch (error) {
+        lines.push(`Ping failed: ${error.message}`)
+      }
+      lines.push("")
+    } else if (this.session) {
+      lines.push("## Session (from launch; ping unavailable)")
+      lines.push(JSON.stringify(this.redactSession(this.session), null, 2))
+      lines.push("")
+    } else {
+      lines.push("## Session")
+      lines.push("(no active session)")
+      lines.push("")
+    }
+
+    lines.push("## Event log (oldest first)")
+    lines.push(this.logLines.length > 0 ? [...this.logLines].reverse().join("\n") : "(empty)")
+    lines.push("")
+    lines.push("---")
+    lines.push("Paste this report when filing feedback or a bug report.")
+
+    const text = lines.join("\n")
+
+    try {
+      await navigator.clipboard.writeText(text)
+      if (this.status) this.status.textContent = "Copied emulator feedback report to clipboard"
+      this.appendLog("Copied emulator feedback report to clipboard", {
+        flushTransfers: false,
+        flushSystemLogs: false
+      })
+    } catch (error) {
+      this.setStatus(`Could not copy feedback report: ${error.message}`)
+    }
+  }
+
+  formatInstallationStatus() {
+    const raw = this.el.dataset.emulatorInstallationStatus
+    if (!raw) return "(installation status not available on page)"
+
+    try {
+      const status = JSON.parse(raw)
+      const lines = [`Status: ${status.status ?? "unknown"}`, `Platform: ${status.platform ?? "?"}`]
+
+      if (status.error) lines.push(`Error: ${status.error}`)
+
+      if (Array.isArray(status.missing) && status.missing.length > 0) {
+        lines.push("Missing:")
+        for (const item of status.missing) {
+          const label = item?.label || item?.id || JSON.stringify(item)
+          const detail = item?.detail ? ` (${item.detail})` : ""
+          lines.push(`  - ${label}${detail}`)
+        }
+      } else if (status.status === "ok") {
+        lines.push("All checked dependencies present.")
+      }
+
+      if (Array.isArray(status.components) && status.components.length > 0) {
+        lines.push("Components:")
+        for (const component of status.components) {
+          const label = component?.label || component?.id || "component"
+          lines.push(`  - ${label}: ${component?.status ?? "?"} — ${component?.detail ?? ""}`)
+        }
+      }
+
+      return lines.join("\n")
+    } catch (_error) {
+      return `(could not parse installation status JSON: ${raw.slice(0, 200)})`
+    }
+  }
+
+  formatVncSessionProbeState() {
+    const probe = this.vncSessionProbe
+    if (!probe) return "(none)"
+    if (!probe.ok) return `failed in ${probe.ms}ms (${probe.error})`
+    return `ok in ${probe.ms}ms (alive=${probe.alive}, display_ready=${probe.display_ready})`
+  }
+
+  formatVncWebSocketState() {
+    const diag = this.vncWsDiag
+    if (!diag) return "(none)"
+    const state = diag.readyStateLabel || "unknown"
+    if (diag.open) {
+      return `${state}, ${diag.bytesReceived} bytes in ${diag.framesReceived} frame(s)`
+    }
+    if (diag.closed) {
+      return `${state} (code ${diag.closeCode ?? "?"}, reason ${diag.closeReason || "(none)"})`
+    }
+    if (diag.error) return `${diag.error} (${state})`
+    return state
+  }
+
+  formatClientState() {
+    const screen = this.expectedScreenSize()
+    const vncBacking = this.readVncBackingSize()
+    const phoneState =
+      this.phoneSocket == null
+        ? "none"
+        : ["connecting", "open", "closing", "closed"][this.phoneSocket.readyState] || String(this.phoneSocket.readyState)
+
+    return [
+      `Status line: ${this.currentStatus || "(none)"}`,
+      `Launching: ${this.launching}`,
+      `Stopping: ${this.stopping}`,
+      `Installing: ${this.installing}`,
+      `Session ended: ${this.sessionEnded}`,
+      `Session alive (ping): ${this.sessionAlive}`,
+      `Display connected: ${this.displayConnected}`,
+      `Phone bridge ready: ${this.phoneBridgeReady}`,
+      `Phone websocket: ${phoneState}`,
+      `VNC connecting: ${this.vncConnecting}`,
+      `VNC reconnect attempts: ${this.vncReconnectAttempts}`,
+      `VNC transport: ${this.formatVncWebSocketState()}`,
+      `VNC session probe: ${this.formatVncSessionProbeState()}`,
+      `App installed: ${this.appInstalled}`,
+      `Expected screen: ${screen.width}x${screen.height}`,
+      `VNC canvas backing: ${vncBacking ? `${vncBacking.width}x${vncBacking.height}` : "(none)"}`,
+      `Storage keys: ${this.storageEntries.size}`,
+      `Data log entries: ${this.dataLogEntries?.length ?? 0}`
+    ].join("\n")
+  }
+
+  redactSession(session) {
+    if (!session || typeof session !== "object") return session
+    const copy = {...session}
+    if (copy.token) copy.token = "(redacted)"
+    return copy
+  }
+
   async captureScreenshot() {
     if (!this.canvas) return
     const canvas = this.canvas.querySelector("canvas")
@@ -2083,6 +3043,28 @@ export class EmbeddedEmulatorHost {
     }
   }
 
+  schedulePingAfterDisplayConnect() {
+    this.stopPingAfterDisplayTimer()
+    if (!this.session || this.destroyed) return
+
+    const start = () => {
+      this.pingAfterDisplayTimer = null
+      if (this.session && !this.destroyed) this.startPing()
+    }
+
+    if (this.displayConnected) {
+      start()
+      return
+    }
+
+    this.pingAfterDisplayTimer = window.setTimeout(start, 45_000)
+  }
+
+  stopPingAfterDisplayTimer() {
+    if (this.pingAfterDisplayTimer) window.clearTimeout(this.pingAfterDisplayTimer)
+    this.pingAfterDisplayTimer = null
+  }
+
   startPing() {
     this.stopPing()
     if (!this.session || this.destroyed) return
@@ -2102,11 +3084,15 @@ export class EmbeddedEmulatorHost {
     try {
       const response = await postJSON(session.ping_path)
       if (this.session?.id !== session.id || this.destroyed) return
-      if (response?.alive === false && !this.installing) {
+      if (response?.alive === true) {
+        this.sessionAlive = true
+      } else if (!this.installing) {
+        this.sessionAlive = false
         this.endSession("Embedded emulator is no longer running")
       }
     } catch (_error) {
       if (this.session?.id === session.id && !this.destroyed && !this.installing) {
+        this.sessionAlive = false
         this.endSession("Embedded emulator is no longer reachable")
       }
     }
@@ -2177,7 +3163,12 @@ export class EmbeddedEmulatorHost {
     if (options.flushTransfers !== false) this.flushPutBytesSummary()
     if (options.flushSystemLogs !== false) this.flushSystemLogSummary()
     this.observeStorageLog(message)
-    this.logLines.unshift(`${new Date().toLocaleTimeString()} ${message}`)
+    const stamp = `${new Date().toLocaleTimeString()} ${message}`
+    const line =
+      this.logLines.length === 0 && message.includes("Launching embedded emulator")
+        ? `${stamp} [ui ${EMBEDDED_EMULATOR_UI_BUILD}]`
+        : stamp
+    this.logLines.unshift(line)
     this.logLines = this.logLines.slice(0, MAX_LOG_LINES)
     this.scheduleLogFlush()
     this.notifyStateChanged()
@@ -2207,17 +3198,23 @@ export class EmbeddedEmulatorHost {
   endSession(message) {
     if (this.sessionEnded) return
     this.sessionEnded = true
+    this.sessionAlive = false
+    this.displayConnected = false
+    this.phoneBridgeReady = false
     const oldPhoneSocket = this.phoneSocket
     this.session = null
+    this.launching = false
     this.stopping = false
     this.installing = false
     this.pendingPypkjsInstall = null
     this.phoneBridgeActive = false
+    this.stopPingAfterDisplayTimer()
     this.stopPing()
     this.stopVncReconnect()
     this.stopConfigPopupPolling()
     this.hideConfigPage()
     if (this.rfb) {
+      this.reconnectingVnc = true
       this.rfb.disconnect()
       this.rfb = null
     }
@@ -2247,6 +3244,13 @@ export class EmbeddedEmulatorHost {
   }
 
   updateControlButtons() {
+    this.launchButton = this.el.querySelector("[data-emulator-launch]")
+    this.installButton = this.el.querySelector("[data-emulator-install]")
+    this.preferencesButton = this.el.querySelector("[data-emulator-preferences]")
+    this.screenshotButton = this.el.querySelector("[data-emulator-screenshot]")
+    this.storageResetButton = this.el.querySelector("[data-emulator-storage-reset]")
+    this.storageAddButton = this.el.querySelector("[data-emulator-storage-add]")
+
     const hasSession = !!this.session
     this.setButtonDisabled(this.launchButton, this.launching || this.stopping)
     this.setButtonDisabled(this.installButton, this.launching || this.installing || this.stopping || !this.installReady())
@@ -2266,7 +3270,14 @@ export class EmbeddedEmulatorHost {
   }
 
   installReady() {
-    return !!(this.session?.backend_enabled && this.session?.install_path && !this.sessionEnded)
+    return !!(
+      this.session?.backend_enabled &&
+      this.session?.install_path &&
+      !this.sessionEnded &&
+      this.sessionAlive &&
+      !this.launching &&
+      !this.stopping
+    )
   }
 
   companionPreferencesReady() {

@@ -113,7 +113,7 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
         {:noreply, %{state | pypkjs: socket, pypkjs_buffer: <<>>}}
 
       {:error, :timeout} ->
-        Process.send_after(self(), :accept_proxy, 100)
+        Process.send_after(self(), :accept_proxy, 50)
         {:noreply, state}
 
       {:error, reason} ->

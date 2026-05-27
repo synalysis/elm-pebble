@@ -236,6 +236,7 @@ siteNavItems currentRoute =
     , navHref "/packages" "Docs"
     , navLink currentRoute Route.Ide "IDE"
     , navLink currentRoute Route.Articles__WhyElmForPebble "Why Elm"
+    , navLink currentRoute Route.FAQ "FAQ"
     , navLink currentRoute Route.Source "Source"
     ]
 

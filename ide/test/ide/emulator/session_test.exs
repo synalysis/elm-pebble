@@ -24,6 +24,7 @@ defmodule Ide.Emulator.SessionTest do
       assert info.app_uuid == nil
       assert "button_select" in info.controls
       assert "battery" in info.controls
+      assert info.display_ready == false
 
       assert :ok = Emulator.kill(info.id)
     end)
@@ -129,6 +130,26 @@ defmodule Ide.Emulator.SessionTest do
     end)
   end
 
+  test "ping does not stop the session when health check fails" do
+    EmulatorSessionEnv.run_live(fn ->
+      assert {:ok, info} =
+               EmulatorLaunch.launch(
+                 project_slug: "ping-health-test",
+                 platform: "diorite",
+                 artifact_path: nil
+               )
+
+      assert {:ok, session_pid} = Emulator.lookup(info.id)
+      _previous = :sys.replace_state(session_pid, fn state -> %{state | qemu_pid: nil} end)
+
+      assert {:error, {:child_not_running, :qemu}} = Session.health_check(session_pid)
+      assert {:error, {:child_not_running, :qemu}} = Session.ping(session_pid)
+      assert Process.alive?(session_pid)
+      assert {:ok, ^session_pid} = Emulator.lookup(info.id)
+      assert :ok = Emulator.kill(info.id)
+    end)
+  end
+
   test "ping reports an unresponsive session without blocking the caller" do
     EmulatorSessionEnv.run(fn ->
       assert {:ok, info} =
@@ -200,12 +221,24 @@ defmodule Ide.Emulator.SessionTest do
     refute "-audio" in args
   end
 
-  test "companion launches wait for bluetooth ready console marker" do
+  test "emulator launch waits for bluetooth ready console marker before pypkjs" do
     source = File.read!("lib/ide/emulator/session.ex")
 
-    assert source =~ ~S/qemu_boot_markers(%{has_phone_companion: true})/
-    assert source =~ ~S/qemu_boot_markers(_state)/
-    assert source =~ ~S/"Ready for communication"/
+    assert source =~ ~S/qemu_boot_markers(_state), do: ["Ready for communication"]/
+    refute source =~ "maybe_wait_for_install_ready"
+    assert source =~ ~S/ensure_min_time_since_boot_for_install/
+    assert source =~ "Do not open a second console session for the same marker"
+    refute source =~ ~S/<SDK Home>/
+    assert source =~ ~S/pypkjs unavailable/
+  end
+
+  test "launch waits for VNC RFB banner after TCP port is open" do
+    source = File.read!("lib/ide/emulator/session.ex")
+
+    assert source =~ "capture_vnc_rfb_connection"
+    assert source =~ "VncReady.capture_banner_open"
+    assert source =~ "vnc_banner_ready: true"
+    assert source =~ "vnc_banner_ready: false"
   end
 
   test "pypkjs arguments include qemu bridge, websocket port, and persist dir" do
@@ -294,6 +327,7 @@ defmodule Ide.Emulator.SessionTest do
     assert source =~ "local_port_call_timeout(:phone)"
     assert source =~ "pypkjs_ready_timeout_ms"
     assert source =~ "maybe_start_pypkjs_if_needed"
+    refute source =~ "maybe_start_pypkjs_if_needed(%{has_phone_companion: true}"
   end
 
   test "companion installs keep pypkjs alive for phone bridge" do

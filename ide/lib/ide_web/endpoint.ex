@@ -17,7 +17,7 @@ defmodule IdeWeb.Endpoint do
 
   socket "/socket", IdeWeb.UserSocket,
     websocket: true,
-    longpoll: false
+    longpoll: true
 
   # Serve at "/" the static files from "priv/static" directory.
   #
@@ -27,7 +27,9 @@ defmodule IdeWeb.Endpoint do
     at: "/",
     from: :ide,
     gzip: false,
-    only: IdeWeb.static_paths()
+    only: IdeWeb.static_paths(),
+    # Required when workspace pages set COEP: require-corp (WASM + embedded noVNC chunks).
+    headers: %{"cross-origin-resource-policy" => "same-origin"}
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.

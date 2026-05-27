@@ -22,4 +22,11 @@ defmodule Ide.Emulator.SessionInstallPrepareTest do
              bt_port: 12_345
            })
   end
+
+  test "install pacing uses smaller PutBytes chunks on snowy-class platforms" do
+    source = File.read!("lib/ide/emulator/session.ex")
+
+    assert source =~ ~S/platform_putbytes_pacing(platform) when platform in ["emery", "flint", "gabbro"]/
+    assert source =~ "chunk_size: config(:pbw_chunk_size, 256)"
+  end
 end

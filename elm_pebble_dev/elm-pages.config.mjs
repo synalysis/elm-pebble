@@ -31,7 +31,19 @@ export default {
     media.addEventListener("change", applyTheme);
   })();
 </script>
-<script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="fzpmCkhiUf" data-description="Support me on Buy me a coffee!" data-message="" data-color="#5F7FFF" data-position="Right" data-x_margin="18" data-y_margin="18"></script>
+    <style>
+      @media (max-width: 47.99rem) { header .site-header-desktop-nav { display: none !important; } }
+      @media (min-width: 48rem) { header .site-header-mobile-menu { display: none !important; } }
+      .site-header-mobile-menu details:not([open]) > nav { display: none !important; }
+      .site-hero-layout { display: flex !important; flex-direction: column !important; width: 100%; }
+      .site-hero-intro { display: flex !important; flex-flow: row nowrap !important; align-items: flex-start !important; gap: 1.5rem; width: 100%; }
+      .site-hero-headlines { flex: 1 1 0% !important; min-width: 0; }
+      .site-hero-photo { flex: 0 0 14rem !important; width: 14rem !important; max-width: 14rem !important; overflow: hidden; }
+      .site-hero-photo picture, .site-hero-photo img { display: block; width: 14rem !important; max-width: 14rem !important; height: auto !important; }
+      header ~ main section picture img[src*="pebble-elm"] { display: block !important; width: 14rem !important; max-width: 14rem !important; height: auto !important; }
+    </style>
+    <script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="fzpmCkhiUf" data-description="Support me on Buy me a coffee!" data-message="" data-color="#5F7FFF" data-position="Right" data-x_margin="18" data-y_margin="18"></script>
+    <script src="https://sdk.feedback.one/v0/core.min.js" data-project-id="019e3269-74e1-7a61-8e62-27959f5d5442" defer></script>
 `;
   },
   preloadTagForFile(file) {

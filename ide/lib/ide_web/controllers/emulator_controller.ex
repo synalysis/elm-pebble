@@ -1,6 +1,8 @@
 defmodule IdeWeb.EmulatorController do
   use IdeWeb, :controller
 
+  require Logger
+
   alias Ide.Emulator
   alias Ide.PebblePreferences
   alias Ide.Projects
@@ -312,6 +314,17 @@ defmodule IdeWeb.EmulatorController do
   def ws_phone(conn, %{"id" => id}), do: proxy(conn, id, :phone)
 
   defp proxy(conn, id, kind) do
+    if websocket_upgrade?(conn) do
+      do_proxy(conn, id, kind)
+    else
+      conn
+      |> put_status(426)
+      |> json(%{error: "WebSocket upgrade required"})
+      |> halt()
+    end
+  end
+
+  defp do_proxy(conn, id, kind) do
     # region agent log
     Ide.AgentDebugLog.log(
       "initial",
@@ -353,6 +366,10 @@ defmodule IdeWeb.EmulatorController do
         conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
 
       {:error, reason} ->
+        Logger.warning(
+          "embedded emulator websocket proxy failed id=#{id} kind=#{kind}: #{inspect(reason)}"
+        )
+
         # region agent log
         Ide.AgentDebugLog.log(
           "initial",
@@ -369,6 +386,13 @@ defmodule IdeWeb.EmulatorController do
         # endregion
         conn |> put_status(:bad_request) |> json(%{error: inspect(reason)})
     end
+  end
+
+  defp websocket_upgrade?(conn) do
+    conn.method == "GET" and
+      Enum.any?(get_req_header(conn, "upgrade"), fn value ->
+        value |> String.downcase() |> String.contains?("websocket")
+      end)
   end
 
   defp proxy_target(%{backend_enabled: false}, _kind),
@@ -434,6 +458,25 @@ defmodule IdeWeb.EmulatorController do
 
   defp install_error_message(:embedded_protocol_router_not_started),
     do: "Embedded emulator protocol router is not running."
+
+  defp install_error_message({:install_ready_timeout, marker, _tail}) do
+    "Emulator did not reach “#{marker}” before install. Stop and launch the emulator again, then wait a few seconds before installing."
+  end
+
+  defp install_error_message({:putbytes_failed, %{phase: phase, kind: kind}, :timeout}) do
+    "PutBytes timed out during #{phase} (#{kind}). Stop and launch the emulator again, or wait a few seconds after launch before installing."
+  end
+
+  defp install_error_message({:putbytes_failed, %{phase: phase, kind: kind}, {:timeout, _}}) do
+    "PutBytes timed out during #{phase} (#{kind}). Stop and launch the emulator again, or wait a few seconds after launch before installing."
+  end
+
+  defp install_error_message({:putbytes_failed, %{phase: phase, kind: kind}, {:nack, _cookie}}) do
+    "PutBytes was rejected during #{phase} (#{kind}). Stop and launch the emulator, then try installing again."
+  end
+
+  defp install_error_message(:emulator_session_unresponsive),
+    do: "Embedded emulator session did not respond during install (it may still be uploading). Try again or relaunch the emulator."
 
   defp install_error_message(reason), do: inspect(reason)
 end

@@ -5,11 +5,24 @@ defmodule Ide.Emulator.Session do
 
   require Logger
 
-  alias Ide.Emulator.{PBW, PBWInstaller, SdkImages, SlotLimiter, Types}
+  alias Ide.Emulator.{PBW, PBWInstaller, SdkImages, SlotLimiter, Types, VncReady}
   alias Ide.Emulator.PebbleProtocol.Router
   alias Ide.WatchModels
 
   @default_idle_timeout_ms 5 * 60 * 1000
+
+  # Extra delay before reuse-install when launch already passed qemu_boot_markers.
+  @default_install_min_ms_after_boot_by_platform %{
+    "emery" => 8_000,
+    "flint" => 6_000,
+    "gabbro" => 6_000
+  }
+
+  @default_install_reuse_settle_extra_by_platform %{
+    "emery" => 500,
+    "flint" => 500,
+    "gabbro" => 500
+  }
 
   @qemu_control_accel 11
   @qemu_control_compass 12
@@ -37,7 +50,11 @@ defmodule Ide.Emulator.Session do
           persist_dir: String.t() | nil,
           last_ping_ms: integer(),
           last_boot_ms: integer(),
-          idle_timeout_ms: pos_integer()
+          idle_timeout_ms: pos_integer(),
+          vnc_banner_ready: boolean(),
+          vnc_rfb_banner: binary() | nil,
+          vnc_tcp: port() | nil,
+          vnc_tcp_buffer: binary()
         }
 
   @spec generate_id() :: String.t()
@@ -98,6 +115,39 @@ defmodule Ide.Emulator.Session do
   @spec local_port(pid(), :vnc | :phone) :: pos_integer()
   def local_port(pid, kind) do
     GenServer.call(pid, {:local_port, kind}, local_port_call_timeout(kind))
+  end
+
+  @spec vnc_rfb_banner(pid()) :: {:ok, binary()} | {:error, :not_ready}
+  def vnc_rfb_banner(pid) do
+    GenServer.call(pid, :vnc_rfb_banner, 5_000)
+  catch
+    :exit, _ -> {:error, :not_ready}
+  end
+
+  @spec claim_vnc_tcp(pid()) :: {:ok, port(), binary()} | {:error, term()}
+  def claim_vnc_tcp(pid) do
+    GenServer.call(pid, :claim_vnc_tcp, 5_000)
+  catch
+    :exit, reason -> {:error, reason}
+  end
+
+  @spec return_vnc_tcp(pid(), port()) :: :ok
+  def return_vnc_tcp(pid, tcp) when is_port(tcp) do
+    GenServer.call(pid, {:return_vnc_tcp, tcp}, 5_000)
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc """
+  Closes the session-held VNC TCP connection (if any) so a new client can connect.
+
+  The cached RFB banner remains available via `vnc_rfb_banner/1`.
+  """
+  @spec discard_vnc_tcp(pid()) :: :ok
+  def discard_vnc_tcp(pid) do
+    GenServer.call(pid, :discard_vnc_tcp, 5_000)
+  catch
+    :exit, _ -> :ok
   end
 
   @spec control(pid(), non_neg_integer(), binary()) :: :ok | {:error, Types.session_error()}
@@ -197,12 +247,42 @@ defmodule Ide.Emulator.Session do
   end
 
   defp install_with_router(context) do
-    PBWInstaller.install(context.protocol_router_pid, context.artifact_path, context.platform,
-      timeout_ms: config(:pbw_request_timeout_ms, 45_000),
+    PBWInstaller.install(
+      context.protocol_router_pid,
+      context.artifact_path,
+      context.platform,
+      install_pacing_opts(context.platform)
+    )
+  end
+
+  defp install_pacing_opts(platform) do
+    base = [
+      timeout_ms: config(:pbw_request_timeout_ms, 60_000),
+      install_timeout_ms: config(:pbw_install_timeout_ms, 180_000),
       install_retries: config(:pbw_install_retries, 3),
       install_retry_delay_ms: config(:pbw_install_retry_delay_ms, 2_000),
       post_install_probe_timeout_ms: 1_000
-    )
+    ]
+
+    Keyword.merge(base, platform_putbytes_pacing(platform))
+  end
+
+  # Larger PBWs on snowy-class QEMU machines need smaller PutBytes chunks and more
+  # time between chunks so the Bluetooth stack keeps up during the binary phase (~5% UI).
+  defp platform_putbytes_pacing(platform) when platform in ["emery", "flint", "gabbro"] do
+    [
+      chunk_size: config(:pbw_chunk_size, 256),
+      chunk_delay_ms: config(:pbw_chunk_delay_ms, 20),
+      part_delay_ms: config(:pbw_part_delay_ms, 300),
+      putbytes_retries: config(:pbw_putbytes_retries, 3)
+    ]
+  end
+
+  defp platform_putbytes_pacing(_platform) do
+    [
+      chunk_size: config(:pbw_chunk_size, 500),
+      chunk_delay_ms: config(:pbw_chunk_delay_ms, 10)
+    ]
   end
 
   defp capture_console_after_install(console_port) do
@@ -479,6 +559,38 @@ defmodule Ide.Emulator.Session do
 
   def handle_call({:local_port, :vnc}, _from, state), do: {:reply, state.vnc_port, state}
 
+  def handle_call(:vnc_rfb_banner, _from, %{vnc_rfb_banner: banner} = state) when is_binary(banner) do
+    {:reply, {:ok, banner}, state}
+  end
+
+  def handle_call(:vnc_rfb_banner, _from, state), do: {:reply, {:error, :not_ready}, state}
+
+  def handle_call(:claim_vnc_tcp, _from, %{vnc_tcp: tcp} = state) when is_port(tcp) do
+    buffer = Map.get(state, :vnc_tcp_buffer, <<>>)
+    {:reply, {:ok, tcp, buffer}, %{state | vnc_tcp: nil, vnc_tcp_buffer: <<>>}}
+  end
+
+  def handle_call(:claim_vnc_tcp, _from, state),
+    do: {:reply, {:error, :vnc_tcp_unavailable}, state}
+
+  def handle_call({:return_vnc_tcp, tcp}, _from, %{vnc_tcp: nil} = state) when is_port(tcp) do
+    :inet.setopts(tcp, active: true, nodelay: true, packet: :raw)
+
+    {:reply, :ok, %{state | vnc_tcp: tcp}}
+  end
+
+  def handle_call({:return_vnc_tcp, tcp}, _from, state) when is_port(tcp) do
+    :gen_tcp.close(tcp)
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:discard_vnc_tcp, _from, %{vnc_tcp: tcp} = state) when is_port(tcp) do
+    :gen_tcp.close(tcp)
+    {:reply, :ok, %{state | vnc_tcp: nil, vnc_tcp_buffer: <<>>}}
+  end
+
+  def handle_call(:discard_vnc_tcp, _from, state), do: {:reply, :ok, state}
+
   def handle_call({:local_port, :phone}, _from, %{pypkjs_pid: nil} = state) do
     case maybe_start_pypkjs(state) do
       {:ok, state} ->
@@ -629,7 +741,7 @@ defmodule Ide.Emulator.Session do
         {:reply, {:ok, public_info(state)}, state}
 
       {:error, reason} ->
-        {:stop, {:shutdown, reason}, {:error, reason}, state}
+        {:reply, {:error, reason}, state}
     end
   end
 
@@ -638,10 +750,43 @@ defmodule Ide.Emulator.Session do
 
     with {:ok, state} <- ensure_protocol_router(state),
          {:ok, state} <- maybe_start_pypkjs(state) do
-      settle_ms = config(:install_reuse_settle_ms, 500)
+      :ok = ensure_min_time_since_boot_for_install(state)
+      settle_ms = install_reuse_settle_ms(state)
       if settle_ms > 0, do: Process.sleep(settle_ms)
       {:ok, state}
     end
+  end
+
+  defp ensure_min_time_since_boot_for_install(state) do
+    required = install_min_ms_after_boot(state.platform)
+    elapsed = now_ms() - state.last_boot_ms
+
+    if elapsed < required do
+      Process.sleep(required - elapsed)
+    end
+
+    :ok
+  end
+
+  defp install_min_ms_after_boot(platform) do
+    config(
+      :install_min_ms_after_boot_by_platform,
+      @default_install_min_ms_after_boot_by_platform
+    )
+    |> Map.get(platform, config(:install_min_ms_after_boot, 5_000))
+  end
+
+  defp install_reuse_settle_ms(state) do
+    base = config(:install_reuse_settle_ms, 500)
+
+    extra =
+      config(
+        :install_reuse_settle_extra_by_platform,
+        @default_install_reuse_settle_extra_by_platform
+      )
+      |> Map.get(state.platform, 0)
+
+    base + extra
   end
 
   defp ensure_protocol_router(%{protocol_router_pid: pid} = state) when is_pid(pid) do
@@ -656,6 +801,7 @@ defmodule Ide.Emulator.Session do
   end
 
   defp reset_for_install(state) do
+    state = reset_vnc_connection(state)
     cleanup_process(state.pypkjs_pid)
     cleanup_process(state.protocol_router_pid)
     cleanup_process(state.qemu_pid)
@@ -727,10 +873,16 @@ defmodule Ide.Emulator.Session do
     end
   end
 
+  def handle_info({:tcp, tcp, data}, %{vnc_tcp: tcp} = state) when is_binary(data) do
+    buffer = Map.get(state, :vnc_tcp_buffer, <<>>)
+    {:noreply, %{state | vnc_tcp_buffer: buffer <> data}}
+  end
+
   def handle_info(_message, state), do: {:noreply, state}
 
   @impl true
   def terminate(_reason, state) do
+    close_vnc_tcp_port(state.vnc_tcp)
     cleanup_process(state.qemu_pid)
     cleanup_process(state.pypkjs_pid)
     cleanup_process(state.protocol_router_pid)
@@ -886,7 +1038,11 @@ defmodule Ide.Emulator.Session do
          installing?: false,
          last_ping_ms: now_ms(),
          last_boot_ms: 0,
-         idle_timeout_ms: config(:idle_timeout_ms, @default_idle_timeout_ms)
+         idle_timeout_ms: config(:idle_timeout_ms, @default_idle_timeout_ms),
+         vnc_banner_ready: false,
+         vnc_rfb_banner: nil,
+         vnc_tcp: nil,
+         vnc_tcp_buffer: <<>>
        }}
     end
   end
@@ -901,8 +1057,25 @@ defmodule Ide.Emulator.Session do
            {:ok, pid} <- start_daemon(qemu_bin, qemu_args(state), "qemu:#{state.id}") do
         case wait_for_qemu_boot(pid, state, 60_000) do
           :ok ->
-            with :ok <- maybe_wait_for_install_ready(state, pid, state.console_port) do
-              {:ok, %{state | qemu_pid: pid, last_boot_ms: now_ms()}}
+            # wait_for_qemu_boot already blocks on qemu_boot_markers ("Ready for communication").
+            # Do not open a second console session for the same marker — it will never reappear and
+            # adds a full install_ready_console_timeout_ms stall to every launch.
+            with :ok <- wait_for_tcp_port(state.vnc_port, config(:vnc_ready_timeout_ms, 30_000)),
+                 {:ok, vnc_rfb_banner, vnc_tcp} <-
+                   capture_vnc_rfb_connection(
+                     state.vnc_port,
+                     config(:vnc_rfb_ready_timeout_ms, 15_000)
+                   ) do
+              {:ok,
+               %{
+                 state
+                 | qemu_pid: pid,
+                   last_boot_ms: now_ms(),
+                   vnc_banner_ready: true,
+                   vnc_rfb_banner: vnc_rfb_banner,
+                   vnc_tcp: vnc_tcp,
+                   vnc_tcp_buffer: <<>>
+               }}
             else
               {:error, reason} ->
                 cleanup_process(pid)
@@ -937,13 +1110,22 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  defp maybe_start_pypkjs_if_needed(%{has_phone_companion: true} = state),
-    do: maybe_start_pypkjs(state)
+  # The browser always opens the phone websocket (AppLog, install handoff, controls).
+  # Start pypkjs during session init so the proxy is not racing a 10s client timeout.
+  defp maybe_start_pypkjs_if_needed(state) do
+    if start_processes?() do
+      case maybe_start_pypkjs(state) do
+        {:ok, state} ->
+          {:ok, state}
 
-  defp maybe_start_pypkjs_if_needed(%{pypkjs_pid: pid} = state) when is_pid(pid),
-    do: {:ok, state}
-
-  defp maybe_start_pypkjs_if_needed(state), do: {:ok, state}
+        {:error, reason} ->
+          Logger.warning("embedded emulator pypkjs unavailable: #{inspect(reason)}")
+          {:ok, state}
+      end
+    else
+      {:ok, state}
+    end
+  end
 
   defp maybe_start_pypkjs(%{pypkjs_pid: pid} = state) when is_pid(pid) do
     if live_pid?(pid), do: {:ok, state}, else: maybe_start_pypkjs(%{state | pypkjs_pid: nil})
@@ -995,10 +1177,9 @@ defmodule Ide.Emulator.Session do
     end
   end
 
-  defp qemu_boot_markers(%{has_phone_companion: true}), do: ["Ready for communication"]
-
-  defp qemu_boot_markers(_state),
-    do: ["<SDK Home>", "<Launcher>", "Ready for communication"]
+  # pypkjs connects over the BT proxy during init; earlier console markers only mean
+  # the launcher UI is up, not that libpebble2 can complete fetch_watch_info/0.
+  defp qemu_boot_markers(_state), do: ["Ready for communication"]
 
   defp wait_for_tcp_socket(pid, port, deadline) do
     cond do
@@ -1063,50 +1244,6 @@ defmodule Ide.Emulator.Session do
     end)
   end
 
-  # Install resets can reach "<Launcher>" before the Bluetooth stack accepts BlobDB traffic.
-  defp maybe_wait_for_install_ready(%{installing?: true}, pid, console_port) do
-    wait_for_console_marker(pid, console_port, "Ready for communication", 20_000)
-  end
-
-  defp maybe_wait_for_install_ready(_state, _pid, _console_port), do: :ok
-
-  defp wait_for_console_marker(pid, console_port, marker, timeout_ms) do
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-
-    with {:ok, socket} <- wait_for_tcp_socket(pid, console_port, deadline) do
-      wait_for_console_marker_loop(pid, socket, marker, deadline, <<>>)
-    end
-  end
-
-  defp wait_for_console_marker_loop(pid, socket, marker, deadline, received) do
-    cond do
-      :binary.match(received, marker) != :nomatch ->
-        :gen_tcp.close(socket)
-        :ok
-
-      not Process.alive?(pid) ->
-        :gen_tcp.close(socket)
-        {:error, :qemu_exited_before_install_ready}
-
-      System.monotonic_time(:millisecond) >= deadline ->
-        :gen_tcp.close(socket)
-        {:error, {:install_ready_timeout, marker, console_tail(received)}}
-
-      true ->
-        case :gen_tcp.recv(socket, 0, 250) do
-          {:ok, data} ->
-            wait_for_console_marker_loop(pid, socket, marker, deadline, received <> data)
-
-          {:error, :timeout} ->
-            wait_for_console_marker_loop(pid, socket, marker, deadline, received)
-
-          {:error, reason} ->
-            :gen_tcp.close(socket)
-            {:error, {:qemu_console_closed, reason}}
-        end
-    end
-  end
-
   defp qemu_firmware_failure?(data) do
     Enum.any?(["Invalid firmware description", "SAD WATCH"], fn marker ->
       :binary.match(data, marker) != :nomatch
@@ -1154,6 +1291,50 @@ defmodule Ide.Emulator.Session do
     end
   end
 
+  defp wait_for_tcp_port(port, timeout_ms) when is_integer(port) and is_integer(timeout_ms) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    wait_for_tcp_port_loop(port, deadline)
+  end
+
+  defp wait_for_tcp_port_loop(port, deadline) do
+    cond do
+      tcp_port_open?(port) ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        {:error, {:port_not_ready, :vnc, port}}
+
+      true ->
+        Process.sleep(50)
+        wait_for_tcp_port_loop(port, deadline)
+    end
+  end
+
+  defp capture_vnc_rfb_connection(port, timeout_ms) do
+    case VncReady.capture_banner_open(port, timeout_ms) do
+      {:ok, banner, tcp} -> {:ok, banner, tcp}
+      {:error, reason} -> {:error, {:port_not_ready, :vnc_rfb, port, reason}}
+    end
+  end
+
+  defp reset_vnc_connection(state) do
+    close_vnc_tcp_port(state.vnc_tcp)
+
+    %{
+      state
+      | vnc_tcp: nil,
+        vnc_tcp_buffer: <<>>,
+        vnc_rfb_banner: nil,
+        vnc_banner_ready: false
+    }
+  end
+
+  defp close_vnc_tcp_port(nil), do: :ok
+
+  defp close_vnc_tcp_port(tcp) when is_port(tcp) do
+    :gen_tcp.close(tcp)
+  end
+
   defp maybe_append_layout_arg(args, state) do
     layout_path = Path.join(qemu_image_dir(state.platform), "layouts.json")
 
@@ -1185,8 +1366,18 @@ defmodule Ide.Emulator.Session do
       screen: screen,
       controls: supported_controls(),
       backend_enabled: enabled?(),
+      display_ready: display_ready?(state),
+      phone_bridge_ready: phone_bridge_ready?(state),
       installing: Map.get(state, :installing?, false)
     }
+  end
+
+  defp display_ready?(state) do
+    start_processes?() and live_pid?(state.qemu_pid) and Map.get(state, :vnc_banner_ready, false)
+  end
+
+  defp phone_bridge_ready?(state) do
+    start_processes?() and live_pid?(state.pypkjs_pid) and tcp_port_open?(state.phone_ws_port)
   end
 
   defp supported_controls do

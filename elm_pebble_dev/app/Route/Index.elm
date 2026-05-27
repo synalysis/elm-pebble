@@ -261,6 +261,19 @@ view _ _ =
                                     ]
                                 ]
                                 [ text "Why Elm fits Pebble watchfaces and apps" ]
+                        , Route.FAQ
+                            |> Route.link
+                                [ classes
+                                    [ Tw.inline_flex
+                                    , Tw.items_center
+                                    , Tw.text_base
+                                    , Tw.font_semibold
+                                    , Tw.text_color (blue s600)
+                                    , hover [ Tw.text_color (blue s700) ]
+                                    , dark [ Tw.text_color (blue s400) ]
+                                    ]
+                                ]
+                                [ text "Frequently asked questions" ]
                         , Route.Tutorial__WatchfaceTutorialComplete
                             |> Route.link
                                 [ classes
@@ -303,75 +316,78 @@ hero =
             ]
         ]
         [ div
-            [ classes
-                [ Tw.flex
-                , Tw.flex_col
-                , Tw.items_center
-                , Tw.gap s8
-                , Tw.raw "md:flex-row md:items-start"
+            [ classes [ Tw.raw "site-hero-layout" ] ]
+            [ div
+                [ classes [ Tw.raw "site-hero-intro" ]
+                , attribute
+                    "style"
+                    "display:flex;flex-flow:row nowrap;align-items:flex-start;gap:1.5rem;width:100%"
                 ]
-            ]
-            [ heroImage
-            , div
-                [ classes [ Tw.w_full ] ]
-                [ span
-                    [ classes
-                        [ Tw.inline_flex
-                        , Tw.items_center
-                        , Tw.rounded_lg
-                        , Tw.bg_color (emerald s100)
-                        , Tw.px s3
-                        , Tw.py s2
-                        , Tw.text_base
-                        , Tw.font_semibold
-                        , Tw.text_color (emerald s700)
-                        , dark
-                            [ Tw.bg_color (emerald s900)
-                            , Tw.text_color (emerald s200)
+                [ heroImage
+                , div
+                    [ classes [ Tw.raw "site-hero-headlines" ]
+                    , attribute "style" "flex:1 1 0%;min-width:0"
+                    ]
+                    [ span
+                        [ classes
+                            [ Tw.inline_flex
+                            , Tw.items_center
+                            , Tw.rounded_lg
+                            , Tw.bg_color (emerald s100)
+                            , Tw.px s3
+                            , Tw.py s2
+                            , Tw.text_base
+                            , Tw.font_semibold
+                            , Tw.text_color (emerald s700)
+                            , dark
+                                [ Tw.bg_color (emerald s900)
+                                , Tw.text_color (emerald s200)
+                                ]
                             ]
                         ]
-                    ]
-                    [ text "A nicer way to build Pebble watch faces." ]
-                , h1
-                    [ classes
-                        [ Tw.mt s6
-                        , Tw.text_n4xl
-                        , Tw.font_black
-                        , Tw.tracking_tight
-                        , md [ Tw.text_n5xl ]
+                        [ text "A nicer way to build Pebble watch faces." ]
+                    , h1
+                        [ classes
+                            [ Tw.mt s6
+                            , Tw.text_n4xl
+                            , Tw.font_black
+                            , Tw.tracking_tight
+                            , md [ Tw.text_n5xl ]
+                            ]
                         ]
+                        [ text "Pebble watch faces & apps in Elm." ]
                     ]
-                    [ text "Pebble watch faces & apps in Elm." ]
-                , p
-                    [ classes
-                        [ Tw.mt s5
-                        , Tw.max_w s96
-                        , Tw.text_lg
-                        , Tw.text_color (gray s700)
-                        , dark [ Tw.text_color (gray s300) ]
-                        ]
-                    ]
-                    [ text "Elm Pebble gives Pebble developers a real language and a tight feedback loop: model your app in Elm, see it on a tiny round screen, and keep the logic understandable as the interface evolves." ]
-                , a
-                    [ href "https://ide.elm-pebble.dev"
-                    , rel "noreferrer"
-                    , classes
-                        [ Tw.mt s6
-                        , Tw.inline_flex
-                        , Tw.rounded_lg
-                        , Tw.bg_color (blue s600)
-                        , Tw.px s6
-                        , Tw.py s3
-                        , Tw.font_semibold
-                        , Tw.text_simple white
-                        , Tw.shadow_lg
-                        , Tw.transition_colors
-                        , Tw.raw "hover:bg-blue-700"
-                        ]
-                    ]
-                    [ text "Open the IDE" ]
-                , betaNotice
                 ]
+            , p
+                [ classes
+                    [ Tw.mt s6
+                    , Tw.text_lg
+                    , Tw.text_color (gray s700)
+                    , dark [ Tw.text_color (gray s300) ]
+                    ]
+                ]
+                [ text "Elm Pebble gives Pebble developers a real language and a tight feedback loop: model your app in Elm, see it on a tiny round screen, and keep the logic understandable as the interface evolves." ]
+            , a
+                [ href "https://ide.elm-pebble.dev"
+                , rel "noreferrer"
+                , classes
+                    [ Tw.mt s6
+                    , Tw.self_start
+                    , Tw.w_fit
+                    , Tw.inline_flex
+                    , Tw.rounded_lg
+                    , Tw.bg_color (blue s600)
+                    , Tw.px s6
+                    , Tw.py s3
+                    , Tw.font_semibold
+                    , Tw.text_simple white
+                    , Tw.shadow_lg
+                    , Tw.transition_colors
+                    , Tw.raw "hover:bg-blue-700"
+                    ]
+                ]
+                [ text "Open the IDE" ]
+            , betaNotice
             ]
         ]
 
@@ -381,7 +397,6 @@ betaNotice =
     div
         [ classes
             [ Tw.mt s6
-            , Tw.max_w s96
             , Tw.rounded_lg
             , Tw.border
             , Tw.border_color (blue s200)
@@ -405,28 +420,35 @@ betaNotice =
 
 heroImage : Html.Html msg
 heroImage =
-    node "picture"
-        []
-        [ node "source"
-            [ attribute "srcset" "/pebble-elm.webp"
-            , type_ "image/webp"
+    div
+        [ classes [ Tw.raw "site-hero-photo" ]
+        , attribute "style" "flex:0 0 14rem;width:14rem;max-width:14rem"
+        ]
+        [ node "picture"
+            [ attribute "style" "display:block;width:14rem;max-width:14rem"
             ]
-            []
-        , img
-            [ src "/pebble-elm.jpg"
-            , alt "Pebble watch displaying an Elm Pebble watchface"
-            , attribute "loading" "eager"
-            , classes
-                [ Tw.w_full
-                , Tw.rounded_lg
-                , Tw.border
-                , Tw.border_color (gray s200)
-                , Tw.shadow_lg
-                , dark [ Tw.border_color (slate s800) ]
-                , Tw.raw "max-w-56 md:max-w-64 object-cover"
+            [ node "source"
+                [ attribute "srcset" "/pebble-elm-hero.webp"
+                , type_ "image/webp"
                 ]
+                []
+            , img
+                [ src "/pebble-elm-hero.jpg"
+                , alt "Pebble watch displaying an Elm Pebble watchface"
+                , attribute "loading" "eager"
+                , attribute "width" "280"
+                , attribute "height" "224"
+                , attribute "style" "display:block;width:14rem;max-width:14rem;height:auto"
+                , classes
+                    [ Tw.rounded_lg
+                    , Tw.border
+                    , Tw.border_color (gray s200)
+                    , Tw.shadow_lg
+                    , dark [ Tw.border_color (slate s800) ]
+                    ]
+                ]
+                []
             ]
-            []
         ]
 
 

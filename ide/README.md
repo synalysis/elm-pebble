@@ -38,6 +38,12 @@ mix test
 - Project files are stored on disk under `ide/workspace_projects/<project-slug>/`.
 - Source roots are created automatically for each project.
 
+## Embedded emulator
+
+The IDE can run Pebble QEMU on the host and drive it from the project emulator page (`/projects/:slug/emulator`): display (noVNC), PBW install, watch buttons, and simulator sensors.
+
+See **[docs/embedded-emulator.md](docs/embedded-emulator.md)** for architecture, HTTP/WebSocket/channel APIs, control protocols, and troubleshooting (including the Phoenix `emulator_vnc` display path).
+
 ## Pebble toolchain and screenshots
 
 - Build and emulator actions currently target the IDE template app at `ide/priv/pebble_app_template/`.

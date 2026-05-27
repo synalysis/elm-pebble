@@ -26,8 +26,9 @@ defmodule IdeWeb.Plugs.CrossOriginIsolation do
   end
 
   defp workspace_pane_path?(path) do
+    # Emulator pane uses WebSocket VNC to /api; skip COEP here (not needed without WASM).
     Regex.match?(
-      ~r{/projects/[^/]+/(editor|resources|packages|debugger|build|emulator|settings)$},
+      ~r{/projects/[^/]+/(editor|resources|packages|debugger|build|settings)$},
       path
     )
   end

@@ -2,17 +2,64 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Header nav: avoid hidden/md:flex cascade issues and <details> ignoring display:none */
-@layer components {
-  @media (max-width: 47.99rem) {
-    .site-header-desktop-nav {
-      display: none !important;
-    }
+/*
+ * Unlayered site chrome — must stay outside @layer so display:none beats .flex utilities.
+ */
+@media (max-width: 47.99rem) {
+  header .site-header-desktop-nav {
+    display: none !important;
   }
+}
 
-  @media (min-width: 48rem) {
-    .site-header-mobile-menu {
-      display: none !important;
-    }
+@media (min-width: 48rem) {
+  header .site-header-mobile-menu {
+    display: none !important;
   }
+}
+
+.site-header-mobile-menu details:not([open]) > nav {
+  display: none !important;
+}
+
+.site-hero-layout {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0;
+  width: 100%;
+}
+
+.site-hero-intro {
+  display: flex !important;
+  flex-flow: row nowrap !important;
+  align-items: flex-start !important;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.site-hero-headlines {
+  flex: 1 1 0% !important;
+  min-width: 0;
+}
+
+.site-hero-photo {
+  flex: 0 0 14rem !important;
+  width: 14rem !important;
+  max-width: 14rem !important;
+  overflow: hidden;
+}
+
+.site-hero-photo picture,
+.site-hero-photo img {
+  display: block;
+  width: 14rem !important;
+  max-width: 14rem !important;
+  height: auto !important;
+}
+
+/* Legacy hero markup (picture without .site-hero-photo wrapper) */
+header ~ main section picture img[src*="pebble-elm"] {
+  display: block;
+  width: 100%;
+  max-width: 14rem;
+  height: auto;
 }

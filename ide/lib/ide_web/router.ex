@@ -25,6 +25,13 @@ defmodule IdeWeb.Router do
     plug IdeWeb.Plugs.RequireAuth
   end
 
+  pipeline :authenticated_emulator_ws do
+    plug IdeWeb.Plugs.LogEmulatorWebSocket
+    plug :fetch_session
+    plug IdeWeb.Plugs.FetchCurrentUser
+    plug IdeWeb.Plugs.RequireAuth
+  end
+
   pipeline :wasm_emulator do
     plug :accepts, ["html"]
   end
@@ -94,12 +101,17 @@ defmodule IdeWeb.Router do
     get "/emulator/config-return", EmulatorController, :config_return
     get "/projects/:slug/companion/preferences", EmulatorController, :companion_preferences
     get "/emulator/:id/artifact", EmulatorController, :artifact
-    get "/emulator/:id/ws/vnc", EmulatorController, :ws_vnc
-    get "/emulator/:id/ws/phone", EmulatorController, :ws_phone
     get "/wasm-emulator/status", WasmEmulatorController, :status
     get "/wasm-emulator/projects/:slug/package", WasmEmulatorController, :package
     get "/wasm-emulator/projects/:slug/install-plan", WasmEmulatorController, :install_plan
     post "/wasm-emulator/projects/:slug/screenshot", WasmEmulatorController, :screenshot
+  end
+
+  scope "/api", IdeWeb do
+    pipe_through :authenticated_emulator_ws
+
+    get "/emulator/:id/ws/vnc", EmulatorController, :ws_vnc
+    get "/emulator/:id/ws/phone", EmulatorController, :ws_phone
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

@@ -235,6 +235,10 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     assert html =~ "data-wasm-log"
     assert get_resp_header(emulator_conn, "cross-origin-opener-policy") == ["same-origin"]
     assert get_resp_header(emulator_conn, "cross-origin-embedder-policy") == ["require-corp"]
+
+    asset_conn = get(recycle(conn), "/assets/app.js")
+    assert response(asset_conn, 200) =~ "EmbeddedEmulatorHost"
+    assert get_resp_header(asset_conn, "cross-origin-resource-policy") == ["same-origin"]
   end
 
   test "publish pane is not cross-origin isolated so Firebase popup login can communicate", %{

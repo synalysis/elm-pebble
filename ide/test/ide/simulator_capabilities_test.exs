@@ -264,7 +264,11 @@ defmodule Ide.SimulatorCapabilitiesTest do
     js = File.read!("assets/js/emulator/embedded_emulator.js")
 
     assert source =~ "data-emulator-simulator-capabilities"
+    assert source =~ "data-emulator-copy-feedback"
+    assert source =~ ":if={@debug_mode}"
+    assert source =~ "emulator_feedback_installation_json"
     assert source =~ "emulator_simulator_capabilities_json"
+    assert js =~ "copyFeedbackReport"
     assert js =~ "simulatorWeatherEnabled()"
     assert js =~ "emulatorSimulatorCapabilities"
     assert js =~ "readVncFramebufferSize"
