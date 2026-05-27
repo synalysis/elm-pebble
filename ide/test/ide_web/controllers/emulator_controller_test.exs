@@ -141,6 +141,30 @@ defmodule IdeWeb.EmulatorControllerTest do
     end)
   end
 
+  test "simulator-settings applies QEMU controls in dry-run session", %{conn: conn} do
+    EmulatorSessionEnv.run(fn ->
+      assert {:ok, info} =
+               EmulatorLaunch.launch(project_slug: "wf", platform: "basalt", artifact_path: nil)
+
+      assert %{"result" => %{"applied" => applied, "protocols" => protocols}, "status" => "ok"} =
+               conn
+               |> post(~p"/api/emulator/#{info.id}/simulator-settings", %{
+                 "settings" => %{
+                   "battery_percent" => 42,
+                   "charging" => false,
+                   "connected" => true
+                 }
+               })
+               |> json_response(200)
+
+      assert applied >= 2
+      assert 5 in protocols
+      assert 3 in protocols
+
+      assert :ok = Emulator.kill(info.id)
+    end)
+  end
+
   test "control validates accel protocol payload length", %{conn: conn} do
     EmulatorSessionEnv.run(fn ->
       assert {:ok, info} =

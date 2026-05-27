@@ -1,5 +1,11 @@
 defmodule IdeWeb.EmulatorVncChannel do
-  @moduledoc false
+  @moduledoc """
+  Relays RFB between the browser (noVNC) and QEMU over a Phoenix channel.
+
+  Production embedded emulator display uses this channel only; see
+  `ide/docs/embedded-emulator.md` (VNC policy). `/api/emulator/:id/ws/vnc` remains for
+  tools, tests, and local proxy — do not point the browser host at raw VNC without re-validation.
+  """
 
   use IdeWeb, :channel
 

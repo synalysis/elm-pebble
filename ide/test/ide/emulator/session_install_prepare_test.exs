@@ -23,11 +23,12 @@ defmodule Ide.Emulator.SessionInstallPrepareTest do
            })
   end
 
-  test "install pacing uses smaller PutBytes chunks on snowy-class platforms" do
-    source = File.read!("lib/ide/emulator/session.ex")
+  test "install pacing lives in InstallPrep" do
+    source = File.read!("lib/ide/emulator/install_prep.ex")
 
     assert source =~ ~S/platform_putbytes_pacing(platform) when platform in ["emery", "flint", "gabbro"]/
     assert source =~ "chunk_size: config(:pbw_chunk_size, 256)"
+    assert File.read!("lib/ide/emulator/session.ex") =~ "InstallPrep.pacing_opts"
   end
 
   test "session delegates QEMU payload validation to QemuControl" do

@@ -110,6 +110,13 @@ defmodule Ide.Emulator do
     end
   end
 
+  @spec apply_simulator_settings(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def apply_simulator_settings(id, settings) when is_binary(id) and is_map(settings) do
+    with {:ok, pid} <- lookup(id) do
+      Session.apply_simulator_settings(pid, settings)
+    end
+  end
+
   @spec screenshot(String.t(), keyword()) :: {:ok, binary()} | {:error, Types.emulator_error()}
   def screenshot(id, opts \\ []) when is_binary(id) do
     with {:ok, pid} <- lookup(id),

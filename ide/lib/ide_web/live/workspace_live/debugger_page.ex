@@ -273,6 +273,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               project={@project}
               debugger_state={@debugger_state}
               mode={:debugger}
+              description="Simulated date/time affects debugger stepping only; the embedded QEMU watch face uses host clock unless you use an external SDK emulator (emu-set-time)."
             />
             <.watch_interactives_panel
               id="debugger-watch-interactives"

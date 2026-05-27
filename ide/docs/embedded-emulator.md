@@ -48,7 +48,13 @@ flowchart LR
 | `IdeWeb.EmulatorController` | Launch, ping, install, control, kill; serves PBW artifact |
 | `IdeWeb.EmulatorVncChannel` | Relays RFB bytes between browser and QEMU over Phoenix channel `emulator_vnc:<session_id>` |
 | `IdeWeb.EmulatorProxySocket` | Raw WebSocket proxy to local TCP (used for `/ws/phone` and legacy `/ws/vnc`) |
-| `embedded_emulator.js` | Browser orchestration: launch, display, install, controls, logs |
+| `embedded_emulator.js` | Thin browser orchestrator (toolbar, state, feedback) |
+| `emulator_http.js` | Shared `postJSON`, CSRF, WebSocket URL helpers |
+| `emulator_session_client.js` | Launch, stop, ping, install HTTP session API |
+| `emulator_vnc.js` | Phoenix VNC channel + noVNC display |
+| `emulator_simulator_delivery.js` | Simulator settings → QEMU batch API, phone bridge, weather |
+| `qemu_control.js` | QEMU protocol encoders (shared with WASM emulator) |
+| `install_prep.ex` | Install pacing, reuse settle, reset-needed checks |
 
 ## Prerequisites
 
@@ -70,12 +76,12 @@ mix phx.server
 
 Open a project emulator page: `http://localhost:4000/projects/<slug>/emulator`.
 
-After frontend changes: `mix assets.build` and hard-refresh the page. The event log includes a **UI build** string (e.g. `2025-05-27-vnc-phoenix-channel-v21`) to confirm the loaded client bundle.
+After frontend changes: `mix assets.build` and hard-refresh the page. The event log includes a **UI build** string (e.g. `v22-refactor`) to confirm the loaded client bundle.
 
 ## Browser workflow
 
 1. **Launch** — builds/uses a PBW for the project and platform, starts `Emulator.Session`, waits until `display_ready` (QEMU up + VNC banner captured).
-2. **Display** — connects noVNC through Phoenix channel `emulator_vnc:<id>` (not a direct browser WebSocket to `/ws/vnc` in current builds).
+2. **Display** — connects noVNC through Phoenix channel `emulator_vnc:<id>` (production path). Raw `/api/emulator/:id/ws/vnc` is for tools, tests, and local proxy only — do not point the embedded browser host at it without re-validation (see **VNC policy** below).
 3. **Install** — pushes the PBW to the running watch via native installer (`POST .../install`) or phone-bridge fallback when pypkjs is available.
 4. **Controls** — buttons and simulator sliders send QEMU control packets via `POST .../control`.
 5. **Phone bridge** — optional WebSocket to `/api/emulator/:id/ws/phone` for AppLog, storage debug, companion-style messages.
@@ -190,9 +196,23 @@ The browser may fall back to **phone-bridge install** if the native install path
 
 **Simulator settings → QEMU:** changing the emulator page “Simulator settings” form pushes `simulator_settings_applied` to the browser, which calls `applySimulatorSettingsToQemu/2`. Settings are re-applied automatically after **Launch** and when resuming a persisted session (so defaults reach QEMU even if the form was loaded before QEMU started).
 
-**Simulated date/time** (`use_simulated_time`, `simulated_date`, `simulated_time`) is handled by the **Elm debugger runtime** (`Ide.Debugger.DeviceData`), not QEMU control packets.
+**Simulated date/time** (`use_simulated_time`, `simulated_date`, `simulated_time`) is **debugger-only** on the emulator settings form (hidden in `:emulator` mode). It affects Elm debugger stepping via `Ide.Debugger.DeviceData`, not embedded QEMU watch-face time. There is no QEMU control protocol for set-time in embedded sessions; external SDK emulators receive `emu-set-time` via `QemuControl.external_cli_commands/1`.
 
-**External SDK emulator:** the same settings map to `pebble emu-*` CLI commands via `QemuControl.external_cli_commands/1`.
+**Batch apply:** `POST /api/emulator/:id/simulator-settings` with `{"settings": {...}}` applies all mapped QEMU controls in one request (`Ide.Emulator.apply_simulator_settings/2`). The browser delivery module uses this after launch/resume, with per-control `/control` fallback.
+
+**External SDK emulator:** battery, Bluetooth, time format, timeline peek, compass, and simulated time (when enabled) map to `pebble emu-*` via `QemuControl.external_cli_commands/1`.
+
+### Simulator delivery matrix
+
+| Setting | Embedded QEMU | Phone bridge | Debugger runtime | External `pebble emu-*` |
+|---------|---------------|--------------|------------------|-------------------------|
+| Battery / charging | protocol 5 | settings JSON | DeviceData | `emu-battery` |
+| Bluetooth | protocol 3 | settings JSON | DeviceData | `emu-bt-connection` |
+| 24h format | protocol 9 | — | — | `emu-time-format` |
+| Timeline peek | protocol 10 | — | — | `emu-set-timeline-quick-view` |
+| Compass | protocol 12 | — | — | `emu-compass` |
+| Simulated date/time | — | — | DeviceData | `emu-set-time` (when enabled) |
+| Weather / companion | — | inject + JSON | subscriptions | — |
 
 **Elixir:**
 
@@ -244,6 +264,7 @@ All routes under `/api` require authentication unless noted.
 | `POST` | `/api/emulator/:id/ping` | Session status + `alive` |
 | `POST` | `/api/emulator/:id/install` | Install PBW into QEMU |
 | `POST` | `/api/emulator/:id/control` | QEMU control packet |
+| `POST` | `/api/emulator/:id/simulator-settings` | Batch apply normalized simulator settings to QEMU |
 | `POST` | `/api/emulator/:id/kill` | End session |
 | `GET` | `/api/emulator/:id/artifact` | Download session PBW |
 | `GET` | `/api/emulator/:id/ws/vnc` | Raw VNC WebSocket (proxy) |
@@ -325,15 +346,26 @@ Tests often set `start_processes: false` on `Ide.Emulator.Session` to avoid spaw
 | Phone bridge not ready | `phone_bridge_ready: false` — pypkjs missing or not started; non-fatal for display-only apps |
 | Stale session after refresh | Browser re-pings `ping_path`; may call `kill` and launch again |
 
-**Feedback report** (in emulator UI): includes UI build, session ping JSON, VNC byte/frame counts, and ordered event log — paste when filing bugs.
+**Feedback report** (in emulator UI): includes UI build, session ping JSON, `simulatorSettingsSource`, `simulatorSettingsAppliedAt`, `lastQemuSettingsApply`, VNC byte/frame counts, and ordered event log — paste when filing bugs.
+
+## VNC policy
+
+- **Browser (embedded emulator):** Phoenix channel `emulator_vnc:<session_id>` only (`EmulatorVncChannel` + `emulator_vnc.js`).
+- **`GET /api/emulator/:id/ws/vnc`:** raw TCP↔WebSocket proxy for automation, `emulator_vnc_http_ws_test.exs`, and local tools — not the production browser path.
+- Re-enabling direct browser VNC requires re-validating auth, buffering, and RFB handshake behavior end-to-end.
 
 ## Related code
 
 | Path | Description |
 |------|-------------|
-| `assets/js/emulator/embedded_emulator.js` | Browser host |
+| `assets/js/emulator/embedded_emulator.js` | Browser orchestrator |
+| `assets/js/emulator/emulator_http.js` | HTTP + CSRF helpers |
+| `assets/js/emulator/emulator_session_client.js` | Session launch/stop/ping/install |
+| `assets/js/emulator/emulator_vnc.js` | VNC channel + noVNC |
+| `assets/js/emulator/emulator_simulator_delivery.js` | Simulator settings delivery |
 | `assets/js/user_socket.js` | Phoenix `/socket` client |
 | `lib/ide_web/channels/emulator_vnc_channel.ex` | VNC channel relay |
+| `lib/ide/emulator/install_prep.ex` | Install pacing and reuse settle |
 | `lib/ide_web/controllers/emulator_controller.ex` | HTTP API |
 | `lib/ide/emulator/session.ex` | Session GenServer |
 | `lib/ide/emulator/qemu_control.ex` | QEMU protocol IDs, encoders, simulator-settings mapping |

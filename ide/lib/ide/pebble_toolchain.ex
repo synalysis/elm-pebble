@@ -508,6 +508,33 @@ defmodule Ide.PebbleToolchain do
     {:ok, ["emu-set-timeline-quick-view", "--emulator", emulator_target, value]}
   end
 
+  defp emulator_control_args(emulator_target, %{"control" => "set_time"} = params) do
+    case Map.get(params, "time") do
+      time when is_binary(time) and time != "" ->
+        {:ok, ["emu-set-time", "--emulator", emulator_target, time]}
+
+      _ ->
+        {:error, :invalid_set_time}
+    end
+  end
+
+  defp emulator_control_args(emulator_target, %{"control" => "compass"} = params) do
+    with {:ok, heading} <- normalize_compass_heading(Map.get(params, "heading", "0")) do
+      calibrated =
+        if truthy?(Map.get(params, "valid", true)), do: "--calibrated", else: "--uncalibrated"
+
+      {:ok,
+       [
+         "emu-compass",
+         "--emulator",
+         emulator_target,
+         "--heading",
+         Integer.to_string(heading),
+         calibrated
+       ]}
+    end
+  end
+
   defp emulator_control_args(_emulator_target, params),
     do: {:error, {:unsupported_emulator_control, Map.get(params, "control")}}
 
@@ -536,6 +563,17 @@ defmodule Ide.PebbleToolchain do
   end
 
   defp normalize_percent(_), do: {:error, :invalid_percent}
+
+  defp normalize_compass_heading(value) when is_integer(value) and value in 0..359, do: {:ok, value}
+
+  defp normalize_compass_heading(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} -> normalize_compass_heading(int)
+      _ -> {:error, :invalid_compass_heading}
+    end
+  end
+
+  defp normalize_compass_heading(_), do: {:error, :invalid_compass_heading}
 
   defp truthy?(values) when is_list(values), do: Enum.any?(values, &truthy?/1)
   defp truthy?(value), do: value in [true, "true", "1", 1, "yes", "on"]

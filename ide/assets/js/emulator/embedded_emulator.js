@@ -1,3 +1,7 @@
+import {postJSON, websocketURL} from "./emulator_http.js"
+import {EmulatorVnc} from "./emulator_vnc.js"
+import {EmulatorSessionClient} from "./emulator_session_client.js"
+import {EmulatorSimulatorDelivery} from "./emulator_simulator_delivery.js"
 import {
   applySimulatorSettingsToQemu,
   BUTTONS,
@@ -57,30 +61,10 @@ const WEATHER_CONDITION_WIRE_CODES = {
 
 import {disconnectUserSocket, getUserSocket, waitForUserSocketOpen} from "../user_socket"
 
-const EMBEDDED_EMULATOR_UI_BUILD = "2025-05-27-vnc-phoenix-channel-v21"
+const EMBEDDED_EMULATOR_UI_BUILD = "v22-refactor"
 const PHOENIX_SOCKET_OPEN_TIMEOUT_MS = 10_000
 const VNC_CHANNEL_JOIN_TIMEOUT_MS = 10_000
 
-let rfbModulePromise = null
-
-function loadRFB() {
-  if (!rfbModulePromise) {
-    rfbModulePromise = import("@novnc/novnc")
-      .then(module => module.default)
-      .catch(error => {
-        rfbModulePromise = null
-        const blocked =
-          error?.message?.includes("Failed to fetch") || error?.name === "TypeError"
-        const hint = blocked
-          ? " (check browser console for COEP/CORP blocked script — hard refresh after server restart)"
-          : ""
-        throw new Error(`Could not load noVNC display client${hint}: ${error?.message || error}`)
-      })
-  }
-  return rfbModulePromise
-}
-
-const csrfToken = () => document.querySelector("meta[name='csrf-token']")?.getAttribute("content") || ""
 const persistedStateFields = [
   "session",
   "buttonState",
@@ -160,63 +144,6 @@ function definePersistedState(host) {
   })
 }
 
-function agentDebugLog(runId, hypothesisId, location, message, data = {}) {
-  fetch("http://127.0.0.1:7308/ingest/2a69f066-12c8-491a-a0be-5118a68d7127", {
-    method: "POST",
-    headers: {"Content-Type": "application/json", "X-Debug-Session-Id": "edf96a"},
-    body: JSON.stringify({sessionId: "edf96a", runId, hypothesisId, location, message, data, timestamp: Date.now()})
-  }).catch(() => {})
-}
-
-async function postJSON(url, body = {}, {timeoutMs} = {}) {
-  const controller = timeoutMs ? new AbortController() : null
-  const timer =
-    controller &&
-    setTimeout(() => {
-      controller.abort()
-    }, timeoutMs)
-
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {"content-type": "application/json", "x-csrf-token": csrfToken()},
-      body: JSON.stringify(body),
-      signal: controller?.signal
-    })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(data.error || response.statusText)
-    return data
-  } catch (error) {
-    if (controller?.signal.aborted) {
-      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`)
-    }
-
-    throw error
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
-}
-
-function websocketURL(path) {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-  // Must match the page origin (localhost vs 127.0.0.1 are different origins in browsers).
-  return `${protocol}//${window.location.host}${path}`
-}
-
-function vncWebSocketReadyStateLabel(readyState) {
-  switch (readyState) {
-    case WebSocket.CONNECTING:
-      return "CONNECTING"
-    case WebSocket.OPEN:
-      return "OPEN"
-    case WebSocket.CLOSING:
-      return "CLOSING"
-    case WebSocket.CLOSED:
-      return "CLOSED"
-    default:
-      return readyState == null ? "missing" : String(readyState)
-  }
-}
 
 export class EmbeddedEmulatorHost {
   constructor(hook) {
@@ -231,6 +158,10 @@ export class EmbeddedEmulatorHost {
     this.phoneOpenedAt = 0
     this.logFlushScheduled = false
     this.destroyed = false
+    this.simulatorDelivery = new EmulatorSimulatorDelivery(this)
+    this.sessionClient = new EmulatorSessionClient(this)
+    this.vnc = new EmulatorVnc(this)
+    this.lastQemuSettingsApply = null
     this.simulatorSettings = null
     this.lastAppliedSimulatorSettingsJson = null
     this.simulatorSettingsSource = null
@@ -383,14 +314,7 @@ export class EmbeddedEmulatorHost {
     this.applyCanvasSize()
     this.syncSimulatorSettingsFromDataset()
     if (this.session?.backend_enabled && this.rfb && previousCanvas && previousCanvas !== this.canvas) {
-      // #region agent log
-      agentDebugLog("initial", "H19", "embedded_emulator.js:updated:canvas_replaced", "emulator canvas replaced during liveview update", {
-        sessionId: this.session?.id,
-        previousConnected: this.rfb?._rfbConnectionState,
-        hasPreviousCanvas: !!previousCanvas,
-        hasNewCanvas: !!this.canvas
-      })
-      // #endregion
+    
       this.reconnectVncAfterDomPatch()
     }
     this.ensureVncAttached()
@@ -413,24 +337,8 @@ export class EmbeddedEmulatorHost {
     this.updateControlButtons()
   }
 
-  async validatePersistedSession() {
-    if (!this.session) return
-
-    this.sessionAlive = false
-    this.displayConnected = false
-    this.phoneBridgeReady = false
-
-    try {
-      const response = await postJSON(this.session.ping_path)
-      if (response?.alive !== true) {
-        this.endSession("Previous emulator session has ended")
-        return
-      }
-
-      this.sessionAlive = true
-    } catch (_error) {
-      this.endSession("Previous emulator session is unreachable")
-    }
+  validatePersistedSession(...args) {
+    return this.sessionClient.validatePersistedSession(...args)
   }
 
   resumeExistingSession() {
@@ -513,925 +421,47 @@ export class EmbeddedEmulatorHost {
     void this.launch()
   }
 
-  async launch() {
-    if (this.launching) return
-    if (this.session) return
-
-    const slug = this.el.dataset.projectSlug
-    const platform = this.el.dataset.emulatorTarget
-    if (!slug || !platform) {
-      this.setStatus("Embedded emulator is missing project slug or watch model")
-      return
-    }
-
-    this.launching = true
-    this.notifyStateChanged()
-
-    try {
-      this.clearLog()
-      this.hideConfigPage()
-      this.sessionEnded = false
-      this.appInstalled = false
-      this.setStatus("Launching embedded emulator...")
-      void loadRFB().catch(() => {})
-      const payload = {slug, platform}
-      this.session = await postJSON("/api/emulator/launch", payload)
-      this.sessionAlive = true
-      this.displayConnected = false
-      this.phoneBridgeReady = false
-      // #region agent log
-      agentDebugLog("initial", "H19,H20,H21", "embedded_emulator.js:launch:session", "emulator launch response received in browser", {
-        sessionId: this.session?.id,
-        backendEnabled: this.session?.backend_enabled,
-        vncPath: this.session?.vnc_path,
-        screen: this.session?.screen
-      })
-      // #endregion
-      if (!this.destroyed) {
-        this.warnSessionScreenMismatch()
-        this.logEmulatorPlatform()
-        this.applyCanvasSize()
-        const displayReady = await this.waitForDisplayReady()
-        if (!displayReady && this.session && !this.destroyed) {
-          this.appendLog("Embedded emulator VNC port was not ready before display connect timed out")
-        }
-        await this.connectDisplay()
-        if (this.session && !this.destroyed) this.schedulePingAfterDisplayConnect()
-      }
-      if (this.session?.backend_enabled && this.displayConnected) {
-        this.setStatus("Embedded emulator display connected")
-      } else if (this.session?.backend_enabled) {
-        this.setStatus("Embedded emulator session started; connecting display...")
-      } else {
-        this.setStatus("Embedded emulator backend disabled; launch API is in dry-run mode")
-      }
-      this.reapplySimulatorSettingsToQemu({source: "after_launch", quiet: true})
-    } catch (error) {
-      this.setStatus(`Embedded emulator failed: ${error.message}`)
-    } finally {
-      this.launching = false
-      this.notifyStateChanged()
-    }
+  async launch(...args) {
+    return this.sessionClient.launch(...args)
   }
 
-  async stop() {
-    if (!this.session || this.stopping) return
-    const session = this.session
-    this.stopping = true
-    this.notifyStateChanged()
-
-    try {
-      await postJSON(session.kill_path)
-      this.endSession("Embedded emulator stopped")
-    } catch (error) {
-      this.setStatus(`Could not stop embedded emulator: ${error.message}`)
-    } finally {
-      this.stopping = false
-      this.notifyStateChanged()
-    }
+  async stop(...args) {
+    return this.sessionClient.stop(...args)
   }
 
-  resolveCanvas() {
-    this.canvas = this.el.querySelector("[data-emulator-canvas]")
-    return this.canvas
-  }
-
-  async waitForDisplayReady(timeoutMs = DISPLAY_READY_TIMEOUT_MS) {
-    if (!this.session?.backend_enabled) return true
-    if (this.session.display_ready) return true
-
-    const deadline = Date.now() + timeoutMs
-    const pingPath = this.session.ping_path
-
-    while (Date.now() < deadline) {
-      if (this.destroyed || !this.session) return false
-
-      try {
-        const info = await postJSON(pingPath)
-        if (info.display_ready) {
-          Object.assign(this.session, info)
-          return true
-        }
-      } catch (_error) {
-        // Session may still be booting QEMU/VNC.
-      }
-
-      await new Promise(resolve => window.setTimeout(resolve, DISPLAY_READY_POLL_MS))
-    }
-
-    return !!this.session?.display_ready
-  }
-
-  async connectDisplay() {
-    if (this.destroyed || !this.session?.backend_enabled) return
-
-    for (let attempt = 0; attempt < 20 && !this.resolveCanvas(); attempt += 1) {
-      await new Promise(resolve => window.requestAnimationFrame(resolve))
-    }
-
-    if (!this.canvas) {
-      this.appendLog("Embedded emulator display element not found in the page")
-      return
-    }
-
-    if (!this.session.display_ready) {
-      await this.waitForDisplayReady(15_000)
-    }
-
-    this.appendLog(`Connecting embedded emulator display (${this.session.vnc_path})`)
-
-    try {
-      await this.connectVnc()
-    } catch (error) {
-      this.appendLog(`Embedded emulator display failed: ${error.message}`)
-    }
-  }
-
-  closeVncSocket() {
-    if (this.vncSocket) {
-      try {
-        this.vncSocket.close()
-      } catch (_error) {
-        // Socket may already be closed.
-      }
-      this.vncSocket = null
-    }
-  }
-
-  closeVncChannel() {
-    if (this.vncChannel) {
-      try {
-        this.vncChannel.leave()
-      } catch (_error) {
-        // Channel may already be closed.
-      }
-      this.vncChannel = null
-    }
-    this.resetVncFramePipeline()
-    this.vncPhoenixSocket = null
-  }
-
-  disconnectRfb(rfb, {reconnecting = false} = {}) {
-    if (reconnecting) this.reconnectingVnc = true
-    if (rfb) {
-      try {
-        rfb.disconnect()
-      } catch (_error) {
-        // noVNC may already be disconnected.
-      }
-    }
-    this.closeVncChannel()
-    this.closeVncSocket()
-  }
-
-  ensurePhoenixSocket() {
-    const socket = getUserSocket({onLog: message => this.appendLog(message)})
-    this.vncPhoenixSocket = socket
-    return socket
-  }
-
-  decodeChannelBinary(payload) {
-    if (payload instanceof ArrayBuffer) return payload
-    if (ArrayBuffer.isView(payload)) {
-      return payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength)
-    }
-    if (payload && typeof payload === "object") {
-      const encoded = payload.b64 ?? payload["b64"]
-      if (typeof encoded === "string") return this.base64ToArrayBuffer(encoded)
-    }
-    if (typeof payload === "string") {
-      return this.base64ToArrayBuffer(payload)
-    }
-    return null
-  }
-
-  base64ToArrayBuffer(encoded) {
-    const binary = atob(encoded)
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
-    return bytes.buffer
-  }
-
-  vncBytes(data) {
-    if (data instanceof ArrayBuffer) return new Uint8Array(data)
-    if (ArrayBuffer.isView(data)) {
-      return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-    }
-    throw new Error(`unsupported VNC frame data (${data?.constructor?.name || typeof data})`)
-  }
-
-  bytesToBase64(bytes) {
-    let binary = ""
-    const chunk = 0x8000
-    for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
-    }
-    return btoa(binary)
-  }
-
-  pushVncFrame(channel, data) {
-    const bytes = this.vncBytes(data)
-    if (!this.vncLoggedFirstSend) {
-      this.vncLoggedFirstSend = true
-      this.appendLog(`Embedded emulator VNC pushing ${bytes.length} byte(s) to channel`)
-    }
-    channel.push("frame", {b64: this.bytesToBase64(bytes)})
-  }
-
-  resetVncFramePipeline() {
-    this.vncPendingFrames = []
-    this.vncFrameSink = null
-    this.vncJoinInitial = null
-  }
-
-  enqueueVncChannelFrame(payload) {
-    const data = this.decodeChannelBinary(payload)
-    if (!data) {
-      const kind = payload == null ? "null" : payload?.constructor?.name || typeof payload
-      this.appendLog(`Embedded emulator VNC ignored frame payload (${kind})`)
-      return
-    }
-    const chunkBytes = data.byteLength || 0
-    if (this.vncWsDiag) {
-      this.vncWsDiag.bytesReceived += chunkBytes
-      this.vncWsDiag.framesReceived += 1
-    }
-    if (this.vncFrameSink) {
-      this.vncFrameSink(data)
-    } else {
-      this.vncPendingFrames.push(data)
-    }
-  }
-
-  bindVncFrameSink(deliver) {
-    this.vncFrameSink = deliver
-    const pending = this.vncPendingFrames
-    this.vncPendingFrames = []
-    for (const data of pending) deliver(data)
-  }
-
-  deliverVncJoinInitial(rfb) {
-    const data = this.vncJoinInitial
-    if (!data || !rfb?._sock?._recvMessage) return
-
-    this.vncJoinInitial = null
-    rfb._sock._recvMessage({data})
-    this.appendLog(`Embedded emulator delivered ${data.byteLength} byte(s) join initial to noVNC`)
-  }
-
-  async joinVncChannel() {
-    const socket = this.ensurePhoenixSocket()
-    const topic = `emulator_vnc:${this.session.id}`
-
-    this.appendLog(`Opening Phoenix user socket (state=${socket.connectionState()})`)
-    await waitForUserSocketOpen(socket, PHOENIX_SOCKET_OPEN_TIMEOUT_MS, {
-      onLog: message => this.appendLog(message)
-    })
-    this.appendLog("Phoenix user socket open; joining emulator VNC channel")
-
-    this.resetVncFramePipeline()
-    const channel = socket.channel(topic, {})
-    // Register before join: the server may push the RFB banner as soon as the relay starts.
-    channel.on("frame", payload => this.enqueueVncChannelFrame(payload))
-
-    return new Promise((resolve, reject) => {
-      let settled = false
-      const finish = (error, joinedChannel = null) => {
-        if (settled) return
-        settled = true
-        window.clearTimeout(timer)
-        if (error) reject(error)
-        else resolve(joinedChannel)
-      }
-
-      const timer = window.setTimeout(() => {
-        finish(
-          new Error(
-            `Phoenix channel join timed out after ${VNC_CHANNEL_JOIN_TIMEOUT_MS / 1000}s (socket=${socket.connectionState()})`
-          )
-        )
-      }, VNC_CHANNEL_JOIN_TIMEOUT_MS)
-
-      channel
-        .join()
-        .receive("ok", response => {
-          if (response?.initial) {
-            try {
-              const binary = atob(response.initial)
-              const bytes = new Uint8Array(binary.length)
-              for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
-              // Hold until noVNC has attached the transport and run _socketOpen(); feeding the
-              // RFB banner earlier triggers "Unknown init state" and the handshake never starts.
-              this.vncJoinInitial = bytes.buffer
-              if (this.vncWsDiag) this.vncWsDiag.bytesReceived += bytes.byteLength
-              this.appendLog(
-                `Embedded emulator VNC channel received ${bytes.byteLength} byte(s) in join reply (held for noVNC init)`
-              )
-            } catch (error) {
-              this.appendLog(`Embedded emulator VNC join initial decode failed: ${error.message}`)
-            }
-          }
-          finish(null, channel)
-        })
-        .receive("error", response => {
-          finish(new Error(`Phoenix channel join failed: ${JSON.stringify(response)}`))
-        })
-        .receive("timeout", () => finish(new Error("Phoenix channel join timeout")))
-    })
-  }
-
-  createVncChannelTransport(channel) {
-    let onopen = null
-    let onmessage = null
-    let onerror = null
-    let onclose = null
-    const pendingForTransport = []
-
-    const deliverToTransport = data => {
-      if (onmessage) onmessage({data})
-      else pendingForTransport.push(data)
-    }
-
-    const flushPendingForTransport = () => {
-      if (!onmessage || pendingForTransport.length === 0) return
-      const pending = pendingForTransport.splice(0)
-      for (const data of pending) onmessage({data})
-    }
-
-    this.bindVncFrameSink(deliverToTransport)
-
-    channel.onError(() => {
-      if (this.vncWsDiag) this.vncWsDiag.error = "phoenix channel error"
-      if (onerror) onerror(new Event("error"))
-    })
-
-    channel.onClose(() => {
-      if (this.vncWsDiag) {
-        this.vncWsDiag.closed = true
-        this.vncWsDiag.open = false
-      }
-      if (onclose) onclose(new CloseEvent("close"))
-    })
-
-    return {
-      binaryType: "arraybuffer",
-      protocol: "",
-      bufferedAmount: 0,
-      readyState: WebSocket.OPEN,
-      send: data => {
-        this.pushVncFrame(channel, data)
-      },
-      close: () => {
-        channel.leave()
-      },
-      get onopen() {
-        return onopen
-      },
-      set onopen(fn) {
-        onopen = fn
-      },
-      get onmessage() {
-        return onmessage
-      },
-      set onmessage(fn) {
-        onmessage = fn
-        flushPendingForTransport()
-      },
-      get onerror() {
-        return onerror
-      },
-      set onerror(fn) {
-        onerror = fn
-      },
-      get onclose() {
-        return onclose
-      },
-      set onclose(fn) {
-        onclose = fn
-      }
-    }
-  }
-
-  resetVncWsDiag() {
-    this.vncLoggedFirstSend = false
-    this.vncWsDiag = {
-      url: null,
-      readyState: null,
-      readyStateLabel: "missing",
-      open: false,
-      closed: false,
-      closeCode: null,
-      closeReason: null,
-      error: null,
-      bytesReceived: 0,
-      framesReceived: 0
-    }
-  }
-
-  attachVncWebSocketDiagnostics(ws) {
-    if (!ws || ws.__elmPebbleVncDiag) return
-    ws.__elmPebbleVncDiag = true
-
-    const refreshReadyState = () => {
-      this.vncWsDiag.readyState = ws.readyState
-      this.vncWsDiag.readyStateLabel = vncWebSocketReadyStateLabel(ws.readyState)
-    }
-
-    refreshReadyState()
-
-    ws.addEventListener("open", () => {
-      refreshReadyState()
-      this.vncWsDiag.open = true
-      this.appendLog("Embedded emulator VNC websocket open")
-    })
-    ws.addEventListener("message", event => {
-      const chunkBytes =
-        event.data instanceof ArrayBuffer
-          ? event.data.byteLength
-          : typeof event.data === "string"
-            ? event.data.length
-            : 0
-      this.vncWsDiag.bytesReceived += chunkBytes
-      this.vncWsDiag.framesReceived += 1
-    })
-    ws.addEventListener("error", () => {
-      refreshReadyState()
-      this.vncWsDiag.error = "websocket error"
-    })
-    ws.addEventListener("close", event => {
-      refreshReadyState()
-      this.vncWsDiag.closed = true
-      this.vncWsDiag.closeCode = event.code
-      this.vncWsDiag.closeReason = event.reason || null
-    })
-  }
-
-  async probeEmulatorSession(pingPath) {
-    const started = performance.now()
-
-    try {
-      const info = await postJSON(pingPath)
-      return {
-        ok: true,
-        ms: Math.round(performance.now() - started),
-        alive: info?.alive === true,
-        display_ready: info?.display_ready === true
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        ms: Math.round(performance.now() - started),
-        error: error?.message || String(error)
-      }
-    }
-  }
-
-  openVncWebSocket(url) {
-    this.resetVncWsDiag()
-    this.vncWsDiag.url = url
-    this.closeVncSocket()
-
-    return new Promise((resolve, reject) => {
-      let settled = false
-      let ws
-
-      const finish = (error, socket = null) => {
-        if (settled) return
-        settled = true
-        window.clearInterval(stateTimer)
-        window.clearTimeout(openTimer)
-        if (error) {
-          this.closeVncSocket()
-          reject(error)
-        } else {
-          resolve(socket)
-        }
-      }
-
-      try {
-        ws = new WebSocket(url)
-      } catch (error) {
-        finish(new Error(`WebSocket constructor failed: ${error.message}`))
-        return
-      }
-
-      ws.binaryType = "arraybuffer"
-      this.vncSocket = ws
-      this.attachVncWebSocketDiagnostics(ws)
-
-      const stateTimer = window.setInterval(() => {
-        if (!this.vncWsDiag || ws !== this.vncSocket) return
-        this.vncWsDiag.readyState = ws.readyState
-        this.vncWsDiag.readyStateLabel = vncWebSocketReadyStateLabel(ws.readyState)
-      }, 250)
-
-      const openTimer = window.setTimeout(() => {
-        const label = vncWebSocketReadyStateLabel(ws.readyState)
-        finish(
-          new Error(
-            `WebSocket did not open within ${VNC_WS_OPEN_TIMEOUT_MS / 1000}s (${label}); check IDE server logs for emulator websocket proxy errors`
-          )
-        )
-      }, VNC_WS_OPEN_TIMEOUT_MS)
-
-      ws.addEventListener(
-        "open",
-        () => {
-          finish(null, ws)
-        },
-        {once: true}
-      )
-
-      ws.addEventListener(
-        "error",
-        () => {
-          const label = vncWebSocketReadyStateLabel(ws.readyState)
-          finish(new Error(`WebSocket error before open (${label})`))
-        },
-        {once: true}
-      )
-
-      ws.addEventListener(
-        "close",
-        event => {
-          if (ws.readyState === WebSocket.OPEN) return
-          const reason = event.reason ? `: ${event.reason}` : ""
-          finish(
-            new Error(
-              `WebSocket closed before open (code ${event.code}${reason}, state ${vncWebSocketReadyStateLabel(ws.readyState)})`
-            )
-          )
-        },
-        {once: true}
-      )
-    })
-  }
-
-  async connectVnc() {
-    if (this.destroyed || !this.session?.backend_enabled || !this.canvas) return
-    if (this.vncConnecting) return
-    this.vncConnecting = true
-    if (this.rfb) {
-      const previousRfb = this.rfb
-      this.rfb = null
-      this.rfbCanvas = null
-      this.disconnectRfb(previousRfb, {reconnecting: this.displayConnected})
-    }
-    if (this.destroyed || !this.session?.backend_enabled || !this.canvas) {
-      this.vncConnecting = false
-      return
-    }
-    let RFB
-    try {
-      RFB = await loadRFB()
-    } catch (error) {
-      this.vncConnecting = false
-      throw error
-    }
-    if (this.destroyed || !this.session?.backend_enabled || !this.canvas) {
-      this.vncConnecting = false
-      return
-    }
-    const sessionProbe = await this.probeEmulatorSession(this.session.ping_path)
-    this.vncSessionProbe = sessionProbe
-    if (sessionProbe.ok) {
-      this.appendLog(
-        `Embedded emulator session probe ok in ${sessionProbe.ms}ms (alive=${sessionProbe.alive}, display_ready=${sessionProbe.display_ready})`
-      )
-    } else {
-      this.appendLog(`Embedded emulator session probe failed in ${sessionProbe.ms}ms: ${sessionProbe.error}`)
-    }
-    this.appendLog(`Connecting embedded emulator display via Phoenix channel (emulator_vnc:${this.session.id})`)
-    this.resetVncWsDiag()
-    let channel
-    try {
-      channel = await this.joinVncChannel()
-      this.vncChannel = channel
-      this.appendLog("Embedded emulator VNC channel joined")
-    } catch (error) {
-      this.vncConnecting = false
-      this.appendLog(`Embedded emulator VNC channel failed: ${error.message}`)
-      throw error
-    }
-    if (this.destroyed || !this.session?.backend_enabled || !this.canvas) {
-      this.vncConnecting = false
-      this.closeVncChannel()
-      return
-    }
-    const transport = this.createVncChannelTransport(channel)
-    const bytesReceived = this.vncWsDiag?.bytesReceived || 0
-    const framesReceived = this.vncWsDiag?.framesReceived || 0
-    this.vncWsDiag.url = `phoenix:/socket/emulator_vnc:${this.session.id}`
-    Object.assign(this.vncWsDiag, {
-      readyState: WebSocket.OPEN,
-      readyStateLabel: "OPEN",
-      open: true,
-      closed: false,
-      closeCode: null,
-      closeReason: null,
-      error: null,
-      bytesReceived,
-      framesReceived
-    })
-    let rfb
-    try {
-      rfb = new RFB(this.canvas, transport, {
-        shared: true,
-        credentials: {password: ""}
-      })
-      this.deliverVncJoinInitial(rfb)
-    } catch (error) {
-      this.vncConnecting = false
-      this.closeVncChannel()
-      throw error
-    }
-    this.rfb = rfb
-    this.rfbCanvas = this.canvas
-    this.vncViewportConfigKey = null
-    this.vncConnecting = false
-    this.reconnectingVnc = false
-    this.updateControlButtons()
-    // #region agent log
-    agentDebugLog("initial", "H19,H20,H21", "embedded_emulator.js:vnc:create", "noVNC RFB object created", {
-      sessionId: this.session?.id,
-      vncPath: this.session?.vnc_path,
-      canvasWidth: this.canvas?.width,
-      canvasHeight: this.canvas?.height,
-      clientWidth: this.canvas?.clientWidth,
-      clientHeight: this.canvas?.clientHeight
-    })
-    // #endregion
-    rfb.resizeSession = false
-    const connectTimeout = window.setTimeout(() => {
-      if (this.destroyed || rfb !== this.rfb || this.displayConnected) return
-      const diag = this.vncWsDiag || {}
-      const wsState = diag.readyStateLabel || "unknown"
-      const wsHint = diag.open
-        ? diag.bytesReceived > 0
-          ? `VNC transport received ${diag.bytesReceived} bytes in ${diag.framesReceived} frame(s) but noVNC did not finish the handshake`
-          : this.vncPendingFrames?.length > 0
-            ? `VNC transport has ${this.vncPendingFrames.length} buffered frame(s) waiting for noVNC`
-            : "VNC transport open but no binary frames received from the server"
-        : diag.closed
-          ? `VNC transport closed (code ${diag.closeCode ?? "?"}, state ${wsState})`
-          : diag.error
-            ? `${diag.error} (state ${wsState})`
-            : `VNC transport did not open (state ${wsState})`
-      this.appendLog(
-        `Embedded emulator display connect timed out (no VNC response within ${VNC_CONNECT_TIMEOUT_MS / 1000}s; ${wsHint})`
-      )
-      this.disconnectRfb(rfb, {reconnecting: true})
-      if (this.session && !this.stopping) {
-        this.scheduleVncReconnect("Embedded emulator display timed out; reconnecting...")
-      }
-    }, VNC_CONNECT_TIMEOUT_MS)
-    rfb.addEventListener("credentialsrequired", () => {
-      if (this.destroyed || rfb !== this.rfb) return
-      try {
-        rfb.sendCredentials({password: ""})
-      } catch (error) {
-        this.appendLog(`Embedded emulator display credentials failed: ${error.message}`)
-      }
-    })
-    rfb.addEventListener("securityfailure", event => {
-      if (this.destroyed || rfb !== this.rfb) return
-      window.clearTimeout(connectTimeout)
-      const reason = event?.detail?.reason || "security failure"
-      this.appendLog(`Embedded emulator display security failure: ${reason}`)
-      this.disconnectRfb(rfb, {reconnecting: true})
-      if (this.session && !this.stopping) {
-        this.scheduleVncReconnect(`Embedded emulator display security failure; reconnecting...`)
-      }
-    })
-    rfb.addEventListener("connectfailed", event => {
-      if (this.destroyed || rfb !== this.rfb) return
-      window.clearTimeout(connectTimeout)
-      const reason = event?.detail?.reason || "connect failed"
-      this.appendLog(`Embedded emulator display connect failed: ${reason}`)
-      this.disconnectRfb(rfb, {reconnecting: true})
-      if (this.session && !this.stopping) {
-        this.scheduleVncReconnect(`Embedded emulator display connect failed; reconnecting...`)
-      }
-    })
-    rfb.addEventListener("connect", () => {
-      if (this.destroyed) return
-      if (rfb !== this.rfb) return
-      window.clearTimeout(connectTimeout)
-      this.stopVncReconnect()
-      this.vncReconnectAttempts = 0
-      // #region agent log
-      agentDebugLog("initial", "H20,H21", "embedded_emulator.js:vnc:connect", "noVNC connected", {
-        sessionId: this.session?.id,
-        canvasWidth: this.canvas?.width,
-        canvasHeight: this.canvas?.height,
-        clientWidth: this.canvas?.clientWidth,
-        clientHeight: this.canvas?.clientHeight
-      })
-      // #endregion
-      this.scheduleVncViewportConfig(rfb, "connect", 100)
-      this.scheduleVncViewportConfig(rfb, "connect_1s", 1000)
-      this.scheduleVncViewportConfig(rfb, "connect_3s", 3000)
-      this.scheduleVncCanvasSample("after_connect")
-      this.scheduleVncCanvasSample("after_connect_1s", 1000)
-      if (this.session && !this.stopping) {
-        this.displayConnected = true
-        this.setStatus("Embedded emulator display connected")
-        this.stopPingAfterDisplayTimer()
-        if (!this.destroyed && !this.pingTimer) this.startPing()
-        this.connectPhone()
-      }
-    })
-    rfb.addEventListener("framebufferresize", () => {
-      if (this.destroyed) return
-      if (rfb !== this.rfb) return
-      this.scheduleVncViewportConfig(rfb, "framebufferresize")
-    })
-    rfb.addEventListener("disconnect", event => {
-      if (this.destroyed) return
-      if (rfb !== this.rfb) return
-      window.clearTimeout(connectTimeout)
-      if (this.reconnectingVnc) return
-      // #region agent log
-      agentDebugLog("initial", "H19,H20", "embedded_emulator.js:vnc:disconnect", "noVNC disconnected", {
-        sessionId: this.session?.id,
-        clean: event?.detail?.clean,
-        reconnecting: this.reconnectingVnc,
-        stopping: this.stopping
-      })
-      // #endregion
-      const detail = event?.detail
-      const status = detail?.status
-      const clean = detail?.clean
-      const reason = clean ? "clean disconnect" : `disconnect (status ${status ?? "?"})`
-      if (this.session && !this.stopping) {
-        this.appendLog(`Embedded emulator display ${reason}`)
-        this.scheduleVncReconnect("Embedded emulator display disconnected; reconnecting...")
-      }
-    })
-  }
-
-  reconnectVncAfterDomPatch() {
-    this.scheduleVncReconnect("Embedded emulator display moved; reconnecting...")
-  }
-
-  ensureVncAttached() {
-    if (this.destroyed || !this.session?.backend_enabled || !this.canvas || this.stopping) return
-    if (document.visibilityState === "hidden") return
-    if (this.rfb && this.rfbCanvas === this.canvas) return
-    if (this.vncReconnectTimer || this.reconnectingVnc || this.vncConnecting) return
-    void this.connectDisplay()
-  }
-
-  scheduleVncReconnect(message) {
-    if (this.destroyed || !this.session?.backend_enabled || this.stopping || this.vncReconnectTimer) return
-    this.setStatus(message)
-    const delay = Math.min(VNC_RECONNECT_BASE_MS * 2 ** this.vncReconnectAttempts, VNC_RECONNECT_MAX_MS)
-    // #region agent log
-    agentDebugLog("initial", "H19,H20", "embedded_emulator.js:vnc:reconnect_scheduled", "scheduled noVNC reconnect", {
-      sessionId: this.session?.id,
-      message,
-      attempts: this.vncReconnectAttempts,
-      delay
-    })
-    // #endregion
-    this.vncReconnectAttempts += 1
-    this.vncReconnectTimer = window.setTimeout(() => {
-      this.vncReconnectTimer = null
-      this.connectDisplay().catch(error => {
-        this.reconnectingVnc = false
-        if (this.session && !this.stopping && !this.destroyed) this.scheduleVncReconnect(`Embedded emulator display reconnect failed: ${error.message}`)
-      })
-    }, delay)
-  }
-
-  stopVncReconnect() {
-    if (this.vncReconnectTimer) window.clearTimeout(this.vncReconnectTimer)
-    this.vncReconnectTimer = null
-  }
-
-  readVncBackingSize() {
-    const innerCanvas = this.canvas?.querySelector("canvas")
-    if (!innerCanvas?.width || !innerCanvas?.height) return null
-    return {width: innerCanvas.width, height: innerCanvas.height}
-  }
-
-  readVncFramebufferSize(rfb) {
-    const fbWidth = rfb?._fbWidth ?? 0
-    const fbHeight = rfb?._fbHeight ?? 0
-    if (fbWidth > 0 && fbHeight > 0) {
-      return {width: fbWidth, height: fbHeight}
-    }
-    return this.readVncBackingSize()
-  }
-
-  scheduleVncViewportConfig(rfb, reason, delayMs = 100) {
-    window.setTimeout(() => {
-      if (this.destroyed || rfb !== this.rfb) return
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          this.configureVncDisplay(rfb, reason)
-        })
-      })
-    }, delayMs)
-  }
-
-  configureVncDisplay(rfb, reason = "connect") {
-    if (this.destroyed || !rfb || rfb !== this.rfb || !this.canvas) return
-
-    const screen = this.expectedScreenSize()
-    this.applyCanvasSize()
-    rfb.resizeSession = false
-
-    const framebuffer = this.readVncFramebufferSize(rfb)
-    const canvasBacking = this.readVncBackingSize()
-    const fbWidth = framebuffer?.width ?? 0
-    const fbHeight = framebuffer?.height ?? 0
-    const oversized =
-      fbWidth > screen.width + 1 ||
-      fbHeight > screen.height + 1
-    const configKey = `${fbWidth}x${fbHeight}:${screen.width}x${screen.height}`
-    if (this.vncViewportConfigKey === configKey) return
-    this.vncViewportConfigKey = configKey
-
-    // Always clip at 1:1. scaleViewport scales the entire padded QEMU surface into
-    // the canvas, which shrinks a top-left draw layer into the upper-left quadrant.
-    rfb.scaleViewport = false
-    rfb.clipViewport = true
-
-    const canvasNote =
-      canvasBacking && (canvasBacking.width !== fbWidth || canvasBacking.height !== fbHeight)
-        ? ` canvas ${canvasBacking.width}x${canvasBacking.height}`
-        : ""
-
-    this.appendLog(
-      `VNC viewport ${reason}: framebuffer ${fbWidth}x${fbHeight}, screen ${screen.width}x${screen.height}, clip${oversized ? " (padded fb)" : ""}${canvasNote}`,
-      {flushTransfers: false, flushSystemLogs: false}
-    )
-  }
-
-  scheduleVncCanvasSample(label, delayMs = 0) {
-    const sample = () => {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          this.logVncCanvasSample(label)
-        })
-      })
-    }
-    if (delayMs > 0) {
-      window.setTimeout(sample, delayMs)
-    } else {
-      sample()
-    }
-  }
-
-  logVncCanvasSample(label) {
-    const innerCanvas = this.canvas?.querySelector("canvas")
-    const wrapperRect = this.canvas?.getBoundingClientRect?.()
-    const innerRect = innerCanvas?.getBoundingClientRect?.()
-    const sample = {
-      label,
-      sessionId: this.session?.id,
-      wrapperPresent: !!this.canvas,
-      innerCanvasPresent: !!innerCanvas,
-      wrapperSize: wrapperRect ? {width: wrapperRect.width, height: wrapperRect.height} : null,
-      innerSize: innerRect ? {width: innerRect.width, height: innerRect.height} : null,
-      backingSize: innerCanvas ? {width: innerCanvas.width, height: innerCanvas.height} : null,
-      wrapperChildren: this.canvas ? Array.from(this.canvas.children).map(child => child.tagName) : []
-    }
-
-    if (innerCanvas?.width && innerCanvas?.height) {
-      try {
-        const context = innerCanvas.getContext("2d")
-        const points = [
-          [Math.floor(innerCanvas.width / 2), Math.floor(innerCanvas.height / 2)],
-          [1, 1],
-          [Math.max(innerCanvas.width - 2, 0), 1],
-          [1, Math.max(innerCanvas.height - 2, 0)],
-          [Math.max(innerCanvas.width - 2, 0), Math.max(innerCanvas.height - 2, 0)]
-        ]
-        const pixels = points.map(([x, y]) => Array.from(context.getImageData(x, y, 1, 1).data))
-        sample.pixelSample = pixels
-        sample.nonBlackSamples = pixels.filter(([r, g, b, a]) => a !== 0 && (r !== 0 || g !== 0 || b !== 0)).length
-        const gridColors = []
-        for (let y = 0; y < 5; y += 1) {
-          for (let x = 0; x < 5; x += 1) {
-            const px = Math.floor(((x + 0.5) * innerCanvas.width) / 5)
-            const py = Math.floor(((y + 0.5) * innerCanvas.height) / 5)
-            gridColors.push(Array.from(context.getImageData(px, py, 1, 1).data).slice(0, 3).join(","))
-          }
-        }
-        sample.uniqueGridColors = Array.from(new Set(gridColors)).slice(0, 12)
-        sample.uniqueGridColorCount = new Set(gridColors).size
-      } catch (error) {
-        sample.pixelError = error.message
-      }
-    }
-
-    // #region agent log
-    agentDebugLog("initial", "H21,H23", "embedded_emulator.js:vnc:canvas_sample", "sampled noVNC canvas pixels and DOM", sample)
-    // #endregion
-  }
-
+  resolveCanvas(...args) { return this.vnc.resolveCanvas(...args) }
+  waitForDisplayReady(...args) { return this.vnc.waitForDisplayReady(...args) }
+  connectDisplay(...args) { return this.vnc.connectDisplay(...args) }
+  closeVncSocket(...args) { return this.vnc.closeVncSocket(...args) }
+  closeVncChannel(...args) { return this.vnc.closeVncChannel(...args) }
+  disconnectRfb(...args) { return this.vnc.disconnectRfb(...args) }
+  ensurePhoenixSocket(...args) { return this.vnc.ensurePhoenixSocket(...args) }
+  decodeChannelBinary(...args) { return this.vnc.decodeChannelBinary(...args) }
+  base64ToArrayBuffer(...args) { return this.vnc.base64ToArrayBuffer(...args) }
+  vncBytes(...args) { return this.vnc.vncBytes(...args) }
+  bytesToBase64(...args) { return this.vnc.bytesToBase64(...args) }
+  pushVncFrame(...args) { return this.vnc.pushVncFrame(...args) }
+  resetVncFramePipeline(...args) { return this.vnc.resetVncFramePipeline(...args) }
+  enqueueVncChannelFrame(...args) { return this.vnc.enqueueVncChannelFrame(...args) }
+  bindVncFrameSink(...args) { return this.vnc.bindVncFrameSink(...args) }
+  deliverVncJoinInitial(...args) { return this.vnc.deliverVncJoinInitial(...args) }
+  joinVncChannel(...args) { return this.vnc.joinVncChannel(...args) }
+  createVncChannelTransport(...args) { return this.vnc.createVncChannelTransport(...args) }
+  resetVncWsDiag(...args) { return this.vnc.resetVncWsDiag(...args) }
+  attachVncWebSocketDiagnostics(...args) { return this.vnc.attachVncWebSocketDiagnostics(...args) }
+  probeEmulatorSession(...args) { return this.vnc.probeEmulatorSession(...args) }
+  openVncWebSocket(...args) { return this.vnc.openVncWebSocket(...args) }
+  connectVnc(...args) { return this.vnc.connectVnc(...args) }
+  reconnectVncAfterDomPatch(...args) { return this.vnc.reconnectVncAfterDomPatch(...args) }
+  ensureVncAttached(...args) { return this.vnc.ensureVncAttached(...args) }
+  scheduleVncReconnect(...args) { return this.vnc.scheduleVncReconnect(...args) }
+  stopVncReconnect(...args) { return this.vnc.stopVncReconnect(...args) }
+  readVncBackingSize(...args) { return this.vnc.readVncBackingSize(...args) }
+  readVncFramebufferSize(...args) { return this.vnc.readVncFramebufferSize(...args) }
+  scheduleVncViewportConfig(...args) { return this.vnc.scheduleVncViewportConfig(...args) }
+  configureVncDisplay(...args) { return this.vnc.configureVncDisplay(...args) }
+  scheduleVncCanvasSample(...args) { return this.vnc.scheduleVncCanvasSample(...args) }
+  logVncCanvasSample(...args) { return this.vnc.logVncCanvasSample(...args) }
   connectPhone() {
     if (this.destroyed || !this.session?.backend_enabled) return
     const oldPhoneSocket = this.phoneSocket
@@ -1509,25 +539,8 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  async installPbwViaNativeInstaller(installSessionId = this.session?.id) {
-    if (!this.session?.install_path) {
-      this.setStatus("Embedded emulator install API is unavailable.")
-      return
-    }
-
-    this.setStatus("Installing PBW on embedded emulator via fallback installer...")
-    this.appendLog("native PBW install started (this can take a few minutes on large apps)")
-    const response = await postJSON(this.session.install_path, {}, {timeoutMs: 300_000})
-    if (this.session?.id !== installSessionId) return
-    const parts = response.result?.parts?.map(part => part.kind).join(", ")
-    this.appInstalled = true
-    this.lastSentWeatherJson = null
-    this.setStatus(parts ? `PBW installed on embedded emulator (${parts})` : "PBW installed on embedded emulator")
-    this.appendLog("native PBW install complete")
-    if (this.rfb) {
-      this.scheduleVncViewportConfig(this.rfb, "after_install", 500)
-      this.scheduleVncViewportConfig(this.rfb, "after_install_2s", 2000)
-    }
+  installPbwViaNativeInstaller(...args) {
+    return this.sessionClient.installPbwViaNativeInstaller(...args)
   }
 
   async ensurePhoneBridge(timeoutMs = 35_000) {
@@ -1679,12 +692,7 @@ export class EmbeddedEmulatorHost {
     if (opcode === 0x02) {
       const text = new TextDecoder().decode(data.slice(1))
       if (/watch -> Elm companion|Elm companion|AppMessage|not responding|error|failed/i.test(text)) {
-        // #region agent log
-        agentDebugLog("initial", "H31,H32", "embedded_emulator.js:phone:text", "phone bridge text frame", {
-          sessionId: this.session?.id,
-          text: this.truncate(text, 600)
-        })
-        // #endregion
+      
       }
       return
     }
@@ -1706,18 +714,7 @@ export class EmbeddedEmulatorHost {
           this.scheduleVncCanvasSample("after_phone_appmessage_250ms", 250)
           this.scheduleVncCanvasSample("after_phone_appmessage_1500ms", 1500)
         }
-        // #region agent log
-        agentDebugLog("initial", "H31,H32,H33,H46", "embedded_emulator.js:phone:pebble_frame", "selected Pebble frame via phone bridge", {
-          sessionId: this.session?.id,
-          direction: opcode === 0x00 ? "watch_to_phone" : "phone_to_watch",
-          endpoint,
-          endpointName: this.endpointName(endpoint),
-          payloadBytes: length,
-          payloadPrefix: this.hexPreview(payload, 80),
-          appLog: endpoint === ENDPOINT_APP_LOG ? this.describeAppLogFrame(opcode === 0x00 ? "watch -> phone" : "phone -> watch", payload) : null,
-          dataLogging: endpoint === ENDPOINT_DATA_LOGGING ? this.describeDataLoggingPayload(payload) : null
-        })
-        // #endregion
+      
         if (endpoint === ENDPOINT_DATA_LOGGING) {
           this.recordDataLogEntry(this.describeDataLoggingPayload(payload))
         }
@@ -1812,426 +809,37 @@ export class EmbeddedEmulatorHost {
     this.sendQemu(QEMU.compass, encodeCompass(settings))
   }
 
-  reapplySimulatorSettingsToQemu(options = {}) {
-    if (!this.emulatorSessionActive()) return
-
-    if (!this.simulatorSettings) {
-      this.refreshSimulatorSettingsFromDataset()
-    }
-
-    const settings = this.simulatorSettings
-    if (!settings || typeof settings !== "object") return
-
-    this.applySimulatorSettings(settings, {
-      source: options.source || "session_ready",
-      quiet: options.quiet ?? true,
-      syncCompanion: options.syncCompanion ?? false
-    })
-  }
-
-  applyInitialSimulatorSettings() {
-    const raw = this.el.dataset.emulatorSimulatorSettings
-    if (!raw) return
-
-    try {
-      this.applySimulatorSettings(JSON.parse(raw), {source: "dataset", syncCompanion: false})
-      this.lastAppliedSimulatorSettingsJson = raw
-    } catch (_error) {
-      this.appendLog("Could not parse initial simulator settings from page")
-    }
-  }
-
-  parseSimulatorCapabilities() {
-    const raw = this.el.dataset.emulatorSimulatorCapabilities
-    if (!raw) return new Set()
-
-    try {
-      const parsed = JSON.parse(raw)
-      return new Set(Array.isArray(parsed) ? parsed : [])
-    } catch (_error) {
-      return new Set()
-    }
-  }
-
-  simulatorCapabilities() {
-    return this._simulatorCapabilities || (this._simulatorCapabilities = this.parseSimulatorCapabilities())
-  }
-
-  simulatorWeatherEnabled() {
-    return this.simulatorCapabilities().has("weather")
-  }
-
-  refreshSimulatorCapabilities() {
-    this._simulatorCapabilities = this.parseSimulatorCapabilities()
-  }
-
-  companionSimulatorEnabled() {
-    return this.el.dataset.emulatorHasPhoneCompanion === "true"
-  }
-
-  emulatorSessionActive() {
-    return !!this.session?.id
-  }
-
-  shouldSyncCompanionSimulator(options = {}) {
-    return (
-      this.companionSimulatorEnabled() &&
-      this.emulatorSessionActive() &&
-      options.syncCompanion !== false
-    )
-  }
-
-  simulatorSettingsWeatherKey(settings = this.simulatorSettings) {
-    return this.weatherDebugQueueKey(this.resolveWeatherSimulatorSettings(settings))
-  }
-
-  syncSimulatorSettingsFromDataset() {
-    const raw = this.el.dataset.emulatorSimulatorSettings
-    if (!raw || raw === this.lastAppliedSimulatorSettingsJson) return
-
-    let incoming
-    try {
-      incoming = JSON.parse(raw)
-    } catch (_error) {
-      this.appendLog("Could not parse updated simulator settings from page")
-      return
-    }
-
-    const incomingWeatherKey = this.simulatorSettingsWeatherKey(incoming)
-    const currentWeatherKey = this.simulatorSettingsWeatherKey()
-
-    // LiveView DOM patches can lag behind push_event; don't revert fresher settings.
-    if (
-      this.simulatorSettingsSource === "push_event" &&
-      currentWeatherKey &&
-      incomingWeatherKey !== currentWeatherKey
-    ) {
-      return
-    }
-
-    this.applySimulatorSettings(incoming, {source: "dataset"})
-    this.lastAppliedSimulatorSettingsJson = raw
-  }
-
-  refreshSimulatorSettingsFromDataset() {
-    const raw = this.el.dataset.emulatorSimulatorSettings
-    if (!raw) return
-
-    try {
-      this.simulatorSettings = JSON.parse(raw)
-    } catch (_error) {
-      this.appendLog("Could not parse simulator settings from page dataset")
-    }
-  }
-
-  applySimulatorSettings(settings = {}, options = {}) {
-    this.simulatorSettings = settings
-    this.simulatorSettingsSource = options.source || "push_event"
-    this.simulatorSettingsAppliedAt = Date.now()
-
-    if (this.emulatorSessionActive()) {
-      applySimulatorSettingsToQemu((protocol, payload) => this.sendQemu(protocol, payload), settings)
-    }
-
-    if (this.shouldSyncCompanionSimulator(options)) {
-      const quiet = options.quiet ?? options.source === "dataset"
-      this.pushSimulatorSettingsToPhoneBridgeNow({quiet})
-      if (this.simulatorWeatherEnabled()) {
-        this.scheduleWeatherPush({quiet})
-      }
-    }
-
-    this.lastAppliedSimulatorSettingsJson = JSON.stringify(this.simulatorSettingsPayload(settings))
-  }
-
-  simulatorSettingsPayload(settings = this.simulatorSettings) {
-    if (!settings || typeof settings !== "object") {
-      return this.simulatorWeatherEnabled() ? {weather: {...DEFAULT_SIMULATOR_WEATHER}} : {}
-    }
-
-    const payload = {...settings}
-    const weather = this.resolveWeatherSimulatorSettings(settings)
-
-    if (weather) {
-      payload.weather = weather
-    } else {
-      delete payload.weather
-      delete payload.weather_temperatureC
-      delete payload.weather_condition
-      delete payload.weather_humidityPercent
-      delete payload.weather_pressureHpa
-      delete payload.weather_windKph
-    }
-
-    return payload
-  }
-
-  pushSimulatorSettingsToPhoneBridgeNow(options = {}) {
-    if (!this.companionSimulatorEnabled()) return false
-
-    const payload = this.simulatorSettingsPayload()
-    const sent = this.sendSimulatorSettingsToPhoneBridge(payload)
-    if (sent && options.quiet === false && this.simulatorWeatherEnabled()) {
-      const weather = this.resolveWeatherSimulatorSettings(payload)
-      this.appendLog(
-        `synced simulator weather via phone bridge: ${this.parseSimulatorTemperatureC(weather?.temperatureC) ?? "?"}°C ${weather?.condition || "clear"}`
-      )
-    }
-    return sent
-  }
-
-  scheduleWeatherPush(options = {}) {
-    if (!this.simulatorWeatherEnabled()) return
-    if (!this.shouldSyncCompanionSimulator(options)) return
-    this.resetWeatherDebugQueueIfStuck("new settings push")
-    this.weatherDebugInFlight = false
-    this.pendingWeatherRetry = null
-    if (this.weatherDebugAckTimer != null) {
-      window.clearTimeout(this.weatherDebugAckTimer)
-      this.weatherDebugAckTimer = null
-    }
-
-    if (this.weatherPushTimer != null) {
-      window.clearTimeout(this.weatherPushTimer)
-    }
-    if (this.weatherDebugFallbackTimer != null) {
-      window.clearTimeout(this.weatherDebugFallbackTimer)
-      this.weatherDebugFallbackTimer = null
-    }
-
-    this.weatherPushTimer = window.setTimeout(() => {
-      this.weatherPushTimer = null
-      const weather = this.resolveWeatherSimulatorSettings()
-      const bridgeSent = this.pushSimulatorSettingsToPhoneBridgeNow()
-      const injectTimerId = window.setTimeout(() => {
-        this.weatherPushRetryTimers = this.weatherPushRetryTimers.filter(id => id !== injectTimerId)
-        const injected = this.enqueueWeatherDebugPush(weather, {quiet: true, force: true})
-        if (!injected && options.quiet === false) {
-          this.appendLog(
-            `skipped simulator weather inject: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
-          )
-        }
-      }, 400)
-      this.weatherPushRetryTimers.push(injectTimerId)
-      this.scheduleWeatherDebugFallback(weather, {quiet: options.quiet !== false})
-      if (options.quiet === false) {
-        if (bridgeSent) {
-          this.appendLog(
-            `synced simulator weather via phone bridge: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
-          )
-        } else {
-          this.appendLog("skipped simulator weather sync: phone bridge is not connected")
-        }
-      }
-    }, 150)
-  }
-
-  scheduleWeatherDebugFallback(weather, options = {}) {
-    if (this.weatherDebugFallbackTimer != null) {
-      window.clearTimeout(this.weatherDebugFallbackTimer)
-    }
-
-    this.weatherDebugFallbackTimer = window.setTimeout(() => {
-      this.weatherDebugFallbackTimer = null
-      const sent = this.enqueueWeatherDebugPush(weather, {quiet: true, force: true})
-      if (sent && options.quiet === false) {
-        this.appendLog(
-          `pushed simulator weather to watch: ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
-        )
-      }
-    }, 1500)
-  }
-
-  scheduleWeatherDebugAckTimeout() {
-    if (this.weatherDebugAckTimer != null) {
-      window.clearTimeout(this.weatherDebugAckTimer)
-    }
-
-    this.weatherDebugAckTimer = window.setTimeout(() => {
-      this.weatherDebugAckTimer = null
-      if (!this.weatherDebugInFlight) return
-      this.weatherDebugInFlight = false
-      this.drainWeatherDebugQueue()
-    }, 2500)
-  }
-
-  weatherDebugQueueKey(weather) {
-    return JSON.stringify({
-      temperatureC: this.parseSimulatorTemperatureC(weather?.temperatureC),
-      condition: weather?.condition || "clear"
-    })
-  }
-
-  enqueueWeatherDebugPush(weather, options = {}) {
-    if (!this.simulatorWeatherEnabled()) return false
-    if (!this.session?.app_uuid) {
-      if (options.quiet === false) {
-        this.appendLog("skipped simulator weather: install a PBW on the emulator first")
-      }
-      return false
-    }
-    if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) {
-      if (options.quiet === false) {
-        this.appendLog("skipped simulator weather: phone bridge is not connected")
-      }
-      return false
-    }
-
-    const resolved = weather && typeof weather === "object" ? weather : DEFAULT_SIMULATOR_WEATHER
-    const queueKey = this.weatherDebugQueueKey(resolved)
-    if (!options.force && queueKey === this.lastSentWeatherJson) {
-      return false
-    }
-
-    this.weatherDebugQueue = this.weatherDebugQueue.filter(item => item.queueKey !== queueKey)
-    this.weatherDebugQueue.push({weather: resolved, options, queueKey})
-    return this.drainWeatherDebugQueue()
-  }
-
-  drainWeatherDebugQueue() {
-    if (this.weatherDebugInFlight || this.weatherDebugQueue.length === 0) {
-      return false
-    }
-
-    const item = this.weatherDebugQueue.shift()
-    this.weatherDebugInFlight = true
-    this.weatherDebugInFlightAt = Date.now()
-    this.pendingWeatherRetry = item.weather
-    const sent = this.pushWeatherDebugAppMessage(item.weather, {quiet: true})
-    if (!sent) {
-      this.weatherDebugInFlight = false
-      this.weatherDebugQueue.unshift(item)
-      return false
-    }
-
-    this.scheduleWeatherDebugAckTimeout()
-    return true
-  }
-
-  logWeatherTrace(bytes) {
-    try {
-      const trace = JSON.parse(new TextDecoder().decode(bytes))
-      const temp = trace.temperatureC ?? trace.weather?.temperatureC ?? "?"
-      const condition = trace.condition ?? trace.weather?.condition ?? "clear"
-      const detail = trace.detail ? ` (${trace.detail})` : ""
-      this.appendLog(`weather trace [${trace.stage}]: ${temp}°C ${condition}${detail}`)
-    } catch (_error) {
-      this.appendLog("weather trace: could not decode trace frame")
-    }
-  }
-
-  resetWeatherDebugQueueIfStuck(reason) {
-    if (!this.weatherDebugInFlight) return false
-    const ageMs = Date.now() - this.weatherDebugInFlightAt
-    if (ageMs < 2500) return false
-    this.weatherDebugInFlight = false
-    this.pendingWeatherRetry = null
-    if (this.weatherDebugAckTimer != null) {
-      window.clearTimeout(this.weatherDebugAckTimer)
-      this.weatherDebugAckTimer = null
-    }
-    this.appendLog(`weather trace [queue_reset]: prior inject ack timed out (${reason}, ${ageMs}ms)`)
-    return true
-  }
-
-  weatherConditionWireCode(condition) {
-    const normalized = String(condition || "clear").toLowerCase().replace(/[^a-z0-9]+/g, "")
-    return WEATHER_CONDITION_WIRE_CODES[normalized] || WEATHER_CONDITION_WIRE_CODES.clear
-  }
-
-  parseSimulatorTemperatureC(value) {
-    if (value === null || value === undefined || value === "") return null
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? Math.round(parsed) : null
-  }
-
-  resolveWeatherSimulatorSettings(settings = this.simulatorSettings) {
-    if (!settings || typeof settings !== "object") {
-      return this.simulatorWeatherEnabled() ? DEFAULT_SIMULATOR_WEATHER : null
-    }
-
-    const nested = settings.weather
-    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-      return {
-        temperatureC: nested.temperatureC ?? settings.weather_temperatureC ?? DEFAULT_SIMULATOR_WEATHER.temperatureC,
-        condition: nested.condition ?? settings.weather_condition ?? DEFAULT_SIMULATOR_WEATHER.condition,
-        humidityPercent: nested.humidityPercent ?? settings.weather_humidityPercent ?? DEFAULT_SIMULATOR_WEATHER.humidityPercent,
-        pressureHpa: nested.pressureHpa ?? settings.weather_pressureHpa ?? DEFAULT_SIMULATOR_WEATHER.pressureHpa,
-        windKph: nested.windKph ?? settings.weather_windKph ?? DEFAULT_SIMULATOR_WEATHER.windKph
-      }
-    }
-
-    if (
-      settings.weather_temperatureC != null ||
-      settings.weather_condition != null ||
-      settings.weather_humidityPercent != null ||
-      settings.weather_pressureHpa != null ||
-      settings.weather_windKph != null
-    ) {
-      return {
-        temperatureC: settings.weather_temperatureC ?? DEFAULT_SIMULATOR_WEATHER.temperatureC,
-        condition: settings.weather_condition || DEFAULT_SIMULATOR_WEATHER.condition,
-        humidityPercent: settings.weather_humidityPercent ?? DEFAULT_SIMULATOR_WEATHER.humidityPercent,
-        pressureHpa: settings.weather_pressureHpa ?? DEFAULT_SIMULATOR_WEATHER.pressureHpa,
-        windKph: settings.weather_windKph ?? DEFAULT_SIMULATOR_WEATHER.windKph
-      }
-    }
-
-    return this.simulatorWeatherEnabled() ? DEFAULT_SIMULATOR_WEATHER : null
-  }
-
-  scheduleWeatherSimulatorInject(reason) {
-    if (!this.simulatorWeatherEnabled()) return
-    this.weatherInjectTimers.forEach(timerId => window.clearTimeout(timerId))
-    const timerId = window.setTimeout(() => {
-      this.weatherInjectTimers = this.weatherInjectTimers.filter(id => id !== timerId)
-      this.injectWeatherSimulatorSettings(reason)
-    }, 2000)
-    this.weatherInjectTimers = [timerId]
-  }
-
-  injectWeatherSimulatorSettings(reason) {
-    if (!this.simulatorWeatherEnabled()) return
-    const weather = this.resolveWeatherSimulatorSettings()
-    const sent = this.pushWeatherDebugAppMessage(weather, {quiet: true})
-    if (sent) {
-      this.appendLog(
-        `injected simulator weather (${reason}): ${this.parseSimulatorTemperatureC(weather.temperatureC) ?? "?"}°C ${weather.condition || "clear"}`
-      )
-    }
-  }
-
-  pushWeatherDebugAppMessage(weather, options = {}) {
-    if (!this.simulatorWeatherEnabled()) return false
-    const resolved = weather && typeof weather === "object" ? weather : DEFAULT_SIMULATOR_WEATHER
-    const temperatureC = this.parseSimulatorTemperatureC(resolved.temperatureC)
-    const conditionWire = this.weatherConditionWireCode(resolved.condition)
-    const entries = []
-
-    if (temperatureC != null) {
-      entries.push({key: DEBUG_SIMULATOR.weatherTemperatureC, type: "int", value: temperatureC})
-    }
-    entries.push({key: DEBUG_SIMULATOR.weatherConditionWire, type: "int", value: conditionWire})
-
-    return this.sendDebugAppMessage(entries, options)
-  }
-
-  sendWeatherSimulatorSettings(weather, options = {}) {
-    return this.enqueueWeatherDebugPush(weather, options)
-  }
-
-  sendSimulatorSettingsToPhoneBridge(settings = null) {
-    const payload = settings ?? this.simulatorSettingsPayload()
-    if (!payload) return false
-    if (!this.phoneSocket || this.phoneSocket.readyState !== WebSocket.OPEN) return false
-
-    const encoded = new TextEncoder().encode(JSON.stringify(payload))
-    const out = new Uint8Array(1 + encoded.length)
-    out[0] = 0x0e
-    out.set(encoded, 1)
-    this.phoneSocket.send(out)
-    return true
-  }
+  reapplySimulatorSettingsToQemu(...args) { return this.simulatorDelivery.reapplySimulatorSettingsToQemu(...args) }
+  applyInitialSimulatorSettings(...args) { return this.simulatorDelivery.applyInitialSimulatorSettings(...args) }
+  parseSimulatorCapabilities(...args) { return this.simulatorDelivery.parseSimulatorCapabilities(...args) }
+  simulatorCapabilities(...args) { return this.simulatorDelivery.simulatorCapabilities(...args) }
+  simulatorWeatherEnabled(...args) { return this.simulatorDelivery.simulatorWeatherEnabled(...args) }
+  refreshSimulatorCapabilities(...args) { return this.simulatorDelivery.refreshSimulatorCapabilities(...args) }
+  companionSimulatorEnabled(...args) { return this.simulatorDelivery.companionSimulatorEnabled(...args) }
+  emulatorSessionActive(...args) { return this.simulatorDelivery.emulatorSessionActive(...args) }
+  shouldSyncCompanionSimulator(...args) { return this.simulatorDelivery.shouldSyncCompanionSimulator(...args) }
+  simulatorSettingsWeatherKey(...args) { return this.simulatorDelivery.simulatorSettingsWeatherKey(...args) }
+  syncSimulatorSettingsFromDataset(...args) { return this.simulatorDelivery.syncSimulatorSettingsFromDataset(...args) }
+  refreshSimulatorSettingsFromDataset(...args) { return this.simulatorDelivery.refreshSimulatorSettingsFromDataset(...args) }
+  applySimulatorSettings(...args) { return this.simulatorDelivery.applySimulatorSettings(...args) }
+  simulatorSettingsPayload(...args) { return this.simulatorDelivery.simulatorSettingsPayload(...args) }
+  pushSimulatorSettingsToPhoneBridgeNow(...args) { return this.simulatorDelivery.pushSimulatorSettingsToPhoneBridgeNow(...args) }
+  scheduleWeatherPush(...args) { return this.simulatorDelivery.scheduleWeatherPush(...args) }
+  scheduleWeatherDebugFallback(...args) { return this.simulatorDelivery.scheduleWeatherDebugFallback(...args) }
+  scheduleWeatherDebugAckTimeout(...args) { return this.simulatorDelivery.scheduleWeatherDebugAckTimeout(...args) }
+  weatherDebugQueueKey(...args) { return this.simulatorDelivery.weatherDebugQueueKey(...args) }
+  enqueueWeatherDebugPush(...args) { return this.simulatorDelivery.enqueueWeatherDebugPush(...args) }
+  drainWeatherDebugQueue(...args) { return this.simulatorDelivery.drainWeatherDebugQueue(...args) }
+  logWeatherTrace(...args) { return this.simulatorDelivery.logWeatherTrace(...args) }
+  resetWeatherDebugQueueIfStuck(...args) { return this.simulatorDelivery.resetWeatherDebugQueueIfStuck(...args) }
+  weatherConditionWireCode(...args) { return this.simulatorDelivery.weatherConditionWireCode(...args) }
+  parseSimulatorTemperatureC(...args) { return this.simulatorDelivery.parseSimulatorTemperatureC(...args) }
+  resolveWeatherSimulatorSettings(...args) { return this.simulatorDelivery.resolveWeatherSimulatorSettings(...args) }
+  scheduleWeatherSimulatorInject(...args) { return this.simulatorDelivery.scheduleWeatherSimulatorInject(...args) }
+  injectWeatherSimulatorSettings(...args) { return this.simulatorDelivery.injectWeatherSimulatorSettings(...args) }
+  pushWeatherDebugAppMessage(...args) { return this.simulatorDelivery.pushWeatherDebugAppMessage(...args) }
+  sendWeatherSimulatorSettings(...args) { return this.simulatorDelivery.sendWeatherSimulatorSettings(...args) }
+  sendSimulatorSettingsToPhoneBridge(...args) { return this.simulatorDelivery.sendSimulatorSettingsToPhoneBridge(...args) }
 
   sendQemu(protocol, payload) {
     if (!this.session?.id) return
@@ -2942,6 +1550,15 @@ export class EmbeddedEmulatorHost {
     return `ok in ${probe.ms}ms (alive=${probe.alive}, display_ready=${probe.display_ready})`
   }
 
+  formatLastQemuSettingsApply() {
+    const apply = this.lastQemuSettingsApply
+    if (!apply) return "(none)"
+    const names = Array.isArray(apply.protocols)
+      ? apply.protocols.map(p => p?.name || p).filter(Boolean).join(", ")
+      : ""
+    return `count=${apply.count ?? 0}, source=${apply.source ?? "?"}` + (names ? `, protocols=${names}` : "")
+  }
+
   formatVncWebSocketState() {
     const diag = this.vncWsDiag
     if (!diag) return "(none)"
@@ -2982,7 +1599,10 @@ export class EmbeddedEmulatorHost {
       `Expected screen: ${screen.width}x${screen.height}`,
       `VNC canvas backing: ${vncBacking ? `${vncBacking.width}x${vncBacking.height}` : "(none)"}`,
       `Storage keys: ${this.storageEntries.size}`,
-      `Data log entries: ${this.dataLogEntries?.length ?? 0}`
+      `Data log entries: ${this.dataLogEntries?.length ?? 0}`,
+      `Simulator settings source: ${this.simulatorSettingsSource ?? "(none)"}`,
+      `Simulator settings applied at: ${this.simulatorSettingsAppliedAt ? new Date(this.simulatorSettingsAppliedAt).toISOString() : "(none)"}`,
+      `Last QEMU settings apply: ${this.formatLastQemuSettingsApply()}`
     ].join("\n")
   }
 
@@ -3027,21 +1647,8 @@ export class EmbeddedEmulatorHost {
     }
   }
 
-  schedulePingAfterDisplayConnect() {
-    this.stopPingAfterDisplayTimer()
-    if (!this.session || this.destroyed) return
-
-    const start = () => {
-      this.pingAfterDisplayTimer = null
-      if (this.session && !this.destroyed) this.startPing()
-    }
-
-    if (this.displayConnected) {
-      start()
-      return
-    }
-
-    this.pingAfterDisplayTimer = window.setTimeout(start, 45_000)
+  schedulePingAfterDisplayConnect(...args) {
+    return this.sessionClient.schedulePingAfterDisplayConnect(...args)
   }
 
   stopPingAfterDisplayTimer() {
@@ -3049,11 +1656,8 @@ export class EmbeddedEmulatorHost {
     this.pingAfterDisplayTimer = null
   }
 
-  startPing() {
-    this.stopPing()
-    if (!this.session || this.destroyed) return
-    this.pingSession()
-    this.pingTimer = window.setInterval(() => this.pingSession(), 5_000)
+  startPing(...args) {
+    return this.sessionClient.startPing(...args)
   }
 
   stopPing() {
@@ -3061,25 +1665,8 @@ export class EmbeddedEmulatorHost {
     this.pingTimer = null
   }
 
-  async pingSession() {
-    const session = this.session
-    if (!session || this.destroyed) return
-
-    try {
-      const response = await postJSON(session.ping_path)
-      if (this.session?.id !== session.id || this.destroyed) return
-      if (response?.alive === true) {
-        this.sessionAlive = true
-      } else if (!this.installing) {
-        this.sessionAlive = false
-        this.endSession("Embedded emulator is no longer running")
-      }
-    } catch (_error) {
-      if (this.session?.id === session.id && !this.destroyed && !this.installing) {
-        this.sessionAlive = false
-        this.endSession("Embedded emulator is no longer reachable")
-      }
-    }
+  async pingSession(...args) {
+    return this.sessionClient.pingSession(...args)
   }
 
   targetScreenSize() {

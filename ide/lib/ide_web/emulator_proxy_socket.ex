@@ -11,19 +11,7 @@ defmodule IdeWeb.EmulatorProxySocket do
       {:ok, socket} ->
         :inet.setopts(socket, active: true, nodelay: true, packet: :raw)
 
-        # region agent log
-        Ide.AgentDebugLog.log(
-          "initial",
-          "H20,H22",
-          "emulator_proxy_socket.ex:init:tcp_ok",
-          "emulator proxy connected to tcp target",
-          %{
-            host: host,
-            port: port
-          }
-        )
-
-        # endregion
+  
         {:ok, %{client: nil, tcp: socket, relay_logged: false}}
 
       {:error, reason} ->
@@ -31,20 +19,7 @@ defmodule IdeWeb.EmulatorProxySocket do
           "embedded emulator proxy tcp connect failed #{host}:#{port}: #{inspect(reason)}"
         )
 
-        # region agent log
-        Ide.AgentDebugLog.log(
-          "initial",
-          "H20,H22",
-          "emulator_proxy_socket.ex:init:tcp_error",
-          "emulator proxy failed to connect to tcp target",
-          %{
-            host: host,
-            port: port,
-            reason: inspect(reason)
-          }
-        )
-
-        # endregion
+  
         {:stop, {:tcp_connect_failed, reason}, %{client: nil, tcp: nil}}
     end
   end
@@ -107,32 +82,10 @@ defmodule IdeWeb.EmulatorProxySocket do
   end
 
   def handle_info({:tcp_closed, socket}, %{tcp: socket} = state) do
-    # region agent log
-    Ide.AgentDebugLog.log(
-      "initial",
-      "H20,H22",
-      "emulator_proxy_socket.ex:tcp_closed",
-      "emulator proxy tcp target closed",
-      %{}
-    )
-
-    # endregion
     {:stop, :normal, state}
   end
 
-  def handle_info({:tcp_error, socket, reason}, %{tcp: socket} = state) do
-    # region agent log
-    Ide.AgentDebugLog.log(
-      "initial",
-      "H20,H22",
-      "emulator_proxy_socket.ex:tcp_error",
-      "emulator proxy tcp target errored",
-      %{
-        reason: inspect(reason)
-      }
-    )
-
-    # endregion
+  def handle_info({:tcp_error, socket, _reason}, %{tcp: socket} = state) do
     {:stop, :normal, state}
   end
 

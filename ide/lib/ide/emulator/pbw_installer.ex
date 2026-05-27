@@ -195,30 +195,6 @@ defmodule Ide.Emulator.PBWInstaller do
       "native pbw install start uuid=#{pbw.uuid} variant=#{pbw.variant} parts=#{inspect(Enum.map(pbw.parts, &{&1.kind, &1.size}))}"
     )
 
-    # region agent log
-    Ide.AgentDebugLog.log(
-      "initial",
-      "H13",
-      "pbw_installer.ex:install:start",
-      "embedded pbw installer starting",
-      %{
-        path: pbw.path,
-        file: pbw_file_fingerprint(pbw.path),
-        uuid: pbw.uuid,
-        variant: pbw.variant,
-        parts:
-          Enum.map(pbw.parts, fn part ->
-            %{
-              kind: part.kind,
-              name: part.name,
-              size: part.size,
-              sha256_12: sha256_12(part.data)
-            }
-          end)
-      }
-    )
-
-    # endregion
 
     with :ok <- insert_app_metadata(router, pbw.app_metadata, timeout, blob_post_insert_settle_ms),
          {:ok, fetch} <- request_app_fetch(router, pbw.uuid, timeout),
@@ -242,24 +218,6 @@ defmodule Ide.Emulator.PBWInstaller do
     end
   end
 
-  defp pbw_file_fingerprint(path) do
-    stat =
-      case File.stat(path, time: :posix) do
-        {:ok, stat} -> %{size: stat.size, mtime: stat.mtime}
-        {:error, reason} -> %{error: inspect(reason)}
-      end
-
-    case File.read(path) do
-      {:ok, data} -> Map.put(stat, :sha256_12, sha256_12(data))
-      {:error, reason} -> Map.put(stat, :read_error, inspect(reason))
-    end
-  end
-
-  defp sha256_12(data) when is_binary(data) do
-    :crypto.hash(:sha256, data)
-    |> Base.encode16(case: :lower)
-    |> binary_part(0, 12)
-  end
 
   defp insert_app_metadata(router, metadata, timeout, settle_ms) do
     token = System.unique_integer([:positive]) |> rem(0xFFFE) |> Kernel.+(1)
@@ -359,26 +317,6 @@ defmodule Ide.Emulator.PBWInstaller do
              timeout
            ) do
       Packets.decode_app_fetch_request(frame.payload)
-      |> tap(fn
-        {:ok, fetch} ->
-          # region agent log
-          Ide.AgentDebugLog.log(
-            "initial",
-            "H13",
-            "pbw_installer.ex:app_fetch",
-            "app fetch request received",
-            %{
-              uuid: fetch.uuid,
-              app_id: fetch.app_id,
-              payload: Base.encode16(frame.payload, case: :lower)
-            }
-          )
-
-        # endregion
-
-        _ ->
-          :ok
-      end)
     end
   end
 
@@ -588,7 +526,7 @@ defmodule Ide.Emulator.PBWInstaller do
     Logger.debug("native pbw install part install kind=#{kind} cookie=#{cookie}")
     expected_cookies = [cookie, 0]
 
-    with {:ok, install} <-
+    with {:ok, _} <-
            send_putbytes(
              router,
              Packets.putbytes_install(cookie),
@@ -597,22 +535,6 @@ defmodule Ide.Emulator.PBWInstaller do
              install_timeout,
              putbytes_retries
            ) do
-      # region agent log
-      Ide.AgentDebugLog.log(
-        "initial",
-        "H13",
-        "pbw_installer.ex:install_ack",
-        "final putbytes install acknowledged",
-        %{
-          kind: kind,
-          request_cookie: cookie,
-          expected_cookies: expected_cookies,
-          response_cookie: install.cookie,
-          response: to_string(install.result)
-        }
-      )
-
-      # endregion
       observe_post_install_frame(router, kind)
     end
   end
@@ -671,22 +593,6 @@ defmodule Ide.Emulator.PBWInstaller do
     data
     |> chunks(chunk_size)
     |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, sent} ->
-      # region agent log
-      Ide.AgentDebugLog.log(
-        "initial",
-        "H25",
-        "pbw_installer.ex:putbytes:chunk_send",
-        "sending PutBytes chunk",
-        %{
-          kind: kind,
-          cookie: cookie,
-          offset: sent,
-          chunk_size: byte_size(chunk),
-          total_size: byte_size(data)
-        }
-      )
-
-      # endregion
 
       case send_putbytes(
              router,
@@ -704,42 +610,11 @@ defmodule Ide.Emulator.PBWInstaller do
            ) do
         {:ok, _ack} ->
           if chunk_delay_ms > 0, do: Process.sleep(chunk_delay_ms)
-          # region agent log
-          Ide.AgentDebugLog.log(
-            "initial",
-            "H25",
-            "pbw_installer.ex:putbytes:chunk_ack",
-            "PutBytes chunk acknowledged",
-            %{
-              kind: kind,
-              cookie: cookie,
-              offset: sent,
-              chunk_size: byte_size(chunk),
-              next_offset: sent + byte_size(chunk),
-              total_size: byte_size(data)
-            }
-          )
-
-          # endregion
+    
           {:cont, {:ok, sent + byte_size(chunk)}}
 
         {:error, reason} ->
-          # region agent log
-          Ide.AgentDebugLog.log(
-            "initial",
-            "H25",
-            "pbw_installer.ex:putbytes:chunk_error",
-            "PutBytes chunk failed",
-            %{
-              kind: kind,
-              cookie: cookie,
-              offset: sent,
-              chunk_size: byte_size(chunk),
-              reason: inspect(reason)
-            }
-          )
-
-          # endregion
+    
           {:halt, {:error, reason}}
       end
     end)
@@ -782,29 +657,6 @@ defmodule Ide.Emulator.PBWInstaller do
          retries_left
        ) do
     if meta.phase != :put do
-      # region agent log
-      Ide.AgentDebugLog.log(
-        "initial",
-        "H25,H26",
-        "pbw_installer.ex:putbytes:send",
-        "sending PutBytes phase",
-        %{
-          phase: meta.phase,
-          kind: Map.get(meta, :kind),
-          cookie: Map.get(meta, :cookie),
-          size: Map.get(meta, :size),
-          app_id: Map.get(meta, :app_id),
-          bytes_sent: Map.get(meta, :bytes_sent),
-          crc: Map.get(meta, :crc),
-          expected_cookie: expected_cookie,
-          timeout: timeout,
-          payload_prefix:
-            payload |> binary_part(0, min(byte_size(payload), 24)) |> Base.encode16(case: :lower),
-          payload_bytes: byte_size(payload)
-        }
-      )
-
-      # endregion
     end
 
     result =
@@ -823,21 +675,7 @@ defmodule Ide.Emulator.PBWInstaller do
 
     case result do
       {:error, {:nack, cookie}} when meta.phase != :commit and retries_left > 0 ->
-        # region agent log
-        Ide.AgentDebugLog.log(
-          "initial",
-          "H25,H26",
-          "pbw_installer.ex:putbytes:nack_retry",
-          "PutBytes phase NACK retrying",
-          %{
-            phase: meta.phase,
-            kind: Map.get(meta, :kind),
-            cookie: cookie,
-            retries_left: retries_left
-          }
-        )
-
-        # endregion
+  
         Logger.debug(
           "native pbw install PutBytes NACK phase=#{meta.phase} kind=#{Map.get(meta, :kind)} cookie=#{cookie}; retrying"
         )
@@ -846,50 +684,15 @@ defmodule Ide.Emulator.PBWInstaller do
         do_send_putbytes(router, packet, expected_cookie, meta, timeout, retries_left - 1)
 
       {:error, reason} ->
-        # region agent log
-        Ide.AgentDebugLog.log(
-          "initial",
-          "H25,H26",
-          "pbw_installer.ex:putbytes:error",
-          "PutBytes phase failed",
-          %{
-            phase: meta.phase,
-            kind: Map.get(meta, :kind),
-            cookie: Map.get(meta, :cookie),
-            expected_cookie: expected_cookie,
-            reason: inspect(reason)
-          }
-        )
-
-        # endregion
+  
         {:error, {:putbytes_failed, meta, reason}}
 
-      {:ok, response} = ok ->
-        if meta.phase != :put do
-          # region agent log
-          Ide.AgentDebugLog.log(
-            "initial",
-            "H25,H26",
-            "pbw_installer.ex:putbytes:ack",
-            "PutBytes phase acknowledged",
-            %{
-              phase: meta.phase,
-              kind: Map.get(meta, :kind),
-              cookie: Map.get(meta, :cookie),
-              expected_cookie: expected_cookie,
-              response_cookie: response.cookie,
-              response: to_string(response.result)
-            }
-          )
-
-          # endregion
-        end
-
+      {:ok, _} = ok ->
         ok
     end
   end
 
-  defp observe_post_install_frame(router, kind) do
+  defp observe_post_install_frame(router, _kind) do
     matcher = fn frame ->
       frame.endpoint in [
         Packets.endpoint(:app_fetch),
@@ -898,40 +701,8 @@ defmodule Ide.Emulator.PBWInstaller do
       ]
     end
 
-    case Router.await_frame(router, matcher, 250) do
-      {:ok, frame} ->
-        # region agent log
-        Ide.AgentDebugLog.log(
-          "initial",
-          "H13",
-          "pbw_installer.ex:post_install_frame",
-          "frame observed after final install ack",
-          %{
-            kind: kind,
-            endpoint: frame.endpoint,
-            payload: Base.encode16(frame.payload, case: :lower)
-          }
-        )
-
-        # endregion
-        :ok
-
-      {:error, reason} ->
-        # region agent log
-        Ide.AgentDebugLog.log(
-          "initial",
-          "H13",
-          "pbw_installer.ex:post_install_timeout",
-          "no post-install frame observed",
-          %{
-            kind: kind,
-            reason: inspect(reason)
-          }
-        )
-
-        # endregion
-        :ok
-    end
+    _ = Router.await_frame(router, matcher, 250)
+    :ok
   end
 
   defp probe_post_install_state(_router, timeout) when timeout <= 0, do: :ok
@@ -939,7 +710,7 @@ defmodule Ide.Emulator.PBWInstaller do
   defp probe_post_install_state(router, timeout) do
     {endpoint, payload} = Packets.app_run_state_request()
 
-    run_state_result =
+    _ =
       Router.send_and_await(
         router,
         endpoint,
@@ -948,37 +719,10 @@ defmodule Ide.Emulator.PBWInstaller do
         timeout
       )
 
-    # region agent log
-    Ide.AgentDebugLog.log(
-      "initial",
-      "H28",
-      "pbw_installer.ex:post_install_run_state",
-      "queried AppRunState after install",
-      %{
-        request_endpoint: endpoint,
-        request_payload: Base.encode16(payload, case: :lower),
-        result: probe_result(run_state_result)
-      }
-    )
-
-    # endregion
-
     observe_post_install_any_frames(router, timeout, 40, [])
   end
 
-  defp observe_post_install_any_frames(_router, _timeout, 0, frames) do
-    # region agent log
-    Ide.AgentDebugLog.log(
-      "initial",
-      "H29",
-      "pbw_installer.ex:post_install_frames",
-      "post-install frame observation complete",
-      %{
-        frames: Enum.reverse(frames)
-      }
-    )
-
-    # endregion
+  defp observe_post_install_any_frames(_router, _timeout, 0, _frames) do
     :ok
   end
 
@@ -1016,14 +760,4 @@ defmodule Ide.Emulator.PBWInstaller do
   end
 
   defp maybe_add_data_logging_marker(observed, _payload), do: observed
-
-  defp probe_result({:ok, frame}) do
-    %{
-      endpoint: frame.endpoint,
-      payload_bytes: byte_size(frame.payload),
-      payload: Base.encode16(frame.payload, case: :lower)
-    }
-  end
-
-  defp probe_result({:error, reason}), do: %{error: inspect(reason)}
 end

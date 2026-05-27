@@ -18,6 +18,7 @@ defmodule Ide.SimulatorSettings do
           capabilities: [String.t()],
           group: atom(),
           optional: boolean(),
+          debugger_only: boolean(),
           min: number() | nil,
           max: number() | nil,
           step: number() | nil,
@@ -106,6 +107,7 @@ defmodule Ide.SimulatorSettings do
       step: nil,
       options: nil,
       optional: false,
+      debugger_only: true,
       hint: "Disable to use the current host clock."
     },
     %{
@@ -119,6 +121,7 @@ defmodule Ide.SimulatorSettings do
       step: nil,
       options: nil,
       optional: true,
+      debugger_only: true,
       hint: nil
     },
     %{
@@ -132,6 +135,7 @@ defmodule Ide.SimulatorSettings do
       step: nil,
       options: nil,
       optional: true,
+      debugger_only: true,
       hint: nil
     },
     %{
@@ -555,7 +559,7 @@ defmodule Ide.SimulatorSettings do
     caps = capabilities_for(project, debugger_state, mode)
 
     @fields
-    |> Enum.filter(fn field -> field_active?(field, caps) end)
+    |> Enum.filter(fn field -> field_active?(field, caps) and field_visible_in_mode?(field, mode) end)
     |> Enum.group_by(& &1.group)
     |> Enum.sort_by(fn {group, _} -> group_order(group) end)
     |> Enum.map(fn {group, fields} ->
@@ -656,6 +660,13 @@ defmodule Ide.SimulatorSettings do
   defp field_active?(field, caps) do
     Enum.any?(field.capabilities, &MapSet.member?(caps, &1))
   end
+
+  @spec field_visible_in_mode?(field_spec(), :debugger | :emulator) :: boolean()
+  defp field_visible_in_mode?(field, :emulator) do
+    not Map.get(field, :debugger_only, false)
+  end
+
+  defp field_visible_in_mode?(_field, _mode), do: true
 
   @spec group_order(atom()) :: integer()
   defp group_order(:watch_device), do: 0

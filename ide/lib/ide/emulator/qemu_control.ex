@@ -61,25 +61,14 @@ defmodule Ide.Emulator.QemuControl do
   """
   @spec external_cli_commands(map()) :: [map()]
   def external_cli_commands(settings) when is_map(settings) do
-    [
-      %{
-        "control" => "battery",
-        "percent" => Integer.to_string(Map.get(settings, "battery_percent", 0)),
-        "charging" => bool_string(Map.get(settings, "charging", false))
-      },
-      %{
-        "control" => "bluetooth",
-        "connected" => bool_string(Map.get(settings, "connected", false))
-      },
-      %{
-        "control" => "time_format",
-        "enabled" => bool_string(Map.get(settings, "clock_24h", false))
-      },
-      %{
-        "control" => "timeline_quick_view",
-        "enabled" => bool_string(Map.get(settings, "timeline_peek", false))
-      }
-    ]
+    []
+    |> maybe_external_battery(settings)
+    |> maybe_external_bluetooth(settings)
+    |> maybe_external_time_format(settings)
+    |> maybe_external_timeline_peek(settings)
+    |> maybe_external_set_time(settings)
+    |> maybe_external_compass(settings)
+    |> Enum.reverse()
   end
 
   def external_cli_commands(_settings), do: []
@@ -162,6 +151,109 @@ defmodule Ide.Emulator.QemuControl do
       commands
     end
   end
+
+  defp maybe_external_battery(commands, settings) do
+    if Map.has_key?(settings, "battery_percent") or Map.has_key?(settings, "charging") do
+      [
+        %{
+          "control" => "battery",
+          "percent" => Integer.to_string(Map.get(settings, "battery_percent", 0)),
+          "charging" => bool_string(Map.get(settings, "charging", false))
+        }
+        | commands
+      ]
+    else
+      commands
+    end
+  end
+
+  defp maybe_external_bluetooth(commands, settings) do
+    if Map.has_key?(settings, "connected") do
+      [
+        %{"control" => "bluetooth", "connected" => bool_string(Map.get(settings, "connected", false))}
+        | commands
+      ]
+    else
+      commands
+    end
+  end
+
+  defp maybe_external_time_format(commands, settings) do
+    if Map.has_key?(settings, "clock_24h") do
+      [%{"control" => "time_format", "enabled" => bool_string(Map.get(settings, "clock_24h", false))} | commands]
+    else
+      commands
+    end
+  end
+
+  defp maybe_external_timeline_peek(commands, settings) do
+    if Map.has_key?(settings, "timeline_peek") do
+      [
+        %{"control" => "timeline_quick_view", "enabled" => bool_string(Map.get(settings, "timeline_peek", false))}
+        | commands
+      ]
+    else
+      commands
+    end
+  end
+
+  defp maybe_external_set_time(commands, settings) do
+    if simulated_time_enabled?(settings) do
+      {:ok, time} = external_set_time_value(settings)
+      [%{"control" => "set_time", "time" => time} | commands]
+    else
+      commands
+    end
+  end
+
+  defp maybe_external_compass(commands, settings) do
+    if Map.has_key?(settings, "compass_heading_deg") or Map.has_key?(settings, "compass_valid") do
+      heading = Map.get(settings, "compass_heading_deg", 0) |> max(0) |> min(360) |> round()
+      valid? = Map.get(settings, "compass_valid", true)
+
+      [
+        %{
+          "control" => "compass",
+          "heading" => Integer.to_string(heading),
+          "valid" => bool_string(valid?)
+        }
+        | commands
+      ]
+    else
+      commands
+    end
+  end
+
+  defp simulated_time_enabled?(settings) do
+    Map.get(settings, "use_simulated_time") in [true, "true", "1", 1]
+  end
+
+  defp external_set_time_value(settings) do
+    fallback = NaiveDateTime.local_now()
+    date = parse_simulated_date(Map.get(settings, "simulated_date"), NaiveDateTime.to_date(fallback))
+    time = parse_simulated_time(Map.get(settings, "simulated_time"), NaiveDateTime.to_time(fallback))
+
+    {:ok, naive} = NaiveDateTime.new(date, time)
+    {:ok, Calendar.strftime(naive, "%H:%M:%S")}
+  end
+
+  defp parse_simulated_date(value, fallback) when is_binary(value) do
+    case Date.from_iso8601(String.trim(value)) do
+      {:ok, date} -> date
+      {:error, _} -> fallback
+    end
+  end
+
+  defp parse_simulated_date(_value, fallback), do: fallback
+
+  defp parse_simulated_time(value, fallback) when is_binary(value) do
+    case Time.from_iso8601(String.trim(value)) do
+      {:ok, time} -> time
+      {:error, _} -> fallback
+    end
+  end
+
+  defp parse_simulated_time(_value, fallback), do: fallback
 
   defp maybe_compass_command(commands, settings) do
     if Map.has_key?(settings, "compass_heading_deg") or Map.has_key?(settings, "compass_valid") do

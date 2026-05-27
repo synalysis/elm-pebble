@@ -3,7 +3,8 @@ defmodule Ide.Emulator.QemuControlTest do
 
   alias Ide.Emulator.QemuControl
 
-  test "encode_battery clamps percent and encodes charging flag" do
+  test "encode_battery golden bytes" do
+    assert %{protocol: 5, payload: <<88, 1>>} = QemuControl.encode_battery(88, true)
     assert %{protocol: 5, payload: <<100, 1>>} = QemuControl.encode_battery(150, true)
     assert %{protocol: 5, payload: <<0, 0>>} = QemuControl.encode_battery(-5, false)
   end
@@ -57,10 +58,28 @@ defmodule Ide.Emulator.QemuControlTest do
   test "external_cli_commands maps simulator settings for Pebble CLI" do
     commands = QemuControl.external_cli_commands(%{"battery_percent" => 77, "charging" => true})
 
-    assert [%{"control" => "battery", "percent" => "77", "charging" => "true"} | _] = commands
-    assert Enum.any?(commands, &(&1["control"] == "bluetooth"))
-    assert Enum.any?(commands, &(&1["control"] == "time_format"))
-    assert Enum.any?(commands, &(&1["control"] == "timeline_quick_view"))
+    assert [%{"control" => "battery", "percent" => "77", "charging" => "true"}] = commands
+  end
+
+  test "external_cli_commands includes emu-set-time when simulated time enabled" do
+    commands =
+      QemuControl.external_cli_commands(%{
+        "use_simulated_time" => true,
+        "simulated_date" => "2025-05-22",
+        "simulated_time" => "14:30:00"
+      })
+
+    assert [%{"control" => "set_time", "time" => "14:30:00"}] = commands
+  end
+
+  test "external_cli_commands includes compass when heading present" do
+    commands =
+      QemuControl.external_cli_commands(%{
+        "compass_heading_deg" => 90,
+        "compass_valid" => true
+      })
+
+    assert [%{"control" => "compass", "heading" => "90", "valid" => "true"}] = commands
   end
 
   test "supported_controls omits unimplemented set_time" do
