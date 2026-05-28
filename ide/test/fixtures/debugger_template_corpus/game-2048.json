@@ -1,0 +1,1948 @@
+{
+  "preview_diagnostics": {
+    "render_source": "runtime_view_output",
+    "root_type": "windowStack",
+    "runtime_view_output_kinds": [
+      "clear",
+      "text",
+      "push_context",
+      "stroke_color",
+      "text_color",
+      "rect",
+      "pop_context"
+    ],
+    "status": "ok"
+  },
+  "preview_ops": [
+    {
+      "color": 255,
+      "kind": "clear"
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 16,
+      "h": 16,
+      "kind": "text_label",
+      "text": "2048  Best 0",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 132,
+      "x": 4,
+      "y": 4
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 11,
+      "y": 26
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 11,
+      "y": 31
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 42,
+      "y": 26
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 42,
+      "y": 31
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 73,
+      "y": 26
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 73,
+      "y": 31
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 104,
+      "y": 26
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": "2",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 104,
+      "y": 31
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 11,
+      "y": 57
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 11,
+      "y": 62
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 42,
+      "y": 57
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 42,
+      "y": 62
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 73,
+      "y": 57
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 73,
+      "y": 62
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 104,
+      "y": 57
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 104,
+      "y": 62
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 11,
+      "y": 88
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 11,
+      "y": 93
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 42,
+      "y": 88
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 42,
+      "y": 93
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 73,
+      "y": 88
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 73,
+      "y": 93
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 104,
+      "y": 88
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 104,
+      "y": 93
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 11,
+      "y": 119
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 11,
+      "y": 124
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 42,
+      "y": 119
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": "2",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 42,
+      "y": 124
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 73,
+      "y": 119
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 73,
+      "y": 124
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 28,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 28,
+      "x": 104,
+      "y": 119
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": ".",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 28,
+      "x": 104,
+      "y": 124
+    }
+  ],
+  "preview_ops_sha256": "34b17638d4244f5367d8006ad1dfe1dc3d77af15b60a6c1b8aaae2483cc07639",
+  "render_tree": {
+    "node_count": 53,
+    "node_types": [
+      "canvasLayer",
+      "clear",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "rect",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "window",
+      "windowStack"
+    ],
+    "root_type": "windowStack",
+    "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [],
+                  "color": 255,
+                  "label": "",
+                  "text": null,
+                  "type": "clear"
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 16,
+                  "label": "",
+                  "text": "2048  Best 0",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 132,
+                  "x": 4,
+                  "y": 4
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 11,
+                      "y": 26
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 11,
+                      "y": 31
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 42,
+                      "y": 26
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 42,
+                      "y": 31
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 73,
+                      "y": 26
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 73,
+                      "y": 31
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 104,
+                      "y": 26
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": "2",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 104,
+                      "y": 31
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 11,
+                      "y": 57
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 11,
+                      "y": 62
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 42,
+                      "y": 57
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 42,
+                      "y": 62
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 73,
+                      "y": 57
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 73,
+                      "y": 62
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 104,
+                      "y": 57
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 104,
+                      "y": 62
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 11,
+                      "y": 88
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 11,
+                      "y": 93
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 42,
+                      "y": 88
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 42,
+                      "y": 93
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 73,
+                      "y": 88
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 73,
+                      "y": 93
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 104,
+                      "y": 88
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 104,
+                      "y": 93
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 11,
+                      "y": 119
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 11,
+                      "y": 124
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 42,
+                      "y": 119
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": "2",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 42,
+                      "y": 124
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 73,
+                      "y": 119
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 73,
+                      "y": 124
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 28,
+                      "label": "",
+                      "text": null,
+                      "type": "rect",
+                      "w": 28,
+                      "x": 104,
+                      "y": 119
+                    },
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 18,
+                      "label": "",
+                      "text": ".",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 28,
+                      "x": 104,
+                      "y": 124
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                }
+              ],
+              "id": 1,
+              "label": "",
+              "text": null,
+              "type": "canvasLayer"
+            }
+          ],
+          "id": 1,
+          "label": "",
+          "text": null,
+          "type": "window"
+        }
+      ],
+      "label": "",
+      "text": null,
+      "type": "windowStack"
+    }
+  },
+  "runtime_model": {
+    "best": 0,
+    "cells": [
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0
+    ],
+    "colorMode": {
+      "args": [],
+      "ctor": "Color"
+    },
+    "displayShape": {
+      "args": [],
+      "ctor": "Rectangular"
+    },
+    "last_message": "DeviceLoaded",
+    "last_operation": "nil",
+    "runtime_view_output": [],
+    "score": 0,
+    "screenH": 168,
+    "screenW": 144,
+    "seed": 451259489,
+    "step_counter": 1,
+    "timeString": null,
+    "turn": 0
+  },
+  "template": "game-2048",
+  "timeline_init_messages": [
+    "update:DeviceLoaded",
+    "update:RandomGenerated {\"args\":[451259489],\"ctor\":\"RandomGenerated\",\"tag\":6}",
+    "update:BestLoaded {\"args\":[\"\"],\"ctor\":\"BestLoaded\",\"tag\":5}",
+    "init:init"
+  ],
+  "view_tree_type": "windowStack",
+  "watch_model": {
+    "_debugger_steps": 3,
+    "debugger_init_complete": true,
+    "elm_executor_mode": "runtime_executed",
+    "last_source": "module Main exposing (main)\n\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Events as Events\nimport Pebble.Light as Light\nimport Pebble.Platform as Platform\nimport Pebble.Storage as Storage\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\nimport Random\n\n\ntype alias Model =\n    { cells : List Int\n    , score : Int\n    , best : Int\n    , seed : Int\n    , turn : Int\n    , screenW : Int\n    , screenH : Int\n    , displayShape : Platform.DisplayShape\n    }\n\n\ntype Direction\n    = Left\n    | Right\n    | Up\n    | Down\n\n\ntype Msg\n    = LeftPressed\n    | RightPressed\n    | UpPressed\n    | DownPressed\n    | BestLoaded String\n    | RandomGenerated Int\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { cells = emptyBoard\n      , score = 0\n      , best = 0\n      , seed = 0\n      , turn = 0\n      , screenW = context.screen.width\n      , screenH = context.screen.height\n      , displayShape = context.screen.shape\n      }\n    , Cmd.batch\n        [ Storage.readString 2048 BestLoaded\n        , Random.generate RandomGenerated (Random.int 1 2147483647)\n        , Light.enable\n        ]\n    )\n\n\nemptyBoard : List Int\nemptyBoard =\n    List.repeat 16 0\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        LeftPressed ->\n            moveBoard Left model\n\n        RightPressed ->\n            moveBoard Right model\n\n        UpPressed ->\n            moveBoard Up model\n\n        DownPressed ->\n            moveBoard Down model\n\n        BestLoaded value ->\n            ( { model | best = Maybe.withDefault 0 (String.toInt value) }, Cmd.none )\n\n        RandomGenerated seed ->\n            let\n                ( cells, nextSeed ) =\n                    initialBoard seed\n            in\n            ( { model | cells = cells, seed = nextSeed }, Cmd.none )\n\n\nmoveBoard : Direction -> Model -> ( Model, Cmd Msg )\nmoveBoard direction model =\n    let\n        oriented =\n            orient direction model.cells\n\n        collapsed =\n            collapseRows oriented\n\n        restored =\n            restore direction collapsed.cells\n    in\n    if restored == model.cells then\n        ( model, Cmd.none )\n\n    else\n        let\n            ( nextCells, nextSeed ) =\n                spawnTileWithSeed model.seed restored\n\n            nextScore =\n                model.score + collapsed.score\n\n            nextBest =\n                max model.best nextScore\n\n            saveBest =\n                if nextBest > model.best then\n                    Storage.writeString 2048 (String.fromInt nextBest)\n\n                else\n                    Cmd.none\n        in\n        ( { model\n            | cells = nextCells\n            , score = nextScore\n            , best = nextBest\n            , seed = nextSeed\n            , turn = model.turn + 1\n          }\n        , saveBest\n        )\n\n\ninitialBoard : Int -> ( List Int, Int )\ninitialBoard seed =\n    let\n        ( firstCells, firstSeed ) =\n            spawnTileWithSeed seed emptyBoard\n    in\n    spawnTileWithSeed firstSeed firstCells\n\n\ntype alias CollapseResult =\n    { cells : List Int\n    , score : Int\n    }\n\n\ncollapseRows : List Int -> CollapseResult\ncollapseRows cells =\n    let\n        row0 =\n            collapseRow (rowAt 0 cells)\n\n        row1 =\n            collapseRow (rowAt 1 cells)\n\n        row2 =\n            collapseRow (rowAt 2 cells)\n\n        row3 =\n            collapseRow (rowAt 3 cells)\n    in\n    { cells = row0.cells ++ row1.cells ++ row2.cells ++ row3.cells\n    , score = row0.score + row1.score + row2.score + row3.score\n    }\n\n\ncollapseRow : List Int -> CollapseResult\ncollapseRow row =\n    let\n        merged =\n            merge (List.filter ((/=) 0) row)\n    in\n    { cells = merged.cells ++ List.repeat (4 - List.length merged.cells) 0\n    , score = merged.score\n    }\n\n\nmerge : List Int -> CollapseResult\nmerge values =\n    case values of\n        a :: b :: rest ->\n            if a == b then\n                let\n                    tail =\n                        merge rest\n\n                    value =\n                        a + b\n                in\n                { cells = value :: tail.cells\n                , score = value + tail.score\n                }\n\n            else\n                let\n                    tail =\n                        merge (b :: rest)\n                in\n                { cells = a :: tail.cells\n                , score = tail.score\n                }\n\n        _ ->\n            { cells = values, score = 0 }\n\n\nspawnTile : Int -> List Int -> List Int\nspawnTile seed cells =\n    Tuple.first (spawnTileWithSeed seed cells)\n\n\nspawnTileWithSeed : Int -> List Int -> ( List Int, Int )\nspawnTileWithSeed seed cells =\n    let\n        emptyCount =\n            countEmpty cells\n\n        seedAfterChoice =\n            advanceSeed seed\n\n        seedAfterTile =\n            advanceSeed seedAfterChoice\n\n        tileIndex =\n            nthEmptyIndex (randomIndex emptyCount seedAfterChoice) cells\n\n        tileValue =\n            if randomIndex 10 seedAfterTile == 0 then\n                4\n\n            else\n                2\n    in\n    if emptyCount == 0 then\n        ( cells, seedAfterTile )\n\n    else\n        ( setCell tileIndex tileValue cells, seedAfterTile )\n\n\nadvanceSeed : Int -> Int\nadvanceSeed seed =\n    modBy 2147483647 (seed * 16807 + 11)\n\n\nrandomIndex : Int -> Int -> Int\nrandomIndex maxExclusive seed =\n    if maxExclusive <= 0 then\n        0\n\n    else\n        modBy maxExclusive seed\n\n\ncountEmpty : List Int -> Int\ncountEmpty cells =\n    case cells of\n        [] ->\n            0\n\n        value :: rest ->\n            (if value == 0 then\n                1\n\n             else\n                0\n            )\n                + countEmpty rest\n\n\nnthEmptyIndex : Int -> List Int -> Int\nnthEmptyIndex target cells =\n    nthEmptyIndexHelp target 0 cells\n\n\nnthEmptyIndexHelp : Int -> Int -> List Int -> Int\nnthEmptyIndexHelp target index cells =\n    case cells of\n        [] ->\n            -1\n\n        value :: rest ->\n            if value == 0 then\n                if target == 0 then\n                    index\n\n                else\n                    nthEmptyIndexHelp (target - 1) (index + 1) rest\n\n            else\n                nthEmptyIndexHelp target (index + 1) rest\n\n\nsetCell : Int -> Int -> List Int -> List Int\nsetCell index newValue cells =\n    List.indexedMap\n        (\\i value ->\n            if i == index then\n                newValue\n\n            else\n                value\n        )\n        cells\n\n\norient : Direction -> List Int -> List Int\norient direction cells =\n    case direction of\n        Left ->\n            cells\n\n        Right ->\n            reverseRows cells\n\n        Up ->\n            transpose cells\n\n        Down ->\n            reverseRows (transpose cells)\n\n\nrestore : Direction -> List Int -> List Int\nrestore direction cells =\n    case direction of\n        Left ->\n            cells\n\n        Right ->\n            reverseRows cells\n\n        Up ->\n            transpose cells\n\n        Down ->\n            transpose (reverseRows cells)\n\n\nrowAt : Int -> List Int -> List Int\nrowAt row cells =\n    List.take 4 (List.drop (row * 4) cells)\n\n\nreverseRows : List Int -> List Int\nreverseRows cells =\n    [ List.reverse (rowAt 0 cells)\n    , List.reverse (rowAt 1 cells)\n    , List.reverse (rowAt 2 cells)\n    , List.reverse (rowAt 3 cells)\n    ]\n        |> List.concat\n\n\ntranspose : List Int -> List Int\ntranspose cells =\n    List.map\n        (\\i -> Maybe.withDefault 0 (listAt i cells))\n        [ 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15 ]\n\n\nlistAt : Int -> List a -> Maybe a\nlistAt index values =\n    if index < 0 then\n        Nothing\n\n    else\n        List.head (List.drop index values)\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Button.onPress Button.Back LeftPressed\n        , Button.onPress Button.Up UpPressed\n        , Button.onPress Button.Down DownPressed\n        , Button.onPress Button.Select RightPressed\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    let\n        layout =\n            boardLayout model\n\n        textOptions =\n            if Platform.displayShapeIsRound model.displayShape then\n                Ui.alignCenter Ui.defaultTextOptions\n\n            else\n                Ui.defaultTextOptions\n\n        chromeOps =\n            if Platform.displayShapeIsRound model.displayShape then\n                let\n                    textW =\n                        (min model.screenW model.screenH * 4) // 9\n\n                    textX =\n                        (model.screenW - textW) // 2\n                in\n                [ Ui.text Resources.DefaultFont textOptions { x = textX, y = 10, w = textW, h = 14 } \"2048\"\n                , Ui.text Resources.DefaultFont textOptions { x = textX, y = model.screenH - 24, w = textW, h = 14 } (\"Best \" ++ String.fromInt model.best)\n                ]\n\n            else\n                [ Ui.text Resources.DefaultFont textOptions { x = 4, y = 4, w = 132, h = 16 } (\"2048  Best \" ++ String.fromInt model.best)\n                ]\n    in\n    Ui.clear Color.white\n        :: (chromeOps\n                ++ List.indexedMap (drawCell layout) model.cells\n           )\n        |> Ui.toUiNode\n\n\ntype alias BoardLayout =\n    { x : Int\n    , y : Int\n    , cell : Int\n    , gap : Int\n    }\n\n\nboardLayout : Model -> BoardLayout\nboardLayout model =\n    if Platform.displayShapeIsRound model.displayShape then\n        let\n            diameter =\n                min model.screenW model.screenH\n\n            targetBoardSize =\n                (diameter * 2) // 3\n\n            gap =\n                2\n\n            cell =\n                (targetBoardSize - gap * 3) // 4\n\n            boardSize =\n                cell * 4 + gap * 3\n        in\n        { x = (model.screenW - boardSize) // 2\n        , y = (model.screenH - boardSize) // 2\n        , cell = cell\n        , gap = gap\n        }\n\n    else\n        let\n            boardTop =\n                26\n\n            horizontalMargin =\n                10\n\n            bottomMargin =\n                4\n\n            gap =\n                max 3 (min model.screenW model.screenH // 48)\n\n            targetBoardSize =\n                min\n                    (model.screenW - horizontalMargin * 2)\n                    (model.screenH - boardTop - bottomMargin)\n\n            cell =\n                (targetBoardSize - gap * 3) // 4\n\n            boardSize =\n                cell * 4 + gap * 3\n        in\n        { x = (model.screenW - boardSize) // 2\n        , y = boardTop\n        , cell = cell\n        , gap = gap\n        }\n\n\ndrawCell : BoardLayout -> Int -> Int -> Ui.RenderOp\ndrawCell layout index value =\n    let\n        x =\n            layout.x + modBy 4 index * (layout.cell + layout.gap)\n\n        y =\n            layout.y + (index // 4) * (layout.cell + layout.gap)\n\n        label =\n            if value == 0 then\n                \".\"\n\n            else\n                String.fromInt value\n\n        textY =\n            y + ((layout.cell - 18) // 2)\n    in\n    Ui.context\n        [ Ui.strokeColor Color.black\n        , Ui.textColor Color.black\n        ]\n        [ Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black\n        , Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = x, y = textY, w = layout.cell, h = 18 } label\n        ]\n        |> Ui.group\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
+    "launch_context": {
+      "has_compass": false,
+      "has_microphone": false,
+      "launch_reason": "LaunchUser",
+      "screen": {
+        "color_mode": "Color",
+        "height": 168,
+        "shape": "Rectangular",
+        "width": 144
+      },
+      "shape": "rect",
+      "supports_health": true,
+      "watch_model": "Basalt",
+      "watch_profile_id": "basalt"
+    },
+    "revision": "a3b2a08c1f36",
+    "runtime_known_messages": [
+      "LeftPressed",
+      "RightPressed",
+      "UpPressed",
+      "DownPressed",
+      "BestLoaded",
+      "RandomGenerated"
+    ],
+    "runtime_message_cursor": 3,
+    "runtime_message_source": "runtime_followup",
+    "runtime_model": {
+      "best": 0,
+      "cells": [
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0
+      ],
+      "colorMode": {
+        "args": [],
+        "ctor": "Color"
+      },
+      "displayShape": {
+        "args": [],
+        "ctor": "Rectangular"
+      },
+      "last_message": "DeviceLoaded",
+      "last_operation": "nil",
+      "score": 0,
+      "screenH": 168,
+      "screenW": 144,
+      "seed": 451259489,
+      "step_counter": 1,
+      "turn": 0
+    },
+    "runtime_model_source": "step_message",
+    "runtime_update_branches": [
+      "LeftPressed",
+      "RightPressed",
+      "UpPressed",
+      "DownPressed",
+      "BestLoaded value",
+      "RandomGenerated seed"
+    ],
+    "runtime_view_output": [
+      {
+        "color": 255,
+        "kind": "clear",
+        "text": null
+      },
+      {
+        "font_id": 1,
+        "h": 16,
+        "kind": "text",
+        "text": "2048  Best 0",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 132,
+        "x": 4,
+        "y": 4
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 11,
+        "y": 26
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 11,
+        "y": 31
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 42,
+        "y": 26
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 42,
+        "y": 31
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 73,
+        "y": 26
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 73,
+        "y": 31
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 104,
+        "y": 26
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": "2",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 104,
+        "y": 31
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 11,
+        "y": 57
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 11,
+        "y": 62
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 42,
+        "y": 57
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 42,
+        "y": 62
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 73,
+        "y": 57
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 73,
+        "y": 62
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 104,
+        "y": 57
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 104,
+        "y": 62
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 11,
+        "y": 88
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 11,
+        "y": 93
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 42,
+        "y": 88
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 42,
+        "y": 93
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 73,
+        "y": 88
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 73,
+        "y": 93
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 104,
+        "y": 88
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 104,
+        "y": 93
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 11,
+        "y": 119
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 11,
+        "y": 124
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 42,
+        "y": 119
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": "2",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 42,
+        "y": 124
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 73,
+        "y": 119
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 73,
+        "y": 124
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "rect",
+        "text": null,
+        "w": 28,
+        "x": 104,
+        "y": 119
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": ".",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 28,
+        "x": 104,
+        "y": 124
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      }
+    ],
+    "screen_height": 168,
+    "screen_width": 144,
+    "simulator_settings": {
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "battery_percent": 88,
+      "calendar_events": [],
+      "charging": false,
+      "clock_24h": true,
+      "compass_heading_deg": 0,
+      "compass_valid": true,
+      "connected": true,
+      "dictation_error": "",
+      "dictation_transcript": "",
+      "environment": {
+        "moon": {
+          "moonriseMin": 900,
+          "moonsetMin": 300,
+          "phaseE6": 500000
+        },
+        "sun": {
+          "polarDay": false,
+          "sunriseMin": 420,
+          "sunsetMin": 1200
+        },
+        "tide": null
+      },
+      "health_steps": 4200,
+      "health_steps_today": 9100,
+      "language": "en",
+      "latitude": 48.137154,
+      "locale": "en-US",
+      "longitude": 11.576124,
+      "network_online": true,
+      "notifications_enabled": true,
+      "preferences": {},
+      "quiet_hours": false,
+      "region": "US",
+      "simulated_date": "2026-05-27",
+      "simulated_time": "08:53:00",
+      "storage_values": {},
+      "timeline_peek": false,
+      "timezone_id": "Europe/Berlin",
+      "timezone_offset_min": 0,
+      "use_simulated_time": true,
+      "vibe_pattern_ms": [],
+      "weather": {
+        "condition": "clear",
+        "humidityPercent": 50,
+        "pressureHpa": 1013,
+        "temperatureC": 21,
+        "windKph": 8
+      }
+    },
+    "source_root": "watch",
+    "status": "idle",
+    "supports_color": true,
+    "timeString": null,
+    "watch_profile_id": "basalt"
+  }
+}

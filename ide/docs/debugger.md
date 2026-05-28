@@ -51,6 +51,21 @@ AppMessage delivery (`FromWatch` / `FromPhone` subscription steps) is deferred t
 
 Watch bootstrap clears the main “Starting debugger…” busy state immediately when async companion loading is enabled. Async companion reload uses parser-only init (`RuntimeExecutor.execute_introspect_only`, no `ElmExecutorAdapter`) and defers `InitSurfaceEffects` plus protocol queue drain to `DeferredCompanionInit` so reload returns before the companion banner times out. A second blocking compile during reload is skipped while `debugger_skip_blocking_compile` is set. Optional phone `elmc` runs in a separate background task only when needed (`config :ide, :debugger_lazy_elmc`, default `true`): companion lacks Core IR and the parser view still needs evaluation. It does not hold the companion bootstrap banner or block reload. HTTP and protocol follow-ups continue in the background; LiveView refreshes on `debugger:runtime:<scope_key>` PubSub with a short debounce (`config :ide, :debugger_runtime_refresh_debounce_ms`, default `100`) so timeline/models update as each step completes. Synchronous companion bootstrap (`config :ide, :debugger_async_companion_bootstrap, false`) still compiles phone before reload (tests). Set `config :ide, :debugger_lazy_elmc, false` to schedule compile whenever Core IR is missing. Set `config :ide, :debugger_companion_reload_await_idle, true` to block companion reload on the full HTTP/protocol idle queue even when async bootstrap is enabled. **Copy for agent** re-reads the debugger Agent snapshot so the exported timeline is not stale socket assigns.
 
+## Template corpus tests (MCP)
+
+`mix test test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus` exercises every project template via MCP:
+
+1. `projects.create` with the template key
+2. `debugger.start`, `debugger.set_watch_profile`, `debugger.set_simulator_settings`
+3. `debugger.reload` for phone (when the template ships a companion app) then watch `Main.elm`
+4. Snapshot via `debugger.models`, `debugger.render_tree`, `debugger.preview_diagnostics`, and canonical preview SVG ops (`DebuggerPreview.svg_ops/2`)
+
+Golden fixtures live under `ide/test/fixtures/debugger_template_corpus/<template>.json`. Refresh them after intentional preview changes:
+
+```bash
+UPDATE_DEBUGGER_TEMPLATE_SNAPSHOTS=1 mix test test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus
+```
+
 ## Visual preview pipeline
 
 The debugger watch SVG preview is **view-only**: it does not re-run `init` or `update` when refreshing layout. Given the surface `model` at the timeline cursor:

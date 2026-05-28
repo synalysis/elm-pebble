@@ -1,0 +1,376 @@
+{
+  "preview_diagnostics": {
+    "render_source": "runtime_view_output",
+    "root_type": "windowStack",
+    "runtime_view_output_kinds": [
+      "clear",
+      "text"
+    ],
+    "status": "ok"
+  },
+  "preview_ops": [
+    {
+      "color": 255,
+      "kind": "clear"
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": "08:53",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 128,
+      "x": 8,
+      "y": 36
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": "0C ?",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 128,
+      "x": 8,
+      "y": 54
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": "Sun 0:00-0:00",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 128,
+      "x": 8,
+      "y": 72
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": "Moon 0%",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 128,
+      "x": 8,
+      "y": 90
+    }
+  ],
+  "preview_ops_sha256": "78d6d1221a041c1ed221a735137c4f1e8de60001fd9c270ba366db0c168e6ee3",
+  "render_tree": {
+    "node_count": 8,
+    "node_types": [
+      "canvasLayer",
+      "clear",
+      "text",
+      "text",
+      "text",
+      "text",
+      "window",
+      "windowStack"
+    ],
+    "root_type": "windowStack",
+    "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [],
+                  "color": 255,
+                  "label": "",
+                  "text": null,
+                  "type": "clear"
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 18,
+                  "label": "",
+                  "text": "<TIME>",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 36
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 18,
+                  "label": "",
+                  "text": "0C ?",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 54
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 18,
+                  "label": "",
+                  "text": "Sun 0:00-0:00",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 72
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 18,
+                  "label": "",
+                  "text": "Moon 0%",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 128,
+                  "x": 8,
+                  "y": 90
+                }
+              ],
+              "id": 1,
+              "label": "",
+              "text": null,
+              "type": "canvasLayer"
+            }
+          ],
+          "id": 1,
+          "label": "",
+          "text": null,
+          "type": "window"
+        }
+      ],
+      "label": "",
+      "text": null,
+      "type": "windowStack"
+    }
+  },
+  "runtime_model": {
+    "colorMode": {
+      "args": [],
+      "ctor": "BlackWhite"
+    },
+    "condition": {
+      "args": [],
+      "ctor": "UnknownWeather"
+    },
+    "displayShape": {
+      "args": [],
+      "ctor": "Rectangular"
+    },
+    "last_message": "CurrentTimeString",
+    "last_operation": "nil",
+    "moonPhaseE6": 0,
+    "runtime_view_output": [],
+    "screenH": 168,
+    "screenW": 144,
+    "sunriseMin": 0,
+    "sunsetMin": 0,
+    "temperatureC": 0,
+    "timeString": "<TIME>"
+  },
+  "template": "companion-demo-weather-env",
+  "timeline_init_messages": [
+    "update:CurrentTimeString {\"args\":[\"08:53\"],\"ctor\":\"CurrentTimeString\"}",
+    "init:init"
+  ],
+  "view_tree_type": "windowStack",
+  "watch_model": {
+    "_debugger_steps": 1,
+    "debugger_init_complete": true,
+    "elm_executor_mode": "runtime_executed",
+    "last_source": "module Main exposing (main)\n\nimport Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..), WeatherCondition(..))\nimport Companion.Watch as CompanionWatch\nimport Json.Decode as Decode\nimport Pebble.Cmd as Cmd\nimport Pebble.Events as Events\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { timeString : String\n    , temperatureC : Int\n    , condition : WeatherCondition\n    , sunriseMin : Int\n    , sunsetMin : Int\n    , moonPhaseE6 : Int\n    , screenW : Int\n    , screenH : Int\n    }\n\n\ntype Msg\n    = MinuteChanged Int\n    | CurrentTimeString String\n    | FromPhone PhoneToWatch\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { timeString = \"--:--\"\n      , temperatureC = 0\n      , condition = UnknownWeather\n      , sunriseMin = 0\n      , sunsetMin = 0\n      , moonPhaseE6 = 0\n      , screenW = context.screen.width\n      , screenH = context.screen.height\n      }\n    , Cmd.batch\n        [ Cmd.getCurrentTimeString CurrentTimeString\n        , CompanionWatch.sendWatchToPhone RequestWeatherEnv\n        ]\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        MinuteChanged _ ->\n            ( model\n            , Cmd.batch\n                [ Cmd.getCurrentTimeString CurrentTimeString\n                , CompanionWatch.sendWatchToPhone RequestWeatherEnv\n                ]\n            )\n\n        CurrentTimeString value ->\n            ( { model | timeString = value }, Cmd.none )\n\n        FromPhone (ProvideWeather tempC condition) ->\n            ( { model | temperatureC = tempC, condition = condition }, Cmd.none )\n\n        FromPhone (ProvideEnvironment sunriseMin sunsetMin moonPhaseE6) ->\n            ( { model | sunriseMin = sunriseMin, sunsetMin = sunsetMin, moonPhaseE6 = moonPhaseE6 }, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Events.onMinuteChange MinuteChanged\n        , CompanionWatch.onPhoneToWatch FromPhone\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    let\n        lineH =\n            18\n\n        startY =\n            36\n\n        label x y text_ =\n            Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = y, w = model.screenW - 16, h = lineH } text_\n    in\n    Ui.windowStack\n        [ Ui.window 1\n            [ Ui.canvasLayer 1\n                [ Ui.clear Color.white\n                , label 8 startY model.timeString\n                , label 8 (startY + lineH) (String.fromInt model.temperatureC ++ \"C \" ++ conditionLabel model.condition)\n                , label 8 (startY + lineH * 2) (\"Sun \" ++ formatMinutes model.sunriseMin ++ \"-\" ++ formatMinutes model.sunsetMin)\n                , label 8 (startY + lineH * 3) (\"Moon \" ++ String.fromInt (model.moonPhaseE6 // 10000) ++ \"%\")\n                ]\n            ]\n        ]\n\n\nconditionLabel : WeatherCondition -> String\nconditionLabel condition =\n    case condition of\n        Clear ->\n            \"clear\"\n\n        Cloudy ->\n            \"cloudy\"\n\n        Fog ->\n            \"fog\"\n\n        Drizzle ->\n            \"drizzle\"\n\n        Rain ->\n            \"rain\"\n\n        Snow ->\n            \"snow\"\n\n        Showers ->\n            \"showers\"\n\n        Storm ->\n            \"storm\"\n\n        UnknownWeather ->\n            \"?\"\n\n\nformatMinutes : Int -> String\nformatMinutes minutes =\n    let\n        hours =\n            minutes // 60\n\n        mins =\n            modBy 60 minutes\n    in\n    String.fromInt hours\n        ++ \":\"\n        ++ (if mins < 10 then\n                \"0\"\n\n            else\n                \"\"\n           )\n        ++ String.fromInt mins\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.watchface\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
+    "launch_context": {
+      "has_compass": true,
+      "has_microphone": false,
+      "launch_reason": "LaunchUser",
+      "screen": {
+        "color_mode": "BlackWhite",
+        "height": 168,
+        "shape": "Rectangular",
+        "width": 144
+      },
+      "shape": "rect",
+      "supports_health": false,
+      "watch_model": "Aplite",
+      "watch_profile_id": "aplite"
+    },
+    "revision": "a97ea32fb4f4",
+    "runtime_known_messages": [
+      "MinuteChanged",
+      "CurrentTimeString",
+      "FromPhone"
+    ],
+    "runtime_message_cursor": 1,
+    "runtime_message_source": "init_device_data",
+    "runtime_model": {
+      "colorMode": {
+        "args": [],
+        "ctor": "BlackWhite"
+      },
+      "condition": {
+        "args": [],
+        "ctor": "UnknownWeather"
+      },
+      "displayShape": {
+        "args": [],
+        "ctor": "Rectangular"
+      },
+      "last_message": "CurrentTimeString",
+      "last_operation": "nil",
+      "moonPhaseE6": 0,
+      "screenH": 168,
+      "screenW": 144,
+      "sunriseMin": 0,
+      "sunsetMin": 0,
+      "temperatureC": 0,
+      "timeString": "08:53"
+    },
+    "runtime_model_source": "step_message",
+    "runtime_update_branches": [
+      "MinuteChanged _",
+      "CurrentTimeString value",
+      "FromPhone ProvideWeather (tempC, condition)",
+      "FromPhone ProvideEnvironment (sunriseMin, (sunsetMin, moonPhaseE6))"
+    ],
+    "runtime_view_output": [
+      {
+        "color": 255,
+        "kind": "clear",
+        "text": null
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": "<TIME>",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 128,
+        "x": 8,
+        "y": 36
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": "0C ?",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 128,
+        "x": 8,
+        "y": 54
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": "Sun 0:00-0:00",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 128,
+        "x": 8,
+        "y": 72
+      },
+      {
+        "font_id": 1,
+        "h": 18,
+        "kind": "text",
+        "text": "Moon 0%",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 128,
+        "x": 8,
+        "y": 90
+      }
+    ],
+    "screen_height": 168,
+    "screen_width": 144,
+    "simulator_settings": {
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "battery_percent": 88,
+      "calendar_events": [],
+      "charging": false,
+      "clock_24h": true,
+      "compass_heading_deg": 0,
+      "compass_valid": true,
+      "connected": true,
+      "dictation_error": "",
+      "dictation_transcript": "",
+      "environment": {
+        "moon": {
+          "moonriseMin": 900,
+          "moonsetMin": 300,
+          "phaseE6": 500000
+        },
+        "sun": {
+          "polarDay": false,
+          "sunriseMin": 420,
+          "sunsetMin": 1200
+        },
+        "tide": null
+      },
+      "health_steps": 4200,
+      "health_steps_today": 9100,
+      "language": "en",
+      "latitude": 48.137154,
+      "locale": "en-US",
+      "longitude": 11.576124,
+      "network_online": true,
+      "notifications_enabled": true,
+      "preferences": {},
+      "quiet_hours": false,
+      "region": "US",
+      "simulated_date": "2026-05-27",
+      "simulated_time": "08:53:00",
+      "storage_values": {},
+      "timeline_peek": false,
+      "timezone_id": "Europe/Berlin",
+      "timezone_offset_min": 0,
+      "use_simulated_time": true,
+      "vibe_pattern_ms": [],
+      "weather": {
+        "condition": "clear",
+        "humidityPercent": 50,
+        "pressureHpa": 1013,
+        "temperatureC": 21,
+        "windKph": 8
+      }
+    },
+    "source_root": "watch",
+    "status": "idle",
+    "supports_color": false,
+    "timeString": null,
+    "watch_profile_id": "aplite"
+  }
+}

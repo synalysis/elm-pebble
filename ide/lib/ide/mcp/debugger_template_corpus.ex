@@ -1,0 +1,563 @@
+defmodule Ide.Mcp.DebuggerTemplateCorpus do
+  @moduledoc """
+  MCP-driven debugger bootstrap and snapshot capture for project templates.
+
+  Used by `Ide.Mcp.DebuggerTemplateCorpusTest` to create a project per template,
+  start the debugger once, and compare watch models, render trees, and canonical
+  preview SVG ops against checked-in fixtures.
+  """
+
+  alias Ide.Debugger
+  alias Ide.Debugger.RuntimeBackgroundDrains
+  alias Ide.Debugger.StepExecution
+  alias Ide.Mcp.ToolSupport
+  alias Ide.Mcp.Tools
+  alias Ide.ProjectTemplates
+  alias Ide.Projects
+  alias IdeWeb.WorkspaceLive.DebuggerPreview
+
+  @capabilities [:read, :edit]
+
+  @phone_first_templates ~w(
+    watchface-yes
+    watchface-tangram-time
+    watchface-weather-animated
+    watchface-tutorial-complete
+    companion-demo-phone-status
+    companion-demo-weather-env
+    companion-demo-calendar
+    companion-demo-geolocation
+    companion-demo-storage
+    companion-demo-settings
+    companion-demo-websocket
+    companion-demo-timeline
+  )a
+
+  @aplite_profile_templates ~w(watch-demo-compass)a
+
+  @fixtures_root Path.expand(
+                  "../../../test/fixtures/debugger_template_corpus",
+                  __DIR__
+                )
+
+  @doc "All project template keys exercised by the corpus."
+  @spec template_keys() :: [String.t()]
+  def template_keys, do: ProjectTemplates.template_keys()
+
+  @doc "Directory holding per-template expected snapshot JSON."
+  @spec fixtures_root() :: String.t()
+  def fixtures_root, do: @fixtures_root
+
+  @spec fixture_path(String.t()) :: String.t()
+  def fixture_path(template_key) when is_binary(template_key) do
+    Path.join(fixtures_root(), template_key <> ".json")
+  end
+
+  @doc """
+  Creates the project, starts the debugger, reloads template sources, and returns a snapshot map.
+  """
+  @spec run_template(String.t(), keyword()) ::
+          {:ok, %{slug: String.t(), project: Projects.Project.t(), snapshot: map()}}
+          | {:error, term()}
+  def run_template(template_key, opts \\ []) when is_binary(template_key) do
+    unless template_key in template_keys() do
+      raise ArgumentError, "unknown template #{inspect(template_key)}"
+    end
+
+    slug = Keyword.get(opts, :slug) || unique_slug(template_key)
+    cleanup? = Keyword.get(opts, :cleanup, true)
+
+    with {:ok, project} <- create_project(slug, template_key),
+         :ok <- bootstrap(slug, project, template_key),
+         {:ok, snapshot} <- capture(slug, project, template_key) do
+      if cleanup?, do: _ = Projects.delete_project(project)
+      {:ok, %{slug: slug, project: project, snapshot: snapshot}}
+    end
+  end
+
+  @doc "Loads the checked-in fixture for a template, if present."
+  @spec load_fixture(String.t()) :: {:ok, map()} | {:error, :missing}
+  def load_fixture(template_key) when is_binary(template_key) do
+    path = fixture_path(template_key)
+
+    if File.exists?(path) do
+      {:ok, path |> File.read!() |> Jason.decode!()}
+    else
+      {:error, :missing}
+    end
+  end
+
+  @doc "Writes a normalized snapshot fixture for a template."
+  @spec write_fixture!(String.t(), map()) :: :ok
+  def write_fixture!(template_key, snapshot) when is_binary(template_key) and is_map(snapshot) do
+    path = fixture_path(template_key)
+    File.mkdir_p!(Path.dirname(path))
+
+    path
+    |> File.write!(Jason.encode!(snapshot, pretty: true) <> "\n")
+
+    :ok
+  end
+
+  @doc "Compares a captured snapshot to an expected fixture map."
+  @spec compare_snapshots(map(), map()) :: :ok | {:error, String.t()}
+  def compare_snapshots(actual, expected) when is_map(actual) and is_map(expected) do
+    actual_norm = normalize_snapshot(actual)
+    expected_norm = normalize_snapshot(expected)
+
+    if actual_norm == expected_norm do
+      :ok
+    else
+      diff = snapshot_diff(actual_norm, expected_norm)
+      {:error, "snapshot mismatch\n#{diff}"}
+    end
+  end
+
+  @spec create_project(String.t(), String.t()) ::
+          {:ok, Projects.Project.t()} | {:error, term()}
+  defp create_project(slug, template_key) do
+  with {:ok, created} <-
+         Tools.call(
+           "projects.create",
+           %{
+             "name" => "Corpus #{template_key}",
+             "slug" => slug,
+             "target_type" => ProjectTemplates.target_type_for_template(template_key),
+             "template" => template_key
+           },
+           @capabilities
+         ),
+         {:ok, project} <- ToolSupport.fetch_project(created.slug) do
+      {:ok, project}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec bootstrap(String.t(), Projects.Project.t(), String.t()) :: :ok | {:error, term()}
+  defp bootstrap(slug, project, template_key) do
+    with {:ok, _} <- Tools.call("debugger.start", %{"slug" => slug}, @capabilities),
+         {:ok, _} <-
+           Tools.call(
+             "debugger.set_watch_profile",
+             %{"slug" => slug, "watch_profile_id" => watch_profile_for(template_key)},
+             @capabilities
+           ),
+         {:ok, _} <- apply_simulator_settings(slug, template_key),
+         :ok <- reload_surfaces(slug, project, template_key),
+         :ok <- after_bootstrap(slug, template_key) do
+      _ = RuntimeBackgroundDrains.await_idle(slug, 120_000)
+      :ok
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec apply_simulator_settings(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  defp apply_simulator_settings(slug, template_key) do
+    settings =
+      %{
+        "use_simulated_time" => true,
+        "simulated_date" => "2026-05-27",
+        "simulated_time" => "08:53:00",
+        "timezone_offset_min" => 0
+      }
+      |> Map.merge(template_simulator_extras(template_key))
+
+    Tools.call(
+      "debugger.set_simulator_settings",
+      %{"slug" => slug, "settings" => settings},
+      @capabilities
+    )
+  end
+
+  @spec template_simulator_extras(String.t()) :: map()
+  defp template_simulator_extras("watchface-weather-animated"),
+    do: %{"weather" => %{"temperatureC" => 18, "condition" => "fog"}}
+
+  defp template_simulator_extras("companion-demo-geolocation"),
+    do: %{"latitude" => 48.137154, "longitude" => 11.576124, "accuracy" => 25.0}
+
+  defp template_simulator_extras(_), do: %{}
+
+  @spec after_bootstrap(String.t(), String.t()) :: :ok | {:error, term()}
+  defp after_bootstrap(slug, "watchface-weather-animated") do
+    case Debugger.inject_trigger(slug, %{
+           target: "watch",
+           trigger: "timer",
+           message: "EnableWeatherTransitions"
+         }) do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp after_bootstrap(_slug, _template_key), do: :ok
+
+  @spec reload_surfaces(String.t(), Projects.Project.t(), String.t()) :: :ok | {:error, term()}
+  defp reload_surfaces(slug, project, template_key) do
+    with :ok <- maybe_reload_phone(slug, project, template_key),
+         {:ok, _} <- reload_watch(slug, project) do
+      :ok
+    end
+  end
+
+  @spec maybe_reload_phone(String.t(), Projects.Project.t(), String.t()) :: :ok | {:error, term()}
+  defp maybe_reload_phone(slug, project, template_key) do
+    if template_key in @phone_first_templates do
+      with {:ok, source} <- Projects.read_source_file(project, "phone", "src/CompanionApp.elm"),
+           {:ok, _} <-
+             Tools.call(
+               "debugger.reload",
+               %{
+                 "slug" => slug,
+                 "rel_path" => "src/CompanionApp.elm",
+                 "source" => source,
+                 "source_root" => "phone",
+                 "reason" => "template_corpus_phone"
+               },
+               @capabilities
+             ) do
+        :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  @spec reload_watch(String.t(), Projects.Project.t()) :: {:ok, map()} | {:error, term()}
+  defp reload_watch(slug, project) do
+    with {:ok, source} <- Projects.read_source_file(project, "watch", "src/Main.elm") do
+      Tools.call(
+        "debugger.reload",
+        %{
+          "slug" => slug,
+          "rel_path" => "src/Main.elm",
+          "source" => source,
+          "source_root" => "watch",
+          "reason" => "template_corpus_watch"
+        },
+        @capabilities
+      )
+    end
+  end
+
+  @spec capture(String.t(), Projects.Project.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  defp capture(slug, project, template_key) do
+    with {:ok, models} <-
+           Tools.call(
+             "debugger.models",
+             %{"slug" => slug, "target" => "watch", "include_view_output" => true},
+             @capabilities
+           ),
+         {:ok, render_tree} <-
+           Tools.call(
+             "debugger.render_tree",
+             %{"slug" => slug, "target" => "watch", "include_tree" => true},
+             @capabilities
+           ),
+         {:ok, diagnostics} <-
+           Tools.call(
+             "debugger.preview_diagnostics",
+             %{"slug" => slug, "target" => "watch"},
+             @capabilities
+           ),
+         {:ok, state} <- Debugger.snapshot(slug, event_limit: 200) do
+      models_map = Map.get(models, :models) || Map.get(models, "models") || %{}
+
+      watch_entry =
+        Map.get(models_map, "watch") || Map.get(models_map, :watch) || %{}
+      runtime = Map.get(state, :watch) || %{}
+      preview_ops = preview_ops_for_runtime(runtime, project)
+
+      snapshot =
+        %{
+          "template" => template_key,
+          "watch_model" => Map.get(watch_entry, :model) || Map.get(watch_entry, "model") || %{},
+          "runtime_model" =>
+            Map.get(watch_entry, :runtime_model) || Map.get(watch_entry, "runtime_model") || %{},
+          "view_tree_type" =>
+            Map.get(watch_entry, :view_tree_type) || Map.get(watch_entry, "view_tree_type"),
+          "render_tree" => render_tree_payload(render_tree),
+          "preview_diagnostics" => preview_diagnostics_payload(diagnostics),
+          "preview_ops" => preview_ops,
+          "preview_ops_sha256" => StepExecution.stable_term_sha256(preview_ops),
+          "timeline_init_messages" => timeline_init_messages(state)
+        }
+
+      {:ok, normalize_snapshot(snapshot)}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec preview_ops_for_runtime(map(), Projects.Project.t()) :: [map()]
+  defp preview_ops_for_runtime(runtime, project) when is_map(runtime) do
+    tree = Map.get(runtime, :view_tree) || Map.get(runtime, "view_tree")
+
+    tree
+    |> DebuggerPreview.svg_ops(runtime)
+    |> DebuggerPreview.hydrate_vector_svg_ops(project)
+    |> Enum.map(&canonical_svg_op/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  @spec canonical_svg_op(map()) :: map() | nil
+  defp canonical_svg_op(op) when is_map(op) do
+    kind = op |> Map.get(:kind) |> normalize_kind()
+
+    base =
+      op
+      |> Map.drop([:points, :frames, :path, "points", "frames", "path"])
+      |> Map.new(fn {k, v} -> {to_string(k), v} end)
+      |> Map.put("kind", kind)
+
+    case kind do
+      "vector_sequence_anim" ->
+        Map.take(base, ["kind", "vector_id", "x", "y", "frame_count"])
+
+      "unresolved" ->
+        Map.take(base, ["kind", "label", "reason"])
+
+      _ ->
+        base
+    end
+  end
+
+  defp canonical_svg_op(_), do: nil
+
+  @spec normalize_kind(term()) :: String.t()
+  defp normalize_kind(kind) when is_atom(kind), do: Atom.to_string(kind)
+  defp normalize_kind(kind) when is_binary(kind), do: kind
+  defp normalize_kind(_), do: "unknown"
+
+  @spec render_tree_payload(map()) :: map()
+  defp render_tree_payload(render_tree) when is_map(render_tree) do
+    tree = Map.get(render_tree, :tree) || Map.get(render_tree, "tree")
+    nodes = Map.get(render_tree, :nodes) || Map.get(render_tree, "nodes") || []
+
+    %{
+      "root_type" => Map.get(render_tree, :root_type) || Map.get(render_tree, "root_type"),
+      "node_count" => Map.get(render_tree, :node_count) || Map.get(render_tree, "node_count"),
+      "node_types" =>
+        nodes
+        |> Enum.map(fn node ->
+          node |> Map.get("type") || Map.get(node, :type) |> to_string()
+        end)
+        |> Enum.sort(),
+      "tree" => normalize_render_tree(tree)
+    }
+  end
+
+  defp render_tree_payload(_), do: %{}
+
+  @spec preview_diagnostics_payload(map()) :: map()
+  defp preview_diagnostics_payload(diag) when is_map(diag) do
+    %{
+      "status" => Map.get(diag, :status) || Map.get(diag, "status"),
+      "render_source" => Map.get(diag, :render_source) || Map.get(diag, "render_source"),
+      "root_type" => Map.get(diag, :root_type) || Map.get(diag, "root_type"),
+      "runtime_view_output_kinds" =>
+        Map.get(diag, :runtime_view_output_kinds) || Map.get(diag, "runtime_view_output_kinds") || []
+    }
+  end
+
+  defp preview_diagnostics_payload(_), do: %{}
+
+  @spec timeline_init_messages(map()) :: [String.t()]
+  defp timeline_init_messages(state) when is_map(state) do
+    state
+    |> Map.get(:debugger_timeline, [])
+    |> Enum.take(8)
+    |> Enum.map(fn row ->
+      type = Map.get(row, :type) || Map.get(row, "type")
+      message = Map.get(row, :message) || Map.get(row, "message")
+      "#{type}:#{message}"
+    end)
+  end
+
+  @spec normalize_snapshot(map()) :: map()
+  def normalize_snapshot(snapshot) when is_map(snapshot) do
+    snapshot
+    |> normalize_model_field("watch_model")
+    |> normalize_model_field("runtime_model")
+    |> normalize_render_tree_field()
+    |> Map.update("preview_ops", [], &normalize_preview_ops/1)
+  end
+
+  @spec normalize_model_field(map(), String.t()) :: map()
+  defp normalize_model_field(snapshot, key) do
+    Map.update(snapshot, key, %{}, &normalize_model/1)
+  end
+
+  @spec normalize_render_tree_field(map()) :: map()
+  defp normalize_render_tree_field(snapshot) do
+    Map.update(snapshot, "render_tree", %{}, fn tree ->
+      tree
+      |> Map.update("tree", nil, &normalize_render_tree/1)
+      |> Map.update("node_types", [], fn types ->
+        types |> List.wrap() |> Enum.sort()
+      end)
+    end)
+  end
+
+  @spec normalize_model(map()) :: map()
+  defp normalize_model(model) when is_map(model) do
+    model
+    |> drop_volatile_model_keys()
+    |> normalize_time_fields()
+    |> Map.new(fn {k, v} -> {to_string(k), normalize_value(v)} end)
+    |> Map.new()
+  end
+
+  defp normalize_model(other), do: other
+
+  @spec drop_volatile_model_keys(map()) :: map()
+  defp drop_volatile_model_keys(model) do
+    model
+    |> Map.drop([
+      "elm_executor",
+      "elm_executor_core_ir",
+      "elm_executor_core_ir_b64",
+      "elm_executor_metadata",
+      "elm_introspect",
+      "runtime_model_sha256",
+      "runtime_view_tree_sha256",
+      "last_path",
+      "last_runtime_step_message",
+      "last_runtime_step_op",
+      "runtime_last_message"
+    ])
+    |> Enum.reject(fn {key, _} ->
+      key = to_string(key)
+      String.starts_with?(key, "debugger_device_")
+    end)
+    |> Map.new()
+  end
+
+  @spec normalize_time_fields(map()) :: map()
+  defp normalize_time_fields(model) do
+    model
+    |> Map.update("timeString", nil, &normalize_time_string/1)
+    |> Map.update("runtime_view_output", [], fn rows ->
+      Enum.map(List.wrap(rows), &normalize_view_output_row/1)
+    end)
+  end
+
+  @spec normalize_time_string(term()) :: term()
+  defp normalize_time_string(value) when is_binary(value) do
+    if Regex.match?(~r/^\d{2}:\d{2}$/, value), do: "<TIME>", else: value
+  end
+
+  defp normalize_time_string(value), do: value
+
+  @spec normalize_view_output_row(map()) :: map()
+  defp normalize_view_output_row(row) when is_map(row) do
+    row
+    |> Map.new(fn {k, v} -> {to_string(k), v} end)
+    |> Map.update("text", nil, &normalize_time_string/1)
+    |> Map.drop(["source"])
+  end
+
+  defp normalize_view_output_row(row), do: row
+
+  @spec normalize_render_tree(term()) :: term()
+  defp normalize_render_tree(tree) when is_map(tree) do
+    tree
+    |> Map.drop(["source"])
+    |> Map.new(fn {k, v} -> {to_string(k), normalize_render_tree(v)} end)
+    |> Map.update("text", nil, &normalize_time_string/1)
+  end
+
+  defp normalize_render_tree(list) when is_list(list), do: Enum.map(list, &normalize_render_tree/1)
+  defp normalize_render_tree(other), do: other
+
+  @spec normalize_preview_ops(list()) :: list()
+  defp normalize_preview_ops(ops) when is_list(ops) do
+    Enum.map(ops, &normalize_value/1)
+  end
+
+  @spec normalize_value(term()) :: term()
+  defp normalize_value(map) when is_map(map) do
+    Map.new(map, fn {k, v} -> {to_string(k), normalize_value(v)} end)
+  end
+
+  defp normalize_value(list) when is_list(list), do: Enum.map(list, &normalize_value/1)
+  defp normalize_value({a, b}), do: [normalize_value(a), normalize_value(b)]
+  defp normalize_value(other), do: other
+
+  @spec watch_profile_for(String.t()) :: String.t()
+  defp watch_profile_for(template_key) when template_key in @aplite_profile_templates, do: "aplite"
+
+  defp watch_profile_for(template_key) do
+    template_key
+    |> ProjectTemplates.target_platforms_for_template()
+    |> List.first("aplite")
+  end
+
+  @spec unique_slug(String.t()) :: String.t()
+  defp unique_slug(template_key) do
+    "corpus-#{template_key}-#{System.unique_integer([:positive])}"
+  end
+
+  @doc "Contract checks that every template should satisfy after bootstrap."
+  @spec assert_contract!(map(), String.t()) :: :ok
+  def assert_contract!(snapshot, template_key) when is_map(snapshot) and is_binary(template_key) do
+    view_tree_type = Map.get(snapshot, "view_tree_type")
+    root_type = get_in(snapshot, ["render_tree", "root_type"])
+    preview_ops = Map.get(snapshot, "preview_ops", [])
+    diagnostics = Map.get(snapshot, "preview_diagnostics", %{})
+
+    cond do
+      view_tree_type == "previewUnavailable" ->
+        raise "template #{template_key}: preview unavailable"
+
+      root_type not in ["windowStack", "WindowStack", nil] and not is_binary(root_type) ->
+        raise "template #{template_key}: unexpected render root #{inspect(root_type)}"
+
+      preview_ops == [] ->
+        raise "template #{template_key}: preview produced no SVG ops"
+
+      Map.get(diagnostics, "status") == "unavailable" ->
+        raise "template #{template_key}: preview diagnostics unavailable"
+
+      true ->
+        drawable? =
+          Enum.any?(preview_ops, fn op ->
+            Map.get(op, "kind") not in ["clear", "push_context", "pop_context", nil]
+          end)
+
+        output_kinds = get_in(snapshot, ["preview_diagnostics", "runtime_view_output_kinds"]) || []
+
+        tree_drawable? =
+          get_in(snapshot, ["render_tree", "node_types"])
+          |> List.wrap()
+          |> Enum.any?(&(&1 not in ["clear", "windowStack", "window", "canvasLayer", ""]))
+
+        unless drawable? or tree_drawable? or template_key in ["starter"] or
+                 Enum.any?(output_kinds, &(&1 not in ["clear", "push_context", "pop_context"])) do
+          raise "template #{template_key}: preview only has clear/style ops"
+        end
+
+        :ok
+    end
+  end
+
+  @spec snapshot_diff(map(), map()) :: String.t()
+  defp snapshot_diff(actual, expected) do
+    keys = Map.keys(actual) ++ Map.keys(expected) |> Enum.uniq() |> Enum.sort()
+
+    keys
+    |> Enum.flat_map(fn key ->
+      a = Map.get(actual, key)
+      e = Map.get(expected, key)
+
+      if a == e do
+        []
+      else
+        ["  #{key}:\n    expected: #{inspect(e, limit: 12)}\n    actual:   #{inspect(a, limit: 12)}"]
+      end
+    end)
+    |> Enum.join("\n")
+  end
+end

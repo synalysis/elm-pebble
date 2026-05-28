@@ -1,0 +1,344 @@
+{
+  "preview_diagnostics": {
+    "render_source": "runtime_view_output",
+    "root_type": "windowStack",
+    "runtime_view_output_kinds": [
+      "clear",
+      "text"
+    ],
+    "status": "ok"
+  },
+  "preview_ops": [
+    {
+      "color": 255,
+      "kind": "clear"
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "DataLog demo",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 8
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "0",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 36
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "0",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 56
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 40,
+      "h": 40,
+      "kind": "text_label",
+      "text": "Up: int32 Select: int32 Down: bytes",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 84
+    }
+  ],
+  "preview_ops_sha256": "fe09c99b5c1a10fa7b0f1d35f71381e7546e66ce6fc132369b4b3b27f80d279f",
+  "render_tree": {
+    "node_count": 8,
+    "node_types": [
+      "canvasLayer",
+      "clear",
+      "text",
+      "text",
+      "text",
+      "text",
+      "window",
+      "windowStack"
+    ],
+    "root_type": "windowStack",
+    "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [],
+                  "color": 255,
+                  "label": "",
+                  "text": null,
+                  "type": "clear"
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "DataLog demo",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 8
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "0",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 36
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "0",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 56
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 40,
+                  "label": "",
+                  "text": "Up: int32 Select: int32 Down: bytes",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 84
+                }
+              ],
+              "id": 1,
+              "label": "",
+              "text": null,
+              "type": "canvasLayer"
+            }
+          ],
+          "id": 1,
+          "label": "",
+          "text": null,
+          "type": "window"
+        }
+      ],
+      "label": "",
+      "text": null,
+      "type": "windowStack"
+    }
+  },
+  "runtime_model": {
+    "colorMode": {
+      "args": [],
+      "ctor": "BlackWhite"
+    },
+    "displayShape": {
+      "args": [],
+      "ctor": "Rectangular"
+    },
+    "events": 0,
+    "lastValue": 0,
+    "runtime_view_output": [],
+    "screenH": 168,
+    "screenW": 144,
+    "timeString": null
+  },
+  "template": "watch-demo-data-log",
+  "timeline_init_messages": [
+    "init:init"
+  ],
+  "view_tree_type": "windowStack",
+  "watch_model": {
+    "debugger_init_complete": true,
+    "elm_executor_mode": "runtime_executed",
+    "last_source": "module Main exposing (main)\n\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.DataLog as DataLog\nimport Pebble.Events as Events\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { events : Int\n    , lastValue : Int\n    }\n\n\ntype Msg\n    = UpPressed\n    | SelectPressed\n    | DownPressed\n\n\nlogTag : DataLog.Tag\nlogTag =\n    DataLog.tag 9001\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit _ =\n    ( { events = 0, lastValue = 0 }, Cmd.none )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        UpPressed ->\n            logEvent { model | lastValue = model.events + 1 }\n\n        SelectPressed ->\n            logEvent { model | lastValue = model.events * 2 + 1 }\n\n        DownPressed ->\n            logBytes { model | lastValue = model.events + 10 }\n\n\nlogEvent : Model -> ( Model, Cmd Msg )\nlogEvent model =\n    let\n        next =\n            { model | events = model.events + 1 }\n    in\n    ( next, DataLog.logInt32 logTag next.events )\n\n\nlogBytes : Model -> ( Model, Cmd Msg )\nlogBytes model =\n    let\n        next =\n            { model | events = model.events + 1 }\n    in\n    ( next\n    , DataLog.logBytes logTag [ next.events, next.lastValue, 42 ]\n    )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Button.onPress Button.Up UpPressed\n        , Button.onPress Button.Select SelectPressed\n        , Button.onPress Button.Down DownPressed\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    Ui.toUiNode\n        [ Ui.clear Color.white\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } \"DataLog demo\"\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (String.fromInt model.events)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 20 } (String.fromInt model.lastValue)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 84, w = 136, h = 40 } \"Up: int32 Select: int32 Down: bytes\"\n        ]\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
+    "launch_context": {
+      "has_compass": true,
+      "has_microphone": false,
+      "launch_reason": "LaunchUser",
+      "screen": {
+        "color_mode": "BlackWhite",
+        "height": 168,
+        "shape": "Rectangular",
+        "width": 144
+      },
+      "shape": "rect",
+      "supports_health": false,
+      "watch_model": "Aplite",
+      "watch_profile_id": "aplite"
+    },
+    "revision": "21c37541942b",
+    "runtime_model": {
+      "colorMode": {
+        "args": [],
+        "ctor": "BlackWhite"
+      },
+      "displayShape": {
+        "args": [],
+        "ctor": "Rectangular"
+      },
+      "events": 0,
+      "lastValue": 0,
+      "screenH": 168,
+      "screenW": 144
+    },
+    "runtime_model_source": "init_model",
+    "runtime_view_output": [
+      {
+        "color": 255,
+        "kind": "clear",
+        "text": null
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "DataLog demo",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 8
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "0",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 36
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "0",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 56
+      },
+      {
+        "font_id": 1,
+        "h": 40,
+        "kind": "text",
+        "text": "Up: int32 Select: int32 Down: bytes",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 84
+      }
+    ],
+    "screen_height": 168,
+    "screen_width": 144,
+    "simulator_settings": {
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "battery_percent": 88,
+      "calendar_events": [],
+      "charging": false,
+      "clock_24h": true,
+      "compass_heading_deg": 0,
+      "compass_valid": true,
+      "connected": true,
+      "dictation_error": "",
+      "dictation_transcript": "",
+      "environment": {
+        "moon": {
+          "moonriseMin": 900,
+          "moonsetMin": 300,
+          "phaseE6": 500000
+        },
+        "sun": {
+          "polarDay": false,
+          "sunriseMin": 420,
+          "sunsetMin": 1200
+        },
+        "tide": null
+      },
+      "health_steps": 4200,
+      "health_steps_today": 9100,
+      "language": "en",
+      "latitude": 48.137154,
+      "locale": "en-US",
+      "longitude": 11.576124,
+      "network_online": true,
+      "notifications_enabled": true,
+      "preferences": {},
+      "quiet_hours": false,
+      "region": "US",
+      "simulated_date": "2026-05-27",
+      "simulated_time": "08:53:00",
+      "storage_values": {},
+      "timeline_peek": false,
+      "timezone_id": "Europe/Berlin",
+      "timezone_offset_min": 0,
+      "use_simulated_time": true,
+      "vibe_pattern_ms": [],
+      "weather": {
+        "condition": "clear",
+        "humidityPercent": 50,
+        "pressureHpa": 1013,
+        "temperatureC": 21,
+        "windKph": 8
+      }
+    },
+    "source_root": "watch",
+    "status": "idle",
+    "supports_color": false,
+    "timeString": null,
+    "watch_profile_id": "aplite"
+  }
+}

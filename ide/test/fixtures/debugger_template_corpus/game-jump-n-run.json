@@ -1,0 +1,573 @@
+{
+  "preview_diagnostics": {
+    "render_source": "runtime_view_output",
+    "root_type": "windowStack",
+    "runtime_view_output_kinds": [
+      "clear",
+      "text",
+      "bitmap_in_rect",
+      "fill_rect"
+    ],
+    "status": "ok"
+  },
+  "preview_ops": [
+    {
+      "color": 255,
+      "kind": "clear"
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 16,
+      "h": 16,
+      "kind": "text_label",
+      "text": "Score 0",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 10
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 16,
+      "h": 16,
+      "kind": "text_label",
+      "text": "Best 0",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 26
+    },
+    {
+      "antialiased": true,
+      "bitmap_id": 1,
+      "compositing_mode": 0,
+      "h": 14,
+      "kind": "bitmap_in_rect",
+      "w": 12,
+      "x": 24,
+      "y": 84
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "fill_color": 192,
+      "h": 8,
+      "kind": "fill_rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 40,
+      "x": -48,
+      "y": 132
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "fill_color": 192,
+      "h": 8,
+      "kind": "fill_rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 40,
+      "x": 0,
+      "y": 132
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "fill_color": 192,
+      "h": 8,
+      "kind": "fill_rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 40,
+      "x": 96,
+      "y": 132
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "fill_color": 192,
+      "h": 8,
+      "kind": "fill_rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 40,
+      "x": 144,
+      "y": 132
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "fill_color": 192,
+      "h": 8,
+      "kind": "fill_rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 40,
+      "x": 192,
+      "y": 132
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "fill_color": 192,
+      "h": 8,
+      "kind": "fill_rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 40,
+      "x": 240,
+      "y": 132
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "fill_color": 192,
+      "h": 28,
+      "kind": "fill_rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 18,
+      "x": 252,
+      "y": 98
+    }
+  ],
+  "preview_ops_sha256": "b87a30f41683012a537c71989a9fe050bca623ef82ef3012fcbe337532a0dbe7",
+  "render_tree": {
+    "node_count": 14,
+    "node_types": [
+      "bitmapInRect",
+      "canvasLayer",
+      "clear",
+      "fillRect",
+      "fillRect",
+      "fillRect",
+      "fillRect",
+      "fillRect",
+      "fillRect",
+      "fillRect",
+      "text",
+      "text",
+      "window",
+      "windowStack"
+    ],
+    "root_type": "windowStack",
+    "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [],
+                  "color": 255,
+                  "label": "",
+                  "text": null,
+                  "type": "clear"
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 16,
+                  "label": "",
+                  "text": "Score 0",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 10
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 16,
+                  "label": "",
+                  "text": "Best 0",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 26
+                },
+                {
+                  "bitmap_id": 1,
+                  "children": [],
+                  "h": 14,
+                  "label": "",
+                  "text": null,
+                  "type": "bitmapInRect",
+                  "w": 12,
+                  "x": 24,
+                  "y": 84
+                },
+                {
+                  "children": [],
+                  "fill": 192,
+                  "h": 8,
+                  "label": "",
+                  "text": null,
+                  "type": "fillRect",
+                  "w": 40,
+                  "x": -48,
+                  "y": 132
+                },
+                {
+                  "children": [],
+                  "fill": 192,
+                  "h": 8,
+                  "label": "",
+                  "text": null,
+                  "type": "fillRect",
+                  "w": 40,
+                  "x": 0,
+                  "y": 132
+                },
+                {
+                  "children": [],
+                  "fill": 192,
+                  "h": 8,
+                  "label": "",
+                  "text": null,
+                  "type": "fillRect",
+                  "w": 40,
+                  "x": 96,
+                  "y": 132
+                },
+                {
+                  "children": [],
+                  "fill": 192,
+                  "h": 8,
+                  "label": "",
+                  "text": null,
+                  "type": "fillRect",
+                  "w": 40,
+                  "x": 144,
+                  "y": 132
+                },
+                {
+                  "children": [],
+                  "fill": 192,
+                  "h": 8,
+                  "label": "",
+                  "text": null,
+                  "type": "fillRect",
+                  "w": 40,
+                  "x": 192,
+                  "y": 132
+                },
+                {
+                  "children": [],
+                  "fill": 192,
+                  "h": 8,
+                  "label": "",
+                  "text": null,
+                  "type": "fillRect",
+                  "w": 40,
+                  "x": 240,
+                  "y": 132
+                },
+                {
+                  "children": [],
+                  "fill": 192,
+                  "h": 28,
+                  "label": "",
+                  "text": null,
+                  "type": "fillRect",
+                  "w": 18,
+                  "x": 252,
+                  "y": 98
+                }
+              ],
+              "id": 1,
+              "label": "",
+              "text": null,
+              "type": "canvasLayer"
+            }
+          ],
+          "id": 1,
+          "label": "",
+          "text": null,
+          "type": "window"
+        }
+      ],
+      "label": "",
+      "text": null,
+      "type": "windowStack"
+    }
+  },
+  "runtime_model": {
+    "alive": true,
+    "best": 0,
+    "colorMode": {
+      "args": [],
+      "ctor": "BlackWhite"
+    },
+    "displayShape": {
+      "args": [],
+      "ctor": "Rectangular"
+    },
+    "lastLandingSlot": {
+      "args": [],
+      "ctor": "Nothing"
+    },
+    "last_message": "BestScoreLoaded",
+    "last_operation": "nil",
+    "offset": 0,
+    "playerY": 84,
+    "runtime_view_output": [],
+    "score": 0,
+    "screenH": 168,
+    "screenW": 144,
+    "timeString": null,
+    "velocityY": 0
+  },
+  "template": "game-jump-n-run",
+  "timeline_init_messages": [
+    "update:BestScoreLoaded {\"args\":[0],\"ctor\":\"BestScoreLoaded\",\"tag\":4}",
+    "init:init"
+  ],
+  "view_tree_type": "windowStack",
+  "watch_model": {
+    "_debugger_steps": 1,
+    "debugger_init_complete": true,
+    "elm_executor_mode": "runtime_executed",
+    "last_source": "module Main exposing (main)\n\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Events as Events\nimport Pebble.Frame as Frame\nimport Pebble.Platform as Platform\nimport Pebble.Storage as Storage\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\nimport Pebble.Vibes as Vibes\n\n\ntype alias PlatformTile =\n    { slot : Int\n    , baseY : Int\n    , moving : Bool\n    }\n\n\ntype alias Obstacle =\n    { slot : Int\n    , y : Int\n    , w : Int\n    , h : Int\n    }\n\n\ntype alias Model =\n    { playerY : Int\n    , velocityY : Int\n    , offset : Int\n    , score : Int\n    , best : Int\n    , alive : Bool\n    , lastLandingSlot : Maybe Int\n    , screenW : Int\n    , screenH : Int\n    , displayShape : Platform.DisplayShape\n    }\n\n\ntype Msg\n    = FrameTick Frame.Frame\n    | UpPressed\n    | DownPressed\n    | BestScoreLoaded Int\n\n\nplayerW : Int\nplayerW =\n    12\n\n\nplayerH : Int\nplayerH =\n    14\n\n\nplayerX : Int\nplayerX =\n    24\n\n\ntileSpacing : Int\ntileSpacing =\n    48\n\n\nstorageKey : Int\nstorageKey =\n    201\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( freshModel 0 context.screen.width context.screen.height context.screen.shape\n    , Storage.readInt storageKey BestScoreLoaded\n    )\n\n\nfreshModel : Int -> Int -> Int -> Platform.DisplayShape -> Model\nfreshModel best screenW screenH displayShape =\n    { playerY = 84\n    , velocityY = 0\n    , offset = 0\n    , score = 0\n    , best = best\n    , alive = True\n    , lastLandingSlot = Nothing\n    , screenW = screenW\n    , screenH = screenH\n    , displayShape = displayShape\n    }\n\n\nreset : Model -> Model\nreset model =\n    freshModel model.best model.screenW model.screenH model.displayShape\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        FrameTick _ ->\n            if model.alive then\n                step model\n\n            else\n                ( model, Cmd.none )\n\n        UpPressed ->\n            if model.alive then\n                ( { model | velocityY = -9 }, Cmd.none )\n\n            else\n                ( reset model, Cmd.none )\n\n        DownPressed ->\n            if model.alive then\n                ( { model | velocityY = min 12 (model.velocityY + 3) }, Cmd.none )\n\n            else\n                ( model, Cmd.none )\n\n        BestScoreLoaded value ->\n            ( { model | best = max 0 value }, Cmd.none )\n\n\nstep : Model -> ( Model, Cmd Msg )\nstep model =\n    let\n        scrollSpeed =\n            min 8 (3 + model.score // 120)\n\n        nextOffset =\n            model.offset + scrollSpeed\n\n        nextY =\n            model.playerY + model.velocityY\n\n        player =\n            { x = playerX, y = nextY, w = playerW, h = playerH }\n\n        tiles =\n            visibleTiles nextOffset\n\n        obstacles =\n            visibleObstacles nextOffset\n\n        landingTile =\n            if model.velocityY >= 0 then\n                tiles\n                    |> List.filter (landedOnTile nextOffset model.playerY player)\n                    |> List.sortBy\n                        (\\tile ->\n                            let\n                                rect =\n                                    platformRect nextOffset tile\n                            in\n                            rect.y\n                        )\n                    |> List.head\n\n            else\n                Nothing\n\n        fixedY =\n            case landingTile of\n                Just tile ->\n                    let\n                        rect =\n                            platformRect nextOffset tile\n                    in\n                    rect.y - playerH\n\n                Nothing ->\n                    nextY\n\n        landedPlayer =\n            { x = playerX, y = fixedY, w = playerW, h = playerH }\n\n        scoreGain =\n            landingScore model.lastLandingSlot landingTile\n\n        nextScore =\n            model.score + scoreGain\n\n        nextBest =\n            max model.best nextScore\n\n        obstacleHit =\n            List.any (obstacleCollision landedPlayer nextOffset) obstacles\n\n        fellOff =\n            fixedY + playerH >= 156 && landingTile == Nothing\n\n        dead =\n            obstacleHit || fellOff\n\n        landCmd =\n            if scoreGain > 0 then\n                Vibes.shortPulse\n\n            else\n                Cmd.none\n\n        persistCmd =\n            if nextBest > model.best || dead then\n                Storage.writeInt storageKey nextBest\n\n            else\n                Cmd.none\n\n        deathCmd =\n            if dead then\n                Vibes.doublePulse\n\n            else\n                Cmd.none\n    in\n    ( { model\n        | offset = nextOffset\n        , playerY = fixedY\n        , velocityY =\n            if landingTile /= Nothing then\n                0\n\n            else\n                min 9 (model.velocityY + 1)\n        , score = nextScore\n        , best = nextBest\n        , alive = not dead\n        , lastLandingSlot =\n            case landingTile of\n                Just tile ->\n                    Just tile.slot\n\n                Nothing ->\n                    model.lastLandingSlot\n      }\n    , Cmd.batch [ persistCmd, if dead then deathCmd else landCmd ]\n    )\n\n\nlandingScore : Maybe Int -> Maybe PlatformTile -> Int\nlandingScore lastLanding landingTile =\n    case landingTile of\n        Nothing ->\n            0\n\n        Just tile ->\n            if lastLanding == Just tile.slot then\n                0\n\n            else if tile.moving then\n                2\n\n            else\n                1\n\n\nvisibleSlots : Int -> List Int\nvisibleSlots offset =\n    let\n        first =\n            offset // tileSpacing - 1\n\n        last =\n            first + 6\n    in\n    List.range first last\n\n\nvisibleTiles : Int -> List PlatformTile\nvisibleTiles offset =\n    visibleSlots offset\n        |> List.concatMap genPlatforms\n\n\nvisibleObstacles : Int -> List Obstacle\nvisibleObstacles offset =\n    visibleSlots offset\n        |> List.filterMap genObstacle\n\n\ngenPlatforms : Int -> List PlatformTile\ngenPlatforms slot =\n    let\n        roll =\n            hash slot\n    in\n    if slot <= 0 then\n        [ { slot = slot, baseY = 132, moving = False } ]\n\n    else if modBy 6 roll == 0 then\n        []\n\n    else\n        [ { slot = slot\n          , baseY = if modBy 9 roll == 0 then 116 else 132\n          , moving = modBy 8 roll == 0 && slot > 2\n          }\n        ]\n\n\ngenObstacle : Int -> Maybe Obstacle\ngenObstacle slot =\n    let\n        roll =\n            hash (slot * 31 + 5)\n    in\n    if slot < 4 then\n        Nothing\n\n    else if modBy 10 roll == 0 then\n        Just { slot = slot, y = 98, w = 18, h = 28 }\n\n    else\n        Nothing\n\n\nhash : Int -> Int\nhash n =\n    modBy 997 (n * 73 + 17)\n\n\nlandedOnTile : Int -> Int -> { x : Int, y : Int, w : Int, h : Int } -> PlatformTile -> Bool\nlandedOnTile offset previousPlayerY player tile =\n    let\n        platform =\n            platformRect offset tile\n\n        previousBottom =\n            previousPlayerY + player.h\n\n        playerBottom =\n            player.y + player.h\n\n        horizontalOverlap =\n            player.x < platform.x + platform.w && player.x + player.w > platform.x\n\n        landingFromAbove =\n            previousBottom <= platform.y && playerBottom >= platform.y\n\n        ridingPlatform =\n            abs (previousBottom - platform.y) <= 12\n    in\n    horizontalOverlap && playerBottom >= platform.y - 1 && (landingFromAbove || ridingPlatform)\n\n\nobstacleCollision : { x : Int, y : Int, w : Int, h : Int } -> Int -> Obstacle -> Bool\nobstacleCollision player offset obstacle =\n    rectsOverlap player (obstacleRect offset obstacle)\n\n\nrectsOverlap : { x : Int, y : Int, w : Int, h : Int } -> { x : Int, y : Int, w : Int, h : Int } -> Bool\nrectsOverlap a b =\n    a.x\n        < b.x\n        + b.w\n        && a.x\n        + a.w\n        > b.x\n        && a.y\n        < b.y\n        + b.h\n        && a.y\n        + a.h\n        > b.y\n\n\nobstacleRect : Int -> Obstacle -> { x : Int, y : Int, w : Int, h : Int }\nobstacleRect offset obstacle =\n    { x = obstacle.slot * tileSpacing - offset + 12\n    , y = obstacle.y\n    , w = obstacle.w\n    , h = obstacle.h\n    }\n\n\nplatformRect : Int -> PlatformTile -> { x : Int, y : Int, w : Int, h : Int }\nplatformRect offset tile =\n    let\n        bob =\n            if tile.moving then\n                9 - abs (modBy 18 offset - 9)\n\n            else\n                0\n    in\n    { x = tile.slot * tileSpacing - offset\n    , y = tile.baseY + bob\n    , w = 40\n    , h = 8\n    }\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Frame.every 33 FrameTick\n        , Button.onPress Button.Up UpPressed\n        , Button.onPress Button.Down DownPressed\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    let\n        tiles =\n            visibleTiles model.offset\n\n        obstacles =\n            visibleObstacles model.offset\n\n        hud =\n            hudOps model\n    in\n    Ui.toUiNode\n        ([ Ui.clear Color.white ]\n            ++ hud\n            ++ [ Ui.drawBitmapInRect Resources.JumpHero { x = playerX, y = model.playerY, w = playerW, h = playerH } ]\n            ++ List.map (drawTile model.offset) tiles\n            ++ List.map (drawObstacle model.offset) obstacles\n            ++ (if model.alive then\n                    []\n\n                else\n                    gameOverOps model\n               )\n        )\n\n\nhudOps : Model -> List Ui.RenderOp\nhudOps model =\n    let\n        textOptions =\n            Ui.alignCenter Ui.defaultTextOptions\n\n        textW =\n            if Platform.displayShapeIsRound model.displayShape then\n                (min model.screenW model.screenH * 4) // 9\n\n            else\n                model.screenW - 8\n\n        textX =\n            (model.screenW - textW) // 2\n    in\n    [ Ui.text Resources.DefaultFont textOptions { x = textX, y = 10, w = textW, h = 16 } (\"Score \" ++ String.fromInt model.score)\n    , Ui.text Resources.DefaultFont textOptions { x = textX, y = 26, w = textW, h = 16 } (\"Best \" ++ String.fromInt model.best)\n    ]\n\n\ngameOverOps : Model -> List Ui.RenderOp\ngameOverOps model =\n    let\n        textOptions =\n            Ui.alignCenter Ui.defaultTextOptions\n\n        textW =\n            if Platform.displayShapeIsRound model.displayShape then\n                (min model.screenW model.screenH * 4) // 9\n\n            else\n                model.screenW - 8\n\n        textX =\n            (model.screenW - textW) // 2\n\n        textY =\n            if Platform.displayShapeIsRound model.displayShape then\n                (min model.screenW model.screenH * 3 // 5) - 14\n\n            else\n                model.screenH - 24\n    in\n    [ Ui.text Resources.DefaultFont textOptions { x = textX, y = textY, w = textW, h = 28 } \"Press Up\" ]\n\n\ntoUiRect : { x : Int, y : Int, w : Int, h : Int } -> { x : Int, y : Int, w : Int, h : Int }\ntoUiRect rect =\n    rect\n\n\ndrawTile : Int -> PlatformTile -> Ui.RenderOp\ndrawTile offset tile =\n    Ui.fillRect (toUiRect (platformRect offset tile)) (tileColor tile)\n\n\ntileColor : PlatformTile -> Color\ntileColor tile =\n    if tile.moving then\n        Color.darkGray\n\n    else\n        Color.black\n\n\ndrawObstacle : Int -> Obstacle -> Ui.RenderOp\ndrawObstacle offset obstacle =\n    Ui.fillRect (toUiRect (obstacleRect offset obstacle)) Color.black\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
+    "launch_context": {
+      "has_compass": true,
+      "has_microphone": false,
+      "launch_reason": "LaunchUser",
+      "screen": {
+        "color_mode": "BlackWhite",
+        "height": 168,
+        "shape": "Rectangular",
+        "width": 144
+      },
+      "shape": "rect",
+      "supports_health": false,
+      "watch_model": "Aplite",
+      "watch_profile_id": "aplite"
+    },
+    "revision": "6c2ebc2727f5",
+    "runtime_known_messages": [
+      "FrameTick",
+      "UpPressed",
+      "DownPressed",
+      "BestScoreLoaded"
+    ],
+    "runtime_message_cursor": 1,
+    "runtime_message_source": "runtime_followup",
+    "runtime_model": {
+      "alive": true,
+      "best": 0,
+      "colorMode": {
+        "args": [],
+        "ctor": "BlackWhite"
+      },
+      "displayShape": {
+        "args": [],
+        "ctor": "Rectangular"
+      },
+      "lastLandingSlot": {
+        "args": [],
+        "ctor": "Nothing"
+      },
+      "last_message": "BestScoreLoaded",
+      "last_operation": "nil",
+      "offset": 0,
+      "playerY": 84,
+      "score": 0,
+      "screenH": 168,
+      "screenW": 144,
+      "velocityY": 0
+    },
+    "runtime_model_source": "step_message",
+    "runtime_update_branches": [
+      "FrameTick _",
+      "UpPressed",
+      "DownPressed",
+      "BestScoreLoaded value"
+    ],
+    "runtime_view_output": [
+      {
+        "color": 255,
+        "kind": "clear",
+        "text": null
+      },
+      {
+        "font_id": 1,
+        "h": 16,
+        "kind": "text",
+        "text": "Score 0",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 10
+      },
+      {
+        "font_id": 1,
+        "h": 16,
+        "kind": "text",
+        "text": "Best 0",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 26
+      },
+      {
+        "bitmap_id": 1,
+        "h": 14,
+        "kind": "bitmap_in_rect",
+        "text": null,
+        "w": 12,
+        "x": 24,
+        "y": 84
+      },
+      {
+        "fill": 192,
+        "h": 8,
+        "kind": "fill_rect",
+        "text": null,
+        "w": 40,
+        "x": -48,
+        "y": 132
+      },
+      {
+        "fill": 192,
+        "h": 8,
+        "kind": "fill_rect",
+        "text": null,
+        "w": 40,
+        "x": 0,
+        "y": 132
+      },
+      {
+        "fill": 192,
+        "h": 8,
+        "kind": "fill_rect",
+        "text": null,
+        "w": 40,
+        "x": 96,
+        "y": 132
+      },
+      {
+        "fill": 192,
+        "h": 8,
+        "kind": "fill_rect",
+        "text": null,
+        "w": 40,
+        "x": 144,
+        "y": 132
+      },
+      {
+        "fill": 192,
+        "h": 8,
+        "kind": "fill_rect",
+        "text": null,
+        "w": 40,
+        "x": 192,
+        "y": 132
+      },
+      {
+        "fill": 192,
+        "h": 8,
+        "kind": "fill_rect",
+        "text": null,
+        "w": 40,
+        "x": 240,
+        "y": 132
+      },
+      {
+        "fill": 192,
+        "h": 28,
+        "kind": "fill_rect",
+        "text": null,
+        "w": 18,
+        "x": 252,
+        "y": 98
+      }
+    ],
+    "screen_height": 168,
+    "screen_width": 144,
+    "simulator_settings": {
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "battery_percent": 88,
+      "calendar_events": [],
+      "charging": false,
+      "clock_24h": true,
+      "compass_heading_deg": 0,
+      "compass_valid": true,
+      "connected": true,
+      "dictation_error": "",
+      "dictation_transcript": "",
+      "environment": {
+        "moon": {
+          "moonriseMin": 900,
+          "moonsetMin": 300,
+          "phaseE6": 500000
+        },
+        "sun": {
+          "polarDay": false,
+          "sunriseMin": 420,
+          "sunsetMin": 1200
+        },
+        "tide": null
+      },
+      "health_steps": 4200,
+      "health_steps_today": 9100,
+      "language": "en",
+      "latitude": 48.137154,
+      "locale": "en-US",
+      "longitude": 11.576124,
+      "network_online": true,
+      "notifications_enabled": true,
+      "preferences": {},
+      "quiet_hours": false,
+      "region": "US",
+      "simulated_date": "2026-05-27",
+      "simulated_time": "08:53:00",
+      "storage_values": {},
+      "timeline_peek": false,
+      "timezone_id": "Europe/Berlin",
+      "timezone_offset_min": 0,
+      "use_simulated_time": true,
+      "vibe_pattern_ms": [],
+      "weather": {
+        "condition": "clear",
+        "humidityPercent": 50,
+        "pressureHpa": 1013,
+        "temperatureC": 21,
+        "windKph": 8
+      }
+    },
+    "source_root": "watch",
+    "status": "idle",
+    "supports_color": false,
+    "timeString": null,
+    "watch_profile_id": "aplite"
+  }
+}

@@ -1,0 +1,474 @@
+{
+  "preview_diagnostics": {
+    "render_source": "runtime_view_output",
+    "root_type": "windowStack",
+    "runtime_view_output_kinds": [
+      "clear",
+      "text"
+    ],
+    "status": "ok"
+  },
+  "preview_ops": [
+    {
+      "color": 255,
+      "kind": "clear"
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "WatchInfo demo",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 8
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "--",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 32
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "--",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 52
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "--",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 72
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "0",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 96
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "Select: refresh",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 120
+    }
+  ],
+  "preview_ops_sha256": "83f64307394732371a868aaa09a0dbcdcdca472d10c8e58e3414ab37b911e1e7",
+  "render_tree": {
+    "node_count": 10,
+    "node_types": [
+      "canvasLayer",
+      "clear",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "window",
+      "windowStack"
+    ],
+    "root_type": "windowStack",
+    "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [],
+                  "color": 255,
+                  "label": "",
+                  "text": null,
+                  "type": "clear"
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "WatchInfo demo",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 8
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "--",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 32
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "--",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 52
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "--",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 72
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "0",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 96
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "Select: refresh",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 120
+                }
+              ],
+              "id": 1,
+              "label": "",
+              "text": null,
+              "type": "canvasLayer"
+            }
+          ],
+          "id": 1,
+          "label": "",
+          "text": null,
+          "type": "window"
+        }
+      ],
+      "label": "",
+      "text": null,
+      "type": "windowStack"
+    }
+  },
+  "runtime_model": {
+    "color": {
+      "args": [],
+      "ctor": "Nothing"
+    },
+    "colorMode": {
+      "args": [],
+      "ctor": "BlackWhite"
+    },
+    "displayShape": {
+      "args": [],
+      "ctor": "Rectangular"
+    },
+    "firmware": {
+      "args": [],
+      "ctor": "Nothing"
+    },
+    "firmware_version": "v4.4.0-sim",
+    "last_message": "GotFirmware",
+    "last_operation": "nil",
+    "model": {
+      "args": [],
+      "ctor": "Nothing"
+    },
+    "refreshes": 0,
+    "runtime_view_output": [],
+    "screenH": 168,
+    "screenW": 144,
+    "step_counter": 3,
+    "timeString": null,
+    "watch_color": "BlackWhite",
+    "watch_model": "Aplite"
+  },
+  "template": "watch-demo-watch-info",
+  "timeline_init_messages": [
+    "update:GotFirmware",
+    "update:GotColor",
+    "update:GotModel",
+    "init:init"
+  ],
+  "view_tree_type": "windowStack",
+  "watch_model": {
+    "_debugger_steps": 3,
+    "debugger_init_complete": true,
+    "elm_executor_mode": "runtime_executed",
+    "last_source": "module Main exposing (main)\n\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Events as Events\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\nimport Pebble.WatchInfo as WatchInfo\n\n\ntype alias Model =\n    { model : Maybe WatchInfo.WatchModel\n    , color : Maybe WatchInfo.WatchColor\n    , firmware : Maybe WatchInfo.FirmwareVersion\n    , refreshes : Int\n    }\n\n\ntype Msg\n    = SelectPressed\n    | GotModel WatchInfo.WatchModel\n    | GotColor WatchInfo.WatchColor\n    | GotFirmware WatchInfo.FirmwareVersion\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit _ =\n    ( { model = Nothing, color = Nothing, firmware = Nothing, refreshes = 0 }, requestInfo )\n\n\nrequestInfo : Cmd Msg\nrequestInfo =\n    Cmd.batch\n        [ WatchInfo.getModel GotModel\n        , WatchInfo.getColor GotColor\n        , WatchInfo.getFirmwareVersion GotFirmware\n        ]\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        SelectPressed ->\n            ( { model | refreshes = model.refreshes + 1 }, requestInfo )\n\n        GotModel value ->\n            ( { model | model = Just value }, Cmd.none )\n\n        GotColor value ->\n            ( { model | color = Just value }, Cmd.none )\n\n        GotFirmware value ->\n            ( { model | firmware = Just value }, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch [ Button.onPress Button.Select SelectPressed ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    Ui.toUiNode\n        [ Ui.clear Color.white\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } \"WatchInfo demo\"\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 20 } (maybeLabel model.model watchModelLabel)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 52, w = 136, h = 20 } (maybeLabel model.color watchColorLabel)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 72, w = 136, h = 20 } (maybeLabel model.firmware firmwareLabel)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 20 } (String.fromInt model.refreshes)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 120, w = 136, h = 20 } \"Select: refresh\"\n        ]\n\n\nmaybeLabel : Maybe a -> (a -> String) -> String\nmaybeLabel maybeValue toLabel =\n    case maybeValue of\n        Nothing ->\n            \"--\"\n\n        Just value ->\n            toLabel value\n\n\nwatchModelLabel : WatchInfo.WatchModel -> String\nwatchModelLabel watchModel =\n    case watchModel of\n        WatchInfo.PebbleOriginal ->\n            \"Original\"\n\n        WatchInfo.PebbleSteel ->\n            \"Steel\"\n\n        WatchInfo.PebbleTime ->\n            \"Time\"\n\n        WatchInfo.PebbleTimeSteel ->\n            \"Time Steel\"\n\n        WatchInfo.PebbleTimeRound14 ->\n            \"Round 14\"\n\n        WatchInfo.PebbleTimeRound20 ->\n            \"Round 20\"\n\n        WatchInfo.Pebble2Hr ->\n            \"Pebble 2 HR\"\n\n        WatchInfo.Pebble2Se ->\n            \"Pebble 2 SE\"\n\n        WatchInfo.PebbleTime2 ->\n            \"Time 2\"\n\n        WatchInfo.UnknownModel ->\n            \"Unknown\"\n\n        _ ->\n            \"Core device\"\n\n\nwatchColorLabel : WatchInfo.WatchColor -> String\nwatchColorLabel watchColor =\n    case watchColor of\n        WatchInfo.Black ->\n            \"Black\"\n\n        WatchInfo.White ->\n            \"White\"\n\n        WatchInfo.Red ->\n            \"Red\"\n\n        WatchInfo.Blue ->\n            \"Blue\"\n\n        WatchInfo.Green ->\n            \"Green\"\n\n        WatchInfo.StainlessSteel ->\n            \"Steel\"\n\n        WatchInfo.TimeBlack ->\n            \"Time black\"\n\n        WatchInfo.TimeWhite ->\n            \"Time white\"\n\n        WatchInfo.UnknownColor ->\n            \"Unknown\"\n\n        _ ->\n            \"Color variant\"\n\n\nfirmwareLabel : WatchInfo.FirmwareVersion -> String\nfirmwareLabel version =\n    String.fromInt version.major\n        ++ \".\"\n        ++ String.fromInt version.minor\n        ++ \".\"\n        ++ String.fromInt version.patch\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
+    "launch_context": {
+      "has_compass": true,
+      "has_microphone": false,
+      "launch_reason": "LaunchUser",
+      "screen": {
+        "color_mode": "BlackWhite",
+        "height": 168,
+        "shape": "Rectangular",
+        "width": 144
+      },
+      "shape": "rect",
+      "supports_health": false,
+      "watch_model": "Aplite",
+      "watch_profile_id": "aplite"
+    },
+    "revision": "66d6037c6245",
+    "runtime_known_messages": [
+      "SelectPressed",
+      "GotModel",
+      "GotColor",
+      "GotFirmware"
+    ],
+    "runtime_message_cursor": 3,
+    "runtime_message_source": "init_device_data",
+    "runtime_model": {
+      "color": {
+        "args": [],
+        "ctor": "Nothing"
+      },
+      "colorMode": {
+        "args": [],
+        "ctor": "BlackWhite"
+      },
+      "displayShape": {
+        "args": [],
+        "ctor": "Rectangular"
+      },
+      "firmware": {
+        "args": [],
+        "ctor": "Nothing"
+      },
+      "firmware_version": "v4.4.0-sim",
+      "last_message": "GotFirmware",
+      "last_operation": "nil",
+      "model": {
+        "args": [],
+        "ctor": "Nothing"
+      },
+      "refreshes": 0,
+      "screenH": 168,
+      "screenW": 144,
+      "step_counter": 3,
+      "watch_color": "BlackWhite",
+      "watch_model": "Aplite"
+    },
+    "runtime_model_source": "step_message",
+    "runtime_update_branches": [
+      "SelectPressed",
+      "GotModel value",
+      "GotColor value",
+      "GotFirmware value"
+    ],
+    "runtime_view_output": [
+      {
+        "color": 255,
+        "kind": "clear",
+        "text": null
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "WatchInfo demo",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 8
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "--",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 32
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "--",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 52
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "--",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 72
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "0",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 96
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "Select: refresh",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 120
+      }
+    ],
+    "screen_height": 168,
+    "screen_width": 144,
+    "simulator_settings": {
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "battery_percent": 88,
+      "calendar_events": [],
+      "charging": false,
+      "clock_24h": true,
+      "compass_heading_deg": 0,
+      "compass_valid": true,
+      "connected": true,
+      "dictation_error": "",
+      "dictation_transcript": "",
+      "environment": {
+        "moon": {
+          "moonriseMin": 900,
+          "moonsetMin": 300,
+          "phaseE6": 500000
+        },
+        "sun": {
+          "polarDay": false,
+          "sunriseMin": 420,
+          "sunsetMin": 1200
+        },
+        "tide": null
+      },
+      "health_steps": 4200,
+      "health_steps_today": 9100,
+      "language": "en",
+      "latitude": 48.137154,
+      "locale": "en-US",
+      "longitude": 11.576124,
+      "network_online": true,
+      "notifications_enabled": true,
+      "preferences": {},
+      "quiet_hours": false,
+      "region": "US",
+      "simulated_date": "2026-05-27",
+      "simulated_time": "08:53:00",
+      "storage_values": {},
+      "timeline_peek": false,
+      "timezone_id": "Europe/Berlin",
+      "timezone_offset_min": 0,
+      "use_simulated_time": true,
+      "vibe_pattern_ms": [],
+      "weather": {
+        "condition": "clear",
+        "humidityPercent": 50,
+        "pressureHpa": 1013,
+        "temperatureC": 21,
+        "windKph": 8
+      }
+    },
+    "source_root": "watch",
+    "status": "idle",
+    "supports_color": false,
+    "timeString": null,
+    "watch_profile_id": "aplite"
+  }
+}

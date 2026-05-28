@@ -1,0 +1,344 @@
+{
+  "preview_diagnostics": {
+    "render_source": "runtime_view_output",
+    "root_type": "windowStack",
+    "runtime_view_output_kinds": [
+      "clear",
+      "text"
+    ],
+    "status": "ok"
+  },
+  "preview_ops": [
+    {
+      "color": 255,
+      "kind": "clear"
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "Light demo",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 8
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "Interaction",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 36
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 20,
+      "h": 20,
+      "kind": "text_label",
+      "text": "0",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 64
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 40,
+      "h": 40,
+      "kind": "text_label",
+      "text": "Up/Down: mode Select: apply",
+      "text_align": "center",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 92
+    }
+  ],
+  "preview_ops_sha256": "acc29e5dd2c5e096ce4ce67d48cd8dc1325634e8ec55ab40031c89443c489de6",
+  "render_tree": {
+    "node_count": 8,
+    "node_types": [
+      "canvasLayer",
+      "clear",
+      "text",
+      "text",
+      "text",
+      "text",
+      "window",
+      "windowStack"
+    ],
+    "root_type": "windowStack",
+    "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [],
+                  "color": 255,
+                  "label": "",
+                  "text": null,
+                  "type": "clear"
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "Light demo",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 8
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "Interaction",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 36
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 20,
+                  "label": "",
+                  "text": "0",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 64
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "h": 40,
+                  "label": "",
+                  "text": "Up/Down: mode Select: apply",
+                  "text_align": "center",
+                  "text_overflow": "word_wrap",
+                  "type": "text",
+                  "w": 136,
+                  "x": 4,
+                  "y": 92
+                }
+              ],
+              "id": 1,
+              "label": "",
+              "text": null,
+              "type": "canvasLayer"
+            }
+          ],
+          "id": 1,
+          "label": "",
+          "text": null,
+          "type": "window"
+        }
+      ],
+      "label": "",
+      "text": null,
+      "type": "windowStack"
+    }
+  },
+  "runtime_model": {
+    "applies": 0,
+    "colorMode": {
+      "args": [],
+      "ctor": "BlackWhite"
+    },
+    "displayShape": {
+      "args": [],
+      "ctor": "Rectangular"
+    },
+    "modeIndex": 0,
+    "runtime_view_output": [],
+    "screenH": 168,
+    "screenW": 144,
+    "timeString": null
+  },
+  "template": "watch-demo-light",
+  "timeline_init_messages": [
+    "init:init"
+  ],
+  "view_tree_type": "windowStack",
+  "watch_model": {
+    "debugger_init_complete": true,
+    "elm_executor_mode": "runtime_executed",
+    "last_source": "module Main exposing (main)\n\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Events as Events\nimport Pebble.Light as Light\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { modeIndex : Int\n    , applies : Int\n    }\n\n\ntype Msg\n    = UpPressed\n    | SelectPressed\n    | DownPressed\n\n\nmodes : List ( String, Cmd Msg )\nmodes =\n    [ ( \"Interaction\", Light.interaction )\n    , ( \"Enable\", Light.enable )\n    , ( \"Disable\", Light.disable )\n    ]\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit _ =\n    ( { modeIndex = 0, applies = 0 }, Cmd.none )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        UpPressed ->\n            ( { model | modeIndex = prevIndex model.modeIndex }, Cmd.none )\n\n        DownPressed ->\n            ( { model | modeIndex = nextIndex model.modeIndex }, Cmd.none )\n\n        SelectPressed ->\n            applyMode { model | applies = model.applies + 1 }\n\n\napplyMode : Model -> ( Model, Cmd Msg )\napplyMode model =\n    case currentMode model.modeIndex of\n        ( _, cmd ) ->\n            ( model, cmd )\n\n\ncurrentMode : Int -> ( String, Cmd Msg )\ncurrentMode index =\n    let\n        count =\n            List.length modes\n\n        normalized =\n            modBy count (index + count)\n    in\n    modes\n        |> List.drop normalized\n        |> List.head\n        |> Maybe.withDefault ( \"Interaction\", Light.interaction )\n\n\nprevIndex : Int -> Int\nprevIndex index =\n    modBy (List.length modes) (index - 1 + List.length modes)\n\n\nnextIndex : Int -> Int\nnextIndex index =\n    modBy (List.length modes) (index + 1)\n\n\nmodeLabel : Model -> String\nmodeLabel model =\n    Tuple.first (currentMode model.modeIndex)\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Button.onPress Button.Up UpPressed\n        , Button.onPress Button.Select SelectPressed\n        , Button.onPress Button.Down DownPressed\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    Ui.toUiNode\n        [ Ui.clear Color.white\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } \"Light demo\"\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (modeLabel model)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 64, w = 136, h = 20 } (String.fromInt model.applies)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 92, w = 136, h = 40 } \"Up/Down: mode Select: apply\"\n        ]\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
+    "launch_context": {
+      "has_compass": true,
+      "has_microphone": false,
+      "launch_reason": "LaunchUser",
+      "screen": {
+        "color_mode": "BlackWhite",
+        "height": 168,
+        "shape": "Rectangular",
+        "width": 144
+      },
+      "shape": "rect",
+      "supports_health": false,
+      "watch_model": "Aplite",
+      "watch_profile_id": "aplite"
+    },
+    "revision": "7aa7185bce76",
+    "runtime_model": {
+      "applies": 0,
+      "colorMode": {
+        "args": [],
+        "ctor": "BlackWhite"
+      },
+      "displayShape": {
+        "args": [],
+        "ctor": "Rectangular"
+      },
+      "modeIndex": 0,
+      "screenH": 168,
+      "screenW": 144
+    },
+    "runtime_model_source": "init_model",
+    "runtime_view_output": [
+      {
+        "color": 255,
+        "kind": "clear",
+        "text": null
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "Light demo",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 8
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "Interaction",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 36
+      },
+      {
+        "font_id": 1,
+        "h": 20,
+        "kind": "text",
+        "text": "0",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 64
+      },
+      {
+        "font_id": 1,
+        "h": 40,
+        "kind": "text",
+        "text": "Up/Down: mode Select: apply",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 136,
+        "x": 4,
+        "y": 92
+      }
+    ],
+    "screen_height": 168,
+    "screen_width": 144,
+    "simulator_settings": {
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "battery_percent": 88,
+      "calendar_events": [],
+      "charging": false,
+      "clock_24h": true,
+      "compass_heading_deg": 0,
+      "compass_valid": true,
+      "connected": true,
+      "dictation_error": "",
+      "dictation_transcript": "",
+      "environment": {
+        "moon": {
+          "moonriseMin": 900,
+          "moonsetMin": 300,
+          "phaseE6": 500000
+        },
+        "sun": {
+          "polarDay": false,
+          "sunriseMin": 420,
+          "sunsetMin": 1200
+        },
+        "tide": null
+      },
+      "health_steps": 4200,
+      "health_steps_today": 9100,
+      "language": "en",
+      "latitude": 48.137154,
+      "locale": "en-US",
+      "longitude": 11.576124,
+      "network_online": true,
+      "notifications_enabled": true,
+      "preferences": {},
+      "quiet_hours": false,
+      "region": "US",
+      "simulated_date": "2026-05-27",
+      "simulated_time": "08:53:00",
+      "storage_values": {},
+      "timeline_peek": false,
+      "timezone_id": "Europe/Berlin",
+      "timezone_offset_min": 0,
+      "use_simulated_time": true,
+      "vibe_pattern_ms": [],
+      "weather": {
+        "condition": "clear",
+        "humidityPercent": 50,
+        "pressureHpa": 1013,
+        "temperatureC": 21,
+        "windKph": 8
+      }
+    },
+    "source_root": "watch",
+    "status": "idle",
+    "supports_color": false,
+    "timeString": null,
+    "watch_profile_id": "aplite"
+  }
+}

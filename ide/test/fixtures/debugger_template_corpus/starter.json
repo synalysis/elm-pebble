@@ -1,0 +1,464 @@
+{
+  "preview_diagnostics": {
+    "render_source": "runtime_view_output",
+    "root_type": "windowStack",
+    "runtime_view_output_kinds": [
+      "clear",
+      "push_context",
+      "stroke_width",
+      "antialiased",
+      "stroke_color",
+      "fill_color",
+      "text_color",
+      "round_rect",
+      "arc",
+      "pop_context",
+      "line",
+      "pixel",
+      "text_int"
+    ],
+    "status": "ok"
+  },
+  "preview_ops": [
+    {
+      "color": 255,
+      "kind": "clear"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 70,
+      "kind": "round_rect",
+      "radius": 6,
+      "stroke_color": 192,
+      "stroke_width": 3,
+      "w": 132,
+      "x": 6,
+      "y": 6
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "end_angle": 45000,
+      "h": 36,
+      "kind": "arc",
+      "start_angle": 0,
+      "stroke_color": 192,
+      "stroke_width": 3,
+      "w": 36,
+      "x": 20,
+      "y": 16
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 0,
+      "x2": 143,
+      "y1": 84,
+      "y2": 84
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 72,
+      "y": 84
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "kind": "text_int",
+      "text": "1",
+      "text_color": null,
+      "x": 0,
+      "y": 56
+    }
+  ],
+  "preview_ops_sha256": "cb0b988b579c1cc96543bd90ce3bb193e72fee31a4ad1f9be0a0687521b8c037",
+  "render_tree": {
+    "node_count": 10,
+    "node_types": [
+      "arc",
+      "canvasLayer",
+      "clear",
+      "group",
+      "line",
+      "pixel",
+      "roundRect",
+      "textInt",
+      "window",
+      "windowStack"
+    ],
+    "root_type": "windowStack",
+    "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [],
+                  "color": 255,
+                  "label": "",
+                  "text": null,
+                  "type": "clear"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "fill": 192,
+                      "h": 70,
+                      "label": "",
+                      "radius": 6,
+                      "text": null,
+                      "type": "roundRect",
+                      "w": 132,
+                      "x": 6,
+                      "y": 6
+                    },
+                    {
+                      "children": [],
+                      "end_angle": 45000,
+                      "h": 36,
+                      "label": "",
+                      "start_angle": 0,
+                      "text": null,
+                      "type": "arc",
+                      "w": 36,
+                      "x": 20,
+                      "y": 16
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "fill_color": 192,
+                    "stroke_color": 192,
+                    "text": null,
+                    "text_color": 192
+                  },
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [],
+                  "color": 192,
+                  "label": "",
+                  "text": null,
+                  "type": "line",
+                  "x1": 0,
+                  "x2": 143,
+                  "y1": 84,
+                  "y2": 84
+                },
+                {
+                  "children": [],
+                  "color": 192,
+                  "label": "",
+                  "text": null,
+                  "type": "pixel",
+                  "x": 72,
+                  "y": 84
+                },
+                {
+                  "children": [],
+                  "font_id": 1,
+                  "label": "",
+                  "text": "1",
+                  "type": "textInt",
+                  "x": 0,
+                  "y": 56
+                }
+              ],
+              "id": 1,
+              "label": "",
+              "text": null,
+              "type": "canvasLayer"
+            }
+          ],
+          "id": 1,
+          "label": "",
+          "text": null,
+          "type": "window"
+        }
+      ],
+      "label": "",
+      "text": null,
+      "type": "windowStack"
+    }
+  },
+  "runtime_model": {
+    "clock_style_24h": true,
+    "colorMode": {
+      "args": [],
+      "ctor": "BlackWhite"
+    },
+    "displayShape": {
+      "args": [],
+      "ctor": "Rectangular"
+    },
+    "firmware_version": "v4.4.0-sim",
+    "last_message": "FirmwareVersionString",
+    "last_operation": "nil",
+    "runtime_view_output": [],
+    "screenH": 168,
+    "screenW": 144,
+    "temperature": {
+      "args": [],
+      "ctor": "Nothing"
+    },
+    "timeString": null,
+    "timezone": "UTC",
+    "timezone_is_set": true,
+    "value": 1,
+    "watch_color": "BlackWhite",
+    "watch_model": "Aplite"
+  },
+  "template": "starter",
+  "timeline_init_messages": [
+    "update:FirmwareVersionString",
+    "update:WatchColorName",
+    "update:WatchModelName",
+    "update:TimezoneName",
+    "update:TimezoneIsSet",
+    "update:ClockStyle24h",
+    "update:CurrentTimeString {\"args\":[\"08:53\"],\"ctor\":\"CurrentTimeString\"}",
+    "init:init"
+  ],
+  "view_tree_type": "windowStack",
+  "watch_model": {
+    "_debugger_steps": 7,
+    "debugger_init_complete": true,
+    "elm_executor_mode": "runtime_executed",
+    "last_source": "module Main exposing (Model, Msg, headOrZero, main, update, view)\n\n{-| Fixture application used by compiler and runtime tests. -}\n\nimport Companion.Types exposing (Location(..), Temperature, WatchToPhone(..))\nimport Companion.Watch as CompanionWatch\nimport Json.Decode as Decode\nimport Pebble.Accel as PebbleAccel\nimport Pebble.Button as PebbleButton\nimport Pebble.Cmd\nimport Pebble.Events as PebbleEvents\nimport Pebble.Platform as PebblePlatform\nimport Pebble.Storage as PebbleStorage\nimport Pebble.Time as PebbleTime\nimport Pebble.Ui as PebbleUi\nimport Pebble.Ui.Color as PebbleColor\nimport Pebble.Ui.Resources as UiResources\nimport Pebble.WatchInfo as PebbleWatchInfo\n\n\n{-| App model with counter and optional temperature. -}\ntype alias Model =\n    { value : Int, temperature : Maybe Temperature }\n\n\n{-| Messages handled by the fixture update loop. -}\ntype Msg\n    = Increment\n    | Decrement\n    | Tick Int\n    | UpPressed\n    | SelectPressed\n    | DownPressed\n    | AccelTap\n    | ProvideTemperature Temperature\n    | CurrentTimeString String\n    | ClockStyle24h Bool\n    | TimezoneIsSet Bool\n    | TimezoneName String\n    | WatchModelName PebbleWatchInfo.WatchModel\n    | WatchColorName PebbleWatchInfo.WatchColor\n    | FirmwareVersionString PebbleWatchInfo.FirmwareVersion\n\n\n{-| Return the first integer in a list, or `0` when empty. -}\nheadOrZero : List Int -> Int\nheadOrZero list =\n    Maybe.withDefault 0 (List.head list)\n\n\nhelper : Int -> Int\nhelper value =\n    value + 2\n\n\nadvanced : Int -> Int\nadvanced n =\n    let base = helper n in if base > 10 then base else base + 1\n\n\ncounterOf : Model -> Int\ncounterOf model =\n    model.value\n\n\ntemperatureOf : Model -> Maybe Temperature\ntemperatureOf model =\n    model.temperature\n\n\nrequestWeather : Location -> Cmd Msg\nrequestWeather location =\n    CompanionWatch.sendWatchToPhone (RequestWeather location)\n\n\nrequestSystemInfo : Cmd Msg\nrequestSystemInfo =\n    Cmd.batch\n        [ PebbleTime.currentTimeString CurrentTimeString\n        , PebbleTime.clockStyle24h ClockStyle24h\n        , PebbleTime.timezoneIsSet TimezoneIsSet\n        , PebbleTime.timezone TimezoneName\n        , PebbleWatchInfo.getModel WatchModelName\n        , PebbleWatchInfo.getColor WatchColorName\n        , PebbleWatchInfo.getFirmwareVersion FirmwareVersionString\n        ]\n\n\ninit : PebblePlatform.LaunchContext -> ( Model, Cmd Msg )\ninit launchContext =\n    let\n        initial =\n            PebblePlatform.launchReasonToInt launchContext.reason\n    in\n    ( { value = initial, temperature = Nothing }\n    , Cmd.batch [ requestWeather Berlin, requestSystemInfo ]\n    )\n\n\n{-| Update the model with an incoming message. -}\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        Tick _ ->\n            handlePlatformMsg msg model\n\n        UpPressed ->\n            handlePlatformMsg msg model\n\n        SelectPressed ->\n            handlePlatformMsg msg model\n\n        DownPressed ->\n            handlePlatformMsg msg model\n\n        AccelTap ->\n            handlePlatformMsg msg model\n\n        _ ->\n            handleAppMsg msg model\n\n\nhandleAppMsg : Msg -> Model -> ( Model, Cmd Msg )\nhandleAppMsg msg model =\n    case msg of\n        Increment ->\n            let counter = counterOf model in ( { value = counter + 1, temperature = temperatureOf model }, Cmd.none )\n\n        Decrement ->\n            let counter = counterOf model in ( { value = counter - 1, temperature = temperatureOf model }, Cmd.none )\n\n        ProvideTemperature temperature ->\n            ( { value = counterOf model, temperature = Just temperature }, Cmd.none )\n\n        CurrentTimeString _ ->\n            ( model, Cmd.none )\n\n        ClockStyle24h _ ->\n            ( model, Cmd.none )\n\n        TimezoneIsSet _ ->\n            ( model, Cmd.none )\n\n        TimezoneName _ ->\n            ( model, Cmd.none )\n\n        WatchModelName _ ->\n            ( model, Cmd.none )\n\n        WatchColorName _ ->\n            ( model, Cmd.none )\n\n        FirmwareVersionString _ ->\n            ( model, Cmd.none )\n\n        _ ->\n            ( model, Cmd.none )\n\n\nhandlePlatformMsg : Msg -> Model -> ( Model, Cmd Msg )\nhandlePlatformMsg msg model =\n    case msg of\n        Tick _ ->\n            let counter = counterOf model in let next = advanced counter in ( { value = next, temperature = temperatureOf model }, Pebble.Cmd.timerAfter 1000 )\n\n        UpPressed ->\n            let counter = counterOf model in let next = counter + 1 in ( { value = next, temperature = temperatureOf model }, PebbleStorage.writeInt 1 next )\n\n        SelectPressed ->\n            ( model, Cmd.batch [ requestWeather Berlin, requestSystemInfo ] )\n\n        DownPressed ->\n            let counter = counterOf model in ( { value = counter - 1, temperature = temperatureOf model }, PebbleStorage.delete 1 )\n\n        AccelTap ->\n            let counter = counterOf model in ( { value = counter + 1, temperature = temperatureOf model }, Cmd.none )\n\n        _ ->\n            ( model, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    PebbleEvents.batch [ PebbleEvents.onSecondChange Tick, PebbleButton.onPress PebbleButton.Up UpPressed, PebbleButton.onPress PebbleButton.Select SelectPressed, PebbleButton.onPress PebbleButton.Down DownPressed, PebbleAccel.onTap AccelTap ]\n\n\n{-| Produce the retained virtual UI tree for rendering. -}\nview : Model -> PebbleUi.UiNode\nview model =\n    PebbleUi.windowStack\n        [ PebbleUi.window 1\n            [ PebbleUi.canvasLayer 1\n                [ PebbleUi.clear PebbleColor.white\n                , PebbleUi.group\n                    (PebbleUi.context\n                        [ PebbleUi.strokeWidth 3\n                        , PebbleUi.antialiased 1\n                        , PebbleUi.strokeColor PebbleColor.black\n                        , PebbleUi.fillColor PebbleColor.black\n                        , PebbleUi.textColor PebbleColor.black\n                        ]\n                        [ PebbleUi.roundRect { x = 6, y = 6, w = 132, h = 70 } 6 PebbleColor.black\n                        , PebbleUi.arc { x = 20, y = 16, w = 36, h = 36 } 0 45000\n                        , PebbleUi.pathOutline\n                            (PebbleUi.path\n                                [ { x = 0, y = 0 }, { x = 10, y = 4 }, { x = 16, y = 14 }, { x = 8, y = 24 }, { x = 0, y = 18 } ]\n                                { x = 86, y = 16 }\n                                (PebbleUi.rotationFromPebbleAngle 0)\n                            )\n                        , PebbleUi.pathFilled\n                            (PebbleUi.path\n                                [ { x = 0, y = 0 }, { x = 8, y = 6 }, { x = 6, y = 14 }, { x = 2, y = 20 }, { x = 0, y = 14 } ]\n                                { x = 108, y = 26 }\n                                (PebbleUi.rotationFromPebbleAngle 0)\n                            )\n                        , PebbleUi.pathOutlineOpen\n                            (PebbleUi.path\n                                [ { x = 0, y = 0 }, { x = 8, y = 4 }, { x = 16, y = 2 }, { x = 24, y = 6 } ]\n                                { x = 10, y = 78 }\n                                (PebbleUi.rotationFromPebbleAngle 0)\n                            )\n                        ]\n                    )\n                , PebbleUi.line { x = 0, y = 84 } { x = 143, y = 84 } PebbleColor.black\n                , PebbleUi.pixel { x = 72, y = 84 } PebbleColor.black\n                , statusDraw model\n                , counterDraw model\n                ]\n            ]\n        ]\n\n\nstatusDraw : Model -> PebbleUi.RenderOp\nstatusDraw model =\n    let maybeTemp = temperatureOf model in\n    case maybeTemp of\n        Just temperature ->\n            PebbleUi.textInt UiResources.DefaultFont { x = 0, y = 28 } (temperatureValue temperature)\n\n        Nothing ->\n            PebbleUi.textLabel UiResources.DefaultFont { x = 0, y = 28 } PebbleUi.WaitingForCompanion\n\n\ncounterDraw : Model -> PebbleUi.RenderOp\ncounterDraw model =\n    let counter = counterOf model in PebbleUi.textInt UiResources.DefaultFont { x = 0, y = 56 } counter\n\n\ntemperatureValue : Temperature -> Int\ntemperatureValue temperature =\n    case temperature of\n        Celsius value ->\n            value\n\n        Fahrenheit value ->\n            value\n\n\n{-| Program entry point. -}\nmain : Program Decode.Value Model Msg\nmain =\n    PebblePlatform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
+    "launch_context": {
+      "has_compass": true,
+      "has_microphone": false,
+      "launch_reason": "LaunchUser",
+      "screen": {
+        "color_mode": "BlackWhite",
+        "height": 168,
+        "shape": "Rectangular",
+        "width": 144
+      },
+      "shape": "rect",
+      "supports_health": false,
+      "watch_model": "Aplite",
+      "watch_profile_id": "aplite"
+    },
+    "revision": "7e434712bcb1",
+    "runtime_known_messages": [
+      "Increment",
+      "Decrement",
+      "Tick",
+      "UpPressed",
+      "SelectPressed",
+      "DownPressed",
+      "AccelTap",
+      "ProvideTemperature",
+      "CurrentTimeString",
+      "ClockStyle24h",
+      "TimezoneIsSet",
+      "TimezoneName",
+      "WatchModelName",
+      "WatchColorName",
+      "FirmwareVersionString"
+    ],
+    "runtime_message_cursor": 7,
+    "runtime_message_source": "init_device_data",
+    "runtime_model": {
+      "clock_style_24h": true,
+      "colorMode": {
+        "args": [],
+        "ctor": "BlackWhite"
+      },
+      "displayShape": {
+        "args": [],
+        "ctor": "Rectangular"
+      },
+      "firmware_version": "v4.4.0-sim",
+      "last_message": "FirmwareVersionString",
+      "last_operation": "nil",
+      "screenH": 168,
+      "screenW": 144,
+      "temperature": {
+        "args": [],
+        "ctor": "Nothing"
+      },
+      "timezone": "UTC",
+      "timezone_is_set": true,
+      "value": 1,
+      "watch_color": "BlackWhite",
+      "watch_model": "Aplite"
+    },
+    "runtime_model_source": "step_message",
+    "runtime_update_branches": [
+      "Tick _",
+      "UpPressed",
+      "SelectPressed",
+      "DownPressed",
+      "AccelTap",
+      "_"
+    ],
+    "runtime_view_output": [
+      {
+        "color": 255,
+        "kind": "clear",
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "kind": "stroke_width",
+        "text": null,
+        "value": 3
+      },
+      {
+        "kind": "antialiased",
+        "text": null,
+        "value": true
+      },
+      {
+        "color": 192,
+        "kind": "stroke_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "fill_color",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "fill": 192,
+        "h": 70,
+        "kind": "round_rect",
+        "radius": 6,
+        "text": null,
+        "w": 132,
+        "x": 6,
+        "y": 6
+      },
+      {
+        "end_angle": 45000,
+        "h": 36,
+        "kind": "arc",
+        "start_angle": 0,
+        "text": null,
+        "w": 36,
+        "x": 20,
+        "y": 16
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "line",
+        "text": null,
+        "x1": 0,
+        "x2": 143,
+        "y1": 84,
+        "y2": 84
+      },
+      {
+        "color": 192,
+        "kind": "pixel",
+        "text": null,
+        "x": 72,
+        "y": 84
+      },
+      {
+        "font_id": 1,
+        "kind": "text_int",
+        "text": "1",
+        "x": 0,
+        "y": 56
+      }
+    ],
+    "screen_height": 168,
+    "screen_width": 144,
+    "simulator_settings": {
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "battery_percent": 88,
+      "calendar_events": [],
+      "charging": false,
+      "clock_24h": true,
+      "compass_heading_deg": 0,
+      "compass_valid": true,
+      "connected": true,
+      "dictation_error": "",
+      "dictation_transcript": "",
+      "environment": {
+        "moon": {
+          "moonriseMin": 900,
+          "moonsetMin": 300,
+          "phaseE6": 500000
+        },
+        "sun": {
+          "polarDay": false,
+          "sunriseMin": 420,
+          "sunsetMin": 1200
+        },
+        "tide": null
+      },
+      "health_steps": 4200,
+      "health_steps_today": 9100,
+      "language": "en",
+      "latitude": 48.137154,
+      "locale": "en-US",
+      "longitude": 11.576124,
+      "network_online": true,
+      "notifications_enabled": true,
+      "preferences": {},
+      "quiet_hours": false,
+      "region": "US",
+      "simulated_date": "2026-05-27",
+      "simulated_time": "08:53:00",
+      "storage_values": {},
+      "timeline_peek": false,
+      "timezone_id": "Europe/Berlin",
+      "timezone_offset_min": 0,
+      "use_simulated_time": true,
+      "vibe_pattern_ms": [],
+      "weather": {
+        "condition": "clear",
+        "humidityPercent": 50,
+        "pressureHpa": 1013,
+        "temperatureC": 21,
+        "windKph": 8
+      }
+    },
+    "source_root": "watch",
+    "status": "idle",
+    "supports_color": false,
+    "timeString": null,
+    "watch_profile_id": "aplite"
+  }
+}

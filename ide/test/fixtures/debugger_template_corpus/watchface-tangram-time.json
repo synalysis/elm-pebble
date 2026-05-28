@@ -1,0 +1,625 @@
+{
+  "preview_diagnostics": {
+    "render_source": "runtime_view_output",
+    "root_type": "windowStack",
+    "runtime_view_output_kinds": [
+      "clear",
+      "circle",
+      "fill_circle",
+      "vector_at",
+      "push_context",
+      "text_color",
+      "text",
+      "pop_context"
+    ],
+    "status": "ok"
+  },
+  "preview_ops": [
+    {
+      "color": 193,
+      "kind": "clear"
+    },
+    {
+      "antialiased": true,
+      "color": 215,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 84,
+      "kind": "circle",
+      "r": 60,
+      "stroke_color": 215,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 16,
+      "fill_color": 255,
+      "kind": "fill_circle",
+      "r": 2,
+      "stroke_color": 255,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "cx": 140,
+      "cy": 84,
+      "fill_color": 255,
+      "kind": "fill_circle",
+      "r": 2,
+      "stroke_color": 255,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 152,
+      "fill_color": 255,
+      "kind": "fill_circle",
+      "r": 2,
+      "stroke_color": 255,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "cx": 4,
+      "cy": 84,
+      "fill_color": 255,
+      "kind": "fill_circle",
+      "r": 2,
+      "stroke_color": 255,
+      "stroke_width": 1
+    },
+    {
+      "fill_color": 207,
+      "kind": "path_filled",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 0,
+      "stroke_width": 1
+    },
+    {
+      "fill_color": 199,
+      "kind": "path_filled",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 0,
+      "stroke_width": 1
+    },
+    {
+      "fill_color": 203,
+      "kind": "path_filled",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 0,
+      "stroke_width": 1
+    },
+    {
+      "fill_color": 192,
+      "kind": "path_filled",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 0,
+      "stroke_width": 1
+    },
+    {
+      "fill_color": 223,
+      "kind": "path_filled",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 0,
+      "stroke_width": 1
+    },
+    {
+      "fill_color": 199,
+      "kind": "path_filled",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 0,
+      "stroke_width": 1
+    },
+    {
+      "fill_color": 239,
+      "kind": "path_filled",
+      "offset_x": 0,
+      "offset_y": 0,
+      "rotation": 0,
+      "stroke_color": 0,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 248,
+      "compositing_mode": 0,
+      "cx": 30,
+      "cy": 105,
+      "fill_color": 248,
+      "kind": "fill_circle",
+      "r": 4,
+      "stroke_color": 248,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 248,
+      "compositing_mode": 0,
+      "cx": 25,
+      "cy": 32,
+      "fill_color": 248,
+      "kind": "fill_circle",
+      "r": 3,
+      "stroke_color": 248,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 22,
+      "h": 22,
+      "kind": "text_label",
+      "text": "08:53",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 72,
+      "x": 64,
+      "y": 108
+    }
+  ],
+  "preview_ops_sha256": "28aac31e204d24caa631aed6bfa8a40895c0626c1b90821a0bfab904a492f8dd",
+  "render_tree": {
+    "node_count": 14,
+    "node_types": [
+      "canvasLayer",
+      "circle",
+      "clear",
+      "drawVectorAt",
+      "fillCircle",
+      "fillCircle",
+      "fillCircle",
+      "fillCircle",
+      "fillCircle",
+      "fillCircle",
+      "group",
+      "text",
+      "window",
+      "windowStack"
+    ],
+    "root_type": "windowStack",
+    "tree": {
+      "box": {
+        "h": 168,
+        "text": null,
+        "w": 144,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [],
+                  "color": 193,
+                  "label": "",
+                  "text": null,
+                  "type": "clear"
+                },
+                {
+                  "children": [],
+                  "color": 215,
+                  "cx": 72,
+                  "cy": 84,
+                  "label": "",
+                  "r": 60,
+                  "text": null,
+                  "type": "circle"
+                },
+                {
+                  "children": [],
+                  "color": 255,
+                  "cx": 72,
+                  "cy": 16,
+                  "label": "",
+                  "r": 2,
+                  "text": null,
+                  "type": "fillCircle"
+                },
+                {
+                  "children": [],
+                  "color": 255,
+                  "cx": 140,
+                  "cy": 84,
+                  "label": "",
+                  "r": 2,
+                  "text": null,
+                  "type": "fillCircle"
+                },
+                {
+                  "children": [],
+                  "color": 255,
+                  "cx": 72,
+                  "cy": 152,
+                  "label": "",
+                  "r": 2,
+                  "text": null,
+                  "type": "fillCircle"
+                },
+                {
+                  "children": [],
+                  "color": 255,
+                  "cx": 4,
+                  "cy": 84,
+                  "label": "",
+                  "r": 2,
+                  "text": null,
+                  "type": "fillCircle"
+                },
+                {
+                  "children": [],
+                  "label": "",
+                  "text": null,
+                  "type": "drawVectorAt",
+                  "vector_id": 6,
+                  "x": 14,
+                  "y": 8
+                },
+                {
+                  "children": [],
+                  "color": 248,
+                  "cx": 30,
+                  "cy": 105,
+                  "label": "",
+                  "r": 4,
+                  "text": null,
+                  "type": "fillCircle"
+                },
+                {
+                  "children": [],
+                  "color": 248,
+                  "cx": 25,
+                  "cy": 32,
+                  "label": "",
+                  "r": 3,
+                  "text": null,
+                  "type": "fillCircle"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "font_id": 1,
+                      "h": 22,
+                      "label": "",
+                      "text": "<TIME>",
+                      "text_align": "center",
+                      "text_overflow": "word_wrap",
+                      "type": "text",
+                      "w": 72,
+                      "x": 64,
+                      "y": 108
+                    }
+                  ],
+                  "label": "",
+                  "style": {
+                    "text": null,
+                    "text_color": 255
+                  },
+                  "text": null,
+                  "type": "group"
+                }
+              ],
+              "id": 1,
+              "label": "",
+              "text": null,
+              "type": "canvasLayer"
+            }
+          ],
+          "id": 1,
+          "label": "",
+          "text": null,
+          "type": "window"
+        }
+      ],
+      "label": "",
+      "text": null,
+      "type": "windowStack"
+    }
+  },
+  "runtime_model": {
+    "colorMode": {
+      "args": [],
+      "ctor": "Color"
+    },
+    "companionFigure": {
+      "args": [],
+      "ctor": "Nothing"
+    },
+    "displayShape": {
+      "args": [],
+      "ctor": "Rectangular"
+    },
+    "downloadedPieces": [],
+    "last_message": "CurrentDateTime",
+    "last_operation": "set",
+    "now": {
+      "args": [
+        {
+          "day": 27,
+          "dayOfWeek": {
+            "args": [],
+            "ctor": "Wednesday"
+          },
+          "hour": 8,
+          "minute": 53,
+          "month": 5,
+          "second": 0,
+          "utcOffsetMinutes": 0,
+          "year": 2026
+        }
+      ],
+      "ctor": "Just"
+    },
+    "pendingFigure": {
+      "args": [],
+      "ctor": "Nothing"
+    },
+    "runtime_view_output": [],
+    "screenH": 168,
+    "screenW": 144,
+    "timeString": null
+  },
+  "template": "watchface-tangram-time",
+  "timeline_init_messages": [
+    "update:CurrentDateTime {\"args\":[{\"day\":27,\"dayOfWeek\":{\"args\":[],\"ctor\":\"Wednesday\"},\"hour\":8,\"minute\":53,\"month\":5,\"second\":0,\"utcOffsetMinutes\":0,\"year\":2026}],\"ctor\":\"CurrentDateTime\"}",
+    "init:init"
+  ],
+  "view_tree_type": "windowStack",
+  "watch_model": {
+    "_debugger_steps": 1,
+    "debugger_init_complete": true,
+    "elm_executor_mode": "runtime_executed",
+    "last_source": "module Main exposing (main)\n\nimport Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))\nimport Companion.Watch as CompanionWatch\nimport Json.Decode as Decode\nimport Pebble.Cmd as PebbleCmd\nimport Pebble.Events as Events\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui exposing (Point)\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { now : Maybe PebbleCmd.CurrentDateTime\n    , screenW : Int\n    , screenH : Int\n    , colorMode : Platform.ColorCapability\n    , companionFigure : Maybe Int\n    , downloadedPieces : List DownloadedPiece\n    , pendingFigure : Maybe PendingFigure\n    }\n\n\ntype alias DownloadedPiece =\n    { index : Int\n    , vertexCount : Int\n    , p1 : Point\n    , p2 : Point\n    , p3 : Point\n    , p4 : Point\n    }\n\n\ntype alias PendingFigure =\n    { figureId : Int\n    , pieces : List DownloadedPiece\n    }\n\n\ntype alias Rect =\n    { x : Int\n    , y : Int\n    , w : Int\n    , h : Int\n    }\n\n\ntype Msg\n    = CurrentDateTime PebbleCmd.CurrentDateTime\n    | MinuteChanged Int\n    | FromPhone PhoneToWatch\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { now = Nothing\n      , screenW = context.screen.width\n      , screenH = context.screen.height\n      , colorMode = context.screen.colorMode\n      , companionFigure = Nothing\n      , downloadedPieces = []\n      , pendingFigure = Nothing\n      }\n    , Cmd.batch\n        [ PebbleCmd.getCurrentDateTime CurrentDateTime\n        , CompanionWatch.sendWatchToPhone RequestFigure\n        ]\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        CurrentDateTime value ->\n            ( { model | now = Just value }, Cmd.none )\n\n        MinuteChanged _ ->\n            ( model\n            , PebbleCmd.getCurrentDateTime CurrentDateTime\n            )\n\n        FromPhone (ProvideFigure figureId) ->\n            ( { model | companionFigure = Just (modBy figureCount figureId), downloadedPieces = [], pendingFigure = Nothing }, Cmd.none )\n\n        FromPhone (BeginFigure figureId) ->\n            ( { model | companionFigure = Just figureId, pendingFigure = Just { figureId = figureId, pieces = [] } }, Cmd.none )\n\n        FromPhone (ProvidePiece figureId pieceIndex vertexCount x1 y1 x2 y2 x3 y3 x4 y4) ->\n            ( addDownloadedPiece figureId\n                { index = pieceIndex\n                , vertexCount = vertexCount\n                , p1 = o x1 y1\n                , p2 = o x2 y2\n                , p3 = o x3 y3\n                , p4 = o x4 y4\n                }\n                model\n            , Cmd.none\n            )\n\n        FromPhone (EndFigure figureId) ->\n            ( finishDownloadedFigure figureId model, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Events.onMinuteChange MinuteChanged\n        , CompanionWatch.onPhoneToWatch FromPhone\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    let\n        cx =\n            model.screenW // 2\n\n        cy =\n            model.screenH // 2\n\n        hour =\n            currentHour model\n\n        minute =\n            currentMinute model\n\n        scale =\n            layoutScale model\n\n        clockRadius =\n            scaled scale 60\n\n        markerRadius =\n            scaled scale 68\n\n        hourRadius =\n            scaled scale 42\n\n        minuteRadius =\n            scaled scale 66\n\n        figure =\n            case model.companionFigure of\n                Just companionFigure ->\n                    companionFigure\n\n                Nothing ->\n                    minute\n    in\n    List.concat\n        [ [ Ui.clear (backgroundColor model)\n          , Ui.circle { x = cx, y = cy } clockRadius (clockColor model)\n          ]\n        , hourMarkers cx cy markerRadius (foregroundColor model)\n        , case model.downloadedPieces of\n            [] ->\n                [ builtInFigure scale cx cy hour minute figure ]\n\n            pieces ->\n                downloadedTangram model.colorMode scale cx cy hour minute figure pieces\n        , [ Ui.fillCircle (clockPoint cx cy hour hourRadius) 4 (accentColor model)\n          , Ui.fillCircle (minutePoint cx cy minute minuteRadius) 3 (accentColor model)\n          ]\n        , timeText model scale cx cy hour minute figure\n        ]\n        |> Ui.toUiNode\n\n\nfigureVector : Int -> Resources.VectorGraphic\nfigureVector figure =\n    case modBy figureCount figure of\n        0 ->\n            Resources.TangramBird\n\n        1 ->\n            Resources.TangramComet\n\n        2 ->\n            Resources.TangramCrown\n\n        3 ->\n            Resources.TangramBoat\n\n        4 ->\n            Resources.TangramFlower\n\n        _ ->\n            Resources.TangramKite\n\n\nfigureOriginOffsetX : Int\nfigureOriginOffsetX =\n    66\n\n\nfigureOriginOffsetY : Int\nfigureOriginOffsetY =\n    58\n\n\nvectorDrawOrigin : Int -> Point -> Point\nvectorDrawOrigin scale base =\n    { x = base.x - scaled scale figureOriginOffsetX\n    , y = base.y - scaled scale figureOriginOffsetY\n    }\n\n\nbuiltInFigure : Int -> Int -> Int -> Int -> Int -> Int -> Ui.RenderOp\nbuiltInFigure scale cx cy hour minute figure =\n    let\n        base =\n            formOrigin scale cx cy hour minute figure\n\n        origin =\n            vectorDrawOrigin scale base\n    in\n    Ui.drawVectorAt (figureVector figure) origin\n\n\ndownloadedTangram : Platform.ColorCapability -> Int -> Int -> Int -> Int -> Int -> Int -> List DownloadedPiece -> List Ui.RenderOp\ndownloadedTangram colorMode scale cx cy hour minute figure pieces =\n    let\n        base =\n            formOrigin scale cx cy hour minute figure\n    in\n    pieces\n        |> List.reverse\n        |> List.concatMap (\\piece -> tangramPiece (displayColor colorMode (pieceColor piece.index)) (shapeAt scale base (piecePoints piece)))\n\n\npiecePoints : DownloadedPiece -> List Point\npiecePoints piece =\n    if piece.vertexCount == 3 then\n        [ piece.p1, piece.p2, piece.p3 ]\n    else\n        [ piece.p1, piece.p2, piece.p3, piece.p4 ]\n\n\npieceColor : Int -> Color.Color\npieceColor index =\n    case modBy 7 index of\n        0 ->\n            Color.vividCerulean\n\n        1 ->\n            Color.pictonBlue\n\n        2 ->\n            Color.tiffanyBlue\n\n        3 ->\n            Color.cyan\n\n        4 ->\n            Color.blueMoon\n\n        5 ->\n            Color.electricBlue\n\n        _ ->\n            Color.veryLightBlue\n\n\nbackgroundColor : Model -> Color.Color\nbackgroundColor model =\n    if Platform.colorCapabilityIsColor model.colorMode then\n        Color.oxfordBlue\n    else\n        Color.white\n\n\nforegroundColor : Model -> Color.Color\nforegroundColor model =\n    if Platform.colorCapabilityIsColor model.colorMode then\n        Color.white\n    else\n        Color.black\n\n\nclockColor : Model -> Color.Color\nclockColor model =\n    if Platform.colorCapabilityIsColor model.colorMode then\n        Color.veryLightBlue\n    else\n        Color.black\n\n\naccentColor : Model -> Color.Color\naccentColor model =\n    if Platform.colorCapabilityIsColor model.colorMode then\n        Color.chromeYellow\n    else\n        Color.black\n\n\ndisplayColor : Platform.ColorCapability -> Color.Color -> Color.Color\ndisplayColor colorMode color =\n    if Platform.colorCapabilityIsColor colorMode then\n        color\n    else\n        Color.black\n\n\ntangramPiece : Color.Color -> List Point -> List Ui.RenderOp\ntangramPiece color points =\n    polygonLines color points\n        ++ hatchLines color points\n\n\npolygonLines : Color.Color -> List Point -> List Ui.RenderOp\npolygonLines color points =\n    case points of\n        a :: b :: c :: [] ->\n            [ Ui.line a b color, Ui.line b c color, Ui.line c a color ]\n\n        a :: b :: c :: d :: [] ->\n            [ Ui.line a b color, Ui.line b c color, Ui.line c d color, Ui.line d a color ]\n\n        _ ->\n            []\n\n\nhatchLines : Color.Color -> List Point -> List Ui.RenderOp\nhatchLines color points =\n    case points of\n        a :: b :: c :: [] ->\n            [ Ui.line (midpoint a b) (midpoint a c) color\n            , Ui.line (midpoint b a) (midpoint b c) color\n            , Ui.line (midpoint c a) (midpoint c b) color\n            ]\n\n        a :: b :: c :: d :: [] ->\n            [ Ui.line (midpoint a b) (midpoint d c) color\n            , Ui.line (midpoint a d) (midpoint b c) color\n            ]\n\n        _ ->\n            []\n\n\nshapeAt : Int -> Point -> List Point -> List Point\nshapeAt scale anchor points =\n    List.map (\\point -> { x = anchor.x + scaled scale point.x, y = anchor.y + scaled scale point.y }) points\n\n\nnudgePoint : Point -> Point -> Point\nnudgePoint point nudge =\n    { x = point.x + nudge.x, y = point.y + nudge.y }\n\n\nscalePoint : Int -> Point -> Point\nscalePoint scale point =\n    { x = scaled scale point.x, y = scaled scale point.y }\n\n\nscaled : Int -> Int -> Int\nscaled scale value =\n    (value * scale) // 100\n\n\nlayoutScale : Model -> Int\nlayoutScale model =\n    clampInt 100 130 ((min model.screenW model.screenH * 100) // 156)\n\n\no : Int -> Int -> Point\no x y =\n    { x = x, y = y }\n\n\nmidpoint : Point -> Point -> Point\nmidpoint a b =\n    { x = (a.x + b.x) // 2, y = (a.y + b.y) // 2 }\n\n\np : Int -> Int -> Int -> Int -> Point\np cx cy x y =\n    { x = cx + x, y = cy + y }\n\n\nformOrigin : Int -> Int -> Int -> Int -> Int -> Int -> Point\nformOrigin scale cx cy hour minute figure =\n    let\n        drift =\n            scalePoint scale (minuteNudge minute)\n\n        clearanceDrift =\n            case minute // 15 of\n                0 ->\n                    scalePoint scale (o 0 8)\n\n                1 ->\n                    scalePoint scale (o -8 0)\n\n                2 ->\n                    scalePoint scale (o 0 -8)\n\n                _ ->\n                    scalePoint scale (o 8 0)\n\n        hourDrift =\n            case modBy 4 hour of\n                0 ->\n                    scalePoint scale (o -2 -1)\n\n                1 ->\n                    scalePoint scale (o 2 -1)\n\n                2 ->\n                    scalePoint scale (o 2 1)\n\n                _ ->\n                    scalePoint scale (o -2 1)\n\n        figureDrift =\n            scalePoint scale (figureNudge figure)\n    in\n    nudgePoint (nudgePoint (nudgePoint (nudgePoint (p cx cy 0 (scaled scale -20)) clearanceDrift) drift) hourDrift) figureDrift\n\n\ncurrentHour : Model -> Int\ncurrentHour model =\n    case model.now of\n        Just value ->\n            modBy 12 value.hour\n\n        Nothing ->\n            0\n\n\ncurrentMinute : Model -> Int\ncurrentMinute model =\n    case model.now of\n        Just value ->\n            value.minute\n\n        Nothing ->\n            0\n\n\naddDownloadedPiece : Int -> DownloadedPiece -> Model -> Model\naddDownloadedPiece figureId piece model =\n    case model.pendingFigure of\n        Just pending ->\n            if pending.figureId == figureId then\n                { model | pendingFigure = Just { pending | pieces = piece :: pending.pieces } }\n            else\n                model\n\n        Nothing ->\n            model\n\n\nfinishDownloadedFigure : Int -> Model -> Model\nfinishDownloadedFigure figureId model =\n    case model.pendingFigure of\n        Just pending ->\n            if pending.figureId == figureId && List.length pending.pieces >= 7 then\n                { model | downloadedPieces = pending.pieces, pendingFigure = Nothing }\n            else\n                { model | pendingFigure = Nothing }\n\n        Nothing ->\n            model\n\n\nfigureCount : Int\nfigureCount =\n    6\n\n\nfigureNudge : Int -> Point\nfigureNudge figure =\n    case modBy 8 (figure // figureCount) of\n        0 ->\n            o 0 0\n\n        1 ->\n            o 6 -4\n\n        2 ->\n            o -6 -4\n\n        3 ->\n            o 8 3\n\n        4 ->\n            o -8 3\n\n        5 ->\n            o 4 7\n\n        6 ->\n            o -4 7\n\n        _ ->\n            o 0 -8\n\n\nminutePoint : Int -> Int -> Int -> Int -> Point\nminutePoint cx cy minute radius =\n    let\n        slot =\n            minute // 5\n\n        fine =\n            modBy 5 minute\n\n        start =\n            clockPoint cx cy slot radius\n\n        finish =\n            clockPoint cx cy (slot + 1) radius\n    in\n    { x = start.x + ((finish.x - start.x) * fine) // 5\n    , y = start.y + ((finish.y - start.y) * fine) // 5\n    }\n\n\nminuteAnchor : Int -> Int -> Int -> Int -> Int -> Point\nminuteAnchor cx cy minute offset radius =\n    nudgePoint (clockPoint cx cy ((minute // 5) + offset) radius) (minuteNudge minute)\n\n\nminuteNudge : Int -> Point\nminuteNudge minute =\n    case modBy 5 minute of\n        0 ->\n            o 0 0\n\n        1 ->\n            o 3 -1\n\n        2 ->\n            o 4 1\n\n        3 ->\n            o 2 3\n\n        _ ->\n            o -1 4\n\n\nclockPoint : Int -> Int -> Int -> Int -> Point\nclockPoint cx cy slot radius =\n    let\n        scaled =\n            radius // 2\n    in\n    case modBy 12 slot of\n        0 ->\n            p cx cy 0 (0 - radius)\n\n        1 ->\n            p cx cy scaled (0 - radius)\n\n        2 ->\n            p cx cy radius (0 - scaled)\n\n        3 ->\n            p cx cy radius 0\n\n        4 ->\n            p cx cy radius scaled\n\n        5 ->\n            p cx cy scaled radius\n\n        6 ->\n            p cx cy 0 radius\n\n        7 ->\n            p cx cy (0 - scaled) radius\n\n        8 ->\n            p cx cy (0 - radius) scaled\n\n        9 ->\n            p cx cy (0 - radius) 0\n\n        10 ->\n            p cx cy (0 - radius) (0 - scaled)\n\n        _ ->\n            p cx cy (0 - scaled) (0 - radius)\n\n\nhourMarkers : Int -> Int -> Int -> Color.Color -> List Ui.RenderOp\nhourMarkers cx cy radius color =\n    [ Ui.fillCircle (clockPoint cx cy 0 radius) 2 color\n    , Ui.fillCircle (clockPoint cx cy 3 radius) 2 color\n    , Ui.fillCircle (clockPoint cx cy 6 radius) 2 color\n    , Ui.fillCircle (clockPoint cx cy 9 radius) 2 color\n    ]\n\n\ntimeText : Model -> Int -> Int -> Int -> Int -> Int -> Int -> List Ui.RenderOp\ntimeText model scale cx cy hour minute figure =\n    let\n        label =\n            case model.now of\n                Just value ->\n                    pad2 value.hour ++ \":\" ++ pad2 value.minute\n\n                Nothing ->\n                    \"--:--\"\n\n        position =\n            timeTextPosition model.screenW model.screenH scale cx cy hour minute figure\n    in\n    [ Ui.group\n        (Ui.context\n            [ Ui.textColor (foregroundColor model) ]\n            [ Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = position.x, y = position.y, w = timeTextWidth, h = timeTextHeight } label ]\n        )\n    ]\n\n\ntimeTextWidth : Int\ntimeTextWidth =\n    72\n\n\ntimeTextHeight : Int\ntimeTextHeight =\n    22\n\n\ntimeTextPosition : Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Point\ntimeTextPosition screenW screenH scale cx cy hour minute figure =\n    let\n        hourRadius =\n            scaled scale 42\n\n        minuteRadius =\n            scaled scale 66\n\n        markerRadius =\n            scaled scale 68\n\n        candidates =\n            [ o 8 (cy + 24)\n            , o (screenW - timeTextWidth - 8) (cy + 24)\n            , o 16 (cy + 44)\n            , o (screenW - timeTextWidth - 16) (cy + 44)\n            , o (cx - 72) (cy - 58)\n            , o cx (cy - 58)\n            , o 8 (cy - 12)\n            , o (screenW - timeTextWidth - 8) (cy - 12)\n            ]\n\n        hourMarker =\n            clockPoint cx cy hour hourRadius\n\n        minuteMarker =\n            minutePoint cx cy minute minuteRadius\n\n        figureRect =\n            tangramBounds scale (formOrigin scale cx cy hour minute figure)\n    in\n    bestTextCandidate cy hourMarker minuteMarker (clockPoint cx cy 0 markerRadius) (clockPoint cx cy 3 markerRadius) (clockPoint cx cy 6 markerRadius) (clockPoint cx cy 9 markerRadius) figureRect candidates\n        |> clampTextPosition screenW screenH\n\n\nbestTextCandidate : Int -> Point -> Point -> Point -> Point -> Point -> Point -> Rect -> List Point -> Point\nbestTextCandidate cy hourMarker minuteMarker topMarker rightMarker bottomMarker leftMarker figureRect candidates =\n    case candidates of\n        first :: rest ->\n            List.foldl\n                (\\candidate best ->\n                    if textCandidateScore cy hourMarker minuteMarker topMarker rightMarker bottomMarker leftMarker figureRect candidate < textCandidateScore cy hourMarker minuteMarker topMarker rightMarker bottomMarker leftMarker figureRect best then\n                        candidate\n                    else\n                        best\n                )\n                first\n                rest\n\n        [] ->\n            o 0 0\n\n\ntextCandidateScore : Int -> Point -> Point -> Point -> Point -> Point -> Point -> Rect -> Point -> Int\ntextCandidateScore cy hourMarker minuteMarker topMarker rightMarker bottomMarker leftMarker figureRect position =\n    let\n        rect =\n            { x = position.x, y = position.y, w = timeTextWidth, h = timeTextHeight }\n\n        handPenalty =\n            pointPenalty 10 hourMarker.x hourMarker.y rect.x rect.y rect.w rect.h\n                + pointPenalty 10 minuteMarker.x minuteMarker.y rect.x rect.y rect.w rect.h\n\n        fixedMarkerPenalty =\n            pointPenalty 12 topMarker.x topMarker.y rect.x rect.y rect.w rect.h\n                + pointPenalty 12 rightMarker.x rightMarker.y rect.x rect.y rect.w rect.h\n                + pointPenalty 12 bottomMarker.x bottomMarker.y rect.x rect.y rect.w rect.h\n                + pointPenalty 12 leftMarker.x leftMarker.y rect.x rect.y rect.w rect.h\n\n        figurePenalty =\n            rectOverlapPenalty (rect.x - 4) (rect.y - 4) (rect.w + 8) (rect.h + 8) figureRect.x figureRect.y figureRect.w figureRect.h\n\n        lowerBias =\n            if position.y >= cy then\n                -25\n            else\n                0\n    in\n    handPenalty + fixedMarkerPenalty + figurePenalty + lowerBias\n\n\npointPenalty : Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int\npointPenalty clearance pointX pointY rectX rectY rectW rectH =\n    if pointX >= rectX - clearance && pointX <= rectX + rectW + clearance && pointY >= rectY - clearance && pointY <= rectY + rectH + clearance then\n        260\n    else\n        0\n\n\nrectOverlapPenalty : Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int\nrectOverlapPenalty ax ay aw ah bx by bw bh =\n    if ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by then\n        120\n    else\n        0\n\n\ntangramBounds : Int -> Point -> Rect\ntangramBounds scale origin =\n    { x = origin.x - scaled scale figureOriginOffsetX\n    , y = origin.y - scaled scale figureOriginOffsetY\n    , w = scaled scale (figureOriginOffsetX * 2)\n    , h = scaled scale (figureOriginOffsetY + 68)\n    }\n\n\nclampTextPosition : Int -> Int -> Point -> Point\nclampTextPosition screenW screenH position =\n    { x = clampInt 8 (screenW - timeTextWidth - 8) position.x\n    , y = clampInt 8 (screenH - timeTextHeight - 8) position.y\n    }\n\n\nclampInt : Int -> Int -> Int -> Int\nclampInt low high value =\n    max low (min high value)\n\n\npad2 : Int -> String\npad2 value =\n    if value < 10 then\n        \"0\" ++ String.fromInt value\n    else\n        String.fromInt value\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.watchface\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
+    "launch_context": {
+      "has_compass": false,
+      "has_microphone": false,
+      "launch_reason": "LaunchUser",
+      "screen": {
+        "color_mode": "Color",
+        "height": 168,
+        "shape": "Rectangular",
+        "width": 144
+      },
+      "shape": "rect",
+      "supports_health": true,
+      "watch_model": "Basalt",
+      "watch_profile_id": "basalt"
+    },
+    "revision": "e28206680bea",
+    "runtime_known_messages": [
+      "CurrentDateTime",
+      "MinuteChanged",
+      "FromPhone"
+    ],
+    "runtime_message_cursor": 1,
+    "runtime_message_source": "init_device_data",
+    "runtime_model": {
+      "colorMode": {
+        "args": [],
+        "ctor": "Color"
+      },
+      "companionFigure": {
+        "args": [],
+        "ctor": "Nothing"
+      },
+      "displayShape": {
+        "args": [],
+        "ctor": "Rectangular"
+      },
+      "downloadedPieces": [],
+      "last_message": "CurrentDateTime",
+      "last_operation": "set",
+      "now": {
+        "args": [
+          {
+            "day": 27,
+            "dayOfWeek": {
+              "args": [],
+              "ctor": "Wednesday"
+            },
+            "hour": 8,
+            "minute": 53,
+            "month": 5,
+            "second": 0,
+            "utcOffsetMinutes": 0,
+            "year": 2026
+          }
+        ],
+        "ctor": "Just"
+      },
+      "pendingFigure": {
+        "args": [],
+        "ctor": "Nothing"
+      },
+      "screenH": 168,
+      "screenW": 144
+    },
+    "runtime_model_source": "step_message",
+    "runtime_update_branches": [
+      "CurrentDateTime value",
+      "MinuteChanged _",
+      "FromPhone ProvideFigure figureId",
+      "FromPhone BeginFigure figureId",
+      "FromPhone ProvidePiece (figureId, (pieceIndex, (vertexCount, (x1, (y1, (x2, (y2, (x3, (y3, (x4, y4))))))))))",
+      "FromPhone EndFigure figureId"
+    ],
+    "runtime_view_output": [
+      {
+        "color": 193,
+        "kind": "clear",
+        "text": null
+      },
+      {
+        "color": 215,
+        "cx": 72,
+        "cy": 84,
+        "kind": "circle",
+        "r": 60,
+        "text": null
+      },
+      {
+        "color": 255,
+        "cx": 72,
+        "cy": 16,
+        "kind": "fill_circle",
+        "r": 2,
+        "text": null
+      },
+      {
+        "color": 255,
+        "cx": 140,
+        "cy": 84,
+        "kind": "fill_circle",
+        "r": 2,
+        "text": null
+      },
+      {
+        "color": 255,
+        "cx": 72,
+        "cy": 152,
+        "kind": "fill_circle",
+        "r": 2,
+        "text": null
+      },
+      {
+        "color": 255,
+        "cx": 4,
+        "cy": 84,
+        "kind": "fill_circle",
+        "r": 2,
+        "text": null
+      },
+      {
+        "kind": "vector_at",
+        "text": null,
+        "vector_id": 6,
+        "x": 14,
+        "y": 8
+      },
+      {
+        "color": 248,
+        "cx": 30,
+        "cy": 105,
+        "kind": "fill_circle",
+        "r": 4,
+        "text": null
+      },
+      {
+        "color": 248,
+        "cx": 25,
+        "cy": 32,
+        "kind": "fill_circle",
+        "r": 3,
+        "text": null
+      },
+      {
+        "kind": "push_context",
+        "text": null
+      },
+      {
+        "color": 255,
+        "kind": "text_color",
+        "text": null
+      },
+      {
+        "font_id": 1,
+        "h": 22,
+        "kind": "text",
+        "text": "<TIME>",
+        "text_align": "center",
+        "text_overflow": "word_wrap",
+        "w": 72,
+        "x": 64,
+        "y": 108
+      },
+      {
+        "kind": "pop_context",
+        "text": null
+      }
+    ],
+    "screen_height": 168,
+    "screen_width": 144,
+    "simulator_settings": {
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "battery_percent": 88,
+      "calendar_events": [],
+      "charging": false,
+      "clock_24h": true,
+      "compass_heading_deg": 0,
+      "compass_valid": true,
+      "connected": true,
+      "dictation_error": "",
+      "dictation_transcript": "",
+      "environment": {
+        "moon": {
+          "moonriseMin": 900,
+          "moonsetMin": 300,
+          "phaseE6": 500000
+        },
+        "sun": {
+          "polarDay": false,
+          "sunriseMin": 420,
+          "sunsetMin": 1200
+        },
+        "tide": null
+      },
+      "health_steps": 4200,
+      "health_steps_today": 9100,
+      "language": "en",
+      "latitude": 48.137154,
+      "locale": "en-US",
+      "longitude": 11.576124,
+      "network_online": true,
+      "notifications_enabled": true,
+      "preferences": {},
+      "quiet_hours": false,
+      "region": "US",
+      "simulated_date": "2026-05-27",
+      "simulated_time": "08:53:00",
+      "storage_values": {},
+      "timeline_peek": false,
+      "timezone_id": "Europe/Berlin",
+      "timezone_offset_min": 0,
+      "use_simulated_time": true,
+      "vibe_pattern_ms": [],
+      "weather": {
+        "condition": "clear",
+        "humidityPercent": 50,
+        "pressureHpa": 1013,
+        "temperatureC": 21,
+        "windKph": 8
+      }
+    },
+    "source_root": "watch",
+    "status": "idle",
+    "supports_color": true,
+    "timeString": null,
+    "watch_profile_id": "basalt"
+  }
+}
