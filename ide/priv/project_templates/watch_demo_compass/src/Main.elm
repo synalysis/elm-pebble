@@ -30,10 +30,10 @@ init context =
       , refreshes = 0
       }
     , if context.hasCompass then
-        Compass.current GotHeading
+          Compass.current GotHeading
 
       else
-        Cmd.none
+          Cmd.none
     )
 
 

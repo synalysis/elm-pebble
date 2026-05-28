@@ -3,6 +3,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   Generated expression parser adapter based on leex/yecc artifacts.
   """
 
+  alias ElmEx.Frontend.LetLayout
   alias ElmEx.Types
 
   @typep source() :: String.t()
@@ -541,11 +542,13 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   defp parse_once(source) when is_binary(source) do
     prepared = prepare_source(source)
 
-    with :ok <- validate_source_compat(prepared),
+    with :ok <- LetLayout.validate(prepared),
+         :ok <- validate_source_compat(prepared),
          {:ok, tokens, _line} <- :elm_ex_expr_lexer.string(String.to_charlist(prepared)),
          {:ok, expr} <- :elm_ex_expr_parser.parse(tokens) do
       {:ok, normalize(expr)}
     else
+      {:error, {:inline_let_in, line}} -> {:error, LetLayout.parse_error(line)}
       {:error, reason} -> {:error, reason}
       {:error, reason, _line} -> {:error, reason}
     end

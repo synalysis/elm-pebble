@@ -76,6 +76,7 @@ update msg model =
         SendLocationSnapshot location ( now, zoneName ) ->
             ( model, sendLocationSnapshot location now zoneName )
 
+
 currentSettings : Model -> CompanionPreferences.Settings
 currentSettings model =
     Maybe.withDefault CompanionPreferences.preferencesDefaults model.settings

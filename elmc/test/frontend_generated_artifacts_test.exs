@@ -150,8 +150,15 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert expr3[:args] == ["tag"]
     assert expr3[:body][:op] == :field_call
 
+    assert {:error, {1, :elm_ex_expr_parser, [message4, ~c"in_kw"]}} =
+             ElmEx.Frontend.GeneratedExpressionParser.parse("let base = helper n in base + 1")
+
+    assert message4 =~ "on its own line"
+
     assert {:ok, tokens4, _} =
-             :elm_ex_expr_lexer.string(String.to_charlist("let base = helper n in base + 1"))
+             :elm_ex_expr_lexer.string(
+               String.to_charlist("let\nbase = helper n\nin\nbase + 1")
+             )
 
     assert {:ok, expr4} = :elm_ex_expr_parser.parse(tokens4)
     assert expr4[:op] == :let_in
@@ -194,9 +201,16 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert Enum.at(expr6b[:branches], 0)[:pattern][:kind] == :tuple
     assert Enum.at(expr6b[:branches], 0)[:pattern][:elements] |> length() == 2
 
-    assert {:ok, expr6d} =
+    assert {:error, {1, :elm_ex_expr_parser, [message6d, ~c"in_kw"]}} =
              ElmEx.Frontend.GeneratedExpressionParser.parse(
                "let maybeTemp = temperatureOf model in case maybeTemp of\nJust temperature -> Pebble.Draw.textInt 0 28 temperature\nNothing -> Pebble.Draw.textLabel 0 28 Pebble.Draw.WaitingForCompanion"
+             )
+
+    assert message6d =~ "on its own line"
+
+    assert {:ok, expr6d} =
+             ElmEx.Frontend.GeneratedExpressionParser.parse(
+               "let\nmaybeTemp = temperatureOf model\nin\ncase maybeTemp of\nJust temperature -> Pebble.Draw.textInt 0 28 temperature\nNothing -> Pebble.Draw.textLabel 0 28 Pebble.Draw.WaitingForCompanion"
              )
 
     assert expr6d[:op] == :let_in
@@ -382,14 +396,14 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
 
     assert {:ok, expr17g} =
              ElmEx.Frontend.GeneratedExpressionParser.parse(
-               "let (Parser parse) = callback in parse"
+               "let\n(Parser parse) = callback\nin\nparse"
              )
 
     assert expr17g[:op] == :let_in
 
     assert {:ok, expr17h} =
              ElmEx.Frontend.GeneratedExpressionParser.parse(
-               "let className = if currentIndex == index then \"a\" else \"b\" in className"
+               "let\nclassName = if currentIndex == index then \"a\" else \"b\"\nin\nclassName"
              )
 
     assert expr17h[:op] == :let_in

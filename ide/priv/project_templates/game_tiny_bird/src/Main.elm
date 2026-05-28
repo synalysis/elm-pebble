@@ -128,10 +128,13 @@ step model =
         , alive = not dead
       }
     , if dead then
-        Cmd.batch [ Storage.writeString 42 (String.fromInt nextBest), Vibes.shortPulse ]
+          Cmd.batch
+            [ Storage.writeString 42 (String.fromInt nextBest)
+            , Vibes.shortPulse
+            ]
 
       else
-        Cmd.none
+          Cmd.none
     )
 
 

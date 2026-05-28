@@ -29,6 +29,8 @@ bool_or_expr -> bool_and_expr : '$1'.
 bool_and_expr -> compare_expr andand bool_and_expr : build_and('$1', '$3').
 bool_and_expr -> compare_expr : '$1'.
 
+%% Token-level let/in is accepted here; Elm layout (`in` on its own line) is enforced by
+%% `ElmEx.Frontend.LetLayout.validate/1` before this parser is invoked.
 let_expr -> let_kw let_bindings in_kw pipe_right_expr :
   build_let_bindings('$2', '$4').
 

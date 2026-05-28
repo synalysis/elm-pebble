@@ -289,8 +289,8 @@ nthEmptyIndexHelp target index cells =
                 if target == 0 then
                     index
 
-                else
-                    nthEmptyIndexHelp (target - 1) (index + 1) rest
+            else
+                nthEmptyIndexHelp (target - 1) (index + 1) rest
 
             else
                 nthEmptyIndexHelp target (index + 1) rest

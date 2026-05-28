@@ -13,6 +13,7 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
 
   alias Ide.Mcp.Protocol
   alias Ide.ProjectTemplates
+  alias Ide.ProjectTemplates.SourceValidation
 
   @capabilities [:read, :edit, :build]
   @default_simulator %{
@@ -74,6 +75,15 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
 
     result =
       base
+      |> step(:validate_sources, fn acc ->
+        case SourceValidation.validate_template(acc.template) do
+          :ok ->
+            acc
+
+          {:error, issues} ->
+            fail(acc, "template sources", SourceValidation.format_issues(acc.template, issues))
+        end
+      end)
       |> run_health_steps()
 
     Map.update!(result, :status, fn

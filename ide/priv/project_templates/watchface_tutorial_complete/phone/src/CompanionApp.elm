@@ -120,6 +120,7 @@ update msg model =
                         ]
                     )
 
+
 addError : String -> Model -> Model
 addError error model =
     { model | errors = model.errors ++ [ error ] }

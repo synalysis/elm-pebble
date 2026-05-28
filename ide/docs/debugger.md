@@ -11,7 +11,7 @@ The LiveView pane focuses on day-to-day inspection:
 - **Rendered view** — live watch tree preview; hover highlights nodes.
 - **Start / profile** — session controls and watch profile selection.
 - **Subscriptions** — trigger buttons, auto-fire toggles, configuration modal.
-- **Copy for agent** — markdown export of visible timeline + models + rendered view (`DebuggerSupport.debugger_agent_state_markdown/1`).
+- **Copy for agent** (IDE debug mode only) — markdown export of visible timeline + models + rendered view (`DebuggerSupport.debugger_agent_state_markdown/1`).
 
 Trace export/import, replay forms, fingerprint compare tables, and other agent-oriented workflows were removed from the UI. Use MCP (or “Copy for agent”) for those.
 

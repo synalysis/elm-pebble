@@ -1,6 +1,7 @@
 module Companion.Watch exposing (onPhoneToWatch, sendWatchToPhone)
 
-{-| Watch-side API for typed companion messages. -}
+{-| Watch-side API for typed companion messages.
+-}
 
 import Companion.Internal as Internal
 import Companion.Types exposing (PhoneToWatch, WatchToPhone)
@@ -16,7 +17,8 @@ onPhoneToWatch _ =
     Sub.none
 
 
-{-| Send a typed watch-to-phone message using Pebble app messaging. -}
+{-| Send a typed watch-to-phone message using Pebble app messaging.
+-}
 sendWatchToPhone : WatchToPhone -> Cmd msg
 sendWatchToPhone message =
     Companion.companionSend

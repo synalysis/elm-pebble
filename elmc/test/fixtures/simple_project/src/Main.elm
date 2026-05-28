@@ -1,6 +1,7 @@
 module Main exposing (Model, Msg, headOrZero, main, update, view)
 
-{-| Fixture application used by compiler and runtime tests. -}
+{-| Fixture application used by compiler and runtime tests.
+-}
 
 import Companion.Types exposing (Location(..), Temperature(..), WatchToPhone(..))
 import Companion.Watch as CompanionWatch
@@ -18,12 +19,14 @@ import Pebble.Ui.Resources as UiResources
 import Pebble.WatchInfo as PebbleWatchInfo
 
 
-{-| App model with counter and optional temperature. -}
+{-| App model with counter and optional temperature.
+-}
 type alias Model =
     { value : Int, temperature : Maybe Temperature }
 
 
-{-| Messages handled by the fixture update loop. -}
+{-| Messages handled by the fixture update loop.
+-}
 type Msg
     = Increment
     | Decrement
@@ -42,7 +45,8 @@ type Msg
     | FirmwareVersionString PebbleWatchInfo.FirmwareVersion
 
 
-{-| Return the first integer in a list, or `0` when empty. -}
+{-| Return the first integer in a list, or `0` when empty.
+-}
 headOrZero : List Int -> Int
 headOrZero list =
     Maybe.withDefault 0 (List.head list)
@@ -55,7 +59,15 @@ helper value =
 
 advanced : Int -> Int
 advanced n =
-    let base = helper n in if base > 10 then base else base + 1
+    let
+        base =
+            helper n
+    in
+    if base > 10 then
+        base
+
+    else
+        base + 1
 
 
 counterOf : Model -> Int
@@ -97,7 +109,8 @@ init launchContext =
     )
 
 
-{-| Update the model with an incoming message. -}
+{-| Update the model with an incoming message.
+-}
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
@@ -124,10 +137,18 @@ handleAppMsg : Msg -> Model -> ( Model, Cmd Msg )
 handleAppMsg msg model =
     case msg of
         Increment ->
-            let counter = counterOf model in ( { value = counter + 1, temperature = temperatureOf model }, Cmd.none )
+            let
+                counter =
+                    counterOf model
+            in
+            ( { value = counter + 1, temperature = temperatureOf model }, Cmd.none )
 
         Decrement ->
-            let counter = counterOf model in ( { value = counter - 1, temperature = temperatureOf model }, Cmd.none )
+            let
+                counter =
+                    counterOf model
+            in
+            ( { value = counter - 1, temperature = temperatureOf model }, Cmd.none )
 
         ProvideTemperature temperature ->
             ( { value = counterOf model, temperature = Just temperature }, Cmd.none )
@@ -161,19 +182,43 @@ handlePlatformMsg : Msg -> Model -> ( Model, Cmd Msg )
 handlePlatformMsg msg model =
     case msg of
         Tick _ ->
-            let counter = counterOf model in let next = advanced counter in ( { value = next, temperature = temperatureOf model }, Pebble.Cmd.timerAfter 1000 )
+            let
+                counter =
+                    counterOf model
+            in
+            let
+                next =
+                    advanced counter
+            in
+            ( { value = next, temperature = temperatureOf model }, Pebble.Cmd.timerAfter 1000 )
 
         UpPressed ->
-            let counter = counterOf model in let next = counter + 1 in ( { value = next, temperature = temperatureOf model }, PebbleStorage.writeInt 1 next )
+            let
+                counter =
+                    counterOf model
+            in
+            let
+                next =
+                    counter + 1
+            in
+            ( { value = next, temperature = temperatureOf model }, PebbleStorage.writeInt 1 next )
 
         SelectPressed ->
             ( model, Cmd.batch [ requestWeather Berlin, requestSystemInfo ] )
 
         DownPressed ->
-            let counter = counterOf model in ( { value = counter - 1, temperature = temperatureOf model }, PebbleStorage.delete 1 )
+            let
+                counter =
+                    counterOf model
+            in
+            ( { value = counter - 1, temperature = temperatureOf model }, PebbleStorage.delete 1 )
 
         AccelTap ->
-            let counter = counterOf model in ( { value = counter + 1, temperature = temperatureOf model }, Cmd.none )
+            let
+                counter =
+                    counterOf model
+            in
+            ( { value = counter + 1, temperature = temperatureOf model }, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
@@ -181,10 +226,17 @@ handlePlatformMsg msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    PebbleEvents.batch [ PebbleEvents.onSecondChange Tick, PebbleButton.onPress PebbleButton.Up UpPressed, PebbleButton.onPress PebbleButton.Select SelectPressed, PebbleButton.onPress PebbleButton.Down DownPressed, PebbleAccel.onTap AccelTap ]
+    PebbleEvents.batch
+        [ PebbleEvents.onSecondChange Tick
+        , PebbleButton.onPress PebbleButton.Up UpPressed
+        , PebbleButton.onPress PebbleButton.Select SelectPressed
+        , PebbleButton.onPress PebbleButton.Down DownPressed
+        , PebbleAccel.onTap AccelTap
+        ]
 
 
-{-| Produce the retained virtual UI tree for rendering. -}
+{-| Produce the retained virtual UI tree for rendering.
+-}
 view : Model -> PebbleUi.UiNode
 view model =
     PebbleUi.windowStack
@@ -232,7 +284,10 @@ view model =
 
 statusDraw : Model -> PebbleUi.RenderOp
 statusDraw model =
-    let maybeTemp = temperatureOf model in
+    let
+        maybeTemp =
+            temperatureOf model
+    in
     case maybeTemp of
         Just temperature ->
             PebbleUi.textInt UiResources.DefaultFont { x = 0, y = 28 } (temperatureValue temperature)
@@ -243,7 +298,11 @@ statusDraw model =
 
 counterDraw : Model -> PebbleUi.RenderOp
 counterDraw model =
-    let counter = counterOf model in PebbleUi.textInt UiResources.DefaultFont { x = 0, y = 56 } counter
+    let
+        counter =
+            counterOf model
+    in
+    PebbleUi.textInt UiResources.DefaultFont { x = 0, y = 56 } counter
 
 
 temperatureValue : Temperature -> Int
@@ -256,7 +315,8 @@ temperatureValue temperature =
             value
 
 
-{-| Program entry point. -}
+{-| Program entry point.
+-}
 main : Program Decode.Value Model Msg
 main =
     PebblePlatform.application

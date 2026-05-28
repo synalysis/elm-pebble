@@ -190,11 +190,11 @@ updateFromPhone message model =
                 | weather =
                     Just
                         { temperature = { c10 = temp, unit = tempUnit }
-                        , condition = condition
-                        , precipMm10 = precip
-                        , uv10 = uv
-                        , pressureHpa = pressure
-                        }
+                , condition = condition
+                , precipMm10 = precip
+                , uv10 = uv
+                , pressureHpa = pressure
+            }
                 , displayUnits = updateTemperatureUnit tempUnit model.displayUnits
             }
 
@@ -681,7 +681,10 @@ drawWeatherIcon x y condition =
             cloudIcon x y ++ [ textAt Color.white { x = x + 9, y = y + 14, w = 16, h = 12 } "*" ]
 
         Storm ->
-            cloudIcon x y ++ [ Ui.line { x = x + 13, y = y + 12 } { x = x + 8, y = y + 23 } Color.chromeYellow, Ui.line { x = x + 8, y = y + 23 } { x = x + 18, y = y + 17 } Color.chromeYellow ]
+            cloudIcon x y ++
+                [ Ui.line { x = x + 13, y = y + 12 } { x = x + 8, y = y + 23 } Color.chromeYellow
+                , Ui.line { x = x + 8, y = y + 23 } { x = x + 18, y = y + 17 } Color.chromeYellow
+                ]
 
         UnknownWeather ->
             [ Ui.circle { x = x + 12, y = y + 12 } 8 Color.darkGray ]
@@ -781,7 +784,9 @@ isDayAtTop model =
     sunWindow.mode == PolarDay || (sunrise <= 720 && 720 <= sunset)
 
 
-timeString : Model -> String
+        timeString : Model -> String
+
+
 timeString model =
     let
         minute =
@@ -912,7 +917,7 @@ batteryAlert model =
         Just level ->
             level <= 25
 
-        Nothing ->
+                Nothing ->
             False
 
 

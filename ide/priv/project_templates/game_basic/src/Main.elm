@@ -50,10 +50,10 @@ update msg model =
             in
             ( { model | y = nextY, vy = min 8 (model.vy + 1), best = max model.best (140 - nextY) }
             , if hit then
-                Vibes.shortPulse
+                  Vibes.shortPulse
 
               else
-                Cmd.none
+                  Cmd.none
             )
 
         UpPressed ->

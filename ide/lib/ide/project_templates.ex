@@ -25,7 +25,7 @@ defmodule Ide.ProjectTemplates do
   @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info game-basic game-tiny-bird game-jump-n-run game-2048)
 
   @template_dirs %{
-    "starter" => "starter",
+    "starter" => "starter_watch",
     "watchface-digital" => "watchface_digital",
     "watchface-analog" => "watchface_analog",
     "watchface-tutorial-complete" => "watchface_tutorial_complete",
@@ -60,6 +60,20 @@ defmodule Ide.ProjectTemplates do
   """
   @spec template_keys() :: [String.t()]
   def template_keys, do: @template_keys
+
+  @doc """
+  Absolute path to `priv/project_templates/<dir>` for a template key.
+  """
+  @spec template_priv_root(String.t()) :: {:ok, String.t()} | {:error, {:unknown_template, String.t()}}
+  def template_priv_root(template_key) when is_binary(template_key) do
+    case Map.fetch(@template_dirs, template_key) do
+      {:ok, dir} ->
+        {:ok, Paths.priv_path(Path.join("project_templates", dir))}
+
+      :error ->
+        {:error, {:unknown_template, template_key}}
+    end
+  end
 
   @doc """
   Resolves the implied project target for a template key.

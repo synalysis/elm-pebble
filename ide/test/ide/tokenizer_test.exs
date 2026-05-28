@@ -2311,7 +2311,8 @@ defmodule Ide.TokenizerTest do
   test "compiler mode does not emit expr parser false positives for watchface templates" do
     template_files = [
       Path.expand("../../priv/project_templates/watchface_digital/src/Main.elm", __DIR__),
-      Path.expand("../../priv/project_templates/watchface_analog/src/Main.elm", __DIR__)
+      Path.expand("../../priv/project_templates/watchface_analog/src/Main.elm", __DIR__),
+      Path.expand("../../priv/project_templates/starter_watch/src/Main.elm", __DIR__)
     ]
 
     Enum.each(template_files, fn path ->
@@ -2320,7 +2321,8 @@ defmodule Ide.TokenizerTest do
 
       refute Enum.any?(result.diagnostics, fn diagnostic ->
                diagnostic.source == "tokenizer/expr_parser" and
-                 diagnostic.catalog_id == :missing_expression
+                 (diagnostic.catalog_id == :missing_expression or
+                    String.contains?(diagnostic.message || "", "on its own line"))
              end)
     end)
   end

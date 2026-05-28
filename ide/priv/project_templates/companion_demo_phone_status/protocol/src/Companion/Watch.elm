@@ -1,6 +1,7 @@
 module Companion.Watch exposing (onPhoneToWatch, sendWatchToPhone)
 
-{-| Watch-side API for typed companion messages. -}
+{-| Watch-side API for typed companion messages.
+-}
 
 import Companion.Internal as Internal
 import Companion.Types exposing (PhoneToWatch, WatchToPhone)

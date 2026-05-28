@@ -3,6 +3,7 @@ defmodule Ide.Tokenizer do
   Tokenization seam for editor syntax highlighting and diagnostics.
   """
   @dialyzer :no_match
+  alias ElmEx.Frontend.LetLayout
   alias Ide.Formatter.Semantics.HeaderMetadata
   alias Ide.Diagnostics.TokenizerParserMapper
   alias Ide.Tokenizer.Types
@@ -1531,7 +1532,45 @@ defmodule Ide.Tokenizer do
       trimmed = String.trim(line_text)
       line_indent = leading_indent_width(line_text)
 
-      cond do
+      case let_layout_diagnostic_for_line(line_text, line_no) do
+        [_ | _] = diags ->
+          diags
+
+        [] ->
+          expression_parser_line_diagnostics(
+            trimmed,
+            line_text,
+            line_no,
+            line_indent,
+            indexed_lines,
+            expr_lexer_mod,
+            expr_parser_mod
+          )
+      end
+    end)
+  end
+
+  @spec expression_parser_line_diagnostics(
+          String.t(),
+          String.t(),
+          integer(),
+          integer(),
+          [{String.t(), integer()}],
+          atom(),
+          atom()
+        ) :: [diagnostic()]
+  defp expression_parser_line_diagnostics(
+         trimmed,
+         line_text,
+         line_no,
+         line_indent,
+         indexed_lines,
+         expr_lexer_mod,
+         expr_parser_mod
+       )
+       when is_binary(trimmed) and is_binary(line_text) and is_integer(line_no) and
+              is_integer(line_indent) and is_list(indexed_lines) do
+    cond do
         trimmed == "" or String.starts_with?(trimmed, "--") ->
           []
 
@@ -1573,7 +1612,24 @@ defmodule Ide.Tokenizer do
         true ->
           []
       end
-    end)
+  end
+
+  @spec let_layout_diagnostic_for_line(String.t(), integer()) :: [diagnostic()]
+  defp let_layout_diagnostic_for_line(line_text, line_no) when is_binary(line_text) and is_integer(line_no) do
+    case LetLayout.validate(line_text) do
+      :ok ->
+        []
+
+      {:error, {:inline_let_in, _}} ->
+        {_, _, [message, _token]} = LetLayout.parse_error(line_no)
+
+        [
+          parser_diagnostic("expr_parser", line_no, %{
+            message: message,
+            elm_title: :missing_expression
+          })
+        ]
+    end
   end
 
   @spec assignment_header_line?(String.t()) :: boolean()

@@ -13,6 +13,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   alias Ide.Mcp.ToolSupport
   alias Ide.Mcp.Tools
   alias Ide.ProjectTemplates
+  alias Ide.ProjectTemplates.SourceValidation
   alias Ide.Projects
   alias IdeWeb.WorkspaceLive.DebuggerPreview
 
@@ -67,7 +68,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     slug = Keyword.get(opts, :slug) || unique_slug(template_key)
     cleanup? = Keyword.get(opts, :cleanup, true)
 
-    with {:ok, project} <- create_project(slug, template_key),
+    with :ok <- SourceValidation.validate_template(template_key),
+         {:ok, project} <- create_project(slug, template_key),
          :ok <- bootstrap(slug, project, template_key),
          {:ok, snapshot} <- capture(slug, project, template_key) do
       if cleanup?, do: _ = Projects.delete_project(project)

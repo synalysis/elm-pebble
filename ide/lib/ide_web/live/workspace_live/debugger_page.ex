@@ -54,6 +54,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         </div>
         <div class="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
           <.debugger_copy_button
+            :if={@debug_mode}
             id="debugger-copy-agent-state"
             text={debugger_agent_state_clipboard_text(assigns)}
             label="Copy for agent"

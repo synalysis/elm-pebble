@@ -72,10 +72,10 @@ update msg model =
         MinuteChanged minute ->
             ( { model | currentDateTime = updateMinute minute model.currentDateTime }
             , if modBy 30 minute == 0 then
-                CompanionWatch.sendWatchToPhone (RequestWeather CurrentLocation)
+                  CompanionWatch.sendWatchToPhone (RequestWeather CurrentLocation)
 
               else
-                Cmd.none
+                  Cmd.none
             )
 
         HourChanged _ ->
@@ -87,10 +87,10 @@ update msg model =
         ConnectionStatusChanged connected ->
             ( { model | connected = Just connected }
             , if connected then
-                Cmd.none
+                  Cmd.none
 
               else
-                PebbleVibes.doublePulse
+                  PebbleVibes.doublePulse
             )
 
 
