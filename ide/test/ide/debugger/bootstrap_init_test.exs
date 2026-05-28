@@ -36,7 +36,7 @@ defmodule Ide.Debugger.BootstrapInitTest do
         attach_compile_artifacts: fn st, _target, _ei -> st end,
         hydrate_runtime_model: fn model, _msg, _path -> model end,
         append_event: fn st, _type, _payload -> st end,
-        append_debugger_event: fn st, _kind, _target, _msg, _src -> st end,
+        append_debugger_event: fn st, _kind, _target, _msg, _src, _opts -> st end,
         runtime_status_after_init: fn st, _target, _exec, _ei -> st end,
         apply_runtime_followups: fn st, _target, _msg, _src, _followups -> st end,
         drain_app_message_queue: fn _st, _target -> flunk("drain should be deferred") end
@@ -56,7 +56,7 @@ defmodule Ide.Debugger.BootstrapInitTest do
         attach_compile_artifacts: fn st, _target, _ei -> st end,
         hydrate_runtime_model: fn model, _msg, _path -> model end,
         append_event: fn st, _type, _payload -> st end,
-        append_debugger_event: fn st, _kind, _target, _msg, _src -> st end,
+        append_debugger_event: fn st, _kind, _target, _msg, _src, _opts -> st end,
         runtime_status_after_init: fn st, _target, _exec, _ei -> st end,
         apply_runtime_followups: fn st, _target, _msg, _src, _followups -> st end,
         drain_app_message_queue: fn st, _target -> st end

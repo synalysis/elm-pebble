@@ -19,7 +19,8 @@ defmodule Ide.Debugger.ElmIntrospectSnapshot do
           required(:hydrate_runtime_model) =>
             (Types.app_model(), String.t() | nil, [String.t()] -> Types.app_model()),
           required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:append_debugger_event) => (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map()),
+          required(:append_debugger_event) =>
+            (map(), String.t(), Types.surface_target(), String.t(), String.t(), map() | nil -> map()),
           required(:runtime_status_after_init) =>
             (map(), Types.surface_target(), map(), Types.elm_introspect() -> map()),
           required(:apply_runtime_followups) =>

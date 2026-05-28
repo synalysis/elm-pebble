@@ -161,9 +161,13 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
       |> String.split("_")
       |> Enum.map_join("", &String.capitalize/1)
 
-    Enum.find(init_keys, fn model_key ->
-      is_binary(model_key) and model_key != patch_key and String.ends_with?(model_key, suffix)
-    end)
+  if suffix == "" do
+      nil
+    else
+      Enum.find(init_keys, fn model_key ->
+        is_binary(model_key) and model_key != patch_key and String.ends_with?(model_key, suffix)
+      end)
+    end
   end
 
   defp model_field_for_patch_field(_patch_key, _init_keys), do: nil
@@ -196,7 +200,7 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
          "args" => args
        })
        when is_map(introspect) and is_binary(ctor) and is_list(args) do
-    with names when length(names) == length(args) <-
+    with names when names != [] and length(names) == length(args) <-
            protocol_ctor_binding_names(introspect, ctor) do
       names
       |> Enum.zip(args)
@@ -509,7 +513,7 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
         |> String.replace_prefix(ctor, "")
         |> String.trim()
         |> String.split(~r/\s+/, trim: true)
-        |> Enum.reject(&(&1 in ["Ok", "Err", "Nothing", "Just"] or &1 == ctor))
+        |> Enum.reject(&(&1 in ["Ok", "Err", "Nothing", "Just", "_"] or &1 == ctor))
 
       true ->
         inner =
@@ -521,7 +525,7 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
         ~r/[A-Za-z][A-Za-z0-9_]*/
         |> Regex.scan(inner)
         |> List.flatten()
-        |> Enum.reject(&(&1 in ["Ok", "Err", "Nothing", "Just"] or &1 == ctor))
+        |> Enum.reject(&(&1 in ["Ok", "Err", "Nothing", "Just", "_"] or &1 == ctor))
     end
   end
 

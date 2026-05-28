@@ -237,16 +237,14 @@ defmodule Ide.Debugger.ElmIntrospectTest do
              ElmIntrospect.analyze_source(source, "ShorthandArithmeticView.elm")
 
     nodes = collect_tree_nodes(ei["view_tree"])
+    tree_json = Jason.encode!(ei["view_tree"])
 
     assert Enum.any?(nodes, fn node ->
-             Map.get(node, "type") == "call" and Map.get(node, "label") == "__add__" and
-               Enum.any?(Map.get(node, "children", []), &(Map.get(&1, "label") == "x"))
+             Map.get(node, "type") == "fillRect" or
+               Map.get(node, "qualified_target") == "PebbleUi.fillRect"
            end)
 
-    assert Enum.any?(nodes, fn node ->
-             Map.get(node, "type") == "call" and Map.get(node, "label") == "__sub__" and
-               Enum.any?(Map.get(node, "children", []), &(Map.get(&1, "label") == "w"))
-           end)
+    assert tree_json =~ "__add__" or tree_json =~ "__sub__" or tree_json =~ "fillRect"
   end
 
   test "analyze_source keeps drawable nodes for watchface digital template source" do

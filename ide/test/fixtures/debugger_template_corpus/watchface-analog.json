@@ -258,7 +258,7 @@
   },
   "template": "watchface-analog",
   "timeline_init_messages": [
-    "update:CurrentDateTime {\"args\":[{\"day\":27,\"dayOfWeek\":{\"args\":[],\"ctor\":\"Wednesday\"},\"hour\":8,\"minute\":53,\"month\":5,\"second\":0,\"utcOffsetMinutes\":0,\"year\":2026}],\"ctor\":\"CurrentDateTime\"}",
+    "update:CurrentDateTime {\"day\":27,\"dayOfWeek\":{\"args\":[],\"ctor\":\"Wednesday\"},\"hour\":8,\"minute\":53,\"month\":5,\"second\":0,\"utcOffsetMinutes\":0,\"year\":2026}",
     "init:init"
   ],
   "view_tree_type": "windowStack",

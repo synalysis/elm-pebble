@@ -300,7 +300,7 @@
   },
   "template": "game-tiny-bird",
   "timeline_init_messages": [
-    "update:StorageStringLoaded {\"args\":[\"\"],\"ctor\":\"StorageStringLoaded\",\"tag\":3}",
+    "update:StorageStringLoaded \"\"",
     "init:init"
   ],
   "view_tree_type": "windowStack",

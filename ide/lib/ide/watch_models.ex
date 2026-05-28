@@ -27,7 +27,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "BlackWhite",
       "has_microphone" => false,
       "has_compass" => true,
-      "supports_health" => false
+      "supports_health" => false,
+      "watch_info_model" => "PebbleOriginal",
+      "watch_info_color" => "Black"
     },
     "basalt" => %{
       "name" => "Basalt",
@@ -36,7 +38,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "Color",
       "has_microphone" => false,
       "has_compass" => false,
-      "supports_health" => true
+      "supports_health" => true,
+      "watch_info_model" => "PebbleTime",
+      "watch_info_color" => "TimeBlack"
     },
     "chalk" => %{
       "name" => "Chalk",
@@ -45,7 +49,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "Color",
       "has_microphone" => false,
       "has_compass" => false,
-      "supports_health" => true
+      "supports_health" => true,
+      "watch_info_model" => "PebbleTimeRound20",
+      "watch_info_color" => "TimeBlack"
     },
     "diorite" => %{
       "name" => "Diorite",
@@ -54,7 +60,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "BlackWhite",
       "has_microphone" => true,
       "has_compass" => false,
-      "supports_health" => true
+      "supports_health" => true,
+      "watch_info_model" => "Pebble2Se",
+      "watch_info_color" => "Black"
     },
     "emery" => %{
       "name" => "Emery",
@@ -63,7 +71,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "Color",
       "has_microphone" => true,
       "has_compass" => false,
-      "supports_health" => true
+      "supports_health" => true,
+      "watch_info_model" => "PebbleTime2",
+      "watch_info_color" => "TimeBlack"
     },
     "flint" => %{
       "name" => "Flint",
@@ -72,7 +82,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "Color",
       "has_microphone" => true,
       "has_compass" => false,
-      "supports_health" => true
+      "supports_health" => true,
+      "watch_info_model" => "Pebble2Hr",
+      "watch_info_color" => "TimeBlack"
     },
     "gabbro" => %{
       "name" => "Gabbro",
@@ -81,7 +93,9 @@ defmodule Ide.WatchModels do
       "color_mode" => "Color",
       "has_microphone" => false,
       "has_compass" => false,
-      "supports_health" => true
+      "supports_health" => true,
+      "watch_info_model" => "PebbleTimeRound20",
+      "watch_info_color" => "TimeBlack"
     }
   }
 
@@ -93,6 +107,40 @@ defmodule Ide.WatchModels do
 
   @spec profiles_map() :: profiles_map()
   def profiles_map, do: @profiles
+
+  @spec watch_info_model_ctor(String.t() | nil) :: String.t()
+  def watch_info_model_ctor(id) do
+    id
+    |> profile_for()
+    |> Map.get("watch_info_model", "UnknownModel")
+  end
+
+  @spec watch_info_color_ctor(String.t() | nil) :: String.t()
+  def watch_info_color_ctor(id) do
+    id
+    |> profile_for()
+    |> Map.get("watch_info_color", "UnknownColor")
+  end
+
+  @spec watch_info_model_ctor_from_launch_context(map()) :: String.t()
+  def watch_info_model_ctor_from_launch_context(launch_context) when is_map(launch_context) do
+    profile_id =
+      Map.get(launch_context, "watch_profile_id") ||
+        Map.get(launch_context, :watch_profile_id) ||
+        default_id()
+
+    watch_info_model_ctor(profile_id)
+  end
+
+  @spec watch_info_color_ctor_from_launch_context(map()) :: String.t()
+  def watch_info_color_ctor_from_launch_context(launch_context) when is_map(launch_context) do
+    profile_id =
+      Map.get(launch_context, "watch_profile_id") ||
+        Map.get(launch_context, :watch_profile_id) ||
+        default_id()
+
+    watch_info_color_ctor(profile_id)
+  end
 
   @spec profile_for(String.t() | nil) :: wire_profile()
   def profile_for(id) when is_binary(id) do

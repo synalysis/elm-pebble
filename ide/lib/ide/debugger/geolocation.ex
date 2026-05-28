@@ -97,10 +97,12 @@ defmodule Ide.Debugger.Geolocation do
 
   @spec init_requested_from_introspect?(Types.elm_introspect() | map()) :: boolean()
   def init_requested_from_introspect?(ei) when is_map(ei) do
-    init_requested?(
-      IntrospectAccess.cmd_calls(ei, "init_cmd_calls"),
-      subscription_callback_from_introspect(ei)
-    )
+    init_cmd_calls =
+      ei
+      |> IntrospectAccess.cmd_calls("init_cmd_calls")
+      |> CmdCall.expand_helpers(ei)
+
+    init_requested?(init_cmd_calls, subscription_callback_from_introspect(ei))
   end
 
   def init_requested_from_introspect?(_ei), do: false

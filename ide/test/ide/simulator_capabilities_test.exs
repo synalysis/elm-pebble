@@ -261,18 +261,25 @@ defmodule Ide.SimulatorCapabilitiesTest do
 
   test "emulator page exposes simulator capabilities for weather gating" do
     source = File.read!("lib/ide_web/live/workspace_live/emulator_page.ex")
-    js = File.read!("assets/js/emulator/embedded_emulator.js")
+    embedded_js =
+      case File.read("assets/js/emulator/embedded_emulator.js") do
+        {:ok, contents} -> contents
+        {:error, _} -> File.read!("assets/js/emulator/embedded_emulator.ts")
+      end
+
+    vnc_js = File.read!("assets/js/emulator/emulator_vnc.ts")
+    delivery_js = File.read!("assets/js/emulator/emulator_simulator_delivery.ts")
 
     assert source =~ "data-emulator-simulator-capabilities"
     assert source =~ "data-emulator-copy-feedback"
     assert source =~ ":if={@debug_mode}"
     assert source =~ "emulator_feedback_installation_json"
     assert source =~ "emulator_simulator_capabilities_json"
-    assert js =~ "copyFeedbackReport"
-    assert js =~ "simulatorWeatherEnabled()"
-    assert js =~ "emulatorSimulatorCapabilities"
-    assert js =~ "readVncFramebufferSize"
-    assert js =~ "clipViewport"
-    assert js =~ "expectedScreenSize"
+    assert embedded_js =~ "copyFeedbackReport"
+    assert embedded_js =~ "simulatorWeatherEnabled()"
+    assert delivery_js =~ "emulatorSimulatorCapabilities"
+    assert embedded_js =~ "readVncFramebufferSize"
+    assert vnc_js =~ "clipViewport"
+    assert embedded_js =~ "expectedScreenSize"
   end
 end

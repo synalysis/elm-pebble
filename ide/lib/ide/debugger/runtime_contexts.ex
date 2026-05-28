@@ -223,6 +223,9 @@ defmodule Ide.Debugger.RuntimeContexts do
       InitSurfaceEffectsContext.build(%{
         append_event: host.append_event,
         apply_step_once: host.apply_step_once,
+        apply_device_data_followups: fn st, target, message, model, source ->
+          DeviceDataResponses.apply_after_step(st, target, message, model, source, device_data)
+        end,
         apply_subscription_ok_response: host.apply_subscription_ok_response,
         protocol_events_ctx: protocol_events_fn,
         protocol_rx_ctx: protocol_rx_fn,

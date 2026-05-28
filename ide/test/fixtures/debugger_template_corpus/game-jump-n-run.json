@@ -345,7 +345,7 @@
   },
   "template": "game-jump-n-run",
   "timeline_init_messages": [
-    "update:BestScoreLoaded {\"args\":[0],\"ctor\":\"BestScoreLoaded\",\"tag\":4}",
+    "update:BestScoreLoaded 0",
     "init:init"
   ],
   "view_tree_type": "windowStack",

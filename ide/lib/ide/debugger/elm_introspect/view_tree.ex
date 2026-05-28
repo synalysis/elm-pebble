@@ -3,6 +3,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   alias ElmEx.Frontend.Module
   alias Ide.Debugger.ElmIntrospect
+  alias ElmExecutor.Runtime.ViewTreeIntrinsics
   alias Ide.Debugger.ElmIntrospect.Types
   alias Ide.Debugger.RuntimeArtifacts
 
@@ -1027,9 +1028,11 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
   def output_source_locations(_api_metadata), do: %{}
 
   @spec internal_arithmetic_view_type(String.t()) :: String.t()
-  # Always use "call" so debugger preview evaluates via the call label (not the
-  # operator name as `type`, which previously dropped // and other binops).
-  defp internal_arithmetic_view_type(_name), do: "call"
+  defp internal_arithmetic_view_type(name) when is_binary(name) do
+    if ViewTreeIntrinsics.int_call_name?(name) or ViewTreeIntrinsics.intrinsic_operator?(name),
+      do: "call",
+      else: name
+  end
 
   @spec view_type_name(Types.ast_expr() | String.t()) :: String.t()
   defp view_type_name(target) when is_binary(target) do

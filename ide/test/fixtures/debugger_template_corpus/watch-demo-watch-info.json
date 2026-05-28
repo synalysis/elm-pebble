@@ -33,7 +33,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "--",
+      "text": "Original",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -47,7 +47,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "--",
+      "text": "Black",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -61,7 +61,7 @@
       "font_size": 20,
       "h": 20,
       "kind": "text_label",
-      "text": "--",
+      "text": "4.4.0",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -98,7 +98,7 @@
       "y": 120
     }
   ],
-  "preview_ops_sha256": "83f64307394732371a868aaa09a0dbcdcdca472d10c8e58e3414ab37b911e1e7",
+  "preview_ops_sha256": "8937802352d2f34516a7f7030a831c41a78687636be4413bfdc87e9250ad3fd5",
   "render_tree": {
     "node_count": 10,
     "node_types": [
@@ -152,7 +152,7 @@
                   "font_id": 1,
                   "h": 20,
                   "label": "",
-                  "text": "--",
+                  "text": "Original",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text",
@@ -165,7 +165,7 @@
                   "font_id": 1,
                   "h": 20,
                   "label": "",
-                  "text": "--",
+                  "text": "Black",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text",
@@ -178,7 +178,7 @@
                   "font_id": 1,
                   "h": 20,
                   "label": "",
-                  "text": "--",
+                  "text": "4.4.0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
                   "type": "text",
@@ -232,8 +232,13 @@
   },
   "runtime_model": {
     "color": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "args": [],
+          "ctor": "Black"
+        }
+      ],
+      "ctor": "Just"
     },
     "colorMode": {
       "args": [],
@@ -244,30 +249,38 @@
       "ctor": "Rectangular"
     },
     "firmware": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "major": 4,
+          "minor": 4,
+          "patch": 0
+        }
+      ],
+      "ctor": "Just"
     },
     "firmware_version": "v4.4.0-sim",
     "last_message": "GotFirmware",
-    "last_operation": "nil",
+    "last_operation": "set",
     "model": {
-      "args": [],
-      "ctor": "Nothing"
+      "args": [
+        {
+          "args": [],
+          "ctor": "PebbleOriginal"
+        }
+      ],
+      "ctor": "Just"
     },
     "refreshes": 0,
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
-    "step_counter": 3,
-    "timeString": null,
-    "watch_color": "BlackWhite",
-    "watch_model": "Aplite"
+    "timeString": null
   },
   "template": "watch-demo-watch-info",
   "timeline_init_messages": [
-    "update:GotFirmware",
-    "update:GotColor",
-    "update:GotModel",
+    "update:GotFirmware {\"major\":4,\"minor\":4,\"patch\":0}",
+    "update:GotColor {\"args\":[],\"ctor\":\"Black\"}",
+    "update:GotModel {\"args\":[],\"ctor\":\"PebbleOriginal\"}",
     "init:init"
   ],
   "view_tree_type": "windowStack",
@@ -302,8 +315,13 @@
     "runtime_message_source": "init_device_data",
     "runtime_model": {
       "color": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "args": [],
+            "ctor": "Black"
+          }
+        ],
+        "ctor": "Just"
       },
       "colorMode": {
         "args": [],
@@ -314,22 +332,30 @@
         "ctor": "Rectangular"
       },
       "firmware": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "major": 4,
+            "minor": 4,
+            "patch": 0
+          }
+        ],
+        "ctor": "Just"
       },
       "firmware_version": "v4.4.0-sim",
       "last_message": "GotFirmware",
-      "last_operation": "nil",
+      "last_operation": "set",
       "model": {
-        "args": [],
-        "ctor": "Nothing"
+        "args": [
+          {
+            "args": [],
+            "ctor": "PebbleOriginal"
+          }
+        ],
+        "ctor": "Just"
       },
       "refreshes": 0,
       "screenH": 168,
-      "screenW": 144,
-      "step_counter": 3,
-      "watch_color": "BlackWhite",
-      "watch_model": "Aplite"
+      "screenW": 144
     },
     "runtime_model_source": "step_message",
     "runtime_update_branches": [
@@ -359,7 +385,7 @@
         "font_id": 1,
         "h": 20,
         "kind": "text",
-        "text": "--",
+        "text": "Original",
         "text_align": "center",
         "text_overflow": "word_wrap",
         "w": 136,
@@ -370,7 +396,7 @@
         "font_id": 1,
         "h": 20,
         "kind": "text",
-        "text": "--",
+        "text": "Black",
         "text_align": "center",
         "text_overflow": "word_wrap",
         "w": 136,
@@ -381,7 +407,7 @@
         "font_id": 1,
         "h": 20,
         "kind": "text",
-        "text": "--",
+        "text": "4.4.0",
         "text_align": "center",
         "text_overflow": "word_wrap",
         "w": 136,

@@ -195,7 +195,7 @@
   },
   "template": "companion-demo-geolocation",
   "timeline_init_messages": [
-    "update:CurrentTimeString {\"args\":[\"08:53\"],\"ctor\":\"CurrentTimeString\"}",
+    "update:CurrentTimeString \"08:53\"",
     "init:init"
   ],
   "view_tree_type": "windowStack",

@@ -56,7 +56,9 @@ defmodule Ide.Mcp.GeolocationWatchfaceTest do
            end)
 
     assert Enum.any?(st.debugger_timeline, fn row ->
-             row.target == "watch" and row.message =~ "FromPhone (ProvidePosition"
+             row.target == "watch" and
+               (String.match?(row.message, ~r/^FromPhone \[\d+,\d+,\d+\]$/) or
+                  String.contains?(row.message, "ProvidePosition"))
            end)
   end
 

@@ -1177,8 +1177,8 @@
   "template": "game-2048",
   "timeline_init_messages": [
     "update:DeviceLoaded",
-    "update:RandomGenerated {\"args\":[451259489],\"ctor\":\"RandomGenerated\",\"tag\":6}",
-    "update:BestLoaded {\"args\":[\"\"],\"ctor\":\"BestLoaded\",\"tag\":5}",
+    "update:RandomGenerated 451259489",
+    "update:BestLoaded \"\"",
     "init:init"
   ],
   "view_tree_type": "windowStack",

@@ -233,8 +233,9 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     assert html =~ "data-wasm-status"
     assert html =~ "data-wasm-assets"
     assert html =~ "data-wasm-log"
-    assert get_resp_header(emulator_conn, "cross-origin-opener-policy") == ["same-origin"]
-    assert get_resp_header(emulator_conn, "cross-origin-embedder-policy") == ["require-corp"]
+    # Emulator pane uses VNC and does not require cross-origin isolation headers.
+    assert get_resp_header(emulator_conn, "cross-origin-opener-policy") == []
+    assert get_resp_header(emulator_conn, "cross-origin-embedder-policy") == []
 
     asset_conn = get(recycle(conn), "/assets/app.js")
     assert response(asset_conn, 200) =~ "EmbeddedEmulatorHost"

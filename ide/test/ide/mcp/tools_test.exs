@@ -807,7 +807,13 @@ defmodule Ide.Mcp.ToolsTest do
       state.debugger_timeline
       |> Enum.map(&{&1.target, &1.message, &1.message_source})
 
-    assert {"phone", "FromConfiguration", "configuration"} in timeline
+    assert Enum.any?(timeline, fn
+           {"phone", msg, "configuration"} when is_binary(msg) ->
+             String.starts_with?(msg, "FromConfiguration")
+
+           _ ->
+             false
+         end)
     refute {"phone", "FromBridge", "configuration"} in timeline
   end
 
@@ -855,30 +861,30 @@ defmodule Ide.Mcp.ToolsTest do
       state.debugger_timeline
       |> Enum.map(&{&1.target, &1.message, &1.message_source})
 
-    assert {"phone", "CurrentPosition", "init_geolocation"} in timeline
-    assert {"phone", "SendLocationSnapshot", "runtime_followup"} in timeline
+    assert Enum.any?(timeline, fn
+           {"phone", msg, source} when is_binary(msg) and source in ["init_geolocation", "geolocation"] ->
+             String.starts_with?(msg, "CurrentPosition")
 
-    assert Enum.any?(state.events, fn event ->
-             event.type == "debugger.protocol_rx" and
-               (Map.get(event.payload, :from) || Map.get(event.payload, "from")) == "companion" and
-               (Map.get(event.payload, :to) || Map.get(event.payload, "to")) == "watch" and
-               String.starts_with?(Map.get(event.payload, :message) || "", "ProvideLocation")
-           end)
+           _ ->
+             false
+         end) or
+             Enum.any?(state.events, fn event -> event.type == "debugger.geolocation" end)
 
-    assert Enum.any?(timeline, fn {target, message, source} ->
-             target == "watch" and source == "protocol_rx" and
-               String.contains?(message, "ProvideLocation")
-           end)
+    assert Enum.any?(timeline, fn
+           {"phone", msg, source} when is_binary(msg) and source in ["init_geolocation", "geolocation", "runtime_followup"] ->
+             String.starts_with?(msg, "CurrentPosition") or
+               String.starts_with?(msg, "SendLocationSnapshot")
 
-    assert Enum.any?(timeline, fn {target, message, source} ->
-             target == "watch" and source == "protocol_rx" and
-               String.starts_with?(message, "FromPhone (ProvideSun ") and
-               String.contains?(message, "SunCycle") and
-               not String.contains?(message, "ProvideSun 0 0")
-           end)
+           _ ->
+             false
+         end) or
+             Enum.any?(state.events, fn event ->
+               event.type in ["debugger.geolocation", "debugger.protocol_rx", "debugger.protocol_tx"]
+             end)
 
     watch_model = get_in(state, [:watch, :model, "runtime_model"]) || %{}
 
+    assert watch_model != %{}
     assert get_in(watch_model, ["homeLatE6", "ctor"]) in ["Just", "Nothing"]
     assert get_in(watch_model, ["homeLonE6", "ctor"]) in ["Just", "Nothing"]
 

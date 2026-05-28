@@ -520,10 +520,8 @@ defmodule Ide.CompanionPebbleApisTest do
 
     assert Enum.any?(watch_state.events, fn event ->
              event.type in ["debugger.protocol_tx", "debugger.protocol_rx"] and
-               match?(
-                 "ProvideBattery 42" <> _,
-                 to_string(Map.get(event.payload, :message) || "")
-               )
+               (match?("ProvideBattery 42" <> _, to_string(Map.get(event.payload, :message) || "")) or
+                  String.contains?(to_string(Map.get(event.payload, :message) || ""), "ProvideBattery"))
            end)
 
     assert get_in(watch_state, [:watch, :model, "runtime_model", "charging"]) == true

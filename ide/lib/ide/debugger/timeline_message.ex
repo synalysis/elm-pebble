@@ -119,6 +119,14 @@ defmodule Ide.Debugger.TimelineMessage do
   end
 
   @spec payload_text(map() | integer() | boolean() | String.t()) :: String.t()
+  defp payload_text(%{"ctor" => _ctor, "args" => [single]}) do
+    payload_text(single)
+  end
+
+  defp payload_text(%{"ctor" => _ctor, "args" => args}) when is_list(args) and args != [] do
+    Jason.encode!(args)
+  end
+
   defp payload_text(%{} = value), do: Jason.encode!(value)
 
   defp payload_text(value) when is_integer(value), do: Integer.to_string(value)

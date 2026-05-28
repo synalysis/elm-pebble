@@ -8,7 +8,6 @@ defmodule Ide.Debugger.InitSurfaceEffects do
   alias Ide.Debugger.DeviceRequest
   alias Ide.Debugger.Geolocation
   alias Ide.Debugger.IntrospectAccess
-  alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.Surface
@@ -19,6 +18,9 @@ defmodule Ide.Debugger.InitSurfaceEffects do
           required(:apply_step_once) =>
             (Types.runtime_state(), Types.surface_target(), String.t(), Types.subscription_payload() | map() | nil,
              String.t(), String.t() -> Types.runtime_state()),
+          required(:apply_device_data_followups) =>
+            (Types.runtime_state(), Types.surface_target(), String.t(), map(), String.t() ->
+               Types.runtime_state()),
           required(:apply_subscription_ok_response) =>
             (Types.runtime_state(), Types.surface_target(), String.t(), map(), String.t(), String.t() ->
                Types.runtime_state()),
@@ -71,6 +73,7 @@ defmodule Ide.Debugger.InitSurfaceEffects do
           "init_device_data",
           "device_data"
         )
+        |> apply_init_device_data_followups(target, req, ctx)
         |> DeviceDataHints.apply_to_state(target, req)
       end)
     else
@@ -79,6 +82,21 @@ defmodule Ide.Debugger.InitSurfaceEffects do
   end
 
   def apply_device_data_responses(state, _target, _ctx), do: state
+
+  @spec apply_init_device_data_followups(Types.runtime_state(), Types.surface_target(), map(), ctx()) ::
+          Types.runtime_state()
+  defp apply_init_device_data_followups(state, target, req, ctx) when is_map(state) and is_map(req) and is_map(ctx) do
+    message = DeviceData.response_message(req)
+
+    if is_binary(message) and message != "" do
+      surface = Surface.from_state(state, target)
+      model = Surface.app_model(surface)
+
+      ctx.apply_device_data_followups.(state, target, message, model, "init_device_data")
+    else
+      state
+    end
+  end
 
   @spec apply_protocol_events(Types.runtime_state(), Types.surface_target(), ctx()) ::
           Types.runtime_state()

@@ -230,6 +230,21 @@ defmodule Ide.Debugger.StepExecution do
 
   def clock_text_label_from_model(_model), do: nil
 
+  @spec clock_only_preview_rows([map()], map()) :: [map()]
+  defp clock_only_preview_rows(rows, model) when is_list(rows) and is_map(model) do
+    if rows == [] do
+      case clock_text_label_from_model(model) do
+        label when is_binary(label) ->
+          [%{"kind" => "text", "text" => label, "x" => 0, "y" => 0}]
+
+        _ ->
+          []
+      end
+    else
+      rows
+    end
+  end
+
   @spec clock_text_label?(Types.wire_input()) :: boolean()
   def clock_text_label?(text) when is_binary(text), do: Regex.match?(~r/^\d{1,2}:\d{2}$/, String.trim(text))
   def clock_text_label?(_text), do: false
@@ -357,6 +372,13 @@ defmodule Ide.Debugger.StepExecution do
               )
             else
               []
+            end
+
+          parser_rows =
+            if parser_preview_resolved?(parser_rows) do
+              parser_rows
+            else
+              clock_only_preview_rows([], model_for_clock)
             end
 
           {parser_rows, parser_view_tree}
@@ -703,7 +725,15 @@ defmodule Ide.Debugger.StepExecution do
 
   @spec operation_from_text(String.t()) :: atom()
   def operation_from_text(text) when is_binary(text) do
-    hint = String.downcase(text)
+    hint =
+      text
+      |> String.trim()
+      |> String.split(~r/\s+/, parts: 2)
+      |> List.first()
+      |> case do
+        nil -> ""
+        ctor -> String.downcase(ctor)
+      end
 
     cond do
       contains_any?(hint, ["inc", "increment", "up", "next", "plus", "add"]) -> :inc

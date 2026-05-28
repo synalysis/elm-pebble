@@ -315,7 +315,15 @@ defmodule Ide.Debugger.RuntimeExecutor do
   @spec operation_from_text(String.t()) ::
           :inc | :dec | :toggle | :enable | :disable | :reset | :tick
   defp operation_from_text(text) when is_binary(text) do
-    hint = String.downcase(text)
+    hint =
+      text
+      |> String.trim()
+      |> String.split(~r/\s+/, parts: 2)
+      |> List.first()
+      |> case do
+        nil -> ""
+        ctor -> String.downcase(ctor)
+      end
 
     cond do
       contains_any?(hint, ["inc", "increment", "up", "next", "plus", "add"]) -> :inc

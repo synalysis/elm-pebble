@@ -188,9 +188,9 @@ defmodule Ide.Debugger.SubscriptionAutoFireState do
 
   defp normalize_target("watch"), do: :watch
   defp normalize_target("companion"), do: :companion
-  defp normalize_target("phone"), do: :phone
+  defp normalize_target("phone"), do: :companion
   defp normalize_target(:watch), do: :watch
   defp normalize_target(:companion), do: :companion
-  defp normalize_target(:phone), do: :phone
+  defp normalize_target(:phone), do: :companion
   defp normalize_target(_), do: :watch
 end

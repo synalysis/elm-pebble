@@ -5,6 +5,7 @@ defmodule Ide.Debugger.DeviceData do
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.SimulatorSettings, as: DebuggerSimulatorSettings
   alias Ide.Debugger.Types
+  alias Ide.WatchModels
 
   @subscription_clock_units %{
     "MinuteChanged" => :minute,
@@ -233,6 +234,27 @@ defmodule Ide.Debugger.DeviceData do
     "#{ctor} #{elm_literal(value)}"
   end
 
+  def response_message(%{response_message: ctor, kind: "watch_model", preview: preview})
+      when is_binary(ctor) and ctor != "" do
+    "#{ctor} #{watch_info_model_ctor_literal(preview)}"
+  end
+
+  def response_message(%{response_message: ctor, kind: "watch_color", preview: preview})
+      when is_binary(ctor) and ctor != "" do
+    "#{ctor} #{watch_info_color_ctor_literal(preview)}"
+  end
+
+  def response_message(%{response_message: ctor, kind: "firmware_version", preview: preview})
+      when is_binary(ctor) and ctor != "" do
+    case firmware_version_wire_record(preview) do
+      %{} = version ->
+        "#{ctor} { major = #{version["major"]}, minor = #{version["minor"]}, patch = #{version["patch"]} }"
+
+      _ ->
+        ctor
+    end
+  end
+
   def response_message(%{response_message: ctor}) when is_binary(ctor), do: ctor
   def response_message(_req), do: nil
 
@@ -280,6 +302,24 @@ defmodule Ide.Debugger.DeviceData do
       end
 
     %{"ctor" => ctor, "args" => [value]}
+  end
+
+  def response_wire_value(%{response_message: ctor, kind: "watch_model", preview: preview})
+      when is_binary(ctor) and ctor != "" do
+    %{"ctor" => ctor, "args" => [%{"ctor" => watch_info_model_ctor_literal(preview), "args" => []}]}
+  end
+
+  def response_wire_value(%{response_message: ctor, kind: "watch_color", preview: preview})
+      when is_binary(ctor) and ctor != "" do
+    %{"ctor" => ctor, "args" => [%{"ctor" => watch_info_color_ctor_literal(preview), "args" => []}]}
+  end
+
+  def response_wire_value(%{response_message: ctor, kind: "firmware_version", preview: preview})
+      when is_binary(ctor) and ctor != "" do
+    case firmware_version_wire_record(preview) do
+      %{} = version -> %{"ctor" => ctor, "args" => [version]}
+      _ -> %{"ctor" => ctor, "args" => []}
+    end
   end
 
   def response_wire_value(_req), do: nil
@@ -381,14 +421,12 @@ defmodule Ide.Debugger.DeviceData do
 
   def finalize_request(%{kind: "watch_model"} = req, model, _current_message) when is_map(model) do
     launch_context = Map.get(model, "launch_context") || %{}
-    watch_model = Map.get(launch_context, "watch_model") || "Pebble Time Round"
-    Map.put(req, :preview, watch_model)
+    Map.put(req, :preview, launch_context)
   end
 
   def finalize_request(%{kind: "watch_color"} = req, model, _current_message) when is_map(model) do
     launch_context = Map.get(model, "launch_context") || %{}
-    color_mode = launch_context_color_mode(launch_context)
-    Map.put(req, :preview, color_mode)
+    Map.put(req, :preview, launch_context)
   end
 
   def finalize_request(%{kind: "firmware_version"} = req, _model, _current_message),
@@ -490,23 +528,53 @@ defmodule Ide.Debugger.DeviceData do
 
   defp init_request_deferred?(_req), do: false
 
-  @spec launch_context_color_mode(map()) :: String.t()
-  defp launch_context_color_mode(launch_context) when is_map(launch_context) do
-    cond do
-      get_in(launch_context, ["screen", "color_mode"]) in ["Color", "BlackWhite"] ->
-        get_in(launch_context, ["screen", "color_mode"])
+  @spec watch_info_model_ctor_literal(map() | String.t()) :: String.t()
+  defp watch_info_model_ctor_literal(launch_context) when is_map(launch_context) do
+    WatchModels.watch_info_model_ctor_from_launch_context(launch_context)
+  end
 
-      get_in(launch_context, ["screen", "colorMode"]) in ["Color", "BlackWhite"] ->
-        get_in(launch_context, ["screen", "colorMode"])
+  defp watch_info_model_ctor_literal(preview) when is_binary(preview), do: preview
 
-      get_in(launch_context, ["screen", "is_color"]) == true ->
-        "Color"
+  @spec watch_info_color_ctor_literal(map() | String.t()) :: String.t()
+  defp watch_info_color_ctor_literal(launch_context) when is_map(launch_context) do
+    WatchModels.watch_info_color_ctor_from_launch_context(launch_context)
+  end
 
-      get_in(launch_context, ["screen", "is_color"]) == false ->
-        "BlackWhite"
+  defp watch_info_color_ctor_literal(preview) when is_binary(preview), do: preview
 
-      true ->
-        "Color"
+  @spec firmware_version_wire_record(String.t() | map() | nil) :: map() | nil
+  def firmware_version_wire_record(version) when is_binary(version) do
+    trimmed =
+      version
+      |> String.trim()
+      |> String.trim_leading("v")
+
+    case String.split(trimmed, "-", parts: 2) do
+      [core, _suffix] -> parse_firmware_version_core(core)
+      [core] -> parse_firmware_version_core(core)
+      _ -> nil
     end
   end
+
+  def firmware_version_wire_record(_version), do: nil
+
+  defp parse_firmware_version_core(core) when is_binary(core) do
+    parts =
+      core
+      |> String.split(".")
+      |> Enum.map(fn part ->
+        case Integer.parse(part) do
+          {value, ""} -> value
+          _ -> 0
+        end
+      end)
+
+    case parts do
+      [major, minor, patch] -> %{"major" => major, "minor" => minor, "patch" => patch}
+      [major, minor] -> %{"major" => major, "minor" => minor, "patch" => 0}
+      [major] -> %{"major" => major, "minor" => 0, "patch" => 0}
+      _ -> nil
+    end
+  end
+
 end

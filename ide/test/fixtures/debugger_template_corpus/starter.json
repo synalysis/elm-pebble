@@ -228,19 +228,17 @@
     "timeString": null,
     "timezone": "UTC",
     "timezone_is_set": true,
-    "value": 1,
-    "watch_color": "BlackWhite",
-    "watch_model": "Aplite"
+    "value": 1
   },
   "template": "starter",
   "timeline_init_messages": [
-    "update:FirmwareVersionString",
-    "update:WatchColorName",
-    "update:WatchModelName",
+    "update:FirmwareVersionString {\"major\":4,\"minor\":4,\"patch\":0}",
+    "update:WatchColorName {\"args\":[],\"ctor\":\"Black\"}",
+    "update:WatchModelName {\"args\":[],\"ctor\":\"PebbleOriginal\"}",
     "update:TimezoneName",
     "update:TimezoneIsSet",
     "update:ClockStyle24h",
-    "update:CurrentTimeString {\"args\":[\"08:53\"],\"ctor\":\"CurrentTimeString\"}",
+    "update:CurrentTimeString \"08:53\"",
     "init:init"
   ],
   "view_tree_type": "windowStack",
@@ -305,9 +303,7 @@
       },
       "timezone": "UTC",
       "timezone_is_set": true,
-      "value": 1,
-      "watch_color": "BlackWhite",
-      "watch_model": "Aplite"
+      "value": 1
     },
     "runtime_model_source": "step_message",
     "runtime_update_branches": [

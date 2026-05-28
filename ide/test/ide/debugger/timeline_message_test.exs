@@ -7,7 +7,7 @@ defmodule Ide.Debugger.TimelineMessageTest do
     value = %{"ctor" => "CurrentDateTime", "args" => [%{"minute" => 7, "hour" => 8}]}
 
     assert TimelineMessage.format("CurrentDateTime", value) ==
-             "CurrentDateTime " <> Jason.encode!(value)
+             "CurrentDateTime {\"hour\":8,\"minute\":7}"
   end
 
   test "message_value_for_step parses minute and json payloads" do

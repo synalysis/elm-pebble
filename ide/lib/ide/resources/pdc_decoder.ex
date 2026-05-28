@@ -62,20 +62,39 @@ defmodule Ide.Resources.PdcDecoder do
 
   @spec decode_sequence(binary()) :: {:ok, sequence()} | {:error, decode_error()}
   def decode_sequence(bytes) when is_binary(bytes) do
-    with "PDCS" <- pdc_magic(bytes),
-         {:ok, payload} <- strip_file_header(bytes),
-         {:ok, width, height, play_count, frame_count, rest} <- sequence_header(payload),
-         {:ok, frames, _rest} <- decode_sequence_frames(frame_count, rest, width, height, []) do
-      {:ok,
-       %{
-         width: width,
-         height: height,
-         play_count: play_count,
-         frames: frames
-       }}
-    else
-      nil -> {:error, :unsupported_pdc_format}
-      {:error, reason} -> {:error, reason}
+    case pdc_magic(bytes) do
+      "PDCS" ->
+        with {:ok, payload} <- strip_file_header(bytes),
+             {:ok, width, height, play_count, frame_count, rest} <- sequence_header(payload),
+             {:ok, frames, _rest} <- decode_sequence_frames(frame_count, rest, width, height, []) do
+          {:ok,
+           %{
+             width: width,
+             height: height,
+             play_count: play_count,
+             frames: frames
+           }}
+        else
+          {:error, reason} -> {:error, reason}
+        end
+
+      "PDCI" ->
+        case decode(bytes) do
+          {:ok, %{width: width, height: height} = image} ->
+            {:ok,
+             %{
+               width: width,
+               height: height,
+               play_count: 1,
+               frames: [%{duration_ms: 0, image: image}]
+             }}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      _ ->
+        {:error, :unsupported_pdc_format}
     end
   end
 
