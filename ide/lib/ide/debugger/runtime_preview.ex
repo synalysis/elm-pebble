@@ -72,12 +72,7 @@ defmodule Ide.Debugger.RuntimePreview do
         |> preview_model_for_message(Map.get(model, "runtime_last_message"))
 
       %{view_output: view_output, view_tree: derived_view_tree} =
-        StepExecution.derive_preview_view_output(
-          execution_model,
-          parser_view_tree,
-          preview_model,
-          model
-        )
+        StepExecution.derive_preview_view_output(execution_model, parser_view_tree, preview_model)
 
       model =
         model

@@ -72,7 +72,8 @@ The debugger watch SVG preview is **view-only**: it does not re-run `init` or `u
 
 1. **Core IR (preferred)** — When `elm_executor_core_ir` is present on the execution model, `SemanticExecutor.derive_view_output_for_runtime_model/2` evaluates `Main.view(model)` through Core IR, normalizes the result tree, then derives drawable rows (`fillRect`, `text`, vectors, etc.). This matches step execution semantics for `if`, `case`, `let`, and qualified calls.
 2. **Parser tree fallback** — If Core IR is missing or view evaluation yields no drawable rows, the introspected parser `view_tree` is evaluated via `derive_view_output_preview/3` (integer ops, `if`/`let` nodes, field access). Full `case` pattern matching without Core IR is not supported (branch patterns are not in the parser tree).
-3. **Clock text refresh** — Stored `runtime_view_output` from a prior step is **not** reused for coordinates; layout is always re-derived. Step rows may still supply fresher clock strings via `refresh_clock_text_view_output/2` when time fields on the model change (e.g. after `MinuteChanged`).
+
+Preview output is not patched after the fact (no clock-string heuristics or model-field guessing). If evaluation cannot produce drawable rows, the preview stays empty or shows unresolved nodes until Core IR or parser evaluation succeeds.
 
 The evaluated or parser tree is attached to the surface as `:view_tree` when introspection marks it usable, for hover bounds in `DebuggerPreview`.
 

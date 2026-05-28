@@ -3,27 +3,82 @@
     "render_source": "runtime_view_output",
     "root_type": "windowStack",
     "runtime_view_output_kinds": [
-      "text"
+      "unresolved",
+      "line",
+      "clear"
     ],
     "status": "ok"
   },
   "preview_ops": [
     {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
       "antialiased": true,
+      "color": 255,
       "compositing_mode": 0,
-      "kind": "text_label",
-      "text": "08:53",
-      "text_color": null,
-      "x": 0,
-      "y": 0
+      "kind": "line",
+      "stroke_color": 255,
+      "stroke_width": 1,
+      "x1": 72,
+      "x2": 72,
+      "y1": 84,
+      "y2": 84
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "kind": "unresolved"
+    },
+    {
+      "color": 192,
+      "kind": "clear"
     }
   ],
-  "preview_ops_sha256": "047886725c60e2e640ba8f2b2bcba50ba946036f00be958689d04bc210794a65",
+  "preview_ops_sha256": "3eb79402f2835b7967386c6e23162ff7adaa971898c40696eb386a593416d43a",
   "render_tree": {
-    "node_count": 4,
+    "node_count": 5,
     "node_types": [
       "canvasLayer",
-      "text",
+      "clear",
+      "line",
       "window",
       "windowStack"
     ],
@@ -43,16 +98,21 @@
               "children": [
                 {
                   "children": [],
-                  "font_id": 0,
-                  "h": 0,
+                  "color": 255,
                   "label": "",
-                  "text": "<TIME>",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 0,
-                  "x": 0,
-                  "y": 0
+                  "text": null,
+                  "type": "line",
+                  "x1": 72,
+                  "x2": 72,
+                  "y1": 84,
+                  "y2": 84
+                },
+                {
+                  "children": [],
+                  "color": 192,
+                  "label": "",
+                  "text": null,
+                  "type": "clear"
                 }
               ],
               "id": 1,
@@ -328,10 +388,138 @@
     ],
     "runtime_view_output": [
       {
-        "kind": "text",
-        "text": "<TIME>",
-        "x": 0,
-        "y": 0
+        "kind": "unresolved",
+        "label": "…, radius, …",
+        "node_type": "fillCircle",
+        "provided_int_count": 0,
+        "required_int_count": 4,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "moonBounds, moonStart, …",
+        "node_type": "fillRadial",
+        "provided_int_count": 0,
+        "required_int_count": 6,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "moonBounds, 0, moonEnd",
+        "node_type": "fillRadial",
+        "provided_int_count": 1,
+        "required_int_count": 6,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "…, …, …",
+        "node_type": "fillCircle",
+        "provided_int_count": 1,
+        "required_int_count": 4,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "…, …, …",
+        "node_type": "fillCircle",
+        "provided_int_count": 1,
+        "required_int_count": 4,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "sunBounds, sunriseAngle, …",
+        "node_type": "fillRadial",
+        "provided_int_count": 0,
+        "required_int_count": 6,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "sunBounds, 0, sunsetAngle",
+        "node_type": "fillRadial",
+        "provided_int_count": 1,
+        "required_int_count": 6,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "…, radius, …",
+        "node_type": "circle",
+        "provided_int_count": 0,
+        "required_int_count": 4,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "…, …, …",
+        "node_type": "circle",
+        "provided_int_count": 1,
+        "required_int_count": 4,
+        "text": null
+      },
+      {
+        "color": 255,
+        "kind": "line",
+        "text": null,
+        "x1": 72,
+        "x2": 72,
+        "y1": 84,
+        "y2": 84
+      },
+      {
+        "kind": "unresolved",
+        "label": "outer, inner, …",
+        "node_type": "line",
+        "provided_int_count": 0,
+        "required_int_count": 5,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "…, radius, …",
+        "node_type": "fillCircle",
+        "provided_int_count": 0,
+        "required_int_count": 4,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "…, radius, …",
+        "node_type": "fillCircle",
+        "provided_int_count": 0,
+        "required_int_count": 4,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "…, radius, …",
+        "node_type": "circle",
+        "provided_int_count": 0,
+        "required_int_count": 4,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "…, hand, …",
+        "node_type": "line",
+        "provided_int_count": 0,
+        "required_int_count": 5,
+        "text": null
+      },
+      {
+        "kind": "unresolved",
+        "label": "…, 4, …",
+        "node_type": "fillCircle",
+        "provided_int_count": 1,
+        "required_int_count": 4,
+        "text": null
+      },
+      {
+        "color": 192,
+        "kind": "clear",
+        "text": null
       }
     ],
     "screen_height": 168,

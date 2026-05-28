@@ -522,34 +522,31 @@ defmodule Ide.DebuggerTest do
     surface_runtime = %{
       model: %{
         "runtime_model" => %{
-          "now" => %{
-            "ctor" => "Just",
-            "args" => [%{"hour" => 8, "minute" => 54, "second" => 0}]
-          },
+          "timeString" => "08:54",
           "screenW" => 144,
           "screenH" => 168
         },
         "runtime_view_output" => [
           %{"kind" => "text", "text" => "08:53", "x" => 0, "y" => 0}
         ],
-        "runtime_last_message" => "MinuteChanged 54",
         "elm_introspect" => %{
           "view_tree" => %{
             "type" => "windowStack",
             "children" => [
               %{
                 "type" => "text",
-                "text" => "stale",
+                "font_id" => 0,
+                "x" => 0,
+                "y" => 0,
+                "w" => 144,
+                "h" => 20,
+                "text_align" => 0,
+                "text_overflow" => 0,
                 "children" => [
                   %{
                     "type" => "expr",
-                    "op" => "++",
-                    "label" => "++",
-                    "children" => [
-                      %{"type" => "call", "label" => "pad2", "children" => [%{"type" => "var", "label" => "value.hour"}]},
-                      %{"type" => "string_literal", "value" => ":"},
-                      %{"type" => "call", "label" => "pad2", "children" => [%{"type" => "var", "label" => "value.minute"}]}
-                    ]
+                    "op" => "field_access",
+                    "label" => "model.timeString"
                   }
                 ]
               }
@@ -562,7 +559,7 @@ defmodule Ide.DebuggerTest do
 
     rendered = Debugger.render_runtime_preview_for_debugger(surface_runtime, %{}, :watch)
 
-  texts =
+    texts =
       for row <- get_in(rendered, [:model, "runtime_view_output"]) || [],
           is_map(row),
           row["kind"] in ["text", "text_label"],
@@ -570,7 +567,7 @@ defmodule Ide.DebuggerTest do
           do: row["text"]
 
     assert Enum.any?(texts, &(&1 == "08:54")),
-           "expected view derived from model.now, got #{inspect(texts)}"
+           "expected view derived from model fields, got #{inspect(texts)}"
   end
 
   test "set_watch_profile updates launch context and watch screen metadata" do

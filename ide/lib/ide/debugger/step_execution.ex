@@ -185,85 +185,6 @@ defmodule Ide.Debugger.StepExecution do
       )
 
     choose_runtime_view_output(supplemented, normalize_view_output(executor_rows))
-    |> refresh_clock_text_view_output(model_for_view)
-  end
-
-  @spec refresh_clock_text_view_output([map()], map()) :: [map()]
-  def refresh_clock_text_view_output(rows, model) when is_list(rows) and is_map(model) do
-    case clock_text_label_from_model(model) do
-      label when is_binary(label) ->
-        Enum.map(rows, fn row ->
-          if is_map(row) and Map.get(row, "kind") in ["text", "text_label"] and
-               clock_text_label?(Map.get(row, "text")) do
-            Map.put(row, "text", label)
-          else
-            row
-          end
-        end)
-
-      _ ->
-        rows
-    end
-  end
-
-  def refresh_clock_text_view_output(rows, _model) when is_list(rows), do: rows
-
-  @spec clock_text_label_from_model(map()) :: String.t() | nil
-  def clock_text_label_from_model(model) when is_map(model) do
-    preview = RuntimeArtifacts.preview_runtime_model(model)
-
-    with %{"ctor" => "Just", "args" => [value]} <- Map.get(preview, "now"),
-         hour when is_integer(hour) <- Map.get(value, "hour"),
-         minute when is_integer(minute) <- Map.get(value, "minute") do
-      format_clock_text_label(hour, minute)
-    else
-      _ ->
-        with %{"$ctor" => "Just", "$args" => [value]} <- Map.get(preview, "now"),
-             hour when is_integer(hour) <- Map.get(value, "hour"),
-             minute when is_integer(minute) <- Map.get(value, "minute") do
-          format_clock_text_label(hour, minute)
-        else
-          _ -> nil
-        end
-    end
-  end
-
-  def clock_text_label_from_model(_model), do: nil
-
-  @spec clock_only_preview_rows([map()], map()) :: [map()]
-  defp clock_only_preview_rows(rows, model) when is_list(rows) and is_map(model) do
-    if rows == [] do
-      case clock_text_label_from_model(model) do
-        label when is_binary(label) ->
-          [%{"kind" => "text", "text" => label, "x" => 0, "y" => 0}]
-
-        _ ->
-          []
-      end
-    else
-      rows
-    end
-  end
-
-  @spec clock_text_label?(Types.wire_input()) :: boolean()
-  def clock_text_label?(text) when is_binary(text), do: Regex.match?(~r/^\d{1,2}:\d{2}$/, String.trim(text))
-  def clock_text_label?(_text), do: false
-
-  @spec format_clock_text_label(integer(), integer()) :: String.t()
-  defp format_clock_text_label(hour, minute) when is_integer(hour) and is_integer(minute) do
-    hour
-    |> rem(24)
-    |> Integer.to_string()
-    |> String.pad_leading(2, "0")
-    |> then(fn hh ->
-      mm =
-        minute
-        |> rem(60)
-        |> Integer.to_string()
-        |> String.pad_leading(2, "0")
-
-      "#{hh}:#{mm}"
-    end)
   end
 
   @spec choose_runtime_view_output(list(), list()) :: [map()]
@@ -342,13 +263,12 @@ defmodule Ide.Debugger.StepExecution do
   def parser_preview_resolved?(rows) when is_list(rows),
     do: rows != [] and not parser_preview_unresolved?(rows)
 
-  @spec derive_preview_view_output(Types.execution_model(), map(), map(), map()) :: %{
+  @spec derive_preview_view_output(Types.execution_model(), map(), map()) :: %{
           view_output: [map()],
           view_tree: map() | nil
         }
-  def derive_preview_view_output(execution_model, view_tree, preview_model, model_for_clock)
-      when is_map(execution_model) and is_map(view_tree) and is_map(preview_model) and
-             is_map(model_for_clock) do
+  def derive_preview_view_output(execution_model, view_tree, preview_model)
+      when is_map(execution_model) and is_map(view_tree) and is_map(preview_model) do
     parser_view_tree = introspect_parser_view_tree(execution_model, view_tree)
     eval_context = preview_eval_context(execution_model)
 
@@ -374,19 +294,8 @@ defmodule Ide.Debugger.StepExecution do
               []
             end
 
-          parser_rows =
-            if parser_preview_resolved?(parser_rows) do
-              parser_rows
-            else
-              clock_only_preview_rows([], model_for_clock)
-            end
-
           {parser_rows, parser_view_tree}
       end
-
-    rows =
-      rows
-      |> refresh_clock_text_view_output(model_for_clock)
 
     view_tree_result =
       cond do
@@ -408,12 +317,7 @@ defmodule Ide.Debugger.StepExecution do
   def supplement_parser_runtime_view_output(execution_model, view_tree, runtime_model)
        when is_map(execution_model) and is_map(view_tree) and is_map(runtime_model) do
     %{view_output: rows} =
-      derive_preview_view_output(
-        execution_model,
-        view_tree,
-        runtime_model,
-        runtime_model
-      )
+      derive_preview_view_output(execution_model, view_tree, runtime_model)
 
     rows
   end
