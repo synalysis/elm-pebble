@@ -39,4 +39,19 @@ defmodule Ide.Debugger.RuntimeExecutor.Types do
         }
 
   @type executor_wire_result :: ExecutorExecutionResult.t() | ExecutorExecutionResult.wire_map()
+
+  @type adapter_request_map :: %{
+          optional(:source_root) => String.t(),
+          optional(:rel_path) => String.t() | nil,
+          optional(:source) => String.t(),
+          optional(:introspect) => Payload.wire_payload(),
+          optional(:current_model) => Types.app_model(),
+          optional(:current_view_tree) => Types.view_output_tree(),
+          optional(:message) => String.t() | nil,
+          optional(:update_branches) => [String.t()] | nil,
+          optional(:debugger_contract) => String.t(),
+          optional(:elm_executor_core_ir) => Types.core_ir(),
+          optional(:elm_executor_metadata) => map() | nil,
+          optional(atom()) => term()
+        }
 end

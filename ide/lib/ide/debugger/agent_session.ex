@@ -56,7 +56,8 @@ defmodule Ide.Debugger.AgentSession do
     )
   end
 
-  @spec append_event(runtime_state(), String.t(), map()) :: runtime_state()
+  @spec append_event(runtime_state(), String.t(), Types.debugger_timeline_payload()) ::
+          runtime_state()
   def append_event(state, type, payload) when is_map(state) do
     EventLog.append(state, type, payload, limit: @history_limit)
   end

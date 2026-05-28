@@ -5,7 +5,7 @@ defmodule Ide.Debugger.Types.PackageCmdErrorEventPayload do
 
   alias Ide.Debugger.Types
 
-  @type command_map :: Types.cmd_call() | map()
+  @type command_map :: Types.cmd_call()
 
   @type t :: %{
           optional(:target) => String.t(),

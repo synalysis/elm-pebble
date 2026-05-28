@@ -123,18 +123,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
             source_root: "phone"
           })
 
-        case result do
-          {:ok, _} ->
-            if companion_reload_await_idle?() do
-              progress.("Applying companion init follow-ups...")
-              _ = Ide.Debugger.RuntimeBackgroundDrains.await_idle(scope_key)
-            end
-
-            result
-
-          _ ->
-            result
+        if match?({:ok, _}, result) and companion_reload_await_idle?() do
+          progress.("Applying companion init follow-ups...")
+          _ = Ide.Debugger.RuntimeBackgroundDrains.await_idle(scope_key)
         end
+
+        result
 
       {:error, _} ->
         :skipped

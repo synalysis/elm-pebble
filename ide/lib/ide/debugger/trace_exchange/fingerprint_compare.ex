@@ -9,7 +9,8 @@ defmodule Ide.Debugger.TraceExchange.FingerprintCompare do
 
   @type runtime_event :: Types.runtime_event()
 
-  @spec build([runtime_event()], integer() | nil, integer() | nil) :: map()
+  @spec build([runtime_event()], integer() | nil, integer() | nil) ::
+          Types.fingerprint_compare_result()
   def build(events, compare_cursor_seq, baseline_cursor_seq) when is_list(events) do
     current_seq = resolve_export_compare_cursor(events, compare_cursor_seq)
     baseline_seq = resolve_export_baseline_cursor(events, baseline_cursor_seq, current_seq)

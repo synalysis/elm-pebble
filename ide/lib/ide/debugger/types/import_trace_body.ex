@@ -3,8 +3,9 @@ defmodule Ide.Debugger.Types.ImportTraceBody do
   Debugger trace export/import JSON body (`export_version` 1).
   """
 
-  alias Ide.Debugger.Types
   alias Ide.Debugger.Surface
+  alias Ide.Debugger.Types
+  alias Ide.Debugger.Types.{LaunchContext, SimulatorSettings, TraceExportWire}
 
   @type export_version :: 1
 
@@ -15,12 +16,12 @@ defmodule Ide.Debugger.Types.ImportTraceBody do
           optional(:running) => boolean(),
           optional(:revision) => String.t() | nil,
           optional(:watch_profile_id) => String.t(),
-          optional(:launch_context) => map(),
-          optional(:simulator_settings) => map(),
-          optional(:watch) => Surface.surface_map() | map(),
-          optional(:companion) => Surface.surface_map() | map(),
-          optional(:phone) => Surface.surface_map() | map(),
-          optional(:events) => [map()],
+          optional(:launch_context) => LaunchContext.wire_map(),
+          optional(:simulator_settings) => SimulatorSettings.wire_map(),
+          optional(:watch) => Surface.surface_map(),
+          optional(:companion) => Surface.surface_map(),
+          optional(:phone) => Surface.surface_map(),
+          optional(:events) => [TraceExportWire.export_event_row()],
           optional(String.t()) => Types.wire_input()
         }
 

@@ -8,16 +8,21 @@ defmodule Ide.Debugger.StepFollowupContexts do
   alias Ide.Debugger.Types
 
   @type host :: %{
-          required(:append_event) => (map(), String.t(), map() -> map()),
+          required(:append_event) =>
+            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+               Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:apply_step_without_value) =>
-            (map(), Types.surface_target(), String.t(), String.t(), String.t() -> map()),
+            (Types.runtime_state(), Types.surface_target(), String.t(), String.t(), String.t() ->
+               Types.runtime_state()),
           required(:apply_step_with_value) =>
-            (map(), Types.surface_target(), String.t(), Types.subscription_payload() | map() | nil,
-             String.t(), String.t() -> map()),
-          optional(:introspect_for) => (map(), Types.surface_target() -> map()),
-          optional(:simulator_settings) => (map() -> map()),
-          optional(:track_http_command) => (map(), map() -> map())
+            (Types.runtime_state(), Types.surface_target(), String.t(),
+             Types.subscription_payload() | nil, String.t(), String.t() -> Types.runtime_state()),
+          optional(:introspect_for) =>
+            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect()),
+          optional(:simulator_settings) => (Types.runtime_state() -> Types.simulator_settings()),
+          optional(:track_http_command) =>
+            (Types.runtime_state(), Types.tracked_http_command() -> Types.runtime_state())
         }
 
   @spec device_data(host()) :: DeviceDataResponses.apply_ctx()

@@ -11,6 +11,7 @@ defmodule Ide.Debugger.TraceExchange do
   * `Ide.Debugger.TraceExchange.Events` — event lookup helpers for snapshot continue
   """
 
+  alias Ide.Debugger.Surface
   alias Ide.Debugger.TraceExchange.{Events, Export, FingerprintCompare, Import, Wire}
   alias Ide.Debugger.Types
 
@@ -31,7 +32,7 @@ defmodule Ide.Debugger.TraceExchange do
           [runtime_event()],
           integer() | nil,
           integer() | nil
-        ) :: map()
+        ) :: Types.fingerprint_compare_result()
   defdelegate build_runtime_fingerprint_compare_payload(events, compare_cursor_seq, baseline_cursor_seq),
     to: FingerprintCompare,
     as: :build
@@ -39,16 +40,17 @@ defmodule Ide.Debugger.TraceExchange do
   @spec event_at_seq([runtime_event()], integer() | nil) :: runtime_event() | nil
   defdelegate event_at_seq(events, seq), to: Events
 
-  @spec snapshot_surface(map(), map()) :: map()
+  @spec snapshot_surface(Surface.surface_map(), Surface.surface_map()) :: Surface.surface_map()
   defdelegate snapshot_surface(surface, fallback), to: Events
 
-  @spec normalize_events_with_snapshot_refs([runtime_event()]) :: [map()]
+  @spec normalize_events_with_snapshot_refs([runtime_event()]) :: [Types.trace_export_event_row()]
   defdelegate normalize_events_with_snapshot_refs(events), to: Wire
 
   @spec normalize_term(Types.wire_input() | atom()) :: Types.normalized_export_term()
   defdelegate normalize_term(term), to: Wire
 
-  @spec decode_import_body(String.t() | map()) :: {:ok, map()} | {:error, Types.protocol_error()}
+  @spec decode_import_body(Types.import_trace_input()) ::
+          {:ok, Types.import_trace_body()} | {:error, Types.protocol_error()}
   defdelegate decode_import_body(input), to: Import, as: :decode_body
 
   @spec validate_import_body(Types.import_trace_body()) :: :ok | {:error, Types.protocol_error()}
@@ -58,6 +60,6 @@ defmodule Ide.Debugger.TraceExchange do
           :ok | {:error, Types.protocol_error()}
   defdelegate maybe_match_import_slug(body, project_slug, opts), to: Import, as: :maybe_match_slug
 
-  @spec parse_import_state(Types.import_trace_body(), keyword()) :: map()
+  @spec parse_import_state(Types.import_trace_body(), keyword()) :: Types.runtime_state()
   defdelegate parse_import_state(body, opts \\ []), to: Import, as: :parse_state
 end

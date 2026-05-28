@@ -10,6 +10,7 @@ defmodule Ide.Debugger.ElmIntrospectSnapshot do
   alias Ide.Debugger.RuntimeViewOutput
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.Types
+  alias Ide.Debugger.Types.ElmIntrospectEventPayload
 
   @type executor :: module()
 
@@ -77,8 +78,8 @@ defmodule Ide.Debugger.ElmIntrospectSnapshot do
       port_mod or StepExecution.introspect_view_usable?(vt, ei)
   end
 
-  @spec merge_from_source(map(), String.t() | nil, String.t(), String.t(), merge_ctx()) ::
-          {map(), map() | nil}
+  @spec merge_from_source(Types.runtime_state(), String.t() | nil, String.t(), String.t(), merge_ctx()) ::
+          {Types.runtime_state(), ElmIntrospectEventPayload.t() | nil}
   def merge_from_source(state, rel_path, source, source_root, ctx)
       when is_map(state) and is_binary(source) and is_binary(source_root) and is_map(ctx) do
     if elm_introspect?(rel_path, source, source_root) do

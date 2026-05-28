@@ -22,7 +22,7 @@ defmodule Ide.Debugger.WireValues do
 
   def map_get_first_present(_map, _keys), do: nil
 
-  @spec map_value(map(), String.t() | atom()) :: Types.wire_input() | nil
+  @spec map_value(Types.wire_map(), String.t() | atom()) :: Types.wire_input() | nil
   def map_value(map, key) when is_map(map) do
     if Map.has_key?(map, key) do
       Map.get(map, key)

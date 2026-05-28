@@ -906,19 +906,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     timeline_mode = Map.get(assigns, :debugger_timeline_mode, "mixed")
     event_limit = Map.get(assigns, :debugger_event_limit, 500)
 
-    case project |> Projects.scope_key() |> Ide.Debugger.snapshot(event_limit: event_limit) do
-      {:ok, state} ->
-        timeline_text =
-          state
-          |> DebuggerSupport.debugger_rows(event_limit)
-          |> DebuggerSupport.debugger_rows_for_mode(timeline_mode)
-          |> DebuggerSupport.debugger_timeline_text()
+    {:ok, state} = project |> Projects.scope_key() |> Ide.Debugger.snapshot(event_limit: event_limit)
 
-        {timeline_text, state, selected_seq}
+    timeline_text =
+      state
+      |> DebuggerSupport.debugger_rows(event_limit)
+      |> DebuggerSupport.debugger_rows_for_mode(timeline_mode)
+      |> DebuggerSupport.debugger_timeline_text()
 
-      _ ->
-        debugger_export_snapshot(assigns, nil)
-    end
+    {timeline_text, state, selected_seq}
   end
 
   defp debugger_export_snapshot(assigns, _project) do

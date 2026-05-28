@@ -5,7 +5,8 @@ defmodule Ide.Debugger.RuntimeStatusFacades do
   alias Ide.Debugger.RuntimeStatusEvents
   alias Ide.Debugger.Types
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() -> Types.runtime_state())
 
   @type append_debugger_event_fn ::
           (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() ->
@@ -19,7 +20,8 @@ defmodule Ide.Debugger.RuntimeStatusFacades do
           required(:source_root_for_target) => source_root_fn()
         }
 
-  @spec maybe_append_elm_introspect(host(), Types.runtime_state(), map() | nil) :: Types.runtime_state()
+  @spec maybe_append_elm_introspect(host(), Types.runtime_state(), Types.elm_introspect() | nil) ::
+          Types.runtime_state()
   def maybe_append_elm_introspect(_host, state, nil), do: state
 
   def maybe_append_elm_introspect(host, state, payload)

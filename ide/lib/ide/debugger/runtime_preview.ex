@@ -10,14 +10,15 @@ defmodule Ide.Debugger.RuntimePreview do
 
   @type executor :: module()
 
-  @spec refresh_from_artifacts(map(), executor()) :: map()
+  @spec refresh_from_artifacts(Types.runtime_state(), executor()) :: Types.runtime_state()
   def refresh_from_artifacts(state, executor) when is_map(state) do
     Enum.reduce([:watch, :companion, :phone], state, fn target, acc ->
       refresh_for_target(acc, target, executor)
     end)
   end
 
-  @spec refresh_for_target(map(), :watch | :companion | :phone, executor()) :: map()
+  @spec refresh_for_target(Types.runtime_state(), Types.surface_target(), executor()) ::
+          Types.runtime_state()
   def refresh_for_target(state, target, _executor)
       when is_map(state) and target in [:watch, :companion, :phone] do
     surface = state |> Map.get(target, %{}) |> RuntimeArtifacts.normalize_surface()
@@ -44,7 +45,12 @@ defmodule Ide.Debugger.RuntimePreview do
   def render_for_debugger_entry(surface_runtime, _latest_runtime, _target, _executor),
     do: surface_runtime
 
-  @spec render_for_debugger(map(), map(), :watch | :companion | :phone, executor()) :: map()
+  @spec render_for_debugger(
+          Surface.surface_map(),
+          Surface.surface_map(),
+          Types.surface_target(),
+          executor()
+        ) :: Surface.surface_map()
   def render_for_debugger(surface_runtime, _latest_runtime, target, _executor)
       when is_map(surface_runtime) and target in [:watch, :companion, :phone] do
     render_view_from_surface(surface_runtime, target) || surface_runtime
@@ -120,7 +126,7 @@ defmodule Ide.Debugger.RuntimePreview do
 
   def render_view_from_surface(_surface_runtime, _target), do: nil
 
-  @spec preview_model_for_message(map(), String.t() | nil) :: map()
+  @spec preview_model_for_message(Types.app_model(), String.t() | nil) :: Types.app_model()
   defp preview_model_for_message(preview_model, message)
        when is_map(preview_model) and is_binary(message) do
     DeviceData.apply_subscription_overrides_to_runtime_now(preview_model, message)
@@ -162,7 +168,7 @@ defmodule Ide.Debugger.RuntimePreview do
 
   def supplement_without_executor(state, _target, _execution_model, _introspect), do: state
 
-  @spec has_drawable_output?(map()) :: boolean()
+  @spec has_drawable_output?(Types.app_model()) :: boolean()
   def has_drawable_output?(model) when is_map(model) do
     model
     |> Map.get("runtime_view_output", [])
@@ -174,7 +180,7 @@ defmodule Ide.Debugger.RuntimePreview do
     end)
   end
 
-  @spec preview_unavailable_view_tree(:watch | :companion | :phone, String.t()) :: map()
+  @spec preview_unavailable_view_tree(Types.surface_target(), String.t()) :: Types.view_output_tree()
   def preview_unavailable_view_tree(target, reason) do
     %{
       "type" => "previewUnavailable",

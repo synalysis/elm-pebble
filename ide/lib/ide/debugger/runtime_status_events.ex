@@ -8,7 +8,8 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.Types
 
-  @type append_event_fn :: (map(), String.t(), map() -> map())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() -> Types.runtime_state())
 
   @type append_debugger_event_fn ::
           (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map())
@@ -126,7 +127,7 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
 
   def maybe_append_after_execution(state, _target, _execution, _introspect, _, _, _), do: state
 
-  @spec followup_messages(map()) :: list()
+  @spec followup_messages(Types.runtime_step_result()) :: [Types.RuntimeStepResult.followup_message()]
   def followup_messages(execution) when is_map(execution) do
     case Map.get(execution, :followup_messages) || Map.get(execution, "followup_messages") do
       messages when is_list(messages) -> messages
@@ -134,7 +135,7 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
     end
   end
 
-  @spec meaningful_init_cmd_count(map()) :: non_neg_integer()
+  @spec meaningful_init_cmd_count(Types.elm_introspect()) :: non_neg_integer()
   def meaningful_init_cmd_count(introspect) when is_map(introspect) do
     introspect
     |> IntrospectAccess.cmd_calls("init_cmd_calls")
@@ -143,7 +144,8 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
 
   def meaningful_init_cmd_count(_), do: 0
 
-  @spec planned_init_followup_count(map(), map()) :: non_neg_integer()
+  @spec planned_init_followup_count(Types.runtime_step_result(), Types.elm_introspect()) ::
+          non_neg_integer()
   def planned_init_followup_count(execution, introspect) when is_map(introspect) do
     executor_planned =
       execution
@@ -166,7 +168,7 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
 
   def planned_init_followup_count(_execution, _introspect), do: 0
 
-  @spec status_message(map()) :: String.t() | nil
+  @spec status_message(Types.ExecutionRuntimeSnapshot.wire_map()) :: String.t() | nil
   def status_message(runtime) when is_map(runtime) do
     backend = runtime["execution_backend"]
     reason = runtime["external_fallback_reason"]
@@ -199,7 +201,7 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
 
   def status_message(_runtime), do: nil
 
-  @spec init_execution?(map()) :: boolean()
+  @spec init_execution?(Types.ExecutionRuntimeSnapshot.wire_map()) :: boolean()
   def init_execution?(runtime) when is_map(runtime) do
     runtime["operation_source"] in ["init_model", nil] and
       runtime["runtime_model_source"] in ["init_model", nil]
@@ -207,7 +209,7 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
 
   def init_execution?(_runtime), do: false
 
-  @spec meaningful_init_cmd_call?(map()) :: boolean()
+  @spec meaningful_init_cmd_call?(Types.cmd_call()) :: boolean()
   def meaningful_init_cmd_call?(call) when is_map(call) do
     target = Map.get(call, "target") || Map.get(call, :target)
     name = Map.get(call, "name") || Map.get(call, :name)

@@ -10,7 +10,7 @@ defmodule Ide.Debugger.SubscriptionApi do
 
   @spec injection_modal_supported?(
           Types.runtime_state(),
-          map(),
+          Types.replay_row() | Types.TriggerCandidate.wire_map(),
           RuntimeHub.config()
         ) :: boolean()
   def injection_modal_supported?(state, row, hub_config) when is_map(state) and is_map(row) and is_map(hub_config) do
@@ -23,11 +23,12 @@ defmodule Ide.Debugger.SubscriptionApi do
 
   def injection_modal_supported?(_state, _row, _hub_config), do: false
 
-  @spec model_active?(Types.runtime_state(), Types.surface_target(), map()) :: boolean()
+  @spec model_active?(Types.runtime_state(), Types.surface_target(), Types.TriggerCandidate.wire_map()) ::
+          boolean()
   def model_active?(state, target, row),
     do: SubscriptionActivation.model_active?(state, target, row)
 
-  @spec trigger_display_label(Types.runtime_state() | map(), String.t(), String.t()) :: String.t()
+  @spec trigger_display_label(Types.runtime_state(), String.t(), String.t()) :: String.t()
   def trigger_display_label(state, trigger, target_name),
     do: TriggerDisplay.label_for(state, trigger, target_name, TriggerDisplay.default_host())
 

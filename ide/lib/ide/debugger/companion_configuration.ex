@@ -3,24 +3,26 @@ defmodule Ide.Debugger.CompanionConfiguration do
 
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
+  alias Ide.Debugger.Types.CompanionConfiguration
   alias Ide.PebblePreferences
   alias Ide.Projects
+  alias Ide.Projects.Project
 
-  @spec values_from_state(Types.runtime_state()) :: map()
+  @spec values_from_state(Types.runtime_state()) :: Types.companion_configuration_values()
   def values_from_state(state) when is_map(state) do
     state |> app_model_from_state() |> values_from_model()
   end
 
   def values_from_state(_state), do: %{}
 
-  @spec configuration_from_state(Types.runtime_state()) :: map()
+  @spec configuration_from_state(Types.runtime_state()) :: Types.companion_configuration()
   def configuration_from_state(state) when is_map(state) do
     state |> app_model_from_state() |> configuration_from_model()
   end
 
   def configuration_from_state(_state), do: %{}
 
-  @spec attach_to_state(map(), String.t()) :: map()
+  @spec attach_to_state(Types.runtime_state(), String.t()) :: Types.runtime_state()
   def attach_to_state(state, session_key) when is_map(state) and is_binary(session_key) do
     case model_from_session(session_key) do
       nil ->
@@ -44,7 +46,8 @@ defmodule Ide.Debugger.CompanionConfiguration do
 
   def attach_to_state(state, _session_key), do: state
 
-  @spec put_state_values(map(), map()) :: map()
+  @spec put_state_values(Types.runtime_state(), Types.companion_configuration_values()) ::
+          Types.runtime_state()
   def put_state_values(state, values) when is_map(state) and is_map(values) do
     update_in(state, [:companion, :model], fn model ->
       model
@@ -55,7 +58,7 @@ defmodule Ide.Debugger.CompanionConfiguration do
 
   def put_state_values(state, _values), do: state
 
-  @spec drop_from_model(map()) :: map()
+  @spec drop_from_model(Types.app_model()) :: Types.app_model()
   def drop_from_model(model) when is_map(model) do
     model
     |> Map.drop(["configuration", :configuration])
@@ -67,7 +70,7 @@ defmodule Ide.Debugger.CompanionConfiguration do
 
   def drop_from_model(model), do: model
 
-  @spec model_from_session(String.t()) :: map() | nil
+  @spec model_from_session(String.t()) :: Types.companion_configuration() | nil
   def model_from_session(session_key) do
     try do
       with %{} = project <- Projects.get_project_by_scope_key(session_key),
@@ -97,7 +100,7 @@ defmodule Ide.Debugger.CompanionConfiguration do
     end
   end
 
-  @spec project_debugger_values(map()) :: map() | nil
+  @spec project_debugger_values(Project.t() | Types.wire_map()) :: Types.companion_configuration_values() | nil
   defp project_debugger_values(%{debugger_settings: settings}) when is_map(settings) do
     case Map.get(settings, "configuration_values") do
       values when is_map(values) -> values
@@ -107,7 +110,7 @@ defmodule Ide.Debugger.CompanionConfiguration do
 
   defp project_debugger_values(_project), do: nil
 
-  @spec sections_from_schema([map()]) :: [map()]
+  @spec sections_from_schema([Types.wire_map()]) :: [CompanionConfiguration.section()]
   defp sections_from_schema(sections) when is_list(sections) do
     Enum.map(sections, fn section ->
       %{
@@ -117,7 +120,7 @@ defmodule Ide.Debugger.CompanionConfiguration do
     end)
   end
 
-  @spec fields_from_schema([map()]) :: [map()]
+  @spec fields_from_schema([Types.wire_map()]) :: [CompanionConfiguration.field()]
   defp fields_from_schema(fields) when is_list(fields) do
     Enum.map(fields, fn field ->
       %{
@@ -138,7 +141,8 @@ defmodule Ide.Debugger.CompanionConfiguration do
   defp stringify_keys(value) when is_list(value), do: Enum.map(value, &stringify_keys/1)
   defp stringify_keys(value), do: value
 
-  @spec put_values_at(Types.app_model(), [String.t()], map()) :: Types.app_model()
+  @spec put_values_at(Types.app_model(), [String.t()], Types.companion_configuration_values()) ::
+          Types.app_model()
   defp put_values_at(model, path, values) when is_map(model) and is_list(path) do
     case get_in(model, path) do
       %{} = configuration -> put_in(model, path, put_values_in_configuration(configuration, values))
@@ -148,7 +152,10 @@ defmodule Ide.Debugger.CompanionConfiguration do
 
   defp put_values_at(model, _path, _values), do: model
 
-  @spec put_values_in_configuration(map(), map()) :: map()
+  @spec put_values_in_configuration(
+          Types.companion_configuration(),
+          Types.companion_configuration_values()
+        ) :: Types.companion_configuration()
   defp put_values_in_configuration(configuration, values)
        when is_map(configuration) and is_map(values) do
     values = stringify_keys(values)
@@ -161,19 +168,23 @@ defmodule Ide.Debugger.CompanionConfiguration do
   defp put_values_in_configuration(configuration, _values) when is_map(configuration),
     do: configuration
 
-  @spec sync_field_control_values(map(), map()) :: map()
+  @spec sync_field_control_values(
+          Types.companion_configuration(),
+          Types.companion_configuration_values()
+        ) :: Types.companion_configuration()
+
   @spec app_model_from_state(Types.runtime_state()) :: Types.app_model()
   defp app_model_from_state(state) when is_map(state) do
     state |> Surface.from_state(:companion) |> Surface.app_model()
   end
 
-  @spec values_from_model(Types.app_model()) :: map()
+  @spec values_from_model(Types.app_model()) :: Types.companion_configuration_values()
   defp values_from_model(model) when is_map(model) do
     get_in(model, ["configuration", "values"]) ||
       get_in(model, ["runtime_model", "configuration", "values"]) || %{}
   end
 
-  @spec configuration_from_model(Types.app_model()) :: map()
+  @spec configuration_from_model(Types.app_model()) :: Types.companion_configuration()
   defp configuration_from_model(model) when is_map(model) do
     Map.get(model, "configuration") || get_in(model, ["runtime_model", "configuration"]) || %{}
   end

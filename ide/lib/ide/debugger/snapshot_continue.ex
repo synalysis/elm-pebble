@@ -6,7 +6,9 @@ defmodule Ide.Debugger.SnapshotContinue do
   alias Ide.Debugger.TraceExchange
   alias Ide.Debugger.Types
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+             Types.runtime_state())
 
   @spec apply(
           Types.runtime_state(),
@@ -23,7 +25,7 @@ defmodule Ide.Debugger.SnapshotContinue do
 
   @spec apply_selected(
           Types.runtime_state(),
-          Types.runtime_event() | map() | nil,
+          Types.runtime_event() | nil,
           non_neg_integer() | nil,
           append_event_fn()
         ) :: Types.runtime_state()
@@ -42,8 +44,7 @@ defmodule Ide.Debugger.SnapshotContinue do
     end
   end
 
-  @spec restore_surfaces(Types.runtime_state(), Types.runtime_event() | map()) ::
-          Types.runtime_state()
+  @spec restore_surfaces(Types.runtime_state(), Types.runtime_event()) :: Types.runtime_state()
   def restore_surfaces(state, selected_event) when is_map(state) and is_map(selected_event) do
     state
     |> Map.put(

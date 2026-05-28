@@ -7,10 +7,10 @@ defmodule Ide.Debugger.StepMessageValue do
   @spec normalize(
           Types.runtime_state(),
           Types.surface_target(),
-          Types.subscription_payload() | map() | nil,
-          map(),
+          Types.subscription_payload() | nil,
+          Types.app_model(),
           (-> ProtocolEvents.ctx())
-        ) :: Types.subscription_payload() | map() | nil
+        ) :: Types.subscription_payload() | nil
   def normalize(_state, _target, nil, _model, _events_ctx), do: nil
 
   def normalize(state, target, message_value, model, events_ctx)

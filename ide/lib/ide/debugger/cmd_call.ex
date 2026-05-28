@@ -1,13 +1,15 @@
 defmodule Ide.Debugger.CmdCall do
   @moduledoc false
 
-  @spec name?(map(), String.t()) :: boolean()
+  alias Ide.Debugger.Types
+
+  @spec name?(Types.cmd_call(), String.t()) :: boolean()
   def name?(row, name) when is_map(row) and is_binary(name),
     do: Map.get(row, "name") == name
 
   def name?(_row, _name), do: false
 
-  @spec target_ends_with?(map(), String.t()) :: boolean()
+  @spec target_ends_with?(Types.cmd_call(), String.t()) :: boolean()
   def target_ends_with?(row, suffix) when is_map(row) and is_binary(suffix) do
     case Map.get(row, "target") do
       target when is_binary(target) -> String.ends_with?(target, suffix)
@@ -17,7 +19,7 @@ defmodule Ide.Debugger.CmdCall do
 
   def target_ends_with?(_row, _suffix), do: false
 
-  @spec requests_current_position?(map(), map()) :: boolean()
+  @spec requests_current_position?(Types.elm_introspect(), Types.cmd_call()) :: boolean()
   def requests_current_position?(ei, row) when is_map(ei) and is_map(row) do
     cond do
       name?(row, "currentPosition") or target_ends_with?(row, ".currentPosition") ->
@@ -40,7 +42,7 @@ defmodule Ide.Debugger.CmdCall do
 
   def requests_current_position?(_ei, _row), do: false
 
-  @spec subscription_call_matches?(map(), [String.t()]) :: boolean()
+  @spec subscription_call_matches?(Types.cmd_call(), [String.t()]) :: boolean()
   def subscription_call_matches?(row, target_suffixes)
       when is_map(row) and is_list(target_suffixes) do
     Enum.any?(target_suffixes, &target_ends_with?(row, &1))
@@ -48,7 +50,7 @@ defmodule Ide.Debugger.CmdCall do
 
   def subscription_call_matches?(_row, _target_suffixes), do: false
 
-  @spec expand_helpers([map()], map()) :: [map()]
+  @spec expand_helpers([Types.cmd_call()], Types.elm_introspect()) :: [Types.cmd_call()]
   def expand_helpers(calls, ei) when is_list(calls) and is_map(ei) do
     helpers =
       case Map.get(ei, "function_cmd_calls", %{}) do

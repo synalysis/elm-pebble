@@ -28,14 +28,14 @@ defmodule Ide.Debugger.Types.ElmcDiagnosticPreview do
 
   alias Ide.Compiler.Diagnostics
 
-  @spec chunk([map()], pos_integer()) :: preview()
+  @spec chunk([Diagnostics.diagnostic_map()], pos_integer()) :: preview()
   def chunk(diagnostics, limit \\ 12) when is_list(diagnostics) do
     diagnostics
     |> Enum.take(limit)
     |> Enum.map(&row_from_diagnostic/1)
   end
 
-  @spec row_from_diagnostic(map()) :: row()
+  @spec row_from_diagnostic(Diagnostics.diagnostic_map()) :: row()
   def row_from_diagnostic(%{} = d) do
     msg = diagnostic_value(d, :message, "")
 
@@ -54,7 +54,7 @@ defmodule Ide.Debugger.Types.ElmcDiagnosticPreview do
     }
   end
 
-  @spec diagnostic_value(map(), atom(), Diagnostics.diagnostic_field()) ::
+  @spec diagnostic_value(Diagnostics.diagnostic_map(), atom(), Diagnostics.diagnostic_field()) ::
           Diagnostics.diagnostic_field()
   defp diagnostic_value(%{} = d, key, default \\ nil) when is_atom(key) do
     cond do

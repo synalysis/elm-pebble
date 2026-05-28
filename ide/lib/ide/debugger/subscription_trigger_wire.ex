@@ -80,7 +80,8 @@ defmodule Ide.Debugger.SubscriptionTriggerWire do
           required(:normalize_target) => (String.t() -> Types.surface_target())
         }
 
-  @spec injection_modal_supported?(Types.runtime_state(), map(), injection_modal_ctx()) :: boolean()
+  @spec injection_modal_supported?(Types.runtime_state(), Types.replay_row(), injection_modal_ctx()) ::
+          boolean()
   def injection_modal_supported?(state, row, ctx)
       when is_map(state) and is_map(row) and is_map(ctx) do
     trigger =

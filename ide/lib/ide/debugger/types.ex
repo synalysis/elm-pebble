@@ -11,6 +11,11 @@ defmodule Ide.Debugger.Types do
   alias Ide.Debugger.Protocol.{ConstructorValue, Event, Schema}
   alias Ide.Debugger.RuntimeArtifacts.Types, as: RuntimeArtifactsTypes
   alias Ide.Debugger.Types.{
+    ProtocolTxRxPayload,
+    CompanionConfiguration,
+    RuntimeFollowupRow,
+    SourceLocation,
+    HttpSimulatedResponse,
     AppModel,
     AvailableTriggersAttrs,
     AutoTick,
@@ -32,6 +37,7 @@ defmodule Ide.Debugger.Types do
     PackageCmdEventPayload,
     PackageCmdErrorEventPayload,
     ImportTraceBody,
+    TraceExportWire,
     ExecutionModel,
     ExecutionRuntimeSnapshot,
     ExportTraceOpts,
@@ -112,6 +118,12 @@ defmodule Ide.Debugger.Types do
   @type import_trace_input :: ImportTraceBody.input()
 
   @type import_trace_body :: ImportTraceBody.t() | ImportTraceBody.wire_map()
+
+  @type trace_export_event_row :: TraceExportWire.export_event_row() | TraceExportWire.wire_row()
+
+  @type trace_export_snapshot_refs :: TraceExportWire.snapshot_refs()
+
+  @type trace_snapshot_reference_row :: TraceExportWire.snapshot_reference_row()
 
   @type elm_introspect_event_payload ::
           ElmIntrospectEventPayload.t() | ElmIntrospectEventPayload.wire_map()
@@ -254,13 +266,29 @@ defmodule Ide.Debugger.Types do
           | {:ok, companion_bridge_payload()}
           | {:error, String.t()}
 
+  @type companion_subscription_field_def :: %{
+          required(:key) => String.t(),
+          required(:label) => String.t(),
+          required(:type) => :boolean | :integer | :string,
+          optional(:setting) => String.t(),
+          required(:default) => boolean() | integer() | String.t()
+        }
+
   @type companion_subscription_contract :: %{
           required(:source) => String.t(),
           required(:target_suffixes) => [String.t()],
           required(:payload) => atom(),
+          optional(:trigger_slugs) => [String.t()],
+          optional(:fields) => [companion_subscription_field_def()],
           optional(:plain_result) => boolean(),
           optional(:ok_result_variant) => String.t()
         }
+
+  @type companion_injection_form_data :: wire_map()
+
+  @type pending_protocol_delivery_item :: wire_map()
+
+  @type pending_http_followup_item :: wire_map()
 
   @type companion_subscription_source :: %{
           optional(:source) => String.t(),
@@ -282,6 +310,45 @@ defmodule Ide.Debugger.Types do
           elmc_wire_ctor_value() | elmc_wire_ctor_call() | wire_scalar() | map()
 
   @type subscription_row_input :: DisabledSubscription.wire_map() | map()
+
+  @type runtime_model_patch :: %{optional(String.t()) => wire_input()}
+
+  @type timeline_step_message_value :: subscription_payload() | wire_scalar() | nil
+
+  @type debugger_timeline_payload :: wire_map()
+
+  @type protocol_binding_record :: %{
+          optional(String.t()) => wire_input()
+        }
+
+  @type preview_view_derivation :: %{
+          required(:view_output) => runtime_view_nodes(),
+          optional(:view_tree) => view_output_tree() | nil
+        }
+
+  @type protocol_timeline_event :: ProtocolTxRxPayload.protocol_event()
+
+  @type weather_info_map :: device_preview_map()
+
+  @type companion_configuration :: CompanionConfiguration.wire_map()
+
+  @type companion_configuration_values :: CompanionConfiguration.values()
+
+  @type runtime_followup_row :: RuntimeFollowupRow.wire_row()
+
+  @type source_location :: SourceLocation.wire_map()
+
+  @type http_simulated_response :: HttpSimulatedResponse.wire_map()
+
+  @type api_suffix_contract :: %{required(:target_suffixes) => [String.t()]}
+
+  @type core_ir_eval_context :: wire_map()
+
+  @type protocol_var_bindings :: wire_map()
+
+  @type screen_dimension_patch :: %{
+          optional(String.t()) => pos_integer()
+        }
 
   @type device_preview_map :: %{
           optional(String.t()) => String.t() | integer() | boolean()
@@ -307,6 +374,10 @@ defmodule Ide.Debugger.Types do
   @type replay_step_message :: ReplayRow.t()
 
   @type runtime_fingerprint :: wire_map()
+
+  @type fingerprint_compare_result :: wire_map()
+
+  @type fingerprint_compare_surface_row :: wire_map()
 
   @type normalized_export_term :: map() | list() | wire_scalar()
 

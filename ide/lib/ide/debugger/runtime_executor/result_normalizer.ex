@@ -3,11 +3,10 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
   Normalizes elm_executor / external executor wire results into `RuntimeExecutor.Types.execution_result/0`.
   """
 
-  alias ElmExecutor.Runtime.SemanticExecutor.Types.ExecutionResult, as: ExecutorExecutionResult
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.Types
 
-  @spec normalize(ExecutorExecutionResult.wire_map() | map()) :: ExecutorTypes.execution_result()
+  @spec normalize(ExecutorTypes.executor_wire_result()) :: ExecutorTypes.execution_result()
   def normalize(result) when is_map(result) do
     %{
       model_patch: map_field(result, :model_patch),
@@ -19,7 +18,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
     }
   end
 
-  @spec normalize_elmc_loose(ExecutorExecutionResult.wire_map() | map(), map()) ::
+  @spec normalize_elmc_loose(ExecutorTypes.executor_wire_result(), ExecutorTypes.execution_input()) ::
           ExecutorTypes.execution_result()
   def normalize_elmc_loose(payload, input) when is_map(payload) and is_map(input) do
     runtime_model = map_field(payload, :runtime_model)
@@ -81,14 +80,16 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
     end
   end
 
-  @spec maybe_put_fallback_reason(map(), Types.execution_fallback_reason() | nil) :: map()
+  @spec maybe_put_fallback_reason(Types.ExecutionRuntimeSnapshot.wire_map(), Types.execution_fallback_reason() | nil) ::
+          Types.ExecutionRuntimeSnapshot.wire_map()
   defp maybe_put_fallback_reason(map, nil) when is_map(map), do: map
 
   defp maybe_put_fallback_reason(map, reason) when is_map(map) do
     Map.put(map, "external_fallback_reason", inspect(reason))
   end
 
-  @spec put_runtime_view_output(map(), list()) :: map()
+  @spec put_runtime_view_output(Types.RuntimeStepResult.model_patch(), Types.runtime_view_nodes()) ::
+          Types.RuntimeStepResult.model_patch()
   def put_runtime_view_output(model_patch, [_ | _] = view_output) when is_map(model_patch) do
     Map.put_new(model_patch, "runtime_view_output", view_output)
   end
@@ -108,19 +109,19 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
     }
   end
 
-  @spec map_field(map(), atom()) :: map()
+  @spec map_field(ExecutorTypes.executor_wire_result(), atom()) :: Types.wire_map()
   defp map_field(map, key) when is_map(map) and is_atom(key) do
     value = Map.get(map, key) || Map.get(map, Atom.to_string(key))
     if is_map(value), do: value, else: %{}
   end
 
-  @spec map_or_nil_field(map(), atom()) :: map() | nil
+  @spec map_or_nil_field(ExecutorTypes.executor_wire_result(), atom()) :: Types.wire_map() | nil
   defp map_or_nil_field(map, key) when is_map(map) and is_atom(key) do
     value = Map.get(map, key) || Map.get(map, Atom.to_string(key))
     if is_map(value), do: value, else: nil
   end
 
-  @spec list_field(map(), atom()) :: list()
+  @spec list_field(ExecutorTypes.executor_wire_result(), atom()) :: list()
   defp list_field(map, key) when is_map(map) and is_atom(key) do
     value = Map.get(map, key) || Map.get(map, Atom.to_string(key))
     if is_list(value), do: value, else: []

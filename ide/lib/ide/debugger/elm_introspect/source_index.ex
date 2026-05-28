@@ -24,7 +24,7 @@ defmodule Ide.Debugger.ElmIntrospect.SourceIndex do
     Map.merge(imported, module_function_types(mod, mod.name))
   end
 
-  @spec module_function_types(Module.t(), String.t()) :: map()
+  @spec module_function_types(Module.t(), String.t()) :: Types.function_types_index()
   defp module_function_types(%Module{declarations: declarations}, module_name)
        when is_binary(module_name) and is_list(declarations) do
     declarations
@@ -198,7 +198,8 @@ defmodule Ide.Debugger.ElmIntrospect.SourceIndex do
     end)
   end
 
-  @spec put_module_alias(map(), String.t(), String.t()) :: map()
+  @spec put_module_alias(%{optional(String.t()) => String.t()}, String.t(), String.t()) ::
+          %{optional(String.t()) => String.t()}
   defp put_module_alias(acc, alias_name, module_name)
        when is_map(acc) and is_binary(alias_name) and is_binary(module_name) and alias_name != "" do
     Map.put(acc, alias_name, module_name)

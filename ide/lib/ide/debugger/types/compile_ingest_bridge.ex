@@ -35,6 +35,8 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(String.t()) => Types.wire_input()
         }
 
+  @type compiler_result_map :: check_result() | compile_result() | manifest_result()
+
   @type manifest_result :: %{
           optional(:status) => :ok | :error | String.t(),
           optional(:manifest_path) => String.t() | nil,
@@ -50,15 +52,15 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(String.t()) => Types.wire_input()
         }
 
-  @spec from_compiler_check_result(check_result() | Compiler.check_result() | map()) ::
+  @spec from_compiler_check_result(check_result() | Compiler.check_result()) ::
           CompileIngestAttrs.t()
   def from_compiler_check_result(%{} = result), do: from_check_result(result)
 
-  @spec from_compiler_compile_result(compile_result() | Compiler.compile_result() | map()) ::
+  @spec from_compiler_compile_result(compile_result() | Compiler.compile_result()) ::
           CompileIngestAttrs.t()
   def from_compiler_compile_result(%{} = result), do: from_compile_result(result)
 
-  @spec from_compiler_manifest_result(manifest_result() | Compiler.manifest_result() | map()) ::
+  @spec from_compiler_manifest_result(manifest_result() | Compiler.manifest_result()) ::
           CompileIngestAttrs.t()
   def from_compiler_manifest_result(%{} = result), do: from_manifest_result(result)
 
@@ -113,7 +115,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
     |> drop_nil_fields()
   end
 
-  @spec count_field(map(), atom()) :: non_neg_integer() | nil
+  @spec count_field(compiler_result_map(), atom()) :: non_neg_integer() | nil
   defp count_field(map, key) when is_map(map) and is_atom(key) do
     case Map.get(map, key) || Map.get(map, Atom.to_string(key)) do
       n when is_integer(n) and n >= 0 -> n
@@ -121,7 +123,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
     end
   end
 
-  @spec cached_field(map()) :: boolean() | nil
+  @spec cached_field(compiler_result_map()) :: boolean() | nil
   defp cached_field(map) when is_map(map) do
     case Map.get(map, :cached?) || Map.get(map, "cached?") || Map.get(map, :cached) ||
            Map.get(map, "cached") do
@@ -130,7 +132,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
     end
   end
 
-  @spec diagnostics_field(map()) :: list() | nil
+  @spec diagnostics_field(compiler_result_map()) :: [Compiler.diagnostic()] | nil
   defp diagnostics_field(map) when is_map(map) do
     case Map.get(map, :diagnostics) || Map.get(map, "diagnostics") do
       list when is_list(list) -> list
@@ -138,7 +140,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
     end
   end
 
-  @spec drop_nil_fields(map()) :: map()
+  @spec drop_nil_fields(CompileIngestAttrs.t()) :: CompileIngestAttrs.t()
   defp drop_nil_fields(map) when is_map(map) do
     Map.reject(map, fn {_key, value} -> is_nil(value) end)
   end

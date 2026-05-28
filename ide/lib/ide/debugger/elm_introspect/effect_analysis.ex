@@ -465,7 +465,7 @@ defmodule Ide.Debugger.ElmIntrospect.EffectAnalysis do
 
   def extract_subscription_calls(_, _, _, _), do: []
 
-  @spec subscription_call_rows(String.t(), [Types.ast_expr()], Types.binding_map(), [map()]) ::
+  @spec subscription_call_rows(String.t(), [Types.ast_expr()], Types.binding_map(), [CmdCall.activation_guard()]) ::
           Types.cmd_call_list()
   defp subscription_call_rows(target, args, bindings, guards)
        when is_binary(target) and is_list(args) and is_map(bindings) and is_list(guards) do
@@ -496,7 +496,7 @@ defmodule Ide.Debugger.ElmIntrospect.EffectAnalysis do
           Types.param_list(),
           Types.param_list(),
           :then | :else
-        ) :: [map()]
+        ) :: [CmdCall.activation_guard()]
   defp maybe_if_branch_guards(cond, bindings, allowed, subscriptions_params, branch)
        when is_map(bindings) and is_list(allowed) and is_list(subscriptions_params) and
               branch in [:then, :else] do
@@ -692,7 +692,8 @@ defmodule Ide.Debugger.ElmIntrospect.EffectAnalysis do
 
   defp callback_arg_count_from_args(_, _), do: 0
 
-  @spec callback_arg_count_from_expr(Types.ast_expr(), Types.binding_map(), map(), non_neg_integer()) :: non_neg_integer() | nil
+  @spec callback_arg_count_from_expr(Types.ast_expr(), Types.binding_map(), MapSet.t(String.t()), non_neg_integer()) ::
+          non_neg_integer() | nil
   defp callback_arg_count_from_expr(_expr, _bindings, _seen, depth) when depth > 10, do: nil
 
   defp callback_arg_count_from_expr(
@@ -758,7 +759,8 @@ defmodule Ide.Debugger.ElmIntrospect.EffectAnalysis do
 
   defp callback_preferred_over_result_mapper?(_ctor), do: false
 
-  @spec callback_constructor_from_expr(Types.ast_expr(), Types.binding_map(), map(), non_neg_integer()) :: String.t() | nil
+  @spec callback_constructor_from_expr(Types.ast_expr(), Types.binding_map(), MapSet.t(String.t()), non_neg_integer()) ::
+          String.t() | nil
   defp callback_constructor_from_expr(_expr, _bindings, _seen, depth) when depth > 10, do: nil
 
   defp callback_constructor_from_expr(

@@ -50,6 +50,17 @@ defmodule Ide.Debugger.ElmIntrospect.Types do
           unqualified: %{optional(String.t()) => String.t()}
         }
 
+  @type import_resolution :: %{
+          required(:aliases) => %{optional(String.t()) => String.t()},
+          required(:unqualified) => %{optional(String.t()) => String.t()}
+        }
+
+  @type source_counters :: %{optional(String.t()) => non_neg_integer()}
+
+  @type output_source_locations :: %{
+          optional(String.t()) => [Ide.Debugger.Types.source_location()]
+        }
+
   @type view_build_metadata :: %{
           optional(:aliases) => %{optional(String.t()) => String.t()},
           optional(:functions) => map(),

@@ -239,8 +239,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
     end
   end
 
-  @spec normalize_execution_result(ExecutorTypes.executor_wire_result() | map()) ::
-          execution_result()
+  @spec normalize_execution_result(ExecutorTypes.executor_wire_result()) :: execution_result()
   defp normalize_execution_result(result) when is_map(result) do
     ResultNormalizer.normalize(result)
   end
@@ -435,7 +434,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
     |> Map.put("last_runtime_step_op", Atom.to_string(op))
   end
 
-  @spec view_tree_node_count(Types.view_output_tree() | map()) :: non_neg_integer()
+  @spec view_tree_node_count(Types.view_output_tree()) :: non_neg_integer()
   defp view_tree_node_count(%{"children" => children}) when is_list(children) do
     1 +
       Enum.reduce(children, 0, fn child, acc ->

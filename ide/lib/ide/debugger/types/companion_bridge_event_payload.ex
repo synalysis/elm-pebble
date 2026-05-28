@@ -3,7 +3,7 @@ defmodule Ide.Debugger.Types.CompanionBridgeEventPayload do
 
   alias Ide.Debugger.Types
 
-  @type result_label :: String.t() | map()
+  @type result_label :: String.t() | Types.protocol_ctor_value()
 
   @type t :: %{
           optional(:target) => String.t(),

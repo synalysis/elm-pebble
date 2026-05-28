@@ -12,7 +12,7 @@ defmodule Ide.Debugger.ConfigurationSave do
           optional(atom()) => term()
         }
 
-  @spec closed_bridge_event(map()) :: map()
+  @spec closed_bridge_event(Types.companion_configuration_values()) :: Types.wire_map()
   def closed_bridge_event(encoded_values) when is_map(encoded_values) do
     %{
       "event" => "configuration.closed",
@@ -26,10 +26,10 @@ defmodule Ide.Debugger.ConfigurationSave do
 
   @spec message_payload(
           Types.runtime_state(),
-          map(),
-          map(),
+          Types.companion_configuration_values(),
+          Types.wire_map(),
           bridge_ctx()
-        ) :: {String.t(), map()}
+        ) :: {String.t(), Types.subscription_payload()}
   def message_payload(state, encoded_values, bridge_event, bridge_ctx)
       when is_map(state) and is_map(encoded_values) and is_map(bridge_event) and is_map(bridge_ctx) do
     case subscription_callback(state, bridge_ctx) do
@@ -46,8 +46,8 @@ defmodule Ide.Debugger.ConfigurationSave do
 
   @spec maybe_apply_protocol_messages(
           Types.runtime_state(),
-          map(),
-          map(),
+          Types.companion_configuration(),
+          Types.companion_configuration_values(),
           non_neg_integer(),
           ProtocolRx.ctx()
         ) :: Types.runtime_state()

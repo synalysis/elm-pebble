@@ -6,8 +6,9 @@ defmodule Ide.Debugger.InitCmdFollowups do
 
   alias Ide.Debugger.CmdCall
   alias Ide.Debugger.IntrospectAccess
+  alias Ide.Debugger.Types
 
-  @spec runtime_followup_rows(map()) :: [map()]
+  @spec runtime_followup_rows(Types.elm_introspect()) :: [Types.runtime_followup_row()]
   def runtime_followup_rows(ei) when is_map(ei) do
     ei
     |> IntrospectAccess.cmd_calls("init_cmd_calls")
@@ -19,7 +20,8 @@ defmodule Ide.Debugger.InitCmdFollowups do
 
   def runtime_followup_rows(_), do: []
 
-  @spec merge_followups(list(), map()) :: [map()]
+  @spec merge_followups([Types.runtime_followup_row()], Types.elm_introspect()) ::
+          [Types.runtime_followup_row()]
   def merge_followups(executor_followups, ei) when is_list(executor_followups) and is_map(ei) do
     init_rows = runtime_followup_rows(ei)
 
@@ -56,7 +58,7 @@ defmodule Ide.Debugger.InitCmdFollowups do
 
   defp cmd_call_to_followup(_), do: nil
 
-  @spec http_command_from_cmd_call(map()) :: map() | nil
+  @spec http_command_from_cmd_call(Types.cmd_call()) :: Types.TrackedHttpCommand.wire_map() | nil
   defp http_command_from_cmd_call(%{"target" => target, "arg_values" => [request | _]} = row)
        when is_map(request) and is_binary(target) do
     url = Map.get(request, "url") || Map.get(request, :url)

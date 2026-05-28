@@ -47,7 +47,7 @@ defmodule Ide.Debugger.ProtocolResolutionCtx do
     %{ctx | arg_index: index}
   end
 
-  @spec to_legacy_map(t()) :: map()
+  @spec to_legacy_map(t()) :: Types.core_ir_eval_context()
   def to_legacy_map(%__MODULE__{} = ctx) do
     %{
       message_value: ctx.message_value,

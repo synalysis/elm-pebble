@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.HttpSimulator do
   @moduledoc false
 
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.SimulatorSettings
 
   @type json_decoder :: tuple() | atom() | list()
@@ -9,7 +10,8 @@ defmodule Ide.Debugger.HttpSimulator do
 
   @type weather_map :: SimulatorSettings.weather() | map()
 
-  @spec simulated_response(map(), map() | nil) :: {:ok, map()} | :skip
+  @spec simulated_response(Types.TrackedHttpCommand.wire_map(), Types.simulator_settings() | nil) ::
+          {:ok, Types.http_simulated_response()} | :skip
   def simulated_response(%{"expect" => %{"kind" => "json", "decoder" => decoder}} = _command, weather)
       when is_map(weather) and map_size(weather) > 0 and not is_nil(decoder) do
     case build_json_body(decoder, weather) do
@@ -23,7 +25,9 @@ defmodule Ide.Debugger.HttpSimulator do
 
   def simulated_response(_command, _weather), do: :skip
 
-  @spec build_json_body(json_decoder(), weather_map()) :: map()
+  @type json_object :: %{optional(String.t()) => json_leaf()}
+
+  @spec build_json_body(json_decoder(), weather_map()) :: json_object()
   def build_json_body(decoder, weather) when is_map(weather) do
     decoder_object(decoder, weather)
   end

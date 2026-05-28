@@ -4,8 +4,9 @@ defmodule Ide.Debugger.RuntimeBackgroundDrains do
   alias Ide.Debugger.PendingHttpFollowups
   alias Ide.Debugger.PendingProtocolDelivery
   alias Ide.Debugger.RuntimeBackgroundWork
+  alias Ide.Debugger.Types
 
-  @spec schedule_all(String.t(), map()) :: :ok
+  @spec schedule_all(String.t(), Types.runtime_state()) :: :ok
   def schedule_all(project_slug, state)
       when is_binary(project_slug) and is_map(state) do
     PendingProtocolDelivery.maybe_schedule_drain(project_slug, state)

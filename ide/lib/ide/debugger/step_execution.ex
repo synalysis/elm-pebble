@@ -150,7 +150,7 @@ defmodule Ide.Debugger.StepExecution do
     )
   end
 
-  @spec normalize_protocol_events(list()) :: [map()]
+  @spec normalize_protocol_events(list()) :: [Types.protocol_timeline_event()]
   def normalize_protocol_events(value) when is_list(value), do: value
   def normalize_protocol_events(_), do: []
 
@@ -158,23 +158,29 @@ defmodule Ide.Debugger.StepExecution do
   def normalize_followup_messages(value) when is_list(value), do: value
   def normalize_followup_messages(_), do: []
 
-  @spec normalize_view_output(list()) :: [map()]
+  @spec normalize_view_output(list()) :: Types.runtime_view_nodes()
   def normalize_view_output(value) when is_list(value), do: value
   def normalize_view_output(_), do: []
 
-  @spec put_runtime_view_output(map(), list()) :: map()
+  @spec put_runtime_view_output(Types.app_model(), Types.runtime_view_nodes()) :: Types.app_model()
   def put_runtime_view_output(model, view_output) when is_map(model) do
     case normalize_view_output(view_output) do
       [] -> model
       rows -> Map.put(model, "runtime_view_output", rows)
     end
   end
-  @spec preferred_view_output(list(), list()) :: [map()]
+  @spec preferred_view_output(Types.runtime_view_nodes(), Types.runtime_view_nodes()) ::
+          Types.runtime_view_nodes()
   def preferred_view_output(primary, fallback) do
     choose_runtime_view_output(primary, fallback)
   end
 
-  @spec resolve_runtime_view_output(Types.execution_model(), map(), map(), list()) :: [map()]
+  @spec resolve_runtime_view_output(
+          Types.execution_model(),
+          Types.view_output_tree(),
+          Types.app_model(),
+          Types.runtime_view_nodes()
+        ) :: Types.runtime_view_nodes()
   def resolve_runtime_view_output(execution_model, view_tree, model_for_view, executor_rows)
       when is_map(execution_model) and is_map(view_tree) and is_map(model_for_view) do
     supplemented =
@@ -187,7 +193,8 @@ defmodule Ide.Debugger.StepExecution do
     choose_runtime_view_output(supplemented, normalize_view_output(executor_rows))
   end
 
-  @spec choose_runtime_view_output(list(), list()) :: [map()]
+  @spec choose_runtime_view_output(Types.runtime_view_nodes(), Types.runtime_view_nodes()) ::
+          Types.runtime_view_nodes()
   def choose_runtime_view_output(primary, supplemental) do
     primary_rows = normalize_view_output(primary)
     supplemental_rows = normalize_view_output(supplemental)
@@ -226,7 +233,10 @@ defmodule Ide.Debugger.StepExecution do
     end
   end
 
-  @spec merge_parser_primary_with_executor_vectors([map()], [map()]) :: [map()]
+  @spec merge_parser_primary_with_executor_vectors(
+          Types.runtime_view_nodes(),
+          Types.runtime_view_nodes()
+        ) :: Types.runtime_view_nodes()
   def merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
       when is_list(primary_rows) and is_list(supplemental_rows) do
     supplemental_vectors = Enum.filter(supplemental_rows, &(Map.get(&1, "kind") == "vector_at"))
@@ -263,10 +273,11 @@ defmodule Ide.Debugger.StepExecution do
   def parser_preview_resolved?(rows) when is_list(rows),
     do: rows != [] and not parser_preview_unresolved?(rows)
 
-  @spec derive_preview_view_output(Types.execution_model(), map(), map()) :: %{
-          view_output: [map()],
-          view_tree: map() | nil
-        }
+  @spec derive_preview_view_output(
+          Types.execution_model(),
+          Types.view_output_tree(),
+          Types.inner_runtime_model()
+        ) :: Types.preview_view_derivation()
   def derive_preview_view_output(execution_model, view_tree, preview_model)
       when is_map(execution_model) and is_map(view_tree) and is_map(preview_model) do
     parser_view_tree = introspect_parser_view_tree(execution_model, view_tree)
@@ -313,7 +324,11 @@ defmodule Ide.Debugger.StepExecution do
     %{view_output: rows, view_tree: view_tree_result}
   end
 
-  @spec supplement_parser_runtime_view_output(Types.execution_model(), map(), map()) :: [map()]
+  @spec supplement_parser_runtime_view_output(
+          Types.execution_model(),
+          Types.view_output_tree(),
+          Types.app_model()
+        ) :: Types.runtime_view_nodes()
   def supplement_parser_runtime_view_output(execution_model, view_tree, runtime_model)
        when is_map(execution_model) and is_map(view_tree) and is_map(runtime_model) do
     %{view_output: rows} =
@@ -322,7 +337,11 @@ defmodule Ide.Debugger.StepExecution do
     rows
   end
 
-  @spec derive_core_ir_preview(Types.execution_model(), map(), map()) :: {[map()], map()}
+  @spec derive_core_ir_preview(
+          Types.execution_model(),
+          Types.app_model(),
+          Types.core_ir_eval_context()
+        ) :: {Types.runtime_view_nodes(), Types.view_output_tree()}
   defp derive_core_ir_preview(execution_model, preview_model, eval_context)
        when is_map(execution_model) and is_map(preview_model) and is_map(eval_context) do
     case RuntimeArtifacts.decode_core_ir(execution_model) do
@@ -344,7 +363,7 @@ defmodule Ide.Debugger.StepExecution do
     end
   end
 
-  @spec preview_eval_context(Types.execution_model()) :: map()
+  @spec preview_eval_context(Types.execution_model()) :: Types.core_ir_eval_context()
   defp preview_eval_context(execution_model) when is_map(execution_model) do
     execution_model
     |> RuntimeArtifacts.core_ir_eval_context()
@@ -356,7 +375,8 @@ defmodule Ide.Debugger.StepExecution do
     end)
   end
 
-  @spec introspect_parser_view_tree(Types.execution_model(), map()) :: map()
+  @spec introspect_parser_view_tree(Types.execution_model(), Types.view_output_tree()) ::
+          Types.view_output_tree()
   def introspect_parser_view_tree(execution_model, view_tree) when is_map(execution_model) do
     case introspect_view_tree(RuntimeArtifacts.introspect(execution_model)) do
       %{} = tree ->
@@ -376,7 +396,7 @@ defmodule Ide.Debugger.StepExecution do
   def introspect_view_tree(%{} = introspect), do: Map.get(introspect, "view_tree") || %{}
   def introspect_view_tree(_), do: %{}
 
-  @spec screen_dimensions_for_view_preview(map()) :: map()
+  @spec screen_dimensions_for_view_preview(Types.execution_model()) :: Types.screen_dimension_patch()
   def screen_dimensions_for_view_preview(execution_model) when is_map(execution_model) do
     %{
       "screenW" =>
@@ -392,8 +412,12 @@ defmodule Ide.Debugger.StepExecution do
     |> Map.new()
   end
 
-  @spec runtime_view_output_tree(map(), Types.surface_target(), map() | nil, keyword()) ::
-          map() | nil
+  @spec runtime_view_output_tree(
+          Types.app_model(),
+          Types.surface_target(),
+          Types.view_output_tree() | nil,
+          keyword()
+        ) :: Types.view_output_tree() | nil
   def runtime_view_output_tree(model, target, runtime_view_tree, opts)
       when is_map(model) and target in [:watch, :companion, :phone] and is_list(opts) do
     case RuntimeViewOutput.tree(model, target) do
@@ -423,14 +447,14 @@ defmodule Ide.Debugger.StepExecution do
   end
 
   @spec render_view_after_update(
-          map() | nil,
-          map() | nil,
+          Types.view_output_tree() | nil,
+          Types.view_output_tree() | nil,
           Types.surface_target(),
           String.t(),
           String.t(),
-          map(),
+          Types.app_model(),
           keyword()
-        ) :: map()
+        ) :: Types.view_output_tree()
   def render_view_after_update(
          runtime_view_tree,
          previous_view_tree,
@@ -512,7 +536,7 @@ defmodule Ide.Debugger.StepExecution do
       else: default_view_tree
   end
 
-  @spec normalize_debugger_render_tree(map()) :: map()
+  @spec normalize_debugger_render_tree(Types.view_output_tree()) :: Types.view_output_tree()
   def normalize_debugger_render_tree(%{"type" => "Window"} = tree) do
     window =
       tree
@@ -530,19 +554,19 @@ defmodule Ide.Debugger.StepExecution do
 
   def normalize_debugger_render_tree(tree), do: tree
 
-  @spec concrete_runtime_view_tree?(map(), map()) :: boolean()
+  @spec concrete_runtime_view_tree?(Types.view_output_tree(), Types.elm_introspect()) :: boolean()
   def concrete_runtime_view_tree?(%{"type" => _} = tree, ei) when is_map(ei) do
     introspect_view_usable?(tree, ei) and not parser_expression_view_tree?(tree, ei)
   end
 
   def concrete_runtime_view_tree?(_tree, _ei), do: false
 
-  @spec parser_expression_view_tree?(map(), map()) :: boolean()
+  @spec parser_expression_view_tree?(Types.view_output_tree(), Types.elm_introspect()) :: boolean()
   def parser_expression_view_tree?(tree, ei) when is_map(tree) and is_map(ei),
     do: Ide.Debugger.ElmIntrospect.parser_expression_view_tree_node?(tree, ei)
 
   def parser_expression_view_tree?(_tree, _ei), do: false
-  @spec introspect_view_usable?(map(), Types.elm_introspect()) :: boolean()
+  @spec introspect_view_usable?(Types.view_output_tree(), Types.elm_introspect()) :: boolean()
   def introspect_view_usable?(%{"type" => "unknown", "children" => []}, _ei), do: false
 
   def introspect_view_usable?(%{"type" => type} = tree, ei) when is_binary(type) do
@@ -556,13 +580,13 @@ defmodule Ide.Debugger.StepExecution do
 
   def introspect_view_usable?(_tree, _ei), do: false
 
-  @spec unresolved_parser_view_root?(map(), Types.elm_introspect()) :: boolean()
+  @spec unresolved_parser_view_root?(Types.view_output_tree(), Types.elm_introspect()) :: boolean()
   def unresolved_parser_view_root?(tree, ei) when is_map(tree) and is_map(ei),
     do: Ide.Debugger.ElmIntrospect.parser_expression_view_tree_node?(tree, ei)
 
   def unresolved_parser_view_root?(_tree, _ei), do: false
 
-  @spec mutate_runtime_model(map(), String.t(), [String.t()]) :: map()
+  @spec mutate_runtime_model(Types.app_model(), String.t(), [String.t()]) :: Types.app_model()
   def mutate_runtime_model(model, message, update_branches)
        when is_map(model) and is_binary(message) and is_list(update_branches) do
     op = step_operation_for_message(message, update_branches)
@@ -649,7 +673,11 @@ defmodule Ide.Debugger.StepExecution do
       true -> :tick
     end
   end
-  @spec refresh_runtime_fingerprints(Types.execution_model(), map(), map()) :: Types.execution_model()
+  @spec refresh_runtime_fingerprints(
+          Types.execution_model(),
+          Types.app_model(),
+          Types.view_output_tree()
+        ) :: Types.execution_model()
   def refresh_runtime_fingerprints(model, runtime_model, view_tree)
        when is_map(model) and is_map(runtime_model) do
     runtime = Map.get(model, "elm_executor")
@@ -680,11 +708,12 @@ defmodule Ide.Debugger.StepExecution do
     end
   end
 
-  @spec maybe_put_runtime_source(map(), String.t(), String.t() | nil) :: map()
+  @spec maybe_put_runtime_source(Types.view_output_tree(), String.t(), String.t() | nil) ::
+          Types.view_output_tree()
   def maybe_put_runtime_source(runtime, _key, value) when not is_binary(value), do: runtime
   def maybe_put_runtime_source(runtime, _key, value) when value == "", do: runtime
   def maybe_put_runtime_source(runtime, key, value), do: Map.put(runtime, key, value)
-  @spec view_tree_node_count(map() | [map()]) :: non_neg_integer()
+  @spec view_tree_node_count(Types.view_output_tree() | [Types.view_output_tree()]) :: non_neg_integer()
   def view_tree_node_count(%{"children" => children}) when is_list(children) do
     1 +
       Enum.reduce(children, 0, fn child, acc ->
@@ -702,7 +731,7 @@ defmodule Ide.Debugger.StepExecution do
   def view_tree_node_count(%{}), do: 1
   def view_tree_node_count(_), do: 0
 
-  @spec stable_term_sha256(map() | list()) :: String.t()
+  @spec stable_term_sha256(Types.normalized_export_term() | list()) :: String.t()
   def stable_term_sha256(term) do
     :crypto.hash(:sha256, :erlang.term_to_binary(term))
     |> Base.encode16(case: :lower)
@@ -731,7 +760,7 @@ defmodule Ide.Debugger.StepExecution do
 
   defp integer_or_zero(_), do: 0
 
-  @spec preview_unavailable_view_tree(Types.surface_target(), String.t()) :: map()
+  @spec preview_unavailable_view_tree(Types.surface_target(), String.t()) :: Types.view_output_tree()
   defp preview_unavailable_view_tree(target, reason) do
     %{
       "type" => "previewUnavailable",

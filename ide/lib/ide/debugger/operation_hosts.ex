@@ -10,7 +10,8 @@ defmodule Ide.Debugger.OperationHosts do
   alias Ide.Debugger.TickIngress
   alias Ide.Debugger.Types
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() -> Types.runtime_state())
 
   @type apply_step_fn ::
           (Types.runtime_state(), Types.surface_target(), String.t(), Types.subscription_payload() | nil,
@@ -28,7 +29,8 @@ defmodule Ide.Debugger.OperationHosts do
           (String.t(), (Types.runtime_state() -> Types.runtime_state()) -> {:ok, Types.runtime_state()})
 
   @type merge_artifacts_fn ::
-          (Types.runtime_state(), Types.surface_target() | nil, map() -> Types.runtime_state())
+          (Types.runtime_state(), Types.surface_target() | nil, Types.elm_introspect() ->
+             Types.runtime_state())
 
   @type deps :: %{
           required(:apply_step_once) => apply_step_fn(),

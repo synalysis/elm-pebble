@@ -11,24 +11,31 @@ defmodule Ide.Debugger.ProtocolContexts do
   alias Ide.Debugger.Types
 
   @type events_host :: %{
-          required(:introspect_for) => (Types.runtime_state(), Types.surface_target() -> map()),
-          required(:simulator_settings_from_state) => (Types.runtime_state() -> map()),
+          required(:introspect_for) =>
+            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect()),
+          required(:simulator_settings_from_state) =>
+            (Types.runtime_state() -> Types.simulator_settings()),
           required(:session_key_from_state) => (Types.runtime_state() -> String.t() | nil),
           required(:surface_app_model) =>
             (Types.runtime_state(), Types.surface_target() -> Types.app_model())
         }
 
   @type rx_host :: %{
-          required(:append_event) => (map(), String.t(), map() -> map()),
+          required(:append_event) =>
+            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+               Types.runtime_state()),
           required(:append_debugger_event) =>
-            (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map()),
+            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() ->
+               Types.runtime_state()),
           required(:append_runtime_exec_event_for_target) =>
-            (map(), Types.surface_target(), map() -> map()),
+            (Types.runtime_state(), Types.surface_target(), Types.debugger_timeline_payload() ->
+               Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
-          required(:introspect_for) => (map(), Types.surface_target() -> map()),
+          required(:introspect_for) =>
+            (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect()),
           required(:apply_step_once) =>
-            (map(), Types.surface_target(), String.t(), Types.subscription_payload() | map() | nil,
-             String.t(), String.t() -> map()),
+            (Types.runtime_state(), Types.surface_target(), String.t(),
+             Types.subscription_payload() | nil, String.t(), String.t() -> Types.runtime_state()),
           required(:protocol_events_ctx) => (-> ProtocolEvents.ctx())
         }
 
@@ -48,7 +55,7 @@ defmodule Ide.Debugger.ProtocolContexts do
           Types.runtime_state(),
           Types.surface_target(),
           String.t(),
-          (Types.runtime_state(), Types.surface_target() -> map())
+          (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect())
         ) :: [Types.cmd_call()]
   def cmd_calls_for_message(state, target, message, introspect_for)
       when is_map(state) and is_binary(message) and is_function(introspect_for, 2) do

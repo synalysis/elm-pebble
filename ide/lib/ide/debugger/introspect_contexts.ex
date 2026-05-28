@@ -12,14 +12,20 @@ defmodule Ide.Debugger.IntrospectContexts do
   @type snapshot_host :: %{
           required(:executor) => module(),
           required(:attach_compile_artifacts) =>
-            (map(), Types.surface_target(), Types.elm_introspect() -> map()),
-          required(:append_event) => (map(), String.t(), map() -> map()),
+            (Types.runtime_state(), Types.surface_target(), Types.elm_introspect() ->
+               Types.runtime_state()),
+          required(:append_event) =>
+            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+               Types.runtime_state()),
           required(:append_debugger_event) =>
-            (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map()),
+            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() ->
+               Types.runtime_state()),
           required(:runtime_status_after_init) =>
-            (map(), Types.surface_target(), map(), Types.elm_introspect() -> map()),
+            (Types.runtime_state(), Types.surface_target(), Types.app_model(),
+             Types.elm_introspect() -> Types.runtime_state()),
           required(:apply_runtime_followups) =>
-            (map(), Types.surface_target(), String.t(), String.t(), list() -> map()),
+            (Types.runtime_state(), Types.surface_target(), String.t(), String.t(), list() ->
+               Types.runtime_state()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx())
         }
 
@@ -27,7 +33,7 @@ defmodule Ide.Debugger.IntrospectContexts do
           required(:snapshot_apply_ctx) => ElmIntrospectSnapshot.apply_ctx(),
           required(:init_surface_effects_ctx) => (-> InitSurfaceEffects.ctx()),
           required(:refresh_runtime_preview_for_target) =>
-            (map(), Types.surface_target() -> map()),
+            (Types.runtime_state(), Types.surface_target() -> Types.runtime_state()),
           required(:apply_simulator_settings) => (Types.runtime_state() -> Types.runtime_state())
         }
 

@@ -4,7 +4,7 @@ defmodule Ide.Debugger.IntrospectAccess do
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.CmdCall
 
-  @spec list(Types.elm_introspect() | map() | nil, String.t()) :: Types.param_list()
+  @spec list(Types.elm_introspect() | nil, String.t()) :: Types.param_list()
   def list(ei, key) when is_map(ei) and is_binary(key) do
     case Map.get(ei, key) do
       xs when is_list(xs) ->
@@ -21,7 +21,7 @@ defmodule Ide.Debugger.IntrospectAccess do
 
   def list(_ei, _key), do: []
 
-  @spec cmd_calls(Types.elm_introspect() | map() | nil, String.t()) :: [Types.cmd_call()]
+  @spec cmd_calls(Types.elm_introspect() | nil, String.t()) :: [Types.cmd_call()]
   def cmd_calls(ei, key) when is_map(ei) and is_binary(key) do
     case Map.get(ei, key) do
       rows when is_list(rows) ->
@@ -37,7 +37,7 @@ defmodule Ide.Debugger.IntrospectAccess do
 
   def cmd_calls(_ei, _key), do: []
 
-  @spec normalize_cmd_call_row(map()) :: CmdCall.wire_map()
+  @spec normalize_cmd_call_row(Types.cmd_call() | CmdCall.wire_map()) :: CmdCall.wire_map()
   defp normalize_cmd_call_row(row) when is_map(row) do
     base = %{
       "target" => Map.get(row, "target") || Map.get(row, :target),

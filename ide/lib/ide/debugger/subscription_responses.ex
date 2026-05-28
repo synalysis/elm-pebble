@@ -11,7 +11,7 @@ defmodule Ide.Debugger.SubscriptionResponses do
                Types.runtime_state())
         }
 
-  @spec ok_wire_value(String.t(), Types.subscription_payload()) :: map()
+  @spec ok_wire_value(String.t(), Types.subscription_payload()) :: Types.protocol_ctor_value()
   def ok_wire_value(callback, payload) when is_binary(callback) do
     CompanionBridge.subscription_result_message_value(callback, "Ok", payload)
   end

@@ -15,11 +15,11 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
   @type apply_ctx :: %{
           required(:append_event) =>
-            (Types.runtime_state(), String.t(), map() -> Types.runtime_state()),
+            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+               Types.runtime_state()),
           required(:apply_step_once) =>
             (Types.runtime_state(), Types.surface_target(), String.t(),
-             Types.subscription_payload() | map() | nil, String.t(), String.t() ->
-               Types.runtime_state()),
+             Types.subscription_payload() | nil, String.t(), String.t() -> Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:track_http_command) =>
             (Types.runtime_state(), Types.tracked_http_command() -> Types.runtime_state()),
@@ -175,7 +175,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
   defp apply_static_task(state, _target, _message, _message_value, _message_source, _ctx), do: state
 
-  @spec static_task_followup_rows(map(), String.t() | nil) :: [map()]
+  @spec static_task_followup_rows(Types.elm_introspect(), String.t() | nil) :: [Types.cmd_call()]
   defp static_task_followup_rows(ei, current_ctor)
        when is_map(ei) and is_binary(current_ctor) and current_ctor != "" do
     helper_calls =
@@ -204,7 +204,11 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
   defp static_task_followup_rows(_ei, _current_ctor), do: []
 
-  @spec static_task_followup_message_value(map(), Types.subscription_payload(), map()) :: {:ok, map()} | :error
+  @spec static_task_followup_message_value(
+          Types.cmd_call(),
+          Types.subscription_payload(),
+          Types.runtime_state()
+        ) :: {:ok, Types.protocol_ctor_value() | map()} | :error
   defp static_task_followup_message_value(row, current_message_value, state)
        when is_map(row) and is_map(state) do
     callback = Map.get(row, "callback_constructor")
@@ -265,18 +269,22 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
   defp static_task_value(_sources, _state), do: :error
 
-  @spec static_time_posix() :: map()
+  @spec static_time_posix() :: Types.protocol_ctor_value()
   defp static_time_posix do
     %{"ctor" => "Posix", "args" => [System.system_time(:millisecond)]}
   end
 
-  @spec static_time_zone_name() :: map()
+  @spec static_time_zone_name() :: Types.protocol_ctor_value()
   defp static_time_zone_name do
     %{"ctor" => "Offset", "args" => [utc_offset_minutes_now()]}
   end
 
-  @spec execute_http_command(Types.runtime_state(), Types.surface_target(), map(), apply_ctx()) ::
-          {:ok, map()} | {:error, term()}
+  @spec execute_http_command(
+          Types.runtime_state(),
+          Types.surface_target(),
+          Types.cmd_call(),
+          apply_ctx()
+        ) :: Ide.Debugger.HttpExecutor.result()
   def execute_http_command(state, target, command, ctx)
       when is_map(state) and target in [:watch, :companion, :phone] and is_map(command) and is_map(ctx) do
     model = Surface.app_model(Surface.from_state(state, target))
@@ -507,7 +515,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
     div(local_seconds - utc_seconds, 60)
   end
 
-  @spec http_eval_context(Types.execution_model(), Types.simulator_settings()) :: map()
+  @spec http_eval_context(Types.execution_model(), Types.simulator_settings()) ::
+          Types.core_ir_eval_context()
   defp http_eval_context(model, settings) when is_map(model) and is_map(settings) do
     weather = Map.get(settings, "weather")
 
@@ -521,7 +530,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
   defp http_eval_context(_model, _settings), do: %{}
 
-  @spec simulated_http_response?(map() | nil) :: boolean()
+  @spec simulated_http_response?(Types.HttpSimulatedResponse.wire_map() | nil) :: boolean()
   defp simulated_http_response?(%{"status" => 200, "body" => body}) when is_binary(body) do
     case Jason.decode(body) do
       {:ok, %{"current" => _}} -> true
@@ -532,7 +541,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
 
   defp simulated_http_response?(_response), do: false
 
-  @spec http_command_event(Types.cmd_call()) :: map()
+  @spec http_command_event(Types.cmd_call()) :: Types.wire_map()
   defp http_command_event(command) when is_map(command) do
     %{
       method: Map.get(command, "method") || Map.get(command, :method),

@@ -3,7 +3,6 @@ defmodule Ide.Debugger.RuntimeContexts do
 
   alias Ide.Debugger.CompanionBridgeContext
   alias Ide.Debugger.DeviceDataResponses
-  alias Ide.Debugger.GeolocationResponses
   alias Ide.Debugger.HotReloadContext
   alias Ide.Debugger.HotReloadEvents
   alias Ide.Debugger.HotReloadSurface
@@ -17,56 +16,44 @@ defmodule Ide.Debugger.RuntimeContexts do
   alias Ide.Debugger.StepApplyContext
   alias Ide.Debugger.StepFollowupContexts
   alias Ide.Debugger.SubscriptionWireContexts
-  alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Debugger.SurfaceCompileArtifactsContext
-  alias Ide.Debugger.AutoFireRuntime
-  alias Ide.Debugger.CompanionBridge.Runtime, as: CompanionBridgeRuntime
   alias Ide.Debugger.HotReload
-  alias Ide.Debugger.ProtocolEvents
-  alias Ide.Debugger.ProtocolRx
-  alias Ide.Debugger.StepApply
-  alias Ide.Debugger.StepMessageValue
-  alias Ide.Debugger.SubscriptionTriggerWire
-  alias Ide.Debugger.TriggerMessageSurface
-  alias Ide.Debugger.InitSurfaceEffects
-  alias Ide.Debugger.SubscriptionResponses
-  alias Ide.Debugger.TriggerInjection
   alias Ide.Debugger.TriggerInjectionContext
   alias Ide.Debugger.TriggerSurface
   alias Ide.Debugger.Types
 
   @type step_followup_host :: StepFollowupContexts.host()
 
+  # Host callbacks use map() for runtime state so Dialyzer accepts ctx maps from RuntimeHost.
   @type host :: %{
           required(:append_event) => (map(), String.t(), map() -> map()),
           required(:append_debugger_event) =>
             (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map()),
           required(:apply_step_once) =>
-            (map(), Types.surface_target(), String.t(), Types.subscription_payload() | map() | nil,
-             String.t(), String.t() -> map()),
+            (map(), Types.surface_target(), String.t(), Types.subscription_payload() | nil, String.t(),
+             String.t() -> map()),
           required(:apply_step_without_value) =>
             (map(), Types.surface_target(), String.t(), String.t(), String.t() -> map()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:session_key_from_state) => (map() -> String.t() | nil),
-          required(:simulator_settings_from_state) => (map() -> map()),
+          required(:simulator_settings_from_state) => (map() -> Types.simulator_settings()),
           required(:introspect_for) => (map(), Types.surface_target() -> map()),
           required(:surface_app_model) => (map(), Types.surface_target() -> map()),
           required(:normalize_step_target) => (Types.wire_input() -> Types.surface_target()),
           required(:model_active?) => (map(), Types.surface_target(), map() -> boolean()),
           required(:subscription_row_enabled?) => (map(), Types.surface_target(), map() -> boolean()),
           required(:auto_fire_row_enabled?) => (map(), Types.surface_target(), map() -> boolean()),
-          required(:simulator_now) => (map(), Types.surface_target() -> NaiveDateTime.t()),
+          required(:simulator_now) => (map(), Types.surface_target() -> map()),
           required(:append_runtime_exec) => (map(), Types.surface_target(), map() -> map()),
           required(:trigger_message_for_surface) =>
             (map(), Types.surface_target(), String.t(), String.t() | nil -> String.t()),
           required(:attach_subscription_payload) =>
             (map(), Types.surface_target(), String.t(), String.t() -> String.t()),
-          required(:merge_runtime_artifacts) =>
-            (map(), Types.surface_target(), map() -> map()),
+          required(:merge_runtime_artifacts) => (map(), Types.surface_target(), map() -> map()),
           required(:apply_subscription_ok_response) =>
-            (map(), Types.surface_target(), String.t(), map(), String.t(), String.t() -> map()),
-          required(:maybe_attach_compile_artifacts) =>
-            (map(), Types.surface_target(), map() -> map()),
+            (map(), Types.surface_target(), String.t(), Types.subscription_payload(), String.t(),
+             String.t() -> map()),
+          required(:maybe_attach_compile_artifacts) => (map(), Types.surface_target(), map() -> map()),
           required(:maybe_append_runtime_status) => (map(), Types.surface_target() -> map()),
           required(:maybe_append_runtime_status_after_init) =>
             (map(), Types.surface_target(), map(), map() -> map()),
@@ -76,28 +63,30 @@ defmodule Ide.Debugger.RuntimeContexts do
           optional(:default_auto_fire_interval_ms) => pos_integer()
         }
 
+  # Nested context maps are typed as map() at this boundary so Dialyzer accepts
+  # RuntimeHost/StepApplyCallbacks wiring; leaf modules keep precise ctx() types.
   @type t :: %{
-          step_followup_host: step_followup_host(),
-          device_data: DeviceDataResponses.apply_ctx(),
-          runtime_followups: RuntimeFollowups.apply_ctx(),
-          geolocation: GeolocationResponses.apply_ctx(),
-          subscription_responses: SubscriptionResponses.apply_ctx(),
-          surface_compile: SurfaceCompileArtifactsContext.host(),
-          simulator_watch_delivery: SimulatorWatchDeliveryContext.host(),
-          companion_bridge: CompanionBridgeRuntime.ctx(),
-          protocol_events: ProtocolEvents.ctx(),
-          protocol_rx: ProtocolRx.ctx(),
-          step_apply: StepApply.ctx(),
-          trigger_injection: TriggerInjection.host(),
-          subscription_payload: TriggerMessageSurface.payload_ctx(),
-          trigger_wire: SubscriptionTriggerWire.injection_modal_ctx(),
-          tick_resolution: TriggerMessageSurface.resolve_ctx(),
-          trigger_surface: TriggerSurface.candidates_ctx(),
-          auto_fire: AutoFireRuntime.apply_ctx(),
-          init_surface_effects: InitSurfaceEffects.ctx(),
-          introspect_snapshot_apply: IntrospectContexts.snapshot_host(),
-          introspect_merge: IntrospectContexts.merge_host(),
-          hot_reload_events: HotReloadEvents.host()
+          step_followup_host: map(),
+          device_data: map(),
+          runtime_followups: map(),
+          geolocation: map(),
+          subscription_responses: map(),
+          surface_compile: map(),
+          simulator_watch_delivery: map(),
+          companion_bridge: map(),
+          protocol_events: map(),
+          protocol_rx: map(),
+          step_apply: map(),
+          trigger_injection: map(),
+          subscription_payload: map(),
+          trigger_wire: map(),
+          tick_resolution: map(),
+          trigger_surface: map(),
+          auto_fire: map(),
+          init_surface_effects: map(),
+          introspect_snapshot_apply: map(),
+          introspect_merge: map(),
+          hot_reload_events: map()
         }
 
   @spec build(host()) :: t()
@@ -169,54 +158,27 @@ defmodule Ide.Debugger.RuntimeContexts do
         merge_runtime_artifacts: host.merge_runtime_artifacts
       })
 
+    step_apply_host = %{
+      introspect_for: host.introspect_for,
+      protocol_events_ctx: protocol_events_fn,
+      protocol_rx_ctx: protocol_rx_fn,
+      source_root_for_target: host.source_root_for_target,
+      append_runtime_exec: host.append_runtime_exec,
+      append_event: host.append_event,
+      append_debugger_event: host.append_debugger_event,
+      maybe_append_runtime_status: host.maybe_append_runtime_status
+    }
+
     step_apply =
       StepApplyContext.build(%{
-        ensure_compile_artifacts: fn st, target ->
-          SurfaceCompileArtifacts.ensure_attached(st, target, surface_compile)
-        end,
-        normalize_message_value: fn state, target, message_value, model ->
-          StepMessageValue.normalize(state, target, message_value, model, protocol_events_fn)
-        end,
-        introspect_for: host.introspect_for,
-        protocol_events_ctx: protocol_events_fn,
-        protocol_rx_ctx: protocol_rx_fn,
-        source_root_for_target: host.source_root_for_target,
-        append_runtime_exec: host.append_runtime_exec,
-        append_event: host.append_event,
-        append_debugger_event: host.append_debugger_event,
-        maybe_append_runtime_status: host.maybe_append_runtime_status,
-        device_data_responses: fn st, target, message, model, source ->
-          DeviceDataResponses.apply_after_step(st, target, message, model, source, device_data)
-        end,
-        geolocation_response: fn st, target, message, model, source ->
-          GeolocationResponses.apply_after_step(st, target, message, model, source, geolocation)
-        end,
-        companion_bridge_command_responses: fn st, target, message, model, message_source ->
-          Ide.Debugger.CompanionBridgeEffects.apply_command_responses(
-            st,
-            target,
-            message,
-            model,
-            message_source,
-            companion_bridge
-          )
-        end,
-        companion_bridge_responses: fn st, target, message_source ->
-          Ide.Debugger.CompanionBridgeEffects.apply_responses(st, target, message_source, companion_bridge)
-        end,
-        static_task_followups: fn st, target, message, message_value, source ->
-          RuntimeFollowups.apply_static_task_after_step(
-            st,
-            target,
-            message,
-            message_value,
-            source,
-            runtime_followups
-          )
-        end,
-        runtime_followups: fn st, target, message, source, followups ->
-          RuntimeFollowups.apply_after_step(st, target, message, source, followups, runtime_followups)
-        end
+        host: step_apply_host,
+        surface_compile: surface_compile,
+        protocol_events: protocol_events,
+        protocol_rx: protocol_rx,
+        device_data: device_data,
+        geolocation: geolocation,
+        companion_bridge: companion_bridge,
+        runtime_followups: runtime_followups
       })
 
     init_surface_effects =

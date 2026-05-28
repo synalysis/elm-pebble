@@ -174,7 +174,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     }
   ]
 
-  @spec contracts() :: [map()]
+  @spec contracts() :: [Types.companion_subscription_contract()]
   def contracts, do: @contracts
 
   @spec companion_trigger?(String.t()) :: boolean()
@@ -184,7 +184,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   def companion_trigger?(_trigger), do: false
 
-  @spec contract_for_trigger(String.t()) :: {:ok, map()} | :error
+  @spec contract_for_trigger(String.t()) :: {:ok, Types.companion_subscription_contract()} | :error
   def contract_for_trigger(trigger) when is_binary(trigger) do
     case Enum.find(@contracts, &trigger_matches_contract?(trigger, &1)) do
       %{} = contract -> {:ok, contract}
@@ -194,7 +194,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   def contract_for_trigger(_trigger), do: :error
 
-  @spec form_data(map() | nil, String.t(), String.t()) :: map() | nil
+  @spec form_data(Types.runtime_state() | nil, String.t(), String.t()) ::
+          Types.companion_injection_form_data() | nil
   def form_data(state, trigger, message_constructor) when is_binary(trigger) do
     with {:ok, contract} <- contract_for_trigger(trigger) do
       settings = simulator_settings(state)
@@ -239,7 +240,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   def form_data(_state, _trigger, _message_constructor), do: nil
 
-  @spec message_value(map()) :: map() | nil
+  @spec message_value(Types.wire_map()) :: Types.protocol_ctor_value() | nil
   def message_value(params) when is_map(params) do
     contract_source = Map.get(params, "companion_contract") || Map.get(params, :companion_contract)
     constructor = Map.get(params, "message_constructor") || Map.get(params, :message_constructor)
@@ -283,7 +284,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   def message_value(_params), do: nil
 
-  @spec trigger_matches_contract?(String.t(), map()) :: boolean()
+  @spec trigger_matches_contract?(String.t(), Types.companion_subscription_contract()) :: boolean()
   defp trigger_matches_contract?(trigger, contract) when is_binary(trigger) do
     normalized = normalize_trigger(trigger)
     suffixes = Map.get(contract, :target_suffixes, []) |> List.wrap()
@@ -318,7 +319,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp normalize_trigger(_trigger), do: ""
 
-  @spec simulator_settings(map() | nil) :: map()
+  @spec simulator_settings(Types.runtime_state() | nil) :: Types.simulator_settings()
   defp simulator_settings(%{} = state) do
     case Map.get(state, :simulator_settings) || Map.get(state, "simulator_settings") do
       %{} = settings -> settings
@@ -328,7 +329,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp simulator_settings(_state), do: %{}
 
-  @spec setting_value(map(), map()) :: field_value()
+  @spec setting_value(Types.simulator_settings(), Types.companion_subscription_field_def()) ::
+          field_value()
   defp setting_value(settings, %{type: type, default: default, key: field_key} = field)
        when is_map(settings) do
     lookup_key = Map.get(field, :setting) || field_key
@@ -353,7 +355,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp setting_value(_settings, %{default: default}), do: default
 
-  @spec nested_setting_value(map(), String.t()) :: raw_value()
+  @spec nested_setting_value(Types.simulator_settings(), String.t()) :: raw_value()
   defp nested_setting_value(settings, "weather_" <> field) do
     get_in(settings, ["weather", field])
   end
@@ -364,7 +366,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp nested_setting_value(_settings, _key), do: nil
 
-  @spec calendar_event_setting_value(map(), String.t()) :: raw_value()
+  @spec calendar_event_setting_value(Types.simulator_settings(), String.t()) :: raw_value()
   defp calendar_event_setting_value(settings, key) when is_map(settings) and is_binary(key) do
     case Map.get(settings, "calendar_events", []) |> List.first() do
       %{} = event -> Map.get(event, key)
@@ -379,7 +381,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
   defp encode_field_value(:integer, value) when is_integer(value), do: Integer.to_string(value)
   defp encode_field_value(_type, value), do: to_string(value)
 
-  @spec build_record_payload(map(), map()) :: map()
+  @spec build_record_payload(Types.companion_subscription_contract(), Types.wire_map()) ::
+          Types.protocol_ctor_value() | Types.wire_map() | list()
   defp build_record_payload(%{payload: :environment} = contract, params) do
     contract
     |> Map.get(:fields, [])
@@ -424,7 +427,8 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     end)
   end
 
-  @spec build_calendar_event(map(), map()) :: map()
+  @spec build_calendar_event(Types.companion_subscription_contract(), Types.wire_map()) ::
+          Types.wire_map()
   defp build_calendar_event(contract, params) do
     contract
     |> Map.get(:fields, [])
@@ -434,14 +438,15 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     |> drop_blank_calendar_location()
   end
 
-  @spec drop_blank_calendar_location(map()) :: map()
+  @spec drop_blank_calendar_location(Types.wire_map()) :: Types.wire_map()
   defp drop_blank_calendar_location(%{"location" => location} = event) when location in [nil, ""] do
     Map.delete(event, "location")
   end
 
   defp drop_blank_calendar_location(event), do: event
 
-  @spec build_weather_info(map(), map()) :: map()
+  @spec build_weather_info(Types.companion_subscription_contract(), Types.wire_map()) ::
+          Types.wire_map()
   defp build_weather_info(contract, params) do
     contract
     |> Map.get(:fields, [])
@@ -450,7 +455,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
     end)
   end
 
-  @spec field_param(map(), String.t()) :: raw_value()
+  @spec field_param(Types.wire_map(), String.t()) :: raw_value()
   defp field_param(params, key) when is_map(params) and is_binary(key) do
     Map.get(params, "companion_field_" <> key) ||
       Map.get(params, :"companion_field_#{key}") ||
@@ -459,7 +464,7 @@ defmodule Ide.Debugger.CompanionSubscriptionTrigger do
 
   defp field_param(_params, _key), do: nil
 
-  @spec nested_companion_field(map(), String.t()) :: raw_value()
+  @spec nested_companion_field(Types.wire_map(), String.t()) :: raw_value()
   defp nested_companion_field(params, key) do
     case Map.get(params, "companion_fields") || Map.get(params, :companion_fields) do
       fields when is_list(fields) ->

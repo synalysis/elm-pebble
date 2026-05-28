@@ -10,7 +10,8 @@ defmodule Ide.Debugger.StepOperationHost do
           (Types.runtime_state(), Types.surface_target(), String.t(), Types.subscription_payload() | nil,
            String.t(), String.t() -> Types.runtime_state())
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() -> Types.runtime_state())
 
   @type normalize_target_fn :: (Types.wire_input() -> Types.surface_target())
 

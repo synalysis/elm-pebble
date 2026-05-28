@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
   Event payloads for `debugger.elmc_*` runtime history entries.
   """
 
+  alias Ide.Compiler
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.{CompileIngestAttrs, ElmcDiagnosticPreview}
 
@@ -92,7 +93,7 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
     merge_diagnostic_preview(payload, attrs)
   end
 
-  @spec merge_diagnostic_preview(t(), map()) :: t()
+  @spec merge_diagnostic_preview(t(), CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: t()
   def merge_diagnostic_preview(payload, attrs) when is_map(payload) and is_map(attrs) do
     cond do
       Map.has_key?(attrs, :diagnostics) or Map.has_key?(attrs, "diagnostics") ->
@@ -105,7 +106,7 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
     end
   end
 
-  @spec merge_runtime_artifact_metadata(t(), map()) :: t()
+  @spec merge_runtime_artifact_metadata(t(), CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: t()
   defp merge_runtime_artifact_metadata(payload, attrs) when is_map(payload) and is_map(attrs) do
     case Map.get(attrs, :elm_executor_metadata) || Map.get(attrs, "elm_executor_metadata") do
       metadata when is_map(metadata) -> Map.put(payload, :elm_executor_metadata, metadata)
@@ -119,7 +120,7 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
   def status_string(s) when is_atom(s), do: Atom.to_string(s)
   def status_string(s), do: to_string(s)
 
-  @spec manifest_schema_string(String.t() | integer() | map() | nil) :: String.t()
+  @spec manifest_schema_string(String.t() | integer() | Compiler.manifest_data() | nil) :: String.t()
   def manifest_schema_string(v) when is_integer(v), do: Integer.to_string(v)
   def manifest_schema_string(v) when is_binary(v), do: v
   def manifest_schema_string(_), do: "—"

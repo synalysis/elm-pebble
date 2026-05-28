@@ -352,8 +352,6 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     }
   end
 
-  defp render_tree_payload(_), do: %{}
-
   @spec preview_diagnostics_payload(map()) :: map()
   defp preview_diagnostics_payload(diag) when is_map(diag) do
     %{
@@ -364,8 +362,6 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
         Map.get(diag, :runtime_view_output_kinds) || Map.get(diag, "runtime_view_output_kinds") || []
     }
   end
-
-  defp preview_diagnostics_payload(_), do: %{}
 
   @spec timeline_init_messages(map()) :: [String.t()]
   defp timeline_init_messages(state) when is_map(state) do

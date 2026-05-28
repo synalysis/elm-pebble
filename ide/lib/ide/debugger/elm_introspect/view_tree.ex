@@ -6,6 +6,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
   alias ElmExecutor.Runtime.ViewTreeIntrinsics
   alias Ide.Debugger.ElmIntrospect.Types
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.Types, as: DebuggerTypes
 
   @spec function_type_key(String.t(), String.t(), non_neg_integer()) :: String.t()
   defp function_type_key(module_name, function_name, arity)
@@ -25,7 +26,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
   @doc """
   Returns true when a parser-derived view tree root still needs runtime Core IR evaluation.
   """
-  @spec parser_expression_view?(Types.introspect_snapshot() | map()) :: boolean()
+  @spec parser_expression_view?(Types.introspect_snapshot() | Types.elm_introspect()) :: boolean()
   def parser_expression_view?(introspect) when is_map(introspect) do
     ei = RuntimeArtifacts.introspect(introspect) || introspect
     root = Map.get(ei, "view_tree") || %{}
@@ -39,8 +40,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   Uses declared return types and structural shapes from introspection metadata, not helper names.
   """
-  @spec parser_expression_view_tree_node?(Types.view_tree_node(), Types.elm_introspect() | map()) ::
-          boolean()
+  @spec parser_expression_view_tree_node?(Types.view_tree_node(), Types.elm_introspect()) :: boolean()
   def parser_expression_view_tree_node?(node, ei) when is_map(node) and is_map(ei) do
     type = Map.get(node, "type")
 
@@ -80,7 +80,8 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
     end
   end
 
-  @spec ui_node_call_with_unevaluated_children?(map(), map()) :: boolean()
+  @spec ui_node_call_with_unevaluated_children?(Types.view_tree_node(), Types.elm_introspect()) ::
+          boolean()
   defp ui_node_call_with_unevaluated_children?(node, ei) when is_map(node) and is_map(ei) do
     (view_tree_call_returns_ui_node?(node, ei) or parser_ui_node_wrapper_type?(node)) and
       not parser_expression_structural_type?(Map.get(node, "type")) and
@@ -108,7 +109,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
   def ui_node_type_signature?(_), do: false
 
   @doc ""
-  @spec parser_expression_combinator_type?(String.t(), Types.elm_introspect() | map()) :: boolean()
+  @spec parser_expression_combinator_type?(String.t(), Types.elm_introspect()) :: boolean()
   def parser_expression_combinator_type?(type, introspect \\ %{})
 
   def parser_expression_combinator_type?(type, introspect)
@@ -187,7 +188,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
     Enum.find(values, &(!is_nil(&1)))
   end
 
-  @spec view_tree_call_returns_ui_node?(map(), map()) :: boolean()
+  @spec view_tree_call_returns_ui_node?(Types.view_tree_node(), Types.elm_introspect()) :: boolean()
   defp view_tree_call_returns_ui_node?(node, ei) when is_map(node) and is_map(ei) do
     case Map.get(node, "return_kind") do
       "ui_node" -> true
@@ -198,7 +199,11 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp view_tree_call_returns_ui_node?(_, _), do: false
 
-  @spec view_tree_call_returns_ui_node_from_target?(String.t() | nil, non_neg_integer(), map()) ::
+  @spec view_tree_call_returns_ui_node_from_target?(
+          String.t() | nil,
+          non_neg_integer(),
+          Types.elm_introspect()
+        ) ::
           boolean()
   defp view_tree_call_returns_ui_node_from_target?(target, arity, ei)
        when is_binary(target) and is_integer(arity) and is_map(ei) do
@@ -216,7 +221,8 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp view_tree_call_returns_ui_node_from_target?(_target, _arity, _ei), do: false
 
-  @spec view_tree_call_return_kind(String.t(), non_neg_integer(), map()) :: String.t() | nil
+  @spec view_tree_call_return_kind(String.t(), non_neg_integer(), Types.elm_introspect()) ::
+          String.t() | nil
   defp view_tree_call_return_kind(target, arity, api_metadata)
        when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
     cond do
@@ -236,7 +242,8 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp view_tree_call_return_kind(_target, _arity, _api_metadata), do: nil
 
-  @spec infer_local_function_return_kind(String.t(), non_neg_integer(), map()) :: String.t() | nil
+  @spec infer_local_function_return_kind(String.t(), non_neg_integer(), Types.elm_introspect()) ::
+          String.t() | nil
   defp infer_local_function_return_kind(target, arity, api_metadata)
        when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
     with %Module{} = mod <- Map.get(api_metadata, :module_ref),
@@ -252,7 +259,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp infer_local_function_return_kind(_target, _arity, _api_metadata), do: nil
 
-  @spec infer_expr_return_kind(Types.ast_expr(), map()) :: String.t() | nil
+  @spec infer_expr_return_kind(Types.ast_expr(), Types.binding_map()) :: String.t() | nil
   defp infer_expr_return_kind(expr, api_metadata) when is_map(expr) and is_map(api_metadata) do
     case expr do
       %{op: :qualified_call, target: target, args: args} when is_list(args) ->
@@ -274,7 +281,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp infer_expr_return_kind(_expr, _api_metadata), do: nil
 
-  @spec render_op_call_from_target?(String.t(), non_neg_integer(), map()) :: boolean()
+  @spec render_op_call_from_target?(String.t(), non_neg_integer(), Types.elm_introspect()) :: boolean()
   defp render_op_call_from_target?(target, arity, api_metadata)
        when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
     with types when is_map(types) <- Map.get(api_metadata, "function_types"),
@@ -290,7 +297,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp render_op_call_from_target?(_target, _arity, _api_metadata), do: false
 
-  @spec scene_root_call_return_kind?(String.t(), non_neg_integer(), map()) :: boolean()
+  @spec scene_root_call_return_kind?(String.t(), non_neg_integer(), Types.elm_introspect()) :: boolean()
   defp scene_root_call_return_kind?(target, arity, api_metadata)
        when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
     with types when is_map(types) <- Map.get(api_metadata, "function_types") || Map.get(api_metadata, :function_types),
@@ -308,7 +315,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp scene_root_call_return_kind?(_target, _arity, _api_metadata), do: false
 
-  @spec resolve_view_tree_call_target(String.t(), map()) :: {String.t(), String.t()} | nil
+  @spec resolve_view_tree_call_target(String.t(), Types.elm_introspect()) :: {String.t(), String.t()} | nil
   defp resolve_view_tree_call_target(target, metadata) when is_binary(target) and is_map(metadata) do
     resolution =
       case metadata do
@@ -332,7 +339,12 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp resolve_view_tree_call_target(_target, _metadata), do: nil
 
-  @spec maybe_put_view_tree_return_kind(map(), String.t(), non_neg_integer(), map()) :: map()
+  @spec maybe_put_view_tree_return_kind(
+          Types.view_tree_node(),
+          String.t(),
+          non_neg_integer(),
+          Types.elm_introspect()
+        ) :: Types.view_tree_node()
   defp maybe_put_view_tree_return_kind(node, target, arity, api_metadata)
        when is_map(node) and is_binary(target) and is_map(api_metadata) do
     case view_tree_call_return_kind(target, arity, api_metadata) do
@@ -343,7 +355,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp maybe_put_view_tree_return_kind(node, _target, _arity, _api_metadata), do: node
 
-  @spec view_tree_call_target_name(String.t(), map()) :: String.t()
+  @spec view_tree_call_target_name(String.t(), Types.elm_introspect()) :: String.t()
   defp view_tree_call_target_name(name, api_metadata) when is_binary(name) and is_map(api_metadata) do
     if String.contains?(name, ".") do
       name
@@ -354,7 +366,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
     end
   end
 
-  @spec view_tree_call_target(map()) :: String.t() | nil
+  @spec view_tree_call_target(Types.view_tree_node()) :: String.t() | nil
   defp view_tree_call_target(node) when is_map(node) do
     Map.get(node, "qualified_target") ||
       case {Map.get(node, "label"), Map.get(node, "type")} do
@@ -376,7 +388,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
     end)
   end
 
-  @spec introspect_call_resolution(map()) :: map()
+  @spec introspect_call_resolution(Types.elm_introspect()) :: Types.import_resolution()
   defp introspect_call_resolution(ei) when is_map(ei) do
     aliases =
       (Map.get(ei, "import_entries") || [])
@@ -409,7 +421,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
     %{aliases: aliases, unqualified: unqualified}
   end
 
-  @spec call_tree_arity(map()) :: non_neg_integer()
+  @spec call_tree_arity(Types.view_tree_node()) :: non_neg_integer()
   defp call_tree_arity(root) when is_map(root) do
     root
     |> Map.get("children", [])
@@ -419,7 +431,8 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
     end
   end
 
-  @spec find_function_type_signature(map(), String.t(), String.t()) :: String.t() | nil
+  @spec find_function_type_signature(Types.function_types_index(), String.t(), String.t()) ::
+          String.t() | nil
   defp find_function_type_signature(types, module_name, function_name)
        when is_map(types) and is_binary(module_name) and is_binary(function_name) do
     prefix = module_name <> "|" <> function_name <> "|"
@@ -537,7 +550,12 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp inline_view_lets(other, _bindings, _seen), do: other
 
-  @spec expr_to_view_tree(Types.ast_expr() | nil, non_neg_integer(), non_neg_integer(), map()) :: Types.view_tree()
+  @spec expr_to_view_tree(
+          Types.ast_expr() | nil,
+          non_neg_integer(),
+          non_neg_integer(),
+          Types.view_build_metadata()
+        ) :: Types.view_tree()
   defp expr_to_view_tree(nil, _, _, _api_metadata), do: view_tree_unknown()
 
   defp expr_to_view_tree(%{op: :expr, expr: inner}, d, max, api_metadata) when d < max do
@@ -852,7 +870,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
   @spec view_tree_unknown() :: Types.view_tree()
   defp view_tree_unknown, do: %{"type" => "unknown", "label" => "", "children" => []}
 
-  @spec annotate_view_tree_sources(Types.view_tree(), map()) :: Types.view_tree()
+  @spec annotate_view_tree_sources(Types.view_tree(), Types.view_build_metadata()) :: Types.view_tree()
   defp annotate_view_tree_sources(tree, api_metadata)
        when is_map(tree) and is_map(api_metadata) do
     {annotated, _counters} = annotate_view_tree_sources(tree, api_metadata, %{})
@@ -861,7 +879,11 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp annotate_view_tree_sources(tree, _api_metadata), do: tree
 
-  @spec annotate_view_tree_sources(Types.view_tree(), map(), map()) :: {Types.view_tree(), map()}
+  @spec annotate_view_tree_sources(
+          Types.view_tree(),
+          Types.view_build_metadata(),
+          Types.source_counters()
+        ) :: {Types.view_tree(), Types.source_counters()}
   defp annotate_view_tree_sources(node, api_metadata, counters)
        when is_map(node) and is_map(api_metadata) and is_map(counters) do
     {children, counters} =
@@ -884,7 +906,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp annotate_view_tree_sources(other, _api_metadata, counters), do: {other, counters}
 
-  @spec view_tree_source_target(map()) :: String.t() | nil
+  @spec view_tree_source_target(Types.view_tree_node()) :: String.t() | nil
   defp view_tree_source_target(%{"qualified_target" => target}) when is_binary(target), do: target
   defp view_tree_source_target(%{qualified_target: target}) when is_binary(target), do: target
 
@@ -894,7 +916,12 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
   defp view_tree_source_target(%{type: "call", label: label}) when is_binary(label), do: label
   defp view_tree_source_target(_node), do: nil
 
-  @spec maybe_put_view_tree_source(map(), String.t(), map(), map()) :: map()
+  @spec maybe_put_view_tree_source(
+          Types.view_tree_node(),
+          String.t(),
+          Types.view_build_metadata(),
+          Types.source_counters()
+        ) :: Types.view_tree_node()
   defp maybe_put_view_tree_source(node, target, api_metadata, counters) do
     index = Map.get(counters, target, 0)
 
@@ -904,19 +931,21 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
     end
   end
 
-  @spec increment_source_counter(map(), String.t()) :: map()
+  @spec increment_source_counter(Types.source_counters(), String.t()) :: Types.source_counters()
   defp increment_source_counter(counters, target) when is_map(counters) and is_binary(target) do
     Map.update(counters, target, 1, &(&1 + 1))
   end
 
-  @spec source_location_at([map()], non_neg_integer()) :: map() | nil
+  @spec source_location_at([DebuggerTypes.source_location()], non_neg_integer()) ::
+          DebuggerTypes.source_location() | nil
   defp source_location_at([], _index), do: nil
 
   defp source_location_at(locations, index) when is_list(locations) and is_integer(index) do
     Enum.at(locations, index) || List.last(locations)
   end
 
-  @spec source_locations_for_target(String.t(), map()) :: [map()]
+  @spec source_locations_for_target(String.t(), Types.view_build_metadata()) ::
+          [DebuggerTypes.source_location()]
   defp source_locations_for_target(target, api_metadata)
        when is_binary(target) and is_map(api_metadata) do
     lines = Map.get(api_metadata, :source_lines, [])
@@ -938,7 +967,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp source_locations_for_target(_target, _api_metadata), do: []
 
-  @spec source_call_names(String.t(), map()) :: [String.t()]
+  @spec source_call_names(String.t(), Types.view_build_metadata()) :: [String.t()]
   defp source_call_names(target, api_metadata) when is_binary(target) and is_map(api_metadata) do
     resolved = resolve_source_call(target, api_metadata)
 
@@ -985,7 +1014,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp source_call_name_on_line(_line, _names), do: nil
 
-  @spec output_source_locations(map()) :: map()
+  @spec output_source_locations(Types.view_build_metadata()) :: Types.output_source_locations()
   def output_source_locations(api_metadata) when is_map(api_metadata) do
     %{
       "clear" => ["Pebble.Ui.clear"],
@@ -1042,7 +1071,11 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
     end
   end
 
-  @spec put_module_alias(map(), String.t(), String.t()) :: map()
+  @spec put_module_alias(
+          %{optional(String.t()) => String.t()},
+          String.t(),
+          String.t()
+        ) :: %{optional(String.t()) => String.t()}
   defp put_module_alias(acc, alias_name, module_name)
        when is_map(acc) and is_binary(alias_name) and is_binary(module_name) and alias_name != "" do
     Map.put(acc, alias_name, module_name)
@@ -1055,7 +1088,11 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
     module_name |> String.split(".") |> List.last()
   end
 
-  @spec source_call_arg_names(Types.ast_expr() | String.t(), non_neg_integer(), map()) :: [String.t()]
+  @spec source_call_arg_names(
+          Types.ast_expr() | String.t(),
+          non_neg_integer(),
+          Types.view_build_metadata()
+        ) :: [String.t()]
   defp source_call_arg_names(target, arity, api_metadata)
        when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
     case resolve_source_call(target, api_metadata) do
@@ -1069,7 +1106,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp source_call_arg_names(_target, _arity, _api_metadata), do: []
 
-  @spec resolve_source_call(String.t(), map()) :: {String.t(), String.t()} | nil
+  @spec resolve_source_call(String.t(), Types.view_build_metadata()) :: {String.t(), String.t()} | nil
   defp resolve_source_call(target, api_metadata)
        when is_binary(target) and is_map(api_metadata) do
     parts = String.split(target, ".")
@@ -1086,7 +1123,8 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
 
   defp resolve_source_call(_target, _api_metadata), do: nil
 
-  @spec resolve_qualified_source_call([String.t()], map()) :: {String.t(), String.t()} | nil
+  @spec resolve_qualified_source_call([String.t()], Types.view_build_metadata()) ::
+          {String.t(), String.t()} | nil
   defp resolve_qualified_source_call(parts, api_metadata)
        when is_list(parts) and is_map(api_metadata) do
     aliases = Map.get(api_metadata, :aliases, %{})

@@ -135,7 +135,8 @@ defmodule Ide.Debugger.AutoFireRuntime do
 
   def subscription_due?(_state, _target, _row, _now, _ctx), do: false
 
-  @spec clock_for_target(Types.runtime_state(), Types.surface_target(), apply_ctx()) :: map()
+  @spec clock_for_target(Types.runtime_state(), Types.surface_target(), apply_ctx()) ::
+          Types.wire_map()
   def clock_for_target(state, target, ctx) when is_map(state) and is_map(ctx) do
     state
     |> Map.get(:auto_fire_clock, %{})
@@ -200,8 +201,12 @@ defmodule Ide.Debugger.AutoFireRuntime do
     |> Map.get("use_simulated_time", false) == true
   end
 
-  @spec worker_interval_ms(Types.runtime_state(), [:watch | :companion | :phone], [map()], apply_ctx()) ::
-          pos_integer()
+  @spec worker_interval_ms(
+          Types.runtime_state(),
+          [:watch | :companion | :phone],
+          [Types.subscription_row_input()],
+          apply_ctx()
+        ) :: pos_integer()
   def worker_interval_ms(state, targets, subscriptions, ctx)
       when is_map(state) and is_list(targets) and is_list(subscriptions) and is_map(ctx) do
     default_ms = Map.get(ctx, :default_interval_ms, @default_interval_ms)
@@ -221,7 +226,7 @@ defmodule Ide.Debugger.AutoFireRuntime do
     Map.get(ctx, :default_interval_ms, @default_interval_ms)
   end
 
-  @spec row_selected?(map(), [map()]) :: boolean()
+  @spec row_selected?(Types.auto_fire_candidate(), [Types.subscription_row_input()]) :: boolean()
   def row_selected?(row, subscriptions) when is_map(row) and is_list(subscriptions) do
     row_target = Map.get(row, :target) || Map.get(row, "target")
     row_trigger = Map.get(row, :trigger) || Map.get(row, "trigger")

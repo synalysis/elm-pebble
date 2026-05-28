@@ -7,6 +7,7 @@ defmodule Ide.Debugger.Types.ExecutionModel do
   """
 
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.{InnerRuntimeModel, Shell}
 
@@ -24,7 +25,7 @@ defmodule Ide.Debugger.Types.ExecutionModel do
           optional(atom()) => Types.wire_input()
         }
 
-  @spec from_surface(map()) :: wire_map()
+  @spec from_surface(Surface.surface_map()) :: wire_map()
   def from_surface(surface) when is_map(surface), do: RuntimeArtifacts.execution_model(surface)
 
   def from_surface(_surface), do: %{}

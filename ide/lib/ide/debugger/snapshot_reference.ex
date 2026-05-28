@@ -4,7 +4,7 @@ defmodule Ide.Debugger.SnapshotReference do
   alias Ide.Debugger.TraceExchange
   alias Ide.Debugger.Types
 
-  @spec rows([Types.runtime_event()]) :: [map()]
+  @spec rows([Types.runtime_event()]) :: [Types.trace_snapshot_reference_row()]
   def rows(events) when is_list(events) do
     events
     |> Enum.sort_by(& &1.seq)

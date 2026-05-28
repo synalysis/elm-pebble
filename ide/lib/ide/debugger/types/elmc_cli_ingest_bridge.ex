@@ -100,12 +100,12 @@ defmodule Ide.Debugger.Types.ElmcCliIngestBridge do
     CompileIngestBridge.from_manifest_result(attrs)
   end
 
-  @spec diagnostics_from_warnings([map()]) :: [map()]
+  @spec diagnostics_from_warnings([CliTypes.cli_diagnostic()]) :: [Diagnostics.diagnostic_map()]
   defp diagnostics_from_warnings(warnings) when is_list(warnings) do
     Diagnostics.normalize_list(warnings)
   end
 
-  @spec manifest_schema_version(map() | nil) :: String.t() | integer() | map() | nil
+  @spec manifest_schema_version(Compiler.manifest_data() | nil) :: String.t() | integer() | map() | nil
   defp manifest_schema_version(%{"schema_version" => v}), do: v
   defp manifest_schema_version(%{schema_version: v}), do: v
   defp manifest_schema_version(_), do: nil
@@ -118,7 +118,7 @@ defmodule Ide.Debugger.Types.ElmcCliIngestBridge do
   defp manifest_detail(:error, output) when is_binary(output), do: String.slice(output, 0, 240)
   defp manifest_detail(_status, _output), do: nil
 
-  @spec drop_nil_optional_fields(map()) :: map()
+  @spec drop_nil_optional_fields(CompileIngestBridge.compile_result()) :: CompileIngestBridge.compile_result()
   defp drop_nil_optional_fields(map) when is_map(map) do
     Map.reject(map, fn
       {key, nil} when key in [:elm_executor_core_ir_b64, :elm_executor_metadata] -> true

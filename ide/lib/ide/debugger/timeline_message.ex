@@ -2,8 +2,9 @@ defmodule Ide.Debugger.TimelineMessage do
   @moduledoc false
 
   alias Ide.Debugger.RuntimeModelMessages
+  alias Ide.Debugger.Types
 
-  @spec format(String.t(), map() | integer() | boolean() | String.t() | nil) :: String.t()
+  @spec format(String.t(), Types.timeline_step_message_value()) :: String.t()
   def format(message, message_value \\ nil)
 
   def format(message, message_value) when is_binary(message) do
@@ -34,8 +35,8 @@ defmodule Ide.Debugger.TimelineMessage do
 
   def format(message, _message_value), do: format(to_string(message || ""), nil)
 
-  @spec message_value_for_step(String.t(), map() | nil) ::
-          {String.t(), map() | integer() | boolean() | String.t() | nil}
+  @spec message_value_for_step(String.t(), Types.timeline_step_message_value()) ::
+          {String.t(), Types.timeline_step_message_value()}
   def message_value_for_step(message, explicit_value \\ nil)
 
   def message_value_for_step(message, explicit_value) when is_binary(message) do
@@ -93,7 +94,7 @@ defmodule Ide.Debugger.TimelineMessage do
     end
   end
 
-  @spec literal_payload(String.t()) :: map() | list() | integer() | boolean() | String.t() | nil
+  @spec literal_payload(String.t()) :: Types.protocol_wire_arg() | nil
   defp literal_payload(""), do: nil
   defp literal_payload("True"), do: true
   defp literal_payload("False"), do: false
@@ -118,7 +119,7 @@ defmodule Ide.Debugger.TimelineMessage do
     end
   end
 
-  @spec payload_text(map() | integer() | boolean() | String.t()) :: String.t()
+  @spec payload_text(Types.protocol_wire_arg()) :: String.t()
   defp payload_text(%{"ctor" => _ctor, "args" => [single]}) do
     payload_text(single)
   end

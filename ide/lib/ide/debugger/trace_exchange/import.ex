@@ -14,7 +14,7 @@ defmodule Ide.Debugger.TraceExchange.Import do
           parse_cursor_seq: (Types.wire_input() -> non_neg_integer() | nil)
         ]
 
-  @spec decode_body(String.t() | map()) :: {:ok, map()} | {:error, Types.protocol_error()}
+  @spec decode_body(Types.import_trace_input()) :: {:ok, Types.import_trace_body()} | {:error, Types.protocol_error()}
   def decode_body(json) when is_binary(json) do
     case Jason.decode(json) do
       {:ok, body} when is_map(body) -> {:ok, body}
@@ -50,7 +50,7 @@ defmodule Ide.Debugger.TraceExchange.Import do
     end
   end
 
-  @spec parse_state(Types.import_trace_body(), parse_opts()) :: map()
+  @spec parse_state(Types.import_trace_body(), parse_opts()) :: Types.runtime_state()
   def parse_state(body, opts) when is_map(body) and is_list(opts) do
     parse_watch_profile_id = Keyword.fetch!(opts, :parse_watch_profile_id)
     parse_cursor_seq = Keyword.fetch!(opts, :parse_cursor_seq)

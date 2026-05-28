@@ -5,9 +5,12 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
   `StepInput` → `RuntimeExecutor.Request` → `execution_result` → `RuntimeStepResult`.
   """
 
+  alias ElmExecutor.Runtime.SemanticExecutor.Types.ExecutionResult, as: ExecutorExecutionResult
+  alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewTreeNode
   alias Ide.Debugger.RuntimeExecutor.Request
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.StepInput
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.RuntimeStepResult
 
   @type executor_request :: Request.t()
@@ -25,12 +28,16 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
     RuntimeStepResult.from_executor_result(result)
   end
 
-  @spec step_result_from_wire(map()) :: step_result()
+  @spec step_result_from_wire(ExecutorExecutionResult.wire_map()) :: step_result()
   def step_result_from_wire(wire) when is_map(wire) do
     RuntimeStepResult.from_executor_wire(wire)
   end
 
-  @spec step_result_from_local_fallback(RuntimeStepResult.model_patch(), map(), keyword()) ::
+  @spec step_result_from_local_fallback(
+          RuntimeStepResult.model_patch(),
+          ViewTreeNode.view_tree() | ViewTreeNode.t() | nil,
+          keyword()
+        ) ::
           step_result()
   def step_result_from_local_fallback(model_patch, view_tree, opts \\ [])
       when is_map(model_patch) and is_map(view_tree) and is_list(opts) do
@@ -43,7 +50,7 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
     )
   end
 
-  @spec merge_model_patch(map(), RuntimeStepResult.model_patch()) :: map()
+  @spec merge_model_patch(Types.app_model(), RuntimeStepResult.model_patch()) :: Types.app_model()
   def merge_model_patch(model, patch) when is_map(model) and is_map(patch) do
     Enum.reduce(patch, model, fn
       {"runtime_model", patch_runtime}, acc when is_map(patch_runtime) ->
@@ -66,7 +73,8 @@ defmodule Ide.Debugger.Types.StepExecutionContract do
     end)
   end
 
-  @spec deep_merge_runtime_model(map(), map()) :: map()
+  @spec deep_merge_runtime_model(Types.inner_runtime_model(), Types.inner_runtime_model()) ::
+          Types.inner_runtime_model()
   defp deep_merge_runtime_model(existing, patch) when is_map(existing) and is_map(patch) do
     Map.merge(existing, patch)
   end

@@ -36,7 +36,7 @@ defmodule Ide.Debugger.Surface do
           optional(String.t()) => Types.wire_input()
         }
 
-  @spec from_map(map()) :: t()
+  @spec from_map(t() | surface_map()) :: t()
   def from_map(surface) when is_map(surface) do
     normalized = RuntimeArtifacts.normalize_surface(surface)
 
@@ -82,7 +82,7 @@ defmodule Ide.Debugger.Surface do
     |> Map.new()
   end
 
-  @spec app_model(t() | map()) :: RuntimeArtifacts.app_model()
+  @spec app_model(t() | surface_map()) :: RuntimeArtifacts.app_model()
   def app_model(%__MODULE__{model: model}), do: model
 
   def app_model(surface) when is_map(surface), do: from_map(surface).model
@@ -92,15 +92,15 @@ defmodule Ide.Debugger.Surface do
 
   def shell(surface) when is_map(surface), do: from_map(surface).shell
 
-  @spec execution_model(t() | map()) :: RuntimeArtifacts.execution_model()
+  @spec execution_model(t() | surface_map()) :: RuntimeArtifacts.execution_model()
   def execution_model(%__MODULE__{} = surface), do: RuntimeArtifacts.execution_model(to_map(surface))
 
   def execution_model(surface) when is_map(surface), do: RuntimeArtifacts.execution_model(surface)
 
-  @spec introspect(t() | map()) :: map() | nil
+  @spec introspect(t() | map()) :: Types.elm_introspect() | nil
   def introspect(surface), do: RuntimeArtifacts.introspect(surface)
 
-  @spec introspect!(t() | map()) :: map()
+  @spec introspect!(t() | surface_map()) :: map()
   def introspect!(surface) do
     case introspect(surface) do
       ei when is_map(ei) -> ei
@@ -108,22 +108,22 @@ defmodule Ide.Debugger.Surface do
     end
   end
 
-  @spec put_app_model(t(), map()) :: t()
+  @spec put_app_model(t(), Types.app_model()) :: t()
   def put_app_model(%__MODULE__{} = surface, model) when is_map(model) do
     %{surface | model: model}
   end
 
-  @spec merge_app_model(t(), map()) :: t()
+  @spec merge_app_model(t(), Types.app_model()) :: t()
   def merge_app_model(%__MODULE__{} = surface, patch) when is_map(patch) do
     %{surface | model: Map.merge(surface.model, patch)}
   end
 
-  @spec put_shell(t(), map()) :: t()
+  @spec put_shell(t(), Types.shell()) :: t()
   def put_shell(%__MODULE__{} = surface, shell) when is_map(shell) do
     %{surface | shell: shell}
   end
 
-  @spec put_view_tree(t(), map() | nil) :: t()
+  @spec put_view_tree(t(), Types.view_output_tree() | nil) :: t()
   def put_view_tree(%__MODULE__{} = surface, view_tree) do
     %{surface | view_tree: view_tree}
   end

@@ -3,7 +3,8 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   alias Ide.Debugger.Types
 
-  @spec backend_drift_detail(map() | nil, keyword()) :: String.t() | nil
+  @spec backend_drift_detail(Types.fingerprint_compare_result() | nil, keyword()) ::
+          String.t() | nil
   def backend_drift_detail(compare, opts \\ [])
 
   def backend_drift_detail(compare, opts) when is_map(compare) and is_list(opts) do
@@ -65,7 +66,8 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   def backend_drift_detail(_compare, _opts), do: nil
 
-  @spec key_target_drift_detail(map() | nil, keyword()) :: String.t() | nil
+  @spec key_target_drift_detail(Types.fingerprint_compare_result() | nil, keyword()) ::
+          String.t() | nil
   def key_target_drift_detail(compare, opts \\ [])
 
   def key_target_drift_detail(compare, opts) when is_map(compare) and is_list(opts) do
@@ -128,7 +130,8 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   def merge_drift_detail(_backend_detail, _key_target_detail), do: nil
 
-  @spec surface_rows(map()) :: [{Types.surface_target() | atom() | String.t(), map()}]
+  @spec surface_rows(Types.fingerprint_compare_result()) ::
+          [{Types.surface_target() | atom() | String.t(), Types.fingerprint_compare_surface_row()}]
   defp surface_rows(compare) when is_map(compare) do
     case map_value(compare, :surfaces) do
       surfaces when is_map(surfaces) ->
@@ -142,7 +145,8 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   @type row_value :: String.t() | integer() | float() | boolean() | nil | map()
 
-  @spec row_current_value(map(), atom() | String.t()) :: row_value()
+  @spec row_current_value(Types.fingerprint_compare_surface_row(), atom() | String.t()) ::
+          row_value()
   defp row_current_value(row, key) when is_map(row) do
     case fetch_value(row, key) do
       {:ok, value} ->
@@ -160,7 +164,8 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   defp row_current_value(_row, _key), do: nil
 
-  @spec row_compare_value(map(), [atom() | String.t()]) :: row_value()
+  @spec row_compare_value(Types.fingerprint_compare_surface_row(), [atom() | String.t()]) ::
+          row_value()
   defp row_compare_value(row, keys) when is_map(row) and is_list(keys) do
     compare = map_value(row, :compare)
     baseline = map_value(row, :baseline)
@@ -180,7 +185,8 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   defp row_compare_value(_row, _keys), do: nil
 
-  @spec map_value(map(), atom() | String.t()) :: row_value()
+  @spec map_value(Types.fingerprint_compare_surface_row() | Types.fingerprint_compare_result(), atom() | String.t()) ::
+          row_value()
   defp map_value(map, key) when is_map(map) do
     case fetch_value(map, key) do
       {:ok, value} -> value
@@ -190,7 +196,7 @@ defmodule Ide.Debugger.RuntimeFingerprintDrift do
 
   defp map_value(_map, _key), do: nil
 
-  @spec fetch_value(map(), atom() | String.t()) :: {:ok, row_value()} | :error
+  @spec fetch_value(Types.wire_map(), atom() | String.t()) :: {:ok, row_value()} | :error
   defp fetch_value(map, key) when is_map(map) do
     variants =
       cond do

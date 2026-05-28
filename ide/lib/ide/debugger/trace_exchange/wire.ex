@@ -20,7 +20,7 @@ defmodule Ide.Debugger.TraceExchange.Wire do
 
   def normalize_term(other), do: other
 
-  @spec normalize_event(runtime_event()) :: map()
+  @spec normalize_event(runtime_event()) :: Types.trace_export_event_row()
   def normalize_event(event) when is_map(event) do
     %{
       "companion" => normalize_term(Map.get(event, :companion, %{})),
@@ -32,7 +32,7 @@ defmodule Ide.Debugger.TraceExchange.Wire do
     }
   end
 
-  @spec normalize_events_with_snapshot_refs([runtime_event()]) :: [map()]
+  @spec normalize_events_with_snapshot_refs([runtime_event()]) :: [Types.trace_export_event_row()]
   def normalize_events_with_snapshot_refs(events) when is_list(events) do
     {rows, _previous} =
       Enum.map_reduce(events, %{}, fn event, previous ->
@@ -81,7 +81,8 @@ defmodule Ide.Debugger.TraceExchange.Wire do
     rows
   end
 
-  @spec maybe_put_snapshot_refs(map(), map()) :: map()
+  @spec maybe_put_snapshot_refs(Types.trace_export_event_row(), Types.trace_export_snapshot_refs()) ::
+          Types.trace_export_event_row()
   defp maybe_put_snapshot_refs(row, refs) when map_size(refs) == 0, do: row
   defp maybe_put_snapshot_refs(row, refs), do: Map.put(row, "snapshot_refs", refs)
 end

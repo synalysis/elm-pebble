@@ -13,6 +13,7 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
   alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.RuntimeBackgroundNotify
   alias Ide.Debugger.RuntimeBackgroundWork
+  alias Ide.Debugger.Types
 
   @pending_key :pending_protocol_deliveries
 
@@ -21,7 +22,7 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
     Application.get_env(:ide, :debugger_async_protocol_delivery, true)
   end
 
-  @spec maybe_schedule_drain(String.t(), map()) :: :ok
+  @spec maybe_schedule_drain(String.t(), Types.runtime_state()) :: :ok
   def maybe_schedule_drain(project_slug, state)
       when is_binary(project_slug) and is_map(state) do
     if async?() do
@@ -45,7 +46,7 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
     :ok
   end
 
-  @spec pending(map()) :: [map()]
+  @spec pending(Types.runtime_state()) :: [Types.pending_protocol_delivery_item()]
   def pending(state) when is_map(state) do
     case Map.get(state, @pending_key) || Map.get(state, to_string(@pending_key)) do
       items when is_list(items) -> items
@@ -53,7 +54,8 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
     end
   end
 
-  @spec enqueue(map(), :watch | :companion | :phone, map()) :: map()
+  @spec enqueue(Types.runtime_state(), :watch | :companion | :phone, Types.protocol_tx_rx_payload()) ::
+          Types.runtime_state()
   def enqueue(state, recipient, payload)
       when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(payload) do
     item = %{
@@ -64,7 +66,7 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
     Map.update(state, @pending_key, [item], &(&1 ++ [item]))
   end
 
-  @spec run_drain_batch(String.t(), [map()], ProtocolRx.ctx()) :: :ok
+  @spec run_drain_batch(String.t(), [Types.pending_protocol_delivery_item()], ProtocolRx.ctx()) :: :ok
   def run_drain_batch(project_slug, items, ctx)
       when is_binary(project_slug) and is_list(items) and is_map(ctx) do
     state =

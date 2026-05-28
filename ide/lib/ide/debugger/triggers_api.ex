@@ -11,13 +11,14 @@ defmodule Ide.Debugger.TriggersApi do
 
   @type runtime_state :: Types.RuntimeState.t() | Types.RuntimeState.wire_map()
 
-  @spec trigger_candidates(runtime_state() | map(), :watch | :companion | :phone | nil) ::
+  @spec trigger_candidates(runtime_state(), :watch | :companion | :phone | nil) ::
           [Types.trigger_candidate()]
   def trigger_candidates(state, target \\ :watch) do
     AgentSession.with_hosts(fn hosts -> TriggerQueries.candidates(state, target, hosts) end)
   end
 
-  @spec available_triggers(String.t(), Types.available_triggers_attrs()) :: {:ok, [map()]}
+  @spec available_triggers(String.t(), Types.available_triggers_attrs()) ::
+          {:ok, [Types.trigger_candidate()]}
   def available_triggers(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
     target = TriggerQueries.normalize_optional_target(attrs)
     {:ok, state} = TraceApi.snapshot(project_slug, event_limit: 1)
@@ -31,7 +32,8 @@ defmodule Ide.Debugger.TriggersApi do
     end)
   end
 
-  @spec subscription_trigger_injection_modal_supported?(runtime_state(), map()) :: boolean()
+  @spec subscription_trigger_injection_modal_supported?(runtime_state(), Types.replay_row()) ::
+          boolean()
   def subscription_trigger_injection_modal_supported?(state, row) do
     AgentSession.with_hosts(fn hosts -> TriggerQueries.injection_modal_supported?(state, row, hosts) end)
   end
@@ -45,11 +47,12 @@ defmodule Ide.Debugger.TriggersApi do
 
   defdelegate subscription_trigger_display(op, trigger), to: SubscriptionApi, as: :trigger_display
 
-  @spec subscription_trigger_display_for(runtime_state() | map(), String.t(), String.t()) :: String.t()
+  @spec subscription_trigger_display_for(runtime_state(), String.t(), String.t()) :: String.t()
   defdelegate subscription_trigger_display_for(state, trigger, target_name),
     to: SubscriptionApi,
     as: :trigger_display_label
 
-  @spec subscription_model_active?(runtime_state(), Types.surface_target(), map()) :: boolean()
+  @spec subscription_model_active?(runtime_state(), Types.surface_target(), Types.replay_row()) ::
+          boolean()
   defdelegate subscription_model_active?(state, target, row), to: SubscriptionApi, as: :model_active?
 end

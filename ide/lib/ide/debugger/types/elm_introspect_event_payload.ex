@@ -60,7 +60,7 @@ defmodule Ide.Debugger.Types.ElmIntrospectEventPayload do
 
   @type wire_map :: t() | map()
 
-  @spec from_introspect(map(), String.t() | nil, String.t(), boolean()) :: t()
+  @spec from_introspect(Types.elm_introspect(), String.t() | nil, String.t(), boolean()) :: t()
   def from_introspect(ei, rel_path, source_root, view_outline) when is_map(ei) do
     msgs = Map.get(ei, "msg_constructors") || []
     msgs = if is_list(msgs), do: msgs, else: []
@@ -245,7 +245,7 @@ defmodule Ide.Debugger.Types.ElmIntrospectEventPayload do
     |> then(fn s -> if length(items) > take_count, do: s <> "…", else: s end)
   end
 
-  @spec maybe_put_string_field(map(), atom() | String.t(), String.t()) :: map()
+  @spec maybe_put_string_field(t(), atom() | String.t(), String.t()) :: t()
   defp maybe_put_string_field(map, key, value) when is_map(map) do
     if is_binary(value) and value != "" do
       Map.put(map, key, value)

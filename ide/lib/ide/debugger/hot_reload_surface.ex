@@ -5,7 +5,7 @@ defmodule Ide.Debugger.HotReloadSurface do
   alias Ide.Debugger.SampleViewTrees
   alias Ide.Debugger.Types
 
-  @spec put_view_trees(map(), String.t(), String.t(), String.t()) :: map()
+  @spec put_view_trees(Types.runtime_state(), String.t(), String.t(), String.t()) :: Types.runtime_state()
   def put_view_trees(state, path, revision, "phone") when is_map(state) do
     state
     |> put_in([:watch, :view_tree], SampleViewTrees.watch(path, revision))
@@ -29,9 +29,10 @@ defmodule Ide.Debugger.HotReloadSurface do
 
   def put_view_trees(state, _path, _revision, _source_root), do: state
 
-  @type append_event_fn :: (map(), String.t(), map() -> map())
+  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
 
-  @spec maybe_append_phone_view_render(map(), String.t(), append_event_fn()) :: map()
+  @spec maybe_append_phone_view_render(Types.runtime_state(), String.t(), append_event_fn()) ::
+          Types.runtime_state()
   def maybe_append_phone_view_render(state, "phone", append_event)
       when is_map(state) and is_function(append_event, 3) do
     append_event.(

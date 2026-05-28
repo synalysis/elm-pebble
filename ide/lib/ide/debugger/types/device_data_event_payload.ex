@@ -13,7 +13,7 @@ defmodule Ide.Debugger.Types.DeviceDataEventPayload do
           optional(String.t()) => Types.wire_input()
         }
 
-  @spec from_request(String.t(), DeviceRequest.t() | map()) :: t()
+  @spec from_request(String.t(), DeviceRequest.t()) :: t()
   def from_request(target, request) when is_binary(target) and is_map(request) do
     %{
       target: target,

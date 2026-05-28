@@ -22,7 +22,7 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     Application.get_env(:ide, :debugger_async_http_followups, true)
   end
 
-  @spec maybe_schedule_drain(String.t(), map()) :: :ok
+  @spec maybe_schedule_drain(String.t(), Types.runtime_state()) :: :ok
   def maybe_schedule_drain(project_slug, state)
       when is_binary(project_slug) and is_map(state) do
     if async?() do
@@ -43,7 +43,7 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     :ok
   end
 
-  @spec pending(map()) :: [map()]
+  @spec pending(Types.runtime_state()) :: [Types.pending_http_followup_item()]
   def pending(state) when is_map(state) do
     case Map.get(state, @pending_key) || Map.get(state, to_string(@pending_key)) do
       commands when is_list(commands) -> commands
@@ -52,13 +52,13 @@ defmodule Ide.Debugger.PendingHttpFollowups do
   end
 
   @spec enqueue(
-          map(),
+          Types.runtime_state(),
           Types.surface_target(),
           String.t(),
           String.t(),
-          map(),
+          Types.cmd_call(),
           String.t() | nil
-        ) :: map()
+        ) :: Types.runtime_state()
   def enqueue(state, target, target_name, package, command, followup_message)
       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(target_name) and
              is_binary(package) and is_map(command) do
@@ -73,13 +73,13 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     Map.update(state, @pending_key, [item], &(&1 ++ [item]))
   end
 
-  @spec launch_flight(String.t(), map(), RuntimeFollowups.apply_ctx()) :: :ok
+  @spec launch_flight(String.t(), Types.pending_http_followup_item(), RuntimeFollowups.apply_ctx()) :: :ok
   def launch_flight(project_slug, item, ctx)
       when is_binary(project_slug) and is_map(item) and is_map(ctx) do
     RuntimeBackgroundWork.spawn(project_slug, fn -> run_flight(project_slug, item, ctx) end)
   end
 
-  @spec run_flight(String.t(), map(), RuntimeFollowups.apply_ctx()) :: :ok
+  @spec run_flight(String.t(), Types.pending_http_followup_item(), RuntimeFollowups.apply_ctx()) :: :ok
   def run_flight(project_slug, item, ctx)
       when is_binary(project_slug) and is_map(item) and is_map(ctx) do
     {target, target_name, package, command, followup_message} = flight_fields(item)

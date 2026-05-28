@@ -4,8 +4,8 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
   alias Ide.Debugger.SimulatorSettings, as: DebuggerSimulatorSettings
   alias Ide.Debugger.Types
 
-  @spec storage_result(map(), map()) ::
-          {map(), {:ok, map()} | {:error, String.t()}}
+  @spec storage_result(Types.simulator_settings(), Types.wire_map()) ::
+          {Types.simulator_settings(), {:ok, Types.protocol_ctor_value()} | {:error, String.t()}}
   def storage_result(settings, request) when is_map(settings) and is_map(request) do
     values = Map.get(settings, "storage_values", %{})
     key = Map.get(request, :key)
@@ -36,8 +36,8 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
     end
   end
 
-  @spec preferences_result(map(), map()) ::
-          {map(), {:ok, {String.t(), Types.wire_input()}} | {:error, String.t()}}
+  @spec preferences_result(Types.simulator_settings(), Types.wire_map()) ::
+          {Types.simulator_settings(), {:ok, {String.t(), Types.wire_input()}} | {:error, String.t()}}
   def preferences_result(settings, request) when is_map(settings) and is_map(request) do
     values = Map.get(settings, "preferences", %{})
     key = Map.get(request, :key)
@@ -61,10 +61,10 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
     end
   end
 
-  @spec normalize_settings(map()) :: map()
+  @spec normalize_settings(Types.SimulatorSettings.wire_map()) :: Types.simulator_settings()
   def normalize_settings(settings), do: DebuggerSimulatorSettings.normalize(settings)
 
-  @spec storage_value_to_elm_value(map()) :: map()
+  @spec storage_value_to_elm_value(Types.wire_map()) :: Types.protocol_ctor_value()
   def storage_value_to_elm_value(%{"kind" => "string", "value" => value}) when is_binary(value),
     do: %{"ctor" => "StringValue", "args" => [value]}
 

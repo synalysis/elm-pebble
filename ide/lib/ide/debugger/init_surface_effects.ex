@@ -83,8 +83,12 @@ defmodule Ide.Debugger.InitSurfaceEffects do
 
   def apply_device_data_responses(state, _target, _ctx), do: state
 
-  @spec apply_init_device_data_followups(Types.runtime_state(), Types.surface_target(), map(), ctx()) ::
-          Types.runtime_state()
+  @spec apply_init_device_data_followups(
+          Types.runtime_state(),
+          Types.surface_target(),
+          Types.device_request(),
+          ctx()
+        ) :: Types.runtime_state()
   defp apply_init_device_data_followups(state, target, req, ctx) when is_map(state) and is_map(req) and is_map(ctx) do
     message = DeviceData.response_message(req)
 

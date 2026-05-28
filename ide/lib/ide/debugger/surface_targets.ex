@@ -29,7 +29,7 @@ defmodule Ide.Debugger.SurfaceTargets do
   def tick_targets(nil), do: [:watch, :companion, :phone]
   def tick_targets(target) when target in [:watch, :companion, :phone], do: [target]
 
-  @spec normalize_source_root(map()) :: String.t()
+  @spec normalize_source_root(Types.CompileIngestAttrs.wire_map()) :: String.t()
   def normalize_source_root(attrs) when is_map(attrs) do
     case Map.get(attrs, :source_root) || Map.get(attrs, "source_root") do
       "protocol" -> "protocol"

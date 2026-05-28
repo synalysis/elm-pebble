@@ -10,11 +10,11 @@ defmodule Ide.Debugger.RuntimeSurfaceMerge do
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
 
-  @type fields :: Types.elmc_surface_fields() | map()
+  @type fields :: Types.elmc_surface_fields()
 
   @type surface_target :: Types.surface_target()
 
-  @spec merge_fields(Surface.surface_map() | map(), fields()) :: Surface.surface_map()
+  @spec merge_fields(Surface.surface_map(), fields()) :: Surface.surface_map()
   def merge_fields(surface, fields) when is_map(surface) and is_map(fields) do
     normalized = Surface.from_map(surface) |> Surface.to_map()
     model = Map.get(normalized, :model) || %{}

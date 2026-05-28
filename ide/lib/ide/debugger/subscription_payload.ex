@@ -24,7 +24,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
     end
   end
 
-  @spec attach(Types.runtime_state() | map(), Types.surface_target(), String.t(), String.t(), attach_ctx() | nil) ::
+  @spec attach(Types.runtime_state(), Types.surface_target(), String.t(), String.t(), attach_ctx() | nil) ::
           String.t()
   def attach(state, target, message, trigger, ctx \\ nil)
 
@@ -149,7 +149,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
     end
   end
 
-  @spec simulator_now_for_target(map(), :watch | :companion | :phone) :: NaiveDateTime.t()
+  @spec simulator_now_for_target(Types.runtime_state(), :watch | :companion | :phone) :: NaiveDateTime.t()
   def simulator_now_for_target(state, target)
       when is_map(state) and target in [:watch, :companion, :phone] do
     state
@@ -229,7 +229,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
     end
   end
 
-  @spec blank_string?(Types.wire_scalar() | map() | list()) :: boolean()
+  @spec blank_string?(Types.wire_scalar() | Types.protocol_ctor_value() | list()) :: boolean()
   defp blank_string?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank_string?(_value), do: true
 
@@ -269,7 +269,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
     String.contains?(normalized, "frame") or String.contains?(normalized, "onframe")
   end
 
-  @spec subscription_frame_payload(Types.runtime_state(), Types.surface_target()) :: map()
+  @spec subscription_frame_payload(Types.runtime_state(), Types.surface_target()) :: Types.wire_map()
   defp subscription_frame_payload(state, target) when is_map(state) do
     model =
       case target do
@@ -361,14 +361,14 @@ defmodule Ide.Debugger.SubscriptionPayload do
   defp normalize_boolean("false", _default), do: false
   defp normalize_boolean(_value, default) when is_boolean(default), do: default
 
-  @spec simulator_now_from_model(map()) :: NaiveDateTime.t()
+  @spec simulator_now_from_model(Types.app_model()) :: NaiveDateTime.t()
   defp simulator_now_from_model(model) do
     model
     |> DebuggerSimulatorSettings.from_model()
     |> simulator_now_from_settings()
   end
 
-  @spec simulator_now_from_settings(map()) :: NaiveDateTime.t()
+  @spec simulator_now_from_settings(Types.simulator_settings()) :: NaiveDateTime.t()
   defp simulator_now_from_settings(settings) when is_map(settings) do
     fallback = NaiveDateTime.local_now()
 

@@ -6,11 +6,26 @@ defmodule Ide.Debugger.PackageCommandHandler do
 
   @type runtime_state :: Debugger.runtime_state()
 
+  @type followup_row :: Types.RuntimeFollowupRow.wire_row()
+
+  @type handle_step :: %{
+          optional(:message) => String.t(),
+          optional(:message_value) => Types.protocol_wire_arg(),
+          optional(String.t()) => Types.wire_input(),
+          optional(atom()) => Types.wire_input()
+        }
+
+  @type storage_command_summary :: %{
+          required(:kind) => String.t(),
+          required(:key) => String.t(),
+          required(:type) => String.t()
+        }
+
   @type handle_result ::
-          {:handled, runtime_state(), map(), map() | nil}
+          {:handled, runtime_state(), Types.PackageCmdEventPayload.t(), handle_step() | nil}
           | :unhandled
 
-  @spec handle(runtime_state(), String.t(), String.t(), map()) :: handle_result()
+  @spec handle(runtime_state(), String.t(), String.t(), followup_row()) :: handle_result()
   def handle(state, target_name, package, row) when is_map(state) and is_binary(target_name) do
     command = Map.get(row, "command") || Map.get(row, :command)
 
@@ -23,13 +38,19 @@ defmodule Ide.Debugger.PackageCommandHandler do
 
   def handle(_state, _target_name, _package, _row), do: :unhandled
 
-  @spec storage_command?(Types.cmd_call() | map() | nil) :: boolean()
+  @spec storage_command?(Types.cmd_call() | nil) :: boolean()
   defp storage_command?(%{} = command),
     do: String.starts_with?(command_kind(command), "cmd.storage.")
 
   defp storage_command?(_command), do: false
 
-  @spec handle_storage_command(runtime_state(), String.t(), String.t(), map(), Types.cmd_call()) ::
+  @spec handle_storage_command(
+          runtime_state(),
+          String.t(),
+          String.t(),
+          followup_row(),
+          Types.cmd_call()
+        ) ::
           handle_result()
   defp handle_storage_command(state, target_name, package, row, command) do
     kind = command_kind(command)
@@ -168,7 +189,7 @@ defmodule Ide.Debugger.PackageCommandHandler do
     end
   end
 
-  @spec storage_message_value(Types.cmd_call(), map(), Types.protocol_wire_arg()) ::
+  @spec storage_message_value(Types.cmd_call(), followup_row(), Types.protocol_wire_arg()) ::
           Types.protocol_wire_arg()
   defp storage_message_value(command, row, value) do
     command_value =
@@ -199,7 +220,7 @@ defmodule Ide.Debugger.PackageCommandHandler do
   defp replace_first_list_value([], next), do: [next]
   defp replace_first_list_value([_head | tail], next), do: [next | tail]
 
-  @spec storage_command_event(Types.cmd_call()) :: map()
+  @spec storage_command_event(Types.cmd_call()) :: storage_command_summary()
   defp storage_command_event(command) when is_map(command) do
     %{
       kind: command_kind(command),

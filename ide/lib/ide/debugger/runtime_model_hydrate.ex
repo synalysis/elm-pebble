@@ -87,8 +87,12 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
     end
   end
 
-  @spec maybe_put_message_payload_field(map(), String.t(), Types.protocol_wire_arg(), [String.t()]) ::
-          map()
+  @spec maybe_put_message_payload_field(
+          Types.runtime_model_patch(),
+          String.t(),
+          Types.protocol_wire_arg(),
+          [String.t()]
+        ) :: Types.runtime_model_patch()
   defp maybe_put_message_payload_field(runtime_model, constructor, payload, skip_fields)
        when is_map(runtime_model) and is_binary(constructor) and is_list(skip_fields) do
     case model_field_for_message_constructor(constructor, runtime_model) do
@@ -111,7 +115,8 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
   defp maybe_put_message_payload_field(runtime_model, _constructor, _payload, _skip_fields),
     do: runtime_model
 
-  @spec model_field_for_message_constructor(String.t(), map() | nil) :: String.t() | nil
+  @spec model_field_for_message_constructor(String.t(), Types.inner_runtime_model() | nil) ::
+          String.t() | nil
   defp model_field_for_message_constructor(constructor, runtime_model)
 
   defp model_field_for_message_constructor("Got" <> rest, _runtime_model),
@@ -128,15 +133,20 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
     end
   end
 
-  @spec pick_existing_runtime_field([String.t()], map() | nil) :: String.t() | nil
+  @spec pick_existing_runtime_field([String.t()], Types.inner_runtime_model() | nil) ::
+          String.t() | nil
   defp pick_existing_runtime_field(candidates, runtime_model) when is_list(candidates) do
     Enum.find(candidates, fn key ->
       is_map(runtime_model) and Map.has_key?(runtime_model, key)
     end) || List.first(candidates)
   end
 
-  @spec put_payload_value_if_needed(map(), String.t(), Types.protocol_wire_arg(), String.t()) ::
-          map()
+  @spec put_payload_value_if_needed(
+          Types.runtime_model_patch(),
+          String.t(),
+          Types.protocol_wire_arg(),
+          String.t()
+        ) :: Types.runtime_model_patch()
   defp put_payload_value_if_needed(runtime_model, key, value, constructor)
        when is_map(runtime_model) and is_binary(key) do
     case Map.get(runtime_model, key) do
@@ -182,7 +192,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
   end
 
   def for_message(model, _message, _skip_fields) when is_map(model), do: model
-  @spec patched_fields(Types.app_model() | map()) :: skip_fields()
+  @spec patched_fields(Types.app_model()) :: skip_fields()
   def patched_fields(patch) when is_map(patch) do
     case Map.get(patch, "runtime_model") || Map.get(patch, :runtime_model) do
       runtime_model when is_map(runtime_model) -> Enum.map(Map.keys(runtime_model), &to_string/1)
@@ -199,7 +209,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
   @spec static_value(Types.wire_input()) :: Types.wire_input()
   def static_value(value), do: hydrate_static_runtime_value(value)
 
-  @spec wire_list_to_elixir(Types.protocol_ctor_value() | list() | map()) :: list()
+  @spec wire_list_to_elixir(Types.protocol_ctor_value() | list()) :: list()
   def wire_list_to_elixir(value), do: elm_list_wire_to_elixir(value)
 
   @spec normalize_boolean_string(String.t()) :: boolean() | String.t()
@@ -262,7 +272,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
     end
   end
 
-  @spec elm_list_wire_to_elixir(Types.protocol_ctor_value() | list() | map()) :: list()
+  @spec elm_list_wire_to_elixir(Types.protocol_ctor_value() | list()) :: list()
   defp elm_list_wire_to_elixir([]), do: []
 
   defp elm_list_wire_to_elixir(%{"ctor" => "[]", "args" => []}), do: []
@@ -339,8 +349,11 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
     )
   end
 
-  @spec put_launch_context_value_if_missing(map(), String.t(), Types.wire_scalar() | map()) ::
-          map()
+  @spec put_launch_context_value_if_missing(
+          Types.app_model(),
+          String.t(),
+          Types.wire_scalar() | Types.launch_context()
+        ) :: Types.app_model()
   defp put_launch_context_value_if_missing(runtime_model, key, value)
        when is_map(runtime_model) and is_binary(key) and not is_nil(value) do
     case Map.get(runtime_model, key) do
@@ -377,7 +390,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
   defp unresolved_runtime_value?(_value), do: false
 
-  @spec launch_context_display_shape(map()) :: String.t() | nil
+  @spec launch_context_display_shape(Types.launch_context()) :: String.t() | nil
   defp launch_context_display_shape(%{"screen" => %{} = screen}) do
     cond do
       Map.get(screen, "shape") in ["Round", "Rectangular"] ->
@@ -406,7 +419,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
   defp launch_context_display_shape(_launch_context), do: nil
 
-  @spec launch_context_display_shape_ctor(map()) :: map() | nil
+  @spec launch_context_display_shape_ctor(Types.launch_context()) :: Types.protocol_ctor_value() | nil
   defp launch_context_display_shape_ctor(launch_context) when is_map(launch_context) do
     case launch_context_display_shape(launch_context) do
       "Round" -> %{"ctor" => "Round", "args" => []}
@@ -417,7 +430,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
   defp launch_context_display_shape_ctor(_launch_context), do: nil
 
-  @spec launch_context_color_capability(map()) :: map() | nil
+  @spec launch_context_color_capability(Types.launch_context()) :: Types.protocol_ctor_value() | nil
   defp launch_context_color_capability(launch_context) when is_map(launch_context) do
     case RuntimeSurfaces.launch_context_color_mode(launch_context) do
       "BlackWhite" -> %{"ctor" => "BlackWhite", "args" => []}
@@ -428,7 +441,12 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
   defp launch_context_color_capability(_launch_context), do: nil
 
-  @spec put_payload_integer_if_needed(map(), String.t(), integer(), String.t()) :: map()
+  @spec put_payload_integer_if_needed(
+          Types.runtime_model_patch(),
+          String.t(),
+          integer(),
+          String.t()
+        ) :: Types.runtime_model_patch()
   defp put_payload_integer_if_needed(runtime_model, key, value, constructor)
        when is_map(runtime_model) and is_binary(key) and is_integer(value) do
     case Map.get(runtime_model, key) do

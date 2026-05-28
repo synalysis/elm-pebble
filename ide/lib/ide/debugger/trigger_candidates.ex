@@ -46,7 +46,7 @@ defmodule Ide.Debugger.TriggerCandidates do
 
   defp normalize_integer(_value, default) when is_integer(default), do: default
 
-  @spec for_surface(Types.elm_introspect() | map(), String.t(), model_active_fn()) ::
+  @spec for_surface(Types.elm_introspect(), String.t(), model_active_fn()) ::
           [Types.trigger_candidate()]
   def for_surface(ei, target_name, model_active_fn \\ fn _ -> true end)
 
@@ -195,7 +195,7 @@ defmodule Ide.Debugger.TriggerCandidates do
 
   defp subscription_timing_metadata(_op), do: %{}
 
-  @spec frame_subscription_interval_ms(String.t(), [map()]) :: integer() | nil
+  @spec frame_subscription_interval_ms(String.t(), [Types.wire_map()]) :: integer() | nil
   defp frame_subscription_interval_ms(target, snippets)
        when is_binary(target) and is_list(snippets) do
     value = snippets |> List.first() |> normalize_integer(0)
@@ -435,7 +435,7 @@ defmodule Ide.Debugger.TriggerCandidates do
   defp normalize_trigger_label(_), do: "Trigger"
 
   @doc false
-  @spec subscription_trigger_display(Types.cmd_call() | map() | nil, String.t() | nil) :: String.t()
+  @spec subscription_trigger_display(Types.cmd_call() | nil, String.t() | nil) :: String.t()
   def subscription_trigger_display(%{} = op, trigger) do
     case Map.get(op, "target") do
       target when is_binary(target) and target != "" ->
@@ -452,7 +452,7 @@ defmodule Ide.Debugger.TriggerCandidates do
   def subscription_trigger_display(_op, trigger), do: camel_case_trigger_id(trigger)
 
   @doc false
-  @spec subscription_trigger_display_for(Types.elm_introspect() | map(), String.t()) :: String.t()
+  @spec subscription_trigger_display_for(Types.elm_introspect(), String.t()) :: String.t()
   def subscription_trigger_display_for(ei, trigger)
       when is_map(ei) and is_binary(trigger) do
     case IntrospectAccess.cmd_calls(ei, "subscription_calls") do
@@ -515,7 +515,7 @@ defmodule Ide.Debugger.TriggerCandidates do
 
   defp camel_case_trigger_id(_trigger), do: "Trigger"
 
-  @spec fallback_trigger_seed_rows(String.t()) :: [map()]
+  @spec fallback_trigger_seed_rows(String.t()) :: [Types.trigger_candidate()]
   defp fallback_trigger_seed_rows(target_name) when is_binary(target_name) do
     [
       %{trigger: "button_up", label: "Button Up"},

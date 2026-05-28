@@ -4,14 +4,15 @@ defmodule Ide.Debugger.Geolocation do
   alias Ide.Debugger.CmdCall
   alias Ide.Debugger.CompanionBridge
   alias Ide.Debugger.IntrospectAccess
+  alias Ide.Debugger.ProtocolResolutionCtx
   alias Ide.Debugger.Types
   alias Ide.Debugger.SimulatorSettings, as: DebuggerSimulatorSettings
   alias Ide.SimulatorSettings
 
-  @spec contract() :: map()
+  @spec contract() :: Types.api_suffix_contract()
   def contract, do: CompanionBridge.geolocation_contract()
 
-  @spec location_payload(map()) :: map()
+  @spec location_payload(Types.simulator_settings()) :: Types.wire_map()
   def location_payload(settings) when is_map(settings) do
     normalized = DebuggerSimulatorSettings.normalize(settings)
     {lat, lon, accuracy} = SimulatorSettings.geolocation(normalized)
@@ -23,7 +24,7 @@ defmodule Ide.Debugger.Geolocation do
     }
   end
 
-  @spec location_from_state(map()) :: map()
+  @spec location_from_state(Types.runtime_state()) :: Types.wire_map()
   def location_from_state(state) when is_map(state) do
     state
     |> Map.get(:simulator_settings)
@@ -31,7 +32,7 @@ defmodule Ide.Debugger.Geolocation do
     |> location_payload()
   end
 
-  @spec wire_triplet(map()) :: {integer(), integer(), integer()}
+  @spec wire_triplet(Types.simulator_settings()) :: {integer(), integer(), integer()}
   def wire_triplet(settings) when is_map(settings) do
     {lat, lon, accuracy} = SimulatorSettings.geolocation(settings)
 
@@ -42,7 +43,7 @@ defmodule Ide.Debugger.Geolocation do
     }
   end
 
-  @spec watch_from_phone_message_value(map()) :: map()
+  @spec watch_from_phone_message_value(Types.simulator_settings()) :: Types.phone_to_watch_message_value()
   def watch_from_phone_message_value(settings) when is_map(settings) do
     {lat_e6, lon_e6, accuracy_m} = wire_triplet(settings)
 
@@ -57,7 +58,7 @@ defmodule Ide.Debugger.Geolocation do
     }
   end
 
-  @spec simulator_wire_int(map()) :: integer() | nil
+  @spec simulator_wire_int(Types.core_ir_eval_context() | ProtocolResolutionCtx.t()) :: integer() | nil
   def simulator_wire_int(ctx) when is_map(ctx) do
     with %{} = settings <- Map.get(ctx, :simulator_settings),
          index when is_integer(index) <- Map.get(ctx, :arg_index) do
@@ -74,7 +75,7 @@ defmodule Ide.Debugger.Geolocation do
     end
   end
 
-  @spec init_requested?([map()], String.t() | nil) :: boolean()
+  @spec init_requested?([Types.cmd_call()], String.t() | nil) :: boolean()
   def init_requested?(init_cmd_calls, subscription_callback) when is_list(init_cmd_calls) do
     init_requested? =
       Enum.any?(init_cmd_calls, fn row ->
@@ -87,7 +88,7 @@ defmodule Ide.Debugger.Geolocation do
 
   def init_requested?(_init_cmd_calls, subscription_callback), do: is_binary(subscription_callback)
 
-  @spec update_branch_requests_command?([map()], map()) :: boolean()
+  @spec update_branch_requests_command?([Types.cmd_call()], Types.elm_introspect()) :: boolean()
   def update_branch_requests_command?(update_cmd_calls, ei)
       when is_list(update_cmd_calls) and is_map(ei) do
     Enum.any?(update_cmd_calls, &CmdCall.requests_current_position?(ei, &1))
@@ -95,7 +96,7 @@ defmodule Ide.Debugger.Geolocation do
 
   def update_branch_requests_command?(_update_cmd_calls, _ei), do: false
 
-  @spec init_requested_from_introspect?(Types.elm_introspect() | map()) :: boolean()
+  @spec init_requested_from_introspect?(Types.elm_introspect()) :: boolean()
   def init_requested_from_introspect?(ei) when is_map(ei) do
     init_cmd_calls =
       ei
@@ -107,7 +108,7 @@ defmodule Ide.Debugger.Geolocation do
 
   def init_requested_from_introspect?(_ei), do: false
 
-  @spec subscription_callback_from_introspect(Types.elm_introspect() | map()) :: String.t() | nil
+  @spec subscription_callback_from_introspect(Types.elm_introspect()) :: String.t() | nil
   def subscription_callback_from_introspect(ei) when is_map(ei) do
     subscription_callback(
       IntrospectAccess.cmd_calls(ei, "subscription_calls"),
@@ -117,7 +118,7 @@ defmodule Ide.Debugger.Geolocation do
 
   def subscription_callback_from_introspect(_ei), do: nil
 
-  @spec subscription_callback([map()], map()) :: String.t() | nil
+  @spec subscription_callback([Types.cmd_call()], Types.api_suffix_contract()) :: String.t() | nil
   def subscription_callback(subscription_calls, contract)
       when is_list(subscription_calls) and is_map(contract) do
     target_suffixes = Map.get(contract, :target_suffixes, []) |> List.wrap()

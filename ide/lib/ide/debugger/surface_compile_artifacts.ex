@@ -12,7 +12,8 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
           required(:session_key_from_state) => (Types.runtime_state() -> String.t() | nil),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:merge_runtime_artifacts) =>
-            (Types.runtime_state(), Types.surface_target(), map() -> Types.runtime_state())
+            (Types.runtime_state(), Types.surface_target(), Types.elm_introspect() ->
+               Types.runtime_state())
         }
 
   @spec ensure_attached(Types.runtime_state(), Types.surface_target(), attach_ctx()) ::
@@ -62,7 +63,8 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
     CompanionPhoneCompile.skip_blocking_compile?(state)
   end
 
-  @spec artifacts_for_source_root(Types.runtime_state(), String.t(), attach_ctx()) :: map()
+  @spec artifacts_for_source_root(Types.runtime_state(), String.t(), attach_ctx()) ::
+          Types.runtime_artifacts()
   def artifacts_for_source_root(state, source_root, ctx)
       when is_map(state) and is_binary(source_root) and is_map(ctx) do
     with session_key when is_binary(session_key) <- ctx.session_key_from_state.(state),
@@ -83,7 +85,8 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       end
   end
 
-  @spec entrypoint_artifacts(String.t(), map(), String.t()) :: map()
+  @spec entrypoint_artifacts(String.t(), Ide.Projects.Project.t(), String.t()) ::
+          Types.runtime_artifacts()
   def entrypoint_artifacts(session_key, project, source_root)
       when is_binary(session_key) and is_binary(source_root) do
     _ = Projects.ensure_compiler_workspace(project)

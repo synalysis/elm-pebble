@@ -78,7 +78,7 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmcAdapter do
     end
   end
 
-  @spec adapter_request(execution_input()) :: map()
+  @spec adapter_request(execution_input()) :: ExecutorTypes.adapter_request_map()
   defp adapter_request(input) do
     base = %{
       source_root: Map.get(input, :source_root),
@@ -97,7 +97,8 @@ defmodule Ide.Debugger.RuntimeExecutor.ElmcAdapter do
     |> maybe_put_optional_context(:elm_executor_metadata, Map.get(input, :elm_executor_metadata))
   end
 
-  @spec maybe_put_optional_context(map(), atom(), map()) :: map()
+  @spec maybe_put_optional_context(ExecutorTypes.adapter_request_map(), atom(), Types.core_ir() | Types.wire_map()) ::
+          ExecutorTypes.adapter_request_map()
   defp maybe_put_optional_context(request, key, value)
        when is_map(request) and is_atom(key) and is_map(value) do
     Map.put(request, key, value)

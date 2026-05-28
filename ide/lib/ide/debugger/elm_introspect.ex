@@ -8,9 +8,11 @@ defmodule Ide.Debugger.ElmIntrospect do
   alias ElmEx.Frontend.GeneratedParser
   alias ElmEx.Frontend.Module
   alias Ide.Debugger.ElmIntrospect.EffectAnalysis
+  alias Ide.Debugger.ElmIntrospect.Payload
   alias Ide.Debugger.ElmIntrospect.SourceIndex
   alias Ide.Debugger.ElmIntrospect.Types
   alias Ide.Debugger.ElmIntrospect.ViewTree
+  alias Ide.Debugger.Types, as: DebuggerTypes
 
   # Keep in sync with ElmEx.Frontend.GeneratedParser @default_core_imports
   @implicit_core_imports ~w(Basics List Maybe Result String Char Tuple Debug)
@@ -42,7 +44,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec import_entry_summary(Types.import_entry() | map()) :: String.t()
+  @spec import_entry_summary(Types.import_entry() | DebuggerTypes.wire_map()) :: String.t()
   def import_entry_summary(%{} = e) do
     m = first_non_nil([Map.get(e, "module"), Map.get(e, :module), "?"])
     a = first_non_nil([Map.get(e, "as"), Map.get(e, :as)])
@@ -216,7 +218,11 @@ defmodule Ide.Debugger.ElmIntrospect do
   @doc false
   defdelegate parser_expression_structural_type?(type), to: ViewTree
 
-  @spec map_expr(Types.ast_expr() | nil, (Types.ast_expr() -> term()), term()) :: term()
+  @spec map_expr(
+          Types.ast_expr() | nil,
+          (Types.ast_expr() -> Payload.json_value()),
+          Payload.json_value()
+        ) :: Payload.json_value()
   defp map_expr(nil, _fun, fallback), do: fallback
   defp map_expr(%{} = expr, fun, _fallback) when is_function(fun, 1), do: fun.(expr)
 
@@ -333,7 +339,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec normalize_ports([map()] | nil) :: [map()]
+  @spec normalize_ports([String.t()] | nil) :: [String.t()]
   defp normalize_ports(ports) when is_list(ports) do
     ports
     |> Enum.filter(&is_binary/1)
@@ -412,7 +418,7 @@ defmodule Ide.Debugger.ElmIntrospect do
   end
 
 
-  @spec function_param_names(Types.ast_declaration() | map()) :: [String.t()]
+  @spec function_param_names(Types.ast_declaration()) :: [String.t()]
   defp function_param_names(%{args: args}) when is_list(args), do: args
   defp function_param_names(_), do: []
 
@@ -575,7 +581,7 @@ defmodule Ide.Debugger.ElmIntrospect do
     end
   end
 
-  @spec msg_union([map()]) :: map() | nil
+  @spec msg_union([Types.ast_declaration()]) :: Types.ast_declaration() | nil
   defp msg_union(decls) when is_list(decls) do
     msg_unions = Enum.filter(decls, &match?(%{kind: :union, name: "Msg"}, &1))
 

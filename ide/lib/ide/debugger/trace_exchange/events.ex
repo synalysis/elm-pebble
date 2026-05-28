@@ -12,7 +12,8 @@ defmodule Ide.Debugger.TraceExchange.Events do
 
   def event_at_seq(_events, _seq), do: nil
 
-  @spec snapshot_surface(Surface.t() | map(), Surface.t() | map()) :: map()
+  @spec snapshot_surface(Surface.t() | Surface.surface_map(), Surface.t() | Surface.surface_map()) ::
+          Surface.surface_map()
   def snapshot_surface(%Surface{} = surface, _fallback), do: Surface.to_map(surface)
   def snapshot_surface(surface, _fallback) when is_map(surface), do: surface
 end

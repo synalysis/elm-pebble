@@ -19,7 +19,7 @@ defmodule Ide.Debugger.AppMessageQueue do
     %{watch: [], companion: [], phone: []}
   end
 
-  @spec ensure(map()) :: {map(), queues()}
+  @spec ensure(Types.runtime_state()) :: {Types.runtime_state(), queues()}
   def ensure(state) when is_map(state) do
     queues =
       state
@@ -29,7 +29,7 @@ defmodule Ide.Debugger.AppMessageQueue do
     {Map.put(state, :app_message_queues, queues), queues}
   end
 
-  @spec enqueue(map(), Types.surface_target(), queue_entry()) :: map()
+  @spec enqueue(Types.runtime_state(), Types.surface_target(), queue_entry()) :: Types.runtime_state()
   def enqueue(state, target, payload)
       when is_map(state) and target in @queue_targets and is_map(payload) do
     {state, queues} = ensure(state)
@@ -37,7 +37,7 @@ defmodule Ide.Debugger.AppMessageQueue do
     Map.put(state, :app_message_queues, Map.update!(queues, target, &(&1 ++ [payload])))
   end
 
-  @spec pending?(map(), Types.surface_target()) :: boolean()
+  @spec pending?(Types.runtime_state(), Types.surface_target()) :: boolean()
   def pending?(state, target) when is_map(state) and target in @queue_targets do
     state
     |> Map.get(:app_message_queues, empty())
@@ -49,14 +49,15 @@ defmodule Ide.Debugger.AppMessageQueue do
     end
   end
 
-  @spec drain_entries(map(), Types.surface_target()) :: {map(), [queue_entry()]}
+  @spec drain_entries(Types.runtime_state(), Types.surface_target()) ::
+          {Types.runtime_state(), [queue_entry()]}
   def drain_entries(state, target) when is_map(state) and target in @queue_targets do
     {state, queues} = ensure(state)
     {entries, rest} = {Map.get(queues, target, []), Map.put(queues, target, [])}
     {Map.put(state, :app_message_queues, rest), entries}
   end
 
-  @spec normalize(map()) :: queues()
+  @spec normalize(Types.wire_map()) :: queues()
   defp normalize(queues) when is_map(queues) do
     Enum.reduce(@queue_targets, empty(), fn target, acc ->
       entries =

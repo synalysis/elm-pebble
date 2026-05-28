@@ -4,8 +4,9 @@ defmodule Ide.Debugger.ConfigurationProtocol do
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.Types
+  alias Ide.Debugger.Types.CompanionConfiguration
 
-  @spec events_applied?(map(), non_neg_integer()) :: boolean()
+  @spec events_applied?(Types.runtime_state(), non_neg_integer()) :: boolean()
   def events_applied?(state, seq_before)
       when is_map(state) and is_integer(seq_before) do
     state
@@ -32,7 +33,8 @@ defmodule Ide.Debugger.ConfigurationProtocol do
 
   def events_applied?(_state, _seq_before), do: false
 
-  @spec encode_values(map(), map()) :: map()
+  @spec encode_values(Types.companion_configuration(), Types.companion_configuration_values()) ::
+          Types.companion_configuration_values()
   def encode_values(configuration, values) when is_map(configuration) and is_map(values) do
     configuration
     |> fields()
@@ -50,7 +52,10 @@ defmodule Ide.Debugger.ConfigurationProtocol do
 
   def encode_values(_configuration, values) when is_map(values), do: values
 
-  @spec changed_values(map(), map()) :: map()
+  @spec changed_values(
+          Types.companion_configuration_values(),
+          Types.companion_configuration_values()
+        ) :: Types.companion_configuration_values()
   def changed_values(next_values, previous_values)
       when is_map(next_values) and is_map(previous_values) do
     Map.new(next_values, fn {key, value} -> {key, value} end)
@@ -58,7 +63,7 @@ defmodule Ide.Debugger.ConfigurationProtocol do
     |> Map.new()
   end
 
-  @spec fields(map()) :: [map()]
+  @spec fields(Types.companion_configuration()) :: [CompanionConfiguration.field()]
   def fields(configuration) when is_map(configuration) do
     configuration
     |> Map.get("sections", [])
@@ -69,7 +74,12 @@ defmodule Ide.Debugger.ConfigurationProtocol do
     end)
   end
 
-  @spec apply_messages(map(), map(), map(), ProtocolRx.ctx()) :: map()
+  @spec apply_messages(
+          Types.runtime_state(),
+          Types.companion_configuration(),
+          Types.companion_configuration_values(),
+          ProtocolRx.ctx()
+        ) :: Types.runtime_state()
   def apply_messages(state, configuration, values, rx_ctx)
       when is_map(state) and is_map(configuration) and is_map(values) and is_map(rx_ctx) do
     events =
@@ -84,12 +94,16 @@ defmodule Ide.Debugger.ConfigurationProtocol do
 
   def apply_messages(state, _configuration, _values, _rx_ctx), do: state
 
-  @spec field_value(map(), String.t(), map()) :: Types.wire_input()
+  @spec field_value(
+          Types.companion_configuration_values(),
+          String.t(),
+          CompanionConfiguration.field_control()
+        ) :: Types.wire_input()
   defp field_value(values, id, control) when is_map(values) and is_binary(id) and is_map(control) do
     if Map.has_key?(values, id), do: Map.get(values, id), else: Map.get(control, "default")
   end
 
-  @spec encode_value(map(), Types.wire_input()) :: Types.wire_input()
+  @spec encode_value(CompanionConfiguration.field_control(), Types.wire_input()) :: Types.wire_input()
   defp encode_value(%{"type" => "toggle"}, value), do: truthy?(value)
 
   defp encode_value(%{"type" => type}, value) when type in ["number", "slider"] do
@@ -116,7 +130,8 @@ defmodule Ide.Debugger.ConfigurationProtocol do
   defp truthy?(value) when value in [true, "true", "True", "on", "1", 1], do: true
   defp truthy?(_value), do: false
 
-  @spec protocol_events(map(), map()) :: [map()]
+  @spec protocol_events(CompanionConfiguration.field(), Types.companion_configuration_values()) ::
+          [Types.protocol_timeline_event()]
   defp protocol_events(field, values) when is_map(field) and is_map(values) do
     control = Map.get(field, "control", %{})
     constructor = Map.get(control, "send_to_watch")
@@ -139,7 +154,7 @@ defmodule Ide.Debugger.ConfigurationProtocol do
 
   defp protocol_events(_field, _values), do: []
 
-  @spec protocol_arg(map(), Types.wire_input()) ::
+  @spec protocol_arg(CompanionConfiguration.field_control(), Types.wire_input()) ::
           {:ok, String.t(), Types.protocol_wire_arg()} | :error
   defp protocol_arg(%{"type" => "toggle"}, value) do
     bool = truthy?(value)

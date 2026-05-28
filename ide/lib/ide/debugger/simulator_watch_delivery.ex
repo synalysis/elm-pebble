@@ -72,8 +72,12 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
     end
   end
 
-  @spec inject_unobstructed_triggers(Types.runtime_state(), map(), map(), apply_ctx()) ::
-          Types.runtime_state()
+  @spec inject_unobstructed_triggers(
+          Types.runtime_state(),
+          Types.simulator_settings(),
+          Types.simulator_settings(),
+          apply_ctx()
+        ) :: Types.runtime_state()
   def inject_unobstructed_triggers(state, previous_settings, new_settings, ctx)
       when is_map(state) and is_map(previous_settings) and is_map(new_settings) and is_map(ctx) do
     if Map.get(previous_settings, "timeline_peek") == Map.get(new_settings, "timeline_peek") do
@@ -85,8 +89,12 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
     end
   end
 
-  @spec inject_weather_on_settings_change(Types.runtime_state(), map(), map(), apply_ctx()) ::
-          Types.runtime_state()
+  @spec inject_weather_on_settings_change(
+          Types.runtime_state(),
+          Types.simulator_settings(),
+          Types.simulator_settings(),
+          apply_ctx()
+        ) :: Types.runtime_state()
   def inject_weather_on_settings_change(state, previous_settings, new_settings, ctx)
       when is_map(state) and is_map(previous_settings) and is_map(new_settings) and is_map(ctx) do
     previous_weather = Map.get(previous_settings, "weather") || %{}
@@ -122,7 +130,7 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
     end
   end
 
-  @spec protocol_supports_weather?(Types.runtime_state(), (-> map())) :: boolean()
+  @spec protocol_supports_weather?(Types.runtime_state(), (-> ProtocolEvents.ctx())) :: boolean()
   def protocol_supports_weather?(state, protocol_events_ctx_fun)
       when is_map(state) and is_function(protocol_events_ctx_fun, 0) do
     case ProtocolEvents.project_schema(state, protocol_events_ctx_fun.()) do
@@ -169,7 +177,8 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
     end
   end
 
-  @spec weather_message_value(String.t(), map()) :: map() | nil
+  @spec weather_message_value(String.t(), Types.simulator_settings()) ::
+          Types.phone_to_watch_message_value() | nil
   def weather_message_value("ProvideTemperature", weather) when is_map(weather) do
     case DebuggerSimulatorSettings.temperature_celsius(weather) do
       nil ->
@@ -204,7 +213,7 @@ defmodule Ide.Debugger.SimulatorWatchDelivery do
 
   def weather_message_value(_message_name, _weather), do: nil
 
-  @spec weather_step_message(String.t(), map()) :: String.t()
+  @spec weather_step_message(String.t(), Types.simulator_settings()) :: String.t()
   def weather_step_message("ProvideTemperature", weather) when is_map(weather) do
     case DebuggerSimulatorSettings.temperature_celsius(weather) do
       nil -> "FromPhone (ProvideTemperature ...)"

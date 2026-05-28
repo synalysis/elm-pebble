@@ -11,6 +11,7 @@ defmodule Ide.Debugger.DeferredCompanionInit do
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.RuntimeBackgroundNotify
+  alias Ide.Debugger.Types
 
   @spec schedule(String.t()) :: :ok
   def schedule(scope_key) when is_binary(scope_key) do
@@ -26,7 +27,7 @@ defmodule Ide.Debugger.DeferredCompanionInit do
     :ok
   end
 
-  @spec apply_deferred_companion_effects(String.t()) :: map()
+  @spec apply_deferred_companion_effects(String.t()) :: Types.runtime_state()
   defp apply_deferred_companion_effects(scope_key) when is_binary(scope_key) do
     hosts = AgentSession.hosts()
     contexts = AgentHosts.contexts(hosts)

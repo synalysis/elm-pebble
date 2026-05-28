@@ -13,7 +13,7 @@ defmodule Ide.Debugger.SettingsApi do
   @spec default() :: Types.simulator_settings()
   def default, do: SimulatorSettings.default()
 
-  @spec normalize(map()) :: Types.simulator_settings()
+  @spec normalize(Types.SimulatorSettings.wire_map()) :: Types.simulator_settings()
   def normalize(settings) when is_map(settings), do: SimulatorSettings.normalize(settings)
 
   def normalize(_settings), do: SimulatorSettings.default()

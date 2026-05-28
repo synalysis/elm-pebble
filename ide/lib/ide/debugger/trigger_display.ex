@@ -16,7 +16,7 @@ defmodule Ide.Debugger.TriggerDisplay do
           required(:normalize_target) => normalize_target_fn()
         }
 
-  @spec label_for(Types.runtime_state() | map(), String.t(), String.t(), host()) :: String.t()
+  @spec label_for(Types.runtime_state(), String.t(), String.t(), host()) :: String.t()
   def label_for(state, trigger, target_name, host)
       when is_map(state) and is_binary(trigger) and is_binary(target_name) and is_map(host) do
     TriggerSurface.display_for(

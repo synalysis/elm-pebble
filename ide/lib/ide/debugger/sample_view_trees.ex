@@ -4,12 +4,12 @@ defmodule Ide.Debugger.SampleViewTrees do
   alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.Types
 
-  @spec default_for_target(Types.surface_target()) :: map()
+  @spec default_for_target(Types.surface_target()) :: Types.view_output_tree()
   def default_for_target(:watch), do: Map.get(RuntimeSurfaces.default_watch(), :view_tree)
   def default_for_target(:companion), do: Map.get(RuntimeSurfaces.default_companion(), :view_tree)
   def default_for_target(:phone), do: Map.get(RuntimeSurfaces.default_phone(), :view_tree)
 
-  @spec watch(String.t() | nil, String.t()) :: map()
+  @spec watch(String.t() | nil, String.t()) :: Types.view_output_tree()
   def watch(rel_path, revision) do
     path = rel_path || "unknown"
 
@@ -42,7 +42,7 @@ defmodule Ide.Debugger.SampleViewTrees do
     }
   end
 
-  @spec companion(String.t(), String.t()) :: map()
+  @spec companion(String.t(), String.t()) :: Types.view_output_tree()
   def companion(rel_path, revision) do
     %{
       "type" => "CompanionRoot",
@@ -66,7 +66,7 @@ defmodule Ide.Debugger.SampleViewTrees do
     }
   end
 
-  @spec phone(String.t(), String.t()) :: map()
+  @spec phone(String.t(), String.t()) :: Types.view_output_tree()
   def phone(rel_path, revision) do
     %{
       "type" => "PhoneRoot",

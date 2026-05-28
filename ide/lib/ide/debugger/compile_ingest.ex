@@ -4,6 +4,7 @@ defmodule Ide.Debugger.CompileIngest do
   and `ingest_elmc_manifest/2`.
   """
 
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.{
     CompileIngestAttrs,
     ElmcEventPayload,
@@ -11,15 +12,20 @@ defmodule Ide.Debugger.CompileIngest do
     RuntimeEventAppend
   }
 
+  @type ingest_fields ::
+          ElmcSurfaceFields.check_fields()
+          | ElmcSurfaceFields.compile_fields()
+          | ElmcSurfaceFields.manifest_fields()
+
   @type ingest_plan :: %{
-          required(:fields) => map(),
+          required(:fields) => ingest_fields(),
           required(:event_type) => String.t(),
           required(:event_payload) => ElmcEventPayload.t(),
-          optional(:artifact_fields) => map(),
-          optional(:artifact_target) => :watch | :companion | :phone | nil
+          optional(:artifact_fields) => ElmcSurfaceFields.artifact_fields(),
+          optional(:artifact_target) => ElmcSurfaceFields.surface_target() | nil
         }
 
-  @spec check_plan(CompileIngestAttrs.t() | map()) :: ingest_plan()
+  @spec check_plan(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: ingest_plan()
   def check_plan(attrs) when is_map(attrs) do
     %{
       fields: ElmcSurfaceFields.ingest_check_fields(attrs),
@@ -28,7 +34,7 @@ defmodule Ide.Debugger.CompileIngest do
     }
   end
 
-  @spec compile_plan(CompileIngestAttrs.t() | map()) :: ingest_plan()
+  @spec compile_plan(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: ingest_plan()
   def compile_plan(attrs) when is_map(attrs) do
     %{
       fields: ElmcSurfaceFields.ingest_compile_fields(attrs),
@@ -39,7 +45,7 @@ defmodule Ide.Debugger.CompileIngest do
     }
   end
 
-  @spec manifest_plan(CompileIngestAttrs.t() | map()) :: ingest_plan()
+  @spec manifest_plan(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) :: ingest_plan()
   def manifest_plan(attrs) when is_map(attrs) do
     %{
       fields: ElmcSurfaceFields.ingest_manifest_fields(attrs),
@@ -48,7 +54,7 @@ defmodule Ide.Debugger.CompileIngest do
     }
   end
 
-  @spec merge_fields_into_all_targets(map(), map()) :: map()
+  @spec merge_fields_into_all_targets(Types.runtime_state(), ingest_fields()) :: Types.runtime_state()
   def merge_fields_into_all_targets(state, fields) when is_map(state) and is_map(fields) do
     state
     |> merge_target(:watch, fields)
@@ -56,7 +62,8 @@ defmodule Ide.Debugger.CompileIngest do
     |> merge_target(:phone, fields)
   end
 
-  @spec merge_target(map(), :watch | :companion | :phone, map()) :: map()
+  @spec merge_target(Types.runtime_state(), ElmcSurfaceFields.surface_target(), ingest_fields()) ::
+          Types.runtime_state()
   defp merge_target(state, target, fields)
        when target in [:watch, :companion, :phone] and is_map(state) and is_map(fields) do
     Ide.Debugger.RuntimeSurfaceMerge.merge_into_state(state, target, fields)

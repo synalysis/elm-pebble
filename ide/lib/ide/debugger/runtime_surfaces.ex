@@ -5,7 +5,7 @@ defmodule Ide.Debugger.RuntimeSurfaces do
   alias Ide.Debugger.Types
   alias Ide.WatchModels
 
-  @spec default_watch(map() | nil) :: Surface.surface_map()
+  @spec default_watch(Types.launch_context() | nil) :: Surface.surface_map()
   def default_watch(launch_context \\ nil)
 
   def default_watch(nil) do
@@ -57,7 +57,7 @@ defmodule Ide.Debugger.RuntimeSurfaces do
     |> Surface.to_map()
   end
 
-  @spec protocol_model(String.t()) :: map()
+  @spec protocol_model(String.t()) :: Types.app_model()
   def protocol_model(status) when is_binary(status) do
     %{
       "status" => status,
@@ -228,7 +228,7 @@ defmodule Ide.Debugger.RuntimeSurfaces do
   defp maybe_put_runtime_value(map, _key, value) when value in [nil, ""], do: map
   defp maybe_put_runtime_value(map, key, value), do: Map.put(map, key, value)
 
-  @spec launch_context_color_mode(map()) :: String.t()
+  @spec launch_context_color_mode(Types.LaunchContext.wire_map()) :: String.t()
   def launch_context_color_mode(launch_context) when is_map(launch_context) do
     cond do
       get_in(launch_context, ["screen", "color_mode"]) in ["Color", "BlackWhite"] ->

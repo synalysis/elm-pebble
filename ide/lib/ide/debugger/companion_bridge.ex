@@ -4,7 +4,7 @@ defmodule Ide.Debugger.CompanionBridge do
   alias Ide.Debugger.CompanionBridge.ApiSuffixes
   alias Ide.Debugger.Types
 
-  @spec configuration_contract() :: map()
+  @spec configuration_contract() :: Types.api_suffix_contract()
   def configuration_contract do
     %{
       target_suffixes:
@@ -13,17 +13,17 @@ defmodule Ide.Debugger.CompanionBridge do
     }
   end
 
-  @spec geolocation_contract() :: map()
+  @spec geolocation_contract() :: Types.api_suffix_contract()
   def geolocation_contract do
     %{target_suffixes: ApiSuffixes.suffixes("Geolocation", ["onCurrentPosition"])}
   end
 
-  @spec storage_contract() :: map()
+  @spec storage_contract() :: Types.api_suffix_contract()
   def storage_contract do
     %{target_suffixes: ApiSuffixes.suffixes("Storage", ["onStorage"])}
   end
 
-  @spec preferences_contract() :: map()
+  @spec preferences_contract() :: Types.api_suffix_contract()
   def preferences_contract do
     %{target_suffixes: ApiSuffixes.suffixes("PreferenceStore", ["onPreference"])}
   end
@@ -81,7 +81,7 @@ defmodule Ide.Debugger.CompanionBridge do
     Enum.find(subscription_contracts(), &(Map.fetch!(&1, :source) == source))
   end
 
-  @spec payload(map(), atom(), map()) :: Types.companion_bridge_payload()
+  @spec payload(Types.simulator_settings(), atom(), Types.wire_map()) :: Types.companion_bridge_payload()
   def payload(settings, :calendar, request) when is_map(settings) and is_map(request) do
     events = settings["calendar_events"]
 
@@ -92,7 +92,8 @@ defmodule Ide.Debugger.CompanionBridge do
     end
   end
 
-  def payload(settings, :weather, request) when is_map(settings) and is_map(request) do
+  def payload(settings, :weather, request)
+      when is_map(settings) and is_map(request) do
     weather = weather_info(settings["weather"])
 
     case Map.get(request, :op) do
@@ -106,7 +107,7 @@ defmodule Ide.Debugger.CompanionBridge do
     bool_setting(settings, "network_online", true)
   end
 
-  def payload(settings, kind, _request) when is_map(settings) do
+  def payload(settings, kind, _request) when is_map(settings) and is_atom(kind) do
     case kind do
       :battery ->
         %{"percent" => settings["battery_percent"], "charging" => settings["charging"]}
@@ -130,7 +131,7 @@ defmodule Ide.Debugger.CompanionBridge do
     end
   end
 
-  @spec weather_info(map() | nil) :: map()
+  @spec weather_info(Types.simulator_settings() | nil) :: Types.weather_info_map()
   def weather_info(weather) when is_map(weather) do
     weather
     |> Map.take(["temperatureC", "condition", "humidityPercent", "pressureHpa", "windKph"])
@@ -187,7 +188,8 @@ defmodule Ide.Debugger.CompanionBridge do
     end
   end
 
-  @spec subscription_result_message_value(String.t(), String.t(), Types.subscription_payload()) :: map()
+  @spec subscription_result_message_value(String.t(), String.t(), Types.subscription_payload()) ::
+          Types.protocol_ctor_value()
   def subscription_result_message_value(callback, result_ctor, payload)
       when is_binary(callback) and is_binary(result_ctor) do
     %{

@@ -35,15 +35,20 @@ defmodule Ide.Debugger.Types.RuntimeStepResult do
     Ide.Debugger.RuntimeExecutor.ResultNormalizer.normalize_step_result(result)
   end
 
-  @spec from_executor_wire(ExecutorExecutionResult.wire_map() | map()) :: t()
+  @spec from_executor_wire(ExecutorExecutionResult.wire_map()) :: t()
   def from_executor_wire(wire) when is_map(wire) do
     wire
     |> Ide.Debugger.RuntimeExecutor.ResultNormalizer.normalize()
     |> from_executor_result()
   end
 
-  @spec from_local_fallback(model_patch(), ViewTreeNode.view_tree() | map(), list(), list(), list()) ::
-          t()
+  @spec from_local_fallback(
+          model_patch(),
+          ViewTreeNode.view_tree() | ViewTreeNode.t() | nil,
+          ViewOutputRow.view_output(),
+          [Event.t() | map()],
+          [followup_message()]
+        ) :: t()
   def from_local_fallback(model_patch, view_tree, view_output \\ [], protocol_events \\ [], followup_messages \\ [])
       when is_map(model_patch) do
     %{

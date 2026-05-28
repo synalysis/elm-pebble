@@ -8,7 +8,7 @@ defmodule Ide.Debugger.CompanionBridgeEffects do
           Types.runtime_state(),
           Types.surface_target(),
           String.t(),
-          map(),
+          Types.app_model(),
           String.t(),
           CompanionBridgeRuntime.ctx()
         ) :: Types.runtime_state()

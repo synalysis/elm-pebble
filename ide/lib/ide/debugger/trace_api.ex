@@ -27,7 +27,7 @@ defmodule Ide.Debugger.TraceApi do
     end)
   end
 
-  @spec snapshot_reference_rows([runtime_event()]) :: [map()]
+  @spec snapshot_reference_rows([runtime_event()]) :: [Types.wire_map()]
   def snapshot_reference_rows(events), do: SnapshotReference.rows(events)
 
   @spec export_trace(String.t(), Types.export_trace_opts()) :: {:ok, Types.export_trace_result()}

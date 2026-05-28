@@ -6,16 +6,27 @@ defmodule Ide.Debugger.HotReload do
 
   @type ctx :: %{
           required(:compute_revision) => (String.t() | nil, String.t() -> String.t()),
-          required(:prepare_running_state) => (map() -> map()),
+          required(:prepare_running_state) => (Types.runtime_state() -> Types.runtime_state()),
           required(:put_reload_fields) =>
-            (map(), Types.surface_target(), String.t() | nil, String.t(), String.t() -> map()),
-          required(:put_placeholder_views) => (map(), String.t(), String.t(), String.t() -> map()),
-          required(:merge_introspect) => (map() -> {map(), map() | nil}),
+            (Types.runtime_state(), Types.surface_target(), String.t() | nil, String.t(), String.t() ->
+               Types.runtime_state()),
+          required(:put_placeholder_views) =>
+            (Types.runtime_state(), String.t(), String.t(), String.t() -> Types.runtime_state()),
+          required(:merge_introspect) =>
+            (Types.runtime_state() -> {Types.runtime_state(), Types.elm_introspect() | nil}),
           required(:append_reload_events) =>
-            (map(), String.t(), String.t() | nil, String.t(), String.t(), String.t() -> map())
+            (Types.runtime_state(), String.t(), String.t() | nil, String.t(), String.t(), String.t() ->
+               Types.runtime_state())
         }
 
-  @spec apply(map(), String.t() | nil, String.t(), String.t(), String.t(), ctx()) :: map()
+  @spec apply(
+          Types.runtime_state(),
+          String.t() | nil,
+          String.t(),
+          String.t(),
+          String.t(),
+          ctx()
+        ) :: Types.runtime_state()
   def apply(state, rel_path, source, reason, source_root, ctx)
       when is_map(state) and is_binary(source) and is_binary(reason) and is_binary(source_root) and
              is_map(ctx) do
@@ -34,7 +45,13 @@ defmodule Ide.Debugger.HotReload do
     end)
   end
 
-  @spec put_source_fields(map(), Types.surface_target(), String.t() | nil, String.t(), String.t()) :: map()
+  @spec put_source_fields(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t() | nil,
+          String.t(),
+          String.t()
+        ) :: Types.runtime_state()
   def put_source_fields(state, target, rel_path, source, source_root)
       when target in [:watch, :companion, :phone] do
     state
@@ -54,7 +71,7 @@ defmodule Ide.Debugger.HotReload do
   def reload_pulse(:phone, "protocol"), do: "ProtocolSync"
   def reload_pulse(_target, _source_root), do: "HotReload"
 
-  @spec revision_messages(map(), String.t(), String.t()) :: map()
+  @spec revision_messages(Types.runtime_state(), String.t(), String.t()) :: Types.runtime_state()
   def revision_messages(state, revision, source_root) when is_map(state) do
     state
     |> put_in([:watch, :last_message], reload_pulse(:watch, source_root))

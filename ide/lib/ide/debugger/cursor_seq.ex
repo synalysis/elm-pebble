@@ -1,7 +1,11 @@
 defmodule Ide.Debugger.CursorSeq do
   @moduledoc false
 
-  @spec resolve_at_or_before([map()], integer() | nil) :: integer() | nil
+  alias Ide.Debugger.Types
+
+  @type seq_event :: Types.runtime_event() | %{optional(:seq) => integer() | nil}
+
+  @spec resolve_at_or_before([seq_event()], integer() | nil) :: integer() | nil
   def resolve_at_or_before(events, requested_seq) when is_list(events) do
     seqs = event_seqs(events)
 
@@ -18,7 +22,7 @@ defmodule Ide.Debugger.CursorSeq do
     end
   end
 
-  @spec resolve_before([map()], integer() | nil, integer() | nil) :: integer() | nil
+  @spec resolve_before([seq_event()], integer() | nil, integer() | nil) :: integer() | nil
   def resolve_before(events, current_seq, requested_seq \\ nil)
 
   def resolve_before(events, current_seq, requested_seq)
@@ -43,7 +47,7 @@ defmodule Ide.Debugger.CursorSeq do
 
   def resolve_before(_events, _current_seq, _requested_seq), do: nil
 
-  @spec event_seqs([map()]) :: [integer()]
+  @spec event_seqs([seq_event()]) :: [integer()]
   defp event_seqs(events) when is_list(events) do
     events
     |> Enum.map(&Map.get(&1, :seq))

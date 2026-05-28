@@ -9,7 +9,7 @@ defmodule Ide.Debugger.TriggerDiscovery do
 
   @type host :: %{required(:trigger_surface) => trigger_surface_ctx()}
 
-  @spec candidates(Types.runtime_state() | map(), :watch | :companion | :phone | nil, host()) ::
+  @spec candidates(Types.runtime_state(), :watch | :companion | :phone | nil, host()) ::
           [Types.trigger_candidate()]
   def candidates(state, target, host) when is_map(host) do
     trigger_surface = resolve_trigger_surface(host)

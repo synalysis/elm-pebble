@@ -54,7 +54,7 @@ defmodule Ide.Debugger.SimulatorSettings do
     }
   end
 
-  @spec from_state(map()) :: Types.simulator_settings()
+  @spec from_state(Types.runtime_state()) :: Types.simulator_settings()
   def from_state(state) when is_map(state) do
     state
     |> Map.get(:simulator_settings)
@@ -63,7 +63,7 @@ defmodule Ide.Debugger.SimulatorSettings do
 
   def from_state(_state), do: default()
 
-  @spec from_model(map()) :: Types.simulator_settings()
+  @spec from_model(Types.app_model()) :: Types.simulator_settings()
   def from_model(model) when is_map(model) do
     model
     |> WireValues.map_value("simulator_settings")
@@ -72,7 +72,7 @@ defmodule Ide.Debugger.SimulatorSettings do
 
   def from_model(_model), do: default()
 
-  @spec normalize(map()) :: Types.simulator_settings()
+  @spec normalize(Types.SimulatorSettings.wire_map()) :: Types.simulator_settings()
   def normalize(settings) when is_map(settings) do
     defaults = default()
 
@@ -171,7 +171,7 @@ defmodule Ide.Debugger.SimulatorSettings do
 
   def normalize(_settings), do: default()
 
-  @spec temperature_celsius(map()) :: integer() | nil
+  @spec temperature_celsius(Types.SimulatorSettings.wire_map()) :: integer() | nil
   def temperature_celsius(weather) when is_map(weather) do
     weather
     |> Map.get("temperatureC", Map.get(weather, :temperatureC))
@@ -180,7 +180,7 @@ defmodule Ide.Debugger.SimulatorSettings do
 
   def temperature_celsius(_weather), do: nil
 
-  @spec temperature_scalar(number() | String.t() | map()) :: integer() | nil
+  @spec temperature_scalar(number() | String.t() | Types.protocol_ctor_value()) :: integer() | nil
   def temperature_scalar(value) when is_integer(value), do: value
 
   def temperature_scalar(value) when is_float(value),
@@ -251,7 +251,8 @@ defmodule Ide.Debugger.SimulatorSettings do
   defp normalize_json_list(value, _default) when is_list(value), do: value
   defp normalize_json_list(_value, default) when is_list(default), do: default
 
-  @spec normalize_weather_settings(map() | nil, map()) :: map()
+  @spec normalize_weather_settings(Types.SimulatorSettings.wire_map() | nil, Types.SimulatorSettings.weather()) ::
+          Types.SimulatorSettings.weather()
   defp normalize_weather_settings(value, default) when is_map(value) and is_map(default) do
     weather =
       value

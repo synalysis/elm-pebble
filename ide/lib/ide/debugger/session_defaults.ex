@@ -22,7 +22,7 @@ defmodule Ide.Debugger.SessionDefaults do
     end
   end
 
-  @spec session_key_from_state(map()) :: String.t() | nil
+  @spec session_key_from_state(Types.runtime_state()) :: String.t() | nil
   def session_key_from_state(%{scope_key: key}) when is_binary(key), do: key
   def session_key_from_state(%{project_slug: slug}) when is_binary(slug), do: slug
   def session_key_from_state(_), do: nil
@@ -102,7 +102,7 @@ defmodule Ide.Debugger.SessionDefaults do
     |> SimulatorSurfaceSettings.apply_to_state()
   end
 
-  @spec ensure_phone_state(map()) :: Types.runtime_state()
+  @spec ensure_phone_state(Types.runtime_state()) :: Types.runtime_state()
   def ensure_phone_state(state) when is_map(state) do
     watch_profile_id = RuntimeSurfaces.parse_watch_profile_id(Map.get(state, :watch_profile_id))
 

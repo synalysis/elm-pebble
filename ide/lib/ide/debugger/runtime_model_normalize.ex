@@ -5,7 +5,7 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
   alias Ide.Debugger.RuntimeModelHydrate
   alias Ide.Debugger.Types
 
-  @type patch :: map()
+  @type patch :: Types.runtime_model_patch()
   @type scalar_kind :: :string | :integer | :boolean
 
   @spec patch_values(Types.execution_model(), patch()) :: patch()
@@ -33,7 +33,8 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
 
   def patch_values(_model, patch), do: patch
 
-  @spec model_values(map(), map(), map()) :: map()
+  @spec model_values(Types.inner_runtime_model(), Types.inner_runtime_model(), Types.init_model_values()) ::
+          Types.inner_runtime_model()
   defp model_values(previous, next, initial)
        when is_map(previous) and is_map(next) and is_map(initial) do
     Map.new(next, fn {key, value} ->
@@ -68,7 +69,8 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
     end
   end
 
-  @spec normalize_runtime_shape(Types.protocol_wire_arg(), map()) :: map()
+  @spec normalize_runtime_shape(Types.protocol_wire_arg(), Types.init_model_values()) ::
+          Types.protocol_wire_arg()
   defp normalize_runtime_shape(previous, initial) do
     cond do
       maybe_runtime_ctor?(previous) -> previous

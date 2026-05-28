@@ -4,10 +4,10 @@ defmodule Ide.Debugger.RuntimeViewOutput do
   alias Ide.Debugger.Types
   alias Ide.Debugger.WireValues
 
-  @spec normalize_view_output(list()) :: [map()]
+  @spec normalize_view_output(list()) :: Types.runtime_view_nodes()
   def normalize_view_output(value) when is_list(value), do: value
   def normalize_view_output(_), do: []
-  @spec tree(map(), Types.surface_target()) :: map() | nil
+  @spec tree(Types.app_model(), Types.surface_target()) :: Types.view_output_tree() | nil
   def tree(model, target)
        when is_map(model) and target in [:watch, :companion, :phone] do
     case normalize_view_output(
@@ -45,7 +45,7 @@ defmodule Ide.Debugger.RuntimeViewOutput do
 
   def tree(_model, _target), do: nil
 
-  @spec runtime_view_output_screen(map()) :: {pos_integer(), pos_integer()}
+  @spec runtime_view_output_screen(Types.app_model()) :: {pos_integer(), pos_integer()}
   def runtime_view_output_screen(model) when is_map(model) do
     runtime_model =
       case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
@@ -80,13 +80,14 @@ defmodule Ide.Debugger.RuntimeViewOutput do
 
   def positive_integer_value(_value, fallback), do: fallback
 
-  @spec runtime_view_output_nodes([map()]) :: [map()]
+  @spec runtime_view_output_nodes(Types.runtime_view_nodes()) :: [Types.view_output_tree()]
   def runtime_view_output_nodes(ops) when is_list(ops) do
     {nodes, _rest} = runtime_view_output_nodes_until(ops, false)
     nodes
   end
 
-  @spec runtime_view_output_nodes_until([map()], boolean()) :: {[map()], [map()]}
+  @spec runtime_view_output_nodes_until(Types.runtime_view_nodes(), boolean()) ::
+          {[Types.view_output_tree()], Types.runtime_view_nodes()}
   def runtime_view_output_nodes_until(rows, stop_on_pop?) when is_list(rows) do
     runtime_view_output_nodes_until(rows, stop_on_pop?, [])
   end
@@ -124,7 +125,8 @@ defmodule Ide.Debugger.RuntimeViewOutput do
     end
   end
 
-  @spec split_runtime_view_output_group([map()]) :: {map(), [map()]}
+  @spec split_runtime_view_output_group([Types.view_output_tree()]) ::
+          {Types.wire_map(), [Types.view_output_tree()]}
   def split_runtime_view_output_group(nodes) when is_list(nodes) do
     Enum.reduce(nodes, {%{}, []}, fn node, {style, children} ->
       case Map.get(node, "type") do
@@ -138,13 +140,13 @@ defmodule Ide.Debugger.RuntimeViewOutput do
     |> then(fn {style, children} -> {style, Enum.reverse(children)} end)
   end
 
-  @spec maybe_put_group_style(map(), map()) :: map()
+  @spec maybe_put_group_style(Types.view_output_tree(), Types.wire_map()) :: Types.view_output_tree()
   def maybe_put_group_style(group, style) when is_map(group) and map_size(style) > 0,
     do: Map.put(group, "style", style)
 
   def maybe_put_group_style(group, _style), do: group
 
-  @spec runtime_view_output_style_node(map()) :: map()
+  @spec runtime_view_output_style_node(Types.view_output_node()) :: Types.view_output_tree()
   def runtime_view_output_style_node(row) when is_map(row) do
     kind = runtime_view_output_kind(row)
 
@@ -155,7 +157,7 @@ defmodule Ide.Debugger.RuntimeViewOutput do
     }
   end
 
-  @spec runtime_view_output_node(map()) :: map() | nil
+  @spec runtime_view_output_node(Types.view_output_node()) :: Types.view_output_tree() | nil
   def runtime_view_output_node(row) when is_map(row) do
     case runtime_view_output_kind(row) do
       "clear" ->
@@ -297,7 +299,8 @@ defmodule Ide.Debugger.RuntimeViewOutput do
     end
   end
 
-  @spec maybe_put_rendered_source(map(), map()) :: map()
+  @spec maybe_put_rendered_source(Types.view_output_tree(), Types.wire_map()) ::
+          Types.view_output_tree()
   def maybe_put_rendered_source(node, row) when is_map(node) and is_map(row) do
     case WireValues.map_value(row, "source") do
       %{} = source -> Map.put(node, "source", source)
@@ -305,7 +308,7 @@ defmodule Ide.Debugger.RuntimeViewOutput do
     end
   end
 
-  @spec runtime_view_output_kind(map()) :: String.t()
+  @spec runtime_view_output_kind(Types.view_output_node()) :: String.t()
   def runtime_view_output_kind(row) when is_map(row),
     do: to_string(WireValues.map_value(row, "kind") || "")
 

@@ -20,7 +20,8 @@ defmodule Ide.Debugger.RuntimeHub do
   alias Ide.Debugger.TriggerSurface
   alias Ide.Debugger.Types
 
-  @type append_event_fn :: (Types.runtime_state(), String.t(), map() -> Types.runtime_state())
+  @type append_event_fn ::
+          (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() -> Types.runtime_state())
 
   @type append_debugger_event_fn ::
           (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() ->
@@ -79,7 +80,7 @@ defmodule Ide.Debugger.RuntimeHub do
           String.t() | nil,
           String.t() | nil,
           String.t()
-        ) :: Types.runtime_state()
+        ) :: any()
   def apply_step_once(config, state, target, requested_message, source_override, trigger)
       when target in [:watch, :companion, :phone] do
     apply_step_once(config, state, target, requested_message, nil, source_override, trigger, [])
@@ -94,7 +95,7 @@ defmodule Ide.Debugger.RuntimeHub do
           String.t() | nil,
           String.t(),
           keyword()
-        ) :: Types.runtime_state()
+        ) :: any()
   def apply_step_once(config, state, target, requested_message, message_value, source_override, trigger, opts)
       when target in [:watch, :companion, :phone] and is_list(opts) do
     apply_step_once(config, state, target, requested_message, message_value, source_override, trigger, opts,
@@ -112,7 +113,7 @@ defmodule Ide.Debugger.RuntimeHub do
           String.t(),
           keyword(),
           RuntimeContexts.t()
-        ) :: Types.runtime_state()
+        ) :: any()
   def apply_step_once(
         _config,
         state,
@@ -230,7 +231,7 @@ defmodule Ide.Debugger.RuntimeHub do
           config(),
           Types.runtime_state(),
           Types.surface_target(),
-          map()
+          Types.elm_introspect()
         ) :: Types.runtime_state()
   def maybe_attach_compile_artifacts_for_parser_view(%{append_event: _} = config, state, target, ei) do
     maybe_attach_compile_artifacts_for_parser_view(contexts(config), state, target, ei)
@@ -240,7 +241,7 @@ defmodule Ide.Debugger.RuntimeHub do
           RuntimeContexts.t(),
           Types.runtime_state(),
           Types.surface_target(),
-          map()
+          Types.elm_introspect()
         ) :: Types.runtime_state()
   def maybe_attach_compile_artifacts_for_parser_view(%{step_apply: _} = ctx, state, target, ei) do
     context_attach_compile_artifacts({:built, ctx}, state, target, ei)
@@ -330,7 +331,7 @@ defmodule Ide.Debugger.RuntimeHub do
   # Built callbacks must not use stub_ctx.tick_resolution: the stub pass wires
   # attach_payload to a no-op, which makes auto-fire resolve "" and cycle Msg
   # constructors (CurrentDateTime before MinuteChanged) instead of the subscription row.
-  @spec subscription_wire_fns(:stub | {:built, map()}) ::
+  @spec subscription_wire_fns(:stub | {:built, RuntimeContexts.t()}) ::
           {(Types.runtime_state(), Types.surface_target(), String.t(), String.t() | nil -> String.t()),
            (Types.runtime_state(), Types.surface_target(), String.t(), String.t() -> String.t())}
   defp subscription_wire_fns(:stub) do

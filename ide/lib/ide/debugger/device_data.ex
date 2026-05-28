@@ -16,10 +16,10 @@ defmodule Ide.Debugger.DeviceData do
     "YearChanged" => :year
   }
 
-  @spec settings_from_model(map()) :: map()
+  @spec settings_from_model(Types.app_model()) :: Types.simulator_settings()
   defp settings_from_model(model) when is_map(model), do: DebuggerSimulatorSettings.from_model(model)
 
-  @spec now_from_model(map(), String.t() | nil) :: NaiveDateTime.t()
+  @spec now_from_model(Types.app_model(), String.t() | nil) :: NaiveDateTime.t()
   defp now_from_model(model, current_message) when is_map(model) do
     model
     |> settings_from_model()
@@ -102,7 +102,7 @@ defmodule Ide.Debugger.DeviceData do
   def apply_subscription_overrides_to_runtime_now(runtime_model, _overrides) when is_map(runtime_model),
     do: runtime_model
 
-  @spec apply_clock_map_overrides(map(), %{String.t() => integer()}) :: map()
+  @spec apply_clock_map_overrides(Types.app_model(), %{String.t() => integer()}) :: Types.app_model()
   defp apply_clock_map_overrides(value, overrides) when is_map(value) and is_map(overrides) do
     Enum.reduce(overrides, value, fn {key, int}, acc ->
       if is_binary(key) and is_integer(int), do: Map.put(acc, key, int), else: acc
@@ -138,7 +138,7 @@ defmodule Ide.Debugger.DeviceData do
     end
   end
 
-  @spec now_from_settings(map()) :: NaiveDateTime.t()
+  @spec now_from_settings(Types.simulator_settings()) :: NaiveDateTime.t()
   defp now_from_settings(settings) when is_map(settings) do
     fallback = NaiveDateTime.local_now()
 
@@ -261,7 +261,7 @@ defmodule Ide.Debugger.DeviceData do
   def response_message(%{response_message: ctor}) when is_binary(ctor), do: ctor
   def response_message(_req), do: nil
 
-  @spec response_wire_value(map()) :: map() | nil
+  @spec response_wire_value(Types.device_request()) :: Types.protocol_ctor_value() | nil
   def response_wire_value(%{response_message: ctor, kind: "current_date_time", preview: preview})
       when is_binary(ctor) and ctor != "" and is_map(preview) do
     %{"ctor" => ctor, "args" => [current_date_time_message_payload(preview)]}
@@ -333,7 +333,7 @@ defmodule Ide.Debugger.DeviceData do
   def elm_literal(value) when is_binary(value), do: inspect(value)
   def elm_literal(value), do: inspect(value)
 
-  @spec current_date_time_message_payload(map()) :: map()
+  @spec current_date_time_message_payload(Types.wire_map()) :: Types.wire_map()
   def current_date_time_message_payload(preview) when is_map(preview) do
     Map.update(preview, "dayOfWeek", nil, fn
       value when is_binary(value) -> %{"ctor" => value, "args" => []}
@@ -341,7 +341,7 @@ defmodule Ide.Debugger.DeviceData do
     end)
   end
 
-  @spec health_metric_request_disabled?(map(), map()) :: boolean()
+  @spec health_metric_request_disabled?(Types.app_model(), Types.device_request()) :: boolean()
   def health_metric_request_disabled?(model, %{kind: kind})
        when is_map(model) and kind in ["health_value", "health_sum_today", "health_sum", "health_accessible"] do
     launch_context = Map.get(model, "launch_context") || %{}
@@ -352,18 +352,19 @@ defmodule Ide.Debugger.DeviceData do
 
   def health_metric_request_disabled?(_model, _req), do: false
 
-  @spec health_runtime_disabled?(map()) :: boolean()
+  @spec health_runtime_disabled?(Types.inner_runtime_model()) :: boolean()
   def health_runtime_disabled?(%{"supported" => %{"ctor" => "Just", "args" => [false]}}), do: true
   def health_runtime_disabled?(%{"supported" => %{"ctor" => "Just", "args" => [true]}}), do: false
   def health_runtime_disabled?(_runtime_model), do: false
-  @spec init_request_already_satisfied?(map(), map()) :: boolean()
+  @spec init_request_already_satisfied?(Types.app_model(), Types.device_request()) :: boolean()
   def init_request_already_satisfied?(model, %{kind: kind})
        when is_map(model) and is_binary(kind) do
     Map.has_key?(model, "debugger_device_#{kind}")
   end
 
   def init_request_already_satisfied?(_model, _req), do: false
-  @spec finalize_request(Types.device_request(), map(), String.t() | nil) :: Types.device_request()
+  @spec finalize_request(Types.device_request(), Types.app_model(), String.t() | nil) ::
+          Types.device_request()
   def finalize_request(%{kind: "current_time_string"} = req, model, current_message) do
     now = now_from_model(model, current_message)
     hhmm_text = Calendar.strftime(now, "%H:%M")
@@ -477,7 +478,12 @@ defmodule Ide.Debugger.DeviceData do
     end
   end
 
-  @spec requests_for_message(map(), map(), String.t(), keyword()) :: [Types.device_request()]
+  @spec requests_for_message(
+          Types.elm_introspect(),
+          Types.app_model(),
+          String.t(),
+          keyword()
+        ) :: [Types.device_request()]
   def requests_for_message(ei, model, current_message, opts)
 
   def requests_for_message(ei, model, current_message, opts)
@@ -511,7 +517,7 @@ defmodule Ide.Debugger.DeviceData do
 
   def requests_for_message(_ei, _model, _current_message, _opts), do: []
 
-  @spec cmd_calls_for(map(), String.t()) :: [map()]
+  @spec cmd_calls_for(Types.elm_introspect(), String.t()) :: [Types.cmd_call()]
   defp cmd_calls_for(ei, key) when is_map(ei) and is_binary(key) do
     case Map.get(ei, key) do
       rows when is_list(rows) -> Enum.filter(rows, &is_map/1)
@@ -531,21 +537,21 @@ defmodule Ide.Debugger.DeviceData do
 
   defp init_request_deferred?(_req), do: false
 
-  @spec watch_info_model_ctor_literal(map() | String.t()) :: String.t()
+  @spec watch_info_model_ctor_literal(Types.wire_map() | String.t()) :: String.t()
   defp watch_info_model_ctor_literal(launch_context) when is_map(launch_context) do
     WatchModels.watch_info_model_ctor_from_launch_context(launch_context)
   end
 
   defp watch_info_model_ctor_literal(preview) when is_binary(preview), do: preview
 
-  @spec watch_info_color_ctor_literal(map() | String.t()) :: String.t()
+  @spec watch_info_color_ctor_literal(Types.wire_map() | String.t()) :: String.t()
   defp watch_info_color_ctor_literal(launch_context) when is_map(launch_context) do
     WatchModels.watch_info_color_ctor_from_launch_context(launch_context)
   end
 
   defp watch_info_color_ctor_literal(preview) when is_binary(preview), do: preview
 
-  @spec firmware_version_wire_record(String.t() | map() | nil) :: map() | nil
+  @spec firmware_version_wire_record(String.t() | Types.wire_map() | nil) :: Types.wire_map() | nil
   def firmware_version_wire_record(version) when is_binary(version) do
     trimmed =
       version

@@ -16,18 +16,19 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
   alias Ide.Debugger.RuntimeBackgroundNotify
   alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Debugger.SurfaceAccess
+  alias Ide.Debugger.Types
   alias Ide.Debugger.Types.CompileIngestBridge
   alias Ide.Projects
   alias Ide.Projects.Project
 
-  @spec skip_blocking_compile?(map()) :: boolean()
+  @spec skip_blocking_compile?(Types.runtime_state()) :: boolean()
   def skip_blocking_compile?(state) when is_map(state) do
     Map.get(state, :debugger_skip_blocking_compile) == true
   end
 
   def skip_blocking_compile?(_), do: false
 
-  @spec schedule_if_needed(String.t(), map()) :: :scheduled | :skipped
+  @spec schedule_if_needed(String.t(), Project.t()) :: :scheduled | :skipped
   def schedule_if_needed(scope_key, project) when is_binary(scope_key) do
     state = AgentStore.fetch(scope_key)
 
@@ -39,8 +40,8 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
     end
   end
 
-  @spec needs_compile?(map(), map()) :: boolean()
-  def needs_compile?(state, project) when is_map(state) and is_map(project) do
+  @spec needs_compile?(Types.runtime_state(), Project.t()) :: boolean()
+  def needs_compile?(state, %Project{} = project) when is_map(state) do
     cond do
       phone_root(project) == nil ->
         false
@@ -61,9 +62,9 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
 
   def needs_compile?(_state, _project), do: false
 
-  @spec compile_ingest_and_notify(String.t(), map()) :: :ok | {:error, String.t()}
-  defp compile_ingest_and_notify(scope_key, project)
-       when is_binary(scope_key) and is_map(project) do
+  @spec compile_ingest_and_notify(String.t(), Project.t()) :: :ok | {:error, String.t()}
+  defp compile_ingest_and_notify(scope_key, %Project{} = project)
+       when is_binary(scope_key) do
     case phone_root(project) do
       nil ->
         :ok
@@ -111,6 +112,7 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
     end
   end
 
+  @spec phone_root(Project.t()) :: {String.t(), String.t()} | nil
   defp phone_root(%Project{} = project) do
     workspace_root = Projects.project_workspace_path(project)
 
@@ -119,9 +121,7 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
     |> Enum.find(fn {label, _path} -> label == "phone" end)
   end
 
-  defp phone_root(_), do: nil
-
-  @spec ingest_result(String.t(), compile_result() | map()) :: :ok
+  @spec ingest_result(String.t(), compile_result()) :: :ok
   defp ingest_result(scope_key, result) when is_binary(scope_key) and is_map(result) do
     diagnostics = Map.get(result, :diagnostics) || Map.get(result, "diagnostics") || []
     counts = Diagnostics.summary(diagnostics)

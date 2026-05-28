@@ -100,8 +100,12 @@ defmodule Ide.Debugger.DeviceDataResponses do
 
   def filter_update_cmd_calls(calls, _current_ctor) when is_list(calls), do: calls
 
-  @spec apply_device_response_step(Types.runtime_state(), Types.surface_target(), map(), apply_ctx()) ::
-          Types.runtime_state()
+  @spec apply_device_response_step(
+          Types.runtime_state(),
+          Types.surface_target(),
+          Types.device_request(),
+          apply_ctx()
+        ) :: Types.runtime_state()
   defp apply_device_response_step(state, target, req, ctx) when is_map(state) and is_map(req) and is_map(ctx) do
     response_message = DeviceData.response_message(req)
     wire_value = DeviceData.response_wire_value(req)

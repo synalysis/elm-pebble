@@ -13,21 +13,21 @@ defmodule Ide.Debugger.StepApply do
 
   @phone_to_watch_triggers ~w(phone_to_watch on_phone_to_watch)
 
+  # Callback fields use map() so Dialyzer accepts ctx maps built via partial application
+  # in StepApplyCallbacks; named implementations there keep precise @specs.
   @type ctx :: %{
           required(:ensure_compile_artifacts) => (map(), Types.surface_target() -> map()),
           required(:hydrate_runtime_model) =>
-            (Types.app_model(), String.t() | nil, [String.t()] -> Types.app_model()),
+            (map(), String.t() | nil, [String.t()] -> map()),
           required(:normalize_message_value) =>
             (map(), Types.surface_target(), Types.subscription_payload() | nil, map() ->
                Types.subscription_payload() | nil),
-          required(:normalize_runtime_patch) =>
-            (Types.execution_model(), map() -> map()),
-          required(:patched_runtime_model_fields) =>
-            (Types.app_model() | map() -> [String.t()]),
+          required(:normalize_runtime_patch) => (map(), map() -> map()),
+          required(:patched_runtime_model_fields) => (map() -> [String.t()]),
           required(:preserve_protocol_metadata) => (map(), map() -> map()),
           required(:default_view_tree) => (Types.surface_target() -> map()),
           required(:introspect_for) => (map(), Types.surface_target() -> map()),
-          required(:protocol_events_ctx) => (-> map()),
+          required(:protocol_events_ctx) => (-> ProtocolEvents.ctx()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:append_runtime_exec) => (map(), Types.surface_target(), map() -> map()),
@@ -41,8 +41,7 @@ defmodule Ide.Debugger.StepApply do
             (map(), Types.surface_target(), String.t(), map(), String.t() -> map()),
           required(:companion_bridge_command_responses) =>
             (map(), Types.surface_target(), String.t(), map(), String.t() -> map()),
-          required(:companion_bridge_responses) =>
-            (map(), Types.surface_target(), String.t() -> map()),
+          required(:companion_bridge_responses) => (map(), Types.surface_target() -> map()),
           required(:static_task_followups) =>
             (map(), Types.surface_target(), String.t(), Types.subscription_payload() | nil, String.t() ->
                map()),
@@ -54,12 +53,12 @@ defmodule Ide.Debugger.StepApply do
           map(),
           Types.surface_target(),
           String.t() | nil,
-          Types.subscription_payload() | nil,
+          term(),
           String.t() | nil,
           String.t(),
           keyword(),
-          ctx()
-        ) :: map()
+          map()
+        ) :: any()
   def apply(state, target, requested_message, message_value, source_override, trigger, opts, ctx)
       when target in [:watch, :companion, :phone] and is_list(opts) and is_map(ctx) do
     suppress_protocol_events? = Keyword.get(opts, :suppress_protocol_events, false)
@@ -251,8 +250,11 @@ defmodule Ide.Debugger.StepApply do
 
   end
 
-  @spec timeline_message_value(String.t() | nil, String.t(), map() | integer() | boolean() | String.t() | nil) ::
-          map() | integer() | boolean() | String.t() | nil
+  @spec timeline_message_value(
+          String.t() | nil,
+          String.t(),
+          Types.timeline_step_message_value()
+        ) :: Types.timeline_step_message_value()
   defp phone_to_watch_delivery_protocol_events(:watch, message, message_value, trigger)
        when trigger in @phone_to_watch_triggers and is_binary(message) and message != "" do
     ProtocolEvents.tx_rx_events("companion", "watch", message, trigger, message_value)
