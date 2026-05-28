@@ -2,14 +2,16 @@ defmodule Ide.Debugger.ProtocolRx do
   @moduledoc false
 
   alias Ide.Debugger.AppMessageQueue
+  alias Ide.Debugger.PendingProtocolDelivery
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.ProtocolRuntimePatch
+  alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.Types
 
   @type ctx :: %{
           required(:append_event) => (map(), String.t(), map() -> map()),
           required(:append_debugger_event) =>
-            (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map()),
+            (map(), String.t(), Types.surface_target(), String.t(), String.t(), map() | nil -> map()),
           required(:append_runtime_exec_event_for_target) =>
             (map(), Types.surface_target(), map() -> map()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
@@ -21,8 +23,28 @@ defmodule Ide.Debugger.ProtocolRx do
           required(:refresh_runtime_fingerprints) =>
             (Types.execution_model(), map(), map() -> Types.execution_model()),
           required(:protocol_events_ctx) => (-> map()),
-          required(:runtime_source_loaded?) => (map(), Types.surface_target() -> boolean())
+          required(:runtime_ready_for_delivery?) => (map(), Types.surface_target() -> boolean())
         }
+
+  @init_complete_key "debugger_init_complete"
+
+  @spec runtime_ready_for_delivery?(map(), Types.surface_target()) :: boolean()
+  def runtime_ready_for_delivery?(state, target)
+      when is_map(state) and target in [:watch, :companion, :phone] do
+    surface = Map.get(state, target, %{})
+    model = Map.get(surface, :model) || Map.get(surface, "model") || %{}
+
+    is_map(RuntimeArtifacts.introspect(surface)) and Map.get(model, @init_complete_key) == true
+  end
+
+  def runtime_ready_for_delivery?(_state, _target), do: false
+
+  @spec mark_init_complete(map(), Types.surface_target()) :: map()
+  def mark_init_complete(state, target) when is_map(state) and target in [:watch, :companion, :phone] do
+    put_in(state, [target, :model, @init_complete_key], true)
+  end
+
+  def mark_init_complete(state, _target), do: state
 
   @spec apply_side_effects(map(), [map()], boolean(), ctx()) :: map()
   def apply_side_effects(state, _protocol_events, true, _ctx), do: state
@@ -30,16 +52,21 @@ defmodule Ide.Debugger.ProtocolRx do
   def apply_side_effects(state, protocol_events, false, rx_ctx)
        when is_list(protocol_events) and is_map(rx_ctx) do
     state
-    |> append_events(protocol_events, rx_ctx)
+    |> append_transport_events(protocol_events, rx_ctx)
     |> apply_state_effects(protocol_events, rx_ctx)
   end
 
   def apply_side_effects(state, _protocol_events, _suppress?, _ctx), do: state
 
   @spec append_events(map(), [Types.protocol_event()], ctx()) :: map()
-  def append_events(state, protocol_events, rx_ctx) when is_list(protocol_events) and is_map(rx_ctx) do
+  def append_events(state, protocol_events, rx_ctx) do
+    append_transport_events(state, protocol_events, rx_ctx)
+  end
+
+  @spec append_transport_events(map(), [Types.protocol_event()], ctx()) :: map()
+  def append_transport_events(state, protocol_events, rx_ctx) when is_list(protocol_events) and is_map(rx_ctx) do
     Enum.reduce(protocol_events, state, fn event, acc ->
-      if is_binary(event.type) and is_map(event.payload) do
+      if event.type == "debugger.protocol_tx" and is_map(event.payload) do
         rx_ctx.append_event.(acc, event.type, event.payload)
       else
         acc
@@ -62,74 +89,126 @@ defmodule Ide.Debugger.ProtocolRx do
     recipient = protocol_surface_key(Map.get(payload, :to) || Map.get(payload, "to"))
 
     if recipient in [:watch, :companion, :phone] do
-      if rx_ctx.runtime_source_loaded?.(state, recipient) do
-        deliver_protocol_rx_to_surface(state, payload, rx_ctx)
-      else
-        state
-        |> AppMessageQueue.enqueue(recipient, payload)
-        |> then(&append_queued_protocol_timeline(&1, recipient, payload, rx_ctx))
+      cond do
+        not rx_ctx.runtime_ready_for_delivery?.(state, recipient) ->
+          AppMessageQueue.enqueue(state, recipient, payload)
+
+        PendingProtocolDelivery.async?() ->
+          PendingProtocolDelivery.enqueue(state, recipient, payload)
+
+        true ->
+          deliver_protocol_rx_to_surface(state, payload, rx_ctx)
       end
     else
       state
     end
   end
 
-  defp append_queued_protocol_timeline(state, recipient, payload, rx_ctx)
-       when is_map(state) and is_map(rx_ctx) and recipient in [:watch, :companion, :phone] and is_map(payload) do
-    message = Map.get(payload, :message) || Map.get(payload, "message")
-
-    if is_binary(message) and message != "" do
-      rx_ctx.append_debugger_event.(state, "protocol_rx", recipient, message, "protocol_rx")
-    else
-      state
-    end
+  @spec deliver_payload(map(), map(), ctx()) :: map()
+  def deliver_payload(state, payload, rx_ctx) when is_map(state) and is_map(payload) and is_map(rx_ctx) do
+    deliver_protocol_rx_to_surface(state, payload, rx_ctx)
   end
-
-  defp append_queued_protocol_timeline(state, _recipient, _payload, _ctx), do: state
 
   defp deliver_protocol_rx_to_surface(state, payload, rx_ctx)
        when is_map(payload) and is_map(rx_ctx) do
     {next_state, recipient, meta} = apply_protocol_rx_effect(state, payload, rx_ctx)
 
     if recipient in [:watch, :companion, :phone] do
-      root =
+      next_state =
         next_state
-        |> get_in([recipient, :view_tree, "type"])
-        |> case do
-          value when is_binary(value) and value != "" -> value
-          _ -> "simulated-root"
-        end
+        |> rx_ctx.append_event.("debugger.protocol_rx", protocol_rx_event_payload(payload))
 
-      next_state
-      |> then(fn st ->
-        rx_ctx.append_runtime_exec_event_for_target.(st, recipient, %{
-          trigger: "protocol_rx",
-          message: Map.get(meta, :message),
-          message_source: Map.get(meta, :message_source),
-          protocol_from: Map.get(meta, :from),
-          protocol_to: rx_ctx.source_root_for_target.(recipient),
-          protocol_inbound_count: Map.get(meta, :inbound_count)
-        })
-      end)
-      |> rx_ctx.append_event.(
-        "debugger.update_in",
-        Ide.Debugger.Types.MessageInEventPayload.from_message(
-          rx_ctx.source_root_for_target.(recipient),
-          Map.get(meta, :message),
-          Map.get(meta, :message_source)
-        )
-      )
-      |> rx_ctx.append_event.(
-        "debugger.view_render",
-        Ide.Debugger.Types.ViewRenderEventPayload.from_render(
-          rx_ctx.source_root_for_target.(recipient),
-          root
-        )
-      )
-      |> then(fn st -> maybe_apply_protocol_rx_subscription(st, recipient, meta, rx_ctx) end)
+      case protocol_rx_subscription_message(next_state, recipient, meta, rx_ctx) do
+        {message, message_value} when is_binary(message) and message != "" ->
+          apply_protocol_rx_subscription(
+            next_state,
+            recipient,
+            meta,
+            message,
+            message_value,
+            rx_ctx
+          )
+
+        _ ->
+          append_protocol_rx_timeline_events(next_state, recipient, meta, rx_ctx)
+      end
     else
       next_state
     end
+  end
+
+  # When a subscription maps the inbound AppMessage to an Elm update, StepApply
+  # records the user-facing timeline row; skip a separate protocol_rx row.
+  defp append_protocol_rx_timeline_events(state, recipient, meta, rx_ctx)
+       when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(meta) and
+              is_map(rx_ctx) do
+    inbound_display_message =
+      Map.get(meta, :inbound_display_message) || Map.get(meta, :message) || ""
+
+    root =
+      state
+      |> get_in([recipient, :view_tree, "type"])
+      |> case do
+        value when is_binary(value) and value != "" -> value
+        _ -> "simulated-root"
+      end
+
+    state
+    |> rx_ctx.append_debugger_event.(
+      "protocol_rx",
+      recipient,
+      inbound_display_message,
+      "protocol_rx",
+      Map.get(meta, :message_value)
+    )
+    |> then(fn st ->
+      rx_ctx.append_runtime_exec_event_for_target.(st, recipient, %{
+        trigger: "protocol_rx",
+        message: Map.get(meta, :message),
+        message_source: Map.get(meta, :message_source),
+        protocol_from: Map.get(meta, :from),
+        protocol_to: rx_ctx.source_root_for_target.(recipient),
+        protocol_inbound_count: Map.get(meta, :inbound_count)
+      })
+    end)
+    |> rx_ctx.append_event.(
+      "debugger.update_in",
+      Ide.Debugger.Types.MessageInEventPayload.from_message(
+        rx_ctx.source_root_for_target.(recipient),
+        Map.get(meta, :message),
+        Map.get(meta, :message_source)
+      )
+    )
+    |> rx_ctx.append_event.(
+      "debugger.view_render",
+      Ide.Debugger.Types.ViewRenderEventPayload.from_render(
+        rx_ctx.source_root_for_target.(recipient),
+        root
+      )
+    )
+  end
+
+  defp apply_protocol_rx_subscription(state, recipient, meta, message, message_value, rx_ctx)
+       when is_map(state) and recipient in [:watch, :companion, :phone] and is_binary(message) and
+              message != "" and is_map(meta) and is_map(rx_ctx) do
+    source_override =
+      if Map.get(meta, :trigger) == "configuration", do: "configuration", else: "protocol_rx"
+
+    message_value =
+      if is_map(message_value) do
+        ProtocolEvents.normalize_subscription_message_value(
+          state,
+          recipient,
+          message_value,
+          rx_ctx.protocol_events_ctx.()
+        )
+      else
+        message_value
+      end
+
+    state
+    |> rx_ctx.apply_step_once.(recipient, message, message_value, source_override, "protocol_rx")
+    |> restore_protocol_rx_metadata(recipient, meta)
   end
 
   defp apply_protocol_rx_effect(state, payload, rx_ctx) when is_map(payload) and is_map(rx_ctx) do
@@ -196,52 +275,37 @@ defmodule Ide.Debugger.ProtocolRx do
     end
   end
 
-  defp maybe_apply_protocol_rx_subscription(state, recipient, meta, rx_ctx)
-       when is_map(state) and is_map(rx_ctx) and recipient in [:watch, :companion, :phone] and is_map(meta) do
-    source_override =
-      if Map.get(meta, :trigger) == "configuration", do: "configuration", else: "protocol_rx"
-
-    case protocol_rx_subscription_message(state, recipient, meta, rx_ctx) do
-      {message, message_value} when is_binary(message) and message != "" and is_map(message_value) ->
-        message_value =
-          ProtocolEvents.normalize_subscription_message_value(
-            state,
-            recipient,
-            message_value,
-            rx_ctx.protocol_events_ctx.()
-          )
-
-        state
-        |> rx_ctx.apply_step_once.(recipient, message, message_value, source_override, "protocol_rx")
-        |> restore_protocol_rx_metadata(recipient, meta)
-
-      {message, _message_value} when is_binary(message) and message != "" ->
-        state
-        |> rx_ctx.apply_step_once.(recipient, message, nil, source_override, "protocol_rx")
-        |> restore_protocol_rx_metadata(recipient, meta)
-
-      _ ->
-        state
-    end
-  end
-
-  defp maybe_apply_protocol_rx_subscription(state, _recipient, _meta, _ctx), do: state
-
   @spec drain_message_queue(map(), Types.surface_target(), ctx()) :: map()
   def drain_message_queue(state, target, rx_ctx)
        when is_map(state) and target in [:watch, :companion, :phone] and is_map(rx_ctx) do
     {state, entries} = AppMessageQueue.drain_entries(state, target)
 
     Enum.reduce(entries, state, fn payload, acc ->
-      if rx_ctx.runtime_source_loaded?.(acc, target) do
-        deliver_protocol_rx_to_surface(acc, payload, rx_ctx)
-      else
-        AppMessageQueue.enqueue(acc, target, payload)
+      cond do
+        not rx_ctx.runtime_ready_for_delivery?.(acc, target) ->
+          AppMessageQueue.enqueue(acc, target, payload)
+
+        PendingProtocolDelivery.async?() ->
+          PendingProtocolDelivery.enqueue(acc, target, payload)
+
+        true ->
+          deliver_protocol_rx_to_surface(acc, payload, rx_ctx)
       end
     end)
   end
 
   def drain_message_queue(state, _target, _ctx), do: state
+
+  defp protocol_rx_event_payload(payload) when is_map(payload) do
+    %{
+      from: Map.get(payload, :from) || Map.get(payload, "from"),
+      to: Map.get(payload, :to) || Map.get(payload, "to"),
+      message: Map.get(payload, :message) || Map.get(payload, "message"),
+      message_value: Map.get(payload, :message_value) || Map.get(payload, "message_value"),
+      trigger: Map.get(payload, :trigger) || Map.get(payload, "trigger"),
+      message_source: Map.get(payload, :message_source) || Map.get(payload, "message_source")
+    }
+  end
 
   defp restore_protocol_rx_metadata(state, recipient, meta)
        when is_map(state) and recipient in [:watch, :companion, :phone] and is_map(meta) do

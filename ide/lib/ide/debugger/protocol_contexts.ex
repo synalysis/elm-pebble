@@ -6,7 +6,6 @@ defmodule Ide.Debugger.ProtocolContexts do
   alias Ide.Debugger.IntrospectAccess
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.ProtocolRx
-  alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.Types
@@ -76,13 +75,7 @@ defmodule Ide.Debugger.ProtocolContexts do
       end,
       refresh_runtime_fingerprints: &StepExecution.refresh_runtime_fingerprints/3,
       protocol_events_ctx: host.protocol_events_ctx,
-      runtime_source_loaded?: fn state, target ->
-        state
-        |> Map.get(target, %{})
-        |> RuntimeArtifacts.shell_map()
-        |> Map.get("elm_introspect")
-        |> is_map()
-      end
+      runtime_ready_for_delivery?: &ProtocolRx.runtime_ready_for_delivery?/2
     }
   end
 

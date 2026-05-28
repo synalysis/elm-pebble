@@ -4,6 +4,7 @@ defmodule Ide.Debugger.TriggerInjection do
   alias Ide.Debugger.SubscriptionActivation
   alias Ide.Debugger.SubscriptionAutoFireState
   alias Ide.Debugger.SubscriptionTriggerWire
+  alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.Types
 
   @type host :: %{
@@ -36,9 +37,11 @@ defmodule Ide.Debugger.TriggerInjection do
       )
     else
       resolved_message = host.trigger_message_for_surface.(state, target, trigger, requested_message)
+      {_step_message, derived_message_value} = TimelineMessage.message_value_for_step(resolved_message)
 
       resolved_message_value =
-        SubscriptionTriggerWire.message_value(resolved_message, requested_message_value)
+        SubscriptionTriggerWire.message_value(resolved_message, requested_message_value) ||
+          derived_message_value
 
       row = %{
         trigger: trigger,

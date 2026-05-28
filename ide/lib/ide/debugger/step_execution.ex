@@ -174,6 +174,83 @@ defmodule Ide.Debugger.StepExecution do
     choose_runtime_view_output(primary, fallback)
   end
 
+  @spec resolve_runtime_view_output(Types.execution_model(), map(), map(), list()) :: [map()]
+  def resolve_runtime_view_output(execution_model, view_tree, model_for_view, executor_rows)
+      when is_map(execution_model) and is_map(view_tree) and is_map(model_for_view) do
+    supplemented =
+      supplement_parser_runtime_view_output(
+        execution_model,
+        view_tree,
+        RuntimeArtifacts.preview_runtime_model(model_for_view)
+      )
+
+    choose_runtime_view_output(supplemented, normalize_view_output(executor_rows))
+    |> refresh_clock_text_view_output(model_for_view)
+  end
+
+  @spec refresh_clock_text_view_output([map()], map()) :: [map()]
+  def refresh_clock_text_view_output(rows, model) when is_list(rows) and is_map(model) do
+    case clock_text_label_from_model(model) do
+      label when is_binary(label) ->
+        Enum.map(rows, fn row ->
+          if is_map(row) and Map.get(row, "kind") in ["text", "text_label"] and
+               clock_text_label?(Map.get(row, "text")) do
+            Map.put(row, "text", label)
+          else
+            row
+          end
+        end)
+
+      _ ->
+        rows
+    end
+  end
+
+  def refresh_clock_text_view_output(rows, _model) when is_list(rows), do: rows
+
+  @spec clock_text_label_from_model(map()) :: String.t() | nil
+  def clock_text_label_from_model(model) when is_map(model) do
+    preview = RuntimeArtifacts.preview_runtime_model(model)
+
+    with %{"ctor" => "Just", "args" => [value]} <- Map.get(preview, "now"),
+         hour when is_integer(hour) <- Map.get(value, "hour"),
+         minute when is_integer(minute) <- Map.get(value, "minute") do
+      format_clock_text_label(hour, minute)
+    else
+      _ ->
+        with %{"$ctor" => "Just", "$args" => [value]} <- Map.get(preview, "now"),
+             hour when is_integer(hour) <- Map.get(value, "hour"),
+             minute when is_integer(minute) <- Map.get(value, "minute") do
+          format_clock_text_label(hour, minute)
+        else
+          _ -> nil
+        end
+    end
+  end
+
+  def clock_text_label_from_model(_model), do: nil
+
+  @spec clock_text_label?(Types.wire_input()) :: boolean()
+  def clock_text_label?(text) when is_binary(text), do: Regex.match?(~r/^\d{1,2}:\d{2}$/, String.trim(text))
+  def clock_text_label?(_text), do: false
+
+  @spec format_clock_text_label(integer(), integer()) :: String.t()
+  defp format_clock_text_label(hour, minute) when is_integer(hour) and is_integer(minute) do
+    hour
+    |> rem(24)
+    |> Integer.to_string()
+    |> String.pad_leading(2, "0")
+    |> then(fn hh ->
+      mm =
+        minute
+        |> rem(60)
+        |> Integer.to_string()
+        |> String.pad_leading(2, "0")
+
+      "#{hh}:#{mm}"
+    end)
+  end
+
   @spec choose_runtime_view_output(list(), list()) :: [map()]
   def choose_runtime_view_output(primary, supplemental) do
     primary_rows = normalize_view_output(primary)
@@ -194,22 +271,35 @@ defmodule Ide.Debugger.StepExecution do
         supplemental_rows
 
       prefer_supplemental_vectors? ->
-        supplemental_rows
+        merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
 
       resolved_vector_rows?(supplemental_rows) and not resolved_vector_rows?(primary_rows) ->
-        supplemental_rows
+        merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
 
       vector_rows?(supplemental_rows) and not vector_rows?(primary_rows) ->
-        supplemental_rows
+        merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
 
       parser_preview_resolved?(supplemental_rows) and parser_preview_unresolved?(primary_rows) ->
-        supplemental_rows
+        merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
 
       length(supplemental_rows) > length(primary_rows) ->
-        supplemental_rows
+        merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
 
       true ->
         primary_rows
+    end
+  end
+
+  @spec merge_parser_primary_with_executor_vectors([map()], [map()]) :: [map()]
+  def merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
+      when is_list(primary_rows) and is_list(supplemental_rows) do
+    supplemental_vectors = Enum.filter(supplemental_rows, &(Map.get(&1, "kind") == "vector_at"))
+    primary_without_vectors = Enum.reject(primary_rows, &(Map.get(&1, "kind") == "vector_at"))
+
+    if supplemental_vectors == [] do
+      primary_rows
+    else
+      primary_without_vectors ++ supplemental_vectors
     end
   end
 
@@ -303,6 +393,36 @@ defmodule Ide.Debugger.StepExecution do
     |> Map.new()
   end
 
+  @spec runtime_view_output_tree(map(), Types.surface_target(), map() | nil, keyword()) ::
+          map() | nil
+  def runtime_view_output_tree(model, target, runtime_view_tree, opts)
+      when is_map(model) and target in [:watch, :companion, :phone] and is_list(opts) do
+    case RuntimeViewOutput.tree(model, target) do
+      %{} = tree ->
+        tree
+
+      nil ->
+        case Keyword.get(opts, :execution_model) do
+          %{} = execution_model ->
+            execution_model
+            |> supplement_parser_runtime_view_output(
+              runtime_view_tree || %{},
+              RuntimeArtifacts.preview_runtime_model(model)
+            )
+            |> case do
+              [] ->
+                nil
+
+              rows ->
+                RuntimeViewOutput.tree(Map.put(model, "runtime_view_output", rows), target)
+            end
+
+          _ ->
+            nil
+        end
+    end
+  end
+
   @spec render_view_after_update(
           map() | nil,
           map() | nil,
@@ -333,7 +453,7 @@ defmodule Ide.Debugger.StepExecution do
        )
        when target in [:watch, :companion, :phone] and is_binary(message) and is_binary(trigger) and
               is_map(model) and is_list(opts) do
-    output_view_tree = RuntimeViewOutput.tree(model, target)
+    output_view_tree = runtime_view_output_tree(model, target, runtime_view_tree, opts)
     ei = RuntimeArtifacts.require_introspect(model)
 
     base =

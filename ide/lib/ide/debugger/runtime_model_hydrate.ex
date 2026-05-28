@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.RuntimeModelHydrate do
   @moduledoc ""
 
+  alias Ide.Debugger.DeviceData
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.Types
@@ -46,6 +47,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
       true ->
         runtime_model
     end
+    |> DeviceData.apply_subscription_overrides_to_runtime_now(message)
   end
 
   defp hydrate_runtime_model_message_payload(runtime_model, _message, _skip_fields)

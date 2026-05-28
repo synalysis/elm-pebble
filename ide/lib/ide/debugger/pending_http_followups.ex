@@ -9,6 +9,8 @@ defmodule Ide.Debugger.PendingHttpFollowups do
   alias Ide.Debugger.AgentHosts
   alias Ide.Debugger.AgentSession
   alias Ide.Debugger.AgentStore
+  alias Ide.Debugger.RuntimeBackgroundDrains
+  alias Ide.Debugger.RuntimeBackgroundWork
   alias Ide.Debugger.RuntimeFollowups
   alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
@@ -44,10 +46,9 @@ defmodule Ide.Debugger.PendingHttpFollowups do
 
   @spec pending(map()) :: [map()]
   def pending(state) when is_map(state) do
-    case Map.get(state, :companion) do
-      %{pending_http_followups: commands} when is_list(commands) -> commands
-      %{"pending_http_followups" => commands} when is_list(commands) -> commands
-      _ -> []
+    case Map.get(state, @pending_key) || Map.get(state, to_string(@pending_key)) do
+      commands when is_list(commands) -> commands
+      _ -> legacy_companion_pending(state)
     end
   end
 
@@ -70,21 +71,13 @@ defmodule Ide.Debugger.PendingHttpFollowups do
       "followup_message" => followup_message
     }
 
-    update_in(state, [:companion], fn
-      nil ->
-        %{@pending_key => [item]}
-
-      companion ->
-        companion = if is_map(companion), do: companion, else: %{}
-        Map.update(companion, @pending_key, [item], &(&1 ++ [item]))
-    end)
+    Map.update(state, @pending_key, [item], &(&1 ++ [item]))
   end
 
   @spec launch_flight(String.t(), map(), RuntimeFollowups.apply_ctx()) :: :ok
   def launch_flight(project_slug, item, ctx)
       when is_binary(project_slug) and is_map(item) and is_map(ctx) do
-    Task.start(fn -> run_flight(project_slug, item, ctx) end)
-    :ok
+    RuntimeBackgroundWork.spawn(project_slug, fn -> run_flight(project_slug, item, ctx) end)
   end
 
   @spec run_flight(String.t(), map(), RuntimeFollowups.apply_ctx()) :: :ok
@@ -110,7 +103,7 @@ defmodule Ide.Debugger.PendingHttpFollowups do
         )
       end)
 
-    maybe_schedule_drain(project_slug, state)
+    RuntimeBackgroundDrains.schedule_all(project_slug, state)
     :ok
   end
 
@@ -133,9 +126,24 @@ defmodule Ide.Debugger.PendingHttpFollowups do
   end
 
   defp put_pending(state, items) when is_map(state) and is_list(items) do
+    state
+    |> Map.put(@pending_key, items)
+    |> drop_legacy_companion_pending()
+  end
+
+  defp legacy_companion_pending(state) do
+    case Map.get(state, :companion) do
+      %{@pending_key => commands} when is_list(commands) -> commands
+      %{"pending_http_followups" => commands} when is_list(commands) -> commands
+      _ -> []
+    end
+  end
+
+  defp drop_legacy_companion_pending(state) do
     update_in(state, [:companion], fn
-      nil -> %{@pending_key => items}
-      companion -> Map.put(companion, @pending_key, items)
+      %{@pending_key => _} = companion -> Map.delete(companion, @pending_key)
+      %{"pending_http_followups" => _} = companion -> Map.delete(companion, "pending_http_followups")
+      other -> other
     end)
   end
 end

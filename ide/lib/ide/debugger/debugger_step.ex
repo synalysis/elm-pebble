@@ -2,6 +2,7 @@ defmodule Ide.Debugger.DebuggerStep do
   @moduledoc false
 
   alias Ide.Debugger.Attrs
+  alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.Types
 
   @type apply_step_fn ::
@@ -23,7 +24,8 @@ defmodule Ide.Debugger.DebuggerStep do
       count = Attrs.parse_step_count(Map.get(attrs, :count) || Map.get(attrs, "count"))
 
       Enum.reduce(1..count, state, fn _, acc ->
-        host.apply_step_once.(acc, target, message, nil, nil, "step")
+        {_step_message, message_value} = TimelineMessage.message_value_for_step(message || "")
+        host.apply_step_once.(acc, target, message, message_value, nil, "step")
       end)
     else
       state

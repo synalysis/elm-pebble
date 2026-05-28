@@ -24,7 +24,7 @@ defmodule Ide.Debugger.StepFollowupContexts do
   def device_data(host) when is_map(host) do
     %{
       append_event: host.append_event,
-      apply_step_once: host.apply_step_without_value,
+      apply_step_once: host.apply_step_with_value,
       source_root_for_target: host.source_root_for_target
     }
   end

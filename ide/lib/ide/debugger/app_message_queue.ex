@@ -3,8 +3,8 @@ defmodule Ide.Debugger.AppMessageQueue do
   Per-surface inbound protocol (AppMessage) queues for the debugger.
 
   On device, AppMessage packets are held until the Elm runtime is ready. The
-  debugger mirrors that: protocol_rx for a surface without loaded introspect is
-  queued instead of bootstrapping a full init via hot reload.
+  debugger mirrors that: inbound AppMessages are queued until the recipient surface
+  has finished `init` (not merely parsed introspect).
   """
 
   alias Ide.Debugger.Types

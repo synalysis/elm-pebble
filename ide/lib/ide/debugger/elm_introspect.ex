@@ -249,7 +249,7 @@ defmodule Ide.Debugger.ElmIntrospect do
   end
 
   @spec module_source_scan(Types.module_ref(), String.t() | nil) :: Types.module_scan()
-  defp module_source_scan(%Module{} = mod, source_text_override \\ nil) do
+  defp module_source_scan(%Module{} = mod, source_text_override) do
     source_stats =
       cond do
         is_binary(source_text_override) ->
@@ -278,7 +278,7 @@ defmodule Ide.Debugger.ElmIntrospect do
   end
 
   @spec source_lines(Module.t(), String.t() | nil) :: [String.t()]
-  defp source_lines(%Module{} = mod, source_text_override \\ nil) do
+  defp source_lines(%Module{} = mod, source_text_override) do
     source =
       cond do
         is_binary(source_text_override) ->

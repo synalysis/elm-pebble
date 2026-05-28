@@ -267,6 +267,8 @@ defmodule Ide.Debugger.RuntimeHub do
     }
 
     apply_step = apply_step_callback(config, ctx_ref)
+    {trigger_message_for_surface, attach_subscription_payload} =
+      subscription_wire_fns(ctx_ref)
 
     RuntimeHostCallbacks.build(%{
       append_event: config.append_event,
@@ -281,12 +283,8 @@ defmodule Ide.Debugger.RuntimeHub do
       introspect_for: &SurfaceAccess.introspect/2,
       surface_app_model: &SurfaceAccess.app_model/2,
       normalize_step_target: &SurfaceTargets.normalize/1,
-      trigger_message_for_surface: fn state, target, trigger, requested_message ->
-        context_trigger_message(ctx_ref, state, target, trigger, requested_message)
-      end,
-      attach_subscription_payload: fn state, target, message, trigger ->
-        context_attach_subscription(ctx_ref, state, target, message, trigger)
-      end,
+      trigger_message_for_surface: trigger_message_for_surface,
+      attach_subscription_payload: attach_subscription_payload,
       merge_runtime_artifacts: &RuntimeArtifactMerge.maybe_merge/3,
       apply_subscription_ok_response: fn state, target, callback, payload, source, trigger ->
         context_apply_subscription_ok(ctx_ref, state, target, callback, payload, source, trigger)
@@ -329,13 +327,42 @@ defmodule Ide.Debugger.RuntimeHub do
     end
   end
 
-  defp context_trigger_message(:stub, _state, _target, _trigger, _requested_message), do: ""
+  # Built callbacks must not use stub_ctx.tick_resolution: the stub pass wires
+  # attach_payload to a no-op, which makes auto-fire resolve "" and cycle Msg
+  # constructors (CurrentDateTime before MinuteChanged) instead of the subscription row.
+  @spec subscription_wire_fns(:stub | {:built, map()}) ::
+          {(Types.runtime_state(), Types.surface_target(), String.t(), String.t() | nil -> String.t()),
+           (Types.runtime_state(), Types.surface_target(), String.t(), String.t() -> String.t())}
+  defp subscription_wire_fns(:stub) do
+    {fn _, _, _, _ -> "" end, fn _, _, message, _ -> message end}
+  end
+
+  defp subscription_wire_fns({:built, _stub_ctx}) do
+    payload_ctx = %{
+      introspect: &SurfaceAccess.introspect/2,
+      settings: &simulator_settings_from_state/1
+    }
+
+    tick_resolution = %{
+      introspect_for: &SurfaceAccess.introspect/2,
+      attach_payload: fn state, target, message, trigger ->
+        TriggerMessageSurface.attach_payload(state, target, message, trigger, payload_ctx)
+      end
+    }
+
+    {
+      fn state, target, trigger, requested_message ->
+        TriggerSurface.trigger_message(state, target, trigger, requested_message, tick_resolution)
+      end,
+      fn state, target, message, trigger ->
+        TriggerMessageSurface.attach_payload(state, target, message, trigger, payload_ctx)
+      end
+    }
+  end
 
   defp context_trigger_message({:built, %{tick_resolution: tick_resolution}}, state, target, trigger, requested_message) do
     TriggerSurface.trigger_message(state, target, trigger, requested_message, tick_resolution)
   end
-
-  defp context_attach_subscription(:stub, _state, _target, _message, _trigger), do: ""
 
   defp context_attach_subscription({:built, %{subscription_payload: subscription_payload}}, state, target, message, trigger) do
     TriggerMessageSurface.attach_payload(state, target, message, trigger, subscription_payload)

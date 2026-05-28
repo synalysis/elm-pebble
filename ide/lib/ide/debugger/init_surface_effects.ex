@@ -54,7 +54,7 @@ defmodule Ide.Debugger.InitSurfaceEffects do
       |> CmdCall.expand_helpers(ei)
       |> Enum.flat_map(&DeviceRequest.from_cmd_call/1)
       |> Enum.uniq_by(fn req -> {req.kind, req.response_message} end)
-      |> Enum.map(&DeviceData.finalize_request(&1, model))
+      |> Enum.map(&DeviceData.finalize_request(&1, model, nil))
       |> Enum.reduce(state, fn req, acc ->
         target_name = ctx.source_root_for_target.(target)
 
@@ -67,6 +67,7 @@ defmodule Ide.Debugger.InitSurfaceEffects do
         |> ctx.apply_step_once.(
           target,
           DeviceData.response_message(req),
+          DeviceData.response_wire_value(req),
           "init_device_data",
           "device_data"
         )
@@ -94,15 +95,16 @@ defmodule Ide.Debugger.InitSurfaceEffects do
         &ProtocolEvents.events_from_cmd_call(state, target, &1, model, nil, ctx.protocol_events_ctx.())
       )
       |> Enum.reduce(state, fn event, acc ->
-        acc
-        |> ctx.append_event.(event.type, event.payload)
-        |> then(fn next ->
-          if event.type == "debugger.protocol_rx" do
-            ProtocolRx.apply_state_effects(next, [event], ctx.protocol_rx_ctx.())
-          else
-            next
-          end
-        end)
+        case event.type do
+          "debugger.protocol_tx" ->
+            ctx.append_event.(acc, event.type, event.payload)
+
+          "debugger.protocol_rx" ->
+            ProtocolRx.apply_state_effects(acc, [event], ctx.protocol_rx_ctx.())
+
+          _ ->
+            ctx.append_event.(acc, event.type, event.payload)
+        end
       end)
     else
       state

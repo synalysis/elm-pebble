@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.RuntimeStatusEvents do
   @moduledoc false
 
+  alias Ide.Debugger.InitCmdFollowups
   alias Ide.Debugger.IntrospectAccess
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.Types
@@ -56,12 +57,13 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
           append_debugger_event_fn()
         ) :: map()
   def maybe_append_simple_status(state, target, append_debugger_event)
-      when target in [:watch, :companion, :phone] and is_function(append_debugger_event, 5) do
+      when target in [:watch, :companion, :phone] and
+             (is_function(append_debugger_event, 5) or is_function(append_debugger_event, 6)) do
     runtime = get_in(state, [target, :model, "elm_executor"])
 
     case status_message(runtime) do
       nil -> state
-      message -> append_debugger_event.(state, "runtime", target, message, "runtime_status")
+      message -> append_debugger_event.(state, "runtime", target, message, "runtime_status", nil)
     end
   end
 
@@ -96,6 +98,7 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
         "followup_message_count",
         execution
         |> followup_messages()
+        |> InitCmdFollowups.merge_followups(introspect)
         |> StepExecution.normalize_followup_messages()
         |> length()
       )
@@ -114,7 +117,7 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
             message
           )
         )
-        |> append_debugger_event.("runtime", target, message, "runtime_status")
+        |> append_debugger_event.("runtime", target, message, "runtime_status", nil)
     end
   end
 

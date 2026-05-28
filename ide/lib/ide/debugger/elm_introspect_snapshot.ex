@@ -1,7 +1,10 @@
 defmodule Ide.Debugger.ElmIntrospectSnapshot do
   @moduledoc false
 
+  alias Ide.Debugger.BootstrapInit
   alias Ide.Debugger.ElmIntrospect
+  alias Ide.Debugger.ProtocolRx
+  alias Ide.Debugger.RuntimeExecutor
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimePreview
   alias Ide.Debugger.RuntimeViewOutput
@@ -85,7 +88,7 @@ defmodule Ide.Debugger.ElmIntrospectSnapshot do
           st =
             state
             |> apply(ei, target, source, rel_path, ctx.apply_snapshot)
-            |> ctx.after_apply.(target, source_root)
+            |> maybe_after_apply(state, target, source_root, ctx)
 
           payload =
             if event_worth_logging?(ei) do
@@ -134,11 +137,7 @@ defmodule Ide.Debugger.ElmIntrospectSnapshot do
       |> RuntimeArtifacts.put_vector_resource_indices_on_request(execution_model)
       |> RuntimeArtifacts.put_bitmap_resource_indices_on_request(execution_model)
 
-    execution =
-      case ctx.executor.execute(request) do
-        {:ok, payload} when is_map(payload) -> payload
-        _ -> %{model_patch: %{}, view_tree: nil, runtime: %{}}
-      end
+    execution = resolve_init_execution(state, request, ctx)
 
     model_patch =
       execution
@@ -219,10 +218,41 @@ defmodule Ide.Debugger.ElmIntrospectSnapshot do
         "init"
       )
     )
-    |> ctx.append_debugger_event.("init", target, "init", "init")
+    |> ctx.append_debugger_event.("init", target, "init", "init", nil)
     |> ctx.runtime_status_after_init.(target, execution, ei)
     |> ctx.apply_runtime_followups.(target, "init", "init", followups)
-    |> ctx.drain_app_message_queue.(target)
+    |> ProtocolRx.mark_init_complete(target)
+    |> maybe_drain_app_message_queue(state, target, ctx)
+  end
+
+  defp maybe_after_apply(state, original_state, target, source_root, ctx) do
+    if BootstrapInit.defer_surface_effects?(original_state) do
+      state
+    else
+      ctx.after_apply.(state, target, source_root)
+    end
+  end
+
+  defp resolve_init_execution(state, request, ctx) do
+    result =
+      if BootstrapInit.parser_only?(state) do
+        RuntimeExecutor.execute_introspect_only(request)
+      else
+        ctx.executor.execute(request)
+      end
+
+    case result do
+      {:ok, payload} when is_map(payload) -> payload
+      _ -> %{model_patch: %{}, view_tree: nil, runtime: %{}}
+    end
+  end
+
+  defp maybe_drain_app_message_queue(state, original_state, target, ctx) do
+    if BootstrapInit.defer_surface_effects?(original_state) do
+      state
+    else
+      ctx.drain_app_message_queue.(state, target)
+    end
   end
 
   @spec current_model_for_execution(Types.execution_model()) :: Types.execution_model()

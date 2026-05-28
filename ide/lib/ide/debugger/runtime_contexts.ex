@@ -7,6 +7,7 @@ defmodule Ide.Debugger.RuntimeContexts do
   alias Ide.Debugger.HotReloadContext
   alias Ide.Debugger.HotReloadEvents
   alias Ide.Debugger.HotReloadSurface
+  alias Ide.Debugger.InitCmdFollowups
   alias Ide.Debugger.InitSurfaceEffectsContext
   alias Ide.Debugger.IntrospectContexts
   alias Ide.Debugger.ProtocolContexts
@@ -221,7 +222,7 @@ defmodule Ide.Debugger.RuntimeContexts do
     init_surface_effects =
       InitSurfaceEffectsContext.build(%{
         append_event: host.append_event,
-        apply_step_once: host.apply_step_without_value,
+        apply_step_once: host.apply_step_once,
         apply_subscription_ok_response: host.apply_subscription_ok_response,
         protocol_events_ctx: protocol_events_fn,
         protocol_rx_ctx: protocol_rx_fn,
@@ -237,6 +238,13 @@ defmodule Ide.Debugger.RuntimeContexts do
         append_debugger_event: host.append_debugger_event,
         runtime_status_after_init: host.maybe_append_runtime_status_after_init,
         apply_runtime_followups: fn st, target, message, source, followups ->
+          followups =
+            if init_runtime_followups?(message, source) do
+              InitCmdFollowups.merge_followups(followups, host.introspect_for.(st, target))
+            else
+              followups
+            end
+
           RuntimeFollowups.apply_after_step(st, target, message, source, followups, runtime_followups)
         end,
         protocol_rx_ctx: protocol_rx_fn
@@ -283,7 +291,7 @@ defmodule Ide.Debugger.RuntimeContexts do
         SubscriptionWireContexts.auto_fire(%{
           trigger_candidates: trigger_candidates,
           trigger_message: host.trigger_message_for_surface,
-          apply_step: host.apply_step_without_value,
+          apply_step: host.apply_step_once,
           subscription_row_enabled?: host.subscription_row_enabled?,
           auto_fire_row_enabled?: host.auto_fire_row_enabled?,
           simulator_now: host.simulator_now,
@@ -314,6 +322,12 @@ defmodule Ide.Debugger.RuntimeContexts do
       end
     })
   end
+
+  defp init_runtime_followups?(message, source) when is_binary(message) and is_binary(source) do
+    message in ["init"] and source in ["init", "init_device_data"]
+  end
+
+  defp init_runtime_followups?(_message, _source), do: false
 
   defp step_followup_host(host) do
     %{

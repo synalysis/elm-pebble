@@ -2,6 +2,7 @@ defmodule Ide.Debugger.EventLog do
   @moduledoc false
 
   alias Ide.Debugger.SurfaceTargets
+  alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.RuntimeEvent
   alias Ide.Debugger.Types.RuntimeEventPayload
@@ -49,13 +50,18 @@ defmodule Ide.Debugger.EventLog do
     source_root = Keyword.get(opts, :source_root_for_target, &SurfaceTargets.source_root/1)
 
     debugger_seq = Map.get(state, :debugger_seq, 0) + 1
+    message_value = Keyword.get(opts, :message_value)
 
     row = %{
       seq: debugger_seq,
       raw_seq: Map.get(state, :seq, 0),
       type: type,
       target: source_root.(target),
-      message: if(is_binary(message), do: message, else: to_string(message || "")),
+      message:
+        if(is_binary(message),
+          do: TimelineMessage.format(message, message_value),
+          else: TimelineMessage.format(to_string(message || ""), message_value)
+        ),
       message_source: if(is_binary(message_source), do: message_source, else: nil),
       watch: Map.get(state, :watch, %{}),
       companion: Map.get(state, :companion, %{}),

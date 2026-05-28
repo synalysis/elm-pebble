@@ -3,6 +3,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
   alias Ide.Compiler
   alias Ide.Compiler.Diagnostics
+  alias Ide.Debugger.AgentSession
+  alias Ide.Debugger.BootstrapInit
+  alias Ide.Debugger.CompanionPhoneCompile
+  alias Ide.Debugger.DeferredCompanionInit
   alias Ide.Debugger.Types.CompileIngestBridge
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -53,9 +57,50 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     progress = Keyword.get(opts, :progress, fn _ -> :ok end)
     scope_key = Projects.scope_key(project)
 
+    if companion_bootstrap_async?() do
+      run_companion_bootstrap_async(project, scope_key, progress)
+    else
+      run_companion_bootstrap_sync(project, scope_key, progress)
+    end
+  end
+
+  defp run_companion_bootstrap_sync(project, scope_key, progress) do
     with :ok <- compile_and_ingest_phone(project, scope_key, progress),
          reload <- companion_reload(project, progress) do
       {:ok, %{reload: reload}}
+    end
+  end
+
+  defp run_companion_bootstrap_async(project, scope_key, progress) do
+    progress.("Loading companion model...")
+
+    reload =
+      with_companion_fast_bootstrap(scope_key, fn ->
+        companion_reload(project, progress)
+      end)
+
+    _ = CompanionPhoneCompile.schedule_if_needed(scope_key, project)
+
+    case reload do
+      {:ok, _} ->
+        DeferredCompanionInit.schedule(scope_key)
+        {:ok, %{reload: reload}}
+
+      {:error, _} = err ->
+        err
+
+      :skipped ->
+        {:ok, %{reload: :skipped}}
+    end
+  end
+
+  defp with_companion_fast_bootstrap(scope_key, fun) when is_binary(scope_key) and is_function(fun, 0) do
+    {:ok, _} = AgentSession.mutate(scope_key, &BootstrapInit.with_companion_bootstrap_flags/1)
+
+    try do
+      fun.()
+    after
+      {:ok, _} = AgentSession.mutate(scope_key, &BootstrapInit.clear_companion_bootstrap_flags/1)
     end
   end
 
@@ -66,14 +111,30 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
   defp companion_reload(%Project{} = project, progress) do
     progress.("Loading companion model...")
+    scope_key = Projects.scope_key(project)
+
     case Projects.read_source_file(project, "phone", "src/CompanionApp.elm") do
       {:ok, content} ->
-        Ide.Debugger.reload(Projects.scope_key(project), %{
-          rel_path: "src/CompanionApp.elm",
-          source: content,
-          reason: "debugger_companion_bootstrap",
-          source_root: "phone"
-        })
+        result =
+          Ide.Debugger.reload(scope_key, %{
+            rel_path: "src/CompanionApp.elm",
+            source: content,
+            reason: "debugger_companion_bootstrap",
+            source_root: "phone"
+          })
+
+        case result do
+          {:ok, _} ->
+            if companion_reload_await_idle?() do
+              progress.("Applying companion init follow-ups...")
+              _ = Ide.Debugger.RuntimeBackgroundDrains.await_idle(scope_key)
+            end
+
+            result
+
+          _ ->
+            result
+        end
 
       {:error, _} ->
         :skipped
@@ -83,6 +144,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   @spec companion_bootstrap_async?() :: boolean()
   def companion_bootstrap_async? do
     Application.get_env(:ide, :debugger_async_companion_bootstrap, true)
+  end
+
+  # When companion bootstrap runs in a background Task, do not block on the full
+  # HTTP + protocol cascade; LiveView refreshes on debugger:runtime PubSub events.
+  @spec companion_reload_await_idle?() :: boolean()
+  def companion_reload_await_idle? do
+    not companion_bootstrap_async?() or
+      Application.get_env(:ide, :debugger_companion_reload_await_idle, false)
   end
 
   defp start_session(project, watch_profile_id, progress) do

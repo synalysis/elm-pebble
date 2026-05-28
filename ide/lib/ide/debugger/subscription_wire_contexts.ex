@@ -30,7 +30,7 @@ defmodule Ide.Debugger.SubscriptionWireContexts do
           required(:trigger_message) =>
             (Types.runtime_state(), Types.surface_target(), String.t(), String.t() | nil -> String.t()),
           required(:apply_step) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t(), String.t() ->
+            (Types.runtime_state(), Types.surface_target(), String.t(), map() | nil, String.t(), String.t() ->
                Types.runtime_state()),
           required(:subscription_row_enabled?) =>
             (Types.runtime_state(), Types.surface_target(), map() -> boolean()),

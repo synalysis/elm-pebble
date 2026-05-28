@@ -58,6 +58,12 @@ defmodule Ide.Debugger.RuntimeExecutor do
          followup_messages: []
        }}
 
+  @doc false
+  @spec execute_introspect_only(execution_input()) :: {:ok, execution_result()}
+  def execute_introspect_only(input) when is_map(input) do
+    execute_default_with_backend(input, "parser_only")
+  end
+
   @spec execute_default_with_backend(execution_input(), String.t(), fallback_reason() | nil) ::
           {:ok, execution_result()}
   defp execute_default_with_backend(input, backend, reason \\ nil) do

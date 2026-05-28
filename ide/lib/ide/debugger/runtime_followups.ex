@@ -4,13 +4,13 @@ defmodule Ide.Debugger.RuntimeFollowups do
   alias Ide.Debugger.CmdCall
   alias Ide.Debugger.DeviceData
   alias Ide.Debugger.DeviceDataResponses
+  alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.HttpExecutor
   alias Ide.Debugger.IntrospectAccess
   alias Ide.Debugger.PendingHttpFollowups
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.Surface
-  alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
 
   @type apply_ctx :: %{
@@ -99,7 +99,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
           apply_runtime_http_followup(acc, target, target_name, package, command, followup_message, ctx)
 
         true ->
-          apply_runtime_package_followup(acc, target, target_name, package, row, ctx)
+          apply_runtime_package_followup(acc, target, target_name, package, row, message, ctx)
       end
     end)
   end
@@ -328,7 +328,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
           target,
           response_message,
           message_value,
-          "runtime_followup",
+          "http",
           "runtime_followup"
         )
 
@@ -380,10 +380,11 @@ defmodule Ide.Debugger.RuntimeFollowups do
           String.t(),
           String.t(),
           map(),
+          String.t(),
           apply_ctx()
         ) :: Types.runtime_state()
-  defp apply_runtime_package_followup(state, target, target_name, package, row, ctx)
-       when target in [:watch, :companion, :phone] and is_map(row) do
+  defp apply_runtime_package_followup(state, target, target_name, package, row, parent_message, ctx)
+       when target in [:watch, :companion, :phone] and is_map(row) and is_binary(parent_message) do
     case Ide.Debugger.PackageCommandHandler.handle(state, target_name, package, row) do
       {:handled, next_state, event_payload, %{message: message, message_value: message_value}} ->
         next_state
@@ -410,26 +411,88 @@ defmodule Ide.Debugger.RuntimeFollowups do
         followup_message = Map.get(row, "message") || Map.get(row, :message)
         followup_message_value = Map.get(row, "message_value") || Map.get(row, :message_value)
 
+        {step_message, message_value} =
+          resolve_runtime_followup_step(
+            state,
+            target,
+            parent_message,
+            followup_message,
+            followup_message_value
+          )
+
         state
         |> ctx.append_event.(
           "debugger.package_cmd",
           Ide.Debugger.Types.PackageCmdEventPayload.from_followup(
             target_name,
             package,
-            followup_message
+            TimelineMessage.format(step_message, message_value)
           )
         )
         |> ctx.apply_step_once.(
           target,
-          followup_message,
-          followup_message_value,
+          step_message,
+          message_value,
           "runtime_followup",
           "runtime_followup"
         )
     end
   end
 
-  defp apply_runtime_package_followup(state, _target, _target_name, _package, _row, _ctx), do: state
+  defp apply_runtime_package_followup(state, _target, _target_name, _package, _row, _parent_message, _ctx),
+    do: state
+
+  @spec resolve_runtime_followup_step(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t() | nil,
+          Types.subscription_payload() | map() | nil
+        ) :: {String.t(), map() | nil}
+  defp resolve_runtime_followup_step(state, target, parent_message, followup_message, followup_message_value)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(parent_message) do
+    cond do
+      is_map(followup_message_value) ->
+        {RuntimeModelMessages.wire_constructor(followup_message || "") || followup_message || "",
+         followup_message_value}
+
+      is_binary(followup_message) and followup_message != "" ->
+        case TimelineMessage.message_value_for_step(followup_message) do
+          {message, %{} = value} ->
+            {message, value}
+
+          {message, nil} ->
+            case synthesized_device_wire_value(state, target, parent_message, message) do
+              %{} = value -> {message, value}
+              _ -> {message, nil}
+            end
+        end
+
+      true ->
+        {"", nil}
+    end
+  end
+
+  defp resolve_runtime_followup_step(_state, _target, _parent_message, _followup_message, _followup_message_value),
+    do: {"", nil}
+
+  @spec synthesized_device_wire_value(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t()
+        ) :: map() | nil
+  defp synthesized_device_wire_value(state, target, parent_message, ctor)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(parent_message) and
+              is_binary(ctor) and ctor != "" do
+    state
+    |> DeviceDataResponses.requests_for_surface(target, parent_message)
+    |> Enum.find_value(fn req ->
+      if req.response_message == ctor, do: DeviceData.response_wire_value(req)
+    end)
+  end
+
+  defp synthesized_device_wire_value(_state, _target, _parent_message, _ctor), do: nil
 
   @spec utc_offset_minutes_now() :: integer()
   defp utc_offset_minutes_now do

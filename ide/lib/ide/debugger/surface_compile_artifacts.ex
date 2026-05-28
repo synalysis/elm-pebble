@@ -2,6 +2,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
   @moduledoc false
 
   alias Ide.Compiler
+  alias Ide.Debugger.CompanionPhoneCompile
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.ElmcSurfaceFields
@@ -30,12 +31,17 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
         ) :: Types.runtime_state()
   def maybe_attach_for_parser_view(state, target, ctx)
       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
-    if surface_has_core_ir?(state, target) do
-      state
-    else
-      source_root = ctx.source_root_for_target.(target)
-      artifacts = artifacts_for_source_root(state, source_root, ctx)
-      ctx.merge_runtime_artifacts.(state, target, artifacts)
+    cond do
+      surface_has_core_ir?(state, target) ->
+        state
+
+      skip_blocking_entrypoint_compile?(state) ->
+        state
+
+      true ->
+        source_root = ctx.source_root_for_target.(target)
+        artifacts = artifacts_for_source_root(state, source_root, ctx)
+        ctx.merge_runtime_artifacts.(state, target, artifacts)
     end
   end
 
@@ -51,6 +57,10 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
   end
 
   def surface_has_core_ir?(_state, _target), do: false
+
+  defp skip_blocking_entrypoint_compile?(state) when is_map(state) do
+    CompanionPhoneCompile.skip_blocking_compile?(state)
+  end
 
   @spec artifacts_for_source_root(Types.runtime_state(), String.t(), attach_ctx()) :: map()
   def artifacts_for_source_root(state, source_root, ctx)

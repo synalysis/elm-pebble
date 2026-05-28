@@ -45,6 +45,9 @@ config :ide, :debugger_sync_bootstrap, true
 # Apply HTTP follow-ups synchronously in tests (deterministic Agent state).
 config :ide, :debugger_async_http_followups, false
 
+# Deliver AppMessage subscription effects synchronously in tests.
+config :ide, :debugger_async_protocol_delivery, false
+
 # Enable helpful, but potentially expensive runtime checks
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true

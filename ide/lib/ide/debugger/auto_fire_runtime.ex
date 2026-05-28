@@ -4,6 +4,7 @@ defmodule Ide.Debugger.AutoFireRuntime do
   alias Ide.Debugger.SubscriptionActivation
   alias Ide.Debugger.SubscriptionAutoFireState
   alias Ide.Debugger.SubscriptionPayload
+  alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.TriggerCandidates
   alias Ide.Debugger.Types
 
@@ -13,7 +14,7 @@ defmodule Ide.Debugger.AutoFireRuntime do
           required(:trigger_message) =>
             (Types.runtime_state(), Types.surface_target(), String.t(), String.t() | nil -> String.t()),
           required(:apply_step) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t(), String.t() ->
+            (Types.runtime_state(), Types.surface_target(), String.t(), map() | nil, String.t(), String.t() ->
                Types.runtime_state()),
           required(:subscription_row_enabled?) =>
             (Types.runtime_state(), Types.surface_target(), map() -> boolean()),
@@ -38,17 +39,26 @@ defmodule Ide.Debugger.AutoFireRuntime do
 
         rows
         |> Enum.reduce(acc, fn %{message: message, trigger: trigger}, row_acc ->
-          resolved_message = ctx.trigger_message.(row_acc, target, trigger, message)
+          resolved_message =
+            ctx.trigger_message.(row_acc, target, trigger, message)
+            |> resolved_auto_fire_message(message)
 
-          ctx.apply_step.(
-            row_acc,
-            target,
-            resolved_message,
-            "subscription_auto_fire",
-            trigger
-          )
+          {_step_message, message_value} = TimelineMessage.message_value_for_step(resolved_message)
+
+          row_acc
+          |> then(fn st ->
+            ctx.apply_step.(
+              st,
+              target,
+              resolved_message,
+              message_value,
+              "subscription_auto_fire",
+              trigger
+            )
+          end)
+          |> SubscriptionPayload.advance_simulator_clock_for_auto_fire(trigger)
         end)
-        |> put_clock(target, now, ctx)
+        |> then(fn st -> put_clock(st, target, clock_snapshot(st, target, ctx), ctx) end)
       end)
     else
       state
@@ -153,8 +163,41 @@ defmodule Ide.Debugger.AutoFireRuntime do
   @spec initialize_clocks(Types.runtime_state(), [:watch | :companion | :phone], apply_ctx()) ::
           Types.runtime_state()
   def initialize_clocks(state, targets, ctx) when is_map(state) and is_list(targets) and is_map(ctx) do
-    now = NaiveDateTime.local_now()
-    Enum.reduce(targets, state, &put_clock(&2, &1, now, ctx))
+    Enum.reduce(targets, state, fn target, acc ->
+      now = ctx.simulator_now.(acc, target)
+      seed = clock_seed(acc, target, now, ctx)
+      put_clock(acc, target, seed, ctx)
+    end)
+  end
+
+  @spec clock_seed(Types.runtime_state(), Types.surface_target(), NaiveDateTime.t(), apply_ctx()) ::
+          NaiveDateTime.t()
+  defp clock_seed(state, target, %NaiveDateTime{} = now, ctx) when is_map(state) and is_map(ctx) do
+    if simulated_time_for_target?(state, target) do
+      NaiveDateTime.add(now, -1, :minute)
+    else
+      now
+    end
+  end
+
+  @spec clock_snapshot(Types.runtime_state(), Types.surface_target(), apply_ctx()) :: NaiveDateTime.t()
+  defp clock_snapshot(state, target, ctx) when is_map(state) and is_map(ctx) do
+    now = ctx.simulator_now.(state, target)
+
+    if simulated_time_for_target?(state, target) do
+      NaiveDateTime.add(now, -1, :minute)
+    else
+      now
+    end
+  end
+
+  @spec simulated_time_for_target?(Types.runtime_state(), Types.surface_target()) :: boolean()
+  defp simulated_time_for_target?(state, target) when is_map(state) and target in [:watch, :companion, :phone] do
+    state
+    |> Map.get(target, %{})
+    |> Map.get(:model, %{})
+    |> Ide.Debugger.SimulatorSettings.from_model()
+    |> Map.get("use_simulated_time", false) == true
   end
 
   @spec worker_interval_ms(Types.runtime_state(), [:watch | :companion | :phone], [map()], apply_ctx()) ::
@@ -209,6 +252,15 @@ defmodule Ide.Debugger.AutoFireRuntime do
       trigger,
       source_root_for_target
     )
+  end
+
+  @spec resolved_auto_fire_message(String.t() | nil, String.t() | nil) :: String.t()
+  defp resolved_auto_fire_message(resolved, fallback) do
+    if is_binary(resolved) and String.trim(resolved) != "" do
+      resolved
+    else
+      fallback || ""
+    end
   end
 
   defp contains_any?(text, needles) when is_binary(text) and is_list(needles) do

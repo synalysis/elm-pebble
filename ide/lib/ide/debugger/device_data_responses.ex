@@ -12,7 +12,8 @@ defmodule Ide.Debugger.DeviceDataResponses do
           required(:append_event) =>
             (Types.runtime_state(), String.t(), map() -> Types.runtime_state()),
           required(:apply_step_once) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t(), String.t() ->
+            (Types.runtime_state(), Types.surface_target(), String.t(),
+             Types.subscription_payload() | map() | nil, String.t(), String.t() ->
                Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t())
         }
@@ -71,7 +72,7 @@ defmodule Ide.Debugger.DeviceDataResponses do
         "debugger.device_data",
         Ide.Debugger.Types.DeviceDataEventPayload.from_request(target_name, req)
       )
-      |> ctx.apply_step_once.(target, DeviceData.response_message(req), "device_data", "device_data")
+      |> apply_device_response_step(target, req, ctx)
       |> DeviceDataHints.apply_to_state(target, req)
     end)
   end
@@ -98,4 +99,17 @@ defmodule Ide.Debugger.DeviceDataResponses do
   end
 
   def filter_update_cmd_calls(calls, _current_ctor) when is_list(calls), do: calls
+
+  @spec apply_device_response_step(Types.runtime_state(), Types.surface_target(), map(), apply_ctx()) ::
+          Types.runtime_state()
+  defp apply_device_response_step(state, target, req, ctx) when is_map(state) and is_map(req) and is_map(ctx) do
+    response_message = DeviceData.response_message(req)
+    wire_value = DeviceData.response_wire_value(req)
+
+    if is_binary(response_message) and response_message != "" do
+      ctx.apply_step_once.(state, target, response_message, wire_value, "device_data", "device_data")
+    else
+      state
+    end
+  end
 end

@@ -482,45 +482,59 @@ defmodule Ide.DebuggerTest do
     assert get_in(state, [:phone, :model, "runtime_model", "status"]) == "idle"
   end
 
-  test "render_runtime_preview_for_debugger renders selected model with latest artifacts" do
-    previous_config = Application.get_env(:ide, Debugger, [])
-
-    Application.put_env(
-      :ide,
-      Debugger,
-      Keyword.put(previous_config, :runtime_executor_module, DebuggerRuntimeExecutor)
-    )
-
-    on_exit(fn -> Application.put_env(:ide, Debugger, previous_config) end)
-
-    selected_runtime = %{
-      model: %{"runtime_model" => %{"n" => 1}},
-      view_tree: %{"type" => "parser-root", "children" => [%{}]}
-    }
-
-    latest_runtime = %{
+  test "render_runtime_preview_for_debugger derives view output from surface model only" do
+    surface_runtime = %{
       model: %{
-        "runtime_model" => %{"n" => 99},
-        "elm_introspect" => %{"view" => %{}},
-        "elm_executor_metadata" => %{"version" => "latest"},
-        "elm_executor_core_ir" => %{"modules" => %{}},
-        "last_path" => "watch/src/Main.elm"
+        "runtime_model" => %{
+          "now" => %{
+            "ctor" => "Just",
+            "args" => [%{"hour" => 8, "minute" => 54, "second" => 0}]
+          },
+          "screenW" => 144,
+          "screenH" => 168
+        },
+        "runtime_view_output" => [
+          %{"kind" => "text", "text" => "08:53", "x" => 0, "y" => 0}
+        ],
+        "runtime_last_message" => "MinuteChanged 54",
+        "elm_introspect" => %{
+          "view_tree" => %{
+            "type" => "windowStack",
+            "children" => [
+              %{
+                "type" => "text",
+                "text" => "stale",
+                "children" => [
+                  %{
+                    "type" => "expr",
+                    "op" => "++",
+                    "label" => "++",
+                    "children" => [
+                      %{"type" => "call", "label" => "pad2", "children" => [%{"type" => "var", "label" => "value.hour"}]},
+                      %{"type" => "string_literal", "value" => ":"},
+                      %{"type" => "call", "label" => "pad2", "children" => [%{"type" => "var", "label" => "value.minute"}]}
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
       },
-      view_tree: %{"type" => "latest-root", "children" => [%{}]}
+      view_tree: %{"type" => "windowStack", "children" => []}
     }
 
-    rendered =
-      Debugger.render_runtime_preview_for_debugger(selected_runtime, latest_runtime, :watch)
+    rendered = Debugger.render_runtime_preview_for_debugger(surface_runtime, %{}, :watch)
 
-    assert get_in(rendered, [:model, "runtime_model", "n"]) == 1
-    assert get_in(rendered, [:model, "rendered_n"]) == 1
-    assert get_in(rendered, [:model, "artifact_version"]) == "latest"
+  texts =
+      for row <- get_in(rendered, [:model, "runtime_view_output"]) || [],
+          is_map(row),
+          row["kind"] in ["text", "text_label"],
+          is_binary(row["text"]),
+          do: row["text"]
 
-    assert get_in(rendered, [:model, "runtime_view_output"]) == [
-             %{"kind" => "text_label", "x" => 1, "y" => 2, "text" => "ok"}
-           ]
-
-    assert get_in(rendered, [:view_tree, "children", Access.at(0), "n"]) == 1
+    assert Enum.any?(texts, &(&1 == "08:54")),
+           "expected view derived from model.now, got #{inspect(texts)}"
   end
 
   test "set_watch_profile updates launch context and watch screen metadata" do
@@ -2154,9 +2168,140 @@ defmodule Ide.DebuggerTest do
       |> Enum.filter(&(&1.type == "init" and &1.target == "phone"))
       |> Enum.map(& &1.seq)
 
-    assert phone_inits == [4]
+    assert phone_inits == [3]
     refute AppMessageQueue.pending?(reloaded, :companion)
     refute AppMessageQueue.pending?(reloaded, :watch)
+  end
+
+  test "tangram minute change applies structured current date time follow-up" do
+    slug = "sim-tangram-minute-datetime-#{System.unique_integer([:positive])}"
+
+    watch_source =
+      File.read!(
+        Path.join(["priv", "project_templates", "watchface_tangram_time", "src", "Main.elm"])
+      )
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    {:ok, reloaded} =
+      Debugger.reload(slug, %{
+        rel_path: "src/Main.elm",
+        source: watch_source,
+        reason: "tangram_minute_datetime",
+        source_root: "watch"
+      })
+
+    assert {:ok, configured} =
+             Debugger.set_simulator_settings(slug, %{
+               "use_simulated_time" => true,
+               "simulated_date" => "2026-05-27",
+               "simulated_time" => "23:42:00",
+               "timezone_offset_min" => 120
+             })
+
+    baseline_seq = configured.seq
+
+    assert {:ok, triggered} =
+             Debugger.step(slug, %{
+               target: "watch",
+               message: "MinuteChanged 42",
+               count: 1
+             })
+
+    new_rows =
+      triggered.debugger_timeline
+      |> Enum.filter(&(&1.raw_seq > baseline_seq))
+      |> Enum.sort_by(& &1.seq, :asc)
+
+    assert Enum.any?(new_rows, fn row ->
+             row.type == "update" and row.target == "watch" and
+               (String.starts_with?(row.message, "MinuteChanged 42") or
+                  row.message == "MinuteChanged" or
+                  String.starts_with?(row.message, "MinuteChanged "))
+           end)
+
+    assert Enum.any?(new_rows, fn row ->
+             row.type == "update" and row.target == "watch" and
+               String.starts_with?(row.message, "CurrentDateTime ") and
+               String.contains?(row.message, "\"minute\":42")
+           end)
+
+    minute_seq =
+      new_rows
+      |> Enum.find_value(fn row ->
+        if row.type == "update" and String.starts_with?(row.message, "MinuteChanged "), do: row.seq
+      end)
+
+    datetime_seq =
+      new_rows
+      |> Enum.find_value(fn row ->
+        if row.type == "update" and String.starts_with?(row.message, "CurrentDateTime "), do: row.seq
+      end)
+
+    assert is_integer(minute_seq)
+    assert is_integer(datetime_seq)
+    assert minute_seq < datetime_seq
+
+    now =
+      get_in(triggered, [:watch, :model, "now", "args", Access.at(0)]) ||
+        get_in(triggered, [:watch, :model, "runtime_model", "now", "args", Access.at(0)])
+
+    assert is_map(now)
+    assert now["minute"] == 42
+    assert now["hour"] == 23
+  end
+
+  test "tangram companion init schedules catalog http follow-up on debugger timeline" do
+    previous_async_http = Application.get_env(:ide, :debugger_async_http_followups)
+
+    Application.put_env(:ide, :debugger_async_http_followups, true)
+
+    on_exit(fn ->
+      if is_nil(previous_async_http) do
+        Application.delete_env(:ide, :debugger_async_http_followups)
+      else
+        Application.put_env(:ide, :debugger_async_http_followups, previous_async_http)
+      end
+    end)
+
+    slug = "sim-tangram-catalog-http-timeline-#{System.unique_integer([:positive])}"
+
+    companion_source =
+      File.read!(
+        Path.join(["priv", "project_templates", "watchface_tangram_time", "phone", "src", "CompanionApp.elm"])
+      )
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: companion_source,
+               reason: "tangram_catalog_http_timeline",
+               source_root: "phone"
+             })
+
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+
+    assert {:ok, reloaded} = Debugger.snapshot(slug, event_limit: 500)
+
+    catalog_updates =
+      reloaded.debugger_timeline
+      |> Enum.filter(fn row ->
+        row.type == "update" and row.target == "phone" and
+          String.contains?(row.message, "CatalogReceived")
+      end)
+
+    assert catalog_updates != [],
+           "expected companion CatalogReceived update from init Http.get, got: #{inspect(reloaded.debugger_timeline)}"
+
+    assert Enum.any?(catalog_updates, &(&1.message_source == "http"))
+
+    assert Enum.any?(reloaded.events, fn event ->
+             event.type == "debugger.package_cmd" and
+               get_in(event, [:payload, :package]) == "elm/http" and
+               String.contains?(get_in(event, [:payload, :response_message]) || "", "CatalogReceived")
+           end)
   end
 
   test "watch init queues companion protocol until companion reload instead of bootstrapping init" do

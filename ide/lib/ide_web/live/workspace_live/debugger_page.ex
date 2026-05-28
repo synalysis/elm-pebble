@@ -6,6 +6,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   alias Ide.Debugger
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.Resources.ResourceStore
   alias IdeWeb.WorkspaceLive.DebuggerPreview
@@ -112,6 +113,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         </p>
         <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200" role="progressbar" aria-busy="true">
           <div class="h-full w-1/3 animate-pulse rounded-full bg-zinc-600" />
+        </div>
+      </div>
+      <div
+        :if={debugger_companion_bootstrap_busy?(@debugger_companion_bootstrap_status)}
+        class="mt-2 w-full max-w-xl"
+        data-testid="debugger-companion-bootstrap-progress"
+      >
+        <p class="text-xs text-zinc-600">
+          {@debugger_companion_bootstrap_progress || "Loading companion app…"}
+        </p>
+        <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200" role="progressbar" aria-busy="true">
+          <div class="h-full w-1/3 animate-pulse rounded-full bg-zinc-500" />
         </div>
       </div>
       <div class="mt-3 grid min-h-0 flex-1 grid-cols-12 gap-3">
@@ -768,22 +781,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp debugger_agent_state_clipboard_text(%{} = assigns) do
     project = Map.get(assigns, :project)
 
-    timeline_text =
-      assigns
-      |> Map.get(:debugger_rows, [])
-      |> DebuggerSupport.debugger_rows_for_mode(
-        Map.get(assigns, :debugger_timeline_mode, "mixed")
-      )
-      |> DebuggerSupport.debugger_timeline_text()
+    {timeline_text, state, selected_seq} =
+      debugger_export_snapshot(assigns, project)
 
-    selected_seq =
-      case Map.get(assigns, :debugger_selected_row) do
-        %{seq: s} -> s
-        %{"seq" => s} -> s
-        _ -> nil
-      end
-
-    state = Map.get(assigns, :debugger_state)
+    state = state || Map.get(assigns, :debugger_state)
 
     DebuggerSupport.debugger_agent_state_markdown(%{
       format_version: "elm-pebble.debugger_state.v1",
@@ -793,15 +794,24 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       timeline_text: timeline_text,
       watch_model_json:
         DebuggerSupport.copy_json(
-          debugger_debugger_model(Map.get(assigns, :debugger_watch_runtime))
+          debugger_debugger_model(
+            debugger_export_watch_runtime(state, selected_seq, Map.get(assigns, :debugger_cursor_seq)) ||
+              Map.get(assigns, :debugger_watch_runtime)
+          )
         ),
       companion_model_json:
         DebuggerSupport.copy_json(
-          debugger_debugger_model(Map.get(assigns, :debugger_companion_runtime))
+          debugger_debugger_model(
+            debugger_export_companion_runtime(state, selected_seq, Map.get(assigns, :debugger_cursor_seq)) ||
+              Map.get(assigns, :debugger_companion_runtime)
+          )
         ),
       rendered_view_json:
         DebuggerSupport.copy_json(
-          debugger_rendered_tree(Map.get(assigns, :debugger_watch_view_runtime))
+          debugger_rendered_tree(
+            debugger_export_watch_view_runtime(state, selected_seq, Map.get(assigns, :debugger_cursor_seq)) ||
+              Map.get(assigns, :debugger_watch_view_runtime)
+          )
         ),
       session_running: state && debugger_state_running?(state),
       session_event_count: if(state, do: length(state.events), else: nil),
@@ -822,6 +832,109 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       nil -> selected_debugger_watch_profile_id(state, project)
       id -> id
     end
+  end
+
+  @spec debugger_export_watch_runtime(map() | nil, non_neg_integer() | nil, non_neg_integer() | nil) ::
+          map() | nil
+  defp debugger_export_watch_runtime(%{} = state, selected_seq, cursor_seq) do
+    debugger_export_surface_runtime(state, selected_seq, cursor_seq, :watch)
+  end
+
+  defp debugger_export_watch_runtime(_state, _selected_seq, _cursor_seq), do: nil
+
+  @spec debugger_export_companion_runtime(map() | nil, non_neg_integer() | nil, non_neg_integer() | nil) ::
+          map() | nil
+  defp debugger_export_companion_runtime(%{} = state, selected_seq, cursor_seq) do
+    debugger_export_surface_runtime(state, selected_seq, cursor_seq, :companion)
+  end
+
+  defp debugger_export_companion_runtime(_state, _selected_seq, _cursor_seq), do: nil
+
+  @spec debugger_export_watch_view_runtime(map() | nil, non_neg_integer() | nil, non_neg_integer() | nil) ::
+          map() | nil
+  defp debugger_export_watch_view_runtime(%{} = state, selected_seq, cursor_seq) do
+    case debugger_export_surface_runtime(state, selected_seq, cursor_seq, :watch) do
+      %{} = watch_runtime ->
+        Debugger.render_runtime_preview_for_debugger(
+          watch_runtime,
+          Map.get(state, :watch),
+          :watch
+        )
+
+      _ ->
+        nil
+    end
+  end
+
+  defp debugger_export_watch_view_runtime(_state, _selected_seq, _cursor_seq), do: nil
+
+  @spec debugger_export_surface_runtime(map(), non_neg_integer() | nil, non_neg_integer() | nil, atom()) ::
+          map() | nil
+  defp debugger_export_surface_runtime(state, selected_seq, cursor_seq, surface)
+       when surface in [:watch, :companion] do
+    seq = selected_seq || cursor_seq
+
+    row_runtime =
+      state
+      |> DebuggerSupport.debugger_rows(500)
+      |> Enum.find(fn row -> row.seq == seq end)
+      |> case do
+        %{watch_runtime: rt} when surface == :watch and is_map(rt) -> rt
+        %{companion_runtime: rt} when surface == :companion and is_map(rt) -> rt
+        _ -> nil
+      end
+
+    row_runtime ||
+      case DebuggerSupport.snapshot_runtime_at_cursor(Map.get(state, :events, []), seq) do
+        %{watch: rt} when surface == :watch -> rt
+        %{companion: rt, phone: phone} when surface == :companion -> rt || phone
+        _ -> Map.get(state, surface)
+      end
+  end
+
+  @spec debugger_export_snapshot(map(), Project.t() | nil) ::
+          {String.t(), map() | nil, non_neg_integer() | nil}
+  defp debugger_export_snapshot(assigns, %Project{} = project) do
+    selected_seq =
+      case Map.get(assigns, :debugger_selected_row) do
+        %{seq: s} -> s
+        %{"seq" => s} -> s
+        _ -> nil
+      end
+
+    timeline_mode = Map.get(assigns, :debugger_timeline_mode, "mixed")
+    event_limit = Map.get(assigns, :debugger_event_limit, 500)
+
+    case project |> Projects.scope_key() |> Ide.Debugger.snapshot(event_limit: event_limit) do
+      {:ok, state} ->
+        timeline_text =
+          state
+          |> DebuggerSupport.debugger_rows(event_limit)
+          |> DebuggerSupport.debugger_rows_for_mode(timeline_mode)
+          |> DebuggerSupport.debugger_timeline_text()
+
+        {timeline_text, state, selected_seq}
+
+      _ ->
+        debugger_export_snapshot(assigns, nil)
+    end
+  end
+
+  defp debugger_export_snapshot(assigns, _project) do
+    selected_seq =
+      case Map.get(assigns, :debugger_selected_row) do
+        %{seq: s} -> s
+        %{"seq" => s} -> s
+        _ -> nil
+      end
+
+    timeline_text =
+      assigns
+      |> Map.get(:debugger_rows, [])
+      |> DebuggerSupport.debugger_rows_for_mode(Map.get(assigns, :debugger_timeline_mode, "mixed"))
+      |> DebuggerSupport.debugger_timeline_text()
+
+    {timeline_text, Map.get(assigns, :debugger_state), selected_seq}
   end
 
   @spec debugger_companion_configuration_model(assigns()) :: map() | nil
@@ -2133,6 +2246,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   defp debugger_bootstrap_busy?(:running), do: true
   defp debugger_bootstrap_busy?(_), do: false
+
+  defp debugger_companion_bootstrap_busy?(:running), do: true
+  defp debugger_companion_bootstrap_busy?(_), do: false
 
   defp debugger_start_button_label(_debugger_state, :running), do: "Starting…"
 

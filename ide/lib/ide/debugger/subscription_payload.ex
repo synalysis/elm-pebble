@@ -32,7 +32,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
       when is_map(state) and is_binary(message) and is_binary(trigger) do
     message_text = String.trim(message)
 
-    if message_text == "" or String.contains?(message_text, " ") do
+    if message_text == "" or message_has_payload?(message_text) do
       message
     else
       now = simulator_now_for_target(state, target)
@@ -140,6 +140,14 @@ defmodule Ide.Debugger.SubscriptionPayload do
   end
 
   def attach(_state, _target, message, _trigger, _ctx) when is_binary(message), do: message
+
+  @spec message_has_payload?(String.t()) :: boolean()
+  defp message_has_payload?(message) when is_binary(message) do
+    case String.split(message, ~r/\s+/, parts: 2) do
+      [_ctor, payload] -> String.trim(payload) != ""
+      _ -> false
+    end
+  end
 
   @spec simulator_now_for_target(map(), :watch | :companion | :phone) :: NaiveDateTime.t()
   def simulator_now_for_target(state, target)
@@ -396,4 +404,68 @@ defmodule Ide.Debugger.SubscriptionPayload do
   end
 
   defp parse_simulated_time(_value, fallback), do: fallback
+
+  @spec advance_simulator_clock_for_auto_fire(Types.runtime_state(), String.t()) :: Types.runtime_state()
+  def advance_simulator_clock_for_auto_fire(state, trigger) when is_map(state) and is_binary(trigger) do
+    settings = DebuggerSimulatorSettings.from_state(state)
+
+    if settings["use_simulated_time"] == true do
+      case clock_unit_for_trigger(trigger) do
+        unit when unit in [:second, :minute, :hour, :day, :month, :year] ->
+          now = simulator_now_from_settings(settings)
+          next = advance_naive_datetime(now, unit)
+
+          next_settings = %{
+            settings
+            | "simulated_date" => next |> NaiveDateTime.to_date() |> Date.to_iso8601(),
+              "simulated_time" => next |> NaiveDateTime.to_time() |> format_simulated_time()
+          }
+
+          state
+          |> Map.put(:simulator_settings, next_settings)
+          |> Ide.Debugger.SimulatorSurfaceSettings.apply_to_state()
+
+        _ ->
+          state
+      end
+    else
+      state
+    end
+  end
+
+  def advance_simulator_clock_for_auto_fire(state, _trigger) when is_map(state), do: state
+
+  @spec clock_unit_for_trigger(String.t()) :: :second | :minute | :hour | :day | :month | :year | nil
+  defp clock_unit_for_trigger(trigger) when is_binary(trigger) do
+    t =
+      trigger
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]/, "")
+
+    cond do
+      String.contains?(t, "secondchange") or String.contains?(t, "onsecond") -> :second
+      String.contains?(t, "minutechange") or String.contains?(t, "onminute") -> :minute
+      String.contains?(t, "hourchange") or String.contains?(t, "onhour") -> :hour
+      String.contains?(t, "daychange") or String.contains?(t, "onday") -> :day
+      String.contains?(t, "monthchange") or String.contains?(t, "onmonth") -> :month
+      String.contains?(t, "yearchange") or String.contains?(t, "onyear") -> :year
+      true -> nil
+    end
+  end
+
+  @spec advance_naive_datetime(NaiveDateTime.t(), :second | :minute | :hour | :day | :month | :year) ::
+          NaiveDateTime.t()
+  defp advance_naive_datetime(%NaiveDateTime{} = now, :second), do: NaiveDateTime.add(now, 1, :second)
+  defp advance_naive_datetime(%NaiveDateTime{} = now, :minute), do: NaiveDateTime.add(now, 1, :minute)
+  defp advance_naive_datetime(%NaiveDateTime{} = now, :hour), do: NaiveDateTime.add(now, 1, :hour)
+  defp advance_naive_datetime(%NaiveDateTime{} = now, :day), do: NaiveDateTime.add(now, 1, :day)
+  defp advance_naive_datetime(%NaiveDateTime{} = now, :month), do: NaiveDateTime.add(now, 1, :month)
+  defp advance_naive_datetime(%NaiveDateTime{} = now, :year), do: NaiveDateTime.add(now, 1, :year)
+
+  @spec format_simulated_time(Time.t()) :: String.t()
+  defp format_simulated_time(%Time{} = time) do
+    time
+    |> Time.truncate(:second)
+    |> Time.to_iso8601()
+  end
 end

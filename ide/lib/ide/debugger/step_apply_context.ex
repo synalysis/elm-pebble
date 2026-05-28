@@ -21,7 +21,7 @@ defmodule Ide.Debugger.StepApplyContext do
           required(:append_runtime_exec) => (map(), Types.surface_target(), map() -> map()),
           required(:append_event) => (map(), String.t(), map() -> map()),
           required(:append_debugger_event) =>
-            (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map()),
+            (map(), String.t(), Types.surface_target(), String.t(), String.t(), map() | nil -> map()),
           required(:maybe_append_runtime_status) => (map(), Types.surface_target() -> map()),
           required(:device_data_responses) =>
             (map(), Types.surface_target(), String.t(), map(), String.t() -> map()),

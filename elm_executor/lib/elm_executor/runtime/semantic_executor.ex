@@ -3763,7 +3763,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     from_children =
       Enum.find_value(node_children(node), &eval_view_text(&1, runtime_model, eval_context))
 
-    [value, from_expr, from_field_access, from_children]
+    # Prefer freshly evaluated expressions over cached `value` annotations on view-tree nodes.
+    [from_expr, from_field_access, from_children, value]
     |> Enum.find_value(&normalize_text_value/1)
   end
 

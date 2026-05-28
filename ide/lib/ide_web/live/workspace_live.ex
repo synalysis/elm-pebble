@@ -39,6 +39,7 @@ defmodule IdeWeb.WorkspaceLive do
   alias IdeWeb.WorkspaceLive.ResourcesPage
   alias IdeWeb.WorkspaceLive.ResourcesFlow
   alias IdeWeb.WorkspaceLive.PackagesFlow
+  alias Ide.Debugger.RuntimeBackgroundNotify
   alias IdeWeb.WorkspaceLive.DebuggerSupport
   alias IdeWeb.WorkspaceLive.DebuggerBootstrapFlow
   alias IdeWeb.WorkspaceLive.DebuggerPage
@@ -130,6 +131,7 @@ defmodule IdeWeb.WorkspaceLive do
 
     socket
     |> State.assign_project(project, settings, project_data)
+    |> subscribe_debugger_runtime_updates(project)
     |> maybe_initialize_forms(project)
     |> maybe_open_editor_default_file(project, previous_pane)
     |> refresh_editor_dependencies()
@@ -137,6 +139,27 @@ defmodule IdeWeb.WorkspaceLive do
     |> maybe_check_emulator_installation()
     |> maybe_schedule_debugger_auto_fire_refresh()
     |> refresh_github_repo_status()
+  end
+
+  @spec subscribe_debugger_runtime_updates(socket(), Project.t()) :: socket()
+  defp subscribe_debugger_runtime_updates(socket, %Project{} = project) do
+    if connected?(socket) do
+      topic = RuntimeBackgroundNotify.topic(Projects.scope_key(project))
+      old_topic = socket.assigns[:debugger_runtime_pubsub_topic]
+
+      socket =
+        if old_topic == topic do
+          socket
+        else
+          if is_binary(old_topic), do: Phoenix.PubSub.unsubscribe(Ide.PubSub, old_topic)
+          :ok = Phoenix.PubSub.subscribe(Ide.PubSub, topic)
+          assign(socket, :debugger_runtime_pubsub_topic, topic)
+        end
+
+      socket
+    else
+      socket
+    end
   end
 
   @impl true
@@ -3556,15 +3579,35 @@ defmodule IdeWeb.WorkspaceLive do
 
         {:noreply,
          socket
+         |> assign(:debugger_companion_bootstrap_status, :idle)
+         |> assign(:debugger_companion_bootstrap_progress, nil)
          |> DebuggerSupport.refresh()
-         |> maybe_schedule_debugger_auto_fire_refresh()
-         |> clear_debugger_bootstrap_busy()}
+         |> maybe_schedule_debugger_auto_fire_refresh()}
     end
   end
 
   def handle_info({:debugger_bootstrap_progress, token, message}, socket) do
     if socket.assigns[:debugger_bootstrap_token] == token do
       {:noreply, assign(socket, :debugger_bootstrap_progress, message)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info({:debugger_companion_bootstrap_progress, message}, socket) when is_binary(message) do
+    {:noreply,
+     socket
+     |> assign(:debugger_companion_bootstrap_progress, message)
+     |> schedule_debugger_runtime_refresh()}
+  end
+
+  def handle_info(:debugger_runtime_updated, socket) do
+    {:noreply, schedule_debugger_runtime_refresh(socket)}
+  end
+
+  def handle_info({:debugger_runtime_refresh, seq}, socket) when is_integer(seq) do
+    if socket.assigns[:debugger_runtime_refresh_seq] == seq do
+      {:noreply, DebuggerSupport.refresh_following_debugger_latest(socket)}
     else
       {:noreply, socket}
     end
@@ -4186,11 +4229,16 @@ defmodule IdeWeb.WorkspaceLive do
 
     socket =
       if result.companion_async? do
+        apply_project_auto_fire_settings(project)
         schedule_companion_debugger_bootstrap(project, socket)
 
         socket
-        |> assign(:debugger_bootstrap_progress, "Compiling companion app...")
+        |> clear_debugger_bootstrap_busy()
+        |> assign(:debugger_companion_bootstrap_status, :running)
+        |> assign(:debugger_companion_bootstrap_progress, "Loading companion app...")
         |> put_flash(:info, result.message)
+        |> DebuggerSupport.refresh()
+        |> maybe_schedule_debugger_auto_fire_refresh()
       else
         apply_project_auto_fire_settings(project)
 
@@ -4234,20 +4282,20 @@ defmodule IdeWeb.WorkspaceLive do
   end
 
   @spec schedule_companion_debugger_bootstrap(Projects.Project.t(), socket()) :: :ok
-  defp schedule_companion_debugger_bootstrap(project, socket) do
+  defp schedule_companion_debugger_bootstrap(project, _socket) do
     if DebuggerBootstrapFlow.companion_bootstrap_async?() do
       scope_key = Projects.scope_key(project)
       parent = self()
-      token = socket.assigns[:debugger_bootstrap_token]
 
       Task.start(fn ->
         result =
           DebuggerBootstrapFlow.run_companion_bootstrap(project,
             progress: fn msg ->
-              if token, do: send(parent, {:debugger_bootstrap_progress, token, msg}), else: :ok
+              send(parent, {:debugger_companion_bootstrap_progress, msg})
             end
           )
 
+        send(parent, :debugger_runtime_updated)
         send(parent, {:companion_debugger_bootstrapped, scope_key, result})
       end)
 
@@ -4256,6 +4304,22 @@ defmodule IdeWeb.WorkspaceLive do
       _ = DebuggerBootstrapFlow.run_companion_bootstrap(project)
       :ok
     end
+  end
+
+  @spec schedule_debugger_runtime_refresh(socket()) :: socket()
+  defp schedule_debugger_runtime_refresh(socket) do
+    ms = Application.get_env(:ide, :debugger_runtime_refresh_debounce_ms, 100)
+    seq = (socket.assigns[:debugger_runtime_refresh_seq] || 0) + 1
+
+    if ref = socket.assigns[:debugger_runtime_refresh_ref] do
+      Process.cancel_timer(ref)
+    end
+
+    ref = Process.send_after(self(), {:debugger_runtime_refresh, seq}, ms)
+
+    socket
+    |> assign(:debugger_runtime_refresh_ref, ref)
+    |> assign(:debugger_runtime_refresh_seq, seq)
   end
 
   @spec merge_publish_submit_options(map(), map()) :: map()

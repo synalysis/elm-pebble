@@ -48,7 +48,7 @@ defmodule Ide.Debugger.AgentSession do
       history_limit: @history_limit,
       default_auto_fire_interval_ms: @default_auto_fire_interval_ms,
       append_event: &append_event/3,
-      append_debugger_event: &append_debugger_event/5,
+      append_debugger_event: &append_debugger_event_host/6,
       update: &mutate/2,
       ensure_phone_state: &SessionDefaults.ensure_phone_state/1,
       human_slug_from_session_key: &SessionDefaults.human_slug_from_session_key/1
@@ -60,6 +60,19 @@ defmodule Ide.Debugger.AgentSession do
     EventLog.append(state, type, payload, limit: @history_limit)
   end
 
+  @spec append_debugger_event_host(
+          runtime_state(),
+          String.t(),
+          Types.surface_target(),
+          String.t(),
+          String.t(),
+          map() | integer() | boolean() | String.t() | nil
+        ) :: runtime_state()
+  def append_debugger_event_host(state, type, target, message, message_source, message_value)
+      when is_map(state) do
+    append_debugger_event(state, type, target, message, message_source, message_value)
+  end
+
   @spec append_debugger_event(
           runtime_state(),
           String.t(),
@@ -68,9 +81,23 @@ defmodule Ide.Debugger.AgentSession do
           String.t()
         ) :: runtime_state()
   def append_debugger_event(state, type, target, message, message_source) when is_map(state) do
+    append_debugger_event(state, type, target, message, message_source, nil)
+  end
+
+  @spec append_debugger_event(
+          runtime_state(),
+          String.t(),
+          Types.surface_target(),
+          String.t(),
+          String.t(),
+          map() | integer() | boolean() | String.t() | nil
+        ) :: runtime_state()
+  def append_debugger_event(state, type, target, message, message_source, message_value)
+      when is_map(state) do
     EventLog.append_debugger_event(state, type, target, message, message_source,
       limit: @history_limit,
-      source_root_for_target: &SurfaceTargets.source_root/1
+      source_root_for_target: &SurfaceTargets.source_root/1,
+      message_value: message_value
     )
   end
 end

@@ -114,6 +114,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     |> Component.assign(:debugger_bootstrap_status, :idle)
     |> Component.assign(:debugger_bootstrap_progress, nil)
     |> Component.assign(:debugger_bootstrap_token, nil)
+    |> Component.assign(:debugger_companion_bootstrap_status, :idle)
+    |> Component.assign(:debugger_companion_bootstrap_progress, nil)
+    |> Component.assign(:debugger_runtime_refresh_ref, nil)
+    |> Component.assign(:debugger_runtime_refresh_seq, 0)
   end
 
   @spec refresh(socket()) :: socket()
@@ -3508,11 +3512,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     companion_runtime = companion_or_phone_runtime(companion_runtime, phone_runtime)
 
     watch_view_runtime =
-      Debugger.render_runtime_preview_for_debugger(
-        watch_runtime,
-        latest_debugger_runtime(debugger_state, :watch),
-        :watch
-      )
+      case watch_runtime do
+        %{} = runtime ->
+          Ide.Debugger.RuntimePreview.render_view_from_surface(runtime, :watch) || runtime
+
+        _ ->
+          nil
+      end
 
     %{
       rows: rows,

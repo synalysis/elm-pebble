@@ -4,10 +4,11 @@ defmodule Ide.Debugger.StepApply do
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.ProtocolRuntimePatch
   alias Ide.Debugger.ProtocolRx
-  alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.StepInput
   alias Ide.Debugger.Surface
+  alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.Types
 
   @type ctx :: %{
@@ -30,7 +31,7 @@ defmodule Ide.Debugger.StepApply do
           required(:append_runtime_exec) => (map(), Types.surface_target(), map() -> map()),
           required(:append_event) => (map(), String.t(), map() -> map()),
           required(:append_debugger_event) =>
-            (map(), String.t(), Types.surface_target(), String.t(), String.t() -> map()),
+            (map(), String.t(), Types.surface_target(), String.t(), String.t(), map() | nil -> map()),
           required(:maybe_append_runtime_status) => (map(), Types.surface_target() -> map()),
           required(:device_data_responses) =>
             (map(), Types.surface_target(), String.t(), map(), String.t() -> map()),
@@ -74,6 +75,7 @@ defmodule Ide.Debugger.StepApply do
     {message, msg_source, known_messages, update_branches, next_cursor} =
       StepExecution.resolve_message(execution_model, requested_message)
 
+    timeline_message_value = timeline_message_value(requested_message, message, message_value)
     message_value = ctx.normalize_message_value.(state, target, message_value, model)
 
     step =
@@ -89,28 +91,6 @@ defmodule Ide.Debugger.StepApply do
     runtime_patch = ctx.normalize_runtime_patch.(step.execution_model, runtime_patch)
     runtime_view_tree = Map.get(runtime_result, :view_tree)
     runtime_view_tree = if is_map(runtime_view_tree), do: runtime_view_tree, else: step.view_tree
-
-    preview_runtime_model =
-      model
-      |> Types.StepExecutionContract.merge_model_patch(runtime_patch)
-      |> ctx.hydrate_runtime_model.(message, ctx.patched_runtime_model_fields.(runtime_patch))
-      |> RuntimeArtifacts.preview_runtime_model()
-
-    runtime_view_output =
-      StepExecution.preferred_view_output(
-        Map.get(runtime_result, :view_output),
-        Map.get(model, "runtime_view_output") || Map.get(model, :runtime_view_output)
-      )
-      |> then(fn rows ->
-        supplemented =
-          StepExecution.supplement_parser_runtime_view_output(
-            step.execution_model,
-            runtime_view_tree,
-            preview_runtime_model
-          )
-
-        StepExecution.choose_runtime_view_output(supplemented, rows)
-      end)
 
     message_source = source_override || msg_source
 
@@ -158,6 +138,17 @@ defmodule Ide.Debugger.StepApply do
       )
       |> ctx.hydrate_runtime_model.(message, ctx.patched_runtime_model_fields.(runtime_patch))
       |> then(fn m -> ctx.preserve_protocol_metadata.(m, model) end)
+
+    runtime_view_output =
+      StepExecution.resolve_runtime_view_output(
+        step.execution_model,
+        runtime_view_tree,
+        updated_model,
+        Map.get(runtime_result, :view_output)
+      )
+
+    updated_model =
+      updated_model
       |> Map.put("runtime_last_message", message)
       |> Map.put("runtime_message_source", message_source)
       |> Map.put("runtime_message_cursor", next_cursor)
@@ -174,7 +165,8 @@ defmodule Ide.Debugger.StepApply do
         message,
         trigger,
         updated_model,
-        default_view_tree: ctx.default_view_tree.(target)
+        default_view_tree: ctx.default_view_tree.(target),
+        execution_model: step.execution_model
       )
 
     updated_state =
@@ -212,7 +204,13 @@ defmodule Ide.Debugger.StepApply do
           message_source
         )
       )
-      |> ctx.append_debugger_event.("update", target, message, message_source)
+      |> ctx.append_debugger_event.(
+        "update",
+        target,
+        RuntimeModelMessages.wire_constructor(message) || message,
+        message_source,
+        timeline_message_value
+      )
       |> ctx.maybe_append_runtime_status.(target)
       |> ProtocolRx.apply_side_effects(protocol_events, suppress_protocol_events?, ctx.protocol_rx_ctx.())
       |> ctx.append_event.(
@@ -246,5 +244,20 @@ defmodule Ide.Debugger.StepApply do
       runtime_followups
     )
 
+  end
+
+  @spec timeline_message_value(String.t() | nil, String.t(), map() | integer() | boolean() | String.t() | nil) ::
+          map() | integer() | boolean() | String.t() | nil
+  defp timeline_message_value(requested_message, message, message_value) do
+    case TimelineMessage.message_value_for_step(requested_message || "", message_value) do
+      {_, value} when not is_nil(value) ->
+        value
+
+      _ ->
+        case TimelineMessage.message_value_for_step(message || "", message_value) do
+          {_, value} when not is_nil(value) -> value
+          _ -> message_value
+        end
+    end
   end
 end
