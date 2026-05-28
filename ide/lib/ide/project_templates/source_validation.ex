@@ -10,16 +10,20 @@ defmodule Ide.ProjectTemplates.SourceValidation do
   - already match IDE formatter output (`Formatter.format/1` must not change the file)
   """
 
+  @compile {:no_warn_undefined, [ElmEx.Frontend.LetLayout]}
+
   alias ElmEx.Frontend.GeneratedParser
   alias ElmEx.Frontend.LetLayout
   alias Ide.Formatter
   alias Ide.ProjectTemplates
   alias Ide.Tokenizer
 
+  @type issue_check :: :let_layout | :parse | :tokenizer | :formatter
+
   @type issue :: %{
           required(:template) => String.t(),
           required(:file) => String.t(),
-          required(:check) => atom(),
+          required(:check) => issue_check(),
           required(:detail) => String.t()
         }
 
@@ -55,8 +59,8 @@ defmodule Ide.ProjectTemplates.SourceValidation do
 
         if issues == [], do: :ok, else: {:error, issues}
 
-      {:error, _} = err ->
-        err
+      {:error, {:unknown_template, key}} ->
+        raise ArgumentError, "unknown template #{key}"
     end
   end
 

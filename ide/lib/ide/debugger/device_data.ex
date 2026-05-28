@@ -71,7 +71,10 @@ defmodule Ide.Debugger.DeviceData do
   Used when stepping subscription messages so `model.now` matches the event the user
   triggered before device-data followups (for example `CurrentDateTime`) arrive.
   """
-  @spec apply_subscription_overrides_to_runtime_now(map(), String.t() | nil) :: map()
+  @spec apply_subscription_overrides_to_runtime_now(
+          map(),
+          String.t() | nil | %{String.t() => integer()}
+        ) :: map()
   def apply_subscription_overrides_to_runtime_now(runtime_model, message)
       when is_map(runtime_model) and is_binary(message) do
     runtime_model

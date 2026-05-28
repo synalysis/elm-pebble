@@ -7,11 +7,16 @@ defmodule Ide.Debugger.RuntimeApi do
   alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.RuntimeExecutorConfig
   alias Ide.Debugger.RuntimePreview
+  alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
 
   @type runtime_state :: Types.RuntimeState.t() | Types.RuntimeState.wire_map()
 
-  @spec render_runtime_preview_for_debugger(map() | nil, map() | nil, Types.surface_target()) :: map() | nil
+  @spec render_runtime_preview_for_debugger(
+          Surface.surface_map() | nil,
+          Surface.surface_map() | nil,
+          Types.surface_target()
+        ) :: Surface.surface_map() | nil
   def render_runtime_preview_for_debugger(snapshot_runtime, latest_runtime, target) do
     RuntimePreview.render_for_debugger_entry(
       snapshot_runtime,

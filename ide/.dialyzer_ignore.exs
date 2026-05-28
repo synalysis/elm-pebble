@@ -38,5 +38,15 @@
   {"lib/ide/debugger/wire_values.ex", :pattern_match},
   {"lib/ide/mcp/handlers/compiler.ex", :pattern_match},
   {"lib/ide/mcp/handlers/debugger.ex", :pattern_match},
-  {"lib/ide/debugger/runtime_hub.ex", :pattern_match}
+  {"lib/ide/debugger/runtime_hub.ex", :pattern_match},
+  {"lib/ide/debugger/auto_fire_runtime.ex", :pattern_match},
+  {"lib/ide/debugger/step_execution.ex", :pattern_match},
+  {"lib/ide/debugger/companion_phone_compile.ex", :no_return},
+  {"lib/ide/debugger/companion_phone_compile.ex", :pattern_match},
+  {"lib/ide/debugger/deferred_companion_init.ex", :no_return},
+  {"lib/ide_web/live/workspace_live/debugger_bootstrap_flow.ex", :no_return},
+  {"lib/ide_web/live/workspace_live/debugger_bootstrap_flow.ex", :unused_fun},
+  {"lib/ide_web/live/workspace_live/debugger_bootstrap_flow.ex", :pattern_match},
+  {"lib/ide/mcp/debugger_template_corpus.ex", :pattern_match},
+  {"lib/ide/mcp/debugger_template_corpus.ex", :unused_fun}
 ]

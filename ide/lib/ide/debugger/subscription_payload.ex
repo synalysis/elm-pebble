@@ -229,7 +229,7 @@ defmodule Ide.Debugger.SubscriptionPayload do
     end
   end
 
-  @spec blank_string?(term()) :: boolean()
+  @spec blank_string?(Types.wire_scalar() | map() | list()) :: boolean()
   defp blank_string?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank_string?(_value), do: true
 
@@ -459,8 +459,22 @@ defmodule Ide.Debugger.SubscriptionPayload do
   defp advance_naive_datetime(%NaiveDateTime{} = now, :minute), do: NaiveDateTime.add(now, 1, :minute)
   defp advance_naive_datetime(%NaiveDateTime{} = now, :hour), do: NaiveDateTime.add(now, 1, :hour)
   defp advance_naive_datetime(%NaiveDateTime{} = now, :day), do: NaiveDateTime.add(now, 1, :day)
-  defp advance_naive_datetime(%NaiveDateTime{} = now, :month), do: NaiveDateTime.add(now, 1, :month)
-  defp advance_naive_datetime(%NaiveDateTime{} = now, :year), do: NaiveDateTime.add(now, 1, :year)
+  defp advance_naive_datetime(%NaiveDateTime{} = now, :month) do
+    shift_naive_date(now, month: 1)
+  end
+
+  defp advance_naive_datetime(%NaiveDateTime{} = now, :year) do
+    shift_naive_date(now, year: 1)
+  end
+
+  @spec shift_naive_date(NaiveDateTime.t(), keyword()) :: NaiveDateTime.t()
+  defp shift_naive_date(%NaiveDateTime{} = now, shifts) when is_list(shifts) do
+    date = now |> NaiveDateTime.to_date() |> Date.shift(shifts)
+    time = NaiveDateTime.to_time(now)
+
+    {:ok, shifted} = NaiveDateTime.new(date, time)
+    shifted
+  end
 
   @spec format_simulated_time(Time.t()) :: String.t()
   defp format_simulated_time(%Time{} = time) do

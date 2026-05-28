@@ -4,6 +4,7 @@ defmodule Ide.Debugger.ElmIntrospect.EffectAnalysis do
   alias ElmEx.Frontend.Module
   alias Ide.Debugger.ElmIntrospect
   alias Ide.Debugger.ElmIntrospect.Types
+  alias Ide.Debugger.Types.CmdCall
 
   @spec view_type_name(Types.ast_expr() | String.t()) :: String.t()
   defp view_type_name(target) when is_binary(target) do
@@ -208,7 +209,15 @@ defmodule Ide.Debugger.ElmIntrospect.EffectAnalysis do
 
   @spec cmd_calls_from_case_branch_expr(Types.ast_expr()) :: Types.cmd_call_list()
   defp cmd_calls_from_case_branch_expr(expr) do
-    extract_cmd_calls(expr)
+    {peeled, bindings} = ElmIntrospect.peel_lets_with_bindings(expr)
+
+    case peeled do
+      %{op: :tuple2, right: right} ->
+        extract_cmd_calls(right, bindings)
+
+      _ ->
+        extract_cmd_calls(peeled, bindings)
+    end
   end
 
   @spec maybe_put_branch_constructor(Types.cmd_call_row(), String.t()) :: Types.cmd_call_row()
@@ -511,7 +520,7 @@ defmodule Ide.Debugger.ElmIntrospect.EffectAnalysis do
           Types.param_list(),
           Types.param_list(),
           :then | :else
-        ) :: map() | nil
+        ) :: CmdCall.activation_guard() | nil
   defp guard_from_if_cond(cond, bindings, allowed, subscriptions_params, branch)
        when is_map(bindings) and is_list(allowed) and is_list(subscriptions_params) and
               branch in [:then, :else] do
@@ -527,7 +536,7 @@ defmodule Ide.Debugger.ElmIntrospect.EffectAnalysis do
     end
   end
 
-  @spec guard_from_case_branch(String.t(), Types.ast_expr()) :: map() | nil
+  @spec guard_from_case_branch(String.t(), Types.ast_expr()) :: CmdCall.activation_guard() | nil
   defp guard_from_case_branch(subject, pattern) when is_binary(subject) do
     label = ElmIntrospect.pattern_branch_label(pattern)
 

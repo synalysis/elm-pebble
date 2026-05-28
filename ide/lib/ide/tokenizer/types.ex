@@ -29,6 +29,16 @@ defmodule Ide.Tokenizer.Types do
           optional(:elm_span_semantics) => atom()
         }
 
+  # Parser snippet diagnostics (severity added when merged into the final list).
+  @type parser_line_diagnostic :: %{
+          required(:source) => String.t(),
+          required(:message) => String.t(),
+          required(:line) => integer() | nil,
+          required(:column) => integer() | nil,
+          optional(:elm_title) => atom() | String.t() | nil,
+          optional(:detail) => String.t()
+        }
+
   @type parser_payload :: %{
           diagnostics: [map()],
           metadata: Ide.Formatter.Semantics.HeaderMetadata.metadata(),

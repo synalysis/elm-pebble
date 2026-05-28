@@ -172,14 +172,14 @@ defmodule Ide.Debugger.SubscriptionAutoFireState do
   def target_label([single], source_root_for_target), do: source_root_for_target.(single)
   def target_label(_targets, _source_root_for_target), do: "selected"
 
-  @spec valid_auto_fire_subscription?(term()) :: boolean()
+  @spec valid_auto_fire_subscription?(Types.subscription_row_input()) :: boolean()
   def valid_auto_fire_subscription?(%{"target" => target, "trigger" => trigger})
       when target in ["watch", "protocol"] and is_binary(trigger) and trigger != "",
       do: true
 
   def valid_auto_fire_subscription?(_), do: false
 
-  @spec valid_disabled_subscription?(term()) :: boolean()
+  @spec valid_disabled_subscription?(Types.subscription_row_input()) :: boolean()
   def valid_disabled_subscription?(%{"target" => target, "trigger" => trigger})
       when target in ["watch", "protocol"] and is_binary(trigger) and trigger != "",
       do: true

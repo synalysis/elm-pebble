@@ -245,6 +245,44 @@ defmodule Ide.Debugger.Types do
           | integer()
           | nil
 
+  @type companion_callback_result ::
+          {:ok, companion_bridge_payload()} | {:error, String.t()}
+
+  @type companion_connectivity_callback_result ::
+          {:ok, true}
+          | {:ok, false}
+          | {:ok, companion_bridge_payload()}
+          | {:error, String.t()}
+
+  @type companion_subscription_contract :: %{
+          required(:source) => String.t(),
+          required(:target_suffixes) => [String.t()],
+          required(:payload) => atom(),
+          optional(:plain_result) => boolean(),
+          optional(:ok_result_variant) => String.t()
+        }
+
+  @type companion_subscription_source :: %{
+          optional(:source) => String.t(),
+          optional(:plain_result) => boolean(),
+          optional(:ok_result_variant) => String.t()
+        }
+
+  @type protocol_metadata_value :: wire_scalar() | map() | nil
+
+  @type phone_to_watch_message_value :: protocol_ctor_value() | map()
+
+  @type phone_to_watch_payload :: subscription_payload() | boolean() | String.t()
+
+  @type elmc_wire_ctor_call :: map()
+
+  @type elmc_wire_ctor_value :: map()
+
+  @type simulator_command_input ::
+          elmc_wire_ctor_value() | elmc_wire_ctor_call() | wire_scalar() | map()
+
+  @type subscription_row_input :: DisabledSubscription.wire_map() | map()
+
   @type device_preview_map :: %{
           optional(String.t()) => String.t() | integer() | boolean()
         }

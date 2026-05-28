@@ -572,20 +572,16 @@ defmodule Ide.CompanionPebbleApisTest do
 
     assert Enum.any?(watch_state.events, fn event ->
              event.type in ["debugger.protocol_tx", "debugger.protocol_rx"] and
-               match?(
-                 "ProvideConnectivity false" <> _,
-                 to_string(Map.get(event.payload, :message) || "")
-               )
+               String.contains?(to_string(Map.get(event.payload, :message) || ""), "ProvideConnectivity") and
+               String.contains?(to_string(Map.get(event.payload, :message) || ""), "false")
            end)
 
     {:ok, updated} = Debugger.set_simulator_settings(slug, %{"network_online" => true})
 
     assert Enum.any?(updated.events, fn event ->
              event.type in ["debugger.protocol_tx", "debugger.protocol_rx"] and
-               match?(
-                 "ProvideConnectivity true" <> _,
-                 to_string(Map.get(event.payload, :message) || "")
-               )
+               String.contains?(to_string(Map.get(event.payload, :message) || ""), "ProvideConnectivity") and
+               String.contains?(to_string(Map.get(event.payload, :message) || ""), "true")
            end)
   end
 

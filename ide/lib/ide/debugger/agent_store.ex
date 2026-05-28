@@ -11,7 +11,7 @@ defmodule Ide.Debugger.AgentStore do
   @type store :: %{optional(String.t()) => Types.runtime_state()}
   @type prepare_fn :: (Types.runtime_state() -> Types.runtime_state())
   @type default_state_fn :: (String.t() -> Types.runtime_state())
-  @type on_remove_fn :: (Types.runtime_state() -> any())
+  @type on_remove_fn :: (Types.runtime_state() -> :ok)
 
   @spec update(
           String.t(),

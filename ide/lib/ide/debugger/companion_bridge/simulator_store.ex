@@ -79,7 +79,7 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
 
   def storage_value_to_elm_value(value), do: %{"ctor" => "JsonValue", "args" => [value]}
 
-  @spec command_value_to_storage_value(term()) :: map()
+  @spec command_value_to_storage_value(Types.simulator_command_input()) :: Types.StorageValue.t()
   def command_value_to_storage_value(%{"$ctor" => ctor, "$args" => [value | _]})
       when ctor in ["StringValue", "Storage.StringValue"] and is_binary(value),
       do: %{"kind" => "string", "value" => value}
@@ -97,7 +97,8 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
 
   def command_value_to_storage_value(value), do: %{"kind" => "json", "value" => value}
 
-  @spec command_json_value(term()) :: term()
+  @spec command_json_value(Types.simulator_command_input()) ::
+          Types.wire_scalar() | Types.elmc_wire_ctor_call() | map()
   def command_json_value(%{"$call" => target, "$args" => [value | _]}) when is_binary(target) do
     cond do
       String.ends_with?(target, ".string") and is_binary(value) -> value

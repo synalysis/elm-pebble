@@ -283,7 +283,7 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
 
   def apply_subscription_response(
         state,
-        target,
+        _target,
         callback,
         payload,
         source,
@@ -291,36 +291,155 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
         contract,
         ctx
       )
-      when is_map(state) and target in [:watch, :companion, :phone] and is_binary(callback) and
-             is_binary(source) and is_binary(trigger) and is_map(contract) and is_map(ctx) do
-    if Map.get(contract, :plain_result) == true do
-      connectivity =
-        cond do
-          payload == true -> %{"ctor" => "Online", "args" => []}
-          payload == false -> %{"ctor" => "Offline", "args" => []}
-          is_map(payload) -> payload
-          true -> %{"ctor" => "Offline", "args" => []}
-        end
+      when is_map(state) and is_binary(callback) and is_binary(source) and is_binary(trigger) and
+             is_map(contract) and is_map(ctx) do
+    state = maybe_apply_companion_subscription_step(state, callback, payload, source, trigger, ctx)
 
-      ctx.apply_step.(
-        state,
-        target,
-        callback,
-        %{"ctor" => callback, "args" => [connectivity]},
-        source,
-        trigger
-      )
-    else
-      ctx.apply_step.(
-        state,
-        target,
-        callback,
-        subscription_ok_message_value(callback, payload),
-        source,
-        trigger
-      )
-    end
+    {step_target, step_trigger, message, message_value} =
+      phone_to_watch_step(callback, payload, contract, trigger)
+
+    ctx.apply_step.(state, step_target, message, message_value, source, step_trigger)
   end
+
+  @phone_to_watch_contract_sources ~w(battery locale network notifications)
+  @companion_phone_status_callbacks ~w(GotBattery GotLocale GotConnectivity GotNotifications)
+
+  @spec phone_to_watch_step(
+          String.t(),
+          Types.phone_to_watch_payload(),
+          Types.companion_subscription_contract(),
+          String.t()
+        ) ::
+          {:watch | :companion | :phone, String.t(), String.t(), Types.phone_to_watch_message_value()}
+  defp phone_to_watch_step(callback, payload, %{source: source} = contract, _trigger)
+       when callback in ["FromPhone" | @companion_phone_status_callbacks] and
+              source in @phone_to_watch_contract_sources do
+    normalized = normalize_companion_subscription_payload(payload, contract)
+    message_value = phone_to_watch_message_value(contract, normalized)
+    message = phone_to_watch_step_message(contract, normalized)
+
+    {:watch, "phone_to_watch", message, message_value}
+  end
+
+  defp phone_to_watch_step(callback, payload, _contract, trigger) do
+    {:companion, trigger, callback, subscription_ok_message_value(callback, payload)}
+  end
+
+  defp normalize_companion_subscription_payload(%{"ctor" => "Ok", "args" => [inner]}, contract),
+    do: normalize_companion_subscription_payload(inner, contract)
+
+  defp normalize_companion_subscription_payload({:ok, inner}, contract),
+    do: normalize_companion_subscription_payload(inner, contract)
+
+  defp normalize_companion_subscription_payload(%{"locale" => locale}, %{source: "locale"})
+       when is_binary(locale),
+       do: locale
+
+  defp normalize_companion_subscription_payload(payload, _contract), do: payload
+
+  @spec phone_to_watch_message_value(
+          Types.companion_subscription_source(),
+          Types.phone_to_watch_payload()
+        ) :: Types.phone_to_watch_message_value()
+  defp phone_to_watch_message_value(%{source: "battery"}, payload) when is_map(payload) do
+    %{
+      "ctor" => "FromPhone",
+      "args" => [
+        %{
+          "ctor" => "ProvideBattery",
+          "args" => [Map.get(payload, "percent"), Map.get(payload, "charging")]
+        }
+      ]
+    }
+  end
+
+  defp phone_to_watch_message_value(%{source: "locale"}, payload) when is_binary(payload) do
+    %{
+      "ctor" => "FromPhone",
+      "args" => [%{"ctor" => "ProvideLocale", "args" => [payload]}]
+    }
+  end
+
+  defp phone_to_watch_message_value(%{source: "locale"}, %{"locale" => locale})
+       when is_binary(locale) do
+    phone_to_watch_message_value(%{source: "locale"}, locale)
+  end
+
+  defp phone_to_watch_message_value(%{source: "network", plain_result: true}, online)
+       when is_boolean(online) do
+    phone_to_watch_connectivity_value(online)
+  end
+
+  defp phone_to_watch_message_value(%{source: "network", plain_result: true}, payload)
+       when is_map(payload) do
+    phone_to_watch_connectivity_value(connectivity_online?(payload))
+  end
+
+  defp phone_to_watch_message_value(%{source: "notifications"}, payload) when is_map(payload) do
+    notifications_enabled =
+      Map.get(payload, "notificationsEnabled", Map.get(payload, "notifications_enabled"))
+
+    quiet_hours = Map.get(payload, "quietHours", Map.get(payload, "quiet_hours"))
+
+    %{
+      "ctor" => "FromPhone",
+      "args" => [
+        %{
+          "ctor" => "ProvideNotifications",
+          "args" => [notifications_enabled, quiet_hours]
+        }
+      ]
+    }
+  end
+
+  defp phone_to_watch_message_value(_contract, payload) when is_map(payload), do: payload
+  defp phone_to_watch_message_value(_contract, payload), do: %{"ctor" => "FromPhone", "args" => [payload]}
+
+  defp phone_to_watch_connectivity_value(online) when is_boolean(online) do
+    %{
+      "ctor" => "FromPhone",
+      "args" => [%{"ctor" => "ProvideConnectivity", "args" => [online]}]
+    }
+  end
+
+  defp connectivity_online?(%{"ctor" => "Online"}), do: true
+  defp connectivity_online?(%{"ctor" => "Offline"}), do: false
+  defp connectivity_online?(_), do: false
+
+  @spec phone_to_watch_step_message(
+          Types.companion_subscription_source(),
+          Types.phone_to_watch_payload()
+        ) :: String.t()
+  defp phone_to_watch_step_message(%{source: "battery"}, payload) when is_map(payload) do
+    "FromPhone (ProvideBattery #{Map.get(payload, "percent")} #{Map.get(payload, "charging")})"
+  end
+
+  defp phone_to_watch_step_message(%{source: "locale"}, locale) when is_binary(locale) do
+    "FromPhone (ProvideLocale #{locale})"
+  end
+
+  defp phone_to_watch_step_message(%{source: "locale"}, %{"locale" => locale})
+       when is_binary(locale) do
+    phone_to_watch_step_message(%{source: "locale"}, locale)
+  end
+
+  defp phone_to_watch_step_message(%{source: "network", plain_result: true}, online)
+       when is_boolean(online) do
+    "FromPhone (ProvideConnectivity #{online})"
+  end
+
+  defp phone_to_watch_step_message(%{source: "network", plain_result: true}, payload)
+       when is_map(payload) do
+    "FromPhone (ProvideConnectivity #{connectivity_online?(payload)})"
+  end
+
+  defp phone_to_watch_step_message(%{source: "notifications"}, payload) when is_map(payload) do
+    enabled = Map.get(payload, "notificationsEnabled", Map.get(payload, "notifications_enabled"))
+    quiet = Map.get(payload, "quietHours", Map.get(payload, "quiet_hours"))
+    "FromPhone (ProvideNotifications #{enabled} #{quiet})"
+  end
+
+  defp phone_to_watch_step_message(_contract, _payload), do: "FromPhone"
 
   @spec subscription_ok_message_value(String.t(), Types.companion_bridge_payload()) :: map()
   defp subscription_ok_message_value(callback, payload) when is_binary(callback) do
@@ -339,16 +458,14 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
        when is_map(state) and is_binary(callback) and is_binary(source) and is_binary(api) and is_map(ctx) do
     plain? = Map.get(request, :plain_result) == true
 
-    {result_ctor, payload, message_value} =
+    {result_ctor, payload} =
       if plain? do
-        CompanionBridge.plain_connectivity_parts(callback, result)
+        {"plain", connectivity, _wrapped} =
+          CompanionBridge.plain_connectivity_parts(callback, result)
+
+        {"plain", connectivity}
       else
-        {result_ctor, payload} = CompanionBridge.callback_result_parts(result)
-
-        message_value =
-          CompanionBridge.subscription_message_value(api, callback, result_ctor, payload)
-
-        {result_ctor, payload, message_value}
+        CompanionBridge.callback_result_parts(result)
       end
 
     state
@@ -364,9 +481,34 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
       )
     )
     |> then(fn next_state ->
-      ctx.apply_step.(next_state, target, callback, message_value, source, api)
+      next_state =
+        maybe_apply_companion_subscription_step(next_state, callback, payload, source, api, ctx)
+
+      contract =
+        CompanionBridge.contract_for_source(api) ||
+          %{source: api, plain_result: plain?}
+
+      {step_target, step_trigger, message, step_value} =
+        phone_to_watch_step(callback, payload, contract, source)
+
+      ctx.apply_step.(next_state, step_target, message, step_value, source, step_trigger)
     end)
   end
+
+  defp maybe_apply_companion_subscription_step(state, callback, payload, source, trigger, ctx)
+       when callback in @companion_phone_status_callbacks do
+    ctx.apply_step.(
+      state,
+      :companion,
+      callback,
+      subscription_ok_message_value(callback, payload),
+      source,
+      trigger
+    )
+  end
+
+  defp maybe_apply_companion_subscription_step(state, _callback, _payload, _source, _trigger, _ctx),
+    do: state
 
   @spec bridge_payload(map(), atom(), map(), ctx()) :: Types.companion_bridge_payload()
   defp bridge_payload(state, kind, request, ctx) when is_map(state) and is_map(ctx) do

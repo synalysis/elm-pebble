@@ -34,10 +34,9 @@ defmodule Ide.Debugger.PendingHttpFollowups do
             put_pending(st, [])
           end)
 
-        AgentSession.with_hosts(fn hosts ->
-          ctx = hosts |> AgentHosts.contexts() |> Map.fetch!(:runtime_followups)
-          Enum.each(items, &launch_flight(project_slug, &1, ctx))
-        end)
+        hosts = AgentSession.hosts()
+        ctx = hosts |> AgentHosts.contexts() |> Map.fetch!(:runtime_followups)
+        Enum.each(items, &launch_flight(project_slug, &1, ctx))
       end
     end
 

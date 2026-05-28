@@ -28,7 +28,7 @@ defmodule Ide.Debugger.CompanionBridge do
     %{target_suffixes: ApiSuffixes.suffixes("PreferenceStore", ["onPreference"])}
   end
 
-  @spec subscription_contracts() :: [map()]
+  @spec subscription_contracts() :: [Types.companion_subscription_contract()]
   def subscription_contracts do
     [
       %{
@@ -76,7 +76,7 @@ defmodule Ide.Debugger.CompanionBridge do
     subscription_contracts() |> Enum.map(&Map.fetch!(&1, :source))
   end
 
-  @spec contract_for_source(String.t()) :: map() | nil
+  @spec contract_for_source(String.t()) :: Types.companion_subscription_contract() | nil
   def contract_for_source(source) when is_binary(source) do
     Enum.find(subscription_contracts(), &(Map.fetch!(&1, :source) == source))
   end
@@ -164,7 +164,7 @@ defmodule Ide.Debugger.CompanionBridge do
 
   def wrap_weather_ok_payload(_result_ctor, payload, _default_variant), do: payload
 
-  @spec plain_connectivity_parts(String.t(), term()) ::
+  @spec plain_connectivity_parts(String.t(), Types.companion_connectivity_callback_result()) ::
           {String.t(), Types.companion_bridge_payload(), map()}
   def plain_connectivity_parts(callback, result) when is_binary(callback) do
     connectivity =
@@ -178,7 +178,8 @@ defmodule Ide.Debugger.CompanionBridge do
     {"plain", connectivity, %{"ctor" => callback, "args" => [connectivity]}}
   end
 
-  @spec callback_result_parts(term()) :: {String.t(), Types.companion_bridge_payload()}
+  @spec callback_result_parts(Types.companion_callback_result()) ::
+          {String.t(), Types.companion_bridge_payload()}
   def callback_result_parts(result) do
     case result do
       {:ok, value} -> {"Ok", value}

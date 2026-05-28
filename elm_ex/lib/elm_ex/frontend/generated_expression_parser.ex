@@ -55,6 +55,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> normalize_let_source()
     |> normalize_case_source()
     |> normalize_minus_numeric_source()
+    |> split_inline_let_in_lines()
   end
 
   @spec normalize_case_source(source()) :: source()
@@ -163,9 +164,59 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
         rewritten =
           Enum.take(lines, index) ++
-            ["let " <> Enum.join(bindings, " ;\n") <> " in " <> Enum.join(in_lines, "\n")]
+            [
+              "let " <> Enum.join(bindings, " ;\n"),
+              "in",
+              Enum.join(in_lines, "\n")
+            ]
 
         normalize_let_source(Enum.join(rewritten, "\n"), passes + 1)
+    end
+  end
+
+  @inline_let_in_line ~r/\blet\s+.+\s+in(\s+|$)/u
+
+  @spec split_inline_let_in_lines(source()) :: source()
+  defp split_inline_let_in_lines(source) when is_binary(source) do
+    source
+    |> String.split("\n")
+    |> Enum.flat_map(&split_line_inline_let_in/1)
+    |> Enum.join("\n")
+  end
+
+  @spec split_line_inline_let_in(line()) :: lines()
+  defp split_line_inline_let_in(line) when is_binary(line) do
+    trimmed = String.trim(line)
+
+    if Regex.match?(@inline_let_in_line, trimmed) do
+      case split_rightmost_inline_let_in(trimmed) do
+        {:ok, before, in_expr} ->
+          split_line_inline_let_in(before) ++ ["in" | split_line_inline_let_in(in_expr)]
+
+        :error ->
+          [line]
+      end
+    else
+      [line]
+    end
+  end
+
+  @spec split_rightmost_inline_let_in(source()) :: {:ok, source(), source()} | :error
+  defp split_rightmost_inline_let_in(line) when is_binary(line) do
+    case :binary.matches(line, " in ") do
+      [] ->
+        :error
+
+      matches ->
+        {pos, len} = List.last(matches)
+        before = line |> String.slice(0, pos) |> String.trim_trailing()
+        in_expr = line |> String.slice(pos + len, String.length(line) - pos - len) |> String.trim_leading()
+
+        if String.contains?(before, "let ") do
+          {:ok, before, in_expr}
+        else
+          :error
+        end
     end
   end
 

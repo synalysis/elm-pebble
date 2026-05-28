@@ -258,7 +258,13 @@ defmodule Ide.Debugger.RuntimeContexts do
         snapshot_apply_ctx: introspect_snapshot_apply,
         init_surface_effects_ctx: fn -> init_surface_effects end,
         refresh_runtime_preview_for_target: &RuntimeExecutorConfig.refresh_for_target/2,
-        apply_simulator_settings: &Ide.Debugger.SimulatorSurfaceSettings.apply_to_state/1
+        apply_simulator_settings: fn st ->
+          st
+          |> Ide.Debugger.SimulatorSurfaceSettings.apply_to_state()
+          |> Ide.Debugger.CompanionBridgeEffects.apply_simulator_settings_responses(
+            companion_bridge
+          )
+        end
       })
 
     %{

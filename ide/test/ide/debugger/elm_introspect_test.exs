@@ -95,66 +95,11 @@ defmodule Ide.Debugger.ElmIntrospectTest do
               ( model, Cmd.none )
   """
 
-  @weather_cmd_calls_elm """
-  module WeatherCmd exposing (..)
+  @fixtures_dir Path.join([__DIR__, "..", "..", "fixtures", "elm_introspect"])
 
-  import Companion.Phone as CompanionPhone
-  import Companion.Types exposing (PhoneToWatch(..), Temperature(..), WeatherCondition(..))
-
-  type alias WeatherReport =
-      { temperature : Float
-      , condition : WeatherCondition
-      }
-
-  type Msg
-      = WeatherReceived (Result String WeatherReport)
-
-  update msg model =
-      case msg of
-          WeatherReceived (Ok weather) ->
-              let
-                  rounded =
-                      round weather.temperature
-              in
-              ( model
-              , Cmd.batch
-                  [ CompanionPhone.sendPhoneToWatch (ProvideTemperature (Celsius rounded))
-                  , CompanionPhone.sendPhoneToWatch (ProvideCondition weather.condition)
-                  ]
-              )
-
-          WeatherReceived _ ->
-              ( model, Cmd.none )
-  """
-
-  @http_cmd_calls_elm """
-  module CmdCallsHttp exposing (..)
-
-  import Companion.Http as Http
-  import Json.Decode as Decode
-
-  type Msg
-      = Tick
-      | WeatherReceived (Result Http.Error Float)
-
-  update msg model =
-      case msg of
-          Tick ->
-              let
-                  weatherRequest =
-                      Http.get
-                          { url = "https://example.com/weather"
-                          , expect =
-                              Http.expectJson
-                                  (Decode.field "value" Decode.float)
-                                  WeatherReceived
-                          }
-              in
-              ( model, Http.send httpRequest weatherRequest )
-
-          WeatherReceived value ->
-              ( model, Cmd.none )
-  """
+  defp fixture_source(name) when is_binary(name) do
+    Path.join(@fixtures_dir, name) |> File.read!()
+  end
 
   test "analyze_source extracts init model, Msg tags, and view outline" do
     assert {:ok, %{"elm_introspect" => ei}} = ElmIntrospect.analyze_source(@mini_elm, "Snap.elm")
@@ -512,7 +457,7 @@ defmodule Ide.Debugger.ElmIntrospectTest do
 
   test "analyze_source resolves callback constructor through Http.send request binding" do
     assert {:ok, %{"elm_introspect" => ei}} =
-             ElmIntrospect.analyze_source(@http_cmd_calls_elm, "CmdCallsHttp.elm")
+             ElmIntrospect.analyze_source(fixture_source("cmd_calls_http.elm"), "CmdCallsHttp.elm")
 
     calls = ei["update_cmd_calls"]
     assert is_list(calls)
@@ -526,7 +471,7 @@ defmodule Ide.Debugger.ElmIntrospectTest do
 
   test "analyze_source inlines let-bound weather temperature for protocol cmd arg_values" do
     assert {:ok, %{"elm_introspect" => ei}} =
-             ElmIntrospect.analyze_source(@weather_cmd_calls_elm, "WeatherCmd.elm")
+             ElmIntrospect.analyze_source(fixture_source("weather_cmd.elm"), "WeatherCmd.elm")
 
     calls = ei["update_cmd_calls"]
     assert is_list(calls)
@@ -541,10 +486,12 @@ defmodule Ide.Debugger.ElmIntrospectTest do
 
     celsius_arg = get_in(temperature_call, ["arg_values", Access.at(0), "$args", Access.at(0)])
 
+    assert %{"$ctor" => "Celsius", "$args" => [rounded_arg]} = celsius_arg
+
     assert match?(
-             %{"$ctor" => "Celsius", "$args" => [%{"$call" => call, "$args" => [%{"$field" => "temperature"}]}]}
+             %{"$call" => call, "$args" => [%{"$field" => "temperature"}]}
              when call in ["round", "Basics.round"],
-             celsius_arg
+             rounded_arg
            )
 
     assert get_in(temperature_call, ["branch_constructor"]) == "WeatherReceived"

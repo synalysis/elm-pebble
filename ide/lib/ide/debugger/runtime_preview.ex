@@ -5,6 +5,7 @@ defmodule Ide.Debugger.RuntimePreview do
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeViewOutput
   alias Ide.Debugger.StepExecution
+  alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
 
   @type executor :: module()
@@ -27,8 +28,12 @@ defmodule Ide.Debugger.RuntimePreview do
     end
   end
 
-  @spec render_for_debugger_entry(map() | nil, map() | nil, :watch | :companion | :phone, executor()) ::
-          map() | nil
+  @spec render_for_debugger_entry(
+          Surface.surface_map() | nil,
+          Surface.surface_map() | nil,
+          Types.surface_target(),
+          executor()
+        ) :: Surface.surface_map() | nil
   def render_for_debugger_entry(nil, _latest_runtime, _target, _executor), do: nil
 
   def render_for_debugger_entry(surface_runtime, _latest_runtime, target, _executor)
@@ -51,7 +56,8 @@ defmodule Ide.Debugger.RuntimePreview do
   Runs the Elm `view` against the current runtime model (via parser/semantic preview).
   Does not re-run `update` or `init` through the executor.
   """
-  @spec render_view_from_surface(map(), :watch | :companion | :phone) :: map() | nil
+  @spec render_view_from_surface(Surface.surface_map(), Types.surface_target()) ::
+          Surface.surface_map() | nil
   def render_view_from_surface(surface_runtime, target)
       when is_map(surface_runtime) and target in [:watch, :companion, :phone] do
     surface = RuntimeArtifacts.normalize_surface(surface_runtime)
@@ -115,13 +121,15 @@ defmodule Ide.Debugger.RuntimePreview do
   def render_view_from_surface(_surface_runtime, _target), do: nil
 
   @spec preview_model_for_message(map(), String.t() | nil) :: map()
-  defp preview_model_for_message(preview_model, message) when is_map(preview_model) do
+  defp preview_model_for_message(preview_model, message)
+       when is_map(preview_model) and is_binary(message) do
     DeviceData.apply_subscription_overrides_to_runtime_now(preview_model, message)
   end
 
   defp preview_model_for_message(preview_model, _message) when is_map(preview_model), do: preview_model
 
-  @spec put_debugger_view_tree(map(), map() | nil) :: map()
+  @spec put_debugger_view_tree(Surface.surface_map(), Types.view_output_tree() | nil) ::
+          Surface.surface_map()
   def put_debugger_view_tree(runtime, runtime_view_tree) when is_map(runtime) do
     ei = RuntimeArtifacts.introspect(runtime) || %{}
 
@@ -132,7 +140,12 @@ defmodule Ide.Debugger.RuntimePreview do
     end
   end
 
-  @spec supplement_without_executor(map(), :watch | :companion | :phone, map(), map() | nil) :: map()
+  @spec supplement_without_executor(
+          Types.runtime_state(),
+          Types.surface_target(),
+          Types.execution_model(),
+          Types.elm_introspect()
+        ) :: Types.runtime_state()
   def supplement_without_executor(state, target, execution_model, introspect)
       when is_map(state) and target in [:watch, :companion, :phone] and is_map(execution_model) and
              is_map(introspect) do

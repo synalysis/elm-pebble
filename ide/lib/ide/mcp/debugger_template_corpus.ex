@@ -34,7 +34,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     companion-demo-timeline
   )a
 
-  @aplite_profile_templates ~w(watch-demo-compass)a
+  @aplite_profile_templates ~w(watch-demo-compass)
 
   @fixtures_root Path.expand(
                   "../../../test/fixtures/debugger_template_corpus",
@@ -244,7 +244,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec capture(String.t(), Projects.Project.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  @spec capture(String.t(), Projects.Project.t(), String.t()) ::
+          {:ok, map()} | {:error, String.t() | term()}
   defp capture(slug, project, template_key) do
     with {:ok, models} <-
            Tools.call(

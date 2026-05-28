@@ -14,34 +14,38 @@ defmodule Ide.Debugger.DeferredCompanionInit do
 
   @spec schedule(String.t()) :: :ok
   def schedule(scope_key) when is_binary(scope_key) do
-    Task.start(fn -> run(scope_key) end)
+    Task.start(__MODULE__, :run, [scope_key])
     :ok
   end
 
   @spec run(String.t()) :: :ok
   def run(scope_key) when is_binary(scope_key) do
-    AgentSession.with_hosts(fn hosts ->
-      contexts = AgentHosts.contexts(hosts)
-      init_ctx = Map.fetch!(contexts, :init_surface_effects)
-      protocol_rx_ctx = Map.fetch!(contexts, :protocol_rx)
-
-      {:ok, state} =
-        AgentSession.mutate(scope_key, fn state ->
-          {defer?, state} = BootstrapInit.take_defer_surface_effects(state)
-
-          if defer? do
-            state
-            |> InitSurfaceEffects.apply_all(:companion, init_ctx)
-            |> ProtocolRx.drain_message_queue(:companion, protocol_rx_ctx)
-          else
-            state
-          end
-        end)
-
-      RuntimeBackgroundDrains.schedule_all(scope_key, state)
-      RuntimeBackgroundNotify.broadcast(scope_key)
-    end)
-
+    state = apply_deferred_companion_effects(scope_key)
+    RuntimeBackgroundDrains.schedule_all(scope_key, state)
+    RuntimeBackgroundNotify.broadcast(scope_key)
     :ok
+  end
+
+  @spec apply_deferred_companion_effects(String.t()) :: map()
+  defp apply_deferred_companion_effects(scope_key) when is_binary(scope_key) do
+    hosts = AgentSession.hosts()
+    contexts = AgentHosts.contexts(hosts)
+    init_ctx = Map.fetch!(contexts, :init_surface_effects)
+    protocol_rx_ctx = Map.fetch!(contexts, :protocol_rx)
+
+    {:ok, state} =
+      AgentSession.mutate(scope_key, fn state ->
+        {defer?, state} = BootstrapInit.take_defer_surface_effects(state)
+
+        if defer? do
+          state
+          |> InitSurfaceEffects.apply_all(:companion, init_ctx)
+          |> ProtocolRx.drain_message_queue(:companion, protocol_rx_ctx)
+        else
+          state
+        end
+      end)
+
+    state
   end
 end

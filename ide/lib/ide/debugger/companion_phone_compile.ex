@@ -7,7 +7,11 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
 
   alias Ide.Compiler
   alias Ide.Compiler.Diagnostics
+
+  @type compile_result :: Ide.Compiler.compile_result()
+  alias Ide.Debugger.AgentSession
   alias Ide.Debugger.AgentStore
+  alias Ide.Debugger.CompileIngestApply
   alias Ide.Debugger.ElmIntrospect
   alias Ide.Debugger.RuntimeBackgroundNotify
   alias Ide.Debugger.SurfaceCompileArtifacts
@@ -70,13 +74,13 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
                source_roots: project.source_roots
              ) do
           {:ok, result} ->
-            case ingest_result(scope_key, result) do
-              :ok ->
-                RuntimeBackgroundNotify.broadcast(scope_key)
-                :ok
+            ingest_result(scope_key, result)
 
-              {:error, _} = err ->
-                err
+            if Map.get(result, :status) == :error do
+              {:error, "Companion compile failed: #{Map.get(result, :output, "elmc error")}"}
+            else
+              RuntimeBackgroundNotify.broadcast(scope_key)
+              :ok
             end
 
           {:error, reason} ->
@@ -84,10 +88,10 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
               status: :error,
               compiled_path: Projects.project_workspace_path(project),
               revision: "—",
-              cached: false,
+              cached?: false,
               error_count: 1,
               warning_count: 0,
-              detail: inspect(reason),
+              output: inspect(reason),
               diagnostics: []
             })
 
@@ -117,6 +121,7 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
 
   defp phone_root(_), do: nil
 
+  @spec ingest_result(String.t(), compile_result() | map()) :: :ok
   defp ingest_result(scope_key, result) when is_binary(scope_key) and is_map(result) do
     diagnostics = Map.get(result, :diagnostics) || Map.get(result, "diagnostics") || []
     counts = Diagnostics.summary(diagnostics)
@@ -129,9 +134,13 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
       |> Map.put(:diagnostics, diagnostics)
       |> CompileIngestBridge.from_compiler_compile_result()
 
-    case Ide.Debugger.ingest_elmc_compile(scope_key, attrs) do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, inspect(reason)}
-    end
+    hosts = AgentSession.hosts()
+
+    {:ok, _state} =
+      AgentSession.mutate(scope_key, fn state ->
+        CompileIngestApply.compile(state, attrs, hosts.compile_ingest)
+      end)
+
+    :ok
   end
 end

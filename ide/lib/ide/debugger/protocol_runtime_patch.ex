@@ -41,7 +41,8 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
     end
   end
 
-  @spec merge_protocol_runtime_model_patch(map(), map(), map() | nil) :: map()
+  @spec merge_protocol_runtime_model_patch(Types.app_model(), map(), Types.elm_introspect() | nil) ::
+          Types.app_model()
   defp merge_protocol_runtime_model_patch(model, patch, introspect) when is_map(model) do
     if is_map(patch) and patch != %{} and not noop_provide_position_patch?(patch) do
       patch =
@@ -83,7 +84,7 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
 
   defp noop_provide_position_patch?(_patch), do: false
 
-  @spec align_protocol_patch_to_init_model(map(), map() | nil) :: map()
+  @spec align_protocol_patch_to_init_model(map(), Types.elm_introspect() | nil) :: map()
   defp align_protocol_patch_to_init_model(patch, introspect)
        when is_map(patch) and is_map(introspect) do
     init_keys =
@@ -289,6 +290,19 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
        when is_map(patch) and is_map(introspect) do
     init = Map.get(introspect, "init_model") || %{}
 
+    patch =
+      case patch do
+        %{"condition" => condition} ->
+          if Map.has_key?(init, "displayedCondition") and not Map.has_key?(patch, "displayedCondition") do
+            Map.put(patch, "displayedCondition", condition)
+          else
+            patch
+          end
+
+        _ ->
+          patch
+      end
+
     Enum.reduce(patch, patch, fn {source_key, value}, acc ->
       target =
         introspect
@@ -312,13 +326,34 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
 
   @spec provide_ctor_model_field(map(), String.t()) :: String.t() | nil
   defp provide_ctor_model_field(introspect, ctor) when is_map(introspect) and is_binary(ctor) do
+    init_keys =
+      introspect
+      |> Map.get("init_model", %{})
+      |> Map.keys()
+      |> Enum.map(&to_string/1)
+
     case protocol_ctor_binding_names(introspect, ctor) do
-      [field | _] when is_binary(field) -> field
-      _ -> nil
+      [field | _] when is_binary(field) ->
+        field
+
+      _ ->
+        provide_ctor_field_from_init_keys(ctor, init_keys)
     end
   end
 
   defp provide_ctor_model_field(_introspect, _ctor), do: nil
+
+  # Companion `Provide*` protocol ctors name their payload field in the ctor (for example
+  # `ProvideCondition` -> `condition`) when update-branch text is not available from introspect.
+  @spec provide_ctor_field_from_init_keys(String.t(), [String.t()]) :: String.t() | nil
+  defp provide_ctor_field_from_init_keys("Provide" <> rest, init_keys)
+       when rest != "" and is_list(init_keys) do
+    candidate = String.downcase(rest)
+
+    if candidate in init_keys, do: candidate, else: nil
+  end
+
+  defp provide_ctor_field_from_init_keys(_ctor, _init_keys), do: nil
 
   @spec wrap_protocol_patch_value(map(), String.t(), Types.wire_input()) :: Types.wire_input()
   defp wrap_protocol_patch_value(introspect, field, value)

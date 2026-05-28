@@ -7,7 +7,7 @@ defmodule Ide.Debugger.SubscriptionGuards do
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.CmdCall
 
-  @type guard :: CmdCall.activation_guard() | map()
+  @type guard :: CmdCall.activation_guard()
   @type guards :: :always | [guard()]
 
   @spec satisfied?(Types.runtime_state(), Types.surface_target(), [guard()]) :: boolean()

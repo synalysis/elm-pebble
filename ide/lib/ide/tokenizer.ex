@@ -2,6 +2,7 @@ defmodule Ide.Tokenizer do
   @moduledoc """
   Tokenization seam for editor syntax highlighting and diagnostics.
   """
+  @compile {:no_warn_undefined, [ElmEx.Frontend.LetLayout]}
   @dialyzer :no_match
   alias ElmEx.Frontend.LetLayout
   alias Ide.Formatter.Semantics.HeaderMetadata
@@ -1558,7 +1559,7 @@ defmodule Ide.Tokenizer do
           [{String.t(), integer()}],
           atom(),
           atom()
-        ) :: [diagnostic()]
+        ) :: [Types.parser_line_diagnostic()]
   defp expression_parser_line_diagnostics(
          trimmed,
          line_text,
@@ -1614,7 +1615,7 @@ defmodule Ide.Tokenizer do
       end
   end
 
-  @spec let_layout_diagnostic_for_line(String.t(), integer()) :: [diagnostic()]
+  @spec let_layout_diagnostic_for_line(String.t(), integer()) :: [Types.parser_line_diagnostic()]
   defp let_layout_diagnostic_for_line(line_text, line_no) when is_binary(line_text) and is_integer(line_no) do
     case LetLayout.validate(line_text) do
       :ok ->

@@ -38,7 +38,7 @@ defmodule Ide.Debugger.ProtocolRuntimeMetadata do
 
   def preserve(model, _previous_model), do: model
 
-  @spec value_from(Types.app_model(), String.t()) :: term()
+  @spec value_from(Types.app_model(), String.t()) :: Types.protocol_metadata_value()
   defp value_from(previous_model, key) when is_map(previous_model) and is_binary(key) do
     Map.get(previous_model, key) || get_in(previous_model, ["runtime_model", key])
   end

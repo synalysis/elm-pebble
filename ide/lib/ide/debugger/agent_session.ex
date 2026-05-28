@@ -39,7 +39,8 @@ defmodule Ide.Debugger.AgentSession do
         ) :: {:ok, runtime_state()}
   def mutate_ingest(project_slug, apply_fun)
       when is_binary(project_slug) and is_function(apply_fun, 2) do
-    with_hosts(fn hosts -> mutate(project_slug, &apply_fun.(&1, hosts.compile_ingest)) end)
+    hosts = hosts()
+    mutate(project_slug, &apply_fun.(&1, hosts.compile_ingest))
   end
 
   @spec hosts() :: AgentHosts.t()

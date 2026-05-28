@@ -33,12 +33,11 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
             put_pending(st, [])
           end)
 
-        AgentSession.with_hosts(fn hosts ->
-          ctx = hosts |> AgentHosts.contexts() |> Map.fetch!(:protocol_rx)
+        hosts = AgentSession.hosts()
+        ctx = hosts |> AgentHosts.contexts() |> Map.fetch!(:protocol_rx)
 
-          RuntimeBackgroundWork.spawn(project_slug, fn ->
-            run_drain_batch(project_slug, items, ctx)
-          end)
+        RuntimeBackgroundWork.spawn(project_slug, fn ->
+          run_drain_batch(project_slug, items, ctx)
         end)
       end
     end

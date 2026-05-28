@@ -11,6 +11,8 @@ defmodule Ide.Debugger.StepApply do
   alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.Types
 
+  @phone_to_watch_triggers ~w(phone_to_watch on_phone_to_watch)
+
   @type ctx :: %{
           required(:ensure_compile_artifacts) => (map(), Types.surface_target() -> map()),
           required(:hydrate_runtime_model) =>
@@ -117,10 +119,13 @@ defmodule Ide.Debugger.StepApply do
           []
       end
 
+    phone_to_watch_protocol_events =
+      phone_to_watch_delivery_protocol_events(target, message, message_value, trigger)
+
     runtime_followups = Map.get(runtime_result, :followup_messages, [])
 
     protocol_events =
-      (runtime_protocol_events ++ command_protocol_events)
+      (runtime_protocol_events ++ command_protocol_events ++ phone_to_watch_protocol_events)
       |> ProtocolEvents.normalize_from_schema(state, ctx.protocol_events_ctx.())
       |> ProtocolEvents.enrich(trigger, message_source)
 
@@ -248,13 +253,20 @@ defmodule Ide.Debugger.StepApply do
 
   @spec timeline_message_value(String.t() | nil, String.t(), map() | integer() | boolean() | String.t() | nil) ::
           map() | integer() | boolean() | String.t() | nil
+  defp phone_to_watch_delivery_protocol_events(:watch, message, message_value, trigger)
+       when trigger in @phone_to_watch_triggers and is_binary(message) and message != "" do
+    ProtocolEvents.tx_rx_events("companion", "watch", message, trigger, message_value)
+  end
+
+  defp phone_to_watch_delivery_protocol_events(_target, _message, _message_value, _trigger), do: []
+
   defp timeline_message_value(requested_message, message, message_value) do
     case TimelineMessage.message_value_for_step(requested_message || "", message_value) do
       {_, value} when not is_nil(value) ->
         value
 
       _ ->
-        case TimelineMessage.message_value_for_step(message || "", message_value) do
+        case TimelineMessage.message_value_for_step(message, message_value) do
           {_, value} when not is_nil(value) -> value
           _ -> message_value
         end

@@ -35,11 +35,38 @@ defmodule ElmEx.Frontend.LetLayoutTest do
     assert {:ok, _} = GeneratedExpressionParser.parse(source)
   end
 
-  test "GeneratedExpressionParser rejects inline let/in" do
-    assert {:error, {1, :elm_ex_expr_parser, [message, ~c"in_kw"]}} =
-             GeneratedExpressionParser.parse("let base = helper n in base + 1")
+  test "parses nested let in case branch after normalization" do
+    source = """
+    let
+        batteryOps =
+            case model.batteryLevel of
+                Nothing ->
+                    []
 
-    assert message =~ "on its own line"
+                Just batteryLevel ->
+                    let
+                        batteryColor =
+                            if batteryLevel <= 20 then
+                                PebbleColor.red
+
+                            else if batteryLevel <= 40 then
+                                PebbleColor.chromeYellow
+
+                            else
+                                PebbleColor.green
+                    in
+                    []
+    in
+    []
+        |> PebbleUi.toUiNode
+    """
+
+    assert {:ok, %{op: :let_in}} = GeneratedExpressionParser.parse(source)
+  end
+
+  test "GeneratedExpressionParser normalizes inline let/in before parsing" do
+    assert {:ok, %{op: :let_in}} =
+             GeneratedExpressionParser.parse("let base = helper n in base + 1")
   end
 
   test "starter watch template Main.elm parses through generated frontend" do

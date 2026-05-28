@@ -154,6 +154,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
       Application.get_env(:ide, :debugger_companion_reload_await_idle, false)
   end
 
+  @spec start_session(Project.t(), String.t(), progress()) :: :ok | {:error, String.t()}
   defp start_session(project, watch_profile_id, progress) do
     progress.("Starting debugger session...")
 
@@ -163,6 +164,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     end
   end
 
+  @spec warm_compile(Project.t(), progress()) ::
+          {:ok, BuildFlow.warm_compile_results(), BuildFlow.warm_compile_primary()}
   defp warm_compile(project, progress) do
     progress.("Preparing compiler workspace...")
     progress.("Compiling Elm sources...")
@@ -173,6 +176,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     BuildFlow.warm_debugger_compile_context_work(project, skip_roots: skip_roots)
   end
 
+  @spec compile_and_ingest_phone(Project.t(), String.t(), progress()) ::
+          :ok | {:error, String.t()}
   defp compile_and_ingest_phone(project, scope_key, progress) do
     progress.("Compiling companion app...")
 
@@ -183,17 +188,22 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
       {:ok, result} ->
         progress.("Ingesting companion compile artifacts...")
         ingest_phone_compile(scope_key, result)
-        :ok
+
+        if Map.get(result, :status) == :error do
+          {:error, "Companion compile failed: #{Map.get(result, :output, "elmc error")}"}
+        else
+          :ok
+        end
 
       {:error, reason} ->
         ingest_phone_compile(scope_key, %{
           status: :error,
           compiled_path: Projects.project_workspace_path(project),
           revision: "—",
-          cached: false,
+          cached?: false,
           error_count: 1,
           warning_count: 0,
-          detail: inspect(reason),
+          output: inspect(reason),
           diagnostics: []
         })
 
@@ -201,6 +211,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     end
   end
 
+  @spec compile_phone_root(Project.t()) ::
+          :skipped | {:ok, map()} | {:error, term()}
   defp compile_phone_root(%Project{} = project) do
     workspace_root = Projects.project_workspace_path(project)
     roots = BuildFlow.build_roots(workspace_root, project.source_roots || [])
@@ -217,6 +229,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     end
   end
 
+  @spec ingest_phone_compile(String.t(), map()) :: :ok
   defp ingest_phone_compile(scope_key, result) when is_binary(scope_key) and is_map(result) do
     diagnostics = Map.get(result, :diagnostics) || Map.get(result, "diagnostics") || []
     counts = Diagnostics.summary(diagnostics)
@@ -229,12 +242,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
       |> Map.put(:diagnostics, diagnostics)
       |> CompileIngestBridge.from_compiler_compile_result()
 
-    case Ide.Debugger.ingest_elmc_compile(scope_key, attrs) do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
+    {:ok, _} = Ide.Debugger.ingest_elmc_compile(scope_key, attrs)
+    :ok
   end
 
+  @spec bootstrap_watch_preview(Project.t(), bootstrap_tab(), progress()) ::
+          {:ok, String.t()} | {:error, String.t()}
   defp bootstrap_watch_preview(project, bootstrap_tab, progress) do
     progress.("Loading watch preview...")
 
