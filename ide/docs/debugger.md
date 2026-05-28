@@ -51,6 +51,16 @@ AppMessage delivery (`FromWatch` / `FromPhone` subscription steps) is deferred t
 
 Watch bootstrap clears the main “Starting debugger…” busy state immediately when async companion loading is enabled. Async companion reload uses parser-only init (`RuntimeExecutor.execute_introspect_only`, no `ElmExecutorAdapter`) and defers `InitSurfaceEffects` plus protocol queue drain to `DeferredCompanionInit` so reload returns before the companion banner times out. A second blocking compile during reload is skipped while `debugger_skip_blocking_compile` is set. Optional phone `elmc` runs in a separate background task only when needed (`config :ide, :debugger_lazy_elmc`, default `true`): companion lacks Core IR and the parser view still needs evaluation. It does not hold the companion bootstrap banner or block reload. HTTP and protocol follow-ups continue in the background; LiveView refreshes on `debugger:runtime:<scope_key>` PubSub with a short debounce (`config :ide, :debugger_runtime_refresh_debounce_ms`, default `100`) so timeline/models update as each step completes. Synchronous companion bootstrap (`config :ide, :debugger_async_companion_bootstrap, false`) still compiles phone before reload (tests). Set `config :ide, :debugger_lazy_elmc, false` to schedule compile whenever Core IR is missing. Set `config :ide, :debugger_companion_reload_await_idle, true` to block companion reload on the full HTTP/protocol idle queue even when async bootstrap is enabled. **Copy for agent** re-reads the debugger Agent snapshot so the exported timeline is not stale socket assigns.
 
+## Visual preview pipeline
+
+The debugger watch SVG preview is **view-only**: it does not re-run `init` or `update` when refreshing layout. Given the surface `model` at the timeline cursor:
+
+1. **Core IR (preferred)** — When `elm_executor_core_ir` is present on the execution model, `SemanticExecutor.derive_view_output_for_runtime_model/2` evaluates `Main.view(model)` through Core IR, normalizes the result tree, then derives drawable rows (`fillRect`, `text`, vectors, etc.). This matches step execution semantics for `if`, `case`, `let`, and qualified calls.
+2. **Parser tree fallback** — If Core IR is missing or view evaluation yields no drawable rows, the introspected parser `view_tree` is evaluated via `derive_view_output_preview/3` (integer ops, `if`/`let` nodes, field access). Full `case` pattern matching without Core IR is not supported (branch patterns are not in the parser tree).
+3. **Clock text refresh** — Stored `runtime_view_output` from a prior step is **not** reused for coordinates; layout is always re-derived. Step rows may still supply fresher clock strings via `refresh_clock_text_view_output/2` when time fields on the model change (e.g. after `MinuteChanged`).
+
+The evaluated or parser tree is attached to the surface as `:view_tree` when introspection marks it usable, for hover bounds in `DebuggerPreview`.
+
 ## Code map
 
 | Layer | Module |

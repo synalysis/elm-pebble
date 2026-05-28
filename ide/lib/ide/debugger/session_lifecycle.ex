@@ -2,6 +2,7 @@ defmodule Ide.Debugger.SessionLifecycle do
   @moduledoc false
 
   alias Ide.Debugger.AppMessageQueue
+  alias Ide.Debugger.BootstrapInit
   alias Ide.Debugger.CompanionConfiguration
   alias Ide.Debugger.ProjectResourceIndices
   alias Ide.Debugger.RuntimeSurfaces
@@ -63,6 +64,7 @@ defmodule Ide.Debugger.SessionLifecycle do
         seq: 0,
         app_message_queues: AppMessageQueue.empty()
     }
+    |> BootstrapInit.clear_session_bootstrap_flags()
     |> CompanionConfiguration.attach_to_state(project_slug)
     |> ProjectResourceIndices.attach_all(project_slug)
     |> RuntimeSurfaces.apply_launch_context(bundle.launch_reason)
@@ -85,6 +87,7 @@ defmodule Ide.Debugger.SessionLifecycle do
         debugger_seq: 0,
         app_message_queues: AppMessageQueue.empty()
     }
+    |> BootstrapInit.clear_session_bootstrap_flags()
     |> CompanionConfiguration.attach_to_state(project_slug)
     |> SimulatorSurfaceSettings.apply_to_state()
   end

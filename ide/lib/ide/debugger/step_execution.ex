@@ -327,34 +327,107 @@ defmodule Ide.Debugger.StepExecution do
   def parser_preview_resolved?(rows) when is_list(rows),
     do: rows != [] and not parser_preview_unresolved?(rows)
 
+  @spec derive_preview_view_output(Types.execution_model(), map(), map(), map()) :: %{
+          view_output: [map()],
+          view_tree: map() | nil
+        }
+  def derive_preview_view_output(execution_model, view_tree, preview_model, model_for_clock)
+      when is_map(execution_model) and is_map(view_tree) and is_map(preview_model) and
+             is_map(model_for_clock) do
+    parser_view_tree = introspect_parser_view_tree(execution_model, view_tree)
+    eval_context = preview_eval_context(execution_model)
+
+    preview_model =
+      preview_model
+      |> RuntimeArtifacts.preview_runtime_model()
+      |> Map.merge(screen_dimensions_for_view_preview(execution_model))
+
+    {rows, evaluated_tree} =
+      case derive_core_ir_preview(execution_model, preview_model, eval_context) do
+        {core_rows, %{} = core_tree} when core_rows != [] ->
+          {core_rows, core_tree}
+
+        _ ->
+          parser_rows =
+            if map_size(parser_view_tree) > 0 do
+              ElmExecutor.Runtime.SemanticExecutor.derive_view_output_preview(
+                parser_view_tree,
+                preview_model,
+                eval_context
+              )
+            else
+              []
+            end
+
+          {parser_rows, parser_view_tree}
+      end
+
+    rows =
+      rows
+      |> refresh_clock_text_view_output(model_for_clock)
+
+    view_tree_result =
+      cond do
+        is_map(evaluated_tree) and map_size(evaluated_tree) > 0 and
+            ElmExecutor.Runtime.SemanticExecutor.drawable_view_tree?(evaluated_tree) ->
+          evaluated_tree
+
+        concrete_runtime_view_tree?(parser_view_tree, RuntimeArtifacts.introspect(execution_model)) ->
+          parser_view_tree
+
+        true ->
+          nil
+      end
+
+    %{view_output: rows, view_tree: view_tree_result}
+  end
+
   @spec supplement_parser_runtime_view_output(Types.execution_model(), map(), map()) :: [map()]
   def supplement_parser_runtime_view_output(execution_model, view_tree, runtime_model)
        when is_map(execution_model) and is_map(view_tree) and is_map(runtime_model) do
-    view_tree = introspect_parser_view_tree(execution_model, view_tree)
-
-    if map_size(view_tree) == 0 do
-      []
-    else
-      eval_context =
-        execution_model
-        |> RuntimeArtifacts.core_ir_eval_context()
-        |> then(fn base ->
-          case RuntimeArtifacts.introspect(execution_model) do
-            %{} = ei -> Map.put(base, :elm_introspect, ei)
-            _ -> base
-          end
-        end)
-
-      preview_model =
-        runtime_model
-        |> Map.merge(screen_dimensions_for_view_preview(execution_model))
-
-      ElmExecutor.Runtime.SemanticExecutor.derive_view_output_preview(
+    %{view_output: rows} =
+      derive_preview_view_output(
+        execution_model,
         view_tree,
-        preview_model,
-        eval_context
+        runtime_model,
+        runtime_model
       )
+
+    rows
+  end
+
+  @spec derive_core_ir_preview(Types.execution_model(), map(), map()) :: {[map()], map()}
+  defp derive_core_ir_preview(execution_model, preview_model, eval_context)
+       when is_map(execution_model) and is_map(preview_model) and is_map(eval_context) do
+    case RuntimeArtifacts.decode_core_ir(execution_model) do
+      nil ->
+        {[], %{}}
+
+      _ ->
+        %{view_output: rows, view_tree: tree} =
+          ElmExecutor.Runtime.SemanticExecutor.derive_view_output_for_runtime_model(
+            preview_model,
+            eval_context
+          )
+
+        if parser_preview_resolved?(rows) do
+          {rows, tree}
+        else
+          {[], %{}}
+        end
     end
+  end
+
+  @spec preview_eval_context(Types.execution_model()) :: map()
+  defp preview_eval_context(execution_model) when is_map(execution_model) do
+    execution_model
+    |> RuntimeArtifacts.core_ir_eval_context()
+    |> then(fn base ->
+      case RuntimeArtifacts.introspect(execution_model) do
+        %{} = ei -> Map.put(base, :elm_introspect, ei)
+        _ -> base
+      end
+    end)
   end
 
   @spec introspect_parser_view_tree(Types.execution_model(), map()) :: map()

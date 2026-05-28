@@ -471,6 +471,41 @@ defmodule Ide.DebuggerTest do
     assert restarted.debugger_timeline == []
   end
 
+  test "second start_session clears defer bootstrap flags so watch init device data runs" do
+    alias Ide.Debugger.AgentSession
+    alias Ide.Debugger.BootstrapInit
+
+    slug = "debugger-second-start-device-data-#{System.unique_integer([:positive])}"
+
+    source =
+      File.read!(Path.join(["priv", "project_templates", "watchface_digital", "src", "Main.elm"]))
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             AgentSession.mutate(slug, &BootstrapInit.with_companion_bootstrap_flags/1)
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "src/Main.elm",
+               source: source,
+               reason: "second_start_device_data",
+               source_root: "watch"
+             })
+
+    runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
+
+    assert runtime_model["timeString"] != "--:--"
+    assert is_binary(runtime_model["timeString"])
+
+    assert Enum.any?(reloaded.debugger_timeline, fn row ->
+             row.target == "watch" and row.type == "update" and
+               String.contains?(row.message || "", "CurrentTimeString")
+           end)
+  end
+
   test "start_session exposes companion and phone runtime models" do
     slug = "debugger-protocol-models-#{System.unique_integer([:positive])}"
 

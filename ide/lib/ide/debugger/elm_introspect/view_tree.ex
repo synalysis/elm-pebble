@@ -134,7 +134,8 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
              "var",
              "withDefault",
              "if",
-             "case"
+             "case",
+             "let"
            ],
       do: true
 
@@ -630,9 +631,29 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
     expr_to_view_tree(body, d + 1, max, api_metadata)
   end
 
-  # Let bindings are structural noise for UI shape; keep depth stable.
-  defp expr_to_view_tree(%{op: :let_in, in_expr: inner}, d, max, api_metadata) when d < max do
-    expr_to_view_tree(inner, d, max, api_metadata)
+  defp expr_to_view_tree(%{op: :let_in, name: name, value_expr: value, in_expr: inner}, d, max, api_metadata)
+       when d < max do
+    %{
+      "type" => "let",
+      "label" => to_string(name),
+      "children" => [
+        expr_to_view_tree(value, d + 1, max, api_metadata),
+        expr_to_view_tree(inner, d + 1, max, api_metadata)
+      ]
+    }
+  end
+
+  defp expr_to_view_tree(%{op: :if, cond: cond, then_expr: t, else_expr: e}, d, max, api_metadata)
+       when d < max do
+    %{
+      "type" => "if",
+      "label" => "",
+      "children" => [
+        expr_to_view_tree(cond, d + 1, max, api_metadata),
+        expr_to_view_tree(t, d + 1, max, api_metadata),
+        expr_to_view_tree(e, d + 1, max, api_metadata)
+      ]
+    }
   end
 
   defp expr_to_view_tree(%{op: :if, then_expr: t, else_expr: e}, d, max, api_metadata)
@@ -651,13 +672,15 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
        when d < max and is_list(branches) do
     %{
       "type" => "case",
-      "label" => to_string(s),
-      "children" =>
-        Enum.flat_map(branches, fn
-          %{expr: expr} -> [expr_to_view_tree(expr, d + 1, max, api_metadata)]
-          %{"expr" => expr} -> [expr_to_view_tree(expr, d + 1, max, api_metadata)]
-          _ -> []
-        end)
+      "label" => "",
+      "children" => [
+        expr_to_view_tree(s, d + 1, max, api_metadata)
+        | Enum.flat_map(branches, fn
+            %{expr: expr} -> [expr_to_view_tree(expr, d + 1, max, api_metadata)]
+            %{"expr" => expr} -> [expr_to_view_tree(expr, d + 1, max, api_metadata)]
+            _ -> []
+          end)
+      ]
     }
   end
 
@@ -1004,8 +1027,9 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
   def output_source_locations(_api_metadata), do: %{}
 
   @spec internal_arithmetic_view_type(String.t()) :: String.t()
-  defp internal_arithmetic_view_type(name) when name in ["__add__", "__sub__"], do: "call"
-  defp internal_arithmetic_view_type(name), do: view_type_name(name)
+  # Always use "call" so debugger preview evaluates via the call label (not the
+  # operator name as `type`, which previously dropped // and other binops).
+  defp internal_arithmetic_view_type(_name), do: "call"
 
   @spec view_type_name(Types.ast_expr() | String.t()) :: String.t()
   defp view_type_name(target) when is_binary(target) do

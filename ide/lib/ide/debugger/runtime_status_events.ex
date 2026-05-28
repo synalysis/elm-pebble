@@ -1,6 +1,8 @@
 defmodule Ide.Debugger.RuntimeStatusEvents do
   @moduledoc false
 
+  alias Ide.Debugger.CmdCall
+  alias Ide.Debugger.DeviceRequest
   alias Ide.Debugger.InitCmdFollowups
   alias Ide.Debugger.IntrospectAccess
   alias Ide.Debugger.StepExecution
@@ -102,6 +104,7 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
         |> StepExecution.normalize_followup_messages()
         |> length()
       )
+      |> Map.put("planned_init_followup_count", planned_init_followup_count(execution, introspect))
 
     case status_message(runtime) do
       nil ->
@@ -140,12 +143,43 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
 
   def meaningful_init_cmd_count(_), do: 0
 
+  @spec planned_init_followup_count(map(), map()) :: non_neg_integer()
+  def planned_init_followup_count(execution, introspect) when is_map(introspect) do
+    executor_planned =
+      execution
+      |> followup_messages()
+      |> InitCmdFollowups.merge_followups(introspect)
+      |> StepExecution.normalize_followup_messages()
+      |> length()
+
+    device_planned =
+      introspect
+      |> IntrospectAccess.cmd_calls("init_cmd_calls")
+      |> CmdCall.expand_helpers(introspect)
+      |> Enum.filter(&meaningful_init_cmd_call?/1)
+      |> Enum.flat_map(&DeviceRequest.from_cmd_call/1)
+      |> Enum.uniq_by(fn req -> {req.kind, req.response_message} end)
+      |> length()
+
+    executor_planned + device_planned
+  end
+
+  def planned_init_followup_count(_execution, _introspect), do: 0
+
   @spec status_message(map()) :: String.t() | nil
   def status_message(runtime) when is_map(runtime) do
     backend = runtime["execution_backend"]
     reason = runtime["external_fallback_reason"]
     followup_count = runtime["followup_message_count"]
+    planned_count = runtime["planned_init_followup_count"]
     init_cmd_count = runtime["init_cmd_count"]
+
+    no_planned_followups? =
+      cond do
+        is_integer(planned_count) -> planned_count == 0
+        is_integer(followup_count) -> followup_count == 0
+        true -> true
+      end
 
     cond do
       is_binary(reason) and reason != "" ->
@@ -155,7 +189,7 @@ defmodule Ide.Debugger.RuntimeStatusEvents do
         "runtime fallback #{backend}"
 
       init_execution?(runtime) and is_integer(init_cmd_count) and init_cmd_count > 0 and
-          followup_count in [0, nil] ->
+          no_planned_followups? ->
         "runtime no followups for #{init_cmd_count} init cmd(s)"
 
       true ->

@@ -3530,16 +3530,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
     }
   end
 
-  @spec latest_debugger_runtime(map() | nil, atom()) :: map() | nil
-  defp latest_debugger_runtime(debugger_state, target) when is_map(debugger_state) do
-    case Map.get(debugger_state, target) do
-      runtime when is_map(runtime) -> runtime
-      _ -> nil
-    end
-  end
-
-  defp latest_debugger_runtime(_debugger_state, _target), do: nil
-
   @spec normalize_cursor_seq([map()], maybe_non_neg_integer()) :: maybe_non_neg_integer()
   defp normalize_cursor_seq(events, cursor_seq) do
     CursorSeq.resolve_at_or_before(events, cursor_seq)

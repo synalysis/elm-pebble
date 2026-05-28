@@ -5,6 +5,18 @@ defmodule Ide.Debugger.BootstrapInitTest do
   alias Ide.Debugger.ElmIntrospectSnapshot
   alias Ide.Debugger.RuntimeExecutor
 
+  test "clear_companion_bootstrap_flags removes defer_surface_effects" do
+    state = BootstrapInit.with_companion_bootstrap_flags(%{})
+    assert BootstrapInit.defer_surface_effects?(state)
+    assert BootstrapInit.parser_only?(state)
+
+    cleared = BootstrapInit.clear_companion_bootstrap_flags(state)
+
+    refute BootstrapInit.defer_surface_effects?(cleared)
+    refute BootstrapInit.parser_only?(cleared)
+    refute Map.has_key?(cleared, :debugger_skip_blocking_compile)
+  end
+
   describe "parser-only companion bootstrap" do
     test "apply uses introspect init without executor when parser_only flag is set" do
       ei = %{

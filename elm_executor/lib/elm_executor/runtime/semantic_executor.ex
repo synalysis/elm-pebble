@@ -15,6 +15,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   alias ElmExecutor.Runtime.CoreIREvaluator
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
+  alias ElmExecutor.Runtime.ViewTreeIntrinsics
 
   @doc """
   Evaluates a parser-derived rendered view node against the current runtime model.
@@ -51,6 +52,70 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   end
 
   def derive_view_output_preview(_view_tree, _runtime_model, _eval_context), do: []
+
+  @doc """
+  Evaluates `view` through Core IR and derives drawable preview rows from the result.
+
+  Returns empty `view_output` when evaluation fails or produces no drawable ops.
+  `eval_context` must include Core IR function indexes (see IDE `RuntimeArtifacts.core_ir_eval_context/1`).
+  """
+  @spec derive_view_output_for_runtime_model(map(), map()) :: %{
+          view_output: [map()],
+          view_tree: map()
+        }
+  def derive_view_output_for_runtime_model(runtime_model, eval_context)
+      when is_map(runtime_model) and is_map(eval_context) do
+    eval_context = Map.put(eval_context, :runtime_model, runtime_model)
+    evaluated_tree = evaluate_runtime_view_tree(eval_context, runtime_model)
+
+    view_output =
+      if drawable_view_tree?(evaluated_tree) do
+        evaluated_tree
+        |> derive_view_output(runtime_model, eval_context)
+        |> Enum.map(&stringify_view_output_row/1)
+        |> Enum.reject(fn row -> Map.get(row, "kind") == "unresolved" end)
+      else
+        []
+      end
+
+    %{view_output: view_output, view_tree: evaluated_tree}
+  end
+
+  def derive_view_output_for_runtime_model(_runtime_model, _eval_context),
+    do: %{view_output: [], view_tree: %{}}
+
+  @spec drawable_view_tree?(map()) :: boolean()
+  def drawable_view_tree?(tree) when is_map(tree) do
+    type = to_string(Map.get(tree, "type") || Map.get(tree, :type) || "")
+
+    type in drawable_view_tree_types() or
+      Enum.any?(Map.get(tree, "children") || Map.get(tree, :children) || [], &drawable_view_tree?/1)
+  end
+
+  def drawable_view_tree?(_tree), do: false
+
+  @spec drawable_view_tree_types() :: [String.t()]
+  def drawable_view_tree_types do
+    [
+      "clear",
+      "roundRect",
+      "fillRect",
+      "rect",
+      "text",
+      "line",
+      "circle",
+      "fillCircle",
+      "drawVectorAt",
+      "drawVectorSequenceAt",
+      "bitmapInRect",
+      "rotatedBitmap",
+      "path",
+      "windowStack",
+      "window",
+      "canvasLayer",
+      "root"
+    ]
+  end
 
   @spec stringify_view_output_row(map()) :: map()
   defp stringify_view_output_row(row) when is_map(row) do
@@ -1073,7 +1138,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
   end
 
   @spec evaluate_runtime_view_tree(map(), map()) :: map()
-  defp evaluate_runtime_view_tree(eval_context, runtime_model)
+  def evaluate_runtime_view_tree(eval_context, runtime_model)
        when is_map(eval_context) and is_map(runtime_model) do
     entry_module = entry_module_name(eval_context)
     expr = %{"op" => :qualified_call, "target" => "#{entry_module}.view", "args" => [runtime_model]}
@@ -1087,7 +1152,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
     end
   end
 
-  defp evaluate_runtime_view_tree(_eval_context, _runtime_model), do: %{}
+  def evaluate_runtime_view_tree(_eval_context, _runtime_model), do: %{}
 
   @spec normalize_runtime_view_tree(EvalTypes.runtime_value(), map()) :: map()
   defp normalize_runtime_view_tree(value, eval_context \\ %{}) do
@@ -2121,6 +2186,18 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
             style_rows ++ child_rows ++ [%{"kind" => "pop_context"}]
         end
 
+      "if" ->
+        case selected_if_branch(children, runtime_model, eval_context) do
+          %{} = branch -> view_output_from_tree(branch, runtime_model, eval_context)
+          _ -> []
+        end
+
+      "let" ->
+        case apply_let_view_binding(node, runtime_model, eval_context) do
+          {%{} = inner, ctx} -> view_output_from_tree(inner, runtime_model, ctx)
+          _ -> []
+        end
+
       type
       when type in [
              "root",
@@ -2134,7 +2211,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
              "call",
              "expr",
              "tuple2",
-             "CanvasLayer"
+             "CanvasLayer",
+             "case"
            ] ->
         Enum.flat_map(children, &view_output_from_tree(&1, runtime_model, eval_context))
 
@@ -3725,21 +3803,99 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
             Enum.find_value(children, &eval_view_int(&1, runtime_model, eval_context))
         end
 
-      type == "call" ->
+      type == "if" ->
+        case selected_if_branch(children, runtime_model, eval_context) do
+          %{} = branch -> eval_view_int(branch, runtime_model, eval_context)
+          _ -> nil
+        end
+
+      type == "let" ->
+        case apply_let_view_binding(node, runtime_model, eval_context) do
+          {%{} = inner, ctx} -> eval_view_int(inner, runtime_model, ctx)
+          _ -> nil
+        end
+
+      type == "call" or view_tree_int_call_type?(type) ->
+        call_name = view_tree_int_call_name(node)
         args = Enum.map(children, &eval_view_int(&1, runtime_model, eval_context))
 
         if Enum.all?(args, &is_integer/1) do
-          eval_int_call(label, args)
+          eval_int_call(call_name, args)
         else
           nil
         end
 
       true ->
-        Enum.find_value(children, &eval_view_int(&1, runtime_model, eval_context))
+        case eval_tree_expr_int(node, runtime_model, eval_context) do
+          value when is_integer(value) ->
+            value
+
+          _ ->
+            if type in ["if", "case"] do
+              nil
+            else
+              Enum.find_value(children, &eval_view_int(&1, runtime_model, eval_context))
+            end
+        end
     end
   end
 
   defp eval_view_int_fallback(_node, _runtime_model, _eval_context), do: nil
+
+  @spec selected_if_branch([map()], map(), map()) :: map() | nil
+  defp selected_if_branch(children, runtime_model, eval_context)
+       when is_list(children) and is_map(runtime_model) and is_map(eval_context) do
+    case children do
+      [cond, then_branch, else_branch] when is_map(then_branch) and is_map(else_branch) ->
+        if if_condition_truthy?(cond, runtime_model, eval_context), do: then_branch, else: else_branch
+
+      [then_branch, else_branch] when is_map(then_branch) and is_map(else_branch) ->
+        then_branch
+
+      _ ->
+        nil
+    end
+  end
+
+  defp selected_if_branch(_children, _runtime_model, _eval_context), do: nil
+
+  @spec if_condition_truthy?(map(), map(), map()) :: boolean()
+  defp if_condition_truthy?(cond_node, runtime_model, eval_context)
+       when is_map(cond_node) and is_map(runtime_model) and is_map(eval_context) do
+    case eval_tree_expr_value(cond_node, runtime_model, eval_context) do
+      true -> true
+      false -> false
+      value when is_integer(value) -> value != 0
+      _ -> false
+    end
+  end
+
+  defp if_condition_truthy?(_cond_node, _runtime_model, _eval_context), do: false
+
+  @spec apply_let_view_binding(map(), map(), map()) :: {map(), map()} | nil
+  defp apply_let_view_binding(node, runtime_model, eval_context)
+       when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
+    name = to_string(node["label"] || node[:label] || "")
+    children = node_children(node)
+
+    case children do
+      [value_node, inner_node] when is_map(value_node) and is_map(inner_node) and name != "" ->
+        binding_value = eval_tree_expr_value(value_node, runtime_model, eval_context)
+
+        bindings =
+          eval_context
+          |> Map.get(:view_param_bindings, %{})
+          |> Map.put(name, binding_value)
+
+        ctx = Map.put(eval_context, :view_param_bindings, bindings)
+        {inner_node, ctx}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp apply_let_view_binding(_node, _runtime_model, _eval_context), do: nil
 
   @spec eval_view_text(map(), map(), map()) :: String.t() | nil
   defp eval_view_text(node, runtime_model, eval_context)
@@ -3928,11 +4084,14 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
         }
 
       type == "call" and label != "" ->
-        %{"op" => :call, "name" => label, "args" => Enum.map(children, &tree_node_to_expr/1)}
+        int_call_expr(label, children)
+
+      view_tree_int_call_type?(type) ->
+        int_call_expr(view_tree_int_call_name(node), children)
 
       type != "" and type not in ["expr", "var", "field", "record", "group", "clear", "text"] and
           label == type ->
-        %{"op" => :call, "name" => type, "args" => Enum.map(children, &tree_node_to_expr/1)}
+        int_call_expr(type, children)
 
       type == "expr" and op == "tuple2" and length(children) >= 2 ->
         left = tree_node_to_expr(Enum.at(children, 0))
@@ -3978,12 +4137,85 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
           _ -> nil
         end
 
+      type == "if" ->
+        case children do
+          [cond, then_branch, else_branch] when is_map(then_branch) and is_map(else_branch) ->
+            %{
+              "op" => :if,
+              "cond" => tree_node_to_expr(cond),
+              "then_expr" => tree_node_to_expr(then_branch),
+              "else_expr" => tree_node_to_expr(else_branch)
+            }
+            |> if_expr_when_complete()
+
+          [then_branch, else_branch] when is_map(then_branch) and is_map(else_branch) ->
+            %{
+              "op" => :if,
+              "cond" => %{"op" => :bool_literal, "value" => true},
+              "then_expr" => tree_node_to_expr(then_branch),
+              "else_expr" => tree_node_to_expr(else_branch)
+            }
+            |> if_expr_when_complete()
+
+          _ ->
+            nil
+        end
+
+      type == "let" and label != "" ->
+        case children do
+          [value_node, inner_node] when is_map(value_node) and is_map(inner_node) ->
+            with %{} = value_expr <- tree_node_to_expr(value_node),
+                 %{} = in_expr <- tree_node_to_expr(inner_node) do
+              %{"op" => :let_in, "name" => label, "value_expr" => value_expr, "in_expr" => in_expr}
+            else
+              _ -> nil
+            end
+
+          _ ->
+            nil
+        end
+
       true ->
         nil
     end
   end
 
   defp tree_node_to_expr(_), do: nil
+
+  @spec if_expr_when_complete(map()) :: map() | nil
+  defp if_expr_when_complete(%{"cond" => cond, "then_expr" => then_e, "else_expr" => else_e})
+       when is_map(cond) and is_map(then_e) and is_map(else_e),
+       do: %{"op" => :if, "cond" => cond, "then_expr" => then_e, "else_expr" => else_e}
+
+  defp if_expr_when_complete(_), do: nil
+
+  @spec view_tree_int_call_type?(String.t()) :: boolean()
+  defp view_tree_int_call_type?(type) when is_binary(type),
+    do: ViewTreeIntrinsics.int_call_name?(type)
+  defp view_tree_int_call_type?(_type), do: false
+
+  @spec view_tree_int_call_name(map()) :: String.t()
+  defp view_tree_int_call_name(node) when is_map(node) do
+    type = to_string(node["type"] || node[:type] || "")
+    label = to_string(node["label"] || node[:label] || "")
+
+    cond do
+      type == "call" and label != "" -> label
+      view_tree_int_call_type?(type) -> type
+      true -> label
+    end
+  end
+
+  @spec int_call_expr(String.t(), [map()]) :: map() | nil
+  defp int_call_expr(name, children) when is_binary(name) and is_list(children) do
+    args = Enum.map(children, &tree_node_to_expr/1)
+
+    if Enum.all?(args, &is_map/1) do
+      %{"op" => :call, "name" => name, "args" => args}
+    else
+      nil
+    end
+  end
 
   @spec eval_int_call(String.t(), [integer() | nil]) :: integer() | nil
   defp eval_int_call("__add__", [a, b]), do: a + b
@@ -4020,6 +4252,27 @@ defmodule ElmExecutor.Runtime.SemanticExecutor do
 
   defp eval_int_call("max", [a, b]), do: max(a, b)
   defp eval_int_call("min", [a, b]), do: min(a, b)
+
+  defp eval_int_call("abs", [value]) when is_integer(value), do: abs(value)
+  defp eval_int_call("Basics.abs", [value]) when is_integer(value), do: abs(value)
+  defp eval_int_call("negate", [value]) when is_integer(value), do: -value
+  defp eval_int_call("Basics.negate", [value]) when is_integer(value), do: -value
+
+  defp eval_int_call("round", [value]) when is_integer(value), do: value
+  defp eval_int_call("Basics.round", [value]) when is_integer(value), do: value
+
+  defp eval_int_call("clamp", [low, high, value])
+       when is_integer(low) and is_integer(high) and is_integer(value),
+       do: max(low, min(high, value))
+
+  defp eval_int_call("Basics.clamp", [low, high, value])
+       when is_integer(low) and is_integer(high) and is_integer(value),
+       do: max(low, min(high, value))
+
+  defp eval_int_call("clampInt", [low, high, value])
+       when is_integer(low) and is_integer(high) and is_integer(value),
+       do: max(low, min(high, value))
+
   defp eval_int_call(_name, _args), do: nil
 
   @spec extract_ints(String.t()) :: [integer()]

@@ -71,19 +71,13 @@ defmodule Ide.Debugger.RuntimePreview do
         |> RuntimeArtifacts.preview_runtime_model()
         |> preview_model_for_message(Map.get(model, "runtime_last_message"))
 
-      view_output =
-        case existing_runtime_view_output(model) do
-          rows when is_list(rows) and rows != [] ->
-            StepExecution.refresh_clock_text_view_output(rows, model)
-
-          _ ->
-            StepExecution.supplement_parser_runtime_view_output(
-              execution_model,
-              parser_view_tree,
-              preview_model
-            )
-            |> StepExecution.refresh_clock_text_view_output(model)
-        end
+      %{view_output: view_output, view_tree: derived_view_tree} =
+        StepExecution.derive_preview_view_output(
+          execution_model,
+          parser_view_tree,
+          preview_model,
+          model
+        )
 
       model =
         model
@@ -92,12 +86,18 @@ defmodule Ide.Debugger.RuntimePreview do
       ei = RuntimeArtifacts.require_introspect(model)
 
       runtime_view_tree =
-        case RuntimeViewOutput.tree(model, target) do
-          %{} = output_tree when map_size(output_tree) > 0 ->
-            if StepExecution.introspect_view_usable?(output_tree, ei), do: output_tree, else: nil
+        cond do
+          is_map(derived_view_tree) and StepExecution.introspect_view_usable?(derived_view_tree, ei) ->
+            derived_view_tree
 
-          _ ->
-            nil
+          true ->
+            case RuntimeViewOutput.tree(model, target) do
+              %{} = output_tree when map_size(output_tree) > 0 ->
+                if StepExecution.introspect_view_usable?(output_tree, ei), do: output_tree, else: nil
+
+              _ ->
+                nil
+            end
         end
 
       runtime_view_tree =
@@ -118,18 +118,6 @@ defmodule Ide.Debugger.RuntimePreview do
   end
 
   def render_view_from_surface(_surface_runtime, _target), do: nil
-
-  @spec existing_runtime_view_output(map()) :: [map()]
-  defp existing_runtime_view_output(model) when is_map(model) do
-    model
-    |> Map.get("runtime_view_output", [])
-    |> List.wrap()
-    |> Enum.filter(&is_map/1)
-    |> Enum.reject(fn row ->
-      kind = Map.get(row, "kind")
-      kind in [nil, "", "clear"]
-    end)
-  end
 
   @spec preview_model_for_message(map(), String.t() | nil) :: map()
   defp preview_model_for_message(preview_model, message) when is_map(preview_model) do

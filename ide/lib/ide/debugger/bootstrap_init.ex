@@ -17,7 +17,11 @@ defmodule Ide.Debugger.BootstrapInit do
     state
     |> Map.delete(:debugger_skip_blocking_compile)
     |> Map.delete(@parser_only_key)
+    |> Map.delete(@defer_surface_effects_key)
   end
+
+  @spec clear_session_bootstrap_flags(map()) :: map()
+  def clear_session_bootstrap_flags(state) when is_map(state), do: clear_companion_bootstrap_flags(state)
 
   @spec parser_only?(map()) :: boolean()
   def parser_only?(state) when is_map(state), do: Map.get(state, @parser_only_key) == true
