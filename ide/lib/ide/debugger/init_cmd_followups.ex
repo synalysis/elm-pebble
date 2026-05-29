@@ -32,6 +32,7 @@ defmodule Ide.Debugger.InitCmdFollowups do
 
   def merge_followups(executor_followups, _ei) when is_list(executor_followups), do: executor_followups
 
+  @spec http_cmd_call?(Types.cmd_call()) :: boolean()
   defp http_cmd_call?(%{} = row) do
     target = Map.get(row, "target") || Map.get(row, :target) || ""
     name = Map.get(row, "name") || Map.get(row, :name) || ""
@@ -43,6 +44,7 @@ defmodule Ide.Debugger.InitCmdFollowups do
 
   defp http_cmd_call?(_), do: false
 
+  @spec cmd_call_to_followup(Types.cmd_call()) :: Types.runtime_followup_row() | nil
   defp cmd_call_to_followup(%{} = row) do
     with %{} = command <- http_command_from_cmd_call(row),
          message when is_binary(message) <- callback_message(row) do

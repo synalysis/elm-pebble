@@ -18,14 +18,14 @@ defmodule Ide.Debugger.IntrospectContexts do
             (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
                Types.runtime_state()),
           required(:append_debugger_event) =>
-            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() ->
-               Types.runtime_state()),
+            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t(),
+             Types.timeline_step_message_value() -> Types.runtime_state()),
           required(:runtime_status_after_init) =>
-            (Types.runtime_state(), Types.surface_target(), Types.app_model(),
+            (Types.runtime_state(), Types.surface_target(), Types.step_executor_result() | map(),
              Types.elm_introspect() -> Types.runtime_state()),
           required(:apply_runtime_followups) =>
-            (Types.runtime_state(), Types.surface_target(), String.t(), String.t(), list() ->
-               Types.runtime_state()),
+            (Types.runtime_state(), Types.surface_target(), String.t(), String.t(),
+             [Types.runtime_followup_row()] -> Types.runtime_state()),
           required(:protocol_rx_ctx) => (-> ProtocolRx.ctx())
         }
 

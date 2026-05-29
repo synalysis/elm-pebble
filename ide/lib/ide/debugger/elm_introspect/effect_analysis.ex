@@ -506,7 +506,7 @@ defmodule Ide.Debugger.ElmIntrospect.EffectAnalysis do
     end
   end
 
-  @spec maybe_case_branch_guards(String.t(), Types.ast_expr()) :: [map()]
+  @spec maybe_case_branch_guards(String.t(), Types.ast_expr()) :: [CmdCall.activation_guard()]
   defp maybe_case_branch_guards(subject, pattern) when is_binary(subject) do
     case guard_from_case_branch(subject, pattern) do
       nil -> []

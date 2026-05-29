@@ -87,15 +87,15 @@ defmodule Ide.Debugger.ProtocolContexts do
   end
 
   @spec rx_apply_step_once(
-          map(),
+          Types.runtime_state(),
           Types.surface_target(),
           String.t(),
-          Types.subscription_payload() | map() | nil,
+          Types.subscription_payload() | nil,
           String.t(),
           String.t(),
-          (map(), Types.surface_target(), String.t(), Types.subscription_payload() | map() | nil,
-           String.t(), String.t() -> map())
-        ) :: map()
+          (Types.runtime_state(), Types.surface_target(), String.t(),
+           Types.subscription_payload() | nil, String.t(), String.t() -> Types.runtime_state())
+        ) :: Types.runtime_state()
   def rx_apply_step_once(st, target, message, message_value, source, trigger, apply_step_once)
       when is_function(apply_step_once, 6) do
     if is_map(message_value) do

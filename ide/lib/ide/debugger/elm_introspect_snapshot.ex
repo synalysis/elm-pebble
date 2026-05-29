@@ -16,24 +16,34 @@ defmodule Ide.Debugger.ElmIntrospectSnapshot do
 
   @type apply_ctx :: %{
           required(:executor) => executor(),
-          required(:attach_compile_artifacts) => (map(), Types.surface_target(), Types.elm_introspect() -> map()),
+          required(:attach_compile_artifacts) =>
+            (Types.runtime_state(), Types.surface_target(), Types.elm_introspect() ->
+               Types.runtime_state()),
           required(:hydrate_runtime_model) =>
             (Types.app_model(), String.t() | nil, [String.t()] -> Types.app_model()),
-          required(:append_event) => (map(), String.t(), map() -> map()),
+          required(:append_event) =>
+            (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
+               Types.runtime_state()),
           required(:append_debugger_event) =>
-            (map(), String.t(), Types.surface_target(), String.t(), String.t(), map() | nil -> map()),
+            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t(),
+             Types.timeline_step_message_value() -> Types.runtime_state()),
           required(:runtime_status_after_init) =>
-            (map(), Types.surface_target(), map(), Types.elm_introspect() -> map()),
+            (Types.runtime_state(), Types.surface_target(), Types.step_executor_result() | map(),
+             Types.elm_introspect() -> Types.runtime_state()),
           required(:apply_runtime_followups) =>
-            (map(), Types.surface_target(), String.t(), String.t(), list() -> map()),
-          required(:drain_app_message_queue) => (map(), Types.surface_target() -> map())
+            (Types.runtime_state(), Types.surface_target(), String.t(), String.t(),
+             [Types.runtime_followup_row()] -> Types.runtime_state()),
+          required(:drain_app_message_queue) =>
+            (Types.runtime_state(), Types.surface_target() -> Types.runtime_state())
         }
 
   @type merge_ctx :: %{
           required(:apply_snapshot) => apply_ctx(),
-          required(:after_apply) => (map(), Types.surface_target(), String.t() -> map()),
+          required(:after_apply) =>
+            (Types.runtime_state(), Types.surface_target(), String.t() -> Types.runtime_state()),
           required(:apply_simulator_settings) => (Types.runtime_state() -> Types.runtime_state()),
-          required(:introspect_event_payload) => (Types.elm_introspect(), String.t() | nil, String.t() -> map() | nil)
+          required(:introspect_event_payload) =>
+            (Types.elm_introspect(), String.t() | nil, String.t() -> ElmIntrospectEventPayload.t() | nil)
         }
 
   @spec elm_introspect?(String.t() | nil, String.t() | nil, String.t()) :: boolean()
@@ -110,13 +120,13 @@ defmodule Ide.Debugger.ElmIntrospectSnapshot do
   end
 
   @spec apply(
-          map(),
+          Types.runtime_state(),
           Types.elm_introspect(),
           Types.surface_target(),
           String.t(),
           String.t() | nil,
           apply_ctx()
-        ) :: map()
+        ) :: Types.runtime_state()
   def apply(state, ei, target, source, rel_path, ctx)
       when is_map(ei) and target in [:watch, :companion, :phone] and is_binary(source) and is_map(ctx) do
     state = ctx.attach_compile_artifacts.(state, target, ei)
@@ -235,6 +245,8 @@ defmodule Ide.Debugger.ElmIntrospectSnapshot do
     end
   end
 
+  @spec resolve_init_execution(Types.runtime_state(), map(), apply_ctx()) ::
+          Types.step_executor_result() | map()
   defp resolve_init_execution(state, request, ctx) do
     result =
       if BootstrapInit.parser_only?(state) do

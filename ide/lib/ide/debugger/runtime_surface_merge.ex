@@ -10,9 +10,9 @@ defmodule Ide.Debugger.RuntimeSurfaceMerge do
   alias Ide.Debugger.Surface
   alias Ide.Debugger.Types
 
-  @type fields :: Types.elmc_surface_fields()
-
   @type surface_target :: Types.surface_target()
+
+  @type fields :: Types.elmc_surface_fields()
 
   @spec merge_fields(Surface.surface_map(), fields()) :: Surface.surface_map()
   def merge_fields(surface, fields) when is_map(surface) and is_map(fields) do
@@ -29,7 +29,7 @@ defmodule Ide.Debugger.RuntimeSurfaceMerge do
     })
   end
 
-  @spec merge_into_state(map(), surface_target(), fields()) :: map()
+  @spec merge_into_state(Types.runtime_state(), surface_target(), fields()) :: Types.runtime_state()
   def merge_into_state(state, target, fields)
       when is_map(state) and target in [:watch, :companion, :phone] and is_map(fields) do
     state

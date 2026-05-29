@@ -36,6 +36,8 @@ defmodule Ide.Debugger.Types do
     MessageInEventPayload,
     PackageCmdEventPayload,
     PackageCmdErrorEventPayload,
+    PendingHttpFollowupItem,
+    PendingProtocolDeliveryItem,
     ImportTraceBody,
     TraceExportWire,
     ExecutionModel,
@@ -286,9 +288,11 @@ defmodule Ide.Debugger.Types do
 
   @type companion_injection_form_data :: wire_map()
 
-  @type pending_protocol_delivery_item :: wire_map()
+  @type pending_protocol_delivery_item ::
+          PendingProtocolDeliveryItem.t() | PendingProtocolDeliveryItem.wire_item()
 
-  @type pending_http_followup_item :: wire_map()
+  @type pending_http_followup_item ::
+          PendingHttpFollowupItem.t() | PendingHttpFollowupItem.wire_item()
 
   @type companion_subscription_source :: %{
           optional(:source) => String.t(),

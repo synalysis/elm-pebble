@@ -23,6 +23,20 @@ defmodule Ide.Debugger.DeviceRequestTypesTest do
     assert battery_req.response_message == "BatteryLevel"
   end
 
+  test "from_cmd_call maps qualified PebbleCmd target when name is derived from target" do
+    call = %{
+      "target" => "PebbleCmd.getCurrentDateTime",
+      "name" => "getCurrentDateTime",
+      "callback_constructor" => "CurrentDateTime",
+      "branch_constructor" => "MinuteChanged"
+    }
+
+    [req] = DeviceRequest.from_cmd_call(call)
+
+    assert req.kind == "current_date_time"
+    assert req.response_message == "CurrentDateTime"
+  end
+
   test "from_cmd_call maps health metric cmd on Health target" do
     health_call = %{
       "name" => "value",

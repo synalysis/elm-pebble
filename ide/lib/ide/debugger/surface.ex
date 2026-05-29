@@ -87,7 +87,7 @@ defmodule Ide.Debugger.Surface do
 
   def app_model(surface) when is_map(surface), do: from_map(surface).model
 
-  @spec shell(t() | map()) :: RuntimeArtifacts.shell()
+  @spec shell(t() | surface_map()) :: RuntimeArtifacts.shell()
   def shell(%__MODULE__{shell: shell}), do: shell
 
   def shell(surface) when is_map(surface), do: from_map(surface).shell
@@ -97,7 +97,7 @@ defmodule Ide.Debugger.Surface do
 
   def execution_model(surface) when is_map(surface), do: RuntimeArtifacts.execution_model(surface)
 
-  @spec introspect(t() | map()) :: Types.elm_introspect() | nil
+  @spec introspect(t() | surface_map()) :: Types.elm_introspect() | nil
   def introspect(surface), do: RuntimeArtifacts.introspect(surface)
 
   @spec introspect!(t() | surface_map()) :: map()

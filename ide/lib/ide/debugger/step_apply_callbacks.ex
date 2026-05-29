@@ -38,6 +38,7 @@ defmodule Ide.Debugger.StepApplyCallbacks do
           required(:runtime_followups) => RuntimeFollowups.apply_ctx()
         }
 
+  # Return type stays map() — same keys as StepApply.ctx() but Dialyzer widens callback fields.
   @spec build(deps()) :: map()
   def build(%{} = deps) do
     host = Map.fetch!(deps, :host)
