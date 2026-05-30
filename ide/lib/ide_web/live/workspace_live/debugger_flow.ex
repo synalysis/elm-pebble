@@ -443,6 +443,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
   defp normalize_boolean_setting(value) when value in [true, "true", "1", 1], do: true
   defp normalize_boolean_setting(_value), do: false
 
+  @spec inject_simulator_watch_trigger(socket(), String.t(), String.t() | nil, keyword()) ::
+          {:ok, socket()} | lv_noreply()
   defp inject_simulator_watch_trigger(socket, kind, flash_message, opts \\ []) do
     flash? = Keyword.get(opts, :flash, true)
 
@@ -471,6 +473,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
     end
   end
 
+  @spec inject_simulator_watch_trigger(Project.t(), String.t()) ::
+          {:ok, Ide.Debugger.Types.RuntimeState.t()} | {:error, :trigger_not_found}
   defp inject_simulator_watch_trigger(%Project{} = project, kind) when is_binary(kind) do
     slug = Projects.scope_key(project)
 

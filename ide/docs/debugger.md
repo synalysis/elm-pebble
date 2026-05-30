@@ -111,7 +111,10 @@ Configuration and bootstrap (`BootstrapInit`, `InitCmdFollowups`, `DeferredCompa
 | Layer | Module |
 |-------|--------|
 | Runtime | `Ide.Debugger`, `ide/lib/ide/debugger/*` |
-| LiveView UI | `IdeWeb.WorkspaceLive.DebuggerPage`, `DebuggerSupport` (assigns + shared query helpers) |
+| LiveView UI | `IdeWeb.WorkspaceLive.DebuggerPage`, `DebuggerFlow` (debugger `handle_event`s), `DebuggerSupport` (facade) |
+| DebuggerSupport | `Types`, `Live`, `Timeline`, `Rendered`, `Replay`, `Export`, `Diagnostics`, `Util` under `debugger_support/` |
 | MCP | `Ide.Mcp.Handlers.Debugger` |
+
+`DebuggerSupport` keeps the public API (`defdelegate` from the facade). Regenerate the split from the monolith backup with `mix run --no-compile --no-start scripts/split_debugger_support.exs` (source: `/tmp/debugger_support.monolith.ex`).
 
 When adding behavior, prefer extending `Ide.Debugger` and MCP tools; add LiveView UI only when humans need the same control in the pane.

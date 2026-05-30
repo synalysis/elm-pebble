@@ -782,7 +782,7 @@ defmodule Ide.Resources.ResourceStore do
   @spec read_bitmap_manifest(Types.workspace_path()) :: {:ok, Types.manifest()} | {:error, Types.resource_error()}
   defp read_bitmap_manifest(workspace) do
     path = Path.join(workspace, @manifest_rel_path)
-    read_manifest(path)
+    read_manifest(path, strict: true)
   end
 
   @spec read_font_manifest(Types.workspace_path()) :: {:ok, Types.manifest()} | {:error, Types.resource_error()}
@@ -795,9 +795,10 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
-  @spec read_manifest(Path.t()) :: {:ok, Types.manifest()} | {:error, Types.manifest_io_error()}
-  defp read_manifest(path) do
+  @spec read_manifest(Path.t(), keyword()) :: {:ok, Types.manifest()} | {:error, Types.manifest_io_error()}
+  defp read_manifest(path, opts \\ []) do
     path = Path.expand(path)
+    strict? = Keyword.get(opts, :strict, false)
 
     case File.read(path) do
       {:ok, json} ->
@@ -806,7 +807,7 @@ defmodule Ide.Resources.ResourceStore do
             {:ok, Map.put_new(decoded, "entries", [])}
 
           _ ->
-            {:ok, %{"schema_version" => 1, "entries" => []}}
+            if strict?, do: {:error, :invalid_manifest}, else: {:ok, %{"schema_version" => 1, "entries" => []}}
         end
 
       {:error, :enoent} ->

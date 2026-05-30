@@ -4,15 +4,21 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
   import Phoenix.Component, only: [assign: 2, assign: 3, to_form: 2]
   import Phoenix.LiveView, only: [connected?: 1, push_event: 3, start_async: 3]
 
+  alias Ide.Compiler
   alias Ide.ElmFormat
+  alias Ide.EditorDocLinks
   alias Ide.Formatter
+  alias Ide.Markdown
   alias Ide.Packages
+  alias Ide.PebblePreferences
   alias Ide.Projects
+  alias Ide.Projects.Project
   alias Ide.Resources.ResourceStore
   alias Ide.Tokenizer
   alias IdeWeb.WorkspaceLive.EditorDependencies
   alias IdeWeb.WorkspaceLive.EditorSupport.Types, as: EditorTypes
   alias IdeWeb.WorkspaceLive.PackagesFlow
+  alias IdeWeb.WorkspaceLive.State
 
   @max_editor_highlight_tokens 25_000
   @max_editor_fold_ranges 2_000
@@ -1193,4 +1199,389 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   @spec split_lines(String.t()) :: [String.t()]
   defp split_lines(content) when is_binary(content), do: :binary.split(content, "\n", [:global])
+
+  @spec update_tab_by_id(EditorTypes.socket(), String.t(), (EditorTypes.tab() -> EditorTypes.tab())) ::
+          EditorTypes.socket()
+  def update_tab_by_id(socket, tab_id, updater)
+      when is_binary(tab_id) and is_function(updater, 1) do
+    tabs =
+      Enum.map(socket.assigns.tabs, fn tab ->
+        if tab.id == tab_id do
+          updater.(tab)
+        else
+          tab
+        end
+      end)
+
+    assign(socket, :tabs, tabs)
+  end
+
+  @spec refresh_tab_read_only(EditorTypes.tab()) :: EditorTypes.tab()
+  def refresh_tab_read_only(%{source_root: source_root, rel_path: rel_path} = tab)
+      when is_binary(source_root) and is_binary(rel_path) do
+    %{
+      tab
+      | read_only:
+          tab[:read_only] || ResourceStore.read_only_generated_module?(source_root, rel_path)
+    }
+  end
+
+  def refresh_tab_read_only(tab), do: tab
+
+  @spec tab_with_save_content(EditorTypes.tab(), map()) :: EditorTypes.tab()
+  def tab_with_save_content(tab, %{"content" => content}) when is_binary(content) do
+    %{tab | content: content}
+  end
+
+  def tab_with_save_content(tab, %{"editor" => %{"content" => content}})
+      when is_binary(content) do
+    %{tab | content: content}
+  end
+
+  def tab_with_save_content(tab, _params), do: tab
+
+  @spec tab_content(EditorTypes.tab() | nil) :: String.t() | nil
+  def tab_content(nil), do: nil
+  def tab_content(%{content: content}), do: content
+
+  @spec tab_rel_path(EditorTypes.tab() | nil) :: String.t() | nil
+  def tab_rel_path(nil), do: nil
+  def tab_rel_path(%{rel_path: rel_path}), do: rel_path
+
+  @spec creatable_source_roots(Project.t() | nil) :: [String.t()]
+  def creatable_source_roots(%Project{} = project) do
+    workspace_root = Projects.project_workspace_path(project)
+
+    project.source_roots
+    |> List.wrap()
+    |> Enum.reject(&(&1 == "protocol"))
+    |> Enum.filter(fn source_root ->
+      File.exists?(Path.join([workspace_root, source_root, "elm.json"]))
+    end)
+    |> case do
+      [] -> ["watch"]
+      roots -> roots
+    end
+  end
+
+  def creatable_source_roots(_project), do: ["watch"]
+
+  @spec validate_creatable_source_root(Project.t() | nil, String.t()) ::
+          :ok | {:error, :invalid_source_root}
+  def validate_creatable_source_root(project, source_root) do
+    if source_root in creatable_source_roots(project),
+      do: :ok,
+      else: {:error, :invalid_source_root}
+  end
+
+  @spec capability_sync_source?(String.t(), String.t()) :: boolean()
+  def capability_sync_source?(source_root, rel_path)
+      when is_binary(source_root) and is_binary(rel_path) do
+    source_root in ["watch", "phone"] and String.ends_with?(rel_path, ".elm")
+  end
+
+  def capability_sync_source?(_, _), do: false
+
+  @spec refresh_detected_capabilities(EditorTypes.socket()) :: EditorTypes.socket()
+  def refresh_detected_capabilities(socket) do
+    project = socket.assigns.project
+
+    project =
+      case Projects.sync_detected_capabilities(project) do
+        {:ok, updated} -> updated
+        _ -> project
+      end
+
+    socket
+    |> assign(:project, project)
+    |> assign(:detected_capabilities, State.detected_capabilities_from_project(project))
+    |> assign(
+      :project_settings_form,
+      to_form(State.project_settings_form_data(project), as: :project_settings)
+    )
+  end
+
+  @spec schedule_editor_check(EditorTypes.socket(), EditorTypes.tab()) :: EditorTypes.socket()
+  def schedule_editor_check(socket, %{source_root: source_root, rel_path: rel_path}) do
+    case socket.assigns[:project] do
+      nil ->
+        socket
+
+      project ->
+        token = System.unique_integer([:positive])
+        workspace_root = Projects.project_workspace_path(project)
+
+        socket
+        |> assign(:editor_check_status, :running)
+        |> assign(:editor_check_token, token)
+        |> assign(:editor_check_source_root, source_root)
+        |> assign(:editor_check_rel_path, rel_path)
+        |> assign(:editor_check_diagnostics, [])
+        |> assign(:editor_check_output, nil)
+        |> start_async(:editor_check, fn ->
+          result =
+            Compiler.check_source_root("#{project.slug}:editor:#{source_root}",
+              workspace_root: workspace_root,
+              source_root: source_root
+            )
+
+          {result, token, source_root, rel_path}
+        end)
+    end
+  end
+
+  @spec clear_editor_check(EditorTypes.socket(), EditorTypes.tab() | nil) :: EditorTypes.socket()
+  def clear_editor_check(socket, %{source_root: source_root, rel_path: rel_path}) do
+    if socket.assigns[:editor_check_source_root] == source_root and
+         socket.assigns[:editor_check_rel_path] == rel_path do
+      socket
+      |> assign(:editor_check_status, :idle)
+      |> assign(:editor_check_token, nil)
+      |> assign(:editor_check_diagnostics, [])
+      |> assign(:editor_check_output, nil)
+    else
+      socket
+    end
+  end
+
+  def clear_editor_check(socket, _tab), do: socket
+
+  @spec push_editor_check_lint_diagnostics(
+          EditorTypes.socket(),
+          String.t(),
+          String.t(),
+          [map()]
+        ) :: EditorTypes.socket()
+  def push_editor_check_lint_diagnostics(socket, source_root, rel_path, diagnostics) do
+    case active_tab(socket) do
+      %{source_root: ^source_root, rel_path: ^rel_path} ->
+        diagnostics
+        |> Enum.filter(&editor_check_diagnostic_matches_rel_path?(&1, rel_path))
+        |> then(&push_editor_lint_diagnostics(socket, &1))
+
+      _ ->
+        socket
+    end
+  end
+
+  @spec editor_check_diagnostic_matches_rel_path?(map(), String.t()) :: boolean()
+  defp editor_check_diagnostic_matches_rel_path?(diag, rel_path)
+       when is_map(diag) and is_binary(rel_path) do
+    case Map.get(diag, :file) || Map.get(diag, "file") do
+      nil -> true
+      ^rel_path -> true
+      _other -> false
+    end
+  end
+
+  @spec maybe_regenerate_phone_preferences_after_save(EditorTypes.socket(), EditorTypes.tab()) ::
+          EditorTypes.socket()
+  def maybe_regenerate_phone_preferences_after_save(
+        socket,
+        %{source_root: "phone", rel_path: rel_path}
+      )
+      when is_binary(rel_path) do
+    if String.ends_with?(rel_path, ".elm") and
+         rel_path != PebblePreferences.generated_bridge_rel_path() do
+      :ok = Projects.ensure_generated_phone_preferences(socket.assigns.project)
+
+      socket
+      |> refresh_open_generated_preferences_tab()
+      |> refresh_tree()
+    else
+      socket
+    end
+  end
+
+  def maybe_regenerate_phone_preferences_after_save(socket, _tab), do: socket
+
+  @spec refresh_open_generated_preferences_tab(EditorTypes.socket()) :: EditorTypes.socket()
+  def refresh_open_generated_preferences_tab(socket) do
+    rel_path = PebblePreferences.generated_bridge_rel_path()
+
+    case Projects.read_source_file(socket.assigns.project, "phone", rel_path) do
+      {:ok, content} ->
+        tabs =
+          Enum.map(socket.assigns.tabs, fn
+            %{source_root: "phone", rel_path: ^rel_path} = tab ->
+              mark_editor_content_saved(%{tab | read_only: true}, content)
+
+            tab ->
+              tab
+          end)
+
+        assign(socket, :tabs, tabs)
+
+      _ ->
+        socket
+    end
+  end
+
+  @spec load_editor_doc_body(EditorTypes.socket(), String.t(), String.t() | nil, String.t()) ::
+          EditorTypes.socket()
+  def load_editor_doc_body(socket, package, version, module) do
+    package = to_string(package)
+
+    version =
+      case version do
+        nil -> "latest"
+        "" -> "latest"
+        v -> to_string(v)
+      end
+
+    module = module |> to_string() |> String.trim()
+    opts = []
+    ver_display = version
+
+    {markdown, header} =
+      cond do
+        module != "" ->
+          case Packages.module_doc_markdown(package, version, module, opts) do
+            {:ok, doc} when is_binary(doc) ->
+              if String.trim(doc) != "" do
+                ref_url = EditorDocLinks.package_elm_doc_url(package, module, "")
+                mod_esc = String.replace(module, "`", "")
+
+                intro =
+                  """
+                  **Package:** `#{package}` (#{ver_display})
+
+                  **Module:** `#{mod_esc}`
+
+                  **Also on the web:** [package.elm-lang.org](#{ref_url})
+
+                  ---
+
+                  """
+
+                {doc, intro}
+              else
+                editor_module_doc_readme_fallback(package, version, module, ver_display, opts)
+              end
+
+            _ ->
+              editor_module_doc_readme_fallback(package, version, module, ver_display, opts)
+          end
+
+        true ->
+          {editor_package_readme_slice(package, version, opts), ""}
+      end
+
+    assign(socket, :editor_doc_html, Markdown.readme_to_html(header <> markdown))
+  end
+
+  @spec apply_doc_catalog_rows(EditorTypes.socket(), [map()]) :: EditorTypes.socket()
+  def apply_doc_catalog_rows(socket, rows) when is_list(rows) do
+    socket = assign(socket, :editor_doc_packages, rows)
+
+    cond do
+      rows == [] ->
+        socket
+        |> assign(:editor_doc_package, nil)
+        |> assign(:editor_doc_module, "")
+        |> assign(:editor_doc_html, "")
+
+      socket.assigns[:editor_doc_package] == nil ->
+        init_editor_doc_selection(socket, hd(rows))
+
+      not Enum.any?(rows, &(&1.package == socket.assigns.editor_doc_package)) ->
+        init_editor_doc_selection(socket, hd(rows))
+
+      true ->
+        row = Enum.find(rows, &(&1.package == socket.assigns.editor_doc_package))
+        cur_mod = socket.assigns[:editor_doc_module] || ""
+
+        {mod, socket} =
+          cond do
+            (cur_mod != "" and row) && cur_mod in row.modules ->
+              {cur_mod, assign(socket, :editor_doc_module, cur_mod)}
+
+            row && row.modules != [] ->
+              m = hd(row.modules)
+              {m, assign(socket, :editor_doc_module, m)}
+
+            true ->
+              {"", assign(socket, :editor_doc_module, "")}
+          end
+
+        if row do
+          load_editor_doc_body(socket, row.package, row.version, mod)
+        else
+          socket
+        end
+    end
+  end
+
+  @spec editor_doc_modules_for_package([map()], String.t(), String.t()) :: [String.t()]
+  def editor_doc_modules_for_package(rows, pkg, query \\ "")
+
+  def editor_doc_modules_for_package(rows, pkg, query) when is_list(rows) and is_binary(pkg) do
+    modules =
+      case Enum.find(rows, &(&1.package == pkg)) do
+        %{modules: mods} when is_list(mods) -> mods
+        _ -> []
+      end
+
+    filter_editor_doc_modules(modules, query)
+  end
+
+  def editor_doc_modules_for_package(_, _, _), do: []
+
+  @spec init_editor_doc_selection(EditorTypes.socket(), map()) :: EditorTypes.socket()
+  defp init_editor_doc_selection(socket, row) do
+    mod = List.first(row.modules) || ""
+
+    socket
+    |> assign(:editor_doc_package, row.package)
+    |> assign(:editor_doc_module, mod)
+    |> load_editor_doc_body(row.package, row.version, mod)
+  end
+
+  @spec editor_package_readme_slice(String.t(), String.t(), keyword()) :: String.t()
+  defp editor_package_readme_slice(package, version, opts) do
+    case Packages.readme(package, version, opts) do
+      {:ok, payload} -> String.slice(payload.readme, 0, 12_000)
+      _ -> "_Could not load README for `#{package}` at `#{version}`._"
+    end
+  end
+
+  @spec editor_module_doc_readme_fallback(String.t(), String.t(), String.t(), String.t(), keyword()) ::
+          {String.t(), String.t()}
+  defp editor_module_doc_readme_fallback(package, version, module, ver_display, opts) do
+    readme = editor_package_readme_slice(package, version, opts)
+    ref_url = EditorDocLinks.package_elm_doc_url(package, module, "")
+    mod_esc = String.replace(module, "`", "")
+
+    intro =
+      """
+      **Package:** `#{package}` (#{ver_display})
+
+      **Module:** `#{mod_esc}`
+
+      **Also on the web:** [package.elm-lang.org](#{ref_url})
+
+      _Registry module documentation is not available for this package or version (for example unpublished platform sources). Showing the package README instead._
+
+      ---
+
+      """
+
+    {readme, intro}
+  end
+
+  @spec filter_editor_doc_modules([String.t()], String.t()) :: [String.t()]
+  defp filter_editor_doc_modules(modules, query) when is_list(modules) do
+    needle = query |> to_string() |> String.trim() |> String.downcase()
+
+    if needle == "" do
+      modules
+    else
+      Enum.filter(modules, fn mod ->
+        mod
+        |> to_string()
+        |> String.downcase()
+        |> String.contains?(needle)
+      end)
+    end
+  end
 end

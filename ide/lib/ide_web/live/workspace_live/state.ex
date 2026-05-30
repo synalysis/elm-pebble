@@ -16,6 +16,7 @@ defmodule IdeWeb.WorkspaceLive.State do
   @type project_assign_data :: %{
           required(:tree) => list(),
           required(:bitmap_resources) => list(),
+          optional(:bitmap_resources_error) => String.t() | nil,
           optional(:vector_resources) => list(),
           required(:font_sources) => list(),
           required(:font_resources) => list(),
@@ -189,6 +190,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:github_connected?, false)
     |> assign(:auto_format_last_result, nil)
     |> assign(:bitmap_resources, [])
+    |> assign(:bitmap_resources_error, nil)
     |> assign(:bitmap_upload_output, nil)
     |> assign(:vector_resources, [])
     |> assign(:vector_upload_output, nil)
@@ -295,6 +297,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:tree, Map.fetch!(data, :tree))
     |> assign(:companion_app_present, Map.get(data, :companion_app_present, false))
     |> assign(:bitmap_resources, Map.fetch!(data, :bitmap_resources))
+    |> assign(:bitmap_resources_error, Map.get(data, :bitmap_resources_error))
     |> assign(:vector_resources, Map.get(data, :vector_resources, []))
     |> assign(:font_sources, Map.fetch!(data, :font_sources))
     |> assign(:font_resources, Map.fetch!(data, :font_resources))

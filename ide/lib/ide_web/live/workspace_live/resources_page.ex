@@ -98,8 +98,14 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
           <h3 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">
             Available bitmaps
           </h3>
+          <p
+            :if={@bitmap_resources_error}
+            class="mt-2 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            {@bitmap_resources_error}
+          </p>
           <div
-            :if={@bitmap_resources == []}
+            :if={@bitmap_resources == [] and is_nil(@bitmap_resources_error)}
             class="mt-3 rounded border border-dashed border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-600"
           >
             No bitmap resources uploaded yet.
@@ -150,6 +156,9 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
                   />
                   <p :if={slot.filename} class="truncate font-mono text-zinc-600">{slot.filename}</p>
                   <p :if={slot.bytes} class="text-zinc-500">{slot.bytes} bytes</p>
+                  <p :if={slot.preview_skipped} class="text-[10px] text-amber-700">
+                    Preview hidden (file &gt; 32 KB). Upload is still saved.
+                  </p>
                   <.form
                     for={%{}}
                     phx-change="validate-resource-upload"

@@ -43,6 +43,26 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
           artifact_path: String.t()
         }
 
+  @build_events ~w(
+    run-check
+    run-build
+    run-compile
+    run-manifest
+    set-manifest-strict
+    run-pebble-build
+  )
+
+  @build_asyncs [:run_check, :run_build, :run_compile, :run_manifest, :run_pebble_build]
+
+  @spec build_events() :: [String.t()]
+  def build_events, do: @build_events
+
+  @spec build_asyncs() :: [atom()]
+  def build_asyncs, do: @build_asyncs
+
+  @spec handles?(String.t()) :: boolean()
+  def handles?(event) when is_binary(event), do: event in @build_events
+
   @spec handle_event(String.t(), map(), Phoenix.LiveView.Socket.t()) ::
           {:noreply, Phoenix.LiveView.Socket.t()}
   def handle_event("run-check", _params, socket) do
@@ -95,6 +115,15 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   def handle_event("set-manifest-strict", params, socket) do
     strict? = manifest_strict_from_params(params, socket.assigns.manifest_strict_mode)
     {:noreply, assign(socket, :manifest_strict_mode, strict?)}
+  end
+
+  def handle_event("run-pebble-build", _params, socket) do
+    project = socket.assigns.project
+
+    {:noreply,
+     socket
+     |> assign(:pebble_build_status, :running)
+     |> start_async(:run_pebble_build, fn -> PebbleToolchain.build(project.slug, []) end)}
   end
 
   defp manifest_strict_from_params(%{"build" => %{"manifest_strict" => value}}, _default) do
@@ -300,6 +329,27 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
     socket = DebuggerBridge.sync_check_failed(socket, msg)
     {:noreply, socket}
+  end
+
+  def handle_async(:run_pebble_build, {:ok, {:ok, result}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:pebble_build_status, result.status)
+     |> assign(:pebble_build_output, ToolchainPresenter.render_toolchain_output(result))}
+  end
+
+  def handle_async(:run_pebble_build, {:ok, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:pebble_build_status, :error)
+     |> assign(:pebble_build_output, "Build failed before execution: #{inspect(reason)}")}
+  end
+
+  def handle_async(:run_pebble_build, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:pebble_build_status, :error)
+     |> assign(:pebble_build_output, "Build task exited: #{inspect(reason)}")}
   end
 
   defp package_app_root(%{raw: %{app_root: app_root}}) when is_binary(app_root), do: app_root

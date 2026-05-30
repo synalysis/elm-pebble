@@ -33,6 +33,10 @@
   {"lib/ide_web/live/workspace_live/debugger_support.ex", :unused_fun},
   # Dialyzer reports `@moduledoc` / `@doc false` as line-1 pattern_match (false vs true).
   {"lib/ide/debugger/elm_introspect/view_tree.ex", :pattern_match},
+  {"lib/ide/debugger/elm_introspect/view_tree/structure.ex", :pattern_match},
+  {"lib/ide_web/live/workspace_live/debugger_flow.ex", :unused_fun},
+  {"lib/ide_web/live/workspace_live/debugger_flow.ex", :no_return},
+  {"lib/ide_web/live/workspace_live/debugger_flow.ex", :pattern_match},
   {"lib/ide/debugger/runtime_model_hydrate.ex", :pattern_match},
   {"lib/ide/debugger/runtime_model_normalize.ex", :pattern_match},
   {"lib/ide/debugger/wire_values.ex", :pattern_match},

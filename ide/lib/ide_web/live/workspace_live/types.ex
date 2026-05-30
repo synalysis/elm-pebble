@@ -143,8 +143,12 @@ defmodule IdeWeb.WorkspaceLive.Types do
   @type async_result :: {:ok, async_payload()} | {:exit, async_exit_reason()}
 
   @type info_message ::
-          {:debugger_auto_fire_refresh, String.t()}
+          :debugger_runtime_updated
+          | {:debugger_auto_fire_refresh, String.t()}
           | {:debugger_bootstrap_progress, pos_integer(), String.t()}
+          | {:debugger_companion_bootstrap_progress, String.t()}
+          | {:debugger_runtime_refresh, integer()}
+          | {:companion_debugger_bootstrapped, String.t(), term()}
           | {:capture_all_progress, pos_integer(), Screenshots.progress_payload()}
           | {:packages_search_progress, reference(), PackagesFlow.search_progress()}
 
