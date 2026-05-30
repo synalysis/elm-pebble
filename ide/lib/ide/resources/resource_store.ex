@@ -6,7 +6,7 @@ defmodule Ide.Resources.ResourceStore do
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.PebbleToolchain
-  alias Ide.Resources.{BitmapVariants, PdcDecoder, SvgConverter}
+  alias Ide.Resources.{AnimationStore, BitmapVariants, CtorNaming, PdcDecoder, SvgConverter}
   alias Ide.Resources.Types
 
   @manifest_rel_path "watch/resources/bitmaps.json"
@@ -15,6 +15,7 @@ defmodule Ide.Resources.ResourceStore do
   @font_assets_rel_dir "watch/resources/fonts"
   @vector_manifest_rel_path "watch/resources/vectors.json"
   @vector_assets_rel_dir "watch/resources/vectors"
+  @animation_manifest_rel_path "watch/resources/animations.json"
   @generated_module_rel_path "watch/src/Pebble/Ui/Resources.elm"
   @legacy_generated_module_rel_path "watch/src/Pebble/Ui/Bitmap.elm"
 
@@ -29,6 +30,7 @@ defmodule Ide.Resources.ResourceStore do
   @type bitmap_entry :: %{
           id: String.t(),
           ctor: String.t(),
+          base_name: String.t(),
           filename: String.t() | nil,
           mime: String.t() | nil,
           bytes: non_neg_integer(),
@@ -63,6 +65,7 @@ defmodule Ide.Resources.ResourceStore do
   @type vector_entry :: %{
           id: String.t(),
           ctor: String.t(),
+          base_name: String.t(),
           filename: String.t(),
           mime: String.t(),
           bytes: non_neg_integer(),
@@ -127,6 +130,38 @@ defmodule Ide.Resources.ResourceStore do
     end
   end
 
+  @doc """
+  Registers every `*.png` in the bitmap assets directory (or `dir`) that is not already
+  recorded in `bitmaps.json`. Existing ctors are left unchanged; duplicate file bytes are skipped.
+  """
+  @spec import_bitmaps_from_directory(Project.t(), String.t() | nil, keyword()) ::
+          {:ok, %{imported: non_neg_integer(), skipped: non_neg_integer(), duplicates: non_neg_integer()}}
+  def import_bitmaps_from_directory(%Project{} = project, dir \\ nil, opts \\ []) do
+    workspace = Projects.project_workspace_path(project)
+    assets_dir = dir || Path.join(workspace, @assets_rel_dir)
+    import_opts = Keyword.take(opts, [:color_mode, :ctor])
+
+    result =
+      assets_dir
+      |> Path.join("*.png")
+      |> Path.wildcard()
+      |> Enum.sort()
+      |> Enum.reduce(%{imported: 0, skipped: 0, duplicates: 0}, fn path, acc ->
+        case import_bitmap(project, path, Path.basename(path), import_opts) do
+          {:ok, %{duplicate: true}} ->
+            %{acc | duplicates: acc.duplicates + 1}
+
+          {:ok, _} ->
+            %{acc | imported: acc.imported + 1}
+
+          {:error, _} ->
+            %{acc | skipped: acc.skipped + 1}
+        end
+      end)
+
+    {:ok, result}
+  end
+
   @spec import_bitmap(Project.t(), String.t(), String.t(), keyword()) ::
           {:ok, map()} | {:error, Types.resource_error()}
   def import_bitmap(%Project{} = project, upload_path, original_name, opts \\ [])
@@ -153,8 +188,9 @@ defmodule Ide.Resources.ResourceStore do
          {:ok, bytes} <- File.read(upload_path),
          {:ok, safe_name, mime} <- normalized_filename_and_mime(original_name),
          nil <- duplicate_asset_entry(manifest["entries"] || [], assets_dir, bytes),
-         ctor <- constructor_from_name(safe_name),
-         unique_ctor <- unique_ctor(ctor, manifest["entries"] || []),
+         base_name <- CtorNaming.base_name_from_filename(safe_name),
+         unique_ctor <-
+           CtorNaming.unique_ctor(:bitmap_static, base_name, manifest["entries"] || []),
          basename <- BitmapVariants.legacy_filename(unique_ctor, Path.extname(safe_name)),
          :ok <- remove_bitmap_row_files(assets_dir, existing_row(manifest, unique_ctor)),
          :ok <- File.write(Path.join(assets_dir, basename), bytes) do
@@ -163,6 +199,7 @@ defmodule Ide.Resources.ResourceStore do
       entry =
         BitmapVariants.normalize_row(%{
           "id" => "bitmap_" <> String.downcase(unique_ctor),
+          "base_name" => CtorNaming.legacy_base_from_ctor(unique_ctor, :bitmap_static),
           "ctor" => unique_ctor,
           "filename" => basename,
           "mime" => mime,
@@ -219,6 +256,7 @@ defmodule Ide.Resources.ResourceStore do
       entry =
         prior
         |> Map.put("ctor", unique_ctor)
+        |> Map.put("base_name", CtorNaming.legacy_base_from_ctor(unique_ctor, :bitmap_static))
         |> Map.put("id", "bitmap_" <> String.downcase(unique_ctor))
         |> Map.put("variants", variants)
         |> Map.drop(["filename", "mime", "bytes", "width", "height"])
@@ -293,9 +331,12 @@ defmodule Ide.Resources.ResourceStore do
 
       {:ok,
        Enum.map(entries, fn row ->
+         row = CtorNaming.ensure_row!(row, CtorNaming.vector_kind_from_row(row))
+
          %{
            id: to_string(Map.get(row, "id", "")),
            ctor: to_string(Map.get(row, "ctor", "")),
+           base_name: to_string(Map.get(row, "base_name", "")),
            filename: to_string(Map.get(row, "filename", "")),
            mime: to_string(Map.get(row, "mime", "application/octet-stream")),
            bytes: integer_or_zero(Map.get(row, "bytes", 0)),
@@ -384,18 +425,20 @@ defmodule Ide.Resources.ResourceStore do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @vector_assets_rel_dir)
     manifest_path = Path.join(workspace, @vector_manifest_rel_path)
+    vector_kind = vector_import_kind(extras)
+    base_name = CtorNaming.base_name_from_filename(Path.rootname(safe_name))
 
     with :ok <- File.mkdir_p(assets_dir),
          {:ok, manifest} <- read_vector_manifest(workspace),
          nil <- duplicate_asset_entry(manifest["entries"] || [], assets_dir, pdc_bytes),
-         ctor <- constructor_from_name(Path.rootname(safe_name)),
-         unique_ctor <- unique_ctor(ctor, manifest["entries"] || []),
-         basename <- "#{unique_ctor}.pdc",
+         unique_ctor = CtorNaming.unique_ctor(vector_kind, base_name, manifest["entries"] || []),
+         basename = "#{unique_ctor}.pdc",
          asset_path <- Path.join(assets_dir, basename),
          :ok <- File.write(asset_path, pdc_bytes) do
       entry =
         %{
           "id" => "vector_" <> String.downcase(unique_ctor),
+          "base_name" => CtorNaming.legacy_base_from_ctor(unique_ctor, vector_kind),
           "ctor" => unique_ctor,
           "filename" => basename,
           "mime" => mime,
@@ -519,12 +562,83 @@ defmodule Ide.Resources.ResourceStore do
   @spec ensure_generated(Project.t()) :: :ok | {:error, Types.resource_error()}
   def ensure_generated(%Project{} = project) do
     workspace = Projects.project_workspace_path(project)
-    write_generated_module(workspace)
+
+    with :ok <- migrate_resource_ctor_names(workspace) do
+      write_generated_module(workspace)
+    end
   end
 
   @spec ensure_generated_workspace(String.t()) :: :ok | {:error, Types.resource_error()}
   def ensure_generated_workspace(workspace) when is_binary(workspace) do
-    write_generated_module(workspace)
+    with :ok <- migrate_resource_ctor_names(workspace) do
+      write_generated_module(workspace)
+    end
+  end
+
+  @spec update_bitmap_base_name(Project.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.resource_error()}
+  def update_bitmap_base_name(%Project{} = project, old_ctor, new_base)
+      when is_binary(old_ctor) and is_binary(new_base) do
+    workspace = Projects.project_workspace_path(project)
+    assets_dir = Path.join(workspace, @assets_rel_dir)
+    manifest_path = Path.join(workspace, @manifest_rel_path)
+
+    with {:ok, manifest} <- read_bitmap_manifest(workspace),
+         %{} = row <- existing_row(manifest, old_ctor),
+         new_ctor <-
+           {:ok,
+            CtorNaming.unique_ctor(
+              :bitmap_static,
+              new_base,
+              manifest["entries"] || [],
+              exclude_ctor: old_ctor
+            )},
+         migrated_row <- {:ok, migrate_bitmap_row_files(assets_dir, row, old_ctor, new_ctor)} do
+      entries =
+        (manifest["entries"] || [])
+        |> Enum.reject(&(Map.get(&1, "ctor") == old_ctor))
+        |> Kernel.++([migrated_row])
+        |> Enum.sort_by(&Map.get(&1, "ctor", ""))
+
+      with :ok <- write_manifest(manifest_path, %{"schema_version" => 1, "entries" => entries}),
+           :ok <- write_generated_module(workspace) do
+        {:ok, %{entry: migrated_row, entries: entries}}
+      end
+    else
+      nil -> {:error, :bitmap_not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec update_vector_base_name(Project.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.resource_error()}
+  def update_vector_base_name(%Project{} = project, old_ctor, new_base)
+      when is_binary(old_ctor) and is_binary(new_base) do
+    workspace = Projects.project_workspace_path(project)
+    assets_dir = Path.join(workspace, @vector_assets_rel_dir)
+    manifest_path = Path.join(workspace, @vector_manifest_rel_path)
+
+    with {:ok, manifest} <- read_vector_manifest(workspace),
+         %{} = row <- Enum.find(manifest["entries"] || [], &(Map.get(&1, "ctor") == old_ctor)),
+         kind <- {:ok, CtorNaming.vector_kind_from_row(row)},
+         new_ctor <-
+           {:ok,
+            CtorNaming.unique_ctor(kind, new_base, manifest["entries"] || [], exclude_ctor: old_ctor)},
+         migrated_row <- {:ok, migrate_vector_row_files(assets_dir, row, old_ctor, new_ctor, kind)} do
+      entries =
+        (manifest["entries"] || [])
+        |> Enum.reject(&(Map.get(&1, "ctor") == old_ctor))
+        |> Kernel.++([migrated_row])
+        |> Enum.sort_by(&Map.get(&1, "ctor", ""))
+
+      with :ok <- write_manifest(manifest_path, %{"schema_version" => 1, "entries" => entries}),
+           :ok <- write_generated_module(workspace) do
+        {:ok, %{entry: migrated_row, entries: entries}}
+      end
+    else
+      nil -> {:error, :vector_not_found}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   @spec bitmap_file_path(Project.t(), String.t()) :: {:ok, String.t()} | {:error, Types.resource_error()}
@@ -779,6 +893,18 @@ defmodule Ide.Resources.ResourceStore do
 
   def vector_file_path_by_id(_project, _), do: {:error, :vector_not_found}
 
+  @spec animation_file_path_by_id(Project.t(), integer()) :: {:ok, String.t()} | {:error, Types.resource_error()}
+  def animation_file_path_by_id(%Project{} = project, id) when is_integer(id) and id >= 1 do
+    with {:ok, entries} <- AnimationStore.list(project),
+         %{} = row <- Enum.at(entries, id - 1) do
+      AnimationStore.animation_file_path(project, row.ctor)
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  def animation_file_path_by_id(_project, _), do: {:error, :not_found}
+
   @spec read_bitmap_manifest(Types.workspace_path()) :: {:ok, Types.manifest()} | {:error, Types.resource_error()}
   defp read_bitmap_manifest(workspace) do
     path = Path.join(workspace, @manifest_rel_path)
@@ -847,90 +973,139 @@ defmodule Ide.Resources.ResourceStore do
         _ -> []
       end
 
+    animation_entries =
+      case read_animation_manifest(workspace) do
+        {:ok, manifest} -> file_backed_animation_entries(workspace, manifest["entries"] || [])
+        _ -> []
+      end
+
     path = Path.join(workspace, @generated_module_rel_path)
     legacy = Path.join(workspace, @legacy_generated_module_rel_path)
 
     with :ok <- File.mkdir_p(Path.dirname(path)),
          :ok <-
-           File.write(path, generated_module_source(bitmap_entries, font_entries, vector_entries)) do
+           File.write(
+             path,
+             generated_module_source(bitmap_entries, font_entries, vector_entries, animation_entries)
+           ) do
       _ = File.rm(legacy)
       :ok
     end
   end
 
-  @spec generated_module_source([Types.manifest_entry()], [Types.manifest_entry()], [Types.manifest_entry()]) ::
-          String.t()
-  defp generated_module_source(bitmap_entries, font_entries, vector_entries) do
+  defp read_animation_manifest(workspace) do
+    path = Path.join(workspace, @animation_manifest_rel_path)
+
+    case File.read(path) do
+      {:ok, json} ->
+        case Jason.decode(json) do
+          {:ok, manifest} when is_map(manifest) -> {:ok, manifest}
+          _ -> {:error, :invalid_manifest}
+        end
+
+      {:error, :enoent} ->
+        {:ok, %{"schema_version" => 1, "entries" => []}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp file_backed_animation_entries(workspace, entries) when is_list(entries) do
+    assets_root = Path.join(workspace, "watch/resources/animations")
+
+    Enum.filter(entries, fn row ->
+      filename = to_string(Map.get(row, "filename", ""))
+      filename != "" and File.exists?(Path.join(assets_root, filename))
+    end)
+  end
+
+  @spec generated_module_source(
+          [Types.manifest_entry()],
+          [Types.manifest_entry()],
+          [Types.manifest_entry()],
+          [Types.manifest_entry()]
+        ) :: String.t()
+  defp generated_module_source(bitmap_entries, font_entries, vector_entries, animation_entries) do
     bitmap_rows =
       bitmap_entries
       |> Enum.map(&normalize_bitmap_row/1)
       |> Enum.reject(&(&1.ctor == ""))
+      |> sort_generated_resource_rows(:bitmap)
 
     font_rows =
       font_entries
       |> Enum.map(&normalize_font_row/1)
       |> Enum.reject(&(&1.ctor == ""))
+      |> sort_generated_resource_rows(:font)
 
-    vector_rows =
-      vector_entries
+    {static_vector_entries, animated_vector_entries} =
+      Enum.split_with(vector_entries, &(CtorNaming.vector_kind_from_row(&1) == :vector_static))
+
+    static_vector_rows =
+      static_vector_entries
       |> Enum.map(&normalize_vector_row/1)
       |> Enum.reject(&(&1.ctor == ""))
+      |> sort_generated_resource_rows(:vector)
 
-    {bitmap_type_decl, bitmap_all_decl} =
-      case Enum.map(bitmap_rows, & &1.ctor) do
-        [] ->
-          {"type Bitmap\n    = NoBitmap",
-           "allBitmaps : List Bitmap\nallBitmaps =\n    [ NoBitmap ]"}
+    animated_vector_rows =
+      animated_vector_entries
+      |> Enum.map(&normalize_vector_row/1)
+      |> Enum.reject(&(&1.ctor == ""))
+      |> sort_generated_resource_rows(:vector)
 
-        list ->
-          type_rows = Enum.map_join(list, "\n    | ", & &1)
-          all_rows = Enum.map_join(list, ", ", & &1)
+    animated_bitmap_rows =
+      animation_entries
+      |> Enum.map(&normalize_animation_row/1)
+      |> Enum.reject(&(&1.ctor == ""))
+      |> sort_generated_resource_rows(:animation)
 
-          {"type Bitmap\n    = #{type_rows}",
-           "allBitmaps : List Bitmap\nallBitmaps =\n    [ #{all_rows} ]"}
-      end
+    {static_bitmap_type_decl, static_bitmap_all_decl, static_bitmap_info_decl} =
+      generated_named_resource_section(
+        type_name: "StaticBitmap",
+        nil_ctor: "NoStaticBitmap",
+        all_name: "allStaticBitmaps",
+        info_type: "StaticBitmapInfo",
+        info_fn: "staticBitmapInfo",
+        record_field: "staticBitmap",
+        rows: bitmap_rows,
+        dimension_fields: true
+      )
 
-    bitmap_info_decl =
-      case bitmap_rows do
-        [] ->
-          """
-          type alias BitmapInfo =
-              { bitmap : Bitmap
-              , name : String
-              , width : Int
-              , height : Int
-              }
+    {animated_bitmap_type_decl, animated_bitmap_all_decl, animated_bitmap_info_decl} =
+      generated_named_resource_section(
+        type_name: "AnimatedBitmap",
+        nil_ctor: "NoAnimatedBitmap",
+        all_name: "allAnimatedBitmaps",
+        info_type: "AnimatedBitmapInfo",
+        info_fn: "animatedBitmapInfo",
+        record_field: "animatedBitmap",
+        rows: animated_bitmap_rows,
+        dimension_fields: true,
+        animation_fields: true
+      )
 
-          bitmapInfo : Bitmap -> BitmapInfo
-          bitmapInfo bitmap =
-              case bitmap of
-                  NoBitmap ->
-                      { bitmap = NoBitmap, name = "NoBitmap", width = 0, height = 0 }
-          """
+    {static_vector_type_decl, static_vector_all_decl, static_vector_info_decl} =
+      generated_named_resource_section(
+        type_name: "StaticVector",
+        nil_ctor: "NoStaticVector",
+        all_name: "allStaticVectors",
+        info_type: "StaticVectorInfo",
+        info_fn: "staticVectorInfo",
+        record_field: "staticVector",
+        rows: static_vector_rows
+      )
 
-        rows ->
-          cases =
-            Enum.map_join(rows, "\n", fn row ->
-              """
-                  #{row.ctor} ->
-                      { bitmap = #{row.ctor}, name = "#{elm_string(row.name)}", width = #{row.width}, height = #{row.height} }
-              """
-            end)
-
-          """
-          type alias BitmapInfo =
-              { bitmap : Bitmap
-              , name : String
-              , width : Int
-              , height : Int
-              }
-
-          bitmapInfo : Bitmap -> BitmapInfo
-          bitmapInfo bitmap =
-              case bitmap of
-          #{cases}
-          """
-      end
+    {animated_vector_type_decl, animated_vector_all_decl, animated_vector_info_decl} =
+      generated_named_resource_section(
+        type_name: "AnimatedVector",
+        nil_ctor: "NoAnimatedVector",
+        all_name: "allAnimatedVectors",
+        info_type: "AnimatedVectorInfo",
+        info_fn: "animatedVectorInfo",
+        record_field: "animatedVector",
+        rows: animated_vector_rows
+      )
 
     {font_type_decl, font_all_decl} =
       case Enum.map(font_rows, & &1.ctor) do
@@ -986,70 +1161,45 @@ defmodule Ide.Resources.ResourceStore do
           """
       end
 
-    {vector_type_decl, vector_all_decl} =
-      case Enum.map(vector_rows, & &1.ctor) do
-        [] ->
-          {"type VectorGraphic\n    = NoVectorGraphic",
-           "allVectorGraphics : List VectorGraphic\nallVectorGraphics =\n    [ NoVectorGraphic ]"}
-
-        list ->
-          type_rows = Enum.map_join(list, "\n    | ", & &1)
-          all_rows = Enum.map_join(list, ", ", & &1)
-
-          {"type VectorGraphic\n    = #{type_rows}",
-           "allVectorGraphics : List VectorGraphic\nallVectorGraphics =\n    [ #{all_rows} ]"}
-      end
-
-    vector_info_decl =
-      case vector_rows do
-        [] ->
-          """
-          type alias VectorGraphicInfo =
-              { vector : VectorGraphic
-              , name : String
-              }
-
-          vectorInfo : VectorGraphic -> VectorGraphicInfo
-          vectorInfo vector =
-              case vector of
-                  NoVectorGraphic ->
-                      { vector = NoVectorGraphic, name = "NoVectorGraphic" }
-          """
-
-        rows ->
-          cases =
-            Enum.map_join(rows, "\n", fn row ->
-              """
-                  #{row.ctor} ->
-                      { vector = #{row.ctor}, name = "#{elm_string(row.name)}" }
-              """
-            end)
-
-          """
-          type alias VectorGraphicInfo =
-              { vector : VectorGraphic
-              , name : String
-              }
-
-          vectorInfo : VectorGraphic -> VectorGraphicInfo
-          vectorInfo vector =
-              case vector of
-          #{cases}
-          """
-      end
-
     """
-    module Pebble.Ui.Resources exposing (Bitmap(..), BitmapInfo, Font(..), FontInfo, VectorGraphic(..), VectorGraphicInfo, allBitmaps, allFonts, allVectorGraphics, bitmapInfo, fontInfo, vectorInfo)
+    module Pebble.Ui.Resources exposing
+        ( AnimatedBitmap(..)
+        , AnimatedBitmapInfo
+        , AnimatedVector(..)
+        , AnimatedVectorInfo
+        , Font(..)
+        , FontInfo
+        , StaticBitmap(..)
+        , StaticBitmapInfo
+        , StaticVector(..)
+        , StaticVectorInfo
+        , allAnimatedBitmaps
+        , allAnimatedVectors
+        , allFonts
+        , allStaticBitmaps
+        , allStaticVectors
+        , animatedBitmapInfo
+        , animatedVectorInfo
+        , fontInfo
+        , staticBitmapInfo
+        , staticVectorInfo
+        )
 
     {-| Generated from the resources configured on the project settings Resources page.
     Edit bitmap, vector, and font assets there instead of editing this read-only file.
     -}
 
-    #{bitmap_type_decl}
+    #{static_bitmap_type_decl}
 
-    #{bitmap_all_decl}
+    #{static_bitmap_all_decl}
 
-    #{bitmap_info_decl}
+    #{static_bitmap_info_decl}
+
+    #{animated_bitmap_type_decl}
+
+    #{animated_bitmap_all_decl}
+
+    #{animated_bitmap_info_decl}
 
     #{font_type_decl}
 
@@ -1057,17 +1207,205 @@ defmodule Ide.Resources.ResourceStore do
 
     #{font_info_decl}
 
-    #{vector_type_decl}
+    #{static_vector_type_decl}
 
-    #{vector_all_decl}
+    #{static_vector_all_decl}
 
-    #{vector_info_decl}
+    #{static_vector_info_decl}
+
+    #{animated_vector_type_decl}
+
+    #{animated_vector_all_decl}
+
+    #{animated_vector_info_decl}
     """
+  end
+
+  defp generated_named_resource_section(opts) do
+    type_name = Keyword.fetch!(opts, :type_name)
+    nil_ctor = Keyword.fetch!(opts, :nil_ctor)
+    all_name = Keyword.fetch!(opts, :all_name)
+    info_type = Keyword.fetch!(opts, :info_type)
+    info_fn = Keyword.fetch!(opts, :info_fn)
+    record_field = Keyword.fetch!(opts, :record_field)
+    rows = Keyword.fetch!(opts, :rows)
+    dimension_fields? = Keyword.get(opts, :dimension_fields, false)
+    animation_fields? = Keyword.get(opts, :animation_fields, false)
+
+    ctors = Enum.map(rows, & &1.ctor)
+
+    {type_decl, all_decl} =
+      case ctors do
+        [] ->
+          {"""
+           type #{type_name}
+               = #{nil_ctor}
+           """,
+           """
+           #{all_name} : List #{type_name}
+           #{all_name} =
+               [ #{nil_ctor} ]
+           """}
+
+        list ->
+          type_rows = Enum.map_join(list, "\n    | ", & &1)
+          all_rows = Enum.map_join(list, ", ", & &1)
+
+          {"""
+           type #{type_name}
+               = #{type_rows}
+           """,
+           """
+           #{all_name} : List #{type_name}
+           #{all_name} =
+               [ #{all_rows} ]
+           """}
+      end
+
+    info_decl =
+      case rows do
+        [] ->
+          empty_info_decl(type_name, nil_ctor, info_type, info_fn, record_field, dimension_fields?, animation_fields?)
+
+        row_list ->
+          cases =
+            Enum.map_join(row_list, "\n", fn row ->
+              info_case_row(row, record_field, dimension_fields?, animation_fields?)
+            end)
+
+          populated_info_decl(type_name, info_type, info_fn, record_field, dimension_fields?, animation_fields?, cases)
+      end
+
+    {type_decl, all_decl, info_decl}
+  end
+
+  defp empty_info_decl(type_name, nil_ctor, info_type, info_fn, record_field, dimension_fields?, animation_fields?) do
+    record_fields = info_record_fields(type_name, record_field, dimension_fields?, animation_fields?)
+    nil_record = info_record_literal(record_field, nil_ctor, nil_ctor, 0, 0, 0, 0, dimension_fields?, animation_fields?)
+
+    """
+    type alias #{info_type} =
+        { #{record_fields}
+        }
+
+    #{info_fn} : #{type_name} -> #{info_type}
+    #{info_fn} #{record_field} =
+        case #{record_field} of
+            #{nil_ctor} ->
+                #{nil_record}
+    """
+  end
+
+  defp populated_info_decl(type_name, info_type, info_fn, record_field, dimension_fields?, animation_fields?, cases) do
+    record_fields = info_record_fields(type_name, record_field, dimension_fields?, animation_fields?)
+
+    """
+    type alias #{info_type} =
+        { #{record_fields}
+        }
+
+    #{info_fn} : #{type_name} -> #{info_type}
+    #{info_fn} #{record_field} =
+        case #{record_field} of
+    #{cases}
+    """
+  end
+
+  defp info_record_fields(type_name, record_field, dimension_fields?, animation_fields?) do
+    parts =
+      ["#{record_field} : #{type_name}", "name : String"]
+      |> maybe_add_info_field(dimension_fields?, "width : Int")
+      |> maybe_add_info_field(dimension_fields?, "height : Int")
+      |> maybe_add_info_field(animation_fields?, "frameCount : Int")
+      |> maybe_add_info_field(animation_fields?, "durationMs : Int")
+
+    Enum.join(parts, "\n    , ")
+  end
+
+  defp maybe_add_info_field(parts, true, field), do: parts ++ [field]
+  defp maybe_add_info_field(parts, false, _field), do: parts
+
+  defp info_case_row(row, record_field, dimension_fields?, animation_fields?) do
+    literal =
+      info_record_literal(
+        record_field,
+        row.ctor,
+        row.ctor,
+        Map.get(row, :width, 0),
+        Map.get(row, :height, 0),
+        Map.get(row, :frame_count, 0),
+        Map.get(row, :duration_ms, 0),
+        dimension_fields?,
+        animation_fields?
+      )
+
+    """
+            #{row.ctor} ->
+                #{literal}
+    """
+  end
+
+  defp info_record_literal(record_field, value_ctor, name, width, height, frame_count, duration_ms, dimension_fields?, animation_fields?) do
+    parts =
+      ["#{record_field} = #{value_ctor}", ~s(name = "#{elm_string(name)}")]
+      |> maybe_add_info_literal(dimension_fields?, "width = #{width}")
+      |> maybe_add_info_literal(dimension_fields?, "height = #{height}")
+      |> maybe_add_info_literal(animation_fields?, "frameCount = #{frame_count}")
+      |> maybe_add_info_literal(animation_fields?, "durationMs = #{duration_ms}")
+
+    "{ " <> Enum.join(parts, ", ") <> " }"
+  end
+
+  defp maybe_add_info_literal(parts, true, field), do: parts ++ [field]
+  defp maybe_add_info_literal(parts, false, _field), do: parts
+
+  @spec sort_generated_resource_rows([map()], :bitmap | :font | :vector | :animation) :: [map()]
+  defp sort_generated_resource_rows(rows, kind) when is_list(rows) and kind in [:bitmap, :font, :vector, :animation] do
+    Enum.sort_by(rows, &resource_row_sort_key(&1, kind))
+  end
+
+  defp resource_row_sort_key(%{ctor: ctor}, :font), do: {0, ctor}
+
+  defp resource_row_sort_key(%{ctor: ctor}, :bitmap) do
+    {resource_prefix_rank(ctor, CtorNaming.prefix(:bitmap_static)), ctor}
+  end
+
+  defp resource_row_sort_key(%{ctor: ctor}, :animation) do
+    {resource_prefix_rank(ctor, CtorNaming.prefix(:bitmap_animated)), ctor}
+  end
+
+  defp resource_row_sort_key(%{ctor: ctor}, :vector) do
+    rank =
+      cond do
+        String.starts_with?(ctor, CtorNaming.prefix(:vector_static)) -> 0
+        String.starts_with?(ctor, CtorNaming.prefix(:vector_animated)) -> 1
+        true -> 2
+      end
+
+    {rank, ctor}
+  end
+
+  defp resource_prefix_rank(ctor, expected_prefix) when is_binary(ctor) and is_binary(expected_prefix) do
+    if String.starts_with?(ctor, expected_prefix), do: 0, else: 1
+  end
+
+  defp normalize_animation_row(row) when is_map(row) do
+    normalized = CtorNaming.ensure_row!(row, :bitmap_animated)
+    ctor = to_string(Map.get(normalized, "ctor", ""))
+
+    %{
+      ctor: ctor,
+      name: to_string(Map.get(row, "name", ctor)),
+      width: Map.get(row, "width", 0),
+      height: Map.get(row, "height", 0),
+      frame_count: Map.get(row, "frame_count", 0),
+      duration_ms: Map.get(row, "duration_ms", 0)
+    }
   end
 
   @spec normalize_bitmap_row(map()) :: map()
   defp normalize_bitmap_row(row) do
-    normalized = BitmapVariants.normalize_row(row)
+    normalized = row |> BitmapVariants.normalize_row() |> CtorNaming.ensure_row!(:bitmap_static)
     {width, height} = BitmapVariants.primary_dimensions(normalized)
     ctor = Map.get(normalized, "ctor", "")
 
@@ -1092,7 +1430,8 @@ defmodule Ide.Resources.ResourceStore do
 
   @spec normalize_vector_row(map()) :: map()
   defp normalize_vector_row(row) do
-    ctor = to_string(Map.get(row, "ctor", ""))
+    normalized = CtorNaming.ensure_row!(row, CtorNaming.vector_kind_from_row(row))
+    ctor = to_string(Map.get(normalized, "ctor", ""))
 
     %{
       ctor: ctor,
@@ -1245,16 +1584,16 @@ defmodule Ide.Resources.ResourceStore do
   end
 
   defp resolve_bitmap_ctor(manifest, safe_name, ctor_hint) do
-    base = constructor_from_name(safe_name)
+    base = CtorNaming.base_name_from_filename(safe_name)
 
     cond do
       is_binary(ctor_hint) and ctor_hint != "" ->
         ctor_hint
 
       true ->
-        case existing_row(manifest, base) do
+        case existing_row(manifest, CtorNaming.ctor(:bitmap_static, base)) do
           %{"ctor" => ctor} -> ctor
-          _ -> base
+          _ -> CtorNaming.ctor(:bitmap_static, base)
         end
     end
   end
@@ -1310,10 +1649,13 @@ defmodule Ide.Resources.ResourceStore do
       end)
       |> Map.new()
 
+    row = CtorNaming.ensure_row!(normalized, :bitmap_static)
+
     %{
-      id: Map.get(normalized, "id", ""),
-      ctor: Map.get(normalized, "ctor", ""),
-      filename: Map.get(normalized, "filename"),
+      id: Map.get(row, "id", ""),
+      ctor: Map.get(row, "ctor", ""),
+      base_name: Map.get(row, "base_name", ""),
+      filename: Map.get(row, "filename"),
       mime: Map.get(normalized, "mime"),
       bytes: integer_or_zero(Map.get(normalized, "bytes", 0)),
       width: width,
@@ -1782,4 +2124,143 @@ defmodule Ide.Resources.ResourceStore do
   end
 
   defp string_list(_), do: []
+
+  @spec migrate_resource_ctor_names(Types.workspace_path()) :: :ok | {:error, Types.resource_error()}
+  defp migrate_resource_ctor_names(workspace) do
+    with :ok <- migrate_bitmap_manifest(workspace),
+         :ok <- migrate_vector_manifest(workspace),
+         :ok <- AnimationStore.migrate_manifest(workspace) do
+      :ok
+    end
+  end
+
+  defp migrate_bitmap_manifest(workspace) do
+    manifest_path = Path.join(workspace, @manifest_rel_path)
+    assets_dir = Path.join(workspace, @assets_rel_dir)
+
+    case read_bitmap_manifest(workspace) do
+      {:ok, manifest} ->
+        {entries, changed?} =
+          Enum.map_reduce(manifest["entries"] || [], false, fn row, changed ->
+            migrated = migrate_bitmap_row_files(assets_dir, row)
+            {migrated, changed or migrated != row}
+          end)
+
+        if changed? do
+          write_manifest(manifest_path, %{"schema_version" => 1, "entries" => entries})
+        else
+          :ok
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp migrate_vector_manifest(workspace) do
+    manifest_path = Path.join(workspace, @vector_manifest_rel_path)
+    assets_dir = Path.join(workspace, @vector_assets_rel_dir)
+
+    case read_vector_manifest(workspace) do
+      {:ok, manifest} ->
+        {entries, changed?} =
+          Enum.map_reduce(manifest["entries"] || [], false, fn row, changed ->
+            kind = CtorNaming.vector_kind_from_row(row)
+            migrated = migrate_vector_row_files(assets_dir, row, Map.get(row, "ctor"), nil, kind)
+            {migrated, changed or migrated != row}
+          end)
+
+        if changed? do
+          write_manifest(manifest_path, %{"schema_version" => 1, "entries" => entries})
+        else
+          :ok
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp migrate_bitmap_row_files(assets_dir, row, old_ctor \\ nil, new_ctor \\ nil) do
+    old_ctor = old_ctor || Map.get(row, "ctor", "")
+    ensured = CtorNaming.ensure_row!(row, :bitmap_static)
+    new_ctor = new_ctor || Map.get(ensured, "ctor", "")
+
+    if old_ctor == new_ctor do
+      ensured
+    else
+      Enum.each(BitmapVariants.filenames_for_row(row), fn filename ->
+        old_path = Path.join(assets_dir, filename)
+
+        if File.exists?(old_path) do
+          new_filename = String.replace_prefix(filename, old_ctor, new_ctor)
+          File.rename!(old_path, Path.join(assets_dir, new_filename))
+        end
+      end)
+
+      ensured
+      |> rewrite_ctor_in_row_filenames(old_ctor, new_ctor)
+    end
+  end
+
+  defp migrate_vector_row_files(assets_dir, row, old_ctor, new_ctor, kind) do
+    old_ctor = old_ctor || Map.get(row, "ctor", "")
+    ensured = CtorNaming.ensure_row!(row, kind)
+    new_ctor = new_ctor || Map.get(ensured, "ctor", "")
+
+    if old_ctor == new_ctor do
+      ensured
+    else
+      old_filename = Map.get(row, "filename", "#{old_ctor}.pdc")
+      new_filename = "#{new_ctor}.pdc"
+      old_path = Path.join(assets_dir, old_filename)
+      new_path = Path.join(assets_dir, new_filename)
+
+      if File.exists?(old_path) do
+        File.rename!(old_path, new_path)
+      end
+
+      ensured
+      |> Map.put("filename", new_filename)
+    end
+  end
+
+  defp rewrite_ctor_in_row_filenames(row, old_ctor, new_ctor) do
+    variants =
+      row
+      |> Map.get("variants", %{})
+      |> Enum.map(fn {mode, variant} ->
+        filename = Map.get(variant, "filename", "")
+
+        new_filename =
+          if filename != "" do
+            String.replace_prefix(filename, old_ctor, new_ctor)
+          else
+            filename
+          end
+
+        {mode, Map.put(variant, "filename", new_filename)}
+      end)
+      |> Map.new()
+
+    legacy =
+      case Map.get(row, "filename") do
+        filename when is_binary(filename) and filename != "" ->
+          String.replace_prefix(filename, old_ctor, new_ctor)
+
+        other ->
+          other
+      end
+
+    row
+    |> Map.put("variants", variants)
+    |> Map.put("filename", legacy)
+  end
+
+  defp vector_import_kind(extras) do
+    case Map.get(extras, :kind) do
+      "sequence" -> :vector_animated
+      _ -> :vector_static
+    end
+  end
 end

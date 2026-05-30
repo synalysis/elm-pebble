@@ -83,7 +83,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
     case reload do
       {:ok, _} ->
-        DeferredCompanionInit.schedule(scope_key)
+        progress.("Applying companion init follow-ups...")
+        :ok = DeferredCompanionInit.run(scope_key)
+        progress.("Fetching companion HTTP data...")
+        :ok = Ide.Debugger.RuntimeBackgroundDrains.await_idle(scope_key, 120_000)
         {:ok, %{reload: reload}}
 
       {:error, _} = err ->

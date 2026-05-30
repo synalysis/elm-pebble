@@ -1279,7 +1279,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
   test "vector_resource_id_from_value resolves ctor via vector_resource_indices manifest map" do
     context = %{
       vector_resource_indices: %{
-        "WeatherClear" => 1,
+        "VectorStaticWeatherClear" => 1,
         "WeatherCloudy" => 2,
         "WeatherFog" => 3
       }
@@ -1292,18 +1292,18 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
              )
   end
 
-  test "normalize_value_by_type resolves qualified Resources.VectorGraphic maybe payloads" do
+  test "normalize_value_by_type resolves qualified Resources.StaticVector maybe payloads" do
     context = %{
       constructor_tags: [
-        %{union: "VectorGraphic", ctor: "WeatherFog", tag: 2},
-        %{union: "VectorGraphic", ctor: "TransitionClearToFog", tag: 10}
+        %{union: "StaticVector", ctor: "WeatherFog", tag: 2},
+        %{union: "AnimatedVector", ctor: "TransitionClearToFog", tag: 10}
       ]
     }
 
     assert %{"ctor" => "Just", "args" => [%{"ctor" => "WeatherFog", "args" => [], "tag" => 2}]} =
              CoreIREvaluator.normalize_value_by_type(
                %{"ctor" => "Just", "args" => [2]},
-               "Maybe Resources.VectorGraphic",
+               "Maybe Resources.StaticVector",
                context
              )
   end

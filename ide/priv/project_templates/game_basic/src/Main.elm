@@ -79,7 +79,7 @@ view : Model -> Ui.UiNode
 view model =
     Ui.toUiNode
         [ Ui.clear Color.white
-        , Ui.drawBitmapInRect Resources.NoBitmap { x = 0, y = 0, w = 1, h = 1 }
+        , Ui.drawBitmapInRect Resources.NoStaticBitmap { x = 0, y = 0, w = 1, h = 1 }
         , Ui.fillRect { x = model.x, y = model.y, w = 14, h = 14 } Color.black
         , Ui.rect { x = 104, y = 112, w = 18, h = 36 } Color.black
         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 4, w = 120, h = 24 } ("Best " ++ String.fromInt model.best)

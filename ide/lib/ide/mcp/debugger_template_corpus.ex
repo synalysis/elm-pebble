@@ -300,6 +300,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
     tree
     |> DebuggerPreview.svg_ops(runtime)
+    |> DebuggerPreview.hydrate_animation_svg_ops(project)
     |> DebuggerPreview.hydrate_vector_svg_ops(project)
     |> Enum.map(&canonical_svg_op/1)
     |> Enum.reject(&is_nil/1)

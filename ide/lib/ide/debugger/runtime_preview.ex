@@ -1,7 +1,6 @@
 defmodule Ide.Debugger.RuntimePreview do
   @moduledoc false
 
-  alias Ide.Debugger.DeviceData
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeViewOutput
   alias Ide.Debugger.StepExecution
@@ -127,11 +126,6 @@ defmodule Ide.Debugger.RuntimePreview do
   def render_view_from_surface(_surface_runtime, _target), do: nil
 
   @spec preview_model_for_message(Types.app_model(), String.t() | nil) :: Types.app_model()
-  defp preview_model_for_message(preview_model, message)
-       when is_map(preview_model) and is_binary(message) do
-    DeviceData.apply_subscription_overrides_to_runtime_now(preview_model, message)
-  end
-
   defp preview_model_for_message(preview_model, _message) when is_map(preview_model), do: preview_model
 
   @spec put_debugger_view_tree(Surface.surface_map(), Types.view_output_tree() | nil) ::

@@ -303,6 +303,7 @@ defmodule Ide.Debugger.RuntimeContexts do
   defp step_followup_host(host) do
     %{
       append_event: host.append_event,
+      append_debugger_event: host.append_debugger_event,
       source_root_for_target: host.source_root_for_target,
       apply_step_without_value: host.apply_step_without_value,
       apply_step_with_value: host.apply_step_once,

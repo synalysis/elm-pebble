@@ -435,6 +435,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
         }
         |> maybe_put_rendered_source(row)
 
+      "bitmap_sequence_at" ->
+        %{
+          "type" => "drawBitmapSequenceAt",
+          "label" => "",
+          "children" => [],
+          "animation_id" => map_integer_value(row, "animation_id", 0),
+          "x" => map_integer_value(row, "x", 0),
+          "y" => map_integer_value(row, "y", 0)
+        }
+        |> maybe_put_rendered_source(row)
+
       _ ->
         nil
     end
@@ -567,12 +578,31 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
       "drawVectorSequenceAt" ->
         vector_at_bounds(node, project, :sequence)
 
+      "drawBitmapSequenceAt" ->
+        animation_at_bounds(node, project)
+
       _ ->
         aggregate_child_bounds(node, screen_w, screen_h, project)
     end
   end
 
   defp rendered_bounds_for_node(_node, _screen_w, _screen_h, _project), do: nil
+
+  @spec animation_at_bounds(map(), Project.t() | nil) :: map() | nil
+  defp animation_at_bounds(node, %Project{} = project) when is_map(node) do
+    with animation_id when is_integer(animation_id) and animation_id >= 1 <-
+           Util.map_integer(node, :animation_id),
+         x when is_integer(x) <- Util.map_integer(node, :x),
+         y when is_integer(y) <- Util.map_integer(node, :y),
+         {:ok, path} <- ResourceStore.animation_file_path_by_id(project, animation_id),
+         {:ok, probe} <- Ide.Resources.ApngProbe.probe(path) do
+      %{x: x, y: y, w: max(probe.width, 1), h: max(probe.height, 1)}
+    else
+      _ -> nil
+    end
+  end
+
+  defp animation_at_bounds(_node, _project), do: nil
 
   @spec vector_at_bounds(map(), Project.t() | nil, :image | :sequence) :: map() | nil
   defp vector_at_bounds(node, project, kind) when is_map(node) and kind in [:image, :sequence] do
@@ -1057,6 +1087,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
       "rotatedBitmap" -> ["bitmap_id", "src_w", "src_h", "angle", "center_x", "center_y"]
       "drawVectorAt" -> ["vector_id", "x", "y"]
       "drawVectorSequenceAt" -> ["vector_id", "x", "y"]
+      "drawBitmapSequenceAt" -> ["animation_id", "x", "y"]
       "textInt" -> ["font_id", "x", "y", "value"]
       "textLabel" -> ["font_id", "x", "y", "text"]
       "text" -> ["font_id", "x", "y", "w", "h", "text_align", "text_overflow", "text"]

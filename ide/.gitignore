@@ -25,6 +25,9 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 ide-*.tar
 
+# Built by mix ide.install_gif2apng (see scripts/install_gif2apng.sh).
+/priv/bin/gif2apng
+
 # Ignore assets that are produced by build tools.
 /priv/static/assets/
 

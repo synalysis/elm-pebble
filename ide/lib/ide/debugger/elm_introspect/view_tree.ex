@@ -404,6 +404,7 @@ defmodule Ide.Debugger.ElmIntrospect.ViewTree do
       "rotated_bitmap" => ["Pebble.Ui.rotatedBitmap"],
       "vector_at" => ["Pebble.Ui.drawVectorAt"],
       "vector_sequence_at" => ["Pebble.Ui.drawVectorSequenceAt"],
+      "bitmap_sequence_at" => ["Pebble.Ui.drawBitmapSequenceAt"],
       "arc" => ["Pebble.Ui.arc"],
       "fill_radial" => ["Pebble.Ui.fillRadial"],
       "path_filled" => ["Pebble.Ui.pathFilled"],

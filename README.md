@@ -31,6 +31,7 @@ Container image includes required toolchain binaries:
 
 - `elm` (installed globally via npm)
 - `pebble` CLI (`pebble-tool`)
+- `gif2apng` 1.9 (built from [SourceForge sources](https://sourceforge.net/projects/gif2apng/files/1.9/gif2apng-1.9-src.zip) for animated bitmap GIF upload)
 - a pinned Pebble SDK bundle baked into the image (`PEBBLE_SDK_VERSION`, default `4.9.169`)
 - embedded emulator runtime support (`qemu-pebble` from the installed SDK,
   `pypkjs` from `pebble-tool`, QEMU keymap data, and bzip2 for flash images)

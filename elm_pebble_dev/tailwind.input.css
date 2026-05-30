@@ -36,6 +36,22 @@
   width: 100%;
 }
 
+@media (max-width: 47.99rem) {
+  .site-hero-intro {
+    flex-flow: column nowrap !important;
+    align-items: center !important;
+  }
+
+  .site-hero-headlines {
+    width: 100% !important;
+    text-align: center;
+  }
+
+  .site-hero-headlines .inline-flex {
+    justify-content: center;
+  }
+}
+
 .site-hero-headlines {
   flex: 1 1 0% !important;
   min-width: 0;

@@ -294,6 +294,17 @@ defmodule Ide.Debugger.RuntimeViewOutput do
         }
         |> maybe_put_rendered_source(row)
 
+      "bitmap_sequence_at" ->
+        %{
+          "type" => "drawBitmapSequenceAt",
+          "label" => "",
+          "children" => [],
+          "animation_id" => integer_or_zero(WireValues.map_value(row, "animation_id")),
+          "x" => integer_or_zero(WireValues.map_value(row, "x")),
+          "y" => integer_or_zero(WireValues.map_value(row, "y"))
+        }
+        |> maybe_put_rendered_source(row)
+
       _ ->
         nil
     end

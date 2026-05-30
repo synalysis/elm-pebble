@@ -423,7 +423,7 @@ view model =
     Ui.toUiNode
         ([ Ui.clear Color.white ]
             ++ hud
-            ++ [ Ui.drawBitmapInRect Resources.JumpHero { x = playerX, y = model.playerY, w = playerW, h = playerH } ]
+            ++ [ Ui.drawBitmapInRect Resources.BitmapStaticJumpHero { x = playerX, y = model.playerY, w = playerW, h = playerH } ]
             ++ List.map (drawTile model.offset) tiles
             ++ List.map (drawObstacle model.offset) obstacles
             ++ (if model.alive then

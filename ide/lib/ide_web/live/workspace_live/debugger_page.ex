@@ -1376,6 +1376,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       tree
       |> debugger_watch_svg_ops(assigns.runtime)
       |> hydrate_bitmap_svg_ops(assigns.project)
+      |> DebuggerPreview.hydrate_animation_svg_ops(assigns.project)
       |> DebuggerPreview.hydrate_vector_svg_ops(assigns.project)
 
     unresolved_ops = Enum.filter(svg_ops, &(&1.kind == :unresolved))
@@ -1458,7 +1459,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
               <rect x="0" y="0" width={@screen_w} height={@screen_h} fill="white" />
               <%= for op <- @svg_ops do %>
                 <.debugger_vector_sequence_anim :if={op.kind == :vector_sequence_anim} op={op} />
-                <g :if={op.kind != :vector_sequence_anim}>
+                <image
+                  :if={op.kind == :bitmap_sequence_at and is_binary(op[:href])}
+                  x={op.x}
+                  y={op.y}
+                  width={op.width}
+                  height={op.height}
+                  href={op.href}
+                  preserveAspectRatio="none"
+                />
+                <g :if={op.kind not in [:vector_sequence_anim, :bitmap_sequence_at]}>
                   <title :if={debugger_svg_op_tooltip(op) != nil}>
                     {debugger_svg_op_tooltip(op)}
                   </title>

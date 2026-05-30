@@ -700,9 +700,10 @@ defmodule Ide.ProjectTemplates do
   @spec maybe_copy_template_resources(workspace_path(), template_dir_name()) :: seed_result()
   defp maybe_copy_template_resources(workspace_path, template_dir) do
     source = Paths.priv_path("project_templates/#{template_dir}/resources")
+    target = Path.join(workspace_path, "watch/resources")
 
     if File.dir?(source) do
-      replace_dir(source, Path.join(workspace_path, "watch/resources"))
+      Ide.Projects.WorkspaceMerge.merge_tree(source, target)
     else
       :ok
     end

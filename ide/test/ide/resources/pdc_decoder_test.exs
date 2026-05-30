@@ -4,16 +4,16 @@ defmodule Ide.Resources.PdcDecoderTest do
   alias Ide.Resources.PdcDecoder
 
   @tangram_bird Path.expand(
-                  "../../../priv/project_templates/watchface_tangram_time/resources/vectors/TangramBird.pdc",
+                  "../../../priv/project_templates/watchface_tangram_time/resources/vectors/VectorStaticTangramBird.pdc",
                   __DIR__
                 )
 
   @weather_transition Path.expand(
-                        "../../../priv/project_templates/watchface_weather_animated/resources/vectors/TransitionClearToRain.pdc",
+                        "../../../priv/project_templates/watchface_weather_animated/resources/vectors/VectorAnimatedTransitionClearToRain.pdc",
                         __DIR__
                       )
 
-  test "decode TangramBird.pdc and render preview svg" do
+  test "decode VectorStaticTangramBird.pdc and render preview svg" do
     bytes = File.read!(@tangram_bird)
 
     assert {:ok, image} = PdcDecoder.decode(bytes)

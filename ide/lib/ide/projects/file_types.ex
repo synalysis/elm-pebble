@@ -23,7 +23,7 @@ defmodule Ide.Projects.FileTypes do
 
   @type read_result :: {:ok, binary()} | {:error, path_error() | File.posix()}
   @type write_result :: :ok | {:error, path_error() | File.posix()}
-  @type delete_result :: :ok | {:error, path_error() | File.posix()}
+  @type delete_result :: :ok | {:error, :protected_path | path_error() | File.posix()}
   @type rename_result :: :ok | {:error, path_error() | File.posix()}
   @type ensure_roots_result :: :ok | {:error, File.posix()}
 

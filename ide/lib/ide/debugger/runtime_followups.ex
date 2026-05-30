@@ -17,6 +17,9 @@ defmodule Ide.Debugger.RuntimeFollowups do
           required(:append_event) =>
             (Types.runtime_state(), String.t(), Types.debugger_timeline_payload() ->
                Types.runtime_state()),
+          required(:append_debugger_event) =>
+            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() | nil,
+             Types.timeline_step_message_value() -> Types.runtime_state()),
           required(:apply_step_once) =>
             (Types.runtime_state(), Types.surface_target(), String.t(),
              Types.subscription_payload() | nil, String.t(), String.t() -> Types.runtime_state()),
@@ -87,6 +90,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
         package == "elm/http" and is_map(command) and PendingHttpFollowups.async?() ->
           acc
           |> track_http_command(command)
+          |> append_debugger_http_pending(target, followup_message, command, ctx)
           |> PendingHttpFollowups.enqueue(
             target,
             target_name,
@@ -576,6 +580,29 @@ defmodule Ide.Debugger.RuntimeFollowups do
   end
 
   def track_http_command(state, _command), do: state
+
+  @spec append_debugger_http_pending(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t() | nil,
+          Types.cmd_call(),
+          apply_ctx()
+        ) :: Types.runtime_state()
+  defp append_debugger_http_pending(state, target, followup_message, command, ctx)
+       when target in [:watch, :companion, :phone] and is_map(command) and is_map(ctx) do
+    method = Map.get(command, "method") || "GET"
+    url = Map.get(command, "url") || ""
+    callback = if is_binary(followup_message) and followup_message != "", do: followup_message, else: "?"
+
+    ctx.append_debugger_event.(
+      state,
+      "http",
+      target,
+      "#{method} #{url} → #{callback}",
+      "http_pending",
+      nil
+    )
+  end
 
   @spec reapply_tracked_http_commands(Types.runtime_state(), apply_ctx()) :: Types.runtime_state()
   def reapply_tracked_http_commands(state, ctx) when is_map(state) and is_map(ctx) do

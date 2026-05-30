@@ -100,7 +100,7 @@ defmodule Ide.DebuggerOplistPreviewTest do
              })
 
     assert match?(%{modules: _}, RuntimeArtifacts.decode_core_ir(RuntimeArtifacts.execution_model(state.watch)))
-    assert get_in(state, [:watch, :shell, "bitmap_resource_indices", "JumpHero"]) == 1
+    assert get_in(state, [:watch, :shell, "bitmap_resource_indices", "BitmapStaticJumpHero"]) == 1
 
     initial_offset = get_in(state, [:watch, :model, "runtime_model", "offset"]) || 0
 

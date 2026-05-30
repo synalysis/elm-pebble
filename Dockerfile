@@ -21,13 +21,35 @@ RUN npm run typecheck --prefix assets
 RUN mix assets.deploy
 RUN mix release
 
+# gif2apng 1.9 (Pebble-recommended GIF → APNG converter); not in Debian repos.
+FROM debian:bookworm-slim AS gif2apng-builder
+
+ARG GIF2APNG_VERSION=1.9
+ARG GIF2APNG_SRC_URL=https://sourceforge.net/projects/gif2apng/files/1.9/gif2apng-1.9-src.zip/download
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      curl \
+      unzip \
+      zlib1g-dev && \
+    curl -fsSL -o /tmp/gif2apng.zip "${GIF2APNG_SRC_URL}" && \
+    unzip -q /tmp/gif2apng.zip -d /tmp/gif2apng-src && \
+    make -C /tmp/gif2apng-src && \
+    install -m 0755 /tmp/gif2apng-src/gif2apng /usr/local/bin/gif2apng && \
+    rm -rf /var/lib/apt/lists/* /tmp/gif2apng.zip /tmp/gif2apng-src
+
 FROM debian:bookworm-slim AS runner
 
 ARG PEBBLE_SDK_VERSION=4.9.169
 
+COPY --from=gif2apng-builder /usr/local/bin/gif2apng /usr/local/bin/gif2apng
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       libstdc++6 \
+      zlib1g \
       openssl \
       libncurses6 \
       ca-certificates \

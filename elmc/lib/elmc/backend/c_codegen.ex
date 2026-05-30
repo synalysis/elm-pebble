@@ -5659,6 +5659,19 @@ defmodule Elmc.Backend.CCodegen do
         counter
       )
 
+  defp direct_emit_qualified("Pebble.Ui.drawBitmapSequenceAt", [animation, origin], env, counter),
+    do:
+      direct_append_command(
+        draw_kind(:bitmap_sequence_at),
+        [
+          animation,
+          field_access_expr(origin, "x"),
+          field_access_expr(origin, "y")
+        ],
+        env,
+        counter
+      )
+
   defp direct_emit_qualified("Pebble.Ui.drawRotatedBitmap", args, env, counter),
     do: direct_append_command(draw_kind(:rotated_bitmap), args, env, counter)
 
@@ -7140,6 +7153,18 @@ defmodule Elmc.Backend.CCodegen do
         draw_kind(:vector_sequence_at),
         [
           vector,
+          field_access_expr(origin, "x"),
+          field_access_expr(origin, "y")
+        ],
+        3
+      )
+
+  defp special_value_from_target("Pebble.Ui.drawBitmapSequenceAt", [animation, origin]),
+    do:
+      encoded_cmd_expr(
+        draw_kind(:bitmap_sequence_at),
+        [
+          animation,
           field_access_expr(origin, "x"),
           field_access_expr(origin, "y")
         ],
@@ -9122,6 +9147,7 @@ defmodule Elmc.Backend.CCodegen do
       "RotatedBitmap" -> "Pebble.Ui.drawRotatedBitmap"
       "VectorAt" -> "Pebble.Ui.drawVectorAt"
       "VectorSequenceAt" -> "Pebble.Ui.drawVectorSequenceAt"
+      "BitmapSequenceAt" -> "Pebble.Ui.drawBitmapSequenceAt"
       other -> other
     end
   end

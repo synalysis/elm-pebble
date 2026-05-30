@@ -4,11 +4,11 @@ defmodule ElmExecutor.JnrViewFixTest do
   alias ElmExecutor.Runtime.CoreIREvaluator
 
   test "bitmap_resource_id_from_value resolves ctor via bitmap_resource_indices" do
-    context = %{bitmap_resource_indices: %{"JumpHero" => 2}}
+    context = %{bitmap_resource_indices: %{"BitmapStaticJumpHero" => 2}}
 
     assert {:ok, 2} =
              CoreIREvaluator.bitmap_resource_id_from_value(
-               %{"ctor" => "JumpHero", "args" => []},
+               %{"ctor" => "BitmapStaticJumpHero", "args" => []},
                context
              )
 

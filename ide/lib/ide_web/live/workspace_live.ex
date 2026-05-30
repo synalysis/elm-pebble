@@ -43,6 +43,14 @@ defmodule IdeWeb.WorkspaceLive do
   @type pane :: atom()
   @type dependency_row :: map()
 
+  @valid_resource_views ~w(
+    bitmaps-static
+    bitmaps-animated
+    vectors-static
+    vectors-animated
+    fonts
+  )
+
   @editor_flow_events EditorFlow.editor_events() ++ EditorFlow.file_tab_events()
   @resource_flow_events ResourcesFlow.resource_events()
   @build_flow_events BuildFlow.build_events()
@@ -66,7 +74,7 @@ defmodule IdeWeb.WorkspaceLive do
 
   @impl true
   @spec handle_params(map(), String.t(), socket()) :: lv_noreply()
-  def handle_params(%{"slug" => slug}, _uri, socket) do
+  def handle_params(%{"slug" => slug} = params, _uri, socket) do
     case Projects.get_project_by_slug(slug, socket.assigns.current_user) do
       nil ->
         {:noreply,
@@ -77,18 +85,37 @@ defmodule IdeWeb.WorkspaceLive do
       project ->
         previous_pane = socket.assigns[:pane]
 
-        if State.pane_only_navigation?(socket, project) do
-          {:noreply,
-           socket
-           |> State.assign_pane_switch(project, previous_pane)
-           |> EditorSupport.maybe_open_editor_default_file(project, previous_pane)
-           |> maybe_refresh_debugger()
-           |> EmulatorFlow.maybe_check_emulator_installation()
-           |> DebuggerFlow.maybe_schedule_debugger_auto_fire_refresh()}
-        else
-          {:noreply, load_workspace_project(socket, project, previous_pane)}
+        socket =
+          socket
+          |> assign_resource_view(params)
+
+        cond do
+          socket.assigns.live_action == :resources and is_nil(Map.get(params, "resource_view")) ->
+            {:noreply, push_patch(socket, to: ~p"/projects/#{slug}/resources/bitmaps-static")}
+
+          State.pane_only_navigation?(socket, project) ->
+            {:noreply,
+             socket
+             |> State.assign_pane_switch(project, previous_pane)
+             |> EditorSupport.maybe_open_editor_default_file(project, previous_pane)
+             |> maybe_refresh_debugger()
+             |> EmulatorFlow.maybe_check_emulator_installation()
+             |> DebuggerFlow.maybe_schedule_debugger_auto_fire_refresh()}
+
+          true ->
+            {:noreply, load_workspace_project(socket, project, previous_pane)}
         end
     end
+  end
+
+  defp assign_resource_view(socket, params) when is_map(params) do
+    view =
+      case Map.get(params, "resource_view") do
+        v when v in @valid_resource_views -> v
+        _ -> "bitmaps-static"
+      end
+
+    assign(socket, :resource_view, view)
   end
 
   @spec load_workspace_project(socket(), Projects.Project.t(), pane() | nil) :: socket()
@@ -99,6 +126,7 @@ defmodule IdeWeb.WorkspaceLive do
     tree = Projects.list_source_tree(project)
     {bitmap_resources, bitmap_resources_error} = ResourcesFlow.load_bitmap_resources(project)
     vector_resources = ResourcesFlow.load_vector_resources(project)
+    animation_resources = ResourcesFlow.load_animation_resources(project)
     font_sources = ResourcesFlow.load_font_sources(project)
     font_resources = ResourcesFlow.load_font_resources(project)
     screenshots = ResourcesFlow.load_screenshots(project)
@@ -114,6 +142,7 @@ defmodule IdeWeb.WorkspaceLive do
       bitmap_resources: bitmap_resources,
       bitmap_resources_error: bitmap_resources_error,
       vector_resources: vector_resources,
+      animation_resources: animation_resources,
       font_sources: font_sources,
       font_resources: font_resources,
       screenshots: screenshots,

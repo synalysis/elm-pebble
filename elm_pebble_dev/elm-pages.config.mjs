@@ -30,6 +30,13 @@ export default {
     applyTheme();
     media.addEventListener("change", applyTheme);
   })();
+
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest(".site-header-mobile-menu nav a");
+    if (!link) return;
+    const details = link.closest("details");
+    if (details) details.removeAttribute("open");
+  });
 </script>
     <style>
       @media (max-width: 47.99rem) { header .site-header-desktop-nav { display: none !important; } }
@@ -37,6 +44,11 @@ export default {
       .site-header-mobile-menu details:not([open]) > nav { display: none !important; }
       .site-hero-layout { display: flex !important; flex-direction: column !important; width: 100%; }
       .site-hero-intro { display: flex !important; flex-flow: row nowrap !important; align-items: flex-start !important; gap: 1.5rem; width: 100%; }
+      @media (max-width: 47.99rem) {
+        .site-hero-intro { flex-flow: column nowrap !important; align-items: center !important; }
+        .site-hero-headlines { width: 100% !important; text-align: center; }
+        .site-hero-headlines .inline-flex { justify-content: center; }
+      }
       .site-hero-headlines { flex: 1 1 0% !important; min-width: 0; }
       .site-hero-photo { flex: 0 0 14rem !important; width: 14rem !important; max-width: 14rem !important; overflow: hidden; }
       .site-hero-photo picture, .site-hero-photo img { display: block; width: 14rem !important; max-width: 14rem !important; height: auto !important; }

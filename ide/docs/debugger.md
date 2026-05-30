@@ -81,10 +81,10 @@ The evaluated or parser tree is attached to the surface as `:view_tree` when int
 
 A subscription trigger (for example `MinuteChanged`) is not always a single timeline row:
 
-1. **Ingress** — `SubscriptionPayload` builds the wire message (for example `MinuteChanged 42` from simulator clock fields). `RuntimeModelHydrate` may patch `runtime_model` / `now` from that payload even when Elm `update` returns the same record and only schedules a `Cmd`.
+1. **Ingress** — `SubscriptionPayload` builds the wire message (for example `MinuteChanged 42` from simulator clock fields). The model at this row reflects only what Elm `update` returned for that message (for example Tangram leaves `now` unchanged and schedules `getCurrentDateTime`).
 2. **Elm step** — The primary `update` row shows the returned model and any `Cmd` calls introspect lists for that branch (for example `getCurrentDateTime`).
-3. **Device follow-up** — `DeviceDataResponses` matches those cmds via `DeviceRequest.from_cmd_call/1` (by `name` or qualified `target`, such as `PebbleCmd.getCurrentDateTime`). Hints can merge simulated device fields immediately; a second `apply_step_once` with `message_source: "device_data"` adds a **`CurrentDateTime`** (or other callback) row when the branch declares the callback constructor.
-4. **Preview refresh** — `RuntimePreview` re-derives `Main.view(model)` from the cursor model for SVG output; it does not re-run `update`. Model or view changes on the subscription row can therefore reflect hydration and preview evaluation, not only the Elm-returned model patch.
+3. **Device follow-up** — `DeviceDataResponses` matches those cmds via `DeviceRequest.from_cmd_call/1` (by `name` or qualified `target`, such as `PebbleCmd.getCurrentDateTime`). Simulator clock fields from the triggering subscription are used only to build the synthetic device **response** value, not to patch the model before Elm handles the callback. A second `apply_step_once` with `message_source: "device_data"` adds a **`CurrentDateTime`** (or other callback) row when the branch declares the callback constructor.
+4. **Preview refresh** — `RuntimePreview` re-derives `Main.view(model)` from the cursor model for SVG output; it does not re-run `update`. Clock text on a `MinuteChanged` row therefore stays at the previous `now` until the `CurrentDateTime` row runs.
 
 If a device callback row is missing, check that introspect lists the cmd on that branch and that delivery is not still queued (`:debugger_async_protocol_delivery`).
 

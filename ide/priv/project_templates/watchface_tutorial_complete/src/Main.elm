@@ -204,7 +204,7 @@ view model =
         btIcon =
             case model.connected of
                 Just False ->
-                    [ PebbleUi.drawBitmapInRect UiResources.BtIcon { x = (w - 30) // 2, y = batteryY + 12, w = 30, h = 30 } ]
+                    [ PebbleUi.drawBitmapInRect UiResources.BitmapStaticBtIcon { x = (w - 30) // 2, y = batteryY + 12, w = 30, h = 30 } ]
 
                 _ ->
                     []

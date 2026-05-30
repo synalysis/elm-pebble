@@ -937,7 +937,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     view model =
         Ui.toUiNode
             ([ Ui.clear Color.white ]
-                ++ parallaxBitmap Resources.NoBitmap { x = 0, y = 100, w = 20, h = 8 } model.offset
+                ++ parallaxBitmap Resources.NoStaticBitmap { x = 0, y = 100, w = 20, h = 8 } model.offset
                 ++ List.map (drawItem model.offset) model.items
                 ++ (if model.paused then
                         [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 4, w = 40, h = 12 } "PAUSED" ]
@@ -1139,7 +1139,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     view model =
         Ui.toUiNode
             (Pebble.Game.Sprite.parallaxBitmap
-                Resources.NoBitmap
+                Resources.NoStaticBitmap
                 { x = 0, y = 100, w = 20, h = 8 }
                 model.offset
             )
@@ -2090,9 +2090,9 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
           %{
             "name" => "Pebble.Ui.Resources",
             "unions" => %{
-              "VectorGraphic" => %{
+              "StaticVector" => %{
                 "tags" => %{
-                  "TangramBird" => 0,
+                  "VectorStaticTangramBird" => 0,
                   "TangramComet" => 1
                 }
               }
@@ -2107,7 +2107,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
             %{
               "type" => "drawVectorAt",
               "children" => [
-                %{"type" => "expr", "value" => %{"ctor" => "TangramBird", "args" => []}},
+                %{"type" => "expr", "value" => %{"ctor" => "VectorStaticTangramBird", "args" => []}},
                 %{"type" => "expr", "value" => 8},
                 %{"type" => "expr", "value" => 16}
               ]
@@ -2134,7 +2134,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
       rel_path: "watch/src/Main.elm",
       source: "module Main exposing (main)\n",
       vector_resource_indices: %{
-        "WeatherClear" => 1,
+        "VectorStaticWeatherClear" => 1,
         "WeatherFog" => 3
       },
       introspect: %{

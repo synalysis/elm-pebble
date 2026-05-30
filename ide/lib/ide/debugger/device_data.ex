@@ -65,50 +65,6 @@ defmodule Ide.Debugger.DeviceData do
 
   def apply_subscription_clock_overrides(now, _overrides), do: now
 
-  @doc """
-  Applies subscription payload clock units to a `now` field on a runtime model map.
-
-  Used when stepping subscription messages so `model.now` matches the event the user
-  triggered before device-data followups (for example `CurrentDateTime`) arrive.
-  """
-  @spec apply_subscription_overrides_to_runtime_now(
-          map(),
-          String.t() | nil | %{String.t() => integer()}
-        ) :: map()
-  def apply_subscription_overrides_to_runtime_now(runtime_model, message)
-      when is_map(runtime_model) and is_binary(message) do
-    runtime_model
-    |> apply_subscription_overrides_to_runtime_now(subscription_clock_overrides(message))
-  end
-
-  def apply_subscription_overrides_to_runtime_now(runtime_model, overrides)
-      when is_map(runtime_model) and is_map(overrides) do
-    if map_size(overrides) == 0 do
-      runtime_model
-    else
-      case Map.get(runtime_model, "now") do
-        %{"ctor" => "Just", "args" => [value]} = now when is_map(value) ->
-          Map.put(runtime_model, "now", Map.put(now, "args", [apply_clock_map_overrides(value, overrides)]))
-
-        %{"$ctor" => "Just", "$args" => [value]} = now when is_map(value) ->
-          Map.put(runtime_model, "now", Map.put(now, "$args", [apply_clock_map_overrides(value, overrides)]))
-
-        _ ->
-          runtime_model
-      end
-    end
-  end
-
-  def apply_subscription_overrides_to_runtime_now(runtime_model, _overrides) when is_map(runtime_model),
-    do: runtime_model
-
-  @spec apply_clock_map_overrides(Types.app_model(), %{String.t() => integer()}) :: Types.app_model()
-  defp apply_clock_map_overrides(value, overrides) when is_map(value) and is_map(overrides) do
-    Enum.reduce(overrides, value, fn {key, int}, acc ->
-      if is_binary(key) and is_integer(int), do: Map.put(acc, key, int), else: acc
-    end)
-  end
-
   @spec integer_message_payload(String.t()) :: integer() | nil
   defp integer_message_payload(message) when is_binary(message) do
     message

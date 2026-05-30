@@ -30,7 +30,8 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
     :elm_executor_core_ir,
     :elm_executor_metadata,
     :vector_resource_indices,
-    :bitmap_resource_indices
+    :bitmap_resource_indices,
+    :animation_resource_indices
   ]
 
   @type t :: %__MODULE__{
@@ -46,7 +47,8 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
           elm_executor_core_ir: Types.core_ir(),
           elm_executor_metadata: map() | nil,
           vector_resource_indices: map() | nil,
-          bitmap_resource_indices: map() | nil
+          bitmap_resource_indices: map() | nil,
+          animation_resource_indices: map() | nil
         }
 
   @type wire_map :: ExecutorTypes.execution_input_map()
@@ -74,6 +76,7 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
     |> Map.merge(RuntimeArtifacts.execution_artifacts(execution_model))
     |> RuntimeArtifacts.put_vector_resource_indices_on_request(execution_model)
     |> RuntimeArtifacts.put_bitmap_resource_indices_on_request(execution_model)
+    |> RuntimeArtifacts.put_animation_resource_indices_on_request(execution_model)
     |> then(&struct!(__MODULE__, &1))
     |> validate!()
   end

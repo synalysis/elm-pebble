@@ -64,6 +64,7 @@ defmodule IdeWeb.Router do
       live "/settings", SettingsLive, :index
       live "/projects/:slug/editor", WorkspaceLive, :editor
       live "/projects/:slug/resources", WorkspaceLive, :resources
+      live "/projects/:slug/resources/:resource_view", WorkspaceLive, :resources
       live "/projects/:slug/packages", WorkspaceLive, :packages
       live "/projects/:slug/debugger", WorkspaceLive, :debugger
       live "/projects/:slug/build", WorkspaceLive, :build

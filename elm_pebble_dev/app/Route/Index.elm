@@ -318,16 +318,10 @@ hero =
         [ div
             [ classes [ Tw.raw "site-hero-layout" ] ]
             [ div
-                [ classes [ Tw.raw "site-hero-intro" ]
-                , attribute
-                    "style"
-                    "display:flex;flex-flow:row nowrap;align-items:flex-start;gap:1.5rem;width:100%"
-                ]
+                [ classes [ Tw.raw "site-hero-intro" ] ]
                 [ heroImage
                 , div
-                    [ classes [ Tw.raw "site-hero-headlines" ]
-                    , attribute "style" "flex:1 1 0%;min-width:0"
-                    ]
+                    [ classes [ Tw.raw "site-hero-headlines" ] ]
                     [ span
                         [ classes
                             [ Tw.inline_flex
@@ -421,12 +415,9 @@ betaNotice =
 heroImage : Html.Html msg
 heroImage =
     div
-        [ classes [ Tw.raw "site-hero-photo" ]
-        , attribute "style" "flex:0 0 14rem;width:14rem;max-width:14rem"
-        ]
+        [ classes [ Tw.raw "site-hero-photo" ] ]
         [ node "picture"
-            [ attribute "style" "display:block;width:14rem;max-width:14rem"
-            ]
+            []
             [ node "source"
                 [ attribute "srcset" "/pebble-elm-hero.webp"
                 , type_ "image/webp"
@@ -438,7 +429,6 @@ heroImage =
                 , attribute "loading" "eager"
                 , attribute "width" "280"
                 , attribute "height" "224"
-                , attribute "style" "display:block;width:14rem;max-width:14rem;height:auto"
                 , classes
                     [ Tw.rounded_lg
                     , Tw.border

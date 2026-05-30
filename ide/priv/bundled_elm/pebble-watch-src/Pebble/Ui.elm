@@ -1,5 +1,6 @@
 module Pebble.Ui exposing
-    ( Bitmap
+    ( AnimatedBitmap
+    , AnimatedVector
     , Context
     , ContextSetting(..)
     , Font
@@ -13,8 +14,9 @@ module Pebble.Ui exposing
     , TextAlignment(..)
     , TextOptions
     , TextOverflow(..)
+    , StaticBitmap
+    , StaticVector
     , UiNode
-    , VectorGraphic
     , WindowNode
     , alignCenter
     , alignLeft
@@ -89,7 +91,7 @@ render bridge to keep view logic in pure Elm.
 
 # Resources, labels and path/context helpers
 
-@docs Label, Context, Bitmap, Font, VectorGraphic, Path, Point, Rect, Rotation, TextAlignment, TextOverflow, TextOptions, defaultTextOptions, alignLeft, alignCenter, alignRight, wordWrap, trailingEllipsis, fillOverflow, context, path, rotationFromPebbleAngle, rotationFromDegrees
+@docs Label, Context, StaticBitmap, AnimatedBitmap, StaticVector, AnimatedVector, Font, Path, Point, Rect, Rotation, TextAlignment, TextOverflow, TextOptions, defaultTextOptions, alignLeft, alignCenter, alignRight, wordWrap, trailingEllipsis, fillOverflow, context, path, rotationFromPebbleAngle, rotationFromDegrees
 
 
 # Drawing settings
@@ -133,10 +135,11 @@ type RenderOp
     | Circle Int Int Int Int
     | FillCircle Int Int Int Int
     | Group Context
-    | BitmapInRect Bitmap Int Int Int Int
-    | RotatedBitmap Bitmap Int Int Int Int Int
-    | VectorAt VectorGraphic Int Int
-    | VectorSequenceAt VectorGraphic Int Int
+    | BitmapInRect StaticBitmap Int Int Int Int
+    | RotatedBitmap StaticBitmap Int Int Int Int Int
+    | VectorAt StaticVector Int Int
+    | VectorSequenceAt AnimatedVector Int Int
+    | BitmapSequenceAt AnimatedBitmap Int Int
     | PathFilled Path
     | PathOutline Path
     | PathOutlineOpen Path
@@ -157,10 +160,16 @@ type alias Context =
     ( List ContextSetting, List RenderOp )
 
 
-{-| Bitmap resource handle from `Pebble.Ui.Resources`.
+{-| Static bitmap resource handle from `Pebble.Ui.Resources`.
 -}
-type alias Bitmap =
-    UiResources.Bitmap
+type alias StaticBitmap =
+    UiResources.StaticBitmap
+
+
+{-| Animated bitmap (APNG) resource handle from `Pebble.Ui.Resources`.
+-}
+type alias AnimatedBitmap =
+    UiResources.AnimatedBitmap
 
 
 {-| Font resource handle from `Pebble.Ui.Resources`.
@@ -169,10 +178,16 @@ type alias Font =
     UiResources.Font
 
 
-{-| Vector graphic resource handle from `Pebble.Ui.Resources`.
+{-| Static vector resource handle from `Pebble.Ui.Resources`.
 -}
-type alias VectorGraphic =
-    UiResources.VectorGraphic
+type alias StaticVector =
+    UiResources.StaticVector
+
+
+{-| Animated vector sequence resource handle from `Pebble.Ui.Resources`.
+-}
+type alias AnimatedVector =
+    UiResources.AnimatedVector
 
 
 {-| Path geometry for path draw operations.
@@ -414,30 +429,37 @@ context settings commands =
 
 {-| Draw bitmap resource in the provided rectangle.
 -}
-drawBitmapInRect : Bitmap -> Rect -> RenderOp
+drawBitmapInRect : StaticBitmap -> Rect -> RenderOp
 drawBitmapInRect bitmap bounds =
     BitmapInRect bitmap bounds.x bounds.y bounds.w bounds.h
 
 
 {-| Draw bitmap resource using width/height, angle and center point.
 -}
-drawRotatedBitmap : Bitmap -> Rect -> Rotation -> Point -> RenderOp
+drawRotatedBitmap : StaticBitmap -> Rect -> Rotation -> Point -> RenderOp
 drawRotatedBitmap bitmap srcRect rotation center =
     RotatedBitmap bitmap srcRect.w srcRect.h (rotationToPebbleAngle rotation) center.x center.y
 
 
-{-| Draw a Pebble Draw Command vector resource at the given origin.
+{-| Draw a static vector resource at the given origin.
 -}
-drawVectorAt : VectorGraphic -> Point -> RenderOp
+drawVectorAt : StaticVector -> Point -> RenderOp
 drawVectorAt vector origin =
     VectorAt vector origin.x origin.y
 
 
-{-| Draw a Pebble Draw Command sequence resource at the given origin.
+{-| Draw an animated vector sequence at the given origin.
 -}
-drawVectorSequenceAt : VectorGraphic -> Point -> RenderOp
+drawVectorSequenceAt : AnimatedVector -> Point -> RenderOp
 drawVectorSequenceAt vector origin =
     VectorSequenceAt vector origin.x origin.y
+
+
+{-| Draw an animated bitmap (APNG) sequence at the given origin.
+-}
+drawBitmapSequenceAt : AnimatedBitmap -> Point -> RenderOp
+drawBitmapSequenceAt animation origin =
+    BitmapSequenceAt animation origin.x origin.y
 
 
 {-| Group operations under a temporary style context.

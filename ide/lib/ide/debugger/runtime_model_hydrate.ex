@@ -1,7 +1,6 @@
 defmodule Ide.Debugger.RuntimeModelHydrate do
   @moduledoc ""
 
-  alias Ide.Debugger.DeviceData
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.Types
@@ -19,35 +18,15 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
   defp hydrate_runtime_model_message_payload(runtime_model, message, skip_fields)
        when is_map(runtime_model) and is_binary(message) and is_list(skip_fields) do
     constructor = RuntimeModelMessages.wire_constructor(message)
-    int_payload = integer_message_payload(message)
     payload = elm_message_payload(message)
-
-    runtime_model =
-      cond do
-        constructor == "MinuteChanged" and is_integer(int_payload) ->
-          put_payload_integer_if_needed(runtime_model, "minute", int_payload, constructor)
-
-        constructor == "HourChanged" and is_integer(int_payload) ->
-          put_payload_integer_if_needed(runtime_model, "hour", int_payload, constructor)
-
-        true ->
-          runtime_model
-      end
 
     cond do
       not is_nil(payload) ->
         maybe_put_message_payload_field(runtime_model, constructor, payload, skip_fields)
 
-      constructor == "MinuteChanged" and is_integer(int_payload) ->
-        runtime_model
-
-      constructor == "HourChanged" and is_integer(int_payload) ->
-        runtime_model
-
       true ->
         runtime_model
     end
-    |> DeviceData.apply_subscription_overrides_to_runtime_now(message)
   end
 
   defp hydrate_runtime_model_message_payload(runtime_model, _message, _skip_fields)
@@ -441,25 +420,6 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
   defp launch_context_color_capability(_launch_context), do: nil
 
-  @spec put_payload_integer_if_needed(
-          Types.runtime_model_patch(),
-          String.t(),
-          integer(),
-          String.t()
-        ) :: Types.runtime_model_patch()
-  defp put_payload_integer_if_needed(runtime_model, key, value, constructor)
-       when is_map(runtime_model) and is_binary(key) and is_integer(value) do
-    case Map.get(runtime_model, key) do
-      current when is_integer(current) ->
-        runtime_model
-
-      current ->
-        if message_constructor_value?(current, constructor),
-          do: Map.put(runtime_model, key, value),
-          else: runtime_model
-    end
-  end
-
   @spec message_constructor_value?(Types.protocol_ctor_value(), String.t()) :: boolean()
   defp message_constructor_value?(value, constructor)
        when is_map(value) and is_binary(constructor) do
@@ -468,22 +428,4 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
   end
 
   defp message_constructor_value?(_value, _constructor), do: false
-
-  @spec integer_message_payload(Types.wire_input()) :: integer() | nil
-  defp integer_message_payload(message) when is_binary(message) do
-    message
-    |> String.trim()
-    |> String.split(~r/\s+/, parts: 2)
-    |> case do
-      [_constructor, payload] ->
-        case Integer.parse(String.trim(payload)) do
-          {value, ""} -> value
-          _ -> nil
-        end
-
-      _ ->
-        nil
-    end
-  end
-
 end

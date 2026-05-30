@@ -9,11 +9,9 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.View do
   alias ElmEx.Frontend.GeneratedParser
   alias ElmEx.Frontend.Project
   alias ElmEx.IR.Lowerer
-  alias ElmExecutor.Runtime.CoreIRContract
   alias ElmExecutor.Runtime.CoreIREvaluator
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
-  alias ElmExecutor.Runtime.ViewTreeIntrinsics
   @doc """
   Derives drawable preview rows from a parser-shaped view tree and runtime model.
 
@@ -88,6 +86,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.View do
       "fillCircle",
       "drawVectorAt",
       "drawVectorSequenceAt",
+      "drawBitmapSequenceAt",
       "bitmapInRect",
       "rotatedBitmap",
       "path",
@@ -421,6 +420,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.View do
       "vectorAt" -> ["vector_id", "x", "y"]
       "drawVectorSequenceAt" -> ["vector_id", "x", "y"]
       "vectorSequenceAt" -> ["vector_id", "x", "y"]
+      "drawBitmapSequenceAt" -> ["animation_id", "x", "y"]
+      "bitmapSequenceAt" -> ["animation_id", "x", "y"]
       "textInt" -> ["font_id", "x", "y", "value"]
       "textLabel" -> ["font_id", "x", "y", "text"]
       "text" -> ["font_id", "x", "y", "w", "h", "text_align", "text_overflow", "text"]
@@ -999,6 +1000,25 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.View do
 
   def bitmap_resource_indices_context(_request, _current_model), do: %{}
 
+  @spec animation_resource_indices_context(map(), map()) :: map()
+  def animation_resource_indices_context(request, current_model)
+      when is_map(request) and is_map(current_model) do
+    indices =
+      Execution.map_value(request, :animation_resource_indices) ||
+        Map.get(current_model, "animation_resource_indices") ||
+        Map.get(current_model, :animation_resource_indices)
+
+    case normalize_animation_resource_indices(indices) do
+      %{} = normalized when map_size(normalized) > 0 ->
+        %{animation_resource_indices: normalized}
+
+      _ ->
+        %{}
+    end
+  end
+
+  def animation_resource_indices_context(_request, _current_model), do: %{}
+
   @spec normalize_bitmap_resource_indices(map() | nil) :: map()
   defp normalize_bitmap_resource_indices(indices) when is_map(indices) do
     Enum.reduce(indices, %{}, fn
@@ -1014,6 +1034,22 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.View do
   end
 
   defp normalize_bitmap_resource_indices(_indices), do: %{}
+
+  @spec normalize_animation_resource_indices(map() | nil) :: map()
+  defp normalize_animation_resource_indices(indices) when is_map(indices) do
+    Enum.reduce(indices, %{}, fn
+      {ctor, id}, acc when is_binary(ctor) and is_integer(id) and id >= 1 ->
+        Map.put(acc, ctor, id)
+
+      {ctor, id}, acc when is_atom(ctor) and is_integer(id) and id >= 1 ->
+        Map.put(acc, Atom.to_string(ctor), id)
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp normalize_animation_resource_indices(_indices), do: %{}
 
   @spec normalize_vector_resource_indices(map() | nil) :: map()
   defp normalize_vector_resource_indices(indices) when is_map(indices) do
@@ -1530,6 +1566,17 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.View do
               [unresolved_view_output_row(node, type, ints, 3)]
           end
 
+        type when type in ["drawBitmapSequenceAt", "bitmapSequenceAt"] ->
+          case animation_at_args_from_node(node, ints, runtime_model, eval_context) do
+            {:ok, [animation_id, x, y]} ->
+              [
+                %{"kind" => "bitmap_sequence_at", "animation_id" => animation_id, "x" => x, "y" => y}
+              ]
+
+            :error ->
+              [unresolved_view_output_row(node, type, ints, 3)]
+          end
+
         "pixel" ->
           case require_ints(ints, 3) do
             {:ok, [x, y, color]} ->
@@ -2018,6 +2065,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.View do
       "vectorAt" -> 3
       "drawVectorSequenceAt" -> 3
       "vectorSequenceAt" -> 3
+      "drawBitmapSequenceAt" -> 3
+      "bitmapSequenceAt" -> 3
       "pixel" -> 3
       "textInt" -> 4
       "textLabel" -> 3
@@ -2085,6 +2134,55 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.View do
   end
 
   defp vector_at_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
+
+  @spec animation_at_args_from_node(map(), [integer()], map(), map()) :: SemTypes.draw_args()
+  defp animation_at_args_from_node(node, ints, runtime_model, eval_context)
+       when is_map(node) and is_list(ints) and is_map(runtime_model) and is_map(eval_context) do
+    case require_ints(ints, 3) do
+      {:ok, [animation_id, x, y]} ->
+        {:ok, [animation_id, x, y]}
+
+      :error ->
+        case ViewTreeEval.node_children(node) do
+          [animation_node, x_node, y_node | _] ->
+            with animation_id when is_integer(animation_id) <-
+                   preview_animation_id(animation_node, runtime_model, eval_context),
+                 x when is_integer(x) <- ViewTreeEval.eval_view_int(x_node, runtime_model, eval_context),
+                 y when is_integer(y) <- ViewTreeEval.eval_view_int(y_node, runtime_model, eval_context) do
+              {:ok, [animation_id, x, y]}
+            else
+              _ -> :error
+            end
+
+          [animation_node, point_node | _] ->
+            with animation_id when is_integer(animation_id) <-
+                   preview_animation_id(animation_node, runtime_model, eval_context),
+                 {:ok, [x, y]} <- point_pair_from_node(point_node, runtime_model, eval_context) do
+              {:ok, [animation_id, x, y]}
+            else
+              _ -> :error
+            end
+
+          _ ->
+            :error
+        end
+    end
+  end
+
+  defp animation_at_args_from_node(_node, _ints, _runtime_model, _eval_context), do: :error
+
+  @spec preview_animation_id(map() | EvalTypes.runtime_value(), map(), map()) :: integer() | nil
+  defp preview_animation_id(node, runtime_model, eval_context) do
+    eval_view_animation_id(node, Map.put(eval_context, :runtime_model, runtime_model))
+  end
+
+  @spec eval_view_animation_id(map() | EvalTypes.runtime_value(), map()) :: integer() | nil
+  defp eval_view_animation_id(value, context) do
+    case CoreIREvaluator.animation_resource_id_from_value(value, context) do
+      {:ok, id} -> id
+      :error -> nil
+    end
+  end
 
   @spec eval_view_vector_id(map() | EvalTypes.runtime_value(), map()) :: integer() | nil
   defp eval_view_vector_id(value, context)

@@ -6,6 +6,7 @@ defmodule Ide.Debugger.ElmIntrospect.EffectAnalysis.Subscriptions do
 
   alias Ide.Debugger.ElmIntrospect.EffectAnalysis.CmdCalls
   alias Ide.Debugger.ElmIntrospect.EffectAnalysis.Support
+  alias Ide.Debugger.Types.CmdCall
 
   def subscriptions_outline(nil, _), do: []
 

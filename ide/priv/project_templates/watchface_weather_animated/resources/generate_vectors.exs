@@ -1,7 +1,7 @@
 # Run from the ide app root:
 #   mix run priv/project_templates/watchface_weather_animated/resources/generate_vectors.exs
 
-alias Ide.Resources.{PdcDecoder, PdcEncoder, SvgConverter}
+alias Ide.Resources.{CtorNaming, PdcDecoder, PdcEncoder, SvgConverter}
 
 script_dir = Path.dirname(Path.expand(__ENV__.file))
 vectors_dir = Path.join(script_dir, "vectors")
@@ -135,13 +135,14 @@ File.mkdir_p!(vectors_dir)
 
 manifest_entries =
   for condition <- conditions do
-    ctor = "Weather#{condition}"
+    ctor = CtorNaming.ctor(:vector_static, "Weather#{condition}")
     pdc_path = Path.join(vectors_dir, "#{ctor}.pdc")
     size = convert_image.(Map.fetch!(condition_svg, condition), pdc_path)
     IO.puts("Wrote #{pdc_path} (#{size} bytes)")
 
     %{
       "id" => "vector_#{String.downcase(ctor)}",
+      "base_name" => CtorNaming.legacy_base_from_ctor(ctor, :vector_static),
       "ctor" => ctor,
       "filename" => "#{ctor}.pdc",
       "mime" => "application/octet-stream",
@@ -157,7 +158,7 @@ transition_entries =
       target <- conditions,
       target != "Unknown",
       source != target do
-    ctor = "Transition#{source}To#{target}"
+    ctor = CtorNaming.ctor(:vector_animated, "Transition#{source}To#{target}")
     pdc_path = Path.join(vectors_dir, "#{ctor}.pdc")
 
     size =
@@ -170,6 +171,7 @@ transition_entries =
 
     %{
       "id" => "vector_#{String.downcase(ctor)}",
+      "base_name" => CtorNaming.legacy_base_from_ctor(ctor, :vector_animated),
       "ctor" => ctor,
       "filename" => "#{ctor}.pdc",
       "mime" => "application/octet-stream",

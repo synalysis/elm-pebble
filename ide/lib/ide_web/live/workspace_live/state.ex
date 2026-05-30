@@ -18,6 +18,7 @@ defmodule IdeWeb.WorkspaceLive.State do
           required(:bitmap_resources) => list(),
           optional(:bitmap_resources_error) => String.t() | nil,
           optional(:vector_resources) => list(),
+          optional(:animation_resources) => list(),
           required(:font_sources) => list(),
           required(:font_resources) => list(),
           required(:screenshots) => list(),
@@ -194,6 +195,9 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:bitmap_upload_output, nil)
     |> assign(:vector_resources, [])
     |> assign(:vector_upload_output, nil)
+    |> assign(:resource_view, "bitmaps-static")
+    |> assign(:animation_resources, [])
+    |> assign(:animation_upload_output, nil)
     |> assign(:font_sources, [])
     |> assign(:font_resources, [])
     |> assign(:font_upload_output, nil)
@@ -204,9 +208,18 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:rename_form, to_form(%{"new_rel_path" => ""}, as: :rename))
     |> assign(:diagnostics, [])
     |> allow_upload(:bitmap,
-      accept: ~w(.png .bmp .jpg .jpeg .gif .webp),
+      accept: ~w(.png .bmp .jpg .jpeg .webp),
       max_entries: 10,
-      max_file_size: 2_500_000
+      max_file_size: 2_500_000,
+      auto_upload: true,
+      progress: &resource_upload_progress/3
+    )
+    |> allow_upload(:animation,
+      accept: ~w(.gif .png image/gif image/png image/*),
+      max_entries: 10,
+      max_file_size: 2_500_000,
+      auto_upload: true,
+      progress: &resource_upload_progress/3
     )
     |> allow_upload(:vector,
       accept: ~w(.pdc .svg),
@@ -299,6 +312,7 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:bitmap_resources, Map.fetch!(data, :bitmap_resources))
     |> assign(:bitmap_resources_error, Map.get(data, :bitmap_resources_error))
     |> assign(:vector_resources, Map.get(data, :vector_resources, []))
+    |> assign(:animation_resources, Map.get(data, :animation_resources, []))
     |> assign(:font_sources, Map.fetch!(data, :font_sources))
     |> assign(:font_resources, Map.fetch!(data, :font_resources))
     |> assign(:screenshots, Map.fetch!(data, :screenshots))
@@ -415,6 +429,8 @@ defmodule IdeWeb.WorkspaceLive.State do
   def supported_target_platforms do
     ["aplite", "basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
   end
+
+  defp resource_upload_progress(_name, _entry, socket), do: {:noreply, socket}
 
   @spec target_platforms_form_value([String.t()] | String.t() | nil) :: [String.t()]
   def target_platforms_form_value(value) when is_list(value) do

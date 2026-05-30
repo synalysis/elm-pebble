@@ -14,7 +14,7 @@ defmodule ElmExecutor.Runtime.ViewTreeIntrinsics do
     __add__ __sub__ __mul__ __fdiv__ __idiv__ __pow__
   )a
 
-  @spec int_call_names() :: [String.t()]
+  @spec int_call_names() :: [atom()]
   def int_call_names, do: @int_call_names
 
   @spec int_call_name?(String.t()) :: boolean()
@@ -22,7 +22,7 @@ defmodule ElmExecutor.Runtime.ViewTreeIntrinsics do
 
   def int_call_name?(_), do: false
 
-  @spec intrinsic_operator_names() :: [String.t()]
+  @spec intrinsic_operator_names() :: [atom()]
   def intrinsic_operator_names, do: @intrinsic_operator_names
 
   @spec intrinsic_operator?(String.t()) :: boolean()

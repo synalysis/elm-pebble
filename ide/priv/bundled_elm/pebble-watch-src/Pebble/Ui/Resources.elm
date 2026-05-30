@@ -1,41 +1,75 @@
 module Pebble.Ui.Resources exposing
-    ( Bitmap(..)
-    , BitmapInfo
+    ( AnimatedBitmap(..)
+    , AnimatedBitmapInfo
+    , AnimatedVector(..)
+    , AnimatedVectorInfo
     , Font(..)
     , FontInfo
-    , VectorGraphic(..)
-    , VectorGraphicInfo
-    , allBitmaps
+    , StaticBitmap(..)
+    , StaticBitmapInfo
+    , StaticVector(..)
+    , StaticVectorInfo
+    , allAnimatedBitmaps
+    , allAnimatedVectors
     , allFonts
-    , allVectorGraphics
-    , bitmapInfo
+    , allStaticBitmaps
+    , allStaticVectors
+    , animatedBitmapInfo
+    , animatedVectorInfo
     , fontInfo
-    , vectorInfo
+    , staticBitmapInfo
+    , staticVectorInfo
     )
 
 
-type Bitmap
-    = NoBitmap
+type StaticBitmap
+    = NoStaticBitmap
 
 
-type alias BitmapInfo =
-    { bitmap : Bitmap
+type alias StaticBitmapInfo =
+    { staticBitmap : StaticBitmap
     , name : String
     , width : Int
     , height : Int
     }
 
 
-allBitmaps : List Bitmap
-allBitmaps =
-    [ NoBitmap ]
+allStaticBitmaps : List StaticBitmap
+allStaticBitmaps =
+    [ NoStaticBitmap ]
 
 
-bitmapInfo : Bitmap -> BitmapInfo
-bitmapInfo bitmap =
-    case bitmap of
-        NoBitmap ->
-            { bitmap = NoBitmap, name = "NoBitmap", width = 0, height = 0 }
+staticBitmapInfo : StaticBitmap -> StaticBitmapInfo
+staticBitmapInfo staticBitmap =
+    case staticBitmap of
+        NoStaticBitmap ->
+            { staticBitmap = NoStaticBitmap, name = "NoStaticBitmap", width = 0, height = 0 }
+
+
+type AnimatedBitmap
+    = NoAnimatedBitmap
+
+
+type alias AnimatedBitmapInfo =
+    { animatedBitmap : AnimatedBitmap
+    , name : String
+    , width : Int
+    , height : Int
+    , frameCount : Int
+    , durationMs : Int
+    }
+
+
+allAnimatedBitmaps : List AnimatedBitmap
+allAnimatedBitmaps =
+    [ NoAnimatedBitmap ]
+
+
+animatedBitmapInfo : AnimatedBitmap -> AnimatedBitmapInfo
+animatedBitmapInfo animatedBitmap =
+    case animatedBitmap of
+        NoAnimatedBitmap ->
+            { animatedBitmap = NoAnimatedBitmap, name = "NoAnimatedBitmap", width = 0, height = 0, frameCount = 0, durationMs = 0 }
 
 
 type Font
@@ -61,23 +95,45 @@ fontInfo font =
             { font = DefaultFont, name = "DefaultFont", height = 0 }
 
 
-type VectorGraphic
-    = NoVectorGraphic
+type StaticVector
+    = NoStaticVector
 
 
-type alias VectorGraphicInfo =
-    { vector : VectorGraphic
+type alias StaticVectorInfo =
+    { staticVector : StaticVector
     , name : String
     }
 
 
-allVectorGraphics : List VectorGraphic
-allVectorGraphics =
-    [ NoVectorGraphic ]
+allStaticVectors : List StaticVector
+allStaticVectors =
+    [ NoStaticVector ]
 
 
-vectorInfo : VectorGraphic -> VectorGraphicInfo
-vectorInfo vector =
-    case vector of
-        NoVectorGraphic ->
-            { vector = NoVectorGraphic, name = "NoVectorGraphic" }
+staticVectorInfo : StaticVector -> StaticVectorInfo
+staticVectorInfo staticVector =
+    case staticVector of
+        NoStaticVector ->
+            { staticVector = NoStaticVector, name = "NoStaticVector" }
+
+
+type AnimatedVector
+    = NoAnimatedVector
+
+
+type alias AnimatedVectorInfo =
+    { animatedVector : AnimatedVector
+    , name : String
+    }
+
+
+allAnimatedVectors : List AnimatedVector
+allAnimatedVectors =
+    [ NoAnimatedVector ]
+
+
+animatedVectorInfo : AnimatedVector -> AnimatedVectorInfo
+animatedVectorInfo animatedVector =
+    case animatedVector of
+        NoAnimatedVector ->
+            { animatedVector = NoAnimatedVector, name = "NoAnimatedVector" }

@@ -758,6 +758,11 @@ defmodule Ide.Projects do
     ResourceStore.import_bitmap(project, upload_path, original_name, opts)
   end
 
+  @doc false
+  def import_bitmaps_from_directory(%Project{} = project, dir \\ nil, opts \\ []) do
+    ResourceStore.import_bitmaps_from_directory(project, dir, opts)
+  end
+
   @doc """
   Removes one monochrome or color variant from a bitmap resource.
   """
@@ -799,6 +804,41 @@ defmodule Ide.Projects do
   @spec delete_vector_resource(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.project_error()}
   def delete_vector_resource(%Project{} = project, ctor) do
     ResourceStore.delete_vector(project, ctor)
+  end
+
+  @spec list_animation_resources(Project.t()) ::
+          {:ok, [Ide.Resources.AnimationStore.animation_entry()]} | {:error, Types.project_error()}
+  def list_animation_resources(%Project{} = project) do
+    Ide.Resources.AnimationStore.list(project)
+  end
+
+  @spec import_animation_resource(Project.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.project_error()}
+  def import_animation_resource(%Project{} = project, upload_path, original_name) do
+    Ide.Resources.AnimationStore.import_animation(project, upload_path, original_name)
+  end
+
+  @spec delete_animation_resource(Project.t(), String.t()) :: {:ok, [map()]} | {:error, Types.project_error()}
+  def delete_animation_resource(%Project{} = project, ctor) do
+    Ide.Resources.AnimationStore.delete_animation(project, ctor)
+  end
+
+  @spec update_bitmap_resource_base_name(Project.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.project_error()}
+  def update_bitmap_resource_base_name(%Project{} = project, old_ctor, new_base) do
+    ResourceStore.update_bitmap_base_name(project, old_ctor, new_base)
+  end
+
+  @spec update_vector_resource_base_name(Project.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.project_error()}
+  def update_vector_resource_base_name(%Project{} = project, old_ctor, new_base) do
+    ResourceStore.update_vector_base_name(project, old_ctor, new_base)
+  end
+
+  @spec update_animation_resource_base_name(Project.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.project_error()}
+  def update_animation_resource_base_name(%Project{} = project, old_ctor, new_base) do
+    Ide.Resources.AnimationStore.update_base_name(project, old_ctor, new_base)
   end
 
   @doc """

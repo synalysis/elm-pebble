@@ -100,7 +100,7 @@ defmodule Ide.Mcp.WeatherWatchfaceShowcaseTest do
     generated = Path.join(workspace, ResourceStore.generated_module_rel_path())
     source = File.read!(generated)
     assert String.contains?(source, "ClearToCloudy")
-    assert String.contains?(source, "type VectorGraphic")
+    assert String.contains?(source, "type StaticVector")
   end
 
   test "debugger weather watchface renders fog vector id from project manifest" do

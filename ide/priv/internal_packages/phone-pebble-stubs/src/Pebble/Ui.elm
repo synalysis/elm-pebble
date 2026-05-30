@@ -1,5 +1,5 @@
 module Pebble.Ui exposing
-    ( Bitmap
+    ( StaticBitmap
     , Context
     , ContextSetting(..)
     , Font
@@ -76,8 +76,8 @@ type alias Context =
     ( List ContextSetting, List RenderOp )
 
 
-type alias Bitmap =
-    Resources.Bitmap
+type alias StaticBitmap =
+    Resources.StaticBitmap
 
 
 type alias Font =
@@ -190,12 +190,12 @@ context settings ops =
     ( settings, ops )
 
 
-drawBitmapInRect : Bitmap -> Rect -> RenderOp
+drawBitmapInRect : StaticBitmap -> Rect -> RenderOp
 drawBitmapInRect _ _ =
     RenderOp
 
 
-drawRotatedBitmap : Bitmap -> Rect -> Rotation -> Point -> RenderOp
+drawRotatedBitmap : StaticBitmap -> Rect -> Rotation -> Point -> RenderOp
 drawRotatedBitmap _ _ _ _ =
     RenderOp
 

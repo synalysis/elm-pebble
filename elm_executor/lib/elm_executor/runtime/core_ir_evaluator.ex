@@ -640,11 +640,47 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
           _ -> :no_builtin
         end
 
+      {"pebble.ui.drawbitmapsequenceat", [animation, origin]} ->
+        with {:ok, normalized_animation_id} <- normalize_animation_id(animation, context),
+             {:ok, {x, y}} <- normalize_point(origin) do
+          {:ok,
+           ui_node(
+             "drawBitmapSequenceAt",
+             Enum.map([normalized_animation_id, x, y], &expr_node/1)
+           )}
+        else
+          _ -> :no_builtin
+        end
+
       {"pebble.ui.drawvectorsequenceat", [vector, x, y]} ->
         with {:ok, normalized_vector_id} <- normalize_vector_id(vector, context),
              true <- is_integer(x) and is_integer(y) do
           {:ok,
            ui_node("drawVectorSequenceAt", Enum.map([normalized_vector_id, x, y], &expr_node/1))}
+        else
+          _ -> :no_builtin
+        end
+
+      {"Pebble.Ui.drawBitmapSequenceAt", [animation, origin]} ->
+        with {:ok, normalized_animation_id} <- normalize_animation_id(animation, context),
+             {:ok, {x, y}} <- normalize_point(origin) do
+          {:ok,
+           ui_node(
+             "drawBitmapSequenceAt",
+             Enum.map([normalized_animation_id, x, y], &expr_node/1)
+           )}
+        else
+          _ -> :no_builtin
+        end
+
+      {"pebble.ui.drawbitmapsequenceat", [animation, x, y]} ->
+        with {:ok, normalized_animation_id} <- normalize_animation_id(animation, context),
+             true <- is_integer(x) and is_integer(y) do
+          {:ok,
+           ui_node(
+             "drawBitmapSequenceAt",
+             Enum.map([normalized_animation_id, x, y], &expr_node/1)
+           )}
         else
           _ -> :no_builtin
         end
@@ -3194,7 +3230,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     ctor = to_string(ctor)
 
     cond do
-      ctor in ["NoBitmap"] ->
+      ctor in ["NoBitmap", "NoStaticBitmap"] ->
         {:ok, 0}
 
       is_integer(tag) ->
@@ -3216,7 +3252,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
 
   @spec bitmap_id_from_union_tag(integer(), map()) :: non_neg_integer()
   defp bitmap_id_from_union_tag(tag, context) when is_integer(tag) and is_map(context) do
-    if is_integer(constructor_tag_for_ctor("NoBitmap", context)) do
+    no_bitmap_ctor =
+      if is_integer(constructor_tag_for_ctor("NoStaticBitmap", context)),
+        do: "NoStaticBitmap",
+        else: "NoBitmap"
+
+    if is_integer(constructor_tag_for_ctor(no_bitmap_ctor, context)) do
       max(tag - 1, 0)
     else
       max(tag, 0)
@@ -3273,7 +3314,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     ctor = to_string(ctor)
 
     cond do
-      ctor in ["NoVectorGraphic"] ->
+      ctor in ["NoVectorGraphic", "NoStaticVector", "NoAnimatedVector"] ->
         {:ok, 0}
 
       is_integer(id = vector_resource_index_for_ctor(ctor, context)) and id >= 1 ->
@@ -3313,7 +3354,16 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp prefer_resource_constructor_entry(entries) when is_list(entries) and entries != [] do
     Enum.find(entries, fn entry ->
       union = to_string(Map.get(entry, :union) || Map.get(entry, "union") || "")
-      union in ["VectorGraphic", "Bitmap", "Font"]
+      union in [
+        "VectorGraphic",
+        "Bitmap",
+        "Font",
+        "Animation",
+        "StaticBitmap",
+        "AnimatedBitmap",
+        "StaticVector",
+        "AnimatedVector"
+      ]
     end) || List.first(entries)
   end
 
@@ -3334,6 +3384,74 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   end
 
   defp vector_resource_index_for_ctor(_ctor, _context), do: nil
+
+  @spec animation_resource_id_from_value(EvalTypes.runtime_value(), map()) ::
+          {:ok, non_neg_integer()} | :error
+  def animation_resource_id_from_value(value, context \\ %{}),
+    do: normalize_animation_id(value, context)
+
+  @spec normalize_animation_id(EvalTypes.runtime_value(), map()) :: {:ok, non_neg_integer()} | :error
+  defp normalize_animation_id(value, context)
+
+  defp normalize_animation_id(value, _context) when is_integer(value), do: {:ok, max(value, 0)}
+
+  defp normalize_animation_id(%{"ctor" => ctor, "args" => args} = value, context)
+       when is_map(value) and is_list(args) do
+    animation_resource_id_from_ctor(ctor, Map.get(value, "tag"), context)
+  end
+
+  defp normalize_animation_id(%{ctor: ctor, args: args} = value, context)
+       when is_map(value) and is_list(args) do
+    animation_resource_id_from_ctor(ctor, Map.get(value, :tag), context)
+  end
+
+  defp normalize_animation_id(%{"tag" => tag}, _context) when is_integer(tag),
+    do: {:ok, max(tag, 0)}
+
+  defp normalize_animation_id(%{tag: tag}, _context) when is_integer(tag), do: {:ok, max(tag, 0)}
+
+  defp normalize_animation_id(_, _context), do: :error
+
+  @spec animation_resource_id_from_ctor(String.t() | atom(), integer() | nil, map()) ::
+          {:ok, non_neg_integer()} | :error
+  defp animation_resource_id_from_ctor(ctor, tag, context) do
+    ctor = to_string(ctor)
+
+    cond do
+      ctor in ["NoAnimation", "NoAnimatedBitmap"] ->
+        {:ok, 0}
+
+      is_integer(id = animation_resource_index_for_ctor(ctor, context)) and id >= 1 ->
+        {:ok, id}
+
+      is_integer(tag) ->
+        {:ok, tag + 1}
+
+      is_integer(tag = constructor_tag_for_ctor(ctor, context)) ->
+        {:ok, tag + 1}
+
+      true ->
+        :error
+    end
+  end
+
+  @spec animation_resource_index_for_ctor(String.t() | atom(), map()) :: integer() | nil
+  defp animation_resource_index_for_ctor(ctor, context) when is_map(context) do
+    ctor =
+      ctor
+      |> to_string()
+      |> String.trim()
+
+    context
+    |> Map.get(:animation_resource_indices, %{})
+    |> Map.get(ctor)
+    |> case do
+      id when is_integer(id) and id >= 1 -> id
+      _ -> nil
+    end
+  end
+
+  defp animation_resource_index_for_ctor(_ctor, _context), do: nil
 
   @spec normalize_font_id(EvalTypes.runtime_value()) :: {:ok, non_neg_integer()} | :error
   defp normalize_font_id(value) when is_integer(value), do: {:ok, value}

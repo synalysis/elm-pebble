@@ -1096,14 +1096,22 @@ defmodule Ide.PebbleToolchain do
     with {:ok, bitmap_entries} <- stage_bitmap_resources(workspace_root, app_root),
          {:ok, font_entries} <- stage_font_resources(workspace_root, app_root),
          {:ok, vector_entries} <- stage_vector_resources(workspace_root, app_root),
-         :ok <- write_resource_id_header(app_root, bitmap_entries, font_entries, vector_entries) do
-      {:ok, bitmap_entries ++ font_entries ++ vector_entries}
+         {:ok, animation_entries} <- stage_animation_resources(workspace_root, app_root),
+         :ok <-
+           write_resource_id_header(
+             app_root,
+             bitmap_entries,
+             font_entries,
+             vector_entries,
+             animation_entries
+           ) do
+      {:ok, bitmap_entries ++ font_entries ++ vector_entries ++ animation_entries}
     end
   end
 
-  @spec write_resource_id_header(String.t(), [map()], [map()], [map()]) ::
+  @spec write_resource_id_header(String.t(), [map()], [map()], [map()], [map()]) ::
           :ok | {:error, toolchain_error()}
-  defp write_resource_id_header(app_root, bitmap_entries, font_entries, vector_entries) do
+  defp write_resource_id_header(app_root, bitmap_entries, font_entries, vector_entries, animation_entries) do
     header_path = Path.join(app_root, "src/c/generated/resource_ids.h")
 
     bitmap_cases =
@@ -1129,6 +1137,13 @@ defmodule Ide.PebbleToolchain do
 
     vector_cases =
       vector_entries
+      |> Enum.with_index(1)
+      |> Enum.map_join("\n", fn {entry, index} ->
+        "    case #{index}: return RESOURCE_ID_#{Map.fetch!(entry, "name")};"
+      end)
+
+    animation_cases =
+      animation_entries
       |> Enum.with_index(1)
       |> Enum.map_join("\n", fn {entry, index} ->
         "    case #{index}: return RESOURCE_ID_#{Map.fetch!(entry, "name")};"
@@ -1166,6 +1181,13 @@ defmodule Ide.PebbleToolchain do
     static inline uint32_t elm_pebble_vector_resource_id(int64_t vector_id) {
       switch (vector_id) {
     #{vector_cases}
+        default: return ELM_PEBBLE_RESOURCE_ID_MISSING;
+      }
+    }
+
+    static inline uint32_t elm_pebble_animation_resource_id(int64_t animation_id) {
+      switch (animation_id) {
+    #{animation_cases}
         default: return ELM_PEBBLE_RESOURCE_ID_MISSING;
       }
     }
@@ -1330,6 +1352,55 @@ defmodule Ide.PebbleToolchain do
                   %{
                     "type" => "raw",
                     "name" => "VECTOR_" <> macro_name(ctor),
+                    "file" => package_rel
+                  }
+                ]
+              else
+                []
+              end
+            end)
+
+          {:ok, media_entries}
+        else
+          _ -> {:ok, []}
+        end
+
+      {:error, :enoent} ->
+        {:ok, []}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @spec stage_animation_resources(String.t(), String.t()) :: {:ok, [map()]} | {:error, toolchain_error()}
+  defp stage_animation_resources(workspace_root, app_root) do
+    manifest_path = Path.join(workspace_root, "watch/resources/animations.json")
+    assets_root = Path.join(workspace_root, "watch/resources/animations")
+
+    case File.read(manifest_path) do
+      {:ok, json} ->
+        with {:ok, decoded} <- Jason.decode(json),
+             entries when is_list(entries) <- Map.get(decoded, "entries", []) do
+          media_entries =
+            entries
+            |> Enum.filter(&is_map/1)
+            |> Enum.flat_map(fn row ->
+              ctor = to_string(Map.get(row, "ctor", "Animation"))
+              filename = to_string(Map.get(row, "filename", ""))
+              source_path = Path.join(assets_root, filename)
+              package_rel = Path.join("animations", filename)
+              target_rel = Path.join("resources", package_rel)
+              target_path = Path.join(app_root, target_rel)
+
+              if filename != "" and File.exists?(source_path) do
+                :ok = File.mkdir_p(Path.dirname(target_path))
+                :ok = File.cp(source_path, target_path)
+
+                [
+                  %{
+                    "type" => "raw",
+                    "name" => "ANIMATION_" <> macro_name(ctor),
                     "file" => package_rel
                   }
                 ]

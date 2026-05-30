@@ -2,13 +2,6 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.ViewTreeEval do
   @moduledoc false
   @dialyzer :no_match
 
-  alias ElmExecutor.Runtime.SemanticExecutor.Execution
-
-  alias ElmEx.CoreIR
-  alias ElmEx.Frontend.GeneratedParser
-  alias ElmEx.Frontend.Project
-  alias ElmEx.IR.Lowerer
-  alias ElmExecutor.Runtime.CoreIRContract
   alias ElmExecutor.Runtime.CoreIREvaluator
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes

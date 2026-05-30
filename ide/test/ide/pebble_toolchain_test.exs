@@ -84,6 +84,17 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ ~s(args ++ ["--version", trimmed])
   end
 
+  test "toolchain stages animation raw resources and resource id header" do
+    source = File.read!("lib/ide/pebble_toolchain.ex")
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert source =~ "stage_animation_resources"
+    assert source =~ "elm_pebble_animation_resource_id"
+    assert template =~ "ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT"
+    assert template =~ "ELMC_PEBBLE_DRAW_BITMAP_SEQUENCE_AT"
+    assert template =~ "gbitmap_sequence_create_with_resource"
+  end
+
   test "emulator packaging writes storage log build flags header" do
     source = File.read!("lib/ide/pebble_toolchain.ex")
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")

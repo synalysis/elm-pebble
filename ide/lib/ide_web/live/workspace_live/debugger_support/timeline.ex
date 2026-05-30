@@ -259,8 +259,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
     target = Map.get(row, :target) || Map.get(row, "target") || "-"
     type = Map.get(row, :type) || Map.get(row, "type") || "update"
     message = Map.get(row, :message) || Map.get(row, "message") || ""
+    source = Map.get(row, :message_source) || Map.get(row, "message_source")
 
-    "##{seq} [#{target}] #{type} #{message}"
+    type_label =
+      case {type, source} do
+        {"http", _} -> "http"
+        {_, "http"} -> "http"
+        {_, "http_pending"} -> "http (pending)"
+        {other, _} -> other
+      end
+
+    "##{seq} [#{target}] #{type_label} #{message}"
     |> String.trim()
   end
 

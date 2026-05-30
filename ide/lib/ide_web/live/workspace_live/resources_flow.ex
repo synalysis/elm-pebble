@@ -4,11 +4,14 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
   require Logger
 
   import Phoenix.Component, only: [assign: 3]
-  import Phoenix.LiveView, only: [consume_uploaded_entries: 3, put_flash: 3]
+  import Phoenix.Component, only: [assign: 3, upload_errors: 1]
+  import Phoenix.LiveView, only: [consume_uploaded_entries: 3, put_flash: 3, uploaded_entries: 2]
 
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias Ide.Resources.AnimationStore
   alias Ide.Resources.BitmapVariants
+  alias Ide.Resources.CtorNaming
   alias Ide.Resources.PdcDecoder
   alias Ide.Resources.ResourceStore
   alias Ide.Resources.Types, as: ResourceTypes
@@ -22,6 +25,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
   @type font_resource_row :: ResourceTypes.font_entry() | map()
   @type font_source_row :: ResourceTypes.font_source() | map()
   @type vector_resource_row :: ResourceTypes.vector_entry() | map()
+  @type animation_resource_row :: map()
 
   @spec bitmap_upload_output([upload_result_row()]) :: String.t()
   def bitmap_upload_output([]), do: "No file uploaded."
@@ -44,25 +48,163 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     upload_summary(results, "vector graphic", "vector graphics")
   end
 
+  @spec animation_upload_output([upload_result_row()]) :: String.t()
+  def animation_upload_output([]), do: "No file uploaded."
+
+  def animation_upload_output(results) when is_list(results) do
+    upload_summary(results, "animation", "animations")
+  end
+
+  @spec filter_vectors([vector_resource_row()], :static | :animated) :: [vector_resource_row()]
+  def filter_vectors(resources, :static) when is_list(resources) do
+    Enum.filter(resources, fn row -> Map.get(row, :kind) != "sequence" end)
+  end
+
+  def filter_vectors(resources, :animated) when is_list(resources) do
+    Enum.filter(resources, fn row -> Map.get(row, :kind) == "sequence" end)
+  end
+
   defp upload_summary(results, singular, plural) do
+    normalized = Enum.map(results, &normalize_upload_result/1)
+
+    {ok_rows, failed_rows} =
+      Enum.split_with(normalized, fn
+        %{} = row -> not Map.has_key?(row, :error)
+        _ -> false
+      end)
+
     uploaded =
       Enum.count(
-        results,
-        &(is_map(&1) and not Map.get(&1, :duplicate) and not Map.has_key?(&1, :error))
+        ok_rows,
+        &(is_map(&1) and Map.get(&1, :duplicate, false) != true)
       )
 
-    duplicates = Enum.count(results, &(is_map(&1) and Map.get(&1, :duplicate)))
-    failed = Enum.count(results, &(is_map(&1) and Map.has_key?(&1, :error)))
+    duplicates =
+      Enum.count(ok_rows, &(is_map(&1) and Map.get(&1, :duplicate, false) == true))
+
+    failure_messages =
+      failed_rows
+      |> Enum.map(fn
+        %{error: message} when is_binary(message) -> message
+        %{error: reason} -> resource_import_error_message(reason)
+        _ -> nil
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
 
     [
       "Uploaded #{uploaded} #{if uploaded == 1, do: singular, else: plural}.",
       duplicates > 0 &&
         "Skipped #{duplicates} duplicate #{if duplicates == 1, do: singular, else: plural}.",
-      failed > 0 && "#{failed} failed."
+      failure_messages != [] && Enum.join(failure_messages, " ")
     ]
-    |> Enum.reject(&(&1 in [false, nil]))
+    |> Enum.reject(&(&1 in [false, nil, ""]))
     |> Enum.join(" ")
   end
+
+  @spec resource_import_error_message(term()) :: String.t()
+  def resource_import_error_message(reason) do
+    case reason do
+      :gif_converter_missing ->
+        "GIF import requires gif2apng (run `mix ide.install_gif2apng` in ide/, or install on PATH)."
+
+      :gif_conversion_failed ->
+        "GIF could not be converted to APNG. Check that the file is a valid GIF."
+
+      :not_animated ->
+        "File is not an animated PNG (APNG). Upload a GIF or a multi-frame APNG."
+
+      :unsupported_format ->
+        "Unsupported file type. Use .gif or animated .png."
+
+      :file_too_large ->
+        "Animation file is too large (max 64 KB)."
+
+      :too_many_frames ->
+        "Too many frames (max 64)."
+
+      :dimensions_too_large ->
+        "Image dimensions are too large (max 200×200 px)."
+
+      :invalid_png ->
+        "Could not read PNG/APNG metadata."
+
+      :invalid_animation ->
+        "Invalid animation file."
+
+      :invalid_manifest ->
+        "animations.json is invalid."
+
+      other when is_binary(other) ->
+        other
+
+      other ->
+        "Import failed: #{inspect(other)}"
+    end
+  end
+
+  @spec upload_ready?(map()) :: boolean()
+  def upload_ready?(upload) when is_map(upload) do
+    upload.entries != [] and Enum.all?(upload.entries, &upload_entry_ready?(&1, upload))
+  end
+
+  def upload_ready?(_), do: false
+
+  # With default LiveView uploads (no auto_upload), files upload on form submit; done? stays
+  # false until then, so the submit button must not require done?.
+  defp upload_entry_ready?(entry, upload) do
+    entry.valid? and (not upload_auto_upload?(upload) or entry.done?)
+  end
+
+  defp upload_auto_upload?(upload) do
+    Map.get(upload, :auto_upload?) == true
+  end
+
+  @spec consume_resource_upload(socket(), atom(), (map(), map() -> {:ok, map()})) ::
+          {socket(), [upload_result_row()], String.t()}
+  defp consume_resource_upload(socket, upload_name, import_fn) do
+    upload = Map.fetch!(socket.assigns.uploads, upload_name)
+    upload_config_errors = upload_errors(upload) |> Enum.map(&format_upload_error/1)
+    {done, in_progress} = uploaded_entries(socket, upload_name)
+
+    invalid_entries = Enum.filter(upload.entries, fn entry -> not entry.valid? end)
+
+    cond do
+      upload_config_errors != [] ->
+        {socket, [], Enum.join(upload_config_errors, " ")}
+
+      in_progress != [] and upload_auto_upload?(upload) ->
+        {socket, [], "Files are still uploading. Wait until the upload finishes, then try again."}
+
+      invalid_entries != [] and done == [] ->
+        reasons =
+          invalid_entries
+          |> Enum.map(fn entry -> entry.client_name <> ": not accepted or too large" end)
+
+        {socket, [], Enum.join(reasons, " ")}
+
+      done == [] ->
+        {socket, [], "No file uploaded. Choose a file first."}
+
+      true ->
+        results =
+          consume_uploaded_entries(socket, upload_name, fn meta, entry ->
+            import_fn.(meta, entry)
+          end)
+
+        {socket, results, ""}
+    end
+  rescue
+    error in ArgumentError ->
+      Logger.warning("resource upload #{upload_name} failed: #{Exception.message(error)}")
+      {socket, [], Exception.message(error)}
+  end
+
+  @spec format_upload_error(term()) :: String.t()
+  def format_upload_error(:too_large), do: "File is too large."
+  def format_upload_error(:not_accepted), do: "File type is not accepted."
+  def format_upload_error(:too_many_files), do: "Too many files selected."
+  def format_upload_error(other), do: "Upload error: #{inspect(other)}"
 
   @spec load_font_sources(Project.t()) :: [font_source_row()]
   def load_font_sources(%Project{} = project) do
@@ -159,6 +301,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
     entry
     |> Map.put(:resource_id, idx)
+    |> Map.put(:ctor_prefix, CtorNaming.prefix(:bitmap_static))
     |> Map.put(:variant_slots, variants)
     |> Map.put(:legacy_preview_data_url, legacy_preview)
     |> Map.put(:has_legacy, entry.filename not in [nil, ""])
@@ -203,8 +346,14 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
               _ -> nil
             end
 
+          ctor_prefix =
+            if entry.kind == "sequence",
+              do: CtorNaming.prefix(:vector_animated),
+              else: CtorNaming.prefix(:vector_static)
+
           entry
           |> Map.put(:resource_id, idx)
+          |> Map.put(:ctor_prefix, ctor_prefix)
           |> Map.put(:kind_label, vector_kind_label(entry))
           |> Map.put(:preview_svg, preview_svg)
           |> Map.put(:sequence_label, vector_sequence_label(entry))
@@ -226,6 +375,42 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
   end
 
   defp vector_sequence_label(_), do: nil
+
+  @spec load_animation_resources(Project.t()) :: [animation_resource_row()]
+  def load_animation_resources(%Project{} = project) do
+    case Projects.list_animation_resources(project) do
+      {:ok, entries} ->
+        Enum.with_index(entries, 1)
+        |> Enum.map(fn {entry, idx} ->
+          preview =
+            case AnimationStore.animation_file_path(project, entry.ctor) do
+              {:ok, path} -> animation_preview_data_url(path)
+              _ -> nil
+            end
+
+          loop_label = animation_loop_label(entry)
+
+          entry
+          |> Map.put(:resource_id, idx)
+          |> Map.put(:ctor_prefix, CtorNaming.prefix(:bitmap_animated))
+          |> Map.put(:preview_data_url, preview)
+          |> Map.put(:loop_label, loop_label)
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp animation_loop_label(%{play_count: :infinite}), do: "loops forever"
+  defp animation_loop_label(%{play_count: 1}), do: "plays once"
+  defp animation_loop_label(%{play_count: count}) when is_integer(count), do: "plays #{count} times"
+  defp animation_loop_label(_), do: nil
+
+  @spec animation_preview_data_url(String.t()) :: String.t() | nil
+  defp animation_preview_data_url(path) when is_binary(path) do
+    bitmap_preview_data_url(path, "image/png")
+  end
 
   @spec vector_preview_svg(String.t()) :: String.t() | nil
   defp vector_preview_svg(path) when is_binary(path) do
@@ -272,6 +457,10 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     clear-bitmap-variant
     validate-resource-upload
     delete-bitmap-resource
+    upload-vector-resource
+    delete-vector-resource
+    upload-animation-resource
+    delete-animation-resource
     upload-font-resource
     add-font-variant
     update-font-variant
@@ -299,18 +488,21 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     project = socket.assigns.project
     import_opts = bitmap_import_opts(params)
 
-    results =
-      consume_uploaded_entries(socket, :bitmap, fn %{path: path}, entry ->
+    {socket, results, output} =
+      consume_resource_upload(socket, :bitmap, fn %{path: path}, entry ->
         case Projects.import_bitmap_resource(project, path, entry.client_name, import_opts) do
           {:ok, result} -> {:ok, result}
-          {:error, reason} -> {:ok, %{error: inspect(reason)}}
+          {:error, reason} -> {:ok, %{error: resource_import_error_message(reason)}}
         end
       end)
+
+    output = upload_result_message(output, results, &bitmap_upload_output/1)
 
     socket =
       socket
       |> assign_bitmap_resources(project)
-      |> assign(:bitmap_upload_output, bitmap_upload_output(results))
+      |> assign(:bitmap_upload_output, output)
+      |> maybe_flash_upload_result(output, results)
       |> EditorSupport.refresh_tree()
 
     {:noreply, socket}
@@ -352,25 +544,153 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
     end
   end
 
+  def handle_event("upload-vector-resource", _params, socket) do
+    project = socket.assigns.project
+
+    {socket, results, output} =
+      consume_resource_upload(socket, :vector, fn %{path: path}, entry ->
+        case Projects.import_vector_resource(project, path, entry.client_name) do
+          {:ok, result} -> {:ok, result}
+          {:error, reason} -> {:ok, %{error: resource_import_error_message(reason)}}
+        end
+      end)
+
+    output = upload_result_message(output, results, &vector_upload_output/1)
+
+    socket =
+      socket
+      |> assign(:vector_resources, load_vector_resources(project))
+      |> assign(:vector_upload_output, output)
+      |> maybe_flash_upload_result(output, results)
+      |> EditorSupport.refresh_tree()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("delete-vector-resource", %{"ctor" => ctor}, socket) do
+    case Projects.delete_vector_resource(socket.assigns.project, ctor) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:vector_resources, load_vector_resources(socket.assigns.project))
+         |> EditorSupport.refresh_tree()
+         |> put_flash(:info, "Deleted vector #{ctor}.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not delete vector: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("upload-animation-resource", _params, socket) do
+    project = socket.assigns.project
+
+    {socket, results, output} =
+      consume_resource_upload(socket, :animation, fn %{path: path}, entry ->
+        case Projects.import_animation_resource(project, path, entry.client_name) do
+          {:ok, result} -> {:ok, result}
+          {:error, reason} -> {:ok, %{error: resource_import_error_message(reason)}}
+        end
+      end)
+
+    output = upload_result_message(output, results, &animation_upload_output/1)
+
+    socket =
+      socket
+      |> assign(:animation_resources, load_animation_resources(project))
+      |> assign(:animation_upload_output, output)
+      |> maybe_flash_upload_result(output, results)
+      |> EditorSupport.refresh_tree()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("delete-animation-resource", %{"ctor" => ctor}, socket) do
+    case Projects.delete_animation_resource(socket.assigns.project, ctor) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:animation_resources, load_animation_resources(socket.assigns.project))
+         |> EditorSupport.refresh_tree()
+         |> put_flash(:info, "Deleted animation #{ctor}.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not delete animation: #{inspect(reason)}")}
+    end
+  end
+
   def handle_event("upload-font-resource", _params, socket) do
     project = socket.assigns.project
 
-    results =
-      consume_uploaded_entries(socket, :font, fn %{path: path}, entry ->
+    {socket, results, output} =
+      consume_resource_upload(socket, :font, fn %{path: path}, entry ->
         case Projects.import_font_resource(project, path, entry.client_name) do
           {:ok, result} -> {:ok, result}
-          {:error, reason} -> {:ok, %{error: inspect(reason)}}
+          {:error, reason} -> {:ok, %{error: resource_import_error_message(reason)}}
         end
       end)
+
+    output = upload_result_message(output, results, &font_upload_output/1)
 
     socket =
       socket
       |> assign(:font_resources, load_font_resources(project))
       |> assign(:font_sources, load_font_sources(project))
-      |> assign(:font_upload_output, font_upload_output(results))
+      |> assign(:font_upload_output, output)
+      |> maybe_flash_upload_result(output, results)
       |> EditorSupport.refresh_tree()
 
     {:noreply, socket}
+  end
+
+  def handle_event("update-bitmap-base-name", %{"ctor" => ctor, "base_name" => base_name}, socket) do
+    project = socket.assigns.project
+
+    case Projects.update_bitmap_resource_base_name(project, ctor, base_name) do
+      {:ok, _} ->
+        {bitmaps, err} = load_bitmap_resources(project)
+
+        {:noreply,
+         socket
+         |> assign(:bitmap_resources, bitmaps)
+         |> assign(:bitmap_resources_error, err)
+         |> EditorSupport.refresh_tree()
+         |> put_flash(:info, "Updated bitmap resource name.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not rename bitmap: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("update-vector-base-name", %{"ctor" => ctor, "base_name" => base_name}, socket) do
+    project = socket.assigns.project
+
+    case Projects.update_vector_resource_base_name(project, ctor, base_name) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:vector_resources, load_vector_resources(project))
+         |> EditorSupport.refresh_tree()
+         |> put_flash(:info, "Updated vector resource name.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not rename vector: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("update-animation-base-name", %{"ctor" => ctor, "base_name" => base_name}, socket) do
+    project = socket.assigns.project
+
+    case Projects.update_animation_resource_base_name(project, ctor, base_name) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:animation_resources, load_animation_resources(project))
+         |> EditorSupport.refresh_tree()
+         |> put_flash(:info, "Updated animation resource name.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not rename animation: #{inspect(reason)}")}
+    end
   end
 
   def handle_event("add-font-variant", %{"variant" => params}, socket) do
@@ -449,4 +769,54 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   defp blank_to_nil(value) when value in [nil, ""], do: nil
   defp blank_to_nil(value), do: value
+
+  defp normalize_upload_result({:ok, row}) when is_map(row), do: row
+  defp normalize_upload_result(row) when is_map(row), do: row
+  defp normalize_upload_result(_), do: nil
+
+  defp upload_result_message("", results, summary_fun) do
+    case import_failure_lines(results) do
+      [] -> summary_fun.(results)
+      lines -> Enum.join(lines, " ")
+    end
+  end
+
+  defp upload_result_message(message, _results, _summary_fun) when is_binary(message), do: message
+
+  defp import_failure_lines(results) do
+    Enum.flat_map(results, fn
+      {:ok, %{error: message}} when is_binary(message) -> [message]
+      %{error: message} when is_binary(message) -> [message]
+      _ -> []
+    end)
+  end
+
+  defp maybe_flash_upload_result(socket, output, results) do
+    failed? =
+      output =~ "failed" or output =~ "requires" or output =~ "not " or
+        output =~ "too large" or output =~ "Wait until" or
+        Enum.any?(results, fn
+          {:ok, %{error: _}} -> true
+          %{error: _} -> true
+          _ -> false
+        end)
+
+    uploaded? =
+      Enum.any?(results, fn
+        {:ok, row} when is_map(row) -> not Map.has_key?(row, :error) and Map.get(row, :duplicate) != true
+        row when is_map(row) -> not Map.has_key?(row, :error) and Map.get(row, :duplicate) != true
+        _ -> false
+      end)
+
+    cond do
+      uploaded? ->
+        put_flash(socket, :info, output)
+
+      failed? ->
+        put_flash(socket, :error, output)
+
+      true ->
+        socket
+    end
+  end
 end

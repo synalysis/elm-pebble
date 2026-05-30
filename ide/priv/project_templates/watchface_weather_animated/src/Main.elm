@@ -17,7 +17,7 @@ type alias Model =
     , temperature : Maybe Temperature
     , condition : Maybe WeatherCondition
     , displayedCondition : Maybe WeatherCondition
-    , activeTransition : Maybe Resources.VectorGraphic
+    , activeTransition : Maybe Resources.AnimatedVector
     , suppressWeatherTransitions : Bool
     , screenW : Int
     , screenH : Int
@@ -237,38 +237,38 @@ conditionString condition =
             "Weather"
 
 
-conditionVector : WeatherCondition -> Resources.VectorGraphic
+conditionVector : WeatherCondition -> Resources.StaticVector
 conditionVector condition =
     case condition of
         Clear ->
-            Resources.WeatherClear
+            Resources.VectorStaticWeatherClear
 
         Cloudy ->
-            Resources.WeatherCloudy
+            Resources.VectorStaticWeatherCloudy
 
         Fog ->
-            Resources.WeatherFog
+            Resources.VectorStaticWeatherFog
 
         Drizzle ->
-            Resources.WeatherDrizzle
+            Resources.VectorStaticWeatherDrizzle
 
         Rain ->
-            Resources.WeatherRain
+            Resources.VectorStaticWeatherRain
 
         Snow ->
-            Resources.WeatherSnow
+            Resources.VectorStaticWeatherSnow
 
         Showers ->
-            Resources.WeatherShowers
+            Resources.VectorStaticWeatherShowers
 
         Storm ->
-            Resources.WeatherStorm
+            Resources.VectorStaticWeatherStorm
 
         UnknownWeather ->
-            Resources.WeatherUnknown
+            Resources.VectorStaticWeatherUnknown
 
 
-transitionVector : WeatherCondition -> WeatherCondition -> Maybe Resources.VectorGraphic
+transitionVector : WeatherCondition -> WeatherCondition -> Maybe Resources.AnimatedVector
 transitionVector from to =
     if from == to then
         Nothing
@@ -278,25 +278,25 @@ transitionVector from to =
             Clear ->
                 case to of
                     Cloudy ->
-                        Just Resources.TransitionClearToCloudy
+                        Just Resources.VectorAnimatedTransitionClearToCloudy
 
                     Fog ->
-                        Just Resources.TransitionClearToFog
+                        Just Resources.VectorAnimatedTransitionClearToFog
 
                     Drizzle ->
-                        Just Resources.TransitionClearToDrizzle
+                        Just Resources.VectorAnimatedTransitionClearToDrizzle
 
                     Rain ->
-                        Just Resources.TransitionClearToRain
+                        Just Resources.VectorAnimatedTransitionClearToRain
 
                     Snow ->
-                        Just Resources.TransitionClearToSnow
+                        Just Resources.VectorAnimatedTransitionClearToSnow
 
                     Showers ->
-                        Just Resources.TransitionClearToShowers
+                        Just Resources.VectorAnimatedTransitionClearToShowers
 
                     Storm ->
-                        Just Resources.TransitionClearToStorm
+                        Just Resources.VectorAnimatedTransitionClearToStorm
 
                     _ ->
                         Nothing
@@ -304,25 +304,25 @@ transitionVector from to =
             Cloudy ->
                 case to of
                     Clear ->
-                        Just Resources.TransitionCloudyToClear
+                        Just Resources.VectorAnimatedTransitionCloudyToClear
 
                     Fog ->
-                        Just Resources.TransitionCloudyToFog
+                        Just Resources.VectorAnimatedTransitionCloudyToFog
 
                     Drizzle ->
-                        Just Resources.TransitionCloudyToDrizzle
+                        Just Resources.VectorAnimatedTransitionCloudyToDrizzle
 
                     Rain ->
-                        Just Resources.TransitionCloudyToRain
+                        Just Resources.VectorAnimatedTransitionCloudyToRain
 
                     Snow ->
-                        Just Resources.TransitionCloudyToSnow
+                        Just Resources.VectorAnimatedTransitionCloudyToSnow
 
                     Showers ->
-                        Just Resources.TransitionCloudyToShowers
+                        Just Resources.VectorAnimatedTransitionCloudyToShowers
 
                     Storm ->
-                        Just Resources.TransitionCloudyToStorm
+                        Just Resources.VectorAnimatedTransitionCloudyToStorm
 
                     _ ->
                         Nothing
@@ -330,25 +330,25 @@ transitionVector from to =
             Fog ->
                 case to of
                     Clear ->
-                        Just Resources.TransitionFogToClear
+                        Just Resources.VectorAnimatedTransitionFogToClear
 
                     Cloudy ->
-                        Just Resources.TransitionFogToCloudy
+                        Just Resources.VectorAnimatedTransitionFogToCloudy
 
                     Drizzle ->
-                        Just Resources.TransitionFogToDrizzle
+                        Just Resources.VectorAnimatedTransitionFogToDrizzle
 
                     Rain ->
-                        Just Resources.TransitionFogToRain
+                        Just Resources.VectorAnimatedTransitionFogToRain
 
                     Snow ->
-                        Just Resources.TransitionFogToSnow
+                        Just Resources.VectorAnimatedTransitionFogToSnow
 
                     Showers ->
-                        Just Resources.TransitionFogToShowers
+                        Just Resources.VectorAnimatedTransitionFogToShowers
 
                     Storm ->
-                        Just Resources.TransitionFogToStorm
+                        Just Resources.VectorAnimatedTransitionFogToStorm
 
                     _ ->
                         Nothing
@@ -356,25 +356,25 @@ transitionVector from to =
             Drizzle ->
                 case to of
                     Clear ->
-                        Just Resources.TransitionDrizzleToClear
+                        Just Resources.VectorAnimatedTransitionDrizzleToClear
 
                     Cloudy ->
-                        Just Resources.TransitionDrizzleToCloudy
+                        Just Resources.VectorAnimatedTransitionDrizzleToCloudy
 
                     Fog ->
-                        Just Resources.TransitionDrizzleToFog
+                        Just Resources.VectorAnimatedTransitionDrizzleToFog
 
                     Rain ->
-                        Just Resources.TransitionDrizzleToRain
+                        Just Resources.VectorAnimatedTransitionDrizzleToRain
 
                     Snow ->
-                        Just Resources.TransitionDrizzleToSnow
+                        Just Resources.VectorAnimatedTransitionDrizzleToSnow
 
                     Showers ->
-                        Just Resources.TransitionDrizzleToShowers
+                        Just Resources.VectorAnimatedTransitionDrizzleToShowers
 
                     Storm ->
-                        Just Resources.TransitionDrizzleToStorm
+                        Just Resources.VectorAnimatedTransitionDrizzleToStorm
 
                     _ ->
                         Nothing
@@ -382,25 +382,25 @@ transitionVector from to =
             Rain ->
                 case to of
                     Clear ->
-                        Just Resources.TransitionRainToClear
+                        Just Resources.VectorAnimatedTransitionRainToClear
 
                     Cloudy ->
-                        Just Resources.TransitionRainToCloudy
+                        Just Resources.VectorAnimatedTransitionRainToCloudy
 
                     Fog ->
-                        Just Resources.TransitionRainToFog
+                        Just Resources.VectorAnimatedTransitionRainToFog
 
                     Drizzle ->
-                        Just Resources.TransitionRainToDrizzle
+                        Just Resources.VectorAnimatedTransitionRainToDrizzle
 
                     Snow ->
-                        Just Resources.TransitionRainToSnow
+                        Just Resources.VectorAnimatedTransitionRainToSnow
 
                     Showers ->
-                        Just Resources.TransitionRainToShowers
+                        Just Resources.VectorAnimatedTransitionRainToShowers
 
                     Storm ->
-                        Just Resources.TransitionRainToStorm
+                        Just Resources.VectorAnimatedTransitionRainToStorm
 
                     _ ->
                         Nothing
@@ -408,25 +408,25 @@ transitionVector from to =
             Snow ->
                 case to of
                     Clear ->
-                        Just Resources.TransitionSnowToClear
+                        Just Resources.VectorAnimatedTransitionSnowToClear
 
                     Cloudy ->
-                        Just Resources.TransitionSnowToCloudy
+                        Just Resources.VectorAnimatedTransitionSnowToCloudy
 
                     Fog ->
-                        Just Resources.TransitionSnowToFog
+                        Just Resources.VectorAnimatedTransitionSnowToFog
 
                     Drizzle ->
-                        Just Resources.TransitionSnowToDrizzle
+                        Just Resources.VectorAnimatedTransitionSnowToDrizzle
 
                     Rain ->
-                        Just Resources.TransitionSnowToRain
+                        Just Resources.VectorAnimatedTransitionSnowToRain
 
                     Showers ->
-                        Just Resources.TransitionSnowToShowers
+                        Just Resources.VectorAnimatedTransitionSnowToShowers
 
                     Storm ->
-                        Just Resources.TransitionSnowToStorm
+                        Just Resources.VectorAnimatedTransitionSnowToStorm
 
                     _ ->
                         Nothing
@@ -434,25 +434,25 @@ transitionVector from to =
             Showers ->
                 case to of
                     Clear ->
-                        Just Resources.TransitionShowersToClear
+                        Just Resources.VectorAnimatedTransitionShowersToClear
 
                     Cloudy ->
-                        Just Resources.TransitionShowersToCloudy
+                        Just Resources.VectorAnimatedTransitionShowersToCloudy
 
                     Fog ->
-                        Just Resources.TransitionShowersToFog
+                        Just Resources.VectorAnimatedTransitionShowersToFog
 
                     Drizzle ->
-                        Just Resources.TransitionShowersToDrizzle
+                        Just Resources.VectorAnimatedTransitionShowersToDrizzle
 
                     Rain ->
-                        Just Resources.TransitionShowersToRain
+                        Just Resources.VectorAnimatedTransitionShowersToRain
 
                     Snow ->
-                        Just Resources.TransitionShowersToSnow
+                        Just Resources.VectorAnimatedTransitionShowersToSnow
 
                     Storm ->
-                        Just Resources.TransitionShowersToStorm
+                        Just Resources.VectorAnimatedTransitionShowersToStorm
 
                     _ ->
                         Nothing
@@ -460,25 +460,25 @@ transitionVector from to =
             Storm ->
                 case to of
                     Clear ->
-                        Just Resources.TransitionStormToClear
+                        Just Resources.VectorAnimatedTransitionStormToClear
 
                     Cloudy ->
-                        Just Resources.TransitionStormToCloudy
+                        Just Resources.VectorAnimatedTransitionStormToCloudy
 
                     Fog ->
-                        Just Resources.TransitionStormToFog
+                        Just Resources.VectorAnimatedTransitionStormToFog
 
                     Drizzle ->
-                        Just Resources.TransitionStormToDrizzle
+                        Just Resources.VectorAnimatedTransitionStormToDrizzle
 
                     Rain ->
-                        Just Resources.TransitionStormToRain
+                        Just Resources.VectorAnimatedTransitionStormToRain
 
                     Snow ->
-                        Just Resources.TransitionStormToSnow
+                        Just Resources.VectorAnimatedTransitionStormToSnow
 
                     Showers ->
-                        Just Resources.TransitionStormToShowers
+                        Just Resources.VectorAnimatedTransitionStormToShowers
 
                     _ ->
                         Nothing

@@ -20,6 +20,7 @@ Implemented in this phase:
 ```bash
 cd ide
 mix setup
+mix ide.install_gif2apng   # optional: animated GIF upload (skipped if already on PATH)
 mix phx.server
 ```
 
@@ -47,6 +48,7 @@ See **[docs/embedded-emulator.md](docs/embedded-emulator.md)** for architecture,
 ## Pebble toolchain and screenshots
 
 - Build and emulator actions currently target the IDE template app at `ide/priv/pebble_app_template/`.
+- **Animated bitmap resources** (Resources → Bitmaps → Animated) convert uploaded GIFs to APNG via [`gif2apng`](http://gif2apng.sourceforge.net/) on the IDE host (the IDE runs `gif2apng -z0`, per [Pebble’s animated images guide](https://developer.repebble.com/guides/app-resources/animated-images/)). Local dev: `mix ide.install_gif2apng` (builds 1.9 into `priv/bin/`). Docker includes a system build. You can also set `GIF2APNG_BIN` or put `gif2apng` on `PATH`. Without a converter, GIF upload fails with a clear error; you can still import ready-made APNG files as `.png`.
 - Configure in `ide/config/config.exs` via `Ide.PebbleToolchain`:
   - `template_app_root`
   - `emulator_target`

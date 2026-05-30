@@ -31,7 +31,48 @@ defmodule Ide.Debugger.TriggerCandidates do
 
   @spec tickish_message?(String.t()) :: boolean()
   defp tickish_message?(message) when is_binary(message) do
-    contains_any?(String.downcase(message), ["tick", "time", "clock", "second", "minute", "hour"])
+    down = String.downcase(message)
+
+    # Device callback constructors (for example CurrentDateTime) are not subscription ticks.
+    not String.contains?(down, "datetime") and
+      contains_any?(down, ["tick", "time", "clock", "second", "minute", "hour"])
+  end
+
+  @spec message_for_subscription_unit([String.t()], String.t()) :: String.t() | nil
+  defp message_for_subscription_unit(known_messages, trigger_down)
+       when is_list(known_messages) and is_binary(trigger_down) do
+    unit =
+      cond do
+        contains_any?(trigger_down, ["secondchange", "onsecond"]) or
+            (contains_any?(trigger_down, ["second"]) and not contains_any?(trigger_down, ["minute"])) ->
+          "second"
+
+        contains_any?(trigger_down, ["minutechange", "onminute", "minute"]) ->
+          "minute"
+
+        contains_any?(trigger_down, ["hourchange", "onhour", "hour"]) ->
+          "hour"
+
+        contains_any?(trigger_down, ["daychange", "onday", "day"]) ->
+          "day"
+
+        contains_any?(trigger_down, ["monthchange", "onmonth", "month"]) ->
+          "month"
+
+        contains_any?(trigger_down, ["yearchange", "onyear", "year"]) ->
+          "year"
+
+        true ->
+          nil
+      end
+
+    if is_binary(unit) do
+      Enum.find(known_messages, fn message ->
+        down = String.downcase(message)
+
+        String.contains?(down, unit) and not String.contains?(down, "datetime")
+      end)
+    end
   end
 
   @spec normalize_integer(Types.wire_input(), integer()) :: integer()
@@ -296,7 +337,7 @@ defmodule Ide.Debugger.TriggerCandidates do
   end
 
   defp subscription_op_fireable?(_op), do: false
-  @spec best_message_for_trigger([String.t()], String.t()) :: String.t()
+
   @spec best_message_for_trigger([String.t()], String.t()) :: String.t()
   def best_message_for_trigger(known_messages, trigger)
        when is_list(known_messages) and is_binary(trigger) do
@@ -323,7 +364,9 @@ defmodule Ide.Debugger.TriggerCandidates do
           nil
       end
 
-    exact || fuzzy || preferred_fallback || List.first(known_messages) ||
+    unit_message = message_for_subscription_unit(known_messages, normalized)
+
+    exact || fuzzy || preferred_fallback || unit_message || List.first(known_messages) ||
       default_message_for_trigger(trigger)
   end
 

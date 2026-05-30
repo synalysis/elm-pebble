@@ -310,7 +310,7 @@ defmodule Ide.ProjectsTest do
              Projects.import_font_resource(project, tmp_ttf, "menu-copy.ttf")
 
     assert {:ok, entries} = Projects.list_bitmap_resources(project)
-    assert [%{ctor: "Logo"}] = entries
+    assert [%{ctor: "BitmapStaticLogo"}] = entries
     assert {:ok, font_sources} = Projects.list_font_sources(project)
     assert [%{id: source_id, filename: "menu.ttf"}] = font_sources
 
@@ -358,10 +358,10 @@ defmodule Ide.ProjectsTest do
     assert {:ok, source} = File.read(generated)
     assert String.contains?(source, "Generated from the resources configured")
     assert String.contains?(source, "project settings Resources page")
-    assert String.contains?(source, "type Bitmap")
+    assert String.contains?(source, "type StaticBitmap")
     assert String.contains?(source, "Logo")
-    assert String.contains?(source, "type alias BitmapInfo")
-    assert String.contains?(source, "bitmapInfo")
+    assert String.contains?(source, "type alias StaticBitmapInfo")
+    assert String.contains?(source, "staticBitmapInfo")
     assert String.contains?(source, "type Font")
     assert String.contains?(source, "Menu")
     assert String.contains?(source, "MenuDigits28")
@@ -372,14 +372,14 @@ defmodule Ide.ProjectsTest do
     assert String.contains?(source, "fontInfo")
     refute String.contains?(source, "toResourceId")
 
-    assert {:ok, _} = Projects.delete_bitmap_resource(project, "Logo")
+    assert {:ok, _} = Projects.delete_bitmap_resource(project, "BitmapStaticLogo")
     assert {:ok, []} = Projects.list_bitmap_resources(project)
 
     assert {:ok, _} =
              Projects.import_vector_resource(project, tmp_pdc, "piece.pdc")
 
     assert {:ok, vector_entries} = Projects.list_vector_resources(project)
-    assert [%{ctor: "Piece"}] = vector_entries
+    assert [%{ctor: "VectorStaticPiece"}] = vector_entries
 
     svg_path = Path.join(System.tmp_dir!(), "vector_upload_#{System.unique_integer([:positive])}.svg")
 
@@ -392,12 +392,12 @@ defmodule Ide.ProjectsTest do
 
     assert {:ok, _} = Projects.import_vector_resource(project, svg_path, "tri.svg")
     assert {:ok, vector_entries} = Projects.list_vector_resources(project)
-    assert Enum.any?(vector_entries, &(&1.ctor == "Tri"))
+    assert Enum.any?(vector_entries, &(&1.ctor == "VectorStaticTri"))
 
-    assert String.contains?(File.read!(generated), "type VectorGraphic")
+    assert String.contains?(File.read!(generated), "type StaticVector")
     assert String.contains?(File.read!(generated), "drawVectorAt") == false
 
-    assert {:ok, _} = Projects.delete_vector_resource(project, "Piece")
+    assert {:ok, _} = Projects.delete_vector_resource(project, "VectorStaticPiece")
     assert {:ok, _} = Projects.delete_font_resource(project, "MenuDigits28")
     assert File.exists?(source_font_path)
     assert {:ok, remaining_fonts} = Projects.list_font_resources(project)
@@ -692,7 +692,7 @@ defmodule Ide.ProjectsTest do
     base = Projects.project_workspace_path(project)
     assert project.target_type == "watchface"
     assert File.exists?(Path.join(base, "watch/src/Main.elm"))
-    assert File.exists?(Path.join(base, "watch/resources/bitmaps/BtIcon.png"))
+    assert File.exists?(Path.join(base, "watch/resources/bitmaps/BitmapStaticBtIcon.png"))
     assert File.exists?(Path.join(base, "watch/resources/fonts/Jersey.ttf"))
     assert File.exists?(Path.join(base, "watch/resources/bitmaps.json"))
     assert File.exists?(Path.join(base, "watch/resources/fonts.json"))
@@ -737,7 +737,7 @@ defmodule Ide.ProjectsTest do
     assert {:ok, resources} =
              Projects.read_source_file(project, "watch", "src/Pebble/Ui/Resources.elm")
 
-    assert String.contains?(resources, "BtIcon")
+    assert String.contains?(resources, "BitmapStaticBtIcon")
     assert String.contains?(resources, "Jersey")
 
     assert {:ok, watch_elm_json_raw} = File.read(Path.join(base, "watch/elm.json"))
@@ -916,11 +916,11 @@ defmodule Ide.ProjectsTest do
     refute File.exists?(Path.join(base, "phone/src/CompanionPreferences.elm"))
 
     assert File.exists?(Path.join(base, "watch/resources/vectors.json"))
-    assert File.exists?(Path.join(base, "watch/resources/vectors/TangramBird.pdc"))
+    assert File.exists?(Path.join(base, "watch/resources/vectors/VectorStaticTangramBird.pdc"))
 
     assert {:ok, watch_main} = Projects.read_source_file(project, "watch", "src/Main.elm")
     assert String.contains?(watch_main, "Ui.drawVectorAt")
-    assert String.contains?(watch_main, "Resources.TangramBird")
+    assert String.contains?(watch_main, "Resources.VectorStaticTangramBird")
     refute String.contains?(watch_main, "birdForm")
     assert String.contains?(watch_main, "CompanionWatch.sendWatchToPhone RequestFigure")
     assert String.contains?(watch_main, "BeginFigure figureId")
@@ -1074,6 +1074,91 @@ defmodule Ide.ProjectsTest do
 
     assert {:error, :enoent} =
              Projects.read_source_file(project, "protocol", "src/Companion/Types.elm")
+  end
+
+  test "import merge keeps existing watch sources when importing resources only" do
+    workspace =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_import_merge_workspace_#{System.unique_integer([:positive])}"
+      )
+
+    source_root =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_import_merge_source_#{System.unique_integer([:positive])}"
+      )
+
+    on_exit(fn ->
+      File.rm_rf(workspace)
+      File.rm_rf(source_root)
+    end)
+
+    File.mkdir_p!(Path.join(workspace, "watch/src"))
+    File.write!(Path.join(workspace, "watch/src/Main.elm"), "module Main exposing (main)")
+    File.write!(Path.join(workspace, "watch/elm.json"), "{\"type\":\"application\"}")
+
+    File.mkdir_p!(Path.join(source_root, "resources/bitmaps"))
+    File.write!(Path.join(source_root, "resources/bitmaps/Extra.png"), <<137, 80, 78, 71>>)
+
+    assert :ok = Ide.ProjectImport.import(source_root, workspace)
+
+    assert File.exists?(Path.join(workspace, "watch/src/Main.elm"))
+    assert File.exists?(Path.join(workspace, "watch/resources/bitmaps/Extra.png"))
+  end
+
+  test "delete_source_path refuses protected watch src tree" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "Protected Delete",
+               "slug" => "protected-delete-#{System.unique_integer([:positive])}",
+               "target_type" => "watchface",
+               "template" => "watchface-digital"
+             })
+
+    assert {:error, :protected_path} = Projects.delete_source_path(project, "watch", "src")
+    assert {:error, :protected_path} = Projects.delete_source_path(project, "watch", "src/Main.elm")
+    assert {:ok, _} = Projects.read_source_file(project, "watch", "src/Main.elm")
+  end
+
+  test "legacy workspace is not adopted over scoped workspace with user artifacts" do
+    slug = "legacy-artifacts-#{System.unique_integer([:positive])}"
+
+    assert {:ok, user} =
+             %User{}
+             |> User.changeset(%{firebase_uid: "legacy-artifacts", email: "legacy-artifacts@example.test"})
+             |> Repo.insert()
+
+    legacy = Path.join(Projects.projects_root(), slug)
+    on_exit(fn -> File.rm_rf(legacy) end)
+
+    assert {:ok, project} =
+             Projects.create_project(
+               %{
+                 "name" => "Legacy Artifacts",
+                 "slug" => slug,
+                 "target_type" => "watchface",
+                 "template" => "watchface-digital"
+               },
+               user
+             )
+
+    scoped = Projects.project_workspace_path(project)
+    assert scoped != legacy
+    on_exit(fn -> File.rm_rf(scoped) end)
+
+    File.rm_rf!(Path.join(scoped, "watch/src"))
+    File.rm!(Path.join(scoped, "watch/elm.json"))
+    File.mkdir_p!(Path.join(scoped, "watch/resources"))
+    File.write!(Path.join(scoped, "watch/resources/bitmaps.json"), ~s({"schema_version":2,"entries":[]}))
+
+    File.mkdir_p!(Path.join(legacy, "watch/src"))
+    File.write!(Path.join(legacy, "watch/elm.json"), ~s({"type":"application"}))
+    File.write!(Path.join(legacy, "watch/src/Main.elm"), "module Main exposing (main)")
+
+    refute File.exists?(Path.join(scoped, "watch/src/Main.elm"))
+    assert Projects.project_workspace_path(project) == scoped
+    refute File.exists?(Path.join(scoped, "watch/src/Main.elm"))
   end
 
   test "create project writes bundle metadata manifest" do

@@ -35,6 +35,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   @shell_artifact_keys [
     "vector_resource_indices",
     "bitmap_resource_indices",
+    "animation_resource_indices",
     "elm_introspect",
     "elm_executor_core_ir",
     "elm_executor_core_ir_b64",
@@ -256,6 +257,15 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def bitmap_resource_indices(_model), do: %{}
 
+  @spec animation_resource_indices(execution_model()) :: ArtifactTypes.resource_indices()
+  def animation_resource_indices(model) when is_map(model) do
+    Map.get(model, "animation_resource_indices") ||
+      get_in(model, ["runtime_model", "animation_resource_indices"]) ||
+      %{}
+  end
+
+  def animation_resource_indices(_model), do: %{}
+
   @spec execution_artifacts(execution_model()) :: ArtifactTypes.t()
   def execution_artifacts(model) when is_map(model) do
     metadata = Map.get(model, "elm_executor_metadata")
@@ -275,6 +285,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     module = module_name(model)
     vector_indices = vector_resource_indices(model)
     bitmap_indices = bitmap_resource_indices(model)
+    animation_indices = animation_resource_indices(model)
 
     base =
       case decode_core_ir(model) do
@@ -301,6 +312,13 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     base =
       if map_size(bitmap_indices) > 0 do
         Map.put(base, :bitmap_resource_indices, bitmap_indices)
+      else
+        base
+      end
+
+    base =
+      if map_size(animation_indices) > 0 do
+        Map.put(base, :animation_resource_indices, animation_indices)
       else
         base
       end
@@ -358,6 +376,22 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def put_bitmap_resource_indices_on_request(request, _model) when is_map(request), do: request
   def put_bitmap_resource_indices_on_request(request, _model), do: request
 
+  @spec put_animation_resource_indices_on_request(execution_model(), ArtifactTypes.resource_indices()) ::
+          execution_model()
+  def put_animation_resource_indices_on_request(request, model)
+      when is_map(request) and is_map(model) do
+    case animation_resource_indices(model) do
+      indices when map_size(indices) > 0 ->
+        Map.put(request, :animation_resource_indices, indices)
+
+      _ ->
+        request
+    end
+  end
+
+  def put_animation_resource_indices_on_request(request, _model) when is_map(request), do: request
+  def put_animation_resource_indices_on_request(request, _model), do: request
+
   @spec vector_resource_indices_for_project(String.t()) :: ArtifactTypes.resource_indices()
   def vector_resource_indices_for_project(project_slug) when is_binary(project_slug) do
     with %Projects.Project{} = project <- Projects.get_project_by_scope_key(project_slug),
@@ -376,6 +410,20 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def bitmap_resource_indices_for_project(project_slug) when is_binary(project_slug) do
     with %Projects.Project{} = project <- Projects.get_project_by_scope_key(project_slug),
          {:ok, entries} <- ResourceStore.list(project) do
+      entries
+      |> Enum.with_index(1)
+      |> Map.new(fn {row, index} -> {row.ctor, index} end)
+    else
+      _ -> %{}
+    end
+  rescue
+    _ -> %{}
+  end
+
+  @spec animation_resource_indices_for_project(String.t()) :: ArtifactTypes.resource_indices()
+  def animation_resource_indices_for_project(project_slug) when is_binary(project_slug) do
+    with %Projects.Project{} = project <- Projects.get_project_by_scope_key(project_slug),
+         {:ok, entries} <- Ide.Resources.AnimationStore.list(project) do
       entries
       |> Enum.with_index(1)
       |> Map.new(fn {row, index} -> {row.ctor, index} end)

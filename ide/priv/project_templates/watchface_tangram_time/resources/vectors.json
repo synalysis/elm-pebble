@@ -1,53 +1,59 @@
 {
-  "schema_version": 1,
   "entries": [
     {
-      "id": "vector_tangrambird",
-      "ctor": "TangramBird",
-      "filename": "TangramBird.pdc",
-      "mime": "application/octet-stream",
+      "base_name": "TangramBird",
       "bytes": 171,
+      "ctor": "VectorStaticTangramBird",
+      "filename": "VectorStaticTangramBird.pdc",
+      "id": "vector_vectorstatictangrambird",
+      "mime": "application/octet-stream",
       "source": "pdc"
     },
     {
-      "id": "vector_tangramcomet",
-      "ctor": "TangramComet",
-      "filename": "TangramComet.pdc",
-      "mime": "application/octet-stream",
+      "base_name": "TangramComet",
       "bytes": 171,
+      "ctor": "VectorStaticTangramComet",
+      "filename": "VectorStaticTangramComet.pdc",
+      "id": "vector_vectorstatictangramcomet",
+      "mime": "application/octet-stream",
       "source": "pdc"
     },
     {
-      "id": "vector_tangramcrown",
-      "ctor": "TangramCrown",
-      "filename": "TangramCrown.pdc",
-      "mime": "application/octet-stream",
+      "base_name": "TangramCrown",
       "bytes": 171,
+      "ctor": "VectorStaticTangramCrown",
+      "filename": "VectorStaticTangramCrown.pdc",
+      "id": "vector_vectorstatictangramcrown",
+      "mime": "application/octet-stream",
       "source": "pdc"
     },
     {
-      "id": "vector_tangramboat",
-      "ctor": "TangramBoat",
-      "filename": "TangramBoat.pdc",
-      "mime": "application/octet-stream",
+      "base_name": "TangramBoat",
       "bytes": 175,
+      "ctor": "VectorStaticTangramBoat",
+      "filename": "VectorStaticTangramBoat.pdc",
+      "id": "vector_vectorstatictangramboat",
+      "mime": "application/octet-stream",
       "source": "pdc"
     },
     {
-      "id": "vector_tangramflower",
-      "ctor": "TangramFlower",
-      "filename": "TangramFlower.pdc",
-      "mime": "application/octet-stream",
+      "base_name": "TangramFlower",
       "bytes": 171,
+      "ctor": "VectorStaticTangramFlower",
+      "filename": "VectorStaticTangramFlower.pdc",
+      "id": "vector_vectorstatictangramflower",
+      "mime": "application/octet-stream",
       "source": "pdc"
     },
     {
-      "id": "vector_tangramkite",
-      "ctor": "TangramKite",
-      "filename": "TangramKite.pdc",
-      "mime": "application/octet-stream",
+      "base_name": "TangramKite",
       "bytes": 171,
+      "ctor": "VectorStaticTangramKite",
+      "filename": "VectorStaticTangramKite.pdc",
+      "id": "vector_vectorstatictangramkite",
+      "mime": "application/octet-stream",
       "source": "pdc"
     }
-  ]
+  ],
+  "schema_version": 1
 }

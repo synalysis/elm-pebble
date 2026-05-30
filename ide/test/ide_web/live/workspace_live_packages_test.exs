@@ -150,7 +150,7 @@ defmodule IdeWeb.WorkspaceLivePackagesTest do
     assert has_element?(view, "button[disabled]", "Upload font")
 
     bitmap_upload =
-      file_input(view, "form[phx-submit='upload-bitmap-resource']", :bitmap, [
+      file_input(view, "#bitmap-upload-form", :bitmap, [
         %{
           name: "logo.png",
           content: <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0>>,

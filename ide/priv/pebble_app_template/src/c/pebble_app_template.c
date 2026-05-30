@@ -322,6 +322,15 @@ static AppTimer *s_vector_sequence_timer = NULL;
 static uint32_t s_cached_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
 static GDrawCommandSequence *s_cached_sequence = NULL;
 #endif
+#if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+static int64_t s_bitmap_sequence_anim_start_ms = 0;
+static int s_bitmap_sequence_anim_origin_seq = 0;
+static AppTimer *s_bitmap_sequence_timer = NULL;
+static uint32_t s_cached_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+static GBitmapSequence *s_cached_bitmap_sequence = NULL;
+static GBitmap s_bitmap_sequence_frame;
+static bool s_bitmap_sequence_frame_initialized = false;
+#endif
 #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT
 #define VECTOR_IMAGE_CACHE_CAPACITY 8
 
@@ -1503,6 +1512,42 @@ static GDrawCommandSequence *vector_sequence_cached(uint32_t resource_id) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+static void bitmap_sequence_timer_callback(void *data) {
+  (void)data;
+  s_bitmap_sequence_timer = NULL;
+  layer_mark_dirty(s_draw_layer);
+}
+
+static void bitmap_sequence_cache_clear(void) {
+  if (s_cached_bitmap_sequence) {
+    gbitmap_sequence_destroy(s_cached_bitmap_sequence);
+    s_cached_bitmap_sequence = NULL;
+  }
+  if (s_bitmap_sequence_frame_initialized) {
+    gbitmap_destroy(&s_bitmap_sequence_frame);
+    s_bitmap_sequence_frame_initialized = false;
+  }
+  s_cached_bitmap_sequence_resource_id = ELM_PEBBLE_RESOURCE_ID_MISSING;
+}
+
+static GBitmapSequence *bitmap_sequence_cached(uint32_t resource_id) {
+  if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
+    return NULL;
+  }
+  if (s_cached_bitmap_sequence && s_cached_bitmap_sequence_resource_id == resource_id) {
+    return s_cached_bitmap_sequence;
+  }
+  bitmap_sequence_cache_clear();
+  s_cached_bitmap_sequence_resource_id = resource_id;
+  s_cached_bitmap_sequence = gbitmap_sequence_create_with_resource(resource_id);
+  if (!s_cached_bitmap_sequence) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "bitmap sequence load failed resource_id=%lu", (unsigned long)resource_id);
+  }
+  return s_cached_bitmap_sequence;
+}
+#endif
+
 #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT
 static void vector_image_cache_clear(void) {
   for (int i = 0; i < VECTOR_IMAGE_CACHE_CAPACITY; i++) {
@@ -2064,6 +2109,45 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
           s_vector_sequence_timer = app_timer_register(33, vector_sequence_timer_callback, NULL);
         } else if (!animating) {
           vector_sequence_cache_clear();
+        }
+        break;
+      }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+      case ELMC_PEBBLE_DRAW_BITMAP_SEQUENCE_AT: {
+        uint32_t resource_id = elm_pebble_animation_resource_id(cmd->p0);
+        GBitmapSequence *sequence = bitmap_sequence_cached(resource_id);
+        if (!sequence) {
+          break;
+        }
+        if (s_bitmap_sequence_anim_origin_seq != s_render_sequence) {
+          s_bitmap_sequence_anim_start_ms = monotonic_ms();
+          s_bitmap_sequence_anim_origin_seq = s_render_sequence;
+        }
+        uint32_t elapsed = (uint32_t)(monotonic_ms() - s_bitmap_sequence_anim_start_ms);
+        if (!s_bitmap_sequence_frame_initialized) {
+          gbitmap_sequence_update_bitmap_by_elapsed(sequence, &s_bitmap_sequence_frame, elapsed, true);
+          s_bitmap_sequence_frame_initialized = true;
+        } else {
+          gbitmap_sequence_update_bitmap_by_elapsed(sequence, &s_bitmap_sequence_frame, elapsed, false);
+        }
+        GRect frame_bounds = gbitmap_get_bounds(&s_bitmap_sequence_frame);
+        graphics_draw_bitmap_in_rect(
+            ctx,
+            &s_bitmap_sequence_frame,
+            GRect(cmd->p1, cmd->p2, frame_bounds.size.w, frame_bounds.size.h));
+        uint32_t total_duration = gbitmap_sequence_get_total_duration(sequence);
+        uint16_t play_count = gbitmap_sequence_get_play_count(sequence);
+        bool animating = false;
+        if (play_count == 0xFFFF && total_duration > 0) {
+          animating = true;
+        } else if (play_count > 0 && total_duration > 0) {
+          animating = elapsed < (uint32_t)total_duration * (uint32_t)play_count;
+        }
+        if (animating && !s_bitmap_sequence_timer) {
+          s_bitmap_sequence_timer = app_timer_register(33, bitmap_sequence_timer_callback, NULL);
+        } else if (!animating) {
+          bitmap_sequence_cache_clear();
         }
         break;
       }
@@ -3719,6 +3803,13 @@ static void deinit(void) {
     s_vector_sequence_timer = NULL;
   }
   vector_sequence_cache_clear();
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT
+  if (s_bitmap_sequence_timer) {
+    app_timer_cancel(s_bitmap_sequence_timer);
+    s_bitmap_sequence_timer = NULL;
+  }
+  bitmap_sequence_cache_clear();
 #endif
   elmc_pebble_deinit(&s_elm_app);
   // #region agent log

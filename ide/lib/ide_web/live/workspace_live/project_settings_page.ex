@@ -120,7 +120,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         GitHub
       </.link>
       <.link
-        patch={~p"/projects/#{@project.slug}/resources"}
+        patch={~p"/projects/#{@project.slug}/resources/bitmaps-static"}
         class={settings_tab_class(@pane, :resources)}
       >
         Resources

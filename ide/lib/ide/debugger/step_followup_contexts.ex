@@ -22,7 +22,10 @@ defmodule Ide.Debugger.StepFollowupContexts do
             (Types.runtime_state(), Types.surface_target() -> Types.elm_introspect()),
           optional(:simulator_settings) => (Types.runtime_state() -> Types.simulator_settings()),
           optional(:track_http_command) =>
-            (Types.runtime_state(), Types.tracked_http_command() -> Types.runtime_state())
+            (Types.runtime_state(), Types.tracked_http_command() -> Types.runtime_state()),
+          optional(:append_debugger_event) =>
+            (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() | nil,
+             Types.timeline_step_message_value() -> Types.runtime_state())
         }
 
   @spec device_data(host()) :: DeviceDataResponses.apply_ctx()
@@ -38,6 +41,7 @@ defmodule Ide.Debugger.StepFollowupContexts do
   def runtime_followups(host) when is_map(host) do
     %{
       append_event: host.append_event,
+      append_debugger_event: host[:append_debugger_event] || fn st, _, _, _, _, _ -> st end,
       apply_step_once: host.apply_step_with_value,
       source_root_for_target: host.source_root_for_target,
       track_http_command: host[:track_http_command] || fn st, _cmd -> st end,

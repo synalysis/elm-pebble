@@ -35,7 +35,8 @@ defmodule Elmc.Backend.Pebble do
     text_label_with_font: 28,
     text: 29,
     vector_at: 30,
-    vector_sequence_at: 31
+    vector_sequence_at: 31,
+    bitmap_sequence_at: 32
   ]
 
   @command_kinds [
@@ -3404,6 +3405,7 @@ defmodule Elmc.Backend.Pebble do
       {"ELMC_PEBBLE_FEATURE_DRAW_BITMAP_IN_RECT", flags[:draw_bitmap_in_rect]},
       {"ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT", flags[:draw_vector_at]},
       {"ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT", flags[:draw_vector_sequence_at]},
+      {"ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT", flags[:draw_bitmap_sequence_at]},
       {"ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP", flags[:draw_rotated_bitmap]},
       {"ELMC_PEBBLE_FEATURE_DRAW_TEXT", flags[:draw_text]}
     ]
@@ -3620,6 +3622,7 @@ defmodule Elmc.Backend.Pebble do
       draw_bitmap_in_rect: uses_target?(targets, "Pebble.Ui.drawBitmapInRect"),
       draw_vector_at: uses_target?(targets, "Pebble.Ui.drawVectorAt"),
       draw_vector_sequence_at: uses_target?(targets, "Pebble.Ui.drawVectorSequenceAt"),
+      draw_bitmap_sequence_at: uses_target?(targets, "Pebble.Ui.drawBitmapSequenceAt"),
       draw_rotated_bitmap: uses_target?(targets, "Pebble.Ui.drawRotatedBitmap"),
       draw_text: uses_target?(targets, "Pebble.Ui.text"),
       draw_text_any: text_int or text_label or uses_target?(targets, "Pebble.Ui.text")

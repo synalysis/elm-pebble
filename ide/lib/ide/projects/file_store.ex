@@ -5,6 +5,16 @@ defmodule Ide.Projects.FileStore do
 
   alias Ide.Projects.FileTypes
   alias Ide.Projects.Project
+  alias Ide.Projects.WorkspaceMerge
+
+  @protected_delete_paths ~w(
+    src/Main.elm
+    src/Companion/Types.elm
+    src/Companion/GeneratedPreferences.elm
+    src/Pebble/Ui/Resources.elm
+  )
+
+  @protected_delete_dirs ~w(src)
   @hidden_directories MapSet.new([
                       "elm-stuff",
                       "node_modules",
@@ -139,7 +149,8 @@ defmodule Ide.Projects.FileStore do
   @spec delete_path(Project.t(), FileTypes.projects_root(), String.t(), String.t()) ::
           FileTypes.delete_result()
   def delete_path(project, projects_root, source_root, rel_path) do
-    with {:ok, absolute_path} <- safe_path(project, projects_root, source_root, rel_path) do
+    with :ok <- validate_deletable(rel_path),
+         {:ok, absolute_path} <- safe_path(project, projects_root, source_root, rel_path) do
       cond do
         File.dir?(absolute_path) -> File.rm_rf(absolute_path) |> normalize_rm_rf()
         true -> File.rm(absolute_path)
@@ -187,17 +198,57 @@ defmodule Ide.Projects.FileStore do
   @spec maybe_adopt_legacy_workspace(FileTypes.workspace_path(), FileTypes.workspace_path()) ::
           :ok
   defp maybe_adopt_legacy_workspace(scoped, legacy) do
-    if workspace_has_elm_roots?(legacy) and not workspace_has_elm_roots?(scoped) and
-         File.dir?(legacy) do
-      File.mkdir_p(Path.dirname(scoped))
+    cond do
+      workspace_has_elm_roots?(scoped) ->
+        :ok
 
-      case File.cp_r(legacy, scoped) do
-        {:ok, _} -> :ok
-        {:error, _reason, _path} -> :ok
-      end
-    else
-      :ok
+      not workspace_has_elm_roots?(legacy) ->
+        :ok
+
+      workspace_has_user_artifacts?(scoped) ->
+        # Do not merge a legacy tree over a scoped workspace that already has
+        # project metadata or uploaded resources but lost Elm sources.
+        :ok
+
+      not File.dir?(legacy) ->
+        :ok
+
+      true ->
+        File.mkdir_p(Path.dirname(scoped))
+
+        case WorkspaceMerge.merge_tree(legacy, scoped) do
+          :ok -> :ok
+          {:error, _reason} -> :ok
+        end
     end
+  end
+
+  @spec validate_deletable(String.t()) :: :ok | {:error, :protected_path}
+  defp validate_deletable(rel_path) when is_binary(rel_path) do
+    normalized =
+      rel_path
+      |> String.trim()
+      |> String.trim_leading("./")
+      |> String.replace("\\", "/")
+
+    cond do
+      normalized in @protected_delete_paths ->
+        {:error, :protected_path}
+
+      normalized in @protected_delete_dirs ->
+        {:error, :protected_path}
+
+      true ->
+        :ok
+    end
+  end
+
+  @spec workspace_has_user_artifacts?(FileTypes.workspace_path()) :: boolean()
+  defp workspace_has_user_artifacts?(workspace_path) when is_binary(workspace_path) do
+    File.exists?(Path.join(workspace_path, "elm-pebble.project.json")) or
+      File.exists?(Path.join(workspace_path, "watch/resources/bitmaps.json")) or
+      File.exists?(Path.join(workspace_path, "watch/resources/vectors.json")) or
+      File.exists?(Path.join(workspace_path, "watch/resources/fonts.json"))
   end
 
   @spec safe_path(Project.t(), FileTypes.projects_root(), String.t(), String.t()) ::

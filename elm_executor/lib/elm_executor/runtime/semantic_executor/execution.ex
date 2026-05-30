@@ -4,15 +4,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
 
   alias ElmExecutor.Runtime.SemanticExecutor.View
 
-  alias ElmEx.CoreIR
-  alias ElmEx.Frontend.GeneratedParser
-  alias ElmEx.Frontend.Project
-  alias ElmEx.IR.Lowerer
   alias ElmExecutor.Runtime.CoreIRContract
   alias ElmExecutor.Runtime.CoreIREvaluator
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
   alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
-  alias ElmExecutor.Runtime.ViewTreeIntrinsics
 
   @spec execute(SemTypes.execution_request() | map()) ::
           {:ok, SemTypes.execution_result()} | {:error, SemTypes.exec_error()}
@@ -67,6 +62,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
       |> View.evaluator_context(source_module)
       |> Map.merge(View.vector_resource_indices_context(request, current_model))
       |> Map.merge(View.bitmap_resource_indices_context(request, current_model))
+      |> Map.merge(View.animation_resource_indices_context(request, current_model))
       |> Map.put(:launch_context, View.launch_context_from_model(current_model))
     static_init_model = map_value(introspect, :init_model)
 

@@ -846,7 +846,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
           "type" => "drawBitmapInRect",
           "arg_names" => ["bitmap", "bounds"],
           "children" => [
-            %{"type" => "NoBitmap", "qualified_target" => "Resources.NoBitmap", "children" => []},
+            %{"type" => "NoStaticBitmap", "qualified_target" => "Resources.NoStaticBitmap", "children" => []},
             %{
               "type" => "record",
               "children" => [
@@ -1173,7 +1173,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
     transition_entry =
       Enum.find(vectors_json["entries"], fn entry ->
-        entry["ctor"] == "TransitionClearToRain"
+        entry["ctor"] == "VectorAnimatedTransitionClearToRain"
       end)
 
     assert transition_entry
@@ -1192,8 +1192,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     )
 
     File.cp!(
-      Path.join(template_root, "resources/vectors/TransitionClearToRain.pdc"),
-      Path.join(vectors_dir, "TransitionClearToRain.pdc")
+      Path.join(template_root, "resources/vectors/VectorAnimatedTransitionClearToRain.pdc"),
+      Path.join(vectors_dir, "VectorAnimatedTransitionClearToRain.pdc")
     )
 
     on_exit(fn -> File.rm_rf!(workspace) end)
@@ -1209,6 +1209,81 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert anim_op.y == 20
     assert length(anim_op.frame_elements) >= 2
     assert length(anim_op.durations) == length(anim_op.frame_elements)
+  end
+
+  test "hydrate_animation_svg_ops attaches APNG data URL for bitmap sequences" do
+    alias Ide.Projects.FileStore
+
+    slug = "debugger-bseq-test-#{System.unique_integer([:positive])}"
+    project = %Ide.Projects.Project{slug: slug}
+    workspace = FileStore.project_root(project, Ide.Projects.projects_root())
+    animations_dir = Path.join(workspace, "watch/resources/animations")
+    File.mkdir_p!(animations_dir)
+
+    apng_bytes = minimal_apng_bytes(width: 8, height: 6, frames: 2)
+
+    File.write!(Path.join(animations_dir, "TestAnim.png"), apng_bytes)
+
+    manifest = %{
+      "schema_version" => 1,
+      "entries" => [
+        %{
+          "id" => "1",
+          "ctor" => "TestAnim",
+          "filename" => "TestAnim.png",
+          "mime" => "image/png",
+          "bytes" => byte_size(apng_bytes),
+          "width" => 8,
+          "height" => 6,
+          "frame_count" => 2,
+          "duration_ms" => 20,
+          "play_count" => 0
+        }
+      ]
+    }
+
+    File.write!(
+      Path.join(workspace, "watch/resources/animations.json"),
+      Jason.encode!(manifest)
+    )
+
+    on_exit(fn -> File.rm_rf!(workspace) end)
+
+    [hydrated] =
+      DebuggerPreview.hydrate_animation_svg_ops(
+        [%{kind: :bitmap_sequence_at, animation_id: 1, x: 12, y: 34}],
+        project
+      )
+
+    assert hydrated.kind == :bitmap_sequence_at
+    assert hydrated.x == 12
+    assert hydrated.y == 34
+    assert hydrated.width == 8
+    assert hydrated.height == 6
+    assert String.starts_with?(hydrated.href, "data:image/png;base64,")
+    assert hydrated.anim_id == "debugger-bseq-1-12-34"
+  end
+
+  test "svg_ops includes drawBitmapSequenceAt from view tree" do
+    tree = %{
+      "type" => "root",
+      "children" => [
+        %{
+          "type" => "drawBitmapSequenceAt",
+          "children" => [
+            %{"type" => "expr", "value" => 1},
+            %{"type" => "expr", "value" => 10},
+            %{"type" => "expr", "value" => 20}
+          ]
+        }
+      ]
+    }
+
+    [op] = DebuggerPreview.svg_ops(tree, %{model: %{}})
+    assert op.kind == :bitmap_sequence_at
+    assert op.animation_id == 1
+    assert op.x == 10
+    assert op.y == 20
   end
 
   test "debugger preview prefers evaluated runtime_view_output over tree fallback" do
@@ -2811,5 +2886,47 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
       "companion" => %{"model" => %{}, "view_tree" => %{"type" => "CompanionRoot"}},
       "phone" => %{"model" => %{}, "view_tree" => %{"type" => "PhoneRoot"}}
     }
+  end
+
+  defp minimal_apng_bytes(opts) do
+    width = Keyword.fetch!(opts, :width)
+    height = Keyword.fetch!(opts, :height)
+    frames = Keyword.fetch!(opts, :frames)
+    delay_num = Keyword.get(opts, :delay_num, 1)
+    delay_den = Keyword.get(opts, :delay_den, 100)
+
+    ihdr =
+      png_chunk("IHDR", <<
+        width::32-big,
+        height::32-big,
+        8,
+        6,
+        0,
+        0,
+        0
+      >>)
+
+    actl = png_chunk("acTL", <<frames::32-big, 0::32-big>>)
+
+    fctl =
+      png_chunk("fcTL", <<
+        0::32-big,
+        width::32-big,
+        height::32-big,
+        0::32,
+        0::32,
+        delay_num::16-big,
+        delay_den::16-big,
+        0,
+        0
+      >>)
+
+    <<137, 80, 78, 71, 13, 10, 26, 10, ihdr::binary, actl::binary, fctl::binary,
+      png_chunk("IEND", "")::binary>>
+  end
+
+  defp png_chunk(type, data) do
+    crc = :erlang.crc32(type <> data)
+    <<byte_size(data)::32-big, type::binary-size(4), data::binary, crc::32-big>>
   end
 end

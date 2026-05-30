@@ -168,26 +168,26 @@ view model =
         |> Ui.toUiNode
 
 
-figureVector : Int -> Resources.VectorGraphic
+figureVector : Int -> Resources.StaticVector
 figureVector figure =
     case modBy figureCount figure of
         0 ->
-            Resources.TangramBird
+            Resources.VectorStaticTangramBird
 
         1 ->
-            Resources.TangramComet
+            Resources.VectorStaticTangramComet
 
         2 ->
-            Resources.TangramCrown
+            Resources.VectorStaticTangramCrown
 
         3 ->
-            Resources.TangramBoat
+            Resources.VectorStaticTangramBoat
 
         4 ->
-            Resources.TangramFlower
+            Resources.VectorStaticTangramFlower
 
         _ ->
-            Resources.TangramKite
+            Resources.VectorStaticTangramKite
 
 
 figureOriginOffsetX : Int
