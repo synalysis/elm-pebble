@@ -752,10 +752,19 @@ defmodule Ide.Projects do
   @doc """
   Imports a bitmap resource and regenerates the generated resources Elm module.
   """
-  @spec import_bitmap_resource(Project.t(), String.t(), String.t()) ::
+  @spec import_bitmap_resource(Project.t(), String.t(), String.t(), keyword()) ::
           {:ok, map()} | {:error, Types.project_error()}
-  def import_bitmap_resource(%Project{} = project, upload_path, original_name) do
-    ResourceStore.import_bitmap(project, upload_path, original_name)
+  def import_bitmap_resource(%Project{} = project, upload_path, original_name, opts \\ []) do
+    ResourceStore.import_bitmap(project, upload_path, original_name, opts)
+  end
+
+  @doc """
+  Removes one monochrome or color variant from a bitmap resource.
+  """
+  @spec clear_bitmap_variant_resource(Project.t(), String.t(), String.t()) ::
+          {:ok, [map()]} | {:error, Types.project_error()}
+  def clear_bitmap_variant_resource(%Project{} = project, ctor, color_mode) do
+    ResourceStore.clear_bitmap_variant(project, ctor, color_mode)
   end
 
   @doc """

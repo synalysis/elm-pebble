@@ -26,6 +26,13 @@ defmodule Ide.ProjectTemplatesTest do
     assert platforms == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
   end
 
+  test "watchface-poke-battle template excludes aplite" do
+    platforms = ProjectTemplates.target_platforms_for_template("watchface-poke-battle")
+
+    refute "aplite" in platforms
+    assert platforms == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
+  end
+
   test "watch demo templates with metadata restrict target platforms" do
     compass = ProjectTemplates.target_platforms_for_template("watch-demo-compass")
     dictation = ProjectTemplates.target_platforms_for_template("watch-demo-dictation")

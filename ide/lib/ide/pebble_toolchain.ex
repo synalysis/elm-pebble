@@ -1178,6 +1178,35 @@ defmodule Ide.PebbleToolchain do
     end
   end
 
+  defp stage_bitmap_entry_rows(row, assets_root, app_root) do
+    ctor = to_string(Map.get(row, "ctor", "Bitmap"))
+    normalized = Ide.Resources.BitmapVariants.normalize_row(row)
+    package_file = Ide.Resources.BitmapVariants.package_media_file(ctor)
+    filenames = Ide.Resources.BitmapVariants.filenames_for_row(normalized)
+
+    Enum.each(filenames, fn filename ->
+      source_path = Path.join(assets_root, filename)
+      target_variant_path = Path.join([app_root, "resources", "bitmaps", filename])
+
+      if filename != "" and File.exists?(source_path) do
+        :ok = File.mkdir_p(Path.dirname(target_variant_path))
+        :ok = File.cp(source_path, target_variant_path)
+      end
+    end)
+
+    if filenames != [] do
+      [
+        %{
+          "type" => "bitmap",
+          "name" => "BITMAP_" <> macro_name(ctor),
+          "file" => package_file
+        }
+      ]
+    else
+      []
+    end
+  end
+
   @spec stage_bitmap_resources(String.t(), String.t()) :: {:ok, [map()]} | {:error, toolchain_error()}
   defp stage_bitmap_resources(workspace_root, app_root) do
     manifest_path = Path.join(workspace_root, "watch/resources/bitmaps.json")
@@ -1191,25 +1220,7 @@ defmodule Ide.PebbleToolchain do
             entries
             |> Enum.filter(&is_map/1)
             |> Enum.sort_by(&to_string(Map.get(&1, "ctor", "")))
-            |> Enum.map(fn row ->
-              ctor = to_string(Map.get(row, "ctor", "Bitmap"))
-              filename = to_string(Map.get(row, "filename", ""))
-              source_path = Path.join(assets_root, filename)
-              package_rel = Path.join("bitmaps", filename)
-              target_rel = Path.join("resources", package_rel)
-              target_path = Path.join(app_root, target_rel)
-
-              if filename != "" and File.exists?(source_path) do
-                :ok = File.mkdir_p(Path.dirname(target_path))
-                :ok = File.cp(source_path, target_path)
-              end
-
-              %{
-                "type" => "bitmap",
-                "name" => "BITMAP_" <> macro_name(ctor),
-                "file" => package_rel
-              }
-            end)
+            |> Enum.flat_map(&stage_bitmap_entry_rows(&1, assets_root, app_root))
             |> Enum.filter(fn row -> String.trim(to_string(Map.get(row, "file", ""))) != "" end)
 
           {:ok, media_entries}

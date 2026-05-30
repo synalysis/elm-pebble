@@ -6,7 +6,7 @@ defmodule Ide.Resources.ResourceStore do
   alias Ide.Projects
   alias Ide.Projects.Project
   alias Ide.PebbleToolchain
-  alias Ide.Resources.{PdcDecoder, SvgConverter}
+  alias Ide.Resources.{BitmapVariants, PdcDecoder, SvgConverter}
   alias Ide.Resources.Types
 
   @manifest_rel_path "watch/resources/bitmaps.json"
@@ -18,12 +18,23 @@ defmodule Ide.Resources.ResourceStore do
   @generated_module_rel_path "watch/src/Pebble/Ui/Resources.elm"
   @legacy_generated_module_rel_path "watch/src/Pebble/Ui/Bitmap.elm"
 
+  @type bitmap_variant_entry :: %{
+          filename: String.t(),
+          mime: String.t(),
+          bytes: non_neg_integer(),
+          width: non_neg_integer(),
+          height: non_neg_integer()
+        }
+
   @type bitmap_entry :: %{
           id: String.t(),
           ctor: String.t(),
-          filename: String.t(),
-          mime: String.t(),
-          bytes: non_neg_integer()
+          filename: String.t() | nil,
+          mime: String.t() | nil,
+          bytes: non_neg_integer(),
+          width: non_neg_integer(),
+          height: non_neg_integer(),
+          variants: %{optional(String.t()) => bitmap_variant_entry()}
         }
 
   @type font_entry :: %{
@@ -112,23 +123,27 @@ defmodule Ide.Resources.ResourceStore do
     with {:ok, manifest} <- read_bitmap_manifest(workspace) do
       entries = manifest["entries"] || []
 
-      {:ok,
-       Enum.map(entries, fn row ->
-         %{
-           id: to_string(Map.get(row, "id", "")),
-           ctor: to_string(Map.get(row, "ctor", "")),
-           filename: to_string(Map.get(row, "filename", "")),
-           mime: to_string(Map.get(row, "mime", "image/png")),
-           bytes: integer_or_zero(Map.get(row, "bytes", 0))
-         }
-       end)}
+      {:ok, Enum.map(entries, &bitmap_entry_from_row/1)}
     end
   end
 
-  @spec import_bitmap(Project.t(), String.t(), String.t()) ::
+  @spec import_bitmap(Project.t(), String.t(), String.t(), keyword()) ::
           {:ok, map()} | {:error, Types.resource_error()}
-  def import_bitmap(%Project{} = project, upload_path, original_name)
-      when is_binary(upload_path) and is_binary(original_name) do
+  def import_bitmap(%Project{} = project, upload_path, original_name, opts \\ [])
+      when is_binary(upload_path) and is_binary(original_name) and is_list(opts) do
+    color_mode = Keyword.get(opts, :color_mode)
+    ctor_hint = Keyword.get(opts, :ctor)
+
+    if is_binary(color_mode) and BitmapVariants.valid_color_mode?(color_mode) do
+      import_bitmap_variant(project, upload_path, original_name, color_mode, ctor_hint)
+    else
+      import_bitmap_legacy(project, upload_path, original_name)
+    end
+  end
+
+  @spec import_bitmap_legacy(Project.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, Types.resource_error()}
+  defp import_bitmap_legacy(%Project{} = project, upload_path, original_name) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @assets_rel_dir)
     manifest_path = Path.join(workspace, @manifest_rel_path)
@@ -140,43 +155,132 @@ defmodule Ide.Resources.ResourceStore do
          nil <- duplicate_asset_entry(manifest["entries"] || [], assets_dir, bytes),
          ctor <- constructor_from_name(safe_name),
          unique_ctor <- unique_ctor(ctor, manifest["entries"] || []),
-         basename <- "#{unique_ctor}#{Path.extname(safe_name)}",
-         asset_path <- Path.join(assets_dir, basename),
-         :ok <- File.write(asset_path, bytes) do
+         basename <- BitmapVariants.legacy_filename(unique_ctor, Path.extname(safe_name)),
+         :ok <- remove_bitmap_row_files(assets_dir, existing_row(manifest, unique_ctor)),
+         :ok <- File.write(Path.join(assets_dir, basename), bytes) do
       {width, height} = bitmap_dimensions(bytes, mime)
 
-      entry = %{
-        "id" => "bitmap_" <> String.downcase(unique_ctor),
-        "ctor" => unique_ctor,
-        "filename" => basename,
-        "mime" => mime,
-        "bytes" => byte_size(bytes),
-        "width" => width,
-        "height" => height
-      }
+      entry =
+        BitmapVariants.normalize_row(%{
+          "id" => "bitmap_" <> String.downcase(unique_ctor),
+          "ctor" => unique_ctor,
+          "filename" => basename,
+          "mime" => mime,
+          "bytes" => byte_size(bytes),
+          "width" => width,
+          "height" => height,
+          "variants" => %{}
+        })
 
-      entries =
-        (manifest["entries"] || [])
-        |> Enum.reject(&(Map.get(&1, "ctor") == unique_ctor))
-        |> Kernel.++([entry])
-        |> Enum.sort_by(&Map.get(&1, "ctor", ""))
-
-      payload = %{"schema_version" => 1, "entries" => entries}
-
-      with :ok <- write_manifest(manifest_path, payload),
-           :ok <- write_generated_module(workspace) do
-        {:ok, %{entry: entry, entries: entries}}
-      end
+      persist_bitmap_entries(workspace, manifest_path, manifest, entry)
     else
       %{} = duplicate ->
-        {:ok,
-         %{
-           duplicate: true,
-           entry: duplicate
-         }}
+        {:ok, %{duplicate: true, entry: duplicate}}
 
       other ->
         other
+    end
+  end
+
+  @spec import_bitmap_variant(Project.t(), String.t(), String.t(), String.t(), String.t() | nil) ::
+          {:ok, map()} | {:error, Types.resource_error()}
+  defp import_bitmap_variant(%Project{} = project, upload_path, original_name, color_mode, ctor_hint) do
+    workspace = Projects.project_workspace_path(project)
+    assets_dir = Path.join(workspace, @assets_rel_dir)
+    manifest_path = Path.join(workspace, @manifest_rel_path)
+
+    with :ok <- File.mkdir_p(assets_dir),
+         {:ok, manifest} <- read_bitmap_manifest(workspace),
+         {:ok, bytes} <- File.read(upload_path),
+         {:ok, safe_name, mime} <- normalized_filename_and_mime(original_name),
+         ctor <- resolve_bitmap_ctor(manifest, safe_name, ctor_hint),
+         unique_ctor <- unique_ctor(ctor, manifest["entries"] || [], ctor_hint),
+         basename <-
+           BitmapVariants.variant_filename(unique_ctor, color_mode, Path.extname(safe_name)),
+         nil <- duplicate_variant_asset(manifest, assets_dir, bytes, unique_ctor, basename),
+         :ok <- File.write(Path.join(assets_dir, basename), bytes) do
+      {width, height} = bitmap_dimensions(bytes, mime)
+
+      prior = existing_row(manifest, unique_ctor) |> BitmapVariants.normalize_row()
+
+      variants =
+        prior
+        |> Map.get("variants", %{})
+        |> Map.put(color_mode, %{
+          "filename" => basename,
+          "mime" => mime,
+          "bytes" => byte_size(bytes),
+          "width" => width,
+          "height" => height
+        })
+
+      :ok = remove_legacy_filename(assets_dir, prior)
+
+      entry =
+        prior
+        |> Map.put("ctor", unique_ctor)
+        |> Map.put("id", "bitmap_" <> String.downcase(unique_ctor))
+        |> Map.put("variants", variants)
+        |> Map.drop(["filename", "mime", "bytes", "width", "height"])
+        |> BitmapVariants.normalize_row()
+
+      persist_bitmap_entries(workspace, manifest_path, manifest, entry)
+    else
+      %{} = duplicate ->
+        {:ok, %{duplicate: true, entry: duplicate}}
+
+      other ->
+        other
+    end
+  end
+
+  @spec clear_bitmap_variant(Project.t(), String.t(), String.t()) ::
+          {:ok, [map()]} | {:error, Types.resource_error()}
+  def clear_bitmap_variant(%Project{} = project, ctor, color_mode)
+      when is_binary(ctor) and is_binary(color_mode) do
+    unless BitmapVariants.valid_color_mode?(color_mode) do
+      raise ArgumentError, "invalid bitmap color mode #{inspect(color_mode)}"
+    end
+
+    workspace = Projects.project_workspace_path(project)
+    assets_dir = Path.join(workspace, @assets_rel_dir)
+    manifest_path = Path.join(workspace, @manifest_rel_path)
+
+    with {:ok, manifest} <- read_bitmap_manifest(workspace),
+         %{} = row <- existing_row(manifest, ctor) do
+      normalized = BitmapVariants.normalize_row(row)
+      variant = Map.get(normalized["variants"], color_mode)
+
+      if is_map(variant) do
+        filename = Map.get(variant, "filename", "")
+        if filename != "", do: File.rm(Path.join(assets_dir, filename))
+      end
+
+      variants = Map.delete(normalized["variants"], color_mode)
+
+      entry =
+        if map_size(variants) == 0 and not Map.has_key?(normalized, "filename") do
+          nil
+        else
+          normalized |> Map.put("variants", variants) |> BitmapVariants.normalize_row()
+        end
+
+      entries =
+        (manifest["entries"] || [])
+        |> Enum.reject(&(Map.get(&1, "ctor") == ctor))
+        |> then(fn kept ->
+          if entry, do: kept ++ [entry], else: kept
+        end)
+        |> Enum.sort_by(&Map.get(&1, "ctor", ""))
+
+      payload = %{"schema_version" => 2, "entries" => entries}
+
+      with :ok <- write_manifest(manifest_path, payload),
+           :ok <- write_generated_module(workspace) do
+        {:ok, entries}
+      end
+    else
+      _ -> {:error, :bitmap_not_found}
     end
   end
 
@@ -401,12 +505,9 @@ defmodule Ide.Resources.ResourceStore do
 
       {to_remove, kept} = Enum.split_with(entries, &(Map.get(&1, "ctor") == ctor))
 
-      Enum.each(to_remove, fn row ->
-        filename = Map.get(row, "filename", "")
-        if filename != "", do: File.rm(Path.join(assets_dir, filename))
-      end)
+      Enum.each(to_remove, &remove_bitmap_row_files(assets_dir, &1))
 
-      payload = %{"schema_version" => 1, "entries" => kept}
+      payload = %{"schema_version" => 2, "entries" => kept}
 
       with :ok <- write_manifest(manifest_path, payload),
            :ok <- write_generated_module(workspace) do
@@ -428,12 +529,20 @@ defmodule Ide.Resources.ResourceStore do
 
   @spec bitmap_file_path(Project.t(), String.t()) :: {:ok, String.t()} | {:error, Types.resource_error()}
   def bitmap_file_path(%Project{} = project, ctor) when is_binary(ctor) do
+    bitmap_file_path(project, ctor, nil)
+  end
+
+  @spec bitmap_file_path(Project.t(), String.t(), String.t() | nil) ::
+          {:ok, String.t()} | {:error, Types.resource_error()}
+  def bitmap_file_path(%Project{} = project, ctor, color_mode)
+      when is_binary(ctor) and (is_binary(color_mode) or is_nil(color_mode)) do
     workspace = Projects.project_workspace_path(project)
     assets_dir = Path.join(workspace, @assets_rel_dir)
 
     with {:ok, manifest} <- read_bitmap_manifest(workspace),
-         %{} = row <- Enum.find(manifest["entries"] || [], &(Map.get(&1, "ctor") == ctor)),
-         filename when is_binary(filename) and filename != "" <- Map.get(row, "filename") do
+         %{} = row <- existing_row(manifest, ctor),
+         filename when is_binary(filename) and filename != "" <-
+           bitmap_preview_filename(row, color_mode) do
       {:ok, Path.join(assets_dir, filename)}
     else
       _ -> {:error, :bitmap_not_found}
@@ -957,13 +1066,15 @@ defmodule Ide.Resources.ResourceStore do
 
   @spec normalize_bitmap_row(map()) :: map()
   defp normalize_bitmap_row(row) do
-    ctor = to_string(Map.get(row, "ctor", ""))
+    normalized = BitmapVariants.normalize_row(row)
+    {width, height} = BitmapVariants.primary_dimensions(normalized)
+    ctor = Map.get(normalized, "ctor", "")
 
     %{
       ctor: ctor,
       name: to_string(Map.get(row, "name", ctor)),
-      width: integer_or_zero(Map.get(row, "width", 0)),
-      height: integer_or_zero(Map.get(row, "height", 0))
+      width: width,
+      height: height
     }
   end
 
@@ -1074,11 +1185,140 @@ defmodule Ide.Resources.ResourceStore do
 
   defp duplicate_asset_entry(entries, assets_dir, bytes) when is_list(entries) do
     Enum.find(entries, fn row ->
-      filename = Map.get(row, "filename", "")
-
-      is_binary(filename) and filename != "" and
+      Enum.any?(BitmapVariants.filenames_for_row(row), fn filename ->
         match?({:ok, ^bytes}, File.read(Path.join(assets_dir, filename)))
+      end)
     end)
+  end
+
+  defp duplicate_variant_asset(manifest, assets_dir, bytes, ctor, basename) do
+    case File.read(Path.join(assets_dir, basename)) do
+      {:ok, ^bytes} ->
+        existing_row(manifest, ctor)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp persist_bitmap_entries(workspace, manifest_path, manifest, entry) do
+    entries =
+      (manifest["entries"] || [])
+      |> Enum.reject(&(Map.get(&1, "ctor") == Map.get(entry, "ctor")))
+      |> Kernel.++([entry])
+      |> Enum.sort_by(&Map.get(&1, "ctor", ""))
+
+    payload = %{"schema_version" => 2, "entries" => entries}
+
+    with :ok <- write_manifest(manifest_path, payload),
+         :ok <- write_generated_module(workspace) do
+      {:ok, %{entry: entry, entries: entries}}
+    end
+  end
+
+  defp existing_row(manifest, ctor) do
+    Enum.find(manifest["entries"] || [], &(Map.get(&1, "ctor") == ctor)) || %{}
+  end
+
+  defp remove_bitmap_row_files(assets_dir, row) when is_map(row) do
+    Enum.each(BitmapVariants.filenames_for_row(row), fn filename ->
+      path = Path.join(assets_dir, filename)
+      if File.exists?(path), do: File.rm(path)
+    end)
+
+    :ok
+  end
+
+  defp remove_bitmap_row_files(_assets_dir, _), do: :ok
+
+  defp remove_legacy_filename(assets_dir, row) when is_map(row) do
+    case Map.get(row, "filename") do
+      filename when is_binary(filename) and filename != "" ->
+        path = Path.join(assets_dir, filename)
+        if File.exists?(path), do: File.rm(path)
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp resolve_bitmap_ctor(manifest, safe_name, ctor_hint) do
+    base = constructor_from_name(safe_name)
+
+    cond do
+      is_binary(ctor_hint) and ctor_hint != "" ->
+        ctor_hint
+
+      true ->
+        case existing_row(manifest, base) do
+          %{"ctor" => ctor} -> ctor
+          _ -> base
+        end
+    end
+  end
+
+  defp bitmap_preview_filename(row, color_mode) do
+    normalized = BitmapVariants.normalize_row(row)
+    variants = Map.get(normalized, "variants", %{})
+
+    cond do
+      is_binary(color_mode) ->
+        variant_filename(variants, color_mode) ||
+          variant_filename(variants, "Color") ||
+          variant_filename(variants, "BlackWhite") ||
+          legacy_filename(normalized)
+
+      true ->
+        variant_filename(variants, "Color") ||
+          variant_filename(variants, "BlackWhite") ||
+          legacy_filename(normalized)
+    end
+  end
+
+  defp variant_filename(variants, color_mode) do
+    case Map.get(variants, color_mode) do
+      %{"filename" => filename} when is_binary(filename) and filename != "" -> filename
+      _ -> nil
+    end
+  end
+
+  defp legacy_filename(row) do
+    case Map.get(row, "filename") do
+      filename when is_binary(filename) and filename != "" -> filename
+      _ -> nil
+    end
+  end
+
+  defp bitmap_entry_from_row(row) when is_map(row) do
+    normalized = BitmapVariants.normalize_row(row)
+    {width, height} = BitmapVariants.primary_dimensions(normalized)
+
+    variants =
+      normalized
+      |> Map.get("variants", %{})
+      |> Enum.map(fn {mode, variant} ->
+        {mode,
+         %{
+           filename: Map.get(variant, "filename", ""),
+           mime: Map.get(variant, "mime", "image/png"),
+           bytes: integer_or_zero(Map.get(variant, "bytes", 0)),
+           width: integer_or_zero(Map.get(variant, "width", 0)),
+           height: integer_or_zero(Map.get(variant, "height", 0))
+         }}
+      end)
+      |> Map.new()
+
+    %{
+      id: Map.get(normalized, "id", ""),
+      ctor: Map.get(normalized, "ctor", ""),
+      filename: Map.get(normalized, "filename"),
+      mime: Map.get(normalized, "mime"),
+      bytes: integer_or_zero(Map.get(normalized, "bytes", 0)),
+      width: width,
+      height: height,
+      variants: variants
+    }
   end
 
   @spec normalize_font_manifest(map()) :: map()
@@ -1278,7 +1518,13 @@ defmodule Ide.Resources.ResourceStore do
   end
 
   @spec unique_ctor(String.t(), [map()]) :: String.t()
-  defp unique_ctor(ctor, entries) do
+  defp unique_ctor(ctor, entries, ctor_hint \\ nil)
+
+  defp unique_ctor(_ctor, _entries, ctor_hint) when is_binary(ctor_hint) and ctor_hint != "" do
+    ctor_hint
+  end
+
+  defp unique_ctor(ctor, entries, _ctor_hint) do
     used =
       entries
       |> Enum.map(&Map.get(&1, "ctor", ""))

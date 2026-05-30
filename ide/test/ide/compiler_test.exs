@@ -40,7 +40,7 @@ defmodule Ide.CompilerTest do
     templates = []
 
     strict_optional_templates =
-      ["watchface-digital", "game-2048", "starter", "game-basic"] ++
+      ["watchface-digital", "watchface-poke-battle", "game-2048", "starter", "game-basic"] ++
         ~w(watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info)
 
     for template <- templates ++ strict_optional_templates do

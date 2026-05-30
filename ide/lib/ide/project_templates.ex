@@ -22,7 +22,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info game-basic game-tiny-bird game-jump-n-run game-2048)
+  @template_keys ~w(starter watchface-digital watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info game-basic game-tiny-bird game-jump-n-run game-2048)
 
   @template_dirs %{
     "starter" => "starter_watch",
@@ -32,6 +32,7 @@ defmodule Ide.ProjectTemplates do
     "watchface-yes" => "watchface_yes",
     "watchface-tangram-time" => "watchface_tangram_time",
     "watchface-weather-animated" => "watchface_weather_animated",
+    "watchface-poke-battle" => "watchface_poke_battle",
     "companion-demo-phone-status" => "companion_demo_phone_status",
     "companion-demo-weather-env" => "companion_demo_weather_env",
     "companion-demo-calendar" => "companion_demo_calendar",
@@ -87,6 +88,7 @@ defmodule Ide.ProjectTemplates do
              "watchface-yes",
              "watchface-tangram-time",
              "watchface-weather-animated",
+             "watchface-poke-battle",
              "companion-demo-phone-status",
              "companion-demo-weather-env",
              "companion-demo-calendar",
@@ -150,6 +152,7 @@ defmodule Ide.ProjectTemplates do
       {"Watchface: YES (watch, protocol, phone)", "watchface-yes"},
       {"Watchface: Tangram Time (watch, protocol, phone)", "watchface-tangram-time"},
       {"Watchface: Weather Animated (watch, protocol, phone, vectors)", "watchface-weather-animated"},
+      {"Watchface: Poke Battle (watch-only, health steps)", "watchface-poke-battle"},
       {"Companion demo: Phone status (battery, locale, network, notifications)", "companion-demo-phone-status"},
       {"Companion demo: Weather & environment", "companion-demo-weather-env"},
       {"Companion demo: Calendar", "companion-demo-calendar"},
@@ -200,6 +203,9 @@ defmodule Ide.ProjectTemplates do
 
       "watchface-weather-animated" ->
         seed_weather_animated_watchface_workspace(workspace_path)
+
+      "watchface-poke-battle" ->
+        seed_watch_only_workspace(workspace_path, "watchface_poke_battle")
 
       "companion-demo-phone-status" ->
         seed_companion_demo_workspace(workspace_path, "companion_demo_phone_status")

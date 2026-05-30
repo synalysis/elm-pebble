@@ -57,7 +57,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
       elm_debug_to_string: 1
     ]
 
-  alias ElmEx.CoreIR
+  alias ElmExecutor.Runtime.CoreIREvaluator.Eval
+  alias ElmExecutor.Runtime.CoreIREvaluator.Index
   alias ElmExecutor.Runtime.CoreIREvaluator.Value.HigherOrder
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
 
@@ -136,152 +137,16 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   end
 
   @spec index_functions(EvalTypes.core_ir() | nil) :: EvalTypes.function_index()
-  def index_functions(%CoreIR{} = core_ir),
-    do: index_functions(%{modules: core_ir.modules})
-
-  def index_functions(%{modules: modules}) when is_list(modules),
-    do: index_functions(%{"modules" => modules})
-
-  def index_functions(%{"modules" => modules}) when is_list(modules) do
-    Enum.reduce(modules, %{}, fn mod, acc ->
-      module_name = to_string(generic_map_value(mod, "name") || "Main")
-      decls = generic_map_value(mod, "declarations") || []
-
-      Enum.reduce(decls, acc, fn decl, a ->
-        if to_string(generic_map_value(decl, "kind") || "") == "function" do
-          name = to_string(generic_map_value(decl, "name") || "")
-          body = generic_map_value(decl, "expr")
-
-          params =
-            normalize_params(generic_map_value(decl, "params") || generic_map_value(decl, "args"))
-
-          type = generic_map_value(decl, "type")
-
-          Map.put(a, {module_name, name, length(params)}, %{
-            module: module_name,
-            name: name,
-            params: params,
-            body: body,
-            type: if(is_binary(type), do: type, else: nil)
-          })
-        else
-          a
-        end
-      end)
-    end)
-  end
-
-  def index_functions(_), do: %{}
+  defdelegate index_functions(core_ir), to: Index
 
   @spec index_record_aliases(EvalTypes.core_ir() | nil) :: EvalTypes.record_aliases()
-  def index_record_aliases(%{modules: modules}) when is_list(modules),
-    do: index_record_aliases(%{"modules" => modules})
-
-  def index_record_aliases(%{"modules" => modules}) when is_list(modules) do
-    Enum.reduce(modules, %{}, fn mod, acc ->
-      module_name = to_string(generic_map_value(mod, "name") || "Main")
-      decls = generic_map_value(mod, "declarations") || []
-
-      Enum.reduce(decls, acc, fn decl, a ->
-        kind = to_string(generic_map_value(decl, "kind") || "")
-        name = to_string(generic_map_value(decl, "name") || "")
-        expr = generic_map_value(decl, "expr") || %{}
-        fields = generic_map_value(expr, "fields") || []
-
-        if kind == "type_alias" and record_alias_expr?(expr) and is_list(fields) do
-          Map.put(a, {module_name, name}, Enum.map(fields, &to_string/1))
-        else
-          a
-        end
-      end)
-    end)
-  end
-
-  def index_record_aliases(_), do: %{}
+  defdelegate index_record_aliases(core_ir), to: Index
 
   @spec index_record_alias_field_types(EvalTypes.core_ir() | nil) :: EvalTypes.record_alias_field_types()
-  def index_record_alias_field_types(%{modules: modules}) when is_list(modules),
-    do: index_record_alias_field_types(%{"modules" => modules})
-
-  def index_record_alias_field_types(%{"modules" => modules}) when is_list(modules) do
-    Enum.reduce(modules, %{}, fn mod, acc ->
-      module_name = to_string(generic_map_value(mod, "name") || "Main")
-      decls = generic_map_value(mod, "declarations") || []
-
-      Enum.reduce(decls, acc, fn decl, a ->
-        kind = to_string(generic_map_value(decl, "kind") || "")
-        name = to_string(generic_map_value(decl, "name") || "")
-        expr = generic_map_value(decl, "expr") || %{}
-        field_types = generic_map_value(expr, "field_types") || %{}
-
-        if kind == "type_alias" and record_alias_expr?(expr) and is_map(field_types) do
-          Map.put(a, {module_name, name}, stringify_map_values(field_types))
-        else
-          a
-        end
-      end)
-    end)
-  end
-
-  def index_record_alias_field_types(_), do: %{}
+  defdelegate index_record_alias_field_types(core_ir), to: Index
 
   @spec index_constructor_tags(EvalTypes.core_ir() | nil) :: EvalTypes.constructor_tags()
-  def index_constructor_tags(%{modules: modules}) when is_list(modules),
-    do: index_constructor_tags(%{"modules" => modules})
-
-  def index_constructor_tags(%{"modules" => modules}) when is_list(modules) do
-    Enum.flat_map(modules, fn mod ->
-      module_name = to_string(generic_map_value(mod, "name") || "Main")
-      unions = generic_map_value(mod, "unions") || %{}
-      update_module? = module_has_update?(mod)
-
-      Enum.flat_map(unions, fn {union_name, union} ->
-        tags = generic_map_value(union, "tags") || %{}
-
-        Enum.flat_map(tags, fn {ctor, tag} ->
-          if is_integer(tag) do
-            payload_specs = generic_map_value(union, "payload_specs") || %{}
-
-            [
-              %{
-                module: module_name,
-                union: to_string(union_name),
-                ctor: to_string(ctor),
-                tag: tag,
-                payload_spec: generic_map_value(payload_specs, ctor),
-                update_module?: update_module?
-              }
-            ]
-          else
-            []
-          end
-        end)
-      end)
-    end)
-  end
-
-  def index_constructor_tags(_), do: []
-
-  @spec module_has_update?(map()) :: boolean()
-  defp module_has_update?(mod) when is_map(mod) do
-    mod
-    |> generic_map_value("declarations")
-    |> case do
-      decls when is_list(decls) ->
-        Enum.any?(decls, fn decl ->
-          is_map(decl) and to_string(generic_map_value(decl, "kind") || "") == "function" and
-            generic_map_value(decl, "name") == "update"
-        end)
-
-      _ ->
-        false
-    end
-  end
-
-  @spec record_alias_expr?(EvalTypes.expr()) :: boolean()
-  defp record_alias_expr?(expr) when is_map(expr) do
-    (expr["op"] || expr[:op]) in [:record_alias, "record_alias"]
-  end
+  defdelegate index_constructor_tags(core_ir), to: Index
 
   @spec generic_map_value(map(), String.t() | atom()) :: EvalTypes.runtime_value() | nil
   defp generic_map_value(map, key) when is_map(map) and is_binary(key) do
@@ -313,11 +178,6 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec stringify_map_values(map()) :: map()
-  defp stringify_map_values(map) when is_map(map) do
-    Map.new(map, fn {key, value} -> {to_string(key), to_string(value)} end)
-  end
-
   @spec normalize_params(list() | map() | nil) :: [String.t()]
   defp normalize_params(params) when is_list(params) do
     params
@@ -345,295 +205,36 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp do_evaluate(expr, env, context, stack)
        when is_map(expr) and is_map(env) and is_map(context) do
     op = expr |> generic_map_value("op") |> normalize_op()
+    host = %{
+      evaluate: &maybe_evaluate/4,
+      compare: &compare/3,
+      normalize_params: &normalize_params/1,
+      collect_ok: &collect_ok/1,
+      resolve_zero_arity_value: &resolve_zero_arity_value/3,
+      tuple_first: &tuple_first/1,
+      tuple_second: &tuple_second/1,
+      char_from_code: &char_from_code/1,
+      evaluate_with_env_lookup: &maybe_evaluate_with_env_lookup/4,
+      normalize_record_fields: &normalize_record_fields/1,
+      field_access: &field_access/2,
+      numeric_operand_from_var: &numeric_operand_from_var/4,
+      short_ctor_name: &short_ctor_name/1,
+      record_alias_fields: &record_alias_fields/2,
+      record_alias_field_types: &record_alias_field_types/2,
+      record_alias_value: &record_alias_value/4,
+      call_function: &call_function/5,
+      call_callable: &call_callable/5,
+      evaluate_case_branches: &evaluate_case_branches/5
+    }
 
-    case op do
-      :int_literal ->
-        {:ok, generic_map_value(expr, "value")}
+    case Eval.try_dispatch(op, expr, env, context, stack, host) do
+      {:ok, value} ->
+        {:ok, value}
 
-      :float_literal ->
-        {:ok, generic_map_value(expr, "value")}
+      {:error, _} = err ->
+        err
 
-      :bool_literal ->
-        {:ok, generic_map_value(expr, "value")}
-
-      :char_literal ->
-        {:ok, generic_map_value(expr, "value")}
-
-      :string_literal ->
-        {:ok, generic_map_value(expr, "value")}
-
-      :expr ->
-        inner =
-          expr["expr"] || expr[:expr] || expr["value_expr"] || expr[:value_expr] ||
-            expr["in_expr"] || expr[:in_expr]
-
-        maybe_evaluate(inner, env, context, stack)
-
-      :var ->
-        name = expr["name"] || expr[:name]
-
-        value =
-          if is_binary(name) and Map.has_key?(env, name) do
-            Map.get(env, name)
-          else
-            case String.downcase(to_string(name || "")) do
-              "pi" -> :math.pi()
-              "e" -> :math.exp(1.0)
-              "lt" -> %{"ctor" => "LT", "args" => []}
-              "eq" -> %{"ctor" => "EQ", "args" => []}
-              "gt" -> %{"ctor" => "GT", "args" => []}
-              "empty" -> []
-              _ -> nil
-            end
-          end
-
-        cond do
-          value != nil ->
-            {:ok, value}
-
-          is_binary(name) ->
-            case resolve_zero_arity_value(name, context, stack) do
-              {:ok, resolved} -> {:ok, resolved}
-              _ -> {:ok, {:function_ref, name}}
-            end
-
-          true ->
-            {:ok, value}
-        end
-
-      :var_resolved ->
-        value_expr = expr["value_expr"] || expr[:value_expr]
-        maybe_evaluate(value_expr, env, context, stack)
-
-      :add_const ->
-        name = expr["var"] || expr[:var]
-        value = expr["value"] || expr[:value]
-
-        with {:ok, left} <- numeric_operand_from_var(name, env, context, stack),
-             right when is_number(right) <- value do
-          {:ok, left + right}
-        else
-          _ -> {:error, {:invalid_add_const, name}}
-        end
-
-      :sub_const ->
-        name = expr["var"] || expr[:var]
-        value = expr["value"] || expr[:value]
-
-        with {:ok, left} <- numeric_operand_from_var(name, env, context, stack),
-             right when is_number(right) <- value do
-          {:ok, left - right}
-        else
-          _ -> {:error, {:invalid_sub_const, name}}
-        end
-
-      :add_vars ->
-        left_name = expr["left"] || expr[:left]
-        right_name = expr["right"] || expr[:right]
-
-        with {:ok, left} <- numeric_operand_from_var(left_name, env, context, stack),
-             {:ok, right} <- numeric_operand_from_var(right_name, env, context, stack) do
-          {:ok, left + right}
-        else
-          _ -> {:error, {:invalid_add_vars, left_name, right_name}}
-        end
-
-      :field_access ->
-        field = expr["field"] || expr[:field]
-
-        with {:ok, base} <-
-               maybe_evaluate_with_env_lookup(expr["arg"] || expr[:arg], env, context, stack) do
-          {:ok, field_access(base, field)}
-        end
-
-      :field_call ->
-        field = expr["field"] || expr[:field]
-        args = expr["args"] || expr[:args] || []
-
-        with {:ok, base} <-
-               maybe_evaluate_with_env_lookup(expr["arg"] || expr[:arg], env, context, stack),
-             callable when not is_nil(callable) <- field_access(base, field),
-             {:ok, values} <-
-               args |> Enum.map(&maybe_evaluate(&1, env, context, stack)) |> collect_ok(),
-             {:ok, value} <- call_callable(callable, values, env, context, stack) do
-          {:ok, value}
-        else
-          nil -> {:error, {:unknown_field_call, field}}
-          {:error, _} = err -> err
-          _ -> {:error, {:invalid_field_call, field}}
-        end
-
-      :record_literal ->
-        fields = expr["fields"] || expr[:fields] || %{}
-
-        map =
-          normalize_record_fields(fields)
-          |> Enum.reduce(%{}, fn {k, v}, acc ->
-            case maybe_evaluate(v, env, context, stack) do
-              {:ok, value} -> Map.put(acc, to_string(k), value)
-              _ -> Map.put(acc, to_string(k), nil)
-            end
-          end)
-
-        {:ok, map}
-
-      :record_update ->
-        base_expr = expr["base"] || expr[:base]
-        fields = expr["fields"] || expr[:fields] || []
-
-        with {:ok, base} <- maybe_evaluate_with_env_lookup(base_expr, env, context, stack) do
-          base = if is_map(base), do: base, else: %{}
-
-          updated =
-            normalize_record_fields(fields)
-            |> Enum.reduce(base, fn {k, v}, acc ->
-              case maybe_evaluate(v, env, context, stack) do
-                {:ok, value} -> Map.put(acc, to_string(k), value)
-                _ -> acc
-              end
-            end)
-
-          {:ok, updated}
-        end
-
-      :list_literal ->
-        list = expr["items"] || expr[:items] || expr["elements"] || expr[:elements] || []
-
-        list
-        |> Enum.map(&maybe_evaluate(&1, env, context, stack))
-        |> collect_ok()
-
-      :tuple2 ->
-        with {:ok, left} <- maybe_evaluate(expr["left"] || expr[:left], env, context, stack),
-             {:ok, right} <- maybe_evaluate(expr["right"] || expr[:right], env, context, stack) do
-          {:ok, {left, right}}
-        end
-
-      :tuple ->
-        elements = expr["elements"] || expr[:elements] || []
-
-        with true <- is_list(elements),
-             {:ok, values} <-
-               elements |> Enum.map(&maybe_evaluate(&1, env, context, stack)) |> collect_ok() do
-          {:ok, List.to_tuple(values)}
-        else
-          _ -> {:error, {:unsupported_tuple, expr}}
-        end
-
-      :tuple_first_expr ->
-        with {:ok, value} <- maybe_evaluate(expr["arg"] || expr[:arg], env, context, stack) do
-          {:ok, tuple_first(value)}
-        end
-
-      :tuple_second_expr ->
-        with {:ok, value} <- maybe_evaluate(expr["arg"] || expr[:arg], env, context, stack) do
-          {:ok, tuple_second(value)}
-        end
-
-      :tuple_first ->
-        with {:ok, value} <- maybe_evaluate(expr["arg"] || expr[:arg], env, context, stack) do
-          {:ok, tuple_first(value)}
-        end
-
-      :tuple_second ->
-        with {:ok, value} <- maybe_evaluate(expr["arg"] || expr[:arg], env, context, stack) do
-          {:ok, tuple_second(value)}
-        end
-
-      :string_length_expr ->
-        with {:ok, value} <- maybe_evaluate(expr["arg"] || expr[:arg], env, context, stack) do
-          {:ok, if(is_binary(value), do: String.length(value), else: 0)}
-        end
-
-      :char_from_code_expr ->
-        with {:ok, value} <- maybe_evaluate(expr["arg"] || expr[:arg], env, context, stack) do
-          {:ok, char_from_code(value)}
-        end
-
-      :let_in ->
-        name = expr["name"] || expr[:name]
-        value_expr = expr["value_expr"] || expr[:value_expr]
-        in_expr = expr["in_expr"] || expr[:in_expr]
-
-        with {:ok, value} <- maybe_evaluate(value_expr, env, context, stack) do
-          next_env = if is_binary(name), do: Map.put(env, name, value), else: env
-          maybe_evaluate(in_expr, next_env, context, stack)
-        end
-
-      :if ->
-        with {:ok, condition} <- maybe_evaluate(expr["cond"] || expr[:cond], env, context, stack) do
-          if condition == true do
-            maybe_evaluate(expr["then_expr"] || expr[:then_expr], env, context, stack)
-          else
-            maybe_evaluate(expr["else_expr"] || expr[:else_expr], env, context, stack)
-          end
-        end
-
-      :compare ->
-        with {:ok, left} <- maybe_evaluate(expr["left"] || expr[:left], env, context, stack),
-             {:ok, right} <- maybe_evaluate(expr["right"] || expr[:right], env, context, stack) do
-          {:ok, compare(expr["kind"] || expr[:kind], left, right)}
-        end
-
-      :constructor_call ->
-        target = to_string(expr["target"] || expr[:target] || "")
-        args = expr["args"] || expr[:args] || []
-        short = short_ctor_name(target)
-
-        with {:ok, values} <-
-               args |> Enum.map(&maybe_evaluate(&1, env, context, stack)) |> collect_ok() do
-          cond do
-            values == [] and record_alias_fields(context, target) != nil ->
-              {:ok,
-               {:record_alias_constructor, short, record_alias_fields(context, target),
-                record_alias_field_types(context, target)}}
-
-            is_list(record_alias_fields(context, target)) ->
-              {:ok,
-               record_alias_value(
-                 record_alias_fields(context, target),
-                 record_alias_field_types(context, target),
-                 values,
-                 context
-               )}
-
-            true ->
-              case {short, values} do
-                {"True", []} -> {:ok, true}
-                {"False", []} -> {:ok, false}
-                _ -> {:ok, %{"ctor" => short, "args" => values}}
-              end
-          end
-        end
-
-      :lambda ->
-        params = normalize_params(expr["params"] || expr[:params] || expr["args"] || expr[:args])
-        body = expr["body"] || expr[:body]
-        {:ok, {:closure, params, body, env}}
-
-      :qualified_call ->
-        target = to_string(expr["target"] || expr[:target] || "")
-        args = expr["args"] || expr[:args] || []
-        call_function(target, args, env, context, stack)
-
-      :call ->
-        name = to_string(expr["name"] || expr[:name] || "")
-        args = expr["args"] || expr[:args] || []
-        call_function(name, args, env, context, stack)
-
-      :case ->
-        with {:ok, subject} <-
-               maybe_evaluate_with_env_lookup(
-                 expr["subject"] || expr[:subject],
-                 env,
-                 context,
-                 stack
-               ) do
-          branches = expr["branches"] || expr[:branches] || []
-          evaluate_case_branches(branches, subject, env, context, stack)
-        end
-
-      _ ->
+      :unsupported ->
         value = generic_map_value(expr, "value")
 
         cond do

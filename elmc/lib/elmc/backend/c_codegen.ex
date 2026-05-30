@@ -4,75 +4,9 @@ defmodule Elmc.Backend.CCodegen do
   """
 
   alias ElmEx.IR
+  alias Elmc.Backend.CCodegen.Constants
+  alias Elmc.Backend.CCodegen.Emit
   alias Elmc.Backend.CCodegen.Types
-
-  @pebble_color_constants %{
-    "clearColor" => 0x00,
-    "black" => 0xC0,
-    "oxfordBlue" => 0xC1,
-    "dukeBlue" => 0xC2,
-    "blue" => 0xC3,
-    "darkGreen" => 0xC4,
-    "midnightGreen" => 0xC5,
-    "cobaltBlue" => 0xC6,
-    "blueMoon" => 0xC7,
-    "islamicGreen" => 0xC8,
-    "jaegerGreen" => 0xC9,
-    "tiffanyBlue" => 0xCA,
-    "vividCerulean" => 0xCB,
-    "green" => 0xCC,
-    "malachite" => 0xCD,
-    "mediumSpringGreen" => 0xCE,
-    "cyan" => 0xCF,
-    "bulgarianRose" => 0xD0,
-    "imperialPurple" => 0xD1,
-    "indigo" => 0xD2,
-    "electricUltramarine" => 0xD3,
-    "armyGreen" => 0xD4,
-    "darkGray" => 0xD5,
-    "liberty" => 0xD6,
-    "veryLightBlue" => 0xD7,
-    "kellyGreen" => 0xD8,
-    "mayGreen" => 0xD9,
-    "cadetBlue" => 0xDA,
-    "pictonBlue" => 0xDB,
-    "brightGreen" => 0xDC,
-    "screaminGreen" => 0xDD,
-    "mediumAquamarine" => 0xDE,
-    "electricBlue" => 0xDF,
-    "darkCandyAppleRed" => 0xE0,
-    "jazzberryJam" => 0xE1,
-    "purple" => 0xE2,
-    "vividViolet" => 0xE3,
-    "windsorTan" => 0xE4,
-    "roseVale" => 0xE5,
-    "purpureus" => 0xE6,
-    "lavenderIndigo" => 0xE7,
-    "limerick" => 0xE8,
-    "brass" => 0xE9,
-    "lightGray" => 0xEA,
-    "babyBlueEyes" => 0xEB,
-    "springBud" => 0xEC,
-    "inchworm" => 0xED,
-    "mintGreen" => 0xEE,
-    "celeste" => 0xEF,
-    "red" => 0xF0,
-    "folly" => 0xF1,
-    "fashionMagenta" => 0xF2,
-    "magenta" => 0xF3,
-    "orange" => 0xF4,
-    "sunsetOrange" => 0xF5,
-    "brilliantRose" => 0xF6,
-    "shockingPink" => 0xF7,
-    "chromeYellow" => 0xF8,
-    "rajah" => 0xF9,
-    "melon" => 0xFA,
-    "richBrilliantLavender" => 0xFB,
-    "yellow" => 0xFC,
-    "icterine" => 0xFD,
-    "pastelYellow" => 0xFE,
-    "white" => 0xFF
-  }
 
   @spec write_project(IR.t(), String.t(), Types.codegen_opts()) :: :ok | {:error, Types.file_error()}
   def write_project(%IR{} = ir, out_dir, opts \\ %{}) do
@@ -205,7 +139,7 @@ defmodule Elmc.Backend.CCodegen do
     Process.delete(:elmc_enum_types)
 
     trig_fallback_prelude =
-      generated_trig_fallback_prelude([lambda_defs, function_defs, direct_command_defs])
+      Emit.generated_trig_fallback_prelude([lambda_defs, function_defs, direct_command_defs])
 
     """
     #include "elmc_generated.h"
@@ -215,9 +149,9 @@ defmodule Elmc.Backend.CCodegen do
     #pragma GCC diagnostic ignored "-Wunused-function"
     #endif
 
-    #{generated_magic_number_defines()}
+    #{Emit.generated_magic_number_defines()}
 
-    #{pebble_debug_probe_prelude()}
+    #{Emit.pebble_debug_probe_prelude()}
 
     #{trig_fallback_prelude}
 
@@ -231,161 +165,6 @@ defmodule Elmc.Backend.CCodegen do
 
     #{direct_command_defs}
     """
-  end
-
-  defp generated_magic_number_defines do
-    """
-    #define ELMC_RENDER_OP_NONE 0
-    #define ELMC_RENDER_OP_CLEAR 2
-    #define ELMC_RENDER_OP_PIXEL 3
-    #define ELMC_RENDER_OP_LINE 4
-    #define ELMC_RENDER_OP_RECT 5
-    #define ELMC_RENDER_OP_FILL_RECT 6
-    #define ELMC_RENDER_OP_CIRCLE 7
-    #define ELMC_RENDER_OP_FILL_CIRCLE 8
-    #define ELMC_RENDER_OP_PUSH_CONTEXT 10
-    #define ELMC_RENDER_OP_POP_CONTEXT 11
-    #define ELMC_RENDER_OP_STROKE_WIDTH 12
-    #define ELMC_RENDER_OP_ANTIALIASED 13
-    #define ELMC_RENDER_OP_STROKE_COLOR 14
-    #define ELMC_RENDER_OP_FILL_COLOR 15
-    #define ELMC_RENDER_OP_TEXT_COLOR 16
-    #define ELMC_RENDER_OP_ROUND_RECT 17
-    #define ELMC_RENDER_OP_ARC 18
-    #define ELMC_RENDER_OP_CONTEXT_GROUP 19
-    #define ELMC_RENDER_OP_PATH_FILLED 20
-    #define ELMC_RENDER_OP_PATH_OUTLINE 21
-    #define ELMC_RENDER_OP_PATH_OUTLINE_OPEN 22
-    #define ELMC_RENDER_OP_FILL_RADIAL 23
-    #define ELMC_RENDER_OP_COMPOSITING_MODE 24
-    #define ELMC_RENDER_OP_BITMAP_IN_RECT 25
-    #define ELMC_RENDER_OP_ROTATED_BITMAP 26
-    #define ELMC_RENDER_OP_TEXT_INT_WITH_FONT 27
-    #define ELMC_RENDER_OP_TEXT_LABEL_WITH_FONT 28
-    #define ELMC_RENDER_OP_TEXT 29
-    #define ELMC_CONTEXT_STROKE_WIDTH 1
-    #define ELMC_CONTEXT_ANTIALIASED 2
-    #define ELMC_CONTEXT_STROKE_COLOR 3
-    #define ELMC_CONTEXT_FILL_COLOR 4
-    #define ELMC_CONTEXT_TEXT_COLOR 5
-    #define ELMC_CONTEXT_COMPOSITING_MODE 6
-    #define ELMC_UI_NODE_WINDOW_STACK 1000
-    #define ELMC_UI_NODE_WINDOW 1001
-    #define ELMC_UI_NODE_CANVAS_LAYER 1002
-    #define ELMC_BUTTON_BACK 0
-    #define ELMC_BUTTON_UP 1
-    #define ELMC_BUTTON_SELECT 2
-    #define ELMC_BUTTON_DOWN 3
-    #define ELMC_BUTTON_EVENT_PRESSED 1
-    #define ELMC_BUTTON_EVENT_RELEASED 2
-    #define ELMC_BUTTON_EVENT_LONG_PRESSED 3
-    #define ELMC_SUBSCRIPTION_SECOND_CHANGE 1
-    #define ELMC_SUBSCRIPTION_BUTTON_UP 2
-    #define ELMC_SUBSCRIPTION_BUTTON_SELECT 4
-    #define ELMC_SUBSCRIPTION_BUTTON_DOWN 8
-    #define ELMC_SUBSCRIPTION_ACCEL_TAP 16
-    #define ELMC_SUBSCRIPTION_HOUR_CHANGE 1024
-    #define ELMC_SUBSCRIPTION_MINUTE_CHANGE 2048
-    #define ELMC_SUBSCRIPTION_FRAME_BASE 8192
-    #define ELMC_SUBSCRIPTION_BUTTON_RAW 16384
-    #define ELMC_SUBSCRIPTION_DAY_CHANGE 65536
-    #define ELMC_SUBSCRIPTION_MONTH_CHANGE 131072
-    #define ELMC_SUBSCRIPTION_YEAR_CHANGE 262144
-    #define ELMC_SUBSCRIPTION_BUTTON_LONG_UP 128
-    #define ELMC_SUBSCRIPTION_BUTTON_LONG_SELECT 256
-    #define ELMC_SUBSCRIPTION_BUTTON_LONG_DOWN 512
-    #define ELMC_TEXT_ALIGN_LEFT 0
-    #define ELMC_TEXT_ALIGN_CENTER 1
-    #define ELMC_TEXT_ALIGN_RIGHT 2
-    #define ELMC_TEXT_OVERFLOW_WORD_WRAP 0
-    #define ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS 1
-    #define ELMC_TEXT_OVERFLOW_FILL 2
-    #define ELMC_TEXT_OVERFLOW_SHIFT 2
-    #{generated_color_defines()}
-    """
-  end
-
-  defp generated_color_defines do
-    @pebble_color_constants
-    |> Enum.sort_by(fn {name, _value} -> name end)
-    |> Enum.map_join("\n", fn {name, value} ->
-      "#define #{generated_color_macro(name)} #{value}"
-    end)
-  end
-
-  defp pebble_debug_probe_prelude do
-    """
-    #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
-    #include <pebble.h>
-    static inline void elmc_agent_generated_probe(uint32_t tag) {
-      static uint32_t seen_tags[16];
-      static int seen_count = 0;
-      for (int i = 0; i < seen_count; i++) {
-        if (seen_tags[i] == tag) return;
-      }
-      if (seen_count >= 16) return;
-      DataLoggingSessionRef session = data_logging_create(tag, DATA_LOGGING_BYTE_ARRAY, 1, false);
-      if (session) {
-        seen_tags[seen_count++] = tag;
-        data_logging_finish(session);
-      }
-    }
-    #else
-    static inline void elmc_agent_generated_probe(uint32_t tag) {
-      (void)tag;
-    }
-    #endif
-    """
-  end
-
-  defp generated_trig_fallback_prelude(chunks) do
-    source = Enum.join(chunks, "\n")
-    needs_sin? = String.contains?(source, "generated_trig_sin_double")
-    needs_cos? = String.contains?(source, "generated_trig_cos_double")
-
-    if needs_sin? or needs_cos? do
-      cos_helper =
-        if needs_cos? do
-          """
-
-          static double generated_trig_cos_double(double x) {
-            const double half_pi = 1.57079632679489661923;
-            return generated_trig_sin_double(x + half_pi);
-          }
-          """
-        else
-          ""
-        end
-
-      """
-      #if !(defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO))
-      static double generated_trig_normalize_radians(double x) {
-        const double pi = 3.14159265358979323846;
-        const double two_pi = 6.28318530717958647692;
-        while (x > pi) x -= two_pi;
-        while (x < -pi) x += two_pi;
-        return x;
-      }
-
-      static double generated_trig_sin_double(double x) {
-        const double pi = 3.14159265358979323846;
-        const double half_pi = 1.57079632679489661923;
-        x = generated_trig_normalize_radians(x);
-        if (x > half_pi) x = pi - x;
-        if (x < -half_pi) x = -pi - x;
-        double x2 = x * x;
-        return x * (1.0
-            - x2 / 6.0
-            + (x2 * x2) / 120.0
-            - (x2 * x2 * x2) / 5040.0
-            + (x2 * x2 * x2 * x2) / 362880.0);
-      }
-      #{cos_helper}
-      #endif
-      """
-    else
-      ""
-    end
   end
 
   @spec constructor_tag_map(IR.t()) :: map()
@@ -7032,13 +6811,6 @@ defmodule Elmc.Backend.CCodegen do
   defp generated_context_kind_macro(:text_color), do: "ELMC_CONTEXT_TEXT_COLOR"
   defp generated_context_kind_macro(:compositing_mode), do: "ELMC_CONTEXT_COMPOSITING_MODE"
 
-  defp generated_color_macro(name) when is_binary(name) do
-    name
-    |> Macro.underscore()
-    |> String.upcase()
-    |> then(&"ELMC_COLOR_#{&1}")
-  end
-
   @spec special_value_from_target(String.t(), [map()]) :: map() | nil
   defp special_value_from_target("Pebble.Ui.clear", args),
     do: encoded_draw_cmd_expr(draw_kind(:clear), args, 1)
@@ -7218,8 +6990,8 @@ defmodule Elmc.Backend.CCodegen do
        do: %{op: :int_literal, value: round(degrees * 65_536 / 360)}
 
   defp special_value_from_target("Pebble.Ui.Color." <> name, []) do
-    case Map.fetch(@pebble_color_constants, name) do
-      {:ok, _value} -> %{op: :c_int_expr, value: generated_color_macro(name)}
+    case Map.fetch(Constants.pebble_color_constants(), name) do
+      {:ok, _value} -> %{op: :c_int_expr, value: Emit.generated_color_macro(name)}
       :error -> nil
     end
   end
@@ -12623,7 +12395,7 @@ defmodule Elmc.Backend.CCodegen do
     #include "elmc_#{safe_name}.h"
     #include "elmc_generated.h"
 
-    #{pebble_debug_probe_prelude()}
+    #{Emit.pebble_debug_probe_prelude()}
 
     #{function_defs}
     """

@@ -20,15 +20,15 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
         <.settings_nav pane={@pane} project={@project} class="mb-4" />
         <h2 class="text-base font-semibold">Resources</h2>
         <p class="mt-1 text-sm text-zinc-600">
-          Upload bitmap, vector, and font assets used by the watch app. SVG files are converted to
-          Pebble Draw Command (PDC) resources automatically. A generated
-          <span class="font-mono">Pebble.Ui.Resources</span>
+          Upload bitmap, vector, and font assets used by the watch app. Bitmaps can include separate
+          monochrome and color files; Pebble picks the matching variant per watch model at build time.
+          A generated <span class="font-mono">Pebble.Ui.Resources</span>
           module is refreshed automatically.
         </p>
 
         <div class="mt-4 space-y-5">
           <div class="rounded border border-zinc-200 bg-zinc-50 p-3">
-            <h3 class="text-sm font-semibold text-zinc-700">Bitmap uploads</h3>
+            <h3 class="text-sm font-semibold text-zinc-700">New bitmap</h3>
             <.form
               for={%{}}
               phx-change="validate-resource-upload"
@@ -36,6 +36,17 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
               class="mt-2 space-y-2"
             >
               <.live_file_input upload={@uploads.bitmap} class="block w-full text-sm text-zinc-800" />
+              <label class="block text-xs text-zinc-600">
+                <span class="font-medium text-zinc-700">Assign as</span>
+                <select
+                  name="color_mode"
+                  class="mt-1 block w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm"
+                >
+                  <option value="">Universal (all platforms)</option>
+                  <option value="BlackWhite">Monochrome (~bw)</option>
+                  <option value="Color">Color (~color)</option>
+                </select>
+              </label>
               <.button type="submit" disabled={@uploads.bitmap.entries == []}>Upload bitmap</.button>
             </.form>
             <p :if={@bitmap_upload_output} class="mt-2 text-xs text-zinc-600">
@@ -112,15 +123,67 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
                   Delete
                 </button>
               </div>
-              <img
-                :if={bmp.preview_data_url}
-                src={bmp.preview_data_url}
-                alt={bmp.filename}
-                class="mx-auto mb-2 max-h-24 rounded border border-zinc-200 bg-white object-contain"
-              />
-              <p class="truncate font-mono text-zinc-700">{bmp.filename}</p>
-              <p class="text-zinc-500">{bmp.mime} · {bmp.bytes} bytes</p>
-              <p class="text-zinc-500">resource id: {bmp.resource_id}</p>
+
+              <div :if={bmp.has_legacy} class="mb-3 rounded border border-zinc-200 bg-white p-2">
+                <p class="font-medium text-zinc-700">Universal</p>
+                <img
+                  :if={bmp.legacy_preview_data_url}
+                  src={bmp.legacy_preview_data_url}
+                  alt={bmp.filename}
+                  class="mx-auto my-2 max-h-20 object-contain"
+                />
+                <p class="truncate font-mono text-zinc-600">{bmp.filename}</p>
+              </div>
+
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div
+                  :for={slot <- bmp.variant_slots}
+                  class="rounded border border-zinc-200 bg-white p-2"
+                >
+                  <p class="font-medium text-zinc-800">{slot.label}</p>
+                  <p class="mt-0.5 text-[10px] leading-snug text-zinc-500">{slot.platforms}</p>
+                  <img
+                    :if={slot.preview_data_url}
+                    src={slot.preview_data_url}
+                    alt={slot.filename}
+                    class="mx-auto my-2 max-h-20 object-contain"
+                  />
+                  <p :if={slot.filename} class="truncate font-mono text-zinc-600">{slot.filename}</p>
+                  <p :if={slot.bytes} class="text-zinc-500">{slot.bytes} bytes</p>
+                  <.form
+                    for={%{}}
+                    phx-change="validate-resource-upload"
+                    phx-submit="upload-bitmap-resource"
+                    class="mt-2 space-y-1"
+                  >
+                    <input type="hidden" name="ctor" value={bmp.ctor} />
+                    <input type="hidden" name="color_mode" value={slot.color_mode} />
+                    <.live_file_input
+                      upload={@uploads.bitmap}
+                      class="block w-full text-[11px] text-zinc-800"
+                    />
+                    <.button
+                      type="submit"
+                      class="w-full"
+                      disabled={@uploads.bitmap.entries == []}
+                    >
+                      Upload {slot.label}
+                    </.button>
+                  </.form>
+                  <button
+                    :if={slot.filename}
+                    type="button"
+                    phx-click="clear-bitmap-variant"
+                    phx-value-ctor={bmp.ctor}
+                    phx-value-color_mode={slot.color_mode}
+                    class="mt-1 w-full rounded bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-200"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <p class="mt-2 text-zinc-500">resource id: {bmp.resource_id}</p>
             </article>
           </div>
         </section>

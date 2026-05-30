@@ -88,6 +88,24 @@ A subscription trigger (for example `MinuteChanged`) is not always a single time
 
 If a device callback row is missing, check that introspect lists the cmd on that branch and that delivery is not still queued (`:debugger_async_protocol_delivery`).
 
+## Step pipeline modules
+
+When a subscription or init message is applied, the debugger runtime walks these modules in order (egress before ingress for protocol; preview is view-only):
+
+| Stage | Module | Role |
+|-------|--------|------|
+| Step entry | `Ide.Debugger.StepApply` | Chooses surface, normalizes message value, calls runtime executor |
+| Step context | `Ide.Debugger.StepApplyContext`, `StepApplyCallbacks` | Host callbacks, protocol events ctx, device/cmd followups |
+| Runtime step | `Ide.Debugger.RuntimeExecutor`, `RuntimeFollowups` | Elm/Core IR `update`, model patch, followup queue |
+| Protocol egress | `Ide.Debugger.ProtocolEvents` (facade), `.CmdCall`, `.Subscription` | `Cmd` → timeline `protocol_tx` / `protocol_rx` rows |
+| Protocol ingress | `Ide.Debugger.ProtocolRx`, `ProtocolRuntimePatch` | Companion/watch delivery, model patch from wire |
+| Device data | `Ide.Debugger.DeviceDataResponses`, `DeviceRequest` | Simulated or introspect-matched device callbacks |
+| Introspect | `Ide.Debugger.ElmIntrospect`, `ElmIntrospectSnapshot` | Parser outlines, cmd/subscription lists for branches |
+| Preview | `Ide.Debugger.RuntimePreview`, `RuntimeArtifacts` | `Main.view` / Core IR drawable rows at cursor (no re-run of `update`) |
+| Timeline | `Ide.Debugger.TimelineMessage`, `EventLog` | Row labels, cursor metadata, export |
+
+Configuration and bootstrap (`BootstrapInit`, `InitCmdFollowups`, `DeferredCompanionInit`, `PendingProtocolDelivery`) run around reload; they use the same protocol and introspect modules but are not part of every single step.
+
 ## Code map
 
 | Layer | Module |

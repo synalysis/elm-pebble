@@ -3,6 +3,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
 
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias Ide.Resources.BitmapVariants
   alias Ide.Resources.PdcDecoder
   alias Ide.Resources.ResourceStore
   alias Ide.Resources.Types, as: ResourceTypes
@@ -69,21 +70,64 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlow do
       {:ok, entries} ->
         Enum.with_index(entries, 1)
         |> Enum.map(fn {entry, idx} ->
-          preview_data_url =
-            case ResourceStore.bitmap_file_path(project, entry.ctor) do
-              {:ok, path} -> bitmap_preview_data_url(path, entry.mime)
-              _ -> nil
+          variants =
+            BitmapVariants.color_modes()
+            |> Enum.map(fn color_mode ->
+              preview =
+                case ResourceStore.bitmap_file_path(project, entry.ctor, color_mode) do
+                  {:ok, path} ->
+                    mime =
+                      entry.variants
+                      |> Map.get(color_mode)
+                      |> case do
+                        %{mime: mime} -> mime
+                        _ -> entry.mime || "image/png"
+                      end
+
+                    bitmap_preview_data_url(path, mime)
+
+                  _ ->
+                    nil
+                end
+
+              variant =
+                Map.get(entry.variants, color_mode)
+
+              %{
+                color_mode: color_mode,
+                label: variant_label(color_mode),
+                platforms: BitmapVariants.platforms_label(color_mode),
+                preview_data_url: preview,
+                filename: variant && variant.filename,
+                bytes: variant && variant.bytes
+              }
+            end)
+
+          legacy_preview =
+            if entry.filename do
+              case ResourceStore.bitmap_file_path(project, entry.ctor) do
+                {:ok, path} -> bitmap_preview_data_url(path, entry.mime || "image/png")
+                _ -> nil
+              end
+            else
+              nil
             end
 
           entry
           |> Map.put(:resource_id, idx)
-          |> Map.put(:preview_data_url, preview_data_url)
+          |> Map.put(:variant_slots, variants)
+          |> Map.put(:legacy_preview_data_url, legacy_preview)
+          |> Map.put(:has_legacy, entry.filename not in [nil, ""])
         end)
 
       _ ->
         []
     end
   end
+
+  defp variant_label("BlackWhite"), do: "Monochrome"
+  defp variant_label("Color"), do: "Color"
+  defp variant_label(_), do: "Variant"
 
   @spec load_font_resources(Project.t()) :: [font_resource_row()]
   def load_font_resources(%Project{} = project) do
