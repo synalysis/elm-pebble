@@ -217,6 +217,13 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
                source_root: "phone"
              })
 
+    pending_http =
+      reloaded.debugger_timeline
+      |> Enum.filter(&(Map.get(&1, :message_source) == "http_pending"))
+
+    assert pending_http != [],
+           "expected http_pending timeline row when catalog GET is enqueued, got: #{inspect(reloaded.debugger_timeline)}"
+
     assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
 
     assert {:ok, reloaded} = Debugger.snapshot(slug, event_limit: 500)

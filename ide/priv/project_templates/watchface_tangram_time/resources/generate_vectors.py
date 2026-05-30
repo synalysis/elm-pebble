@@ -129,12 +129,13 @@ def main():
 
     manifest_entries = []
 
-    for ctor, pieces in FIGURES:
+    for base_ctor, pieces in FIGURES:
+        ctor = f"VectorStatic{base_ctor}"
         svg_path = os.path.join(VECTORS_DIR, f"{ctor}.svg")
         pdc_path = os.path.join(VECTORS_DIR, f"{ctor}.pdc")
 
         with open(svg_path, "w", encoding="utf-8") as handle:
-            handle.write(write_svg(ctor, pieces))
+            handle.write(write_svg(base_ctor, pieces))
 
         result = subprocess.run(
             [sys.executable, SVG2PDC, svg_path, "-o", pdc_path],
@@ -152,6 +153,7 @@ def main():
         manifest_entries.append(
             {
                 "id": f"vector_{ctor.lower()}",
+                "base_name": base_ctor,
                 "ctor": ctor,
                 "filename": f"{ctor}.pdc",
                 "mime": "application/octet-stream",

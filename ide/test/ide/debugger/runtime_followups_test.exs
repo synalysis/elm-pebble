@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.RuntimeFollowupsTest do
   use ExUnit.Case, async: true
 
+  alias Ide.Debugger.AgentSession
   alias Ide.Debugger.RuntimeFollowups
   alias Ide.Debugger.RuntimeSurfaces
 
@@ -14,6 +15,54 @@ defmodule Ide.Debugger.RuntimeFollowupsTest do
 
       assert RuntimeFollowups.apply_after_step(state, :watch, "Tick", "runtime_followup", [], ctx) ==
                state
+    end
+  end
+
+  describe "async http enqueue" do
+    test "appends http_pending row to debugger timeline" do
+      previous_async_http = Application.get_env(:ide, :debugger_async_http_followups)
+
+      Application.put_env(:ide, :debugger_async_http_followups, true)
+
+      on_exit(fn ->
+        if is_nil(previous_async_http) do
+          Application.delete_env(:ide, :debugger_async_http_followups)
+        else
+          Application.put_env(:ide, :debugger_async_http_followups, previous_async_http)
+        end
+      end)
+
+      state = RuntimeSurfaces.default_companion()
+
+      ctx = %{
+        append_event: fn st, _, _ -> st end,
+        append_debugger_event: &AgentSession.append_debugger_event/6,
+        apply_step_once: fn st, _, _, _, _, _ -> st end,
+        source_root_for_target: fn :phone -> "phone" end,
+        track_http_command: &RuntimeFollowups.track_http_command/2,
+        simulator_settings: fn _ -> %{} end
+      }
+
+      followups = [
+        %{
+          "package" => "elm/http",
+          "command" => %{"method" => "GET", "url" => "https://example.test/dense10.json"},
+          "message" => "CatalogReceived"
+        }
+      ]
+
+      updated =
+        RuntimeFollowups.apply_after_step(state, :phone, "init", "init", followups, ctx)
+
+      pending =
+        Enum.find(updated.debugger_timeline, fn row ->
+          row.message_source == "http_pending"
+        end)
+
+      assert pending
+      assert pending.type == "http"
+      assert pending.message =~ "GET https://example.test/dense10.json"
+      assert pending.message =~ "CatalogReceived"
     end
   end
 
