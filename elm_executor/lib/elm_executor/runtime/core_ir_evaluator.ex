@@ -3702,7 +3702,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         {:ok, value}
 
       :error ->
-        case try_companion_phone_cmd_stub(module_name, function_name) do
+        case try_companion_side_effect_cmd_stub(module_name, function_name) do
           {:ok, value} -> {:ok, value}
           :error -> :error
         end
@@ -3719,21 +3719,43 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  @spec try_companion_phone_cmd_stub(String.t(), String.t()) :: {:ok, map()} | :error
-  defp try_companion_phone_cmd_stub(module_name, function_name)
+  @companion_cmd_functions ~w(
+    outgoing incoming send sendPhoneToWatch sendBridgeCommand
+    registerHandler registerResponseHandler request requestWithPayload
+    setup current
+  )
+
+  @companion_pure_functions ~w(
+    handler interest platformIncomingFor decodeWatchToPhone onWatchToPhone
+    onBattery onLocale onConnectivity onNotificationStatus subscribe
+  )
+
+  @spec try_companion_side_effect_cmd_stub(String.t(), String.t()) :: {:ok, map()} | :error
+  defp try_companion_side_effect_cmd_stub(module_name, function_name)
        when is_binary(module_name) and is_binary(function_name) do
-    if companion_phone_module?(module_name) and
-         function_name in ["outgoing", "sendPhoneToWatch", "incoming"] do
+    if companion_api_module?(module_name) and companion_side_effect_function?(function_name) do
       {:ok, %{"kind" => "cmd.none", "commands" => []}}
     else
       :error
     end
   end
 
-  @spec companion_phone_module?(String.t()) :: boolean()
-  defp companion_phone_module?(module_name) when is_binary(module_name) do
-    String.ends_with?(module_name, "Pebble.Companion.Phone") or
-      String.ends_with?(module_name, ".Phone") or module_name == "Phone"
+  @spec companion_api_module?(String.t()) :: boolean()
+  defp companion_api_module?(module_name) when is_binary(module_name) do
+    compact = compact_module_name(module_name)
+
+    String.starts_with?(compact, "pebblecompanion") or
+      String.contains?(module_name, "Pebble.Companion")
+  end
+
+  @spec companion_side_effect_function?(String.t()) :: boolean()
+  defp companion_side_effect_function?(function_name) when is_binary(function_name) do
+    function_name not in @companion_pure_functions and
+      not String.starts_with?(function_name, "decode") and
+      not String.starts_with?(function_name, "encode") and
+      (function_name in @companion_cmd_functions or
+         String.ends_with?(function_name, "setup") or
+         String.ends_with?(function_name, "current"))
   end
 
   @spec try_stdlib_qualified_builtin(

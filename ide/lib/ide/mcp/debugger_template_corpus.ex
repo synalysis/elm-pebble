@@ -269,6 +269,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
          {:ok, state} <- Debugger.snapshot(slug, event_limit: 200) do
       :ok = assert_surfaces_versioned_core_ir!(state, template_key)
       :ok = assert_companion_runtime_model!(state, template_key)
+      :ok = assert_companion_executor_ready!(state, template_key)
 
       models_map = Map.get(models, :models) || Map.get(models, "models") || %{}
 
@@ -538,8 +539,29 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
             raise "template #{template_key}: expected batteryPercent on companion runtime_model, got #{inspect(runtime_model)}"
           end
 
+          unless is_binary(runtime_model["locale"]) do
+            raise "template #{template_key}: expected locale string on companion runtime_model, got #{inspect(runtime_model)}"
+          end
+
         _ ->
           :ok
+      end
+    end
+
+    :ok
+  end
+
+  @doc false
+  @spec assert_companion_executor_ready!(map(), String.t()) :: :ok
+  def assert_companion_executor_ready!(state, template_key)
+      when is_map(state) and is_binary(template_key) do
+    if template_key in @phone_first_templates do
+      operation_source =
+        get_in(state, [:companion, :model, "elm_executor", "operation_source"]) ||
+          get_in(state, [:companion, :model, :elm_executor, :operation_source])
+
+      if operation_source == "update_evaluation_failed" do
+        raise "template #{template_key}: companion Core IR update failed during bootstrap"
       end
     end
 

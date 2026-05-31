@@ -474,6 +474,57 @@ defmodule Ide.CompanionPebbleApisTest do
              "core_ir_update_eval"
   end
 
+  test "inject_trigger applies companion onLocale payload via Core IR update" do
+    slug = "companion-phone-status-locale-inject-#{System.unique_integer([:positive])}"
+
+    template_root =
+      Path.expand(
+        "../../priv/project_templates/companion_demo_phone_status",
+        __DIR__
+      )
+
+    source = File.read!(Path.join(template_root, "phone/src/CompanionApp.elm"))
+
+    {:ok, _state} = Debugger.start_session(slug)
+
+    {:ok, _state} =
+      Debugger.reload(slug, %{
+        rel_path: "phone/src/CompanionApp.elm",
+        source_root: "phone",
+        source: source,
+        reason: "companion_phone_status_locale_inject"
+      })
+
+    assert {:ok, triggered} =
+             Debugger.inject_trigger(slug, %{
+               target: "phone",
+               trigger: "Locale.onLocale",
+               message: "GotLocale",
+               message_value: %{
+                 "ctor" => "GotLocale",
+                 "args" => [
+                   %{
+                     "ctor" => "Ok",
+                     "args" => [
+                       %{
+                         "locale" => "de-DE",
+                         "language" => "de",
+                         "region" => "DE",
+                         "uses24h" => true
+                       }
+                     ]
+                   }
+                 ]
+               }
+             })
+
+    runtime_model = get_in(triggered, [:companion, :model, "runtime_model"]) || %{}
+    assert runtime_model["locale"] == "de-DE"
+
+    assert get_in(triggered, [:companion, :model, "elm_executor", "operation_source"]) ==
+             "core_ir_update_eval"
+  end
+
   test "debugger forwards phone status protocol values to the watch surface" do
     slug = "companion-phone-status-watch-#{System.unique_integer([:positive])}"
 
