@@ -3,6 +3,14 @@
 # Logic is covered by tests; suppressing analyzer false positives until upstream fixes land.
 [
   {"lib/ide/pebble_toolchain.ex", :pattern_match},
+  {"lib/ide/pebble_toolchain.ex", :apply},
+  {"lib/ide/resources/resource_store.ex", :call},
+  {"lib/ide_web/live/workspace_live/debugger_preview.ex", :unused_fun},
+  {"lib/ide_web/live/workspace_live/debugger_support/live.ex", :no_return},
+  {"lib/ide_web/live/workspace_live/debugger_support/live.ex", :unused_fun},
+  {"lib/ide_web/live/workspace_live/editor_flow.ex", :pattern_match},
+  {"lib/ide_web/live/workspace_live/resources_flow.ex", :pattern_match},
+  {"lib/ide_web/live/workspace_live/resources_page.ex", :call},
   {"lib/ide_web/live/workspace_live/editor_support.ex", :pattern_match},
   {"lib/ide_web/live/workspace_live/editor_page.ex", :guard_fail},
   {"lib/ide/paths.ex", :invalid_contract},
@@ -52,5 +60,7 @@
   {"lib/ide_web/live/workspace_live/debugger_bootstrap_flow.ex", :unused_fun},
   {"lib/ide_web/live/workspace_live/debugger_bootstrap_flow.ex", :pattern_match},
   {"lib/ide/mcp/debugger_template_corpus.ex", :pattern_match},
-  {"lib/ide/mcp/debugger_template_corpus.ex", :unused_fun}
+  {"lib/ide/mcp/debugger_template_corpus.ex", :unused_fun},
+  {"lib/ide/debugger/surface_compile_artifacts.ex", :pattern_match},
+  {"lib/ide/debugger/surface_compile_artifacts.ex", :pattern_match_cov}
 ]

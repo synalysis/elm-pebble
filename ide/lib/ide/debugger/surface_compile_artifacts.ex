@@ -123,8 +123,11 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       case Compiler.compile(Projects.compiler_cache_key(session_key, source_root),
              workspace_root: workspace_root
            ) do
-        {:ok, compile_result} when is_map(compile_result) -> compile_result
-        _ -> %{status: :error}
+        {:ok, compile_result} when is_map(compile_result) ->
+          compile_result
+
+        {:error, _} ->
+          %{status: :error}
       end
 
     result
@@ -153,8 +156,6 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
     is_binary(b64) and b64 != "" and
       RuntimeArtifacts.versioned_core_ir?(%{"elm_executor_core_ir_b64" => b64})
   end
-
-  defp versioned_core_ir_artifacts?(_), do: false
 
   @spec inline_source_present?(Types.runtime_state(), String.t()) :: boolean()
   defp inline_source_present?(state, source_root) when is_map(state) and is_binary(source_root) do
@@ -229,12 +230,8 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
           |> ElmcSurfaceFields.optional_runtime_artifacts()
           |> maybe_merge_lenient_core_ir(watch_dir)
 
-        {:error, reason} ->
-          _ = reason
-          lenient_core_ir_artifact_fields(watch_dir)
-
-        _ ->
-          lenient_core_ir_artifact_fields(watch_dir)
+        {:error, _reason} ->
+          lenient_core_ir_artifact_fields(watch_dir, entry_module_from_path(dest))
       end
 
     if map_size(compile_artifacts) > 0 do
@@ -275,7 +272,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
   end
 
   @spec lenient_core_ir_artifact_fields(String.t(), String.t()) :: Types.runtime_artifacts()
-  defp lenient_core_ir_artifact_fields(project_dir, entry_module \\ "Main")
+  defp lenient_core_ir_artifact_fields(project_dir, entry_module)
        when is_binary(project_dir) and is_binary(entry_module) do
     with {:ok, project} <- Bridge.load_project(project_dir),
          {:ok, ir} <- Lowerer.lower_project(project),
