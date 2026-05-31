@@ -3077,6 +3077,92 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     assert unmapped_result.model_patch["runtime_model"]["title"] == "HELLO"
   end
 
+  test "update eval ignores launch-context envelope fields on runtime model" do
+    core_ir = %{
+      "modules" => [
+        %{
+          "name" => "Main",
+          "declarations" => [
+            %{
+              "name" => "Model",
+              "kind" => "type_alias",
+              "expr" => %{"op" => :record_alias, "fields" => ["n", "enabled"]}
+            },
+            %{
+              "kind" => "function",
+              "name" => "update",
+              "expr" => %{
+                "op" => :case,
+                "subject" => %{"op" => :var, "name" => "msg"},
+                "branches" => [
+                  %{
+                    "pattern" => %{"kind" => :constructor, "name" => "Inc", "args" => []},
+                    "expr" => %{
+                      "op" => :tuple2,
+                      "left" => %{
+                        "op" => :record_literal,
+                        "fields" => %{
+                          "n" => %{
+                            "op" => :call,
+                            "name" => "__add__",
+                            "args" => [
+                              %{
+                                "op" => :field_access,
+                                "arg" => %{"op" => :var, "name" => "model"},
+                                "field" => "n"
+                              },
+                              %{"op" => :int_literal, "value" => 1}
+                            ]
+                          },
+                          "enabled" => %{
+                            "op" => :field_access,
+                            "arg" => %{"op" => :var, "name" => "model"},
+                            "field" => "enabled"
+                          }
+                        }
+                      },
+                      "right" => %{"op" => :var, "name" => "cmd"}
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: "",
+      introspect: %{
+        "msg_constructors" => ["Inc", "Dec"],
+        "init_model" => %{"n" => 1, "enabled" => false}
+      },
+      current_model: %{
+        "launch_context" => %{"screen" => %{"width" => 144, "height" => 168}},
+        "runtime_model" => %{
+          "n" => 1,
+          "enabled" => %{"$var" => false},
+          "screenW" => 144,
+          "screenH" => 168,
+          "colorMode" => %{"ctor" => "Color", "args" => []},
+          "displayShape" => %{"ctor" => "Rectangular", "args" => []}
+        }
+      },
+      current_view_tree: %{},
+      message: "Inc",
+      elm_executor_core_ir: core_ir,
+      elm_executor_metadata: %{"entry_module" => "Main"}
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+    assert result.model_patch["runtime_model"]["n"] == 2
+    assert result.runtime["operation_source"] == "core_ir_update_eval"
+    assert result.model_patch["runtime_model"]["screenW"] == 144
+  end
+
   test "constructor disambiguation updates only the targeted numeric key" do
     core_ir = %{
       modules: [
@@ -3281,6 +3367,80 @@ defmodule ElmExecutor.Runtime.SemanticExecutorTest do
     }
 
     assert {:error, {:invalid_core_ir, _errors}} = SemanticExecutor.execute(request)
+  end
+
+  test "lowered inc/dec update evaluates with launch envelope on runtime model" do
+    source = """
+    module Main exposing (..)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Ui as Ui
+
+    type alias Model =
+        { n : Int, enabled : Bool }
+
+    type Msg
+        = Inc
+        | Dec
+
+    init _ =
+        ( { n = 1, enabled = false }, Cmd.none )
+
+    update msg model =
+        case msg of
+            Inc ->
+                ( { n = model.n + 1, enabled = model.enabled }, Cmd.none )
+
+            Dec ->
+                ( { n = model.n - 1, enabled = model.enabled }, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    view _ =
+        Ui.root []
+
+    main : Program Decode.Value Model Msg
+    main =
+        PebblePlatform.watchface
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+
+    core_ir = core_ir_from_sources([{"watch/src/Main.elm", source}])
+
+    request = %{
+      source_root: "watch",
+      rel_path: "watch/src/Main.elm",
+      source: source,
+      introspect: %{
+        "msg_constructors" => ["Inc", "Dec"],
+        "init_model" => %{"n" => 1, "enabled" => false}
+      },
+      current_model: %{
+        "launch_context" => %{"screen" => %{"width" => 144, "height" => 168}},
+        "runtime_model" => %{
+          "n" => 1,
+          "enabled" => %{"$var" => false},
+          "screenW" => 144,
+          "screenH" => 168,
+          "colorMode" => %{"ctor" => "Color", "args" => []},
+          "displayShape" => %{"ctor" => "Rectangular", "args" => []}
+        }
+      },
+      current_view_tree: %{},
+      message: "Inc",
+      elm_executor_core_ir: core_ir,
+      elm_executor_metadata: %{"entry_module" => "Main"}
+    }
+
+    assert {:ok, result} = SemanticExecutor.execute(request)
+    assert result.model_patch["runtime_model"]["n"] == 2
+    assert result.runtime["operation_source"] == "core_ir_update_eval"
   end
 
   defp core_ir_from_sources(sources) when is_list(sources) do

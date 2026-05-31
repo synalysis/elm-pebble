@@ -106,9 +106,14 @@ defmodule Ide.Debugger.TriggerCandidates do
         trigger = subscription_trigger_for_call(op)
         label = Map.get(op, "label") || Map.get(op, "name") || trigger
         callback = Map.get(op, "callback_constructor")
-        message = callback || best_message_for_trigger(known_messages, to_string(trigger || ""))
         trigger_id = normalize_trigger_id(trigger)
 
+        message =
+          Map.get(trigger_message_index(subscription_calls), trigger_id) ||
+            callback ||
+            best_message_for_trigger(known_messages, to_string(trigger || "")) ||
+            List.first(known_messages) ||
+            "Tick"
         metadata =
           op
           |> button_subscription_metadata()
@@ -338,42 +343,59 @@ defmodule Ide.Debugger.TriggerCandidates do
 
   defp subscription_op_fireable?(_op), do: false
 
-  @spec best_message_for_trigger([String.t()], String.t()) :: String.t()
+  @spec best_message_for_trigger([String.t()], String.t()) :: String.t() | nil
   def best_message_for_trigger(known_messages, trigger)
        when is_list(known_messages) and is_binary(trigger) do
-    normalized = String.downcase(trigger)
+    normalized = normalize_trigger_id(trigger)
 
     exact =
       Enum.find(known_messages, fn message ->
-        String.downcase(message) == normalized
+        ctor =
+          message
+          |> to_string()
+          |> String.trim()
+          |> String.split(~r/\s+/, parts: 2)
+          |> List.first()
+
+        is_binary(ctor) and String.downcase(ctor) == normalized
       end)
 
-    fuzzy =
-      first_matching_message(known_messages, trigger_tokens(normalized)) ||
-        fallback_message_for_trigger(known_messages, normalized)
-
-    preferred_fallback =
-      cond do
-        buttonish_trigger?(normalized) ->
-          first_non_tick_message(known_messages)
-
-        contains_any?(normalized, ["tick", "time", "clock"]) ->
-          Enum.find(known_messages, &tickish_message?/1)
-
-        true ->
-          nil
-      end
-
-    unit_message = message_for_subscription_unit(known_messages, normalized)
-
-    exact || fuzzy || preferred_fallback || unit_message || List.first(known_messages) ||
-      default_message_for_trigger(trigger)
+    exact ||
+      message_for_subscription_unit(known_messages, normalized) ||
+      message_for_button_trigger(known_messages, normalized) ||
+      fallback_message_for_trigger(known_messages, normalized)
   end
 
-  def best_message_for_trigger(_known_messages, trigger) when is_binary(trigger),
-    do: default_message_for_trigger(trigger)
+  def best_message_for_trigger(_known_messages, _trigger), do: nil
 
-  def best_message_for_trigger(_known_messages, _trigger), do: "Tick"
+  @spec message_for_button_trigger([String.t()], String.t()) :: String.t() | nil
+  defp message_for_button_trigger(known_messages, trigger_down)
+       when is_list(known_messages) and is_binary(trigger_down) do
+    if contains_any?(trigger_down, ["button", "up", "down", "select", "click"]) do
+      Enum.find(known_messages, fn message ->
+        down = String.downcase(message)
+
+        String.contains?(down, "button") or String.contains?(down, "press") or
+          String.contains?(down, "up") or String.contains?(down, "down")
+      end)
+    end
+  end
+
+  defp message_for_button_trigger(_known_messages, _trigger_down), do: nil
+
+  @spec trigger_message_index([Types.cmd_call()]) :: %{String.t() => String.t()}
+  def trigger_message_index(subscription_calls) when is_list(subscription_calls) do
+    Enum.reduce(subscription_calls, %{}, fn call, acc ->
+      trigger = subscription_trigger_for_call(call)
+      callback = Map.get(call, "callback_constructor")
+
+      if is_binary(trigger) and trigger != "" and is_binary(callback) and callback != "" do
+        Map.put(acc, normalize_trigger_id(trigger), callback)
+      else
+        acc
+      end
+    end)
+  end
 
   @spec first_matching_message([String.t()], [String.t()]) :: String.t() | nil
   defp first_matching_message(known_messages, tokens)

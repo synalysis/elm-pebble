@@ -1,6 +1,7 @@
 module Main exposing (main)
 
 import Battle as Battle exposing (Scene(..))
+import Basics
 import Json.Decode as Decode
 import Pebble.Button as Button
 import Pebble.Events as Events
@@ -12,7 +13,7 @@ import Pebble.System as System
 import Pebble.Time as Time
 import Pebble.Ui as Ui
 import Pokemon as Pokemon exposing (Player, PlayerSpecies(..))
-import Render exposing (render)
+import Render exposing (FaceModel, render)
 
 
 type alias Model =
@@ -154,7 +155,7 @@ update msg model =
             ( model, Time.currentDateTime CurrentDateTime )
 
         BatteryLevelChanged level ->
-            ( { model | batteryLevel = Just (clamp 0 100 level) }, Cmd.none )
+            ( { model | batteryLevel = Just (Basics.clamp 0 100 level) }, Cmd.none )
 
         HealthSupported supported ->
             ( { model | healthSupported = supported }
@@ -434,50 +435,93 @@ addAnimationSub model subs =
         subs
 
 
+clockHour : Model -> Int
+clockHour model =
+    case model.now of
+        Just now ->
+            now.hour
+
+        Nothing ->
+            0
+
+
+clockMinute : Model -> Int
+clockMinute model =
+    case model.now of
+        Just now ->
+            now.minute
+
+        Nothing ->
+            0
+
+
+clockMonth : Model -> Int
+clockMonth model =
+    case model.now of
+        Just now ->
+            now.month
+
+        Nothing ->
+            1
+
+
+clockDay : Model -> Int
+clockDay model =
+    case model.now of
+        Just now ->
+            now.day
+
+        Nothing ->
+            1
+
+
+playerLevelFromSteps : Model -> Int
+playerLevelFromSteps model =
+    model.stepsToday
+        |> Maybe.map (\steps -> Basics.clamp 4 99 ((steps * 99) // max 1 model.stepGoal))
+        |> Maybe.withDefault 4
+
+
+playerForView : Model -> Pokemon.Player
+playerForView model =
+    { model.player | levelTag = ":L" ++ String.fromInt (playerLevelFromSteps model) }
+
+
+thunderFlashForView : Model -> Bool
+thunderFlashForView model =
+    let
+        player =
+            playerForView model
+    in
+    model.scene == AttackFrame2 && player.attack == Pokemon.Thunder
+
+
+        faceModelFrom : Model -> FaceModel
+
+
+faceModelFrom model =
+    { layout = model.layout
+    , scene = model.scene
+    , player = playerForView model
+    , opponent = model.opponent
+    , opponentHealth = model.opponentHealth
+    , opponentYOffset = model.opponentYOffset
+    , batteryPercent = Maybe.withDefault 100 model.batteryLevel
+    , showDate = model.showDate
+    , showSteps = model.showSteps
+    , stepsToday = model.stepsToday
+    , hour = clockHour model
+    , minute = clockMinute model
+    , month = clockMonth model
+    , day = clockDay model
+    , use24Hour = model.use24Hour
+    , thunderFlash = thunderFlashForView model
+    }
+
+
 view : Model -> Ui.UiNode
 view model =
-    let
-        ( hour, minute, month, day ) =
-            case model.now of
-                Just now ->
-                    ( now.hour, now.minute, now.month, now.day )
-
-                Nothing ->
-                    ( 0, 0, 1, 1 )
-
-        levelFromSteps =
-            model.stepsToday
-                |> Maybe.map (\steps -> clamp 4 99 ((steps * 99) // max 1 model.stepGoal))
-                |> Maybe.withDefault 4
-
-        player =
-            { model.player | levelTag = ":L" ++ String.fromInt levelFromSteps }
-
-        thunderFlash =
-            model.scene == AttackFrame2 && player.attack == Pokemon.Thunder
-
-        battery =
-            Maybe.withDefault 100 model.batteryLevel
-    in
-    Ui.toUiNode <|
-        render
-            { layout = model.layout
-            , scene = model.scene
-            , player = player
-            , opponent = model.opponent
-            , opponentHealth = model.opponentHealth
-            , opponentYOffset = model.opponentYOffset
-            , batteryPercent = battery
-            , showDate = model.showDate
-            , showSteps = model.showSteps
-            , stepsToday = model.stepsToday
-            , hour = hour
-            , minute = minute
-            , month = month
-            , day = day
-            , use24Hour = model.use24Hour
-            , thunderFlash = thunderFlash
-            }
+    Ui.toUiNode (render (faceModelFrom model))
 
 
 main : Program Decode.Value Model Msg

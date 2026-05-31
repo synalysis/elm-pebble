@@ -57,23 +57,36 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
       message_value: message_value
     } = ctx
 
+    entry_module =
+      case map_value(request, :elm_executor_metadata) do
+        %{"entry_module" => name} when is_binary(name) and name != "" -> name
+        %{entry_module: name} when is_binary(name) and name != "" -> name
+        _ -> source_module
+      end
+
     eval_context =
       core_ir
-      |> View.evaluator_context(source_module)
+      |> View.evaluator_context(entry_module)
       |> Map.merge(View.vector_resource_indices_context(request, current_model))
       |> Map.merge(View.bitmap_resource_indices_context(request, current_model))
       |> Map.merge(View.animation_resource_indices_context(request, current_model))
       |> Map.put(:launch_context, View.launch_context_from_model(current_model))
+      |> Map.put(:elm_introspect, introspect)
+      |> Map.put(:current_model, current_model)
     static_init_model = map_value(introspect, :init_model)
 
     base_runtime_model =
       case map_value(current_model, :runtime_model) do
         model when is_map(model) and map_size(model) > 0 ->
-          if unresolved_runtime_model?(model) do
-            evaluated_init_model(core_ir, eval_context, current_model) || model
-          else
-            model
-          end
+          model
+          |> refresh_unresolved_fields_from_init(core_ir, eval_context, current_model)
+          |> then(fn refreshed ->
+            if unresolved_runtime_model?(refreshed) do
+              evaluated_init_model(core_ir, eval_context, current_model) || refreshed
+            else
+              refreshed
+            end
+          end)
 
         _ ->
           evaluated_init_model_if_static_unresolved(
@@ -94,17 +107,23 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
                  eval_context,
                  msg,
                  message_value,
-                 base_runtime_model
+                 base_runtime_model,
+                 current_model
                ) do
             {:ok, updated_model, commands, op, operation_source, key_provenance} ->
               updated =
                 updated_model
                 |> Map.put("last_message", branch_constructor_token(msg))
-                |> Map.put("last_operation", Atom.to_string(op))
+                |> Map.put("last_operation", branch_constructor_token(msg))
 
               {updated, "step_message", op, operation_source, key_provenance, commands}
 
             :error ->
+              operation_source =
+                if declared_message_constructor?(eval_context, msg),
+                  do: "update_evaluation_failed",
+                  else: "unmapped_message"
+
               updated =
                 base_runtime_model
                 |> Map.put("step_counter", Map.get(base_runtime_model, "step_counter", 0) + 1)
@@ -122,7 +141,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
                 "active_key_source" => nil
               }
 
-              {updated, "step_message", nil, "unmapped_message", key_provenance, []}
+              {updated, "step_message", nil, operation_source, key_provenance, []}
           end
 
         _ ->
@@ -258,17 +277,43 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
 
   defp meaningful_init_cmd_call?(_call), do: false
 
-  @spec evaluate_update_from_core_ir(map(), map(), String.t(), SemTypes.message_value(), map()) ::
+  @spec evaluate_update_from_core_ir(
+          map(),
+          map(),
+          String.t(),
+          SemTypes.message_value(),
+          map(),
+          map()
+        ) ::
           {:ok, map(), [map()], atom() | nil, String.t(), map()} | :error
-  defp evaluate_update_from_core_ir(core_ir, eval_context, message, message_value, runtime_model)
-       when is_map(eval_context) and is_binary(message) and is_map(runtime_model) do
-    with %{} = update_expr <- update_function_expr_from_core_ir(core_ir),
+  defp evaluate_update_from_core_ir(
+         core_ir,
+         eval_context,
+         message,
+         message_value,
+         runtime_model,
+         current_model
+       )
+       when is_map(eval_context) and is_binary(message) and is_map(runtime_model) and is_map(current_model) do
+    update_model =
+      runtime_model_for_update_eval(runtime_model, core_ir, eval_context, current_model)
+
+    with %{} = update_expr <- update_function_expr_from_core_ir(core_ir, eval_context),
          {:ok, msg_value} <- parse_message_value(message, message_value),
          msg_value = normalize_msg_for_core_ir(msg_value, eval_context),
-         env = %{"msg" => msg_value, "model" => runtime_model},
+         env = %{"msg" => msg_value, "model" => update_model},
          {:ok, result} <- evaluate_model_command_result(update_expr, env, eval_context),
          {:ok, result_model} <- update_result_model(result) do
-      next_model = Map.merge(runtime_model, result_model)
+      declared_fields = declared_model_fields(eval_context)
+
+      model_updates =
+        if declared_fields == [] do
+          result_model
+        else
+          Map.take(result_model, declared_fields)
+        end
+
+      next_model = Map.merge(runtime_model, model_updates)
       {op, operation_source} = operation_from_model_delta(runtime_model, next_model)
       key_provenance = key_provenance_from_model_delta(runtime_model, next_model)
       {:ok, next_model, update_result_commands(result), op, operation_source, key_provenance}
@@ -282,7 +327,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
          _eval_context,
          _message,
          _message_value,
-         _runtime_model
+         _runtime_model,
+         _current_model
        ),
        do: :error
 
@@ -327,31 +373,136 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
 
   defp unresolved_runtime_model?(_model), do: false
 
-  @spec update_function_expr_from_core_ir(map()) :: map() | nil
-  defp update_function_expr_from_core_ir(%{modules: modules}) when is_list(modules),
-    do: update_function_expr_from_core_ir(%{"modules" => modules})
+  @spec refresh_unresolved_fields_from_init(map(), map(), map(), map()) :: map()
+  defp refresh_unresolved_fields_from_init(model, core_ir, eval_context, current_model)
+       when is_map(model) and is_map(eval_context) and is_map(current_model) do
+    init_model =
+      evaluated_init_model(core_ir, eval_context, current_model) ||
+        introspect_init_model(eval_context)
 
-  defp update_function_expr_from_core_ir(%{"modules" => modules}) when is_list(modules) do
+    case init_model do
+      %{} = resolved_init when map_size(resolved_init) > 0 ->
+        Enum.reduce(model, model, fn {key, value}, acc ->
+          if unresolved_runtime_value?(value) do
+            case Map.get(resolved_init, key) || Map.get(resolved_init, to_string(key)) do
+              replacement
+              when is_map(replacement) or is_list(replacement) or is_number(replacement) or
+                     is_boolean(replacement) or is_binary(replacement) ->
+                Map.put(acc, key, replacement)
+
+              _ ->
+                acc
+            end
+          else
+            acc
+          end
+        end)
+
+      _ ->
+        model
+    end
+  end
+
+  defp refresh_unresolved_fields_from_init(model, _core_ir, _eval_context, _current_model), do: model
+
+  @spec introspect_init_model(map()) :: map() | nil
+  defp introspect_init_model(eval_context) when is_map(eval_context) do
+    case Map.get(eval_context, :elm_introspect) do
+      %{"init_model" => init} when is_map(init) -> init
+      %{init_model: init} when is_map(init) -> init
+      _ -> nil
+    end
+  end
+
+  @spec runtime_model_for_update_eval(map(), map(), map(), map()) :: map()
+  defp runtime_model_for_update_eval(runtime_model, core_ir, eval_context, current_model)
+       when is_map(runtime_model) and is_map(eval_context) do
+    runtime_model
+    |> refresh_unresolved_fields_from_init(core_ir, eval_context, current_model)
+    |> restrict_to_declared_model_fields(eval_context)
+  end
+
+  defp runtime_model_for_update_eval(runtime_model, _core_ir, _eval_context, _current_model),
+    do: runtime_model
+
+  @spec restrict_to_declared_model_fields(map(), map()) :: map()
+  defp restrict_to_declared_model_fields(runtime_model, eval_context)
+       when is_map(runtime_model) and is_map(eval_context) do
+    case declared_model_fields(eval_context) do
+      [] ->
+        runtime_model
+
+      fields ->
+        runtime_model
+        |> Map.take(fields)
+        |> Enum.reject(fn {_key, value} -> unresolved_runtime_value?(value) end)
+        |> Map.new()
+    end
+  end
+
+  @spec declared_model_fields(map()) :: [String.t()]
+  defp declared_model_fields(eval_context) when is_map(eval_context) do
+    entry = entry_module_name(eval_context)
+    aliases = Map.get(eval_context, :record_aliases, %{})
+
+    case Map.get(aliases, {entry, "Model"}) do
+      fields when is_list(fields) -> Enum.map(fields, &to_string/1)
+      _ -> []
+    end
+  end
+
+  @spec update_function_expr_from_core_ir(map(), map()) :: map() | nil
+  defp update_function_expr_from_core_ir(core_ir, eval_context) when is_map(eval_context) do
+    entry_module = entry_module_name(eval_context)
+
+    core_ir
+    |> core_ir_modules()
+    |> update_expr_for_module(entry_module)
+    |> case do
+      %{} = expr ->
+        expr
+
+      _ ->
+        core_ir
+        |> core_ir_modules()
+        |> Enum.find_value(&update_expr_in_module/1)
+    end
+  end
+
+  defp update_function_expr_from_core_ir(_core_ir, _eval_context), do: nil
+
+  @spec core_ir_modules(map()) :: [map()]
+  defp core_ir_modules(%{modules: modules}) when is_list(modules), do: modules
+
+  defp core_ir_modules(%{"modules" => modules}) when is_list(modules), do: modules
+
+  defp core_ir_modules(_), do: []
+
+  @spec update_expr_for_module([map()], String.t()) :: map() | nil
+  defp update_expr_for_module(modules, entry_module) when is_list(modules) and is_binary(entry_module) do
     modules
-    |> Enum.find_value(fn module ->
-      declarations = generic_map_value(module, "declarations") || []
+    |> Enum.find(fn module ->
+      to_string(generic_map_value(module, "name") || "") == entry_module
+    end)
+    |> update_expr_in_module()
+  end
 
-      declarations
-      |> Enum.find_value(fn decl ->
-        name = generic_map_value(decl, "name")
-        kind = generic_map_value(decl, "kind")
+  @spec update_expr_in_module(map()) :: map() | nil
+  defp update_expr_in_module(module) when is_map(module) do
+    declarations = generic_map_value(module, "declarations") || []
 
-        if name == "update" and (kind == "function" or kind == :function) do
-          expr = generic_map_value(decl, "expr")
-          if is_map(expr), do: expr, else: nil
-        else
-          nil
-        end
-      end)
+    Enum.find_value(declarations, fn decl ->
+      name = generic_map_value(decl, "name")
+      kind = generic_map_value(decl, "kind")
+
+      if name == "update" and (kind == "function" or kind == :function) do
+        expr = generic_map_value(decl, "expr")
+        if is_map(expr), do: expr, else: nil
+      end
     end)
   end
 
-  defp update_function_expr_from_core_ir(_), do: nil
+  defp update_expr_in_module(_module), do: nil
 
   @spec entry_module_name(map()) :: String.t()
   def entry_module_name(eval_context) when is_map(eval_context) do
@@ -873,6 +1024,30 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
       "active_key_source" => if(is_binary(active_key), do: "core_ir_delta", else: nil)
     }
   end
+
+  @spec declared_message_constructor?(map(), String.t()) :: boolean()
+  defp declared_message_constructor?(eval_context, message) when is_map(eval_context) and is_binary(message) do
+    ctor = branch_constructor_token(message)
+
+    eval_context
+    |> Map.get(:elm_introspect)
+    |> case do
+      %{"msg_constructors" => constructors} when is_list(constructors) ->
+        Enum.any?(constructors, fn known ->
+          is_binary(known) and String.downcase(known) == String.downcase(ctor)
+        end)
+
+      %{msg_constructors: constructors} when is_list(constructors) ->
+        Enum.any?(constructors, fn known ->
+          is_binary(known) and String.downcase(known) == String.downcase(ctor)
+        end)
+
+      _ ->
+        false
+    end
+  end
+
+  defp declared_message_constructor?(_eval_context, _message), do: false
 
   @spec branch_constructor_token(String.t()) :: String.t()
   defp branch_constructor_token(value) when is_binary(value) do

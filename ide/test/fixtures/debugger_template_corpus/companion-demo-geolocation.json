@@ -185,7 +185,7 @@
       "ctor": "Rectangular"
     },
     "last_message": "CurrentTimeString",
-    "last_operation": "nil",
+    "last_operation": "CurrentTimeString",
     "latitudeE6": 0,
     "longitudeE6": 0,
     "runtime_view_output": [],
@@ -238,7 +238,7 @@
         "ctor": "Rectangular"
       },
       "last_message": "CurrentTimeString",
-      "last_operation": "nil",
+      "last_operation": "CurrentTimeString",
       "latitudeE6": 0,
       "longitudeE6": 0,
       "screenH": 168,

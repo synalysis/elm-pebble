@@ -7,20 +7,28 @@ the mixed parity gate (executor fixtures + debugger parity smoke).
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Message operation resolution (`set`/`inc`/`dec`/`toggle`/`enable`/`disable`/`reset`) | partial | explicit message + core-ir branch hints + structured constructor hints from update/core-ir metadata; records operation provenance |
-| Constructor pattern extraction (`constructor`, nested/aliased/tuple/list/cons shapes) | partial | constructor discovery now traverses nested pattern trees |
-| Scalar literal inference (`int`/`bool`) for branch defaults | partial | int/bool literal fallback and `if` compare fallback supported |
-| `let_in` + compare evaluation for branch boolean defaults | partial | reduced evaluator supports bound vars and compare inside `let_in`/`if` |
-| Model key targeting (numeric/bool) with deterministic hint precedence | partial | constructor/field/var/name hints + primary fallback source labels |
-| View tree continuity for cursor stepping | partial | parser/init base + deterministic runtime step marker |
-| Core IR + metadata propagation in debugger runtime path | partial | optional `elm_executor_core_ir`/`elm_executor_metadata` now flow through debugger/runtime adapters when present; compile bridge storage is best-effort and backend-dependent |
-| Parser-expression bridge (`tree_node_to_expr` -> evaluator) | partial | supports field access, tuple selectors, and integer call reductions (`modBy`, arithmetic) where parser nodes carry enough structure |
-| Protocol event direction across surfaces | partial | watch, companion/protocol, and phone directions supported |
-| Full Elm expression evaluation (`case`, lambda, function calls, collection transforms) | gap | still not a full interpreter; only reduced subset used for mutation hints/defaults |
-| Full Elm data/path update semantics (records/lists/tuples) | gap | currently heuristic key mutation, not structural evaluator parity |
+| Message operation resolution | partial | Real `update` via Core IR; `operation_source` is `core_ir_update_eval` or `update_evaluation_failed` / `unmapped_message` |
+| Constructor pattern extraction | partial | Constructor discovery traverses nested pattern trees |
+| Scalar literal inference | partial | int/bool literal fallback and `if` compare inside `let_in` |
+| Model key targeting | partial | Provenance is `core_ir_delta` on single changed key |
+| View tree continuity | partial | Core IR `view` evaluation; empty preview when Core IR missing or eval fails |
+| Core IR + metadata in debugger | good | Strict Core IR required on reload/step/init; no parser-only model mutation |
+| Parser-expression bridge | removed from debugger preview | Preview uses `derive_view_output_for_runtime_model/2` only |
+| Record update / dotted vars | good | Core IR `record_update` bases like `model.player` resolve via dotted var walk |
+| Qualified stdlib calls | good | e.g. `String.toUpper` via stdlib builtin registry when not in function index |
+| Full Elm expression evaluation | gap | Interpreter subset; unsupported ops fail at runtime |
+| Full Elm data/path update semantics | partial | Full `update` when Core IR branch eval succeeds |
+| Template corpus (30 templates) | good | MCP bootstrap snapshots including multi-module watchfaces |
 
 ## Parity Gate Expectations
 
-1. **Executor parity:** `elm_executor/test/runtime_semantic_executor_test.exs` must cover newly added semantics.
-2. **Debugger parity smoke:** `ide/test/ide/debugger/runtime_executor_parity_test.exs` must preserve output compatibility vs `elmc`.
-3. **Determinism:** identical requests yield stable runtime/model/view hashes and provenance fields.
+1. **Executor parity:** `elm_executor/test/runtime_semantic_executor_test.exs`
+2. **Debugger parity smoke:** `ide/test/ide/debugger/runtime_executor_parity_test.exs`
+3. **Template corpus:** `ide/test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus`
+4. **Determinism:** identical requests yield stable runtime/model/view hashes
+
+## Debugger strict mode
+
+- `Ide.Debugger.RuntimeExecutor` uses `ElmExecutorAdapter` only (no `mutate_runtime_model` fallback).
+- Missing versioned Core IR fails closed with `{:core_ir_execution_failed, reason}`.
+- `Ide.Compiler.build_core_ir_artifact/1` is strict-only (no non-strict ingest).

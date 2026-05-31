@@ -226,6 +226,18 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def decode_core_ir(_model), do: nil
 
+  @spec versioned_core_ir?(execution_model() | Types.core_ir() | nil) :: boolean()
+  def versioned_core_ir?(model) when is_map(model) do
+    case decode_core_ir(model) do
+      %CoreIR{version: "elm_ex.core_ir.v1"} -> true
+      %{"version" => "elm_ex.core_ir.v1"} -> true
+      %{version: "elm_ex.core_ir.v1"} -> true
+      _ -> false
+    end
+  end
+
+  def versioned_core_ir?(_), do: false
+
   @spec module_name(execution_model()) :: String.t()
   def module_name(model) when is_map(model) do
     model
@@ -238,6 +250,17 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   end
 
   def module_name(_model), do: "Main"
+
+  @spec entry_module_name(execution_model()) :: String.t() | nil
+  def entry_module_name(model) when is_map(model) do
+    case Map.get(model, "elm_executor_metadata") || Map.get(model, :elm_executor_metadata) do
+      %{"entry_module" => name} when is_binary(name) and name != "" -> name
+      %{entry_module: name} when is_binary(name) and name != "" -> name
+      _ -> nil
+    end
+  end
+
+  def entry_module_name(_model), do: nil
 
   @spec vector_resource_indices(execution_model()) :: ArtifactTypes.resource_indices()
   def vector_resource_indices(model) when is_map(model) do
@@ -282,7 +305,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def core_ir_eval_context(model, extras \\ [])
 
   def core_ir_eval_context(model, extras) when is_map(model) and is_list(extras) do
-    module = module_name(model)
+    module = entry_module_name(model) || module_name(model)
     vector_indices = vector_resource_indices(model)
     bitmap_indices = bitmap_resource_indices(model)
     animation_indices = animation_resource_indices(model)

@@ -1,7 +1,7 @@
 defmodule Ide.Debugger.RuntimeExecutorParityTest do
   use ExUnit.Case, async: false
 
-  alias Ide.Debugger.RuntimeExecutor
+  alias Ide.Debugger.{CoreIRFixtures, RuntimeExecutor}
   alias Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter
   alias Ide.Debugger.RuntimeExecutor.ElmcAdapter
 
@@ -31,7 +31,7 @@ defmodule Ide.Debugger.RuntimeExecutorParityTest do
              strip_runtime_step_counts(elmc_payload.view_tree)
 
     assert elm_executor_payload.view_output == elmc_payload.view_output
-    assert elm_executor_payload.runtime["operation_source"] == "unmapped_message"
+    assert elm_executor_payload.runtime["operation_source"] == "update_evaluation_failed"
     assert is_nil(elmc_payload.runtime["operation_source"])
   end
 
@@ -49,22 +49,25 @@ defmodule Ide.Debugger.RuntimeExecutorParityTest do
   end
 
   defp step_input(source_root \\ "watch") do
-    %{
-      source_root: source_root,
-      rel_path: "watch/src/Main.elm",
-      source: "module Main exposing (main)\n",
-      introspect: %{
-        "msg_constructors" => ["Inc"],
-        "update_case_branches" => ["Inc"],
-        "view_case_branches" => [],
-        "init_model" => %{"n" => 0},
-        "view_tree" => %{"type" => "root", "children" => []}
+    Map.merge(
+      %{
+        source_root: source_root,
+        rel_path: "watch/src/Main.elm",
+        source: "module Main exposing (main)\n",
+        introspect: %{
+          "msg_constructors" => ["Inc"],
+          "update_case_branches" => ["Inc"],
+          "view_case_branches" => [],
+          "init_model" => %{"n" => 0},
+          "view_tree" => %{"type" => "root", "children" => []}
+        },
+        current_model: %{"runtime_model" => %{"n" => 0}},
+        current_view_tree: %{"type" => "root", "children" => []},
+        message: "Inc",
+        update_branches: ["Inc"]
       },
-      current_model: %{"runtime_model" => %{"n" => 0}},
-      current_view_tree: %{"type" => "root", "children" => []},
-      message: "Inc",
-      update_branches: ["Inc"]
-    }
+      CoreIRFixtures.step_input_attrs()
+    )
   end
 
   defp strip_runtime_step_counts(tree) when is_map(tree) do

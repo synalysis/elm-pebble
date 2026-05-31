@@ -156,7 +156,7 @@
       "ctor": "Rectangular"
     },
     "last_message": "CurrentTimeString",
-    "last_operation": "nil",
+    "last_operation": "CurrentTimeString",
     "nextEvent": {
       "args": [],
       "ctor": "Nothing"
@@ -210,7 +210,7 @@
         "ctor": "Rectangular"
       },
       "last_message": "CurrentTimeString",
-      "last_operation": "nil",
+      "last_operation": "CurrentTimeString",
       "nextEvent": {
         "args": [],
         "ctor": "Nothing"

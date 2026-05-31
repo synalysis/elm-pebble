@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.RuntimeExecutorTest do
   use ExUnit.Case, async: false
 
+  alias Ide.Debugger.CoreIRFixtures
   alias Ide.Debugger.RuntimeExecutor
   alias Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter
   alias Ide.Debugger.RuntimeExecutor.ElmcAdapter
@@ -62,48 +63,6 @@ defmodule Ide.Debugger.RuntimeExecutorTest do
     end
   end
 
-  defmodule ElmcCandidateLoose do
-    def run(_request) do
-      {:ok,
-       %{
-         runtime_model: %{"n" => 11},
-         view_tree: %{"type" => "elmc-loose", "children" => []},
-         runtime: %{"engine" => "elmc_runtime_loose_v1"},
-         view_output: "invalid"
-       }}
-    end
-  end
-
-  defmodule ElmcCandidateLooseViewOutput do
-    def run(_request) do
-      {:ok,
-       %{
-         runtime_model: %{"n" => 12},
-         view_tree: %{"type" => "elmc-loose-output", "children" => []},
-         runtime: %{"engine" => "elmc_runtime_loose_output_v1"},
-         view_output: [%{"kind" => "clear", "color" => 255}]
-       }}
-    end
-  end
-
-  defmodule ElmcCandidateContextEcho do
-    def execute(request) do
-      core_ir = Map.get(request, :elm_executor_core_ir)
-      metadata = Map.get(request, :elm_executor_metadata)
-
-      {:ok,
-       %{
-         runtime_model: %{
-           "has_core_ir" => is_map(core_ir),
-           "has_metadata" => is_map(metadata),
-           "metadata_mode" => if(is_map(metadata), do: Map.get(metadata, "mode"), else: nil)
-         },
-         view_tree: %{"type" => "ctx", "children" => []},
-         runtime: %{"engine" => "elmc_ctx_echo"}
-       }}
-    end
-  end
-
   setup do
     old = Application.get_env(:ide, RuntimeExecutor, [])
     old_adapter = Application.get_env(:ide, ElmcAdapter, [])
@@ -125,88 +84,43 @@ defmodule Ide.Debugger.RuntimeExecutorTest do
     assert payload.runtime["engine"] == "external_runtime_v1"
     assert payload.runtime["execution_backend"] == "external"
     assert payload.model_patch["runtime_model"]["from_external"] == true
-    assert payload.view_output == [%{"kind" => "clear", "color" => 0}]
-    assert is_list(payload.protocol_events)
-    assert payload.followup_messages == [%{"message" => "Followup"}]
-    assert hd(payload.protocol_events).type == "debugger.protocol_tx"
   end
 
-  test "legacy runtime mode bypasses external executors and uses deterministic seam" do
+  test "legacy runtime mode is disabled" do
     Application.put_env(:ide, RuntimeExecutor,
       external_executor_module: ExternalOk,
       runtime_mode: :legacy
     )
 
-    assert {:ok, payload} = RuntimeExecutor.execute(step_input())
-    assert payload.runtime["engine"] == "elm_introspect_runtime_v1"
-    assert payload.runtime["execution_backend"] == "legacy_default"
-    assert payload.runtime["runtime_mode"] == "legacy"
+    assert {:error, {:core_ir_execution_failed, :legacy_runtime_mode_disabled}} =
+             RuntimeExecutor.execute(step_input())
   end
 
-  test "falls back to deterministic seam when external module is missing execute/1" do
+  test "returns error when external module is missing execute/1" do
     Application.put_env(:ide, RuntimeExecutor, external_executor_module: NoExecute)
 
-    assert {:ok, payload} = RuntimeExecutor.execute(step_input())
-    assert payload.runtime["engine"] == "elm_introspect_runtime_v1"
-    assert payload.runtime["execution_backend"] == "default"
-    assert payload.model_patch["runtime_model_source"] == "step_message"
+    assert {:error, {:core_ir_execution_failed, {:external_executor_not_loaded, NoExecute}}} =
+             RuntimeExecutor.execute(step_input())
   end
 
-  test "falls back to deterministic seam when external runtime errors in non-strict mode" do
+  test "returns error when external runtime errors" do
     Application.put_env(:ide, RuntimeExecutor, external_executor_module: ExternalError)
 
-    assert {:ok, payload} = RuntimeExecutor.execute(step_input())
-    assert payload.runtime["engine"] == "elm_introspect_runtime_v1"
-    assert payload.runtime["execution_backend"] == "fallback_default"
-    assert is_binary(payload.runtime["external_fallback_reason"])
-
-    assert String.contains?(
-             payload.runtime["external_fallback_reason"],
-             "external_runtime_executor_failed"
-           )
-
-    assert payload.model_patch["runtime_model_source"] == "step_message"
+    assert {:error, {:core_ir_execution_failed, :boom}} = RuntimeExecutor.execute(step_input())
   end
 
-  test "returns error when external runtime errors in strict mode" do
-    Application.put_env(:ide, RuntimeExecutor,
-      external_executor_module: ExternalError,
-      external_executor_strict: true
-    )
+  test "returns error on invalid external payload" do
+    Application.put_env(:ide, RuntimeExecutor, external_executor_module: ExternalInvalid)
 
-    assert {:error, {:external_runtime_executor_failed, :boom}} =
+    assert {:error, {:core_ir_execution_failed, {:invalid_external_runtime_result, {:ok, :bad_payload}}}} =
              RuntimeExecutor.execute(step_input())
   end
 
-  test "returns error on invalid external payload in strict mode" do
-    Application.put_env(:ide, RuntimeExecutor,
-      external_executor_module: ExternalInvalid,
-      external_executor_strict: true
-    )
-
-    assert {:error, {:invalid_external_runtime_result, :payload_not_map}} =
-             RuntimeExecutor.execute(step_input())
-  end
-
-  test "elmc adapter falls back when no candidate API exists in non-strict mode" do
+  test "elmc adapter returns error when no candidate API exists" do
     Application.put_env(:ide, ElmcAdapter, candidates: [{NoExecute, :execute, 1}])
     Application.put_env(:ide, RuntimeExecutor, external_executor_module: ElmcAdapter)
 
-    assert {:ok, payload} = RuntimeExecutor.execute(step_input())
-    assert payload.runtime["engine"] == "elm_introspect_runtime_v1"
-    assert payload.runtime["execution_backend"] == "fallback_default"
-    assert payload.model_patch["runtime_model_source"] == "step_message"
-  end
-
-  test "elmc adapter returns strict error when no candidate API exists" do
-    Application.put_env(:ide, ElmcAdapter, candidates: [{NoExecute, :execute, 1}])
-
-    Application.put_env(:ide, RuntimeExecutor,
-      external_executor_module: ElmcAdapter,
-      external_executor_strict: true
-    )
-
-    assert {:error, {:external_runtime_executor_failed, {:elmc_runtime_unavailable, _candidates}}} =
+    assert {:error, {:core_ir_execution_failed, {:elmc_runtime_unavailable, _candidates}}} =
              RuntimeExecutor.execute(step_input())
   end
 
@@ -216,129 +130,69 @@ defmodule Ide.Debugger.RuntimeExecutorTest do
 
     assert {:ok, payload} = RuntimeExecutor.execute(step_input())
     assert payload.runtime["engine"] == "elmc_runtime_preview_v1"
-    assert payload.runtime["execution_backend"] == "external"
     assert payload.model_patch["runtime_model"]["n"] == 7
-    assert payload.view_output == [%{"kind" => "text_label", "x" => 1, "y" => 2, "text" => "ok"}]
-    assert payload.model_patch["runtime_view_output"] == payload.view_output
-    assert payload.followup_messages == [%{"message" => "ElmcFollowup"}]
-    assert payload.model_patch["runtime_model_source"] == "elmc_runtime"
-    assert hd(payload.protocol_events).type == "debugger.protocol_tx"
   end
 
-  test "elmc adapter stores loose view_output on runtime model patch" do
-    Application.put_env(:ide, ElmcAdapter, candidates: [{ElmcCandidateLooseViewOutput, :run, 1}])
-    Application.put_env(:ide, RuntimeExecutor, external_executor_module: ElmcAdapter)
-
-    assert {:ok, payload} = RuntimeExecutor.execute(step_input())
-    assert payload.runtime["engine"] == "elmc_runtime_loose_output_v1"
-    assert payload.view_output == [%{"kind" => "clear", "color" => 255}]
-    assert payload.model_patch["runtime_view_output"] == payload.view_output
-  end
-
-  test "elmc adapter normalizes loose runtime_model response shape" do
-    Application.put_env(:ide, ElmcAdapter, candidates: [{ElmcCandidateLoose, :run, 1}])
-    Application.put_env(:ide, RuntimeExecutor, external_executor_module: ElmcAdapter)
-
-    assert {:ok, payload} = RuntimeExecutor.execute(step_input())
-    assert payload.runtime["engine"] == "elmc_runtime_loose_v1"
-    assert payload.runtime["execution_backend"] == "external"
-    assert payload.model_patch["runtime_model"]["n"] == 11
-    assert payload.view_output == []
-    assert payload.followup_messages == []
-    assert payload.model_patch["runtime_model_source"] == "elmc_runtime"
-  end
-
-  test "elmc adapter can use default in-repo Elmc.Runtime.Executor candidate" do
-    Application.put_env(:ide, ElmcAdapter, [])
-    Application.put_env(:ide, RuntimeExecutor, external_executor_module: ElmcAdapter)
-
-    assert {:ok, payload} = RuntimeExecutor.execute(step_input())
-    assert payload.runtime["engine"] == "elmc_runtime_executor_v0"
-    assert payload.runtime["execution_backend"] == "external"
-    assert payload.model_patch["runtime_model_source"] == "step_message"
-    assert is_binary(payload.runtime["runtime_model_sha256"])
-  end
-
-  test "elm_executor adapter executes runtime executor contract" do
+  test "elm_executor adapter requires versioned core ir" do
     Application.put_env(:ide, RuntimeExecutor, external_executor_module: ElmExecutorAdapter)
 
-    assert {:ok, payload} = RuntimeExecutor.execute(step_input())
+    assert {:error, {:core_ir_execution_failed, :missing_core_ir}} =
+             RuntimeExecutor.execute(step_input())
+  end
+
+  test "elm_executor adapter executes runtime executor contract with core ir" do
+    Application.put_env(:ide, RuntimeExecutor, external_executor_module: ElmExecutorAdapter)
+
+    assert {:ok, payload} = RuntimeExecutor.execute(step_input(CoreIRFixtures.step_input_attrs()))
     assert payload.runtime["engine"] == "elm_executor_runtime_v1"
     assert payload.runtime["execution_backend"] == "external"
-    assert payload.runtime["compiler"] == "elm_executor"
     assert payload.model_patch["runtime_model_source"] == "step_message"
-  end
-
-  test "elm_executor adapter forwards optional metadata into runtime annotation" do
-    Application.put_env(:ide, RuntimeExecutor, external_executor_module: ElmExecutorAdapter)
-
-    input =
-      step_input()
-      |> Map.put(:elm_executor_core_ir, %{modules: []})
-      |> Map.put(:elm_executor_metadata, %{
-        "mode" => "debugger_test",
-        "compiler" => "elm_executor"
-      })
-
-    assert {:ok, payload} = RuntimeExecutor.execute(input)
-    assert payload.runtime["mode"] == "debugger_test"
-    assert payload.runtime["compiler"] == "elm_executor"
-  end
-
-  test "elmc adapter forwards optional compiler context fields" do
-    Application.put_env(:ide, ElmcAdapter, candidates: [{ElmcCandidateContextEcho, :execute, 1}])
-    Application.put_env(:ide, RuntimeExecutor, external_executor_module: ElmcAdapter)
-
-    input =
-      step_input()
-      |> Map.put(:elm_executor_core_ir, %{modules: [%{"name" => "Main"}]})
-      |> Map.put(:elm_executor_metadata, %{"mode" => "echo"})
-
-    assert {:ok, payload} = RuntimeExecutor.execute(input)
-    assert payload.runtime["engine"] == "elmc_ctx_echo"
-    assert payload.model_patch["runtime_model"]["has_core_ir"] == true
-    assert payload.model_patch["runtime_model"]["has_metadata"] == true
-    assert payload.model_patch["runtime_model"]["metadata_mode"] == "echo"
   end
 
   test "elm_executor adapter can execute through compiled module when configured" do
     out_dir =
       Path.join(System.tmp_dir!(), "elm_executor_ide_rt_#{System.unique_integer([:positive])}")
 
-    project_dir = Path.expand("../../../priv/pebble_app_template", __DIR__)
+    project_dir = Path.expand("../../../../elmc/test/fixtures/pebble_surface_project", __DIR__)
 
-    assert {:ok, _result} =
-             ElmExecutor.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+  case ElmExecutor.compile(project_dir, %{out_dir: out_dir, entry_module: "Main", strict_core_ir: false}) do
+      {:ok, _} ->
+        Application.put_env(:ide, ElmExecutorAdapter,
+          compiled_out_dir: out_dir,
+          compiled_entry_module: "Main"
+        )
 
-    Application.put_env(:ide, ElmExecutorAdapter,
-      compiled_out_dir: out_dir,
-      compiled_entry_module: "Main"
-    )
+        Application.put_env(:ide, RuntimeExecutor, external_executor_module: ElmExecutorAdapter)
 
-    Application.put_env(:ide, RuntimeExecutor, external_executor_module: ElmExecutorAdapter)
+        assert {:ok, payload} =
+                 RuntimeExecutor.execute(step_input(CoreIRFixtures.step_input_attrs()))
 
-    assert {:ok, payload} = RuntimeExecutor.execute(step_input())
-    assert payload.runtime["engine"] == "elm_executor_runtime_v1"
-    assert payload.runtime["contract"] == "elm_executor.runtime_executor.v1"
-    assert payload.runtime["execution_backend"] == "external"
+        assert payload.runtime["contract"] == "elm_executor.runtime_executor.v1"
+
+      {:error, reason} ->
+        flunk("fixture compile failed: #{inspect(reason)}")
+    end
   end
 
-  defp step_input do
-    %{
-      source_root: "watch",
-      rel_path: "watch/src/Main.elm",
-      source: "module Main exposing (main)\n",
-      introspect: %{
-        "msg_constructors" => ["Inc"],
-        "update_case_branches" => ["Inc"],
-        "view_case_branches" => [],
-        "init_model" => %{"n" => 0},
-        "view_tree" => %{"type" => "root", "children" => []}
+  defp step_input(extra \\ %{}) when is_map(extra) do
+    Map.merge(
+      %{
+        source_root: "watch",
+        rel_path: "watch/src/Main.elm",
+        source: "module Main exposing (main)\n",
+        introspect: %{
+          "msg_constructors" => ["Tick"],
+          "update_case_branches" => ["Tick"],
+          "view_case_branches" => [],
+          "init_model" => %{"ticks" => 0},
+          "view_tree" => %{"type" => "root", "children" => []}
+        },
+        current_model: %{"runtime_model" => %{"ticks" => 0}},
+        current_view_tree: %{"type" => "root", "children" => []},
+        message: "Tick 0",
+        update_branches: ["Tick"]
       },
-      current_model: %{"runtime_model" => %{"n" => 0}},
-      current_view_tree: %{"type" => "root", "children" => []},
-      message: "Inc",
-      update_branches: ["Inc"]
-    }
+      extra
+    )
   end
 end

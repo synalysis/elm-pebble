@@ -249,7 +249,7 @@
     },
     "hour": 8,
     "last_message": "CurrentDateTime",
-    "last_operation": "nil",
+    "last_operation": "CurrentDateTime",
     "minute": 53,
     "runtime_view_output": [],
     "screenH": 168,
@@ -301,7 +301,7 @@
       },
       "hour": 8,
       "last_message": "CurrentDateTime",
-      "last_operation": "nil",
+      "last_operation": "CurrentDateTime",
       "minute": 53,
       "screenH": 168,
       "screenW": 144

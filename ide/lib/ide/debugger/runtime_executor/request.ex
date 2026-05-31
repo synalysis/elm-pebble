@@ -1,6 +1,9 @@
 defmodule Ide.Debugger.RuntimeExecutor.Request do
   @moduledoc """
   Builds validated runtime executor requests from debugger surfaces.
+
+  `validate!/1` checks shape (introspect, model). `validate_execution_ready!/1` also
+  requires versioned Core IR — used by `RuntimeExecutor.execute/1` on `%Request{}`.
   """
 
   alias Ide.Debugger.ElmIntrospect.Payload
@@ -99,6 +102,25 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
     end
 
     request
+  end
+
+  @spec validate_execution_ready!(t() | wire_map()) :: t()
+  def validate_execution_ready!(request) do
+    request = validate!(request)
+
+    unless versioned_core_ir?(request) do
+      raise ArgumentError, "runtime executor request requires versioned elm_executor Core IR"
+    end
+
+    request
+  end
+
+  @spec versioned_core_ir?(t()) :: boolean()
+  defp versioned_core_ir?(%__MODULE__{} = request) do
+    RuntimeArtifacts.versioned_core_ir?(%{
+      "elm_executor_core_ir" => request.elm_executor_core_ir,
+      "elm_executor_metadata" => request.elm_executor_metadata
+    })
   end
 
   def validate!(request) when is_map(request) do

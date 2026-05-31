@@ -1,14 +1,18 @@
 defmodule Ide.Debugger.RuntimeExecutorRequestTest do
   use ExUnit.Case, async: true
 
-  alias Ide.Debugger.{RuntimeExecutor, Surface}
+  alias Ide.Debugger.{CoreIRFixtures, RuntimeExecutor, Surface}
   alias Ide.Debugger.RuntimeExecutor.Request
 
   test "build returns struct and to_map feeds executor" do
     surface =
       Surface.from_map(%{
         model: %{"last_path" => "src/Main.elm", "last_source" => "module Main exposing (..)\n"},
-        shell: %{"elm_introspect" => %{"module" => "Main"}}
+        shell:
+          Map.merge(
+            %{"elm_introspect" => %{"module" => "Main"}},
+            CoreIRFixtures.step_input_attrs()
+          )
       })
 
     request = Request.build(surface: surface, message: "Tick", source_root: "watch")
@@ -32,5 +36,28 @@ defmodule Ide.Debugger.RuntimeExecutorRequestTest do
     }
 
     assert %Request{source_root: "watch"} = Request.validate!(wire)
+  end
+
+  test "validate_execution_ready! requires versioned Core IR" do
+    wire = %{
+      "source_root" => "watch",
+      "rel_path" => nil,
+      "source" => "",
+      "introspect" => %{"module" => "Main"},
+      "current_model" => %{},
+      "current_view_tree" => %{}
+    }
+
+    assert_raise ArgumentError, ~r/versioned elm_executor Core IR/, fn ->
+      Request.validate_execution_ready!(wire)
+    end
+
+    ready =
+      Map.merge(wire, %{
+        "elm_executor_core_ir" => CoreIRFixtures.fixture_core_ir(),
+        "elm_executor_metadata" => CoreIRFixtures.fixture_metadata()
+      })
+
+    assert %Request{} = Request.validate_execution_ready!(ready)
   end
 end

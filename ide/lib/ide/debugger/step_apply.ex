@@ -86,8 +86,52 @@ defmodule Ide.Debugger.StepApply do
         message_source: source_override
       )
 
-    runtime_result = StepExecution.runtime_result(step, update_branches)
+    case StepExecution.runtime_result(step, update_branches) do
+      {:error, reason} ->
+        record_step_execution_error(state, target, message, reason, ctx)
 
+      {:ok, runtime_result} ->
+        apply_runtime_result(
+          state,
+          target,
+          step,
+          model,
+          runtime_result,
+          message,
+          msg_source,
+          known_messages,
+          update_branches,
+          next_cursor,
+          requested_message,
+          message_value,
+          timeline_message_value,
+          source_override,
+          trigger,
+          suppress_protocol_events?,
+          ctx
+        )
+    end
+  end
+
+  defp apply_runtime_result(
+         state,
+         target,
+         step,
+         model,
+         runtime_result,
+         message,
+         msg_source,
+         known_messages,
+         update_branches,
+         next_cursor,
+         requested_message,
+         message_value,
+         timeline_message_value,
+         source_override,
+         trigger,
+         suppress_protocol_events?,
+         ctx
+       ) do
     runtime_patch = Map.get(runtime_result, :model_patch, %{})
     runtime_patch = ctx.normalize_runtime_patch.(step.execution_model, runtime_patch)
     runtime_view_tree = Map.get(runtime_result, :view_tree)
@@ -247,7 +291,6 @@ defmodule Ide.Debugger.StepApply do
       message_source,
       runtime_followups
     )
-
   end
 
   @spec timeline_message_value(
@@ -274,4 +317,42 @@ defmodule Ide.Debugger.StepApply do
         end
     end
   end
+
+  @spec record_step_execution_error(
+          map(),
+          Types.surface_target(),
+          String.t(),
+          Types.execution_error(),
+          ctx()
+        ) :: map()
+  defp record_step_execution_error(state, target, message, reason, ctx) do
+    detail = inspect(reason, limit: 12, printable_limit: 256)
+
+    payload = %{
+      "execution_status" => "error",
+      "error_code" => execution_error_code(reason),
+      "error_detail" => detail,
+      "message" => message,
+      "source_root" => ctx.source_root_for_target.(target)
+    }
+
+    state
+    |> ctx.append_event.("debugger.runtime_exec_error", payload)
+    |> ctx.append_debugger_event.(
+      "runtime_exec_error",
+      target,
+      message,
+      "core_ir",
+      nil
+    )
+    |> Map.put(:last_execution_error, payload)
+  end
+
+  @spec execution_error_code(Types.execution_error()) :: String.t()
+  defp execution_error_code({:core_ir_execution_failed, reason}) when is_atom(reason),
+    do: Atom.to_string(reason)
+
+  defp execution_error_code({:core_ir_execution_failed, reason}), do: inspect(reason, limit: 50)
+
+  defp execution_error_code(reason), do: inspect(reason, limit: 50)
 end

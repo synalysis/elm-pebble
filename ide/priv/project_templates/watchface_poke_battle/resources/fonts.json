@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "font_default",
+      "ctor": "DefaultFont",
+      "filename": "DefaultFont.ttf",
+      "mime": "font/ttf",
+      "height": 14,
+      "bytes": 76636
+    }
+  ]
+}

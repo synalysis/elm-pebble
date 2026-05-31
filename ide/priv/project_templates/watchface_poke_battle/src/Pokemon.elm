@@ -16,6 +16,16 @@ module Pokemon exposing
 import Pebble.Ui.Resources as Resources
 
 
+scaleX : Int -> Int -> Int
+scaleX screenW x =
+    x * screenW // 240
+
+
+scaleY : Int -> Int -> Int
+scaleY screenH y =
+    y * screenH // 240
+
+
 type Attack
     = Thunder
     | Psywave
@@ -47,7 +57,7 @@ type alias Opponent =
     , levelTag : String
     , x : Int
     , y : Int
-    , bitmap : Resources.Bitmap
+    , bitmap : Resources.StaticBitmap
     }
 
 
@@ -58,7 +68,7 @@ type alias Player =
     , attack : Attack
     , x : Int
     , y : Int
-    , bitmap : Resources.Bitmap
+    , bitmap : Resources.StaticBitmap
     }
 
 
@@ -146,143 +156,130 @@ playerSpeciesFromIndex index =
 
 playerFromSpecies : Int -> Int -> PlayerSpecies -> Player
 playerFromSpecies screenW screenH species =
-    let
-        sx x =
-            x * screenW // 240
-
-        sy y =
-            y * screenH // 240
-    in
     case species of
         Pikachu ->
             { species = Pikachu
             , displayName = "Pikachu"
-            , levelTag = ":L"
+            , levelTag = " : L"
             , attack = Thunder
-            , x = sx 40
-            , y = sy 148
-            , bitmap = Resources.PikachuBack
+            , x = scaleX screenW 40
+            , y = scaleY screenH 148
+            , bitmap = Resources.BitmapStaticPikachuBack
             }
 
         PlayerSquirtle ->
             { species = PlayerSquirtle
             , displayName = "Squirtle"
-            , levelTag = ":L"
+            , levelTag = " : L"
             , attack = Bubble
-            , x = sx 47
-            , y = sy 159
-            , bitmap = Resources.SquirtleBack
+            , x = scaleX screenW 47
+            , y = scaleY screenH 159
+            , bitmap = Resources.BitmapStaticSquirtleBack
             }
 
         Flareon ->
             { species = Flareon
             , displayName = "Flareon"
-            , levelTag = ":L"
+            , levelTag = " : L"
             , attack = Ember
-            , x = sx 46
-            , y = sy 150
-            , bitmap = Resources.FlareonBack
+            , x = scaleX screenW 46
+            , y = scaleY screenH 150
+            , bitmap = Resources.BitmapStaticFlareonBack
             }
 
         Mew ->
             { species = Mew
             , displayName = "Mew"
-            , levelTag = ":L"
+            , levelTag = " : L"
             , attack = Psywave
-            , x = sx 35
-            , y = sy 133
-            , bitmap = Resources.MewBack
+            , x = scaleX screenW 35
+            , y = scaleY screenH 133
+            , bitmap = Resources.BitmapStaticMewBack
             }
 
         Mewtwo ->
             { species = Mewtwo
             , displayName = "Mewtwo"
-            , levelTag = ":L"
+            , levelTag = " : L"
             , attack = Psywave
-            , x = sx 46
-            , y = sy 150
-            , bitmap = Resources.MewtwoBack
+            , x = scaleX screenW 46
+            , y = scaleY screenH 150
+            , bitmap = Resources.BitmapStaticMewtwoBack
             }
 
 
 opponent : Int -> Int -> Species -> Opponent
 opponent screenW screenH species =
     let
-        sx x =
-            x * screenW // 240
-
-        sy y =
-            y * screenH // 240
-
         posX160 =
-            sx 160
+            scaleX screenW 160
 
         posY70 =
-            sy 70
+            scaleY screenH 70
     in
     case species of
         Charmander ->
             { species = Charmander
-            , levelTag = ":L4"
-            , x = sx 180
-            , y = sy 75
-            , bitmap = Resources.Charmander
+            , levelTag = " : L4"
+            , x = scaleX screenW 180
+            , y = scaleY screenH 75
+            , bitmap = Resources.BitmapStaticCharmander
             }
 
         Squirtle ->
             { species = Squirtle
-            , levelTag = ":L8"
-            , x = sx 170
-            , y = sy 75
-            , bitmap = Resources.Squirtle
+            , levelTag = " : L8"
+            , x = scaleX screenW 170
+            , y = scaleY screenH 75
+            , bitmap = Resources.BitmapStaticSquirtle
             }
 
         Bulbasaur ->
             { species = Bulbasaur
-            , levelTag = ":L15"
-            , x = sx 170
+            , levelTag = " : L15"
+            , x = scaleX screenW 170
             , y = posY70
-            , bitmap = Resources.Bulbasaur
+            , bitmap = Resources.BitmapStaticBulbasaur
             }
 
         Ivysaur ->
             { species = Ivysaur
-            , levelTag = ":L16"
+            , levelTag = " : L16"
             , x = posX160
             , y = posY70
-            , bitmap = Resources.Ivysaur
+            , bitmap = Resources.BitmapStaticIvysaur
             }
 
         Wartortle ->
             { species = Wartortle
-            , levelTag = ":L23"
+            , levelTag = " : L23"
             , x = posX160
             , y = posY70
-            , bitmap = Resources.Wartortle
+            , bitmap = Resources.BitmapStaticWartortle
             }
 
         Charizard ->
             { species = Charizard
-            , levelTag = ":L42"
+            , levelTag = " : L42"
             , x = posX160
             , y = posY70
-            , bitmap = Resources.Charizard
+            , bitmap = Resources.BitmapStaticCharizard
             }
 
         Blastoise ->
             { species = Blastoise
-            , levelTag = ":L69"
+            , levelTag = " : L69"
             , x = posX160
             , y = posY70
-            , bitmap = Resources.Blastoise
+            , bitmap = Resources.BitmapStaticBlastoise
             }
 
         Missingno ->
             { species = Missingno
-            , levelTag = ":L99"
+            , levelTag = " : L99"
             , x = posX160
             , y = posY70
-            , bitmap = Resources.Missingno
+            , bitmap = Resources.BitmapStaticMissingno
             }
 
 

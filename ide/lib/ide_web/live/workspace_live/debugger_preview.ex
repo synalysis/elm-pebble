@@ -78,45 +78,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   end
 
   @spec svg_ops(view_tree(), runtime_input()) :: [svg_op()]
-  def svg_ops(tree, runtime) when is_map(tree) do
-    runtime_ops = runtime_compact_scene_output(runtime)
-
-    model = runtime_model(runtime)
-    primary_int = primary_int_model_value(model)
-
-    tree_ops =
-      tree
-      |> collect_view_nodes()
-      |> Enum.flat_map(&svg_op_from_node(&1, primary_int, model))
-      |> apply_svg_style_state()
-
-    tree_vector_ops =
-      Enum.filter(tree_ops, &(&1.kind in [:vector_at, :vector_sequence_at]))
-
-    tree_animation_ops =
-      Enum.filter(tree_ops, &(&1.kind == :bitmap_sequence_at))
-
-    runtime_has_vectors? =
-      Enum.any?(runtime_ops, &(&1.kind in [:vector_at, :vector_sequence_at]))
-
-    runtime_has_animations? =
-      Enum.any?(runtime_ops, &(&1.kind == :bitmap_sequence_at))
-
-    cond do
-      runtime_ops == [] ->
-        tree_ops
-
-      true ->
-        runtime_ops
-        |> maybe_append_tree_ops(not runtime_has_vectors?, tree_vector_ops)
-        |> maybe_append_tree_ops(not runtime_has_animations?, tree_animation_ops)
-    end
+  def svg_ops(_tree, runtime) when is_map(runtime) do
+    runtime
+    |> runtime_compact_scene_output()
+    |> apply_svg_style_state()
   end
 
-  defp maybe_append_tree_ops(ops, true, extra), do: ops ++ extra
-  defp maybe_append_tree_ops(ops, false, _extra), do: ops
-
-  def svg_ops(_tree, runtime), do: runtime_compact_scene_output(runtime)
+  def svg_ops(_tree, _runtime), do: []
 
   @spec hydrate_vector_svg_ops([svg_op()], Project.t() | map() | nil) :: [svg_op()]
   def hydrate_vector_svg_ops(rows, %Project{} = project) when is_list(rows) do

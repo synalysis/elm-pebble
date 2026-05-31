@@ -187,33 +187,38 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Eval do
       :var ->
         name = expr["name"] || expr[:name]
 
-        value =
-          if is_binary(name) and Map.has_key?(env, name) do
-            Map.get(env, name)
-          else
-            case String.downcase(to_string(name || "")) do
-              "pi" -> :math.pi()
-              "e" -> :math.exp(1.0)
-              "lt" -> %{"ctor" => "LT", "args" => []}
-              "eq" -> %{"ctor" => "EQ", "args" => []}
-              "gt" -> %{"ctor" => "GT", "args" => []}
-              "empty" -> []
-              _ -> nil
-            end
-          end
-
         cond do
-          value != nil ->
-            {:ok, value}
-
           is_binary(name) ->
-            case host_resolve_zero_arity(host, name, context, stack) do
-              {:ok, resolved} -> {:ok, resolved}
-              _ -> {:ok, {:function_ref, name}}
+            case resolve_dotted_var_value(name, env, host) do
+              {:ok, value} ->
+                {:ok, value}
+
+              :error ->
+                value =
+                  case String.downcase(name) do
+                    "pi" -> :math.pi()
+                    "e" -> :math.exp(1.0)
+                    "lt" -> %{"ctor" => "LT", "args" => []}
+                    "eq" -> %{"ctor" => "EQ", "args" => []}
+                    "gt" -> %{"ctor" => "GT", "args" => []}
+                    "empty" -> []
+                    _ -> nil
+                  end
+
+                cond do
+                  value != nil ->
+                    {:ok, value}
+
+                  true ->
+                    case host_resolve_zero_arity(host, name, context, stack) do
+                      {:ok, resolved} -> {:ok, resolved}
+                      _ -> {:ok, {:function_ref, name}}
+                    end
+                end
             end
 
           true ->
-            {:ok, value}
+            {:ok, nil}
         end
 
       :var_resolved ->
@@ -554,6 +559,11 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Eval do
         args = expr["args"] || expr[:args] || []
         host_call_function(host, target, args, env, context, stack)
 
+      :qualified_call1 ->
+        target = to_string(expr["target"] || expr[:target] || "")
+        args = expr["args"] || expr[:args] || []
+        host_call_function(host, target, args, env, context, stack)
+
       :call ->
         name = to_string(expr["name"] || expr[:name] || "")
         args = expr["args"] || expr[:args] || []
@@ -598,6 +608,37 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Eval do
 
       _ ->
         {:error, :invalid_case_branches}
+    end
+  end
+
+  @spec resolve_dotted_var_value(String.t(), EvalTypes.env(), host()) ::
+          {:ok, EvalTypes.runtime_value()} | :error
+  defp resolve_dotted_var_value(name, env, host) when is_binary(name) and is_map(env) do
+    if Map.has_key?(env, name) do
+      {:ok, Map.get(env, name)}
+    else
+      case String.split(name, ".") do
+        [_] ->
+          :error
+
+        [root | fields] ->
+          with {:ok, base} <- resolve_dotted_var_value(root, env, host) do
+            fields
+            |> Enum.reduce_while({:ok, base}, fn field, {:ok, acc} ->
+              value = host_field_access(host, acc, field)
+
+              if is_nil(value) do
+                {:halt, :error}
+              else
+                {:cont, {:ok, value}}
+              end
+            end)
+            |> case do
+              {:ok, _} = ok -> ok
+              :error -> :error
+            end
+          end
+      end
     end
   end
 

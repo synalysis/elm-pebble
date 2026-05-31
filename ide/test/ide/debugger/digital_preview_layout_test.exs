@@ -2,12 +2,10 @@ defmodule Ide.Debugger.DigitalPreviewLayoutTest do
   use Ide.DataCase, async: false
 
   alias Ide.Debugger
-  alias Ide.Debugger.ElmIntrospect
   alias Ide.Debugger.RuntimePreview
   alias Ide.Debugger.StepExecution
   alias Ide.Projects
   alias IdeWeb.WorkspaceLive.DebuggerPreview
-  alias ElmExecutor.Runtime.SemanticExecutor
 
   @digital_source File.read!("priv/project_templates/watchface_digital/src/Main.elm")
 
@@ -74,27 +72,28 @@ defmodule Ide.Debugger.DigitalPreviewLayoutTest do
   end
 
   test "semantic view preview evaluates centered cardY for digital template" do
-    assert {:ok, %{"elm_introspect" => ei}} =
-             ElmIntrospect.analyze_source(@digital_source, "Main.elm")
+    slug = "digital-preview-semantic-#{System.unique_integer([:positive])}"
 
-    view_tree = ei["view_tree"]
-    runtime_model = %{"screenW" => 144, "screenH" => 168, "timeString" => "08:53"}
+    assert {:ok, _} = Debugger.start_session(slug)
 
-    rows =
-      SemanticExecutor.derive_view_output_preview(view_tree, runtime_model, %{
-        elm_introspect: ei
-      })
+    assert {:ok, state} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: @digital_source,
+               reason: "digital_preview_semantic"
+             })
 
-    execution_model = %{"elm_introspect" => ei, "screen_width" => 144, "screen_height" => 168}
+    execution_model = Ide.Debugger.RuntimeArtifacts.execution_model(state.watch)
+    view_tree = StepExecution.introspect_parser_view_tree(execution_model, state.watch[:view_tree] || %{})
 
-    supplemented =
-      StepExecution.supplement_parser_runtime_view_output(
-        execution_model,
-        view_tree,
-        runtime_model
-      )
+    runtime_model =
+      get_in(state, [:watch, :model, "runtime_model"]) ||
+        %{"screenW" => 144, "screenH" => 168, "timeString" => "08:53"}
 
-    sup_rect = Enum.find(supplemented, &(&1["kind"] == "round_rect"))
+    %{view_output: rows} =
+      StepExecution.derive_preview_view_output(execution_model, view_tree, runtime_model)
+
+    sup_rect = Enum.find(rows, &(&1["kind"] == "round_rect"))
     assert sup_rect
     assert is_integer(sup_rect["y"])
     assert sup_rect["h"] >= 66

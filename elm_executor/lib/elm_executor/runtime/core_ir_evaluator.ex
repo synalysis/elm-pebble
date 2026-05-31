@@ -3676,21 +3676,55 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end)
     |> case do
       nil ->
-        unknown = {:error, {:unknown_function, {module_name, function_name, length(values)}}}
+        resolve_unknown_qualified_function(module_name, function_name, values, context, stack)
 
-        case try_pebble_ui_to_ui_node_fallback(module_name, function_name, values) do
-          {:ok, value} -> {:ok, value}
-          :error -> unknown
-        end
-
-      {:error, {:unknown_function, {module_name, function_name, _arity}}} = unknown ->
-        case try_pebble_ui_to_ui_node_fallback(module_name, function_name, values) do
-          {:ok, value} -> {:ok, value}
-          :error -> unknown
-        end
+      {:error, {:unknown_function, {module_name, function_name, _arity}}} ->
+        resolve_unknown_qualified_function(module_name, function_name, values, context, stack)
 
       result ->
         result
+    end
+  end
+
+  @spec resolve_unknown_qualified_function(
+          String.t(),
+          String.t(),
+          EvalTypes.runtime_values(),
+          EvalTypes.ops_context(),
+          EvalTypes.eval_stack()
+        ) :: EvalTypes.eval_result()
+  defp resolve_unknown_qualified_function(module_name, function_name, values, context, stack)
+       when is_binary(module_name) and is_binary(function_name) and is_list(values) do
+    unknown = {:error, {:unknown_function, {module_name, function_name, length(values)}}}
+
+    case try_stdlib_qualified_builtin(module_name, function_name, values, context, stack) do
+      {:ok, value} ->
+        {:ok, value}
+
+      :error ->
+        case try_pebble_ui_to_ui_node_fallback(module_name, function_name, values) do
+          {:ok, value} -> {:ok, value}
+          :error -> unknown
+        end
+    end
+  end
+
+  @spec try_stdlib_qualified_builtin(
+          String.t(),
+          String.t(),
+          EvalTypes.runtime_values(),
+          EvalTypes.ops_context(),
+          EvalTypes.eval_stack()
+        ) :: {:ok, EvalTypes.runtime_value()} | :error
+  defp try_stdlib_qualified_builtin(module_name, function_name, values, context, stack)
+       when is_binary(module_name) and is_binary(function_name) and is_list(values) do
+    if legacy_fallback_allowed_module?(compact_module_name(module_name)) do
+      case eval_builtin("#{module_name}.#{function_name}", values, %{}, context, stack) do
+        {:ok, value} -> {:ok, value}
+        _ -> :error
+      end
+    else
+      :error
     end
   end
 

@@ -1,4 +1,4 @@
-module Render exposing (render)
+module Render exposing (FaceModel, render)
 
 import Battle exposing (Scene(..))
 import Pokemon exposing (Attack(..), Opponent, Player, attackName, speciesName)
@@ -94,8 +94,8 @@ drawTime layout model =
                 if model.hour == 0 then
                     12
 
-                else
-                    model.hour - 12
+            else
+                model.hour - 12
 
             else
                 model.hour
@@ -153,8 +153,8 @@ drawInfoBox layout =
                 { x = layout.screenW - layout.boxX - ballW + 1, y = layout.boxY + ballH // 2 - 2 }
             ]
         )
-    , Ui.drawBitmapInRect Resources.BoxBall { x = layout.boxX, y = layout.boxY, w = ballW, h = ballH }
-    , Ui.drawBitmapInRect Resources.BoxBall
+    , Ui.drawBitmapInRect Resources.BitmapStaticBoxBall { x = layout.boxX, y = layout.boxY, w = ballW, h = ballH }
+    , Ui.drawBitmapInRect Resources.BitmapStaticBoxBall
         { x = layout.screenW - layout.boxX - ballW
         , y = layout.boxY
         , w = ballW
@@ -192,29 +192,44 @@ drawScene layout model =
         WildAppears _ ->
             drawOpponent layout model
                 ++ drawOpeningPokeball layout model.opponent
-                ++ dialog layout [ "A wild " ++ speciesName model.opponent.species, "appeared!" ]
+                ++ dialog layout
+                    [ "A wild " ++ speciesName model.opponent.species
+                    , "appeared!"
+                    ]
 
         OpponentShown _ ->
             drawOpponent layout model
 
         AttackAnnounce _ ->
             drawOpponent layout model
-                ++ dialog layout [ model.player.displayName ++ " used", attackName model.player.attack ++ "!" ]
+                ++ dialog layout
+                    [ model.player.displayName ++ " used"
+                    , attackName model.player.attack ++ "!"
+                    ]
 
         AttackFrame1 ->
             drawOpponent layout model
                 ++ drawAttack layout model 1
-                ++ dialog layout [ model.player.displayName ++ " used", attackName model.player.attack ++ "!" ]
+                ++ dialog layout
+                    [ model.player.displayName ++ " used"
+                    , attackName model.player.attack ++ "!"
+                    ]
 
         AttackFrame2 ->
             drawOpponent layout model
                 ++ drawAttack layout model 2
-                ++ dialog layout [ model.player.displayName ++ " used", attackName model.player.attack ++ "!" ]
+                ++ dialog layout
+                    [ model.player.displayName ++ " used"
+                    , attackName model.player.attack ++ "!"
+                    ]
 
         AttackFrame3 ->
             drawOpponent layout model
                 ++ drawAttack layout model 3
-                ++ dialog layout [ model.player.displayName ++ " used", attackName model.player.attack ++ "!" ]
+                ++ dialog layout
+                    [ model.player.displayName ++ " used"
+                    , attackName model.player.attack ++ "!"
+                    ]
 
         HealthDrain ->
             drawOpponent layout model
@@ -224,7 +239,10 @@ drawScene layout model =
                 ++ eraseBelowOpponent layout model.opponent
 
         Fainted _ ->
-            dialog layout [ "Enemy " ++ speciesName model.opponent.species, "fainted!" ]
+            dialog layout
+                [ "Enemy " ++ speciesName model.opponent.species
+                , "fainted!"
+                ]
 
         Victory _ ->
             dialog layout [ "Victory!" ]
@@ -235,14 +253,14 @@ drawScene layout model =
 
 drawPokeball : Layout -> Opponent -> List Ui.RenderOp
 drawPokeball layout foe =
-    [ Ui.drawBitmapInRect Resources.Pokeball
+    [ Ui.drawBitmapInRect Resources.BitmapStaticPokeball
         { x = foe.x, y = foe.y + 35, w = 24, h = 24 }
     ]
 
 
 drawOpeningPokeball : Layout -> Opponent -> List Ui.RenderOp
 drawOpeningPokeball layout foe =
-    [ Ui.drawBitmapInRect Resources.PokeballOpen
+    [ Ui.drawBitmapInRect Resources.BitmapStaticPokeballOpen
         { x = foe.x + 10, y = foe.y + 35, w = 24, h = 24 }
     ]
 
@@ -282,7 +300,7 @@ drawTrainerCard layout nameX nameY name levelTag health isOpponent =
     [ textLeft nameX nameY 72 16 (String.toUpper name)
     , textLeft (nameX + 28) (nameY + 15) 40 12 levelTag
     , textLeft (nameX + 3) (nameY + 30) 24 10 "HP:"
-    , Ui.drawBitmapInRect Resources.HealthEmpty { x = nameX + 27, y = nameY + 32, w = 48, h = 8 }
+    , Ui.drawBitmapInRect Resources.BitmapStaticHealthEmpty { x = nameX + 27, y = nameY + 32, w = 48, h = 8 }
     , Ui.group
         (Ui.context [ Ui.fillColor barColor ]
             [ Ui.fillRect { x = nameX + 29, y = nameY + 34, w = barW, h = 2 } barColor ]
@@ -350,7 +368,7 @@ drawThunder layout foe =
         (Ui.context [ Ui.fillColor Color.chromeYellow ]
             [ Ui.fillCircle { x = centerX, y = centerY } 12 Color.chromeYellow ]
         )
-    , Ui.drawBitmapInRect Resources.Thunderbolts { x = centerX - 14, y = centerY - 16, w = 28, h = 32 }
+    , Ui.drawBitmapInRect Resources.BitmapStaticThunderbolts { x = centerX - 14, y = centerY - 16, w = 28, h = 32 }
     ]
 
 
@@ -406,18 +424,18 @@ drawEmbers layout foe frame =
     in
     case frame of
         1 ->
-            [ Ui.drawBitmapInRect Resources.EmberSmall { x = foe.x, y = y - 20, w = 16, h = 20 }
-            , Ui.drawBitmapInRect Resources.EmberSmall { x = foe.x + 25, y = y - 20, w = 16, h = 20 }
+            [ Ui.drawBitmapInRect Resources.BitmapStaticEmberSmall { x = foe.x, y = y - 20, w = 16, h = 20 }
+            , Ui.drawBitmapInRect Resources.BitmapStaticEmberSmall { x = foe.x + 25, y = y - 20, w = 16, h = 20 }
             ]
 
         2 ->
-            [ Ui.drawBitmapInRect Resources.EmberBig { x = foe.x, y = y - 24, w = 16, h = 24 }
-            , Ui.drawBitmapInRect Resources.EmberBig { x = foe.x + 25, y = y - 24, w = 16, h = 24 }
+            [ Ui.drawBitmapInRect Resources.BitmapStaticEmberBig { x = foe.x, y = y - 24, w = 16, h = 24 }
+            , Ui.drawBitmapInRect Resources.BitmapStaticEmberBig { x = foe.x + 25, y = y - 24, w = 16, h = 24 }
             ]
 
         _ ->
-            [ Ui.drawBitmapInRect Resources.EmberSmall { x = foe.x, y = y - 20, w = 16, h = 20 }
-            , Ui.drawBitmapInRect Resources.EmberSmall { x = foe.x + 25, y = y - 20, w = 16, h = 20 }
+            [ Ui.drawBitmapInRect Resources.BitmapStaticEmberSmall { x = foe.x, y = y - 20, w = 16, h = 20 }
+            , Ui.drawBitmapInRect Resources.BitmapStaticEmberSmall { x = foe.x + 25, y = y - 20, w = 16, h = 20 }
             ]
 
 

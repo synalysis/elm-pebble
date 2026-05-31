@@ -16,43 +16,26 @@ defmodule Ide.Debugger.PreviewIntegrationTest do
   alias Ide.DebuggerIntegrationExecutors.TupleMaybeRuntimeExecutor
 
   test "render_runtime_preview_for_debugger derives view output from surface model only" do
-    surface_runtime = %{
-      model: %{
-        "runtime_model" => %{
-          "timeString" => "08:54",
-          "screenW" => 144,
-          "screenH" => 168
-        },
-        "runtime_view_output" => [
-          %{"kind" => "text", "text" => "08:53", "x" => 0, "y" => 0}
-        ],
-        "elm_introspect" => %{
-          "view_tree" => %{
-            "type" => "windowStack",
-            "children" => [
-              %{
-                "type" => "text",
-                "font_id" => 0,
-                "x" => 0,
-                "y" => 0,
-                "w" => 144,
-                "h" => 20,
-                "text_align" => 0,
-                "text_overflow" => 0,
-                "children" => [
-                  %{
-                    "type" => "expr",
-                    "op" => "field_access",
-                    "label" => "model.timeString"
-                  }
-                ]
-              }
-            ]
-          }
-        }
-      },
-      view_tree: %{"type" => "windowStack", "children" => []}
-    }
+    slug = "preview-surface-only-#{System.unique_integer([:positive])}"
+    source = File.read!("priv/project_templates/watchface_digital/src/Main.elm")
+
+    {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, reloaded} =
+             Debugger.reload(slug, %{
+               rel_path: "watch/src/Main.elm",
+               source: source,
+               reason: "preview_surface_only"
+             })
+
+    surface_runtime =
+      reloaded.watch
+      |> update_in([:model, "runtime_model"], fn model ->
+        Map.merge(model || %{}, %{"timeString" => "08:54"})
+      end)
+      |> update_in([:model, "runtime_view_output"], fn _ ->
+        [%{"kind" => "text", "text" => "08:53", "x" => 0, "y" => 0}]
+      end)
 
     rendered = Debugger.render_runtime_preview_for_debugger(surface_runtime, %{}, :watch)
 

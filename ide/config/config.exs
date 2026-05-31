@@ -67,6 +67,13 @@ config :ide, Ide.PublishManifest, output_root: Path.expand("../priv/publish_mani
 
 config :ide, Ide.Settings, settings_path: Path.expand("../priv/ide_settings.json", __DIR__)
 
+config :ide, Ide.Debugger.RuntimeExecutor,
+  runtime_mode: :runtime_first,
+  external_executor_module: Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter,
+  external_executor_strict: true
+
+config :ide, :debugger_lazy_elmc, false
+
 config :ide, Ide.GitHub,
   credentials_path: Path.expand("../priv/github_credentials.json", __DIR__),
   oauth_client_id: nil

@@ -35,7 +35,7 @@
       "kind": "round_rect",
       "radius": 6,
       "stroke_color": 192,
-      "stroke_width": 3,
+      "stroke_width": 1,
       "w": 132,
       "x": 6,
       "y": 6
@@ -47,8 +47,8 @@
       "h": 36,
       "kind": "arc",
       "start_angle": 0,
-      "stroke_color": 192,
-      "stroke_width": 3,
+      "stroke_color": null,
+      "stroke_width": 1,
       "w": 36,
       "x": 20,
       "y": 16
@@ -85,7 +85,7 @@
       "y": 56
     }
   ],
-  "preview_ops_sha256": "cb0b988b579c1cc96543bd90ce3bb193e72fee31a4ad1f9be0a0687521b8c037",
+  "preview_ops_sha256": "91951f60e26d99b5f1f31ec7c3f3eb8306ec64aaae24450a3cf5a0c02be44403",
   "render_tree": {
     "node_count": 10,
     "node_types": [
@@ -217,7 +217,7 @@
     },
     "firmware_version": "v4.4.0-sim",
     "last_message": "FirmwareVersionString",
-    "last_operation": "nil",
+    "last_operation": "FirmwareVersionString",
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
@@ -294,7 +294,7 @@
       },
       "firmware_version": "v4.4.0-sim",
       "last_message": "FirmwareVersionString",
-      "last_operation": "nil",
+      "last_operation": "FirmwareVersionString",
       "screenH": 168,
       "screenW": 144,
       "temperature": {

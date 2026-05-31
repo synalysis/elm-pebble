@@ -537,20 +537,8 @@ defmodule Ide.Compiler do
       {:ok, core_ir} ->
         {:ok, %{core_ir: core_ir, metadata: elm_executor_artifact_metadata("strict", [])}}
 
-      {:error, error} ->
-        with {:ok, core_ir} <- CoreIR.from_ir(ir) do
-          {:ok,
-           %{
-             core_ir: core_ir,
-             metadata:
-               elm_executor_artifact_metadata(
-                 "non_strict",
-                 core_ir_validation_diagnostics(error)
-               )
-           }}
-        else
-          _ -> {:error, :elm_executor_artifacts_unavailable}
-        end
+      {:error, _error} ->
+        {:error, :elm_executor_artifacts_unavailable}
     end
   end
 
@@ -565,10 +553,6 @@ defmodule Ide.Compiler do
       "core_ir_diagnostics" => diagnostics
     }
   end
-
-  @spec core_ir_validation_diagnostics(map()) :: [map()]
-  defp core_ir_validation_diagnostics(%{diagnostics: diagnostics}) when is_list(diagnostics),
-    do: diagnostics
 
   @spec run_elmc_manifest(String.t(), String.t(), boolean()) ::
           {:ok, manifest_result()} | {:error, compiler_error()}

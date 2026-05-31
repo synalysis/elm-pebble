@@ -36,7 +36,10 @@ defmodule Ide.Debugger.TriggerMessageSurface do
         msg_constructors = IntrospectAccess.list(ei, "msg_constructors")
         update_branches = IntrospectAccess.list(ei, "update_case_branches")
         known_messages = if msg_constructors != [], do: msg_constructors, else: update_branches
-        TriggerCandidates.best_message_for_trigger(known_messages, trigger)
+
+        TriggerCandidates.best_message_for_trigger(known_messages, trigger) ||
+          List.first(known_messages) ||
+          TriggerCandidates.default_message_for_trigger(trigger)
       end
 
     ctx.attach_payload.(state, target, message, trigger)

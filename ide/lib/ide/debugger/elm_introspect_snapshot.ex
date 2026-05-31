@@ -247,17 +247,24 @@ defmodule Ide.Debugger.ElmIntrospectSnapshot do
 
   @spec resolve_init_execution(Types.runtime_state(), map(), apply_ctx()) ::
           Types.step_executor_result() | map()
-  defp resolve_init_execution(state, request, ctx) do
-    result =
-      if BootstrapInit.parser_only?(state) do
-        RuntimeExecutor.execute_introspect_only(request)
-      else
-        ctx.executor.execute(request)
-      end
+  defp resolve_init_execution(_state, request, ctx) do
+    case ctx.executor.execute(request) do
+      {:ok, payload} when is_map(payload) ->
+        payload
 
-    case result do
-      {:ok, payload} when is_map(payload) -> payload
-      _ -> %{model_patch: %{}, view_tree: nil, runtime: %{}}
+      {:error, reason} ->
+        %{
+          model_patch: %{
+            "runtime_model" => %{},
+            "runtime_execution_error" => inspect(reason, limit: 50)
+          },
+          view_tree: nil,
+          runtime: %{
+            "execution_status" => "error",
+            "error_code" => "core_ir_init_failed",
+            "error_detail" => inspect(reason, limit: 50)
+          }
+        }
     end
   end
 

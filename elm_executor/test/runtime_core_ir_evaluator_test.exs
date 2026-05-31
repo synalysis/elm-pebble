@@ -1307,4 +1307,36 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
                context
              )
   end
+
+  test "qualified String.toUpper resolves through stdlib builtin registry" do
+    expr = %{
+      "op" => :qualified_call,
+      "target" => "String.toUpper",
+      "args" => ["squirtle"]
+    }
+
+    assert {:ok, "SQUIRTLE"} = CoreIREvaluator.evaluate(expr, %{}, %{module: "Render"})
+  end
+
+  test "dotted var names resolve nested record fields for record_update" do
+    env = %{
+      "model" => %{
+        "player" => %{"displayName" => "Pikachu", "levelTag" => ":L5", "x" => 24}
+      }
+    }
+
+    assert {:ok, %{"displayName" => "Pikachu", "levelTag" => ":L5", "x" => 24}} =
+             CoreIREvaluator.evaluate(%{"op" => :var, "name" => "model.player"}, env, %{})
+
+    update = %{
+      "op" => :record_update,
+      "base" => %{"op" => :var, "name" => "model.player"},
+      "fields" => [
+        %{"name" => "levelTag", "expr" => %{"op" => "string_literal", "value" => ":L99"}}
+      ]
+    }
+
+    assert {:ok, %{"displayName" => "Pikachu", "levelTag" => ":L99", "x" => 24}} =
+             CoreIREvaluator.evaluate(update, env, %{})
+  end
 end

@@ -260,7 +260,7 @@
     },
     "firmware_version": "v4.4.0-sim",
     "last_message": "GotFirmware",
-    "last_operation": "set",
+    "last_operation": "GotFirmware",
     "model": {
       "args": [
         {
@@ -343,7 +343,7 @@
       },
       "firmware_version": "v4.4.0-sim",
       "last_message": "GotFirmware",
-      "last_operation": "set",
+      "last_operation": "GotFirmware",
       "model": {
         "args": [
           {

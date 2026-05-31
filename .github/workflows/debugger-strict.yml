@@ -29,6 +29,7 @@ jobs:
         working-directory: elm_executor
         run: |
           mix test test/runtime_semantic_executor_test.exs
+          mix test test/runtime_core_ir_evaluator_test.exs
 
   ide-debugger:
     name: IDE debugger/runtime suites
@@ -53,4 +54,12 @@ jobs:
         run: |
           mix test test/ide/debugger_test.exs \
             test/ide/debugger/runtime_executor_test.exs \
-            test/ide/debugger/runtime_executor_parity_test.exs
+            test/ide/debugger/runtime_executor_parity_test.exs \
+            test/ide/debugger/runtime_executor_request_test.exs \
+            test/ide/debugger/surface_compile_ephemeral_test.exs \
+            test/ide/debugger/surface_compile_project_test.exs \
+            test/ide/debugger/runtime_preview_test.exs
+
+      - name: Run debugger template corpus
+        working-directory: ide
+        run: mix test test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus

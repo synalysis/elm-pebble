@@ -56,10 +56,11 @@ The IDE has three major loops:
   protocol, view render, replay, tick, snapshot, and runtime execution events.
   MCP exposes the same state and control surface for agent-driven workflows.
 
-The debugger currently combines parser-derived structural information,
-deterministic runtime state updates, `elm_executor` execution work, and snapshot-first
-inspection. Full semantic execution remains the central area to harden before
-calling the debugger complete.
+The debugger uses parser introspection for structure (messages, cmds, subscriptions)
+and **Core IR execution** for `init`, `update`, and watch preview (`elm_executor`).
+Parser-only model/view mutation and preview fallbacks are removed; missing Core IR
+or eval failures surface as timeline errors or `previewUnavailable`. See
+`ide/docs/debugger.md` and `docs/ELM_EXECUTOR_FIDELITY_MATRIX.md`.
 
 ## Package Model
 
@@ -89,13 +90,11 @@ surface supported/blocked status. The current companion package shape is
 
 ### 2. Debugger Runtime Fidelity
 
-- Continue replacing parser-shaped model/view fallbacks with runtime-executed
-  Elm `init`, `update`, and `view` behavior.
-- Keep snapshot continuation, replay, tick, and protocol events deterministic as
-  runtime fidelity improves.
+- Harden Core IR coverage in `elm_executor` (expression forms, stdlib, record updates).
+- Keep snapshot continuation, replay, tick, and protocol events deterministic.
 - Preserve trace export/import and MCP cursor inspection as stable contracts.
-- Expand parity tests across at least two templates for each runtime behavior
-  change.
+- Gate changes with `ide/test/ide/mcp/debugger_template_corpus_test.exs` and
+  `.github/workflows/debugger-strict.yml`.
 
 ### 3. Editor and Language Server
 
@@ -144,6 +143,7 @@ surface supported/blocked status. The current companion package shape is
 Before publishing a cleaned public repository:
 
 - Run the focused IDE/package/debugger tests touched by recent work.
+- Run `.github/workflows/debugger-strict.yml` suites (executor + IDE debugger + template corpus).
 - Run `mix test` in `ide/` if time permits and document any known unrelated
   failures.
 - Run `mix test` in `elm_executor/` for runtime executor changes.

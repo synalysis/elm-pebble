@@ -102,7 +102,7 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
   end
 
   defp lazy_elmc? do
-    Application.get_env(:ide, :debugger_lazy_elmc, true)
+    Application.get_env(:ide, :debugger_lazy_elmc, false)
   end
 
   defp companion_parser_expression_view?(state) do

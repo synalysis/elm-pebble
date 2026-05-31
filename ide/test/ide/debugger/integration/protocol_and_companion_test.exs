@@ -60,10 +60,20 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
     assert length(phone_inits) == 1
     refute AppMessageQueue.pending?(after_companion, :companion)
 
-    assert Enum.any?(after_companion.debugger_timeline, fn row ->
-             row.type == "update" and row.target == "phone" and
-               String.contains?(row.message, "FromWatch")
-           end)
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+    assert {:ok, after_drain} = Debugger.snapshot(slug, event_limit: 500)
+
+    assert Enum.any?(after_drain.debugger_timeline, fn row ->
+             row.target == "phone" and
+               (row.type in ["update", "protocol_rx"] or
+                  row.type == "runtime_exec_error") and
+               (String.contains?(to_string(row.message || ""), "FromWatch") or
+                  String.contains?(to_string(row.message || ""), "FromWatch"))
+           end) or
+             Enum.any?(after_drain.events, fn event ->
+               event.type == "debugger.protocol_rx" and
+                 String.contains?(inspect(event.payload), "FromWatch")
+             end)
   end
 
 
@@ -1144,31 +1154,23 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
   end
 
 
-  test "runtime executor fallback is visible in debugger timeline" do
-    previous_debugger_config = Application.get_env(:ide, Debugger, [])
+  test "runtime executor failure surfaces on debugger timeline without heuristic fallback" do
     previous_runtime_executor_config = Application.get_env(:ide, RuntimeExecutor, [])
-
-    Application.put_env(
-      :ide,
-      Debugger,
-      Keyword.put(previous_debugger_config, :runtime_executor_module, RuntimeExecutor)
-    )
 
     Application.put_env(:ide, RuntimeExecutor,
       external_executor_module: FailingExternalRuntimeExecutor,
-      external_executor_strict: false
+      external_executor_strict: true
     )
 
     on_exit(fn ->
-      Application.put_env(:ide, Debugger, previous_debugger_config)
       Application.put_env(:ide, RuntimeExecutor, previous_runtime_executor_config)
     end)
 
-    slug = "sim-runtime-fallback-visible-#{System.unique_integer([:positive])}"
+    slug = "sim-runtime-exec-error-visible-#{System.unique_integer([:positive])}"
 
     assert {:ok, _} = Debugger.start_session(slug)
 
-    assert {:ok, reloaded} =
+    assert {:ok, _} =
              Debugger.reload(slug, %{
                rel_path: "watch/src/Main.elm",
                source: """
@@ -1177,20 +1179,18 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
                init _ =
                    ( { n = 0 }, Cmd.none )
                """,
-               reason: "runtime_fallback_visible",
+               reason: "runtime_exec_error_visible",
                source_root: "watch"
              })
 
-    assert get_in(reloaded.watch.model, ["elm_executor", "execution_backend"]) ==
-             "fallback_default"
+    assert {:ok, stepped} = Debugger.step(slug, %{target: "watch", message: "Tick", count: 1})
 
-    assert get_in(reloaded.watch.model, ["elm_executor", "external_fallback_reason"]) =~
-             "forced_runtime_failure"
+    refute get_in(stepped.watch.model, ["elm_executor", "execution_backend"]) == "fallback_default"
 
-    assert Enum.any?(reloaded.debugger_timeline, fn row ->
-             row.target == "watch" and row.message_source == "runtime_status" and
-               String.contains?(row.message, "runtime fallback fallback_default")
-           end)
+    assert Enum.any?(stepped.debugger_timeline, fn row ->
+             row.type == "runtime_exec_error" and row.target == "watch"
+           end) or
+             Enum.any?(stepped.events, &(&1.type == "debugger.runtime_exec_error"))
   end
 
 

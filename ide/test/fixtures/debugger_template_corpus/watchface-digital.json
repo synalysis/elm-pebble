@@ -127,7 +127,7 @@
       "ctor": "Rectangular"
     },
     "last_message": "CurrentTimeString",
-    "last_operation": "nil",
+    "last_operation": "CurrentTimeString",
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
@@ -176,7 +176,7 @@
         "ctor": "Rectangular"
       },
       "last_message": "CurrentTimeString",
-      "last_operation": "nil",
+      "last_operation": "CurrentTimeString",
       "screenH": 168,
       "screenW": 144,
       "timeString": "08:53"

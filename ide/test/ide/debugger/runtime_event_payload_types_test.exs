@@ -13,9 +13,16 @@ defmodule Ide.Debugger.RuntimeEventPayloadTypesTest do
                "launch_reason" => "LaunchUser"
              })
 
+    assert {:ok, _} =
+             Debugger.reload(slug, %{
+               "rel_path" => "watch/src/Main.elm",
+               "source" => File.read!("priv/project_templates/watch_demo_health/src/Main.elm"),
+               "reason" => "runtime_event_payload_test"
+             })
+
     assert {:ok, _} = Debugger.step(slug, %{"target" => "watch", "message" => "Tick", "count" => 1})
 
-    assert {:ok, st} = Debugger.snapshot(slug, event_limit: 20)
+    assert {:ok, st} = Debugger.snapshot(slug, event_limit: 200)
 
     start_event = Enum.find(st.events, &(&1.type == "debugger.start"))
     update_event = Enum.find(st.events, &(&1.type == "debugger.update_in"))

@@ -58,7 +58,7 @@ defmodule Ide.Debugger.RuntimePreview do
   @doc """
   Derives drawable preview rows and view tree from the surface `model` only.
 
-  Runs the Elm `view` against the current runtime model (via parser/semantic preview).
+  Runs the Elm `view` against the current runtime model via Core IR when available.
   Does not re-run `update` or `init` through the executor.
   """
   @spec render_view_from_surface(Surface.surface_map(), Types.surface_target()) ::
@@ -82,8 +82,12 @@ defmodule Ide.Debugger.RuntimePreview do
         |> RuntimeArtifacts.preview_runtime_model()
         |> preview_model_for_message(Map.get(model, "runtime_last_message"))
 
-      %{view_output: view_output, view_tree: derived_view_tree} =
+      preview =
         StepExecution.derive_preview_view_output(execution_model, parser_view_tree, preview_model)
+
+      view_output = Map.get(preview, :view_output) || []
+      derived_view_tree = Map.get(preview, :view_tree)
+      preview_error = Map.get(preview, :preview_error)
 
       model =
         model
@@ -93,13 +97,15 @@ defmodule Ide.Debugger.RuntimePreview do
 
       runtime_view_tree =
         cond do
-          is_map(derived_view_tree) and StepExecution.introspect_view_usable?(derived_view_tree, ei) ->
+          StepExecution.concrete_runtime_view_tree?(derived_view_tree, ei) ->
             derived_view_tree
 
           true ->
             case RuntimeViewOutput.tree(model, target) do
               %{} = output_tree when map_size(output_tree) > 0 ->
-                if StepExecution.introspect_view_usable?(output_tree, ei), do: output_tree, else: nil
+                if StepExecution.concrete_runtime_view_tree?(output_tree, ei),
+                  do: output_tree,
+                  else: nil
 
               _ ->
                 nil
@@ -110,9 +116,10 @@ defmodule Ide.Debugger.RuntimePreview do
         if is_map(runtime_view_tree) do
           runtime_view_tree
         else
-          if StepExecution.concrete_runtime_view_tree?(parser_view_tree, ei),
-            do: parser_view_tree,
-            else: nil
+          preview_unavailable_view_tree(
+            target,
+            preview_error || "runtime view did not produce drawable output"
+          )
         end
 
       surface_runtime
@@ -133,12 +140,22 @@ defmodule Ide.Debugger.RuntimePreview do
   def put_debugger_view_tree(runtime, runtime_view_tree) when is_map(runtime) do
     ei = RuntimeArtifacts.introspect(runtime) || %{}
 
-    if StepExecution.introspect_view_usable?(runtime_view_tree, ei) do
-      Map.put(runtime, :view_tree, runtime_view_tree)
-    else
-      runtime
+    cond do
+      preview_unavailable_tree?(runtime_view_tree) ->
+        Map.put(runtime, :view_tree, runtime_view_tree)
+
+      StepExecution.introspect_view_usable?(runtime_view_tree, ei) ->
+        Map.put(runtime, :view_tree, runtime_view_tree)
+
+      true ->
+        runtime
     end
   end
+
+  @spec preview_unavailable_tree?(Types.view_output_tree() | nil) :: boolean()
+  defp preview_unavailable_tree?(%{"type" => "previewUnavailable"}), do: true
+  defp preview_unavailable_tree?(%{type: "previewUnavailable"}), do: true
+  defp preview_unavailable_tree?(_), do: false
 
   @spec supplement_without_executor(
           Types.runtime_state(),

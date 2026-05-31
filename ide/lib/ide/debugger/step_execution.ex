@@ -93,7 +93,8 @@ defmodule Ide.Debugger.StepExecution do
     end)
   end
 
-  @spec runtime_result(StepInput.t(), [String.t()]) :: Types.runtime_step_result()
+  @spec runtime_result(StepInput.t(), [String.t()]) ::
+          {:ok, Types.runtime_step_result()} | {:error, Types.execution_error()}
   def runtime_result(%StepInput{} = step, update_branches)
        when is_binary(step.message) do
     request =
@@ -104,50 +105,27 @@ defmodule Ide.Debugger.StepExecution do
     case executor_module().execute(request) do
       {:ok, %{model_patch: patch} = result} when is_map(patch) ->
         if is_map(Map.get(patch, "runtime_model")) do
-          result
-          |> Map.put(
-            :view_output,
-            normalize_view_output(
-              Map.get(result, :view_output) || Map.get(patch, "runtime_view_output")
-            )
-          )
-          |> Map.put(:protocol_events, normalize_protocol_events(Map.get(result, :protocol_events)))
-          |> Map.put(:followup_messages, normalize_followup_messages(Map.get(result, :followup_messages)))
-          |> StepExecutionContract.step_result_from_executor()
+          {:ok,
+           result
+           |> Map.put(
+             :view_output,
+             normalize_view_output(
+               Map.get(result, :view_output) || Map.get(patch, "runtime_view_output")
+             )
+           )
+           |> Map.put(:protocol_events, normalize_protocol_events(Map.get(result, :protocol_events)))
+           |> Map.put(:followup_messages, normalize_followup_messages(Map.get(result, :followup_messages)))
+           |> StepExecutionContract.step_result_from_executor()}
         else
-          local_runtime_result(step.execution_model, step.view_tree, step.message, update_branches)
+          {:error, {:core_ir_execution_failed, :missing_runtime_model}}
         end
 
+      {:error, _} = err ->
+        err
+
       _ ->
-        local_runtime_result(step.execution_model, step.view_tree, step.message, update_branches)
+        {:error, {:core_ir_execution_failed, :invalid_executor_result}}
     end
-  end
-
-  @spec local_runtime_result(
-          Types.execution_model(),
-          map(),
-          String.t(),
-          [String.t()]
-        ) :: Types.runtime_step_result()
-  def local_runtime_result(model, view_tree, message, update_branches) do
-    runtime_model = Map.get(model, "runtime_model")
-    runtime_model = if is_map(runtime_model), do: runtime_model, else: %{}
-    updated_runtime_model = mutate_runtime_model(runtime_model, message, update_branches)
-
-    StepExecutionContract.step_result_from_local_fallback(
-      model
-      |> Map.put("runtime_model", updated_runtime_model)
-      |> refresh_runtime_fingerprints(updated_runtime_model, view_tree)
-      |> Map.take([
-        "runtime_model",
-        "runtime_model_source",
-        "runtime_model_sha256",
-        "runtime_view_tree_sha256",
-        "elm_executor_mode",
-        "elm_executor"
-      ]),
-      view_tree
-    )
   end
 
   @spec normalize_protocol_events(list()) :: [Types.protocol_timeline_event()]
@@ -183,95 +161,25 @@ defmodule Ide.Debugger.StepExecution do
         ) :: Types.runtime_view_nodes()
   def resolve_runtime_view_output(execution_model, view_tree, model_for_view, executor_rows)
       when is_map(execution_model) and is_map(view_tree) and is_map(model_for_view) do
-    supplemented =
-      supplement_parser_runtime_view_output(
-        execution_model,
-        view_tree,
-        RuntimeArtifacts.preview_runtime_model(model_for_view)
-      )
+    case normalize_view_output(executor_rows) do
+      [] ->
+        derive_preview_view_output(
+          execution_model,
+          view_tree,
+          RuntimeArtifacts.preview_runtime_model(model_for_view)
+        )
+        |> Map.get(:view_output, [])
 
-    choose_runtime_view_output(supplemented, normalize_view_output(executor_rows))
+      rows ->
+        rows
+    end
   end
 
   @spec choose_runtime_view_output(Types.runtime_view_nodes(), Types.runtime_view_nodes()) ::
           Types.runtime_view_nodes()
-  def choose_runtime_view_output(primary, supplemental) do
-    primary_rows = normalize_view_output(primary)
-    supplemental_rows = normalize_view_output(supplemental)
-
-    primary_vector_ids = vector_at_ids(primary_rows)
-    supplemental_vector_ids = vector_at_ids(supplemental_rows)
-
-    prefer_supplemental_vectors? =
-      supplemental_vector_ids != [] and
-        (primary_vector_ids == [] or primary_vector_ids != supplemental_vector_ids)
-
-    cond do
-      supplemental_rows == [] ->
-        primary_rows
-
-      primary_rows == [] ->
-        supplemental_rows
-
-      prefer_supplemental_vectors? ->
-        merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
-
-      resolved_vector_rows?(supplemental_rows) and not resolved_vector_rows?(primary_rows) ->
-        merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
-
-      vector_rows?(supplemental_rows) and not vector_rows?(primary_rows) ->
-        merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
-
-      parser_preview_resolved?(supplemental_rows) and parser_preview_unresolved?(primary_rows) ->
-        merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
-
-      length(supplemental_rows) > length(primary_rows) ->
-        merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
-
-      true ->
-        primary_rows
-    end
+  def choose_runtime_view_output(primary, _supplemental) do
+    normalize_view_output(primary)
   end
-
-  @spec merge_parser_primary_with_executor_vectors(
-          Types.runtime_view_nodes(),
-          Types.runtime_view_nodes()
-        ) :: Types.runtime_view_nodes()
-  def merge_parser_primary_with_executor_vectors(primary_rows, supplemental_rows)
-      when is_list(primary_rows) and is_list(supplemental_rows) do
-    supplemental_vectors = Enum.filter(supplemental_rows, &(Map.get(&1, "kind") == "vector_at"))
-    primary_without_vectors = Enum.reject(primary_rows, &(Map.get(&1, "kind") == "vector_at"))
-
-    if supplemental_vectors == [] do
-      primary_rows
-    else
-      primary_without_vectors ++ supplemental_vectors
-    end
-  end
-
-  def vector_rows?(rows) when is_list(rows),
-    do: Enum.any?(rows, &(is_map(&1) and Map.get(&1, "kind") == "vector_at"))
-
-  def vector_at_ids(rows) when is_list(rows) do
-    rows
-    |> Enum.flat_map(fn
-      %{"kind" => "vector_at", "vector_id" => id} when is_integer(id) -> [id]
-      %{kind: "vector_at", vector_id: id} when is_integer(id) -> [id]
-      _ -> []
-    end)
-  end
-
-  def resolved_vector_rows?(rows) when is_list(rows) do
-    Enum.any?(rows, fn row ->
-      is_map(row) and Map.get(row, "kind") == "vector_at" and is_integer(Map.get(row, "vector_id"))
-    end)
-  end
-
-  def parser_preview_unresolved?(rows) when is_list(rows),
-    do: Enum.any?(rows, &(is_map(&1) and Map.get(&1, "kind") == "unresolved"))
-
-  def parser_preview_resolved?(rows) when is_list(rows),
-    do: rows != [] and not parser_preview_unresolved?(rows)
 
   @spec derive_preview_view_output(
           Types.execution_model(),
@@ -280,7 +188,6 @@ defmodule Ide.Debugger.StepExecution do
         ) :: Types.preview_view_derivation()
   def derive_preview_view_output(execution_model, view_tree, preview_model)
       when is_map(execution_model) and is_map(view_tree) and is_map(preview_model) do
-    parser_view_tree = introspect_parser_view_tree(execution_model, view_tree)
     eval_context = preview_eval_context(execution_model)
 
     preview_model =
@@ -288,78 +195,18 @@ defmodule Ide.Debugger.StepExecution do
       |> RuntimeArtifacts.preview_runtime_model()
       |> Map.merge(screen_dimensions_for_view_preview(execution_model))
 
-    {rows, evaluated_tree} =
-      case derive_core_ir_preview(execution_model, preview_model, eval_context) do
-        {core_rows, %{} = core_tree} when core_rows != [] ->
-          {core_rows, core_tree}
-
-        _ ->
-          parser_rows =
-            if map_size(parser_view_tree) > 0 do
-              ElmExecutor.Runtime.SemanticExecutor.derive_view_output_preview(
-                parser_view_tree,
-                preview_model,
-                eval_context
-              )
-            else
-              []
-            end
-
-          {parser_rows, parser_view_tree}
-      end
-
-    view_tree_result =
-      cond do
-        is_map(evaluated_tree) and map_size(evaluated_tree) > 0 and
-            ElmExecutor.Runtime.SemanticExecutor.drawable_view_tree?(evaluated_tree) ->
-          evaluated_tree
-
-        concrete_runtime_view_tree?(parser_view_tree, RuntimeArtifacts.introspect(execution_model)) ->
-          parser_view_tree
-
-        true ->
-          nil
-      end
-
-    %{view_output: rows, view_tree: view_tree_result}
-  end
-
-  @spec supplement_parser_runtime_view_output(
-          Types.execution_model(),
-          Types.view_output_tree(),
-          Types.app_model()
-        ) :: Types.runtime_view_nodes()
-  def supplement_parser_runtime_view_output(execution_model, view_tree, runtime_model)
-       when is_map(execution_model) and is_map(view_tree) and is_map(runtime_model) do
-    %{view_output: rows} =
-      derive_preview_view_output(execution_model, view_tree, runtime_model)
-
-    rows
-  end
-
-  @spec derive_core_ir_preview(
-          Types.execution_model(),
-          Types.app_model(),
-          Types.core_ir_eval_context()
-        ) :: {Types.runtime_view_nodes(), Types.view_output_tree()}
-  defp derive_core_ir_preview(execution_model, preview_model, eval_context)
-       when is_map(execution_model) and is_map(preview_model) and is_map(eval_context) do
-    case RuntimeArtifacts.decode_core_ir(execution_model) do
-      nil ->
-        {[], %{}}
-
-      _ ->
+    case RuntimeArtifacts.versioned_core_ir?(execution_model) do
+      true ->
         %{view_output: rows, view_tree: tree} =
           ElmExecutor.Runtime.SemanticExecutor.derive_view_output_for_runtime_model(
             preview_model,
             eval_context
           )
 
-        if parser_preview_resolved?(rows) do
-          {rows, tree}
-        else
-          {[], %{}}
-        end
+        %{view_output: normalize_view_output(rows), view_tree: tree}
+
+      false ->
+        %{view_output: [], view_tree: nil, preview_error: "missing_core_ir"}
     end
   end
 
@@ -427,11 +274,12 @@ defmodule Ide.Debugger.StepExecution do
       nil ->
         case Keyword.get(opts, :execution_model) do
           %{} = execution_model ->
-            execution_model
-            |> supplement_parser_runtime_view_output(
+            derive_preview_view_output(
+              execution_model,
               runtime_view_tree || %{},
               RuntimeArtifacts.preview_runtime_model(model)
             )
+            |> Map.get(:view_output, [])
             |> case do
               [] ->
                 nil
@@ -586,93 +434,6 @@ defmodule Ide.Debugger.StepExecution do
 
   def unresolved_parser_view_root?(_tree, _ei), do: false
 
-  @spec mutate_runtime_model(Types.app_model(), String.t(), [String.t()]) :: Types.app_model()
-  def mutate_runtime_model(model, message, update_branches)
-       when is_map(model) and is_binary(message) and is_list(update_branches) do
-    op = step_operation_for_message(message, update_branches)
-
-    {updated, changed?} =
-      Enum.reduce(model, {%{}, false}, fn {key, value}, {acc, changed?} ->
-        cond do
-          is_integer(value) and op == :inc ->
-            {Map.put(acc, key, value + 1), true}
-
-          is_integer(value) and op == :dec ->
-            {Map.put(acc, key, value - 1), true}
-
-          is_integer(value) and op == :reset ->
-            {Map.put(acc, key, 0), true}
-
-          is_boolean(value) and op == :toggle ->
-            {Map.put(acc, key, !value), true}
-
-          is_boolean(value) and op == :enable ->
-            {Map.put(acc, key, true), true}
-
-          is_boolean(value) and op == :disable ->
-            {Map.put(acc, key, false), true}
-
-          is_boolean(value) and op == :reset ->
-            {Map.put(acc, key, false), true}
-
-          true ->
-            {Map.put(acc, key, value), changed?}
-        end
-      end)
-
-    base =
-      if changed? do
-        updated
-      else
-        Map.put(model, "step_counter", Map.get(model, "step_counter", 0) + 1)
-      end
-
-    base
-    |> Map.put("last_message", message)
-    |> Map.put("last_operation", Atom.to_string(op))
-  end
-  @spec step_operation_for_message(String.t(), [String.t()]) :: atom()
-  def step_operation_for_message(message, update_branches)
-       when is_binary(message) and is_list(update_branches) do
-    case operation_from_text(message) do
-      :tick ->
-        update_branches
-        |> Enum.filter(&is_binary/1)
-        |> Enum.map(&operation_from_text/1)
-        |> Enum.find(:tick, &(&1 != :tick))
-
-      op ->
-        op
-    end
-  end
-
-  @spec contains_any?(String.t(), [String.t()] | String.t()) :: boolean()
-  def contains_any?(text, needles) when is_binary(text) and is_list(needles) do
-    Enum.any?(needles, fn needle -> String.contains?(text, needle) end)
-  end
-
-  @spec operation_from_text(String.t()) :: atom()
-  def operation_from_text(text) when is_binary(text) do
-    hint =
-      text
-      |> String.trim()
-      |> String.split(~r/\s+/, parts: 2)
-      |> List.first()
-      |> case do
-        nil -> ""
-        ctor -> String.downcase(ctor)
-      end
-
-    cond do
-      contains_any?(hint, ["inc", "increment", "up", "next", "plus", "add"]) -> :inc
-      contains_any?(hint, ["dec", "decrement", "down", "prev", "minus", "sub"]) -> :dec
-      contains_any?(hint, ["toggle", "flip", "switch"]) -> :toggle
-      contains_any?(hint, ["enable", "enabled", "on", "open", "start"]) -> :enable
-      contains_any?(hint, ["disable", "disabled", "off", "close", "stop"]) -> :disable
-      contains_any?(hint, ["reset", "clear"]) -> :reset
-      true -> :tick
-    end
-  end
   @spec refresh_runtime_fingerprints(
           Types.execution_model(),
           Types.app_model(),

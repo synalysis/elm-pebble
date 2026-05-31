@@ -327,7 +327,8 @@ defmodule Ide.Debugger.Types do
 
   @type preview_view_derivation :: %{
           required(:view_output) => runtime_view_nodes(),
-          optional(:view_tree) => view_output_tree() | nil
+          optional(:view_tree) => view_output_tree() | nil,
+          optional(:preview_error) => String.t()
         }
 
   @type protocol_timeline_event :: ProtocolTxRxPayload.protocol_event()
@@ -410,6 +411,7 @@ defmodule Ide.Debugger.Types do
   @type execution_error ::
           :invalid_execution_input
           | :invalid_http_command
+          | {:core_ir_execution_failed, execution_fallback_reason()}
           | {:invalid_elm_executor_result, execution_fallback_reason()}
           | {:elmc_runtime_executor_failed, execution_fallback_reason()}
           | {:invalid_elmc_runtime_result, execution_fallback_reason()}
