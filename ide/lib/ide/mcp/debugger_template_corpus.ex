@@ -268,6 +268,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
            ),
          {:ok, state} <- Debugger.snapshot(slug, event_limit: 200) do
       :ok = assert_surfaces_versioned_core_ir!(state, template_key)
+      :ok = assert_companion_runtime_model!(state, template_key)
 
       models_map = Map.get(models, :models) || Map.get(models, "models") || %{}
 
@@ -514,6 +515,31 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     if template_key in @phone_first_templates do
       unless SurfaceCompileArtifacts.surface_has_versioned_core_ir?(state, :companion) do
         raise "template #{template_key}: companion surface missing versioned Core IR after bootstrap"
+      end
+    end
+
+    :ok
+  end
+
+  @doc false
+  @spec assert_companion_runtime_model!(map(), String.t()) :: :ok
+  def assert_companion_runtime_model!(state, template_key)
+      when is_map(state) and is_binary(template_key) do
+    if template_key in @phone_first_templates do
+      runtime_model = get_in(state, [:companion, :model, "runtime_model"]) || %{}
+
+      if map_size(runtime_model) == 0 do
+        raise "template #{template_key}: companion runtime_model empty after bootstrap"
+      end
+
+      case template_key do
+        "companion-demo-phone-status" ->
+          unless is_integer(runtime_model["batteryPercent"]) do
+            raise "template #{template_key}: expected batteryPercent on companion runtime_model, got #{inspect(runtime_model)}"
+          end
+
+        _ ->
+          :ok
       end
     end
 

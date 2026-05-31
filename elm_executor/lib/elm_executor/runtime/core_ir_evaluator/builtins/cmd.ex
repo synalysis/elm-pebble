@@ -16,6 +16,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Cmd do
     do: timer_after_command(ms, message_ctor)
 
   def eval("map", [_fun, command]), do: {:ok, command}
+  def eval("outgoing", [_payload]), do: {:ok, %{"kind" => "cmd.none", "commands" => []}}
   def eval(_function_name, _values), do: :no_builtin
 
   @spec timer_after_command(integer(), EvalTypes.runtime_value()) ::

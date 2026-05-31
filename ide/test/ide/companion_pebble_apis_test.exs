@@ -469,7 +469,9 @@ defmodule Ide.CompanionPebbleApisTest do
 
     assert runtime_model["batteryPercent"] == 55
     assert runtime_model["charging"] == true
-    assert runtime_model["charging"] == true
+
+    assert get_in(triggered, [:companion, :model, "elm_executor", "operation_source"]) ==
+             "core_ir_update_eval"
   end
 
   test "debugger forwards phone status protocol values to the watch surface" do

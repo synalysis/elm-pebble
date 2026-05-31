@@ -178,6 +178,18 @@ defmodule Ide.ProjectTemplates do
   end
 
   @doc """
+  Seeds a minimal phone + protocol workspace for debugger inline phone compiles
+  (session-only reloads without a persisted project row).
+  """
+  @spec seed_ephemeral_phone_compile_workspace(String.t()) :: :ok | {:error, template_error()}
+  def seed_ephemeral_phone_compile_workspace(workspace_path) when is_binary(workspace_path) do
+    with :ok <- seed_template_protocol(workspace_path, "companion_demo_phone_status"),
+         :ok <- seed_phone_companion(workspace_path) do
+      :ok
+    end
+  end
+
+  @doc """
   Applies a selected template to a project workspace.
   """
   @spec apply_template(String.t(), String.t()) :: :ok | {:error, template_error()}

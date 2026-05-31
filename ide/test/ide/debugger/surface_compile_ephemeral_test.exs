@@ -44,6 +44,47 @@ defmodule Ide.Debugger.SurfaceCompileEphemeralTest do
     assert RuntimeArtifacts.versioned_core_ir?(RuntimeArtifacts.execution_model(get_in(next, [:watch]) || %{}))
   end
 
+  test "ephemeral inline compile attaches versioned core ir to companion shell for phone source root" do
+    source =
+      File.read!(
+        Path.expand(
+          "../../../priv/project_templates/companion_demo_phone_status/phone/src/CompanionApp.elm",
+          __DIR__
+        )
+      )
+
+    state = %{
+      scope_key: "ephemeral-phone-test",
+      companion: %{
+        model: %{
+          "last_source" => source,
+          "last_path" => "phone/src/CompanionApp.elm",
+          "source_root" => "phone"
+        },
+        shell: %{}
+      }
+    }
+
+    ctx = %{
+      session_key_from_state: fn _ -> "ephemeral-phone-test" end,
+      source_root_for_target: fn :companion -> "phone" end,
+      merge_runtime_artifacts: fn st, target, fields ->
+        Ide.Debugger.RuntimeArtifactMerge.maybe_merge(st, target, fields)
+      end
+    }
+
+    artifacts = SurfaceCompileArtifacts.artifacts_for_source_root(state, "phone", ctx)
+
+    assert is_binary(artifacts["elm_executor_core_ir_b64"]) and
+             artifacts["elm_executor_core_ir_b64"] != ""
+
+    next = SurfaceCompileArtifacts.ensure_attached(state, :companion, ctx)
+
+    assert RuntimeArtifacts.versioned_core_ir?(
+             RuntimeArtifacts.execution_model(get_in(next, [:companion]) || %{})
+           )
+  end
+
   test "inline compile core ir executes inc update with launch envelope" do
     source = """
     module Main exposing (..)

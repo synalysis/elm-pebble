@@ -6,6 +6,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
   alias ElmEx.IR.Lowerer
   alias Ide.Compiler
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.ElmcSurfaceFields
   alias Ide.ProjectTemplates
@@ -159,13 +160,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
 
   @spec inline_source_present?(Types.runtime_state(), String.t()) :: boolean()
   defp inline_source_present?(state, source_root) when is_map(state) and is_binary(source_root) do
-    target =
-      case source_root do
-        "phone" -> :phone
-        "protocol" -> :companion
-        _ -> :watch
-      end
-
+    target = surface_target_for_source_root(source_root)
     model = get_in(state, [target, :model]) || %{}
 
     is_binary(Map.get(model, "last_source")) and String.trim(Map.get(model, "last_source")) != ""
@@ -175,13 +170,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
           Types.runtime_artifacts()
   defp artifacts_from_inline_source(state, source_root, ctx)
        when is_map(state) and is_binary(source_root) and is_map(ctx) do
-    target =
-      case source_root do
-        "phone" -> :phone
-        "protocol" -> :companion
-        _ -> :watch
-      end
-
+    target = surface_target_for_source_root(source_root)
     model = get_in(state, [target, :model]) || %{}
 
     source = Map.get(model, "last_source")
@@ -190,14 +179,63 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
     with true <- is_binary(source) and String.trim(source) != "",
          true <- is_binary(rel_path) and String.trim(rel_path) != "",
          session_key when is_binary(session_key) <- ctx.session_key_from_state.(state) do
-      ephemeral_entrypoint_artifacts(session_key, source, rel_path)
+      ephemeral_entrypoint_artifacts(session_key, source, rel_path, source_root)
     else
       _ -> %{}
     end
   end
 
-  @spec ephemeral_entrypoint_artifacts(String.t(), String.t(), String.t()) :: Types.runtime_artifacts()
-  defp ephemeral_entrypoint_artifacts(session_key, source, rel_path)
+  @spec ephemeral_entrypoint_artifacts(String.t(), String.t(), String.t(), String.t()) ::
+          Types.runtime_artifacts()
+  defp ephemeral_entrypoint_artifacts(session_key, source, rel_path, "phone")
+       when is_binary(session_key) and is_binary(source) and is_binary(rel_path) do
+    workspace = ephemeral_workspace_path(session_key, source, rel_path)
+    phone_root = Path.join(workspace, "phone")
+    dest_rel = normalize_phone_rel_path(rel_path)
+    dest = Path.join(phone_root, dest_rel)
+
+    unless File.dir?(phone_root) do
+      File.rm_rf!(workspace)
+      :ok = ProjectTemplates.seed_ephemeral_phone_compile_workspace(workspace)
+    end
+
+    File.mkdir_p!(Path.dirname(dest))
+    File.write!(dest, source)
+
+    default_companion = Path.join(phone_root, "src/CompanionApp.elm")
+
+    if Path.expand(dest) != Path.expand(default_companion) and File.exists?(default_companion) do
+      File.rm!(default_companion)
+    end
+
+    compile_artifacts =
+      case Compiler.compile(
+             "debugger-inline-phone-#{session_key}-#{:erlang.phash2({rel_path, source})}",
+             workspace_root: phone_root
+           ) do
+        {:ok, result} when is_map(result) ->
+          result
+          |> ElmcSurfaceFields.optional_runtime_artifacts()
+          |> maybe_merge_lenient_core_ir(phone_root)
+
+        {:error, _reason} ->
+          lenient_core_ir_artifact_fields(phone_root, entry_module_from_path(dest))
+      end
+
+    if map_size(compile_artifacts) > 0 do
+      compile_artifacts
+    else
+      lenient_core_ir_artifact_fields(phone_root, entry_module_from_path(dest))
+    end
+  rescue
+    _error ->
+      session_key
+      |> ephemeral_workspace_path(source, rel_path)
+      |> Path.join("phone")
+      |> lenient_core_ir_artifact_fields(entry_module_from_rel_path(rel_path))
+  end
+
+  defp ephemeral_entrypoint_artifacts(session_key, source, rel_path, _source_root)
        when is_binary(session_key) and is_binary(source) and is_binary(rel_path) do
     workspace = ephemeral_workspace_path(session_key, source, rel_path)
     watch_dir = Path.join(workspace, "watch")
@@ -267,7 +305,16 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
     if is_binary(b64) and b64 != "" do
       artifacts
     else
-      Map.merge(artifacts, lenient_core_ir_artifact_fields(project_dir, "Main"))
+      Map.merge(artifacts, lenient_core_ir_artifact_fields(project_dir, default_entry_module(project_dir)))
+    end
+  end
+
+  @spec default_entry_module(String.t()) :: String.t()
+  defp default_entry_module(project_dir) when is_binary(project_dir) do
+    cond do
+      File.exists?(Path.join(project_dir, "src/CompanionApp.elm")) -> "CompanionApp"
+      File.exists?(Path.join(project_dir, "src/Main.elm")) -> "Main"
+      true -> "Main"
     end
   end
 
@@ -320,6 +367,33 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       System.tmp_dir!(),
       "ide-debugger-inline-#{safe_key}-#{:erlang.phash2({rel_path, source})}"
     ])
+  end
+
+  @spec surface_target_for_source_root(String.t()) :: Types.surface_target()
+  defp surface_target_for_source_root("protocol"), do: :companion
+
+  defp surface_target_for_source_root(source_root) when is_binary(source_root) do
+    SurfaceTargets.normalize(source_root)
+  end
+
+  @spec normalize_phone_rel_path(String.t()) :: String.t()
+  defp normalize_phone_rel_path(rel_path) when is_binary(rel_path) do
+    cond do
+      String.starts_with?(rel_path, "phone/src/") ->
+        String.replace_prefix(rel_path, "phone/", "")
+
+      String.match?(rel_path, ~r/^phone\/([^\/]+)\.elm$/) ->
+        "src/#{Path.basename(rel_path)}"
+
+      String.starts_with?(rel_path, "src/") ->
+        rel_path
+
+      String.ends_with?(rel_path, ".elm") ->
+        "src/#{Path.basename(rel_path)}"
+
+      true ->
+        "src/CompanionApp.elm"
+    end
   end
 
   @spec normalize_watch_rel_path(String.t()) :: String.t()

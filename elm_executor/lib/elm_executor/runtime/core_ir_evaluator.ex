@@ -3702,11 +3702,38 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         {:ok, value}
 
       :error ->
-        case try_pebble_ui_to_ui_node_fallback(module_name, function_name, values) do
+        case try_companion_phone_cmd_stub(module_name, function_name) do
           {:ok, value} -> {:ok, value}
-          :error -> unknown
+          :error -> :error
+        end
+        |> case do
+          {:ok, value} ->
+            {:ok, value}
+
+          :error ->
+            case try_pebble_ui_to_ui_node_fallback(module_name, function_name, values) do
+              {:ok, value} -> {:ok, value}
+              :error -> unknown
+            end
         end
     end
+  end
+
+  @spec try_companion_phone_cmd_stub(String.t(), String.t()) :: {:ok, map()} | :error
+  defp try_companion_phone_cmd_stub(module_name, function_name)
+       when is_binary(module_name) and is_binary(function_name) do
+    if companion_phone_module?(module_name) and
+         function_name in ["outgoing", "sendPhoneToWatch", "incoming"] do
+      {:ok, %{"kind" => "cmd.none", "commands" => []}}
+    else
+      :error
+    end
+  end
+
+  @spec companion_phone_module?(String.t()) :: boolean()
+  defp companion_phone_module?(module_name) when is_binary(module_name) do
+    String.ends_with?(module_name, "Pebble.Companion.Phone") or
+      String.ends_with?(module_name, ".Phone") or module_name == "Phone"
   end
 
   @spec try_stdlib_qualified_builtin(
@@ -4331,19 +4358,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         end
 
       :alias ->
-        alias_name = pattern["name"] || pattern[:name]
-        inner = pattern["pattern"] || pattern[:pattern]
+        inner = pattern["pattern"] || pattern[:pattern] || %{}
+        match_pattern(inner, value, context)
 
-        case match_pattern(inner, value, context) do
-          {:ok, bindings} when is_binary(alias_name) and alias_name != "" ->
-            {:ok, Map.put(bindings, alias_name, value)}
-
-          {:ok, bindings} ->
-            {:ok, bindings}
-
-          :nomatch ->
-            :nomatch
-        end
+      :record ->
+        fields = pattern["fields"] || pattern[:fields] || []
+        match_record_pattern_fields(fields, value, context)
 
       _ ->
         :nomatch
@@ -4351,6 +4371,33 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   end
 
   defp match_pattern(_pattern, _value, _context), do: :nomatch
+
+  @spec match_record_pattern_fields(list(), EvalTypes.runtime_value(), map()) ::
+          EvalTypes.pattern_match_result()
+  defp match_record_pattern_fields(fields, value, context)
+       when is_list(fields) and is_map(value) do
+    Enum.reduce_while(fields, {:ok, %{}}, fn field, {:ok, acc} ->
+      name = field["name"] || field[:name]
+      field_pattern = field["pattern"] || field[:pattern] || %{}
+
+      field_value =
+        cond do
+          is_binary(name) -> Map.get(value, name) || Map.get(value, String.to_atom(name))
+          true -> nil
+        end
+
+      case match_pattern(field_pattern, field_value, context) do
+        {:ok, bindings} -> {:cont, {:ok, Map.merge(acc, bindings)}}
+        :nomatch -> {:halt, :nomatch}
+      end
+    end)
+    |> case do
+      {:ok, bindings} -> {:ok, bindings}
+      :nomatch -> :nomatch
+    end
+  end
+
+  defp match_record_pattern_fields(_fields, _value, _context), do: :nomatch
 
   @spec normalize_pattern_kind(EvalTypes.runtime_value()) :: atom() | String.t() | nil
   defp normalize_pattern_kind("wildcard"), do: :wildcard
@@ -4363,6 +4410,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   defp normalize_pattern_kind("tuple2"), do: :tuple2
   defp normalize_pattern_kind("tuple"), do: :tuple
   defp normalize_pattern_kind("alias"), do: :alias
+  defp normalize_pattern_kind("record"), do: :record
   defp normalize_pattern_kind(kind), do: kind
 
   @spec literal_pattern_match?(EvalTypes.runtime_value(), EvalTypes.runtime_value()) :: boolean()
