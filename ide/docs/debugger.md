@@ -62,6 +62,8 @@ Watch bootstrap may still defer `InitSurfaceEffects` and protocol queue drain (`
 3. `debugger.reload` for phone (when the template ships a companion app) then watch `Main.elm`
 4. Snapshot via `debugger.models`, `debugger.render_tree`, `debugger.preview_diagnostics`, and canonical preview SVG ops (`DebuggerPreview.svg_ops/2`)
 
+`DebuggerTemplateCorpus` also asserts versioned Core IR on each surface, non-empty companion `runtime_model` for phone templates, and that neither watch nor companion left `operation_source` as `update_evaluation_failed` after bootstrap.
+
 Golden fixtures live under `ide/test/fixtures/debugger_template_corpus/<template>.json`. Refresh them after intentional preview changes:
 
 ```bash
