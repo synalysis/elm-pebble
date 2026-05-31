@@ -46,7 +46,7 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
       phone_root(project) == nil ->
         false
 
-      SurfaceCompileArtifacts.surface_has_core_ir?(state, :companion) ->
+      SurfaceCompileArtifacts.surface_has_versioned_core_ir?(state, :companion) ->
         false
 
       not lazy_elmc?() ->

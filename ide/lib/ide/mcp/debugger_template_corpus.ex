@@ -10,6 +10,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   alias Ide.Debugger
   alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.StepExecution
+  alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Mcp.ToolSupport
   alias Ide.Mcp.Tools
   alias Ide.ProjectTemplates
@@ -266,6 +267,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
              @capabilities
            ),
          {:ok, state} <- Debugger.snapshot(slug, event_limit: 200) do
+      :ok = assert_surfaces_versioned_core_ir!(state, template_key)
+
       models_map = Map.get(models, :models) || Map.get(models, "models") || %{}
 
       watch_entry =
@@ -498,6 +501,23 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   @spec unique_slug(String.t()) :: String.t()
   defp unique_slug(template_key) do
     "corpus-#{template_key}-#{System.unique_integer([:positive])}"
+  end
+
+  @doc false
+  @spec assert_surfaces_versioned_core_ir!(map(), String.t()) :: :ok
+  def assert_surfaces_versioned_core_ir!(state, template_key)
+      when is_map(state) and is_binary(template_key) do
+    unless SurfaceCompileArtifacts.surface_has_versioned_core_ir?(state, :watch) do
+      raise "template #{template_key}: watch surface missing versioned Core IR after bootstrap"
+    end
+
+    if template_key in @phone_first_templates do
+      unless SurfaceCompileArtifacts.surface_has_versioned_core_ir?(state, :companion) do
+        raise "template #{template_key}: companion surface missing versioned Core IR after bootstrap"
+      end
+    end
+
+    :ok
   end
 
   @doc "Contract checks that every template should satisfy after bootstrap."

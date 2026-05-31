@@ -58,6 +58,7 @@ jobs:
             test/ide/debugger/runtime_executor_request_test.exs \
             test/ide/debugger/surface_compile_ephemeral_test.exs \
             test/ide/debugger/surface_compile_project_test.exs \
+            test/ide/debugger/surface_compile_phone_test.exs \
             test/ide/debugger/runtime_preview_test.exs
 
       - name: Run debugger template corpus

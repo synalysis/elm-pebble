@@ -18,7 +18,7 @@ the mixed parity gate (executor fixtures + debugger parity smoke).
 | Qualified stdlib calls | good | e.g. `String.toUpper` via stdlib builtin registry when not in function index |
 | Full Elm expression evaluation | gap | Interpreter subset; unsupported ops fail at runtime |
 | Full Elm data/path update semantics | partial | Full `update` when Core IR branch eval succeeds |
-| Template corpus (30 templates) | good | MCP bootstrap snapshots including multi-module watchfaces |
+| Template corpus (30 templates) | good | MCP bootstrap snapshots including multi-module watchfaces; phone templates require versioned Core IR on companion |
 
 ## Parity Gate Expectations
 

@@ -104,6 +104,18 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
     request
   end
 
+  def validate!(request) when is_map(request) do
+    request
+    |> Map.new(fn
+      {key, value} when is_atom(key) -> {key, value}
+      {key, value} when is_binary(key) -> {String.to_existing_atom(key), value}
+    end)
+    |> then(&struct!(__MODULE__, &1))
+    |> validate!()
+  rescue
+    ArgumentError -> validate!(Map.new(request))
+  end
+
   @spec validate_execution_ready!(t() | wire_map()) :: t()
   def validate_execution_ready!(request) do
     request = validate!(request)
@@ -121,17 +133,5 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
       "elm_executor_core_ir" => request.elm_executor_core_ir,
       "elm_executor_metadata" => request.elm_executor_metadata
     })
-  end
-
-  def validate!(request) when is_map(request) do
-    request
-    |> Map.new(fn
-      {key, value} when is_atom(key) -> {key, value}
-      {key, value} when is_binary(key) -> {String.to_existing_atom(key), value}
-    end)
-    |> then(&struct!(__MODULE__, &1))
-    |> validate!()
-  rescue
-    ArgumentError -> validate!(Map.new(request))
   end
 end

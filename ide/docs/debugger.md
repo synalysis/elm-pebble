@@ -51,7 +51,7 @@ AppMessage delivery (`FromWatch` / `FromPhone` subscription steps) is deferred t
 
 Watch bootstrap may still defer `InitSurfaceEffects` and protocol queue drain (`DeferredCompanionInit`) while async companion loading is enabled, but **init and step always require versioned Core IR** via `ElmExecutorAdapter`. There is no parser-only model mutation fallback. Missing Core IR or failed `update`/`view` evaluation surfaces `debugger.runtime_exec_error` on the timeline. Compile ingest is strict-only (`Ide.Compiler`); `config :ide, :debugger_lazy_elmc` defaults to `false` so Core IR is built during reload.
 
-`SurfaceCompileArtifacts` prefers the project workspace compile when it yields versioned Core IR; inline ephemeral compile (health-stub workspace + lenient Core IR fallback) is used for editor-only sources without a project row. A failed project DB lookup does not block inline attach. **Copy for agent** re-reads the debugger Agent snapshot so the exported timeline is not stale socket assigns.
+`SurfaceCompileArtifacts` prefers the project workspace compile when it yields versioned Core IR; inline ephemeral compile (health-stub workspace + lenient Core IR fallback) is used for editor-only sources without a project row. A failed project DB lookup does not block inline attach. Companion/phone surfaces use the `phone` source root; lazy background `CompanionPhoneCompile` only runs when versioned Core IR is still missing (and optional `debugger_lazy_elmc` parser-expression heuristics apply). The template corpus asserts versioned Core IR on both watch and companion after bootstrap for phone-shipping templates. **Copy for agent** re-reads the debugger Agent snapshot so the exported timeline is not stale socket assigns.
 
 ## Template corpus tests (MCP)
 
