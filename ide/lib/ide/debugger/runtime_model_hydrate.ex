@@ -1,7 +1,7 @@
 defmodule Ide.Debugger.RuntimeModelHydrate do
   @moduledoc ""
 
-  alias ElmExecutor.Runtime.SemanticExecutor.RuntimeModelValues
+  alias Ide.Debugger.RuntimeModelQuality
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.Types
@@ -165,7 +165,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
         |> hydrate_runtime_model_launch_context(model)
         |> hydrate_runtime_model_message_payload(message, skip_fields)
 
-      Map.put(model, "runtime_model", RuntimeModelValues.drop_parser_artifacts(hydrated))
+      Map.put(model, "runtime_model", RuntimeModelQuality.drop_parser_artifacts(hydrated))
     else
       model
     end
@@ -368,7 +368,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
   @spec unresolved_runtime_value?(Types.wire_input()) :: boolean()
   defp unresolved_runtime_value?(%{"$field" => field, "$on" => _}) when is_binary(field), do: true
   defp unresolved_runtime_value?(%{:"$field" => field, :"$on" => _}) when is_binary(field), do: true
-  defp unresolved_runtime_value?(value), do: RuntimeModelValues.unresolved_value?(value)
+  defp unresolved_runtime_value?(value), do: RuntimeModelQuality.unresolved_value?(value)
 
   @spec launch_context_display_shape(Types.launch_context()) :: String.t() | nil
   defp launch_context_display_shape(%{"screen" => %{} = screen}) do
