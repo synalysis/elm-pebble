@@ -64,6 +64,8 @@ Watch bootstrap may still defer `InitSurfaceEffects` and protocol queue drain (`
 
 `DebuggerTemplateCorpus` also asserts versioned Core IR on each surface, non-empty companion `runtime_model` for phone templates, and that neither watch nor companion left `operation_source` as `update_evaluation_failed` after bootstrap.
 
+A second gate (`--only template_corpus_step`) injects contract-discovered subscription triggers and requires `operation_source` in `core_ir_update_eval` or `core_ir_update_noop`. Templates listed in `@subscription_step_pending` inside `debugger_template_corpus.ex` are excluded until every trigger on that template succeeds.
+
 Golden fixtures live under `ide/test/fixtures/debugger_template_corpus/<template>.json`. Refresh them after intentional preview changes:
 
 ```bash

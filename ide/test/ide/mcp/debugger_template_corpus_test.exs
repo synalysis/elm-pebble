@@ -12,6 +12,12 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusTest do
 
   @update_snapshots? System.get_env("UPDATE_DEBUGGER_TEMPLATE_SNAPSHOTS") in ["1", "true", "TRUE"]
 
+  test "subscription_step_pending is a subset of template keys" do
+    keys = MapSet.new(DebuggerTemplateCorpus.template_keys())
+
+    assert Enum.all?(DebuggerTemplateCorpus.subscription_step_pending(), &(&1 in keys))
+  end
+
   @tag :template_corpus
   @tag timeout: 180_000
   test "templates.list matches ProjectTemplates.template_keys" do
@@ -48,6 +54,23 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusTest do
                 "run UPDATE_DEBUGGER_TEMPLATE_SNAPSHOTS=1 mix test test/ide/mcp/debugger_template_corpus_test.exs"
             )
         end
+      end
+    end
+  end
+
+  for template <- DebuggerTemplateCorpus.subscription_step_template_keys() do
+    @tag :template_corpus_step
+    @tag timeout: 180_000
+    test "subscription step uses Core IR for #{template}" do
+      template = unquote(template)
+
+      assert {:ok, %{slug: slug, project: project}} =
+               DebuggerTemplateCorpus.bootstrap_template(template, cleanup: false)
+
+      try do
+        assert :ok = DebuggerTemplateCorpus.assert_subscription_steps_core_ir!(slug, template)
+      after
+        _ = Ide.Projects.delete_project(project)
       end
     end
   end

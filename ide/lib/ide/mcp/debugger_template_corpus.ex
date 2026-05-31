@@ -8,8 +8,11 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   """
 
   alias Ide.Debugger
+  alias Ide.Debugger.CompanionSubscriptionTrigger
   alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.StepExecution
+  alias Ide.Debugger.SubscriptionTriggerWire
+  alias Ide.Debugger.TriggerCandidates
   alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Mcp.ToolSupport
   alias Ide.Mcp.Tools
@@ -37,6 +40,20 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   @aplite_profile_templates ~w(watch-demo-compass)
 
+  # Watch (or companion+watch) templates where every declared subscription trigger still
+  # hits `update_evaluation_failed` today. Remove keys as Core IR coverage improves.
+  @subscription_step_pending ~w(
+    watch-demo-app-focus
+    watch-demo-data-log
+    watchface-digital
+    watchface-poke-battle
+    watchface-weather-animated
+    companion-demo-calendar
+    companion-demo-geolocation
+    companion-demo-phone-status
+    companion-demo-weather-env
+  )
+
   @fixtures_root Path.expand(
                   "../../../test/fixtures/debugger_template_corpus",
                   __DIR__
@@ -45,6 +62,14 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   @doc "All project template keys exercised by the corpus."
   @spec template_keys() :: [String.t()]
   def template_keys, do: ProjectTemplates.template_keys()
+
+  @doc "Templates included in the subscription-step Core IR corpus gate."
+  @spec subscription_step_template_keys() :: [String.t()]
+  def subscription_step_template_keys, do: template_keys() -- @subscription_step_pending
+
+  @doc "Templates excluded until subscription triggers evaluate via Core IR."
+  @spec subscription_step_pending() :: [String.t()]
+  def subscription_step_pending, do: @subscription_step_pending
 
   @doc "Directory holding per-template expected snapshot JSON."
   @spec fixtures_root() :: String.t()
@@ -76,6 +101,43 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       if cleanup?, do: _ = Projects.delete_project(project)
       {:ok, %{slug: slug, project: project, snapshot: snapshot}}
     end
+  end
+
+  @doc """
+  Bootstraps a template project in the debugger without capturing a snapshot.
+
+  Used to exercise subscription steps after bootstrap without mutating corpus fixtures.
+  """
+  @spec bootstrap_template(String.t(), keyword()) ::
+          {:ok, %{slug: String.t(), project: Projects.Project.t()}} | {:error, term()}
+  def bootstrap_template(template_key, opts \\ []) when is_binary(template_key) do
+    unless template_key in template_keys() do
+      raise ArgumentError, "unknown template #{inspect(template_key)}"
+    end
+
+    slug = Keyword.get(opts, :slug) || unique_slug(template_key)
+    cleanup? = Keyword.get(opts, :cleanup, true)
+
+    with :ok <- SourceValidation.validate_template(template_key),
+         {:ok, project} <- create_project(slug, template_key),
+         :ok <- bootstrap(slug, project, template_key) do
+      if cleanup?, do: _ = Projects.delete_project(project)
+      {:ok, %{slug: slug, project: project}}
+    end
+  end
+
+  @doc """
+  Injects the first contract-discovered subscription trigger per surface and
+  asserts Core IR handled the update (not `update_evaluation_failed`).
+  """
+  @spec assert_subscription_steps_core_ir!(String.t(), String.t()) :: :ok
+  def assert_subscription_steps_core_ir!(slug, template_key)
+      when is_binary(slug) and is_binary(template_key) do
+    if template_key in @phone_first_templates do
+      :ok = assert_companion_subscription_step_core_ir!(slug, template_key)
+    end
+
+    :ok = assert_watch_subscription_step_core_ir!(slug, template_key)
   end
 
   @doc "Loads the checked-in fixture for a template, if present."
@@ -582,6 +644,139 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
 
     :ok
+  end
+
+  @core_ir_step_success_sources ~w(core_ir_update_eval core_ir_update_noop)
+
+  @spec assert_watch_subscription_step_core_ir!(String.t(), String.t()) :: :ok
+  defp assert_watch_subscription_step_core_ir!(slug, template_key) do
+    {:ok, triggers} = Debugger.available_triggers(slug, %{"target" => "watch"})
+    exercise_subscription_triggers!(slug, template_key, "watch", steppable_watch_triggers(triggers))
+  end
+
+  @spec assert_companion_subscription_step_core_ir!(String.t(), String.t()) :: :ok
+  defp assert_companion_subscription_step_core_ir!(slug, template_key) do
+    {:ok, triggers} = Debugger.available_triggers(slug, %{"target" => "phone"})
+    exercise_subscription_triggers!(slug, template_key, "phone", steppable_companion_triggers(triggers))
+  end
+
+  @spec steppable_watch_triggers([map()]) :: [map()]
+  defp steppable_watch_triggers(triggers) when is_list(triggers) do
+    triggers
+    |> Enum.filter(fn row ->
+      trigger = trigger_row_string(row, :trigger)
+      message = trigger_row_string(row, :message)
+
+      trigger_row_active?(row) and trigger != "" and message != "" and
+        not SubscriptionTriggerWire.opaque_gateway_trigger?(trigger)
+    end)
+    |> Enum.sort_by(&watch_trigger_step_priority/1)
+  end
+
+  @spec steppable_companion_triggers([map()]) :: [map()]
+  defp steppable_companion_triggers(triggers) when is_list(triggers) do
+    Enum.filter(triggers, fn row ->
+      trigger = trigger_row_string(row, :trigger)
+      message = trigger_row_string(row, :message)
+
+      trigger_row_active?(row) and trigger != "" and message != "" and
+        CompanionSubscriptionTrigger.companion_trigger?(trigger)
+    end)
+  end
+
+  @spec watch_trigger_step_priority(map()) :: integer()
+  defp watch_trigger_step_priority(row) do
+    trigger = trigger_row_string(row, :trigger)
+    message = trigger_row_string(row, :message)
+
+    cond do
+      SubscriptionTriggerWire.debugger_simulated_payload_trigger?(trigger) -> 0
+      tickish_subscription_message?(message) -> 2
+      true -> 1
+    end
+  end
+
+  @spec exercise_subscription_triggers!(String.t(), String.t(), String.t(), [map()]) :: :ok
+  defp exercise_subscription_triggers!(_slug, _template_key, _target, []), do: :ok
+
+  defp exercise_subscription_triggers!(slug, template_key, target, rows) do
+    case Enum.reduce_while(rows, [], fn row, attempts ->
+           case try_subscription_trigger_step(slug, target, row) do
+             :ok -> {:halt, :ok}
+             {:skip, reason} -> {:cont, [{row, reason} | attempts]}
+           end
+         end) do
+      :ok ->
+        :ok
+
+      attempts when is_list(attempts) ->
+        details =
+          attempts
+          |> Enum.reverse()
+          |> Enum.map_join("\n", fn {row, reason} ->
+            "#{trigger_row_string(row, :trigger)}/#{trigger_row_string(row, :message)}: #{reason}"
+          end)
+
+        raise "template #{template_key}: no #{target} subscription step succeeded Core IR\n#{details}"
+    end
+  end
+
+  @spec try_subscription_trigger_step(String.t(), String.t(), map()) :: :ok | {:skip, String.t()}
+  defp try_subscription_trigger_step(slug, target, row) do
+    trigger = trigger_row_string(row, :trigger)
+    message = trigger_row_string(row, :message)
+
+    case Debugger.inject_trigger(slug, %{target: target, trigger: trigger, message: message}) do
+      {:ok, stepped} ->
+        operation_source = step_operation_source(stepped, target)
+
+        cond do
+          operation_source == "update_evaluation_failed" ->
+            {:skip, "update_evaluation_failed"}
+
+          operation_source in @core_ir_step_success_sources ->
+            :ok
+
+          operation_source == "unmapped_message" ->
+            {:skip, "unmapped_message"}
+
+          true ->
+            {:skip, "unexpected operation_source #{inspect(operation_source)}"}
+        end
+
+      {:error, reason} ->
+        {:skip, "inject error #{inspect(reason)}"}
+    end
+  end
+
+  @spec step_operation_source(map(), String.t()) :: String.t() | nil
+  defp step_operation_source(stepped, target) do
+    surface_key = if target == "phone", do: :companion, else: :watch
+
+    get_in(stepped, [surface_key, :model, "elm_executor", "operation_source"]) ||
+      get_in(stepped, [surface_key, :model, :elm_executor, :operation_source])
+  end
+
+  @spec trigger_row_string(map(), atom()) :: String.t()
+  defp trigger_row_string(row, key) when is_map(row) and is_atom(key) do
+    row |> TriggerCandidates.row_field(key) |> to_string()
+  end
+
+  @spec trigger_row_active?(map()) :: boolean()
+  defp trigger_row_active?(row) when is_map(row) do
+    case TriggerCandidates.row_field(row, :model_active) do
+      false -> false
+      "false" -> false
+      _ -> true
+    end
+  end
+
+  @spec tickish_subscription_message?(String.t()) :: boolean()
+  defp tickish_subscription_message?(message) when is_binary(message) do
+    down = String.downcase(message)
+
+    not String.contains?(down, "datetime") and
+      Enum.any?(["tick", "time", "clock", "second", "minute", "hour"], &String.contains?(down, &1))
   end
 
   @doc "Contract checks that every template should satisfy after bootstrap."
