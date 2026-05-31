@@ -268,6 +268,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
            ),
          {:ok, state} <- Debugger.snapshot(slug, event_limit: 200) do
       :ok = assert_surfaces_versioned_core_ir!(state, template_key)
+      :ok = assert_watch_executor_ready!(state, template_key)
       :ok = assert_companion_runtime_model!(state, template_key)
       :ok = assert_companion_executor_ready!(state, template_key)
 
@@ -546,6 +547,21 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
         _ ->
           :ok
       end
+    end
+
+    :ok
+  end
+
+  @doc false
+  @spec assert_watch_executor_ready!(map(), String.t()) :: :ok
+  def assert_watch_executor_ready!(state, template_key)
+      when is_map(state) and is_binary(template_key) do
+    operation_source =
+      get_in(state, [:watch, :model, "elm_executor", "operation_source"]) ||
+        get_in(state, [:watch, :model, :elm_executor, :operation_source])
+
+    if operation_source == "update_evaluation_failed" do
+      raise "template #{template_key}: watch Core IR update failed during bootstrap"
     end
 
     :ok
