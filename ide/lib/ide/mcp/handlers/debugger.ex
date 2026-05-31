@@ -1216,7 +1216,8 @@ defmodule Ide.Mcp.Handlers.Debugger do
           view_tree,
           surface_tree_sha256,
           fingerprint_view_tree_sha256,
-          ei
+          ei,
+          model
         )
     }
   end
@@ -1275,6 +1276,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
           map() | nil,
           String.t() | nil,
           String.t() | nil,
+          map(),
           map()
         ) :: [String.t()]
   defp preview_findings(
@@ -1284,10 +1286,15 @@ defmodule Ide.Mcp.Handlers.Debugger do
          view_tree,
          surface_tree_sha256,
          fingerprint_view_tree_sha256,
-         ei
+         ei,
+         model
        )
-       when is_map(ei) do
+       when is_map(ei) and is_map(model) do
     []
+    |> maybe_add_finding(
+      Ide.Debugger.RuntimeModelQuality.unresolved_field_names(model) != [],
+      "runtime_model_has_parser_artifacts"
+    )
     |> maybe_add_finding(runtime_output == [], "no_runtime_view_output")
     |> maybe_add_finding(not is_map(rendered_tree), "no_rendered_tree")
     |> maybe_add_finding(render_source == "parser_view_tree", "using_static_parser_view_tree")

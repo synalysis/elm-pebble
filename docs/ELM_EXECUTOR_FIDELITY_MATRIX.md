@@ -18,6 +18,7 @@ the mixed parity gate (executor fixtures + debugger parity smoke).
 | Qualified stdlib calls | good | e.g. `String.toUpper` via stdlib builtin registry when not in function index |
 | Companion `Pebble.Companion.*` setup/current/send/port cmds in update/init | partial | Evaluates as `cmd.none` for side-effect APIs; protocol/storage effects still from debugger followups |
 | Elm record patterns in `case` | good | `kind: :record` and `kind: :alias` patterns match in Core IR evaluator |
+| Parser `init_model` in runtime model | good | Introspect `$var` / `call` / `$opaque` artifacts are stripped; init uses Core IR eval when available |
 | Full Elm expression evaluation | gap | Interpreter subset; unsupported ops fail at runtime |
 | Full Elm data/path update semantics | partial | Full `update` when Core IR branch eval succeeds |
 | Template corpus (30 templates) | good | MCP bootstrap snapshots including multi-module watchfaces; phone templates require versioned Core IR on companion |

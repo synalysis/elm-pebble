@@ -25,7 +25,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Export do
           optional(:session_event_count) => non_neg_integer() | nil,
           optional(:debugger_cursor_seq) => non_neg_integer() | String.t() | nil,
           optional(:selected_timeline_seq) => non_neg_integer() | String.t() | nil,
-          optional(:watch_profile_id) => String.t() | nil
+          optional(:watch_profile_id) => String.t() | nil,
+          optional(:runtime_model_warnings) => String.t() | nil
         }
 
   @doc """
@@ -50,6 +51,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Export do
     cur = session_field(ctx, :debugger_cursor_seq)
     sel = session_field(ctx, :selected_timeline_seq)
     profile = session_field(ctx, :watch_profile_id)
+    warnings = Map.get(ctx, :runtime_model_warnings)
+
+    warnings_section =
+      case warnings do
+        w when is_binary(w) and w != "" ->
+          """
+
+          ## Runtime model warnings
+
+          #{w}
+          """
+
+        _ ->
+          ""
+      end
 
     """
     # IDE debugger state export
@@ -70,6 +86,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Export do
     ## Timeline
 
     #{timeline}
+    #{warnings_section}
 
     ## Watch model
 

@@ -741,11 +741,30 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
     protocol_last_inbound_from
   )
 
+  @spec runtime_model_warnings_text(map() | nil) :: String.t() | nil
+  defp runtime_model_warnings_text(runtime) do
+    runtime
+    |> debugger_raw_runtime_model()
+    |> Ide.Debugger.RuntimeModelQuality.unresolved_field_names()
+    |> case do
+      [] ->
+        nil
+
+      fields ->
+        """
+        Some watch `runtime_model` fields still contain parser/introspect artifacts (`$var`, `call`, `$opaque`) instead of evaluated Elm values: #{Enum.join(fields, ", ")}.
+
+        Typical causes: Core IR was missing on reload, or `Main.init` did not evaluate via the executor. Reload after compile finishes, or check `runtime_execution_error` / `operation_source` on the watch model. Preview needs a fully evaluated model (see `previewUnavailable` when view eval fails).
+        """
+        |> String.trim()
+    end
+  end
+
   @spec debugger_debugger_model(map() | nil) :: map()
   defp debugger_debugger_model(runtime) do
     runtime
     |> debugger_raw_runtime_model()
-    |> RuntimeArtifacts.public_model()
+    |> Ide.Debugger.RuntimeModelQuality.public_runtime_model()
     |> hide_debugger_model_metadata()
     |> hide_companion_protocol_runtime_metadata(runtime)
   end
@@ -787,19 +806,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
     state = state || Map.get(assigns, :debugger_state)
 
+    watch_runtime =
+      debugger_export_watch_runtime(state, selected_seq, Map.get(assigns, :debugger_cursor_seq)) ||
+        Map.get(assigns, :debugger_watch_runtime)
+
     DebuggerSupport.debugger_agent_state_markdown(%{
       format_version: "elm-pebble.debugger_state.v1",
       project_name: project_name_for_clipboard(project),
       project_slug: project_slug_for_clipboard(project),
       timeline_mode: Map.get(assigns, :debugger_timeline_mode, "mixed"),
       timeline_text: timeline_text,
+      runtime_model_warnings: runtime_model_warnings_text(watch_runtime),
       watch_model_json:
-        DebuggerSupport.copy_json(
-          debugger_debugger_model(
-            debugger_export_watch_runtime(state, selected_seq, Map.get(assigns, :debugger_cursor_seq)) ||
-              Map.get(assigns, :debugger_watch_runtime)
-          )
-        ),
+        DebuggerSupport.copy_json(debugger_debugger_model(watch_runtime)),
       companion_model_json:
         DebuggerSupport.copy_json(
           debugger_debugger_model(

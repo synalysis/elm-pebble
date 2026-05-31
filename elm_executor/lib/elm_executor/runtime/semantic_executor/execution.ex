@@ -7,6 +7,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
   alias ElmExecutor.Runtime.CoreIRContract
   alias ElmExecutor.Runtime.CoreIREvaluator
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  alias ElmExecutor.Runtime.SemanticExecutor.RuntimeModelValues
   alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
 
   @spec execute(SemTypes.execution_request() | map()) ::
@@ -82,7 +83,8 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
           |> refresh_unresolved_fields_from_init(core_ir, eval_context, current_model)
           |> then(fn refreshed ->
             if unresolved_runtime_model?(refreshed) do
-              evaluated_init_model(core_ir, eval_context, current_model) || refreshed
+              evaluated_init_model(core_ir, eval_context, current_model) ||
+                RuntimeModelValues.drop_parser_artifacts(refreshed)
             else
               refreshed
             end
@@ -95,8 +97,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
             current_model,
             static_init_model
           ) ||
-            static_init_model ||
-            %{}
+            RuntimeModelValues.drop_parser_artifacts(static_init_model || %{})
       end
 
     {runtime_model, runtime_model_source, op, operation_source, key_provenance, runtime_commands} =
@@ -150,7 +151,11 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
           {base_runtime_model, "init_model", nil, "init_model", %{}, init_commands}
       end
 
-    runtime_model = View.normalize_runtime_model_by_declared_type(runtime_model, eval_context)
+    runtime_model =
+      runtime_model
+      |> View.normalize_runtime_model_by_declared_type(eval_context)
+      |> RuntimeModelValues.drop_parser_artifacts()
+
     runtime_model_for_view = View.enrich_runtime_model_for_view(runtime_model, current_model)
     init_execution? = not (is_binary(message) and message != "")
 
@@ -353,25 +358,10 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Execution do
        ),
        do: evaluated_init_model(core_ir, eval_context, current_model)
 
-  defp unresolved_runtime_value?(%{"$opaque" => true}), do: true
-  defp unresolved_runtime_value?(%{:"$opaque" => true}), do: true
-  defp unresolved_runtime_value?(%{"$var" => name}) when is_binary(name), do: true
-  defp unresolved_runtime_value?(%{:"$var" => name}) when is_binary(name), do: true
-
-  defp unresolved_runtime_value?(value) when is_map(value),
-    do: Enum.any?(value, fn {_key, nested} -> unresolved_runtime_value?(nested) end)
-
-  defp unresolved_runtime_value?(value) when is_list(value),
-    do: Enum.any?(value, &unresolved_runtime_value?/1)
-
-  defp unresolved_runtime_value?(_value), do: false
+  defp unresolved_runtime_value?(value), do: RuntimeModelValues.unresolved_value?(value)
 
   @spec unresolved_runtime_model?(map()) :: boolean()
-  defp unresolved_runtime_model?(model) when is_map(model) do
-    Enum.any?(model, fn {_key, value} -> unresolved_runtime_value?(value) end)
-  end
-
-  defp unresolved_runtime_model?(_model), do: false
+  defp unresolved_runtime_model?(model), do: RuntimeModelValues.unresolved_model?(model)
 
   @spec refresh_unresolved_fields_from_init(map(), map(), map(), map()) :: map()
   defp refresh_unresolved_fields_from_init(model, core_ir, eval_context, current_model)

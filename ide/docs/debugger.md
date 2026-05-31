@@ -80,6 +80,8 @@ The debugger watch SVG preview is **view-only**: it does not re-run `init` or `u
 2. **Missing Core IR** — Preview is empty and diagnostics report `missing_core_ir` (no parser-tree merge or label heuristics).
 3. **Core IR present but view eval fails** — Preview is `previewUnavailable`; diagnostics include the executor error (for example unknown function or invalid record update). Fix the contract or evaluator; the IDE does not infer draw ops from parser trees.
 
+If the watch **runtime model** shows parser artifacts (`$var`, `call`, `$opaque`) on fields like `layout` or `player`, `Main.init` did not evaluate through Core IR (missing compile artifacts or init eval failure). The Models panel and agent export hide those fields; `debugger.preview_diagnostics` reports `runtime_model_has_parser_artifacts` and the agent export adds a **Runtime model warnings** section when any remain on the raw model.
+
 Preview output is not patched after the fact. `RuntimePreview` only keeps **concrete** runtime view trees (not parser expression nodes such as `toUiNode`). When evaluation does not produce a drawable tree, the surface gets `previewUnavailable` (never a stale parser outline left on `:view_tree`). Subscription triggers prefer declared `callback_constructor` values from introspected `subscription_calls`; fuzzy token matching for messages was removed.
 
 ## Subscription steps vs timeline rows

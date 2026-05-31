@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.RuntimeModelHydrate do
   @moduledoc ""
 
+  alias ElmExecutor.Runtime.SemanticExecutor.RuntimeModelValues
   alias Ide.Debugger.RuntimeModelMessages
   alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.Types
@@ -164,7 +165,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
         |> hydrate_runtime_model_launch_context(model)
         |> hydrate_runtime_model_message_payload(message, skip_fields)
 
-      Map.put(model, "runtime_model", hydrated)
+      Map.put(model, "runtime_model", RuntimeModelValues.drop_parser_artifacts(hydrated))
     else
       model
     end
@@ -196,7 +197,15 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
   @spec hydrate_static_runtime_model_values(Types.inner_runtime_model()) :: Types.inner_runtime_model()
   defp hydrate_static_runtime_model_values(runtime_model) when is_map(runtime_model) do
-    Map.new(runtime_model, fn {key, value} -> {key, hydrate_static_runtime_value(value)} end)
+    runtime_model
+    |> Enum.map(fn {key, value} ->
+      case hydrate_static_runtime_value(value) do
+        nil -> nil
+        hydrated -> {key, hydrated}
+      end
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Map.new()
   end
 
   defp hydrate_static_runtime_model_values(runtime_model), do: runtime_model
@@ -221,8 +230,11 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
 
         case static_color_call_value(call, args) do
           {:ok, color} -> color
-          :error -> %{"call" => call, "args" => args}
+          :error -> nil
         end
+
+      Map.has_key?(value, "call") or Map.has_key?(value, :call) ->
+        nil
 
       true ->
         Map.new(value, fn {key, nested} -> {key, hydrate_static_runtime_value(nested)} end)
@@ -356,18 +368,7 @@ defmodule Ide.Debugger.RuntimeModelHydrate do
   @spec unresolved_runtime_value?(Types.wire_input()) :: boolean()
   defp unresolved_runtime_value?(%{"$field" => field, "$on" => _}) when is_binary(field), do: true
   defp unresolved_runtime_value?(%{:"$field" => field, :"$on" => _}) when is_binary(field), do: true
-  defp unresolved_runtime_value?(%{"$var" => name}) when is_binary(name), do: true
-  defp unresolved_runtime_value?(%{:"$var" => name}) when is_binary(name), do: true
-  defp unresolved_runtime_value?(%{"$opaque" => true}), do: true
-  defp unresolved_runtime_value?(%{:"$opaque" => true}), do: true
-  defp unresolved_runtime_value?(%{"op" => "field_access"}), do: true
-  defp unresolved_runtime_value?(%{op: "field_access"}), do: true
-  defp unresolved_runtime_value?(%{op: :field_access}), do: true
-
-  defp unresolved_runtime_value?(value) when is_map(value),
-    do: Enum.any?(value, fn {_key, nested} -> unresolved_runtime_value?(nested) end)
-
-  defp unresolved_runtime_value?(_value), do: false
+  defp unresolved_runtime_value?(value), do: RuntimeModelValues.unresolved_value?(value)
 
   @spec launch_context_display_shape(Types.launch_context()) :: String.t() | nil
   defp launch_context_display_shape(%{"screen" => %{} = screen}) do
