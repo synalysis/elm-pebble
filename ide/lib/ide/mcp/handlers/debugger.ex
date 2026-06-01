@@ -88,7 +88,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
       resolved_cursor = resolve_cursor_seq(events, cursor_seq)
       diag = DebuggerSupport.diagnostics_preview_at_cursor(events, resolved_cursor)
 
-      intro = DebuggerSupport.elm_introspect_at_cursor(events, resolved_cursor)
+      intro = DebuggerSupport.debugger_contract_at_cursor(events, resolved_cursor)
 
       runtime_fingerprints =
         DebuggerSupport.runtime_fingerprints_at_cursor(events, resolved_cursor)
@@ -671,6 +671,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
       snapshot_refs: snapshot_refs,
       elmc_diagnostics: Map.get(diag, :rows, []),
       elmc_diagnostics_source: Map.get(diag, :source),
+      debugger_contract: intro,
       elm_introspect: intro,
       runtime_fingerprints: runtime_fingerprints,
       runtime_fingerprint_digest: runtime_fingerprint_digest,
@@ -1093,7 +1094,9 @@ defmodule Ide.Mcp.Handlers.Debugger do
         "elm_executor_metadata",
         :elm_executor_metadata,
         "elm_introspect",
-        :elm_introspect
+        :elm_introspect,
+        "debugger_contract",
+        :debugger_contract
       ] ++
         if include_view_output? do
           []
@@ -1330,7 +1333,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   @spec parser_expression_view_tree?(map() | nil, map()) :: boolean()
   defp parser_expression_view_tree?(tree, ei) when is_map(tree) and is_map(ei),
-    do: Ide.Debugger.ElmIntrospect.parser_expression_view_tree_node?(tree, ei)
+    do: ElmEx.DebuggerContract.parser_expression_view_tree_node?(tree, ei)
 
   defp parser_expression_view_tree?(_tree, _ei), do: false
 

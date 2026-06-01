@@ -57,7 +57,7 @@ defmodule Ide.Debugger.RuntimeContexts do
           required(:maybe_append_runtime_status) => (map(), Types.surface_target() -> map()),
           required(:maybe_append_runtime_status_after_init) =>
             (map(), Types.surface_target(), map(), map() -> map()),
-          required(:maybe_append_elm_introspect) => (map(), map() | nil -> map()),
+          required(:maybe_append_contract) => (map(), map() | nil -> map()),
           required(:maybe_append_runtime_exec) => (map(), String.t() -> map()),
           required(:maybe_append_phone_view_render) => (map(), String.t() -> map()),
           optional(:default_auto_fire_interval_ms) => pos_integer()
@@ -218,6 +218,7 @@ defmodule Ide.Debugger.RuntimeContexts do
     introspect_merge =
       IntrospectContexts.merge(%{
         snapshot_apply_ctx: introspect_snapshot_apply,
+        surface_compile: surface_compile,
         init_surface_effects_ctx: fn -> init_surface_effects end,
         refresh_runtime_preview_for_target: &RuntimeExecutorConfig.refresh_for_target/2,
         apply_simulator_settings: fn st ->
@@ -263,6 +264,9 @@ defmodule Ide.Debugger.RuntimeContexts do
           trigger_candidates: trigger_candidates,
           trigger_message: host.trigger_message_for_surface,
           apply_step: host.apply_step_once,
+          apply_device_data_responses: fn st, target, message ->
+            DeviceDataResponses.apply_after_step(st, target, message, nil, "subscription_auto_fire", device_data)
+          end,
           subscription_row_enabled?: host.subscription_row_enabled?,
           auto_fire_row_enabled?: host.auto_fire_row_enabled?,
           simulator_now: host.simulator_now,
@@ -274,7 +278,7 @@ defmodule Ide.Debugger.RuntimeContexts do
       introspect_merge: introspect_merge,
       hot_reload_events: %{
         append_event: host.append_event,
-        maybe_append_elm_introspect: host.maybe_append_elm_introspect,
+        maybe_append_contract: host.maybe_append_contract,
         maybe_append_runtime_exec: host.maybe_append_runtime_exec,
         maybe_append_phone_view_render: host.maybe_append_phone_view_render
       }
@@ -286,7 +290,7 @@ defmodule Ide.Debugger.RuntimeContexts do
     HotReloadContext.build(rel_path, source, %{
       put_placeholder_views: &HotReloadSurface.put_view_trees/4,
       merge_introspect: fn st ->
-        Ide.Debugger.ElmIntrospectSnapshot.merge_from_source(st, rel_path, source, source_root, introspect_merge)
+        Ide.Debugger.DebuggerContractSnapshot.merge_from_source(st, rel_path, source, source_root, introspect_merge)
       end,
       append_reload_events: fn st, reason, rp, revision, root, intro_payload ->
         HotReloadEvents.append(st, reason, rp, revision, root, intro_payload, hot_reload_events)

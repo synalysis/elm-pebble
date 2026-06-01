@@ -35,6 +35,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defdelegate debugger_timeline_text(rows), to: IdeWeb.WorkspaceLive.DebuggerSupport.Timeline
   defdelegate diagnostics_preview_at_cursor(events, cursor_seq), to: IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics
   defdelegate diagnostics_preview_source_label(other), to: IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics
+  defdelegate debugger_contract_at_cursor(events, cursor_seq), to: IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics
   defdelegate elm_introspect_at_cursor(events, cursor_seq), to: IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics
   defdelegate event_diagnostic_preview(arg1), to: IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics
   defdelegate event_json(events), to: IdeWeb.WorkspaceLive.DebuggerSupport.Timeline
@@ -43,6 +44,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport do
   defdelegate filter_debugger_rows_for_display(arg1, arg2), to: IdeWeb.WorkspaceLive.DebuggerSupport.Timeline
   defdelegate filtered_event_summaries(events, kind, limit), to: IdeWeb.WorkspaceLive.DebuggerSupport.Timeline
   defdelegate filtered_event_summaries(events, kind, limit, query), to: IdeWeb.WorkspaceLive.DebuggerSupport.Timeline
+  defdelegate format_debugger_contract_brief(arg1), to: IdeWeb.WorkspaceLive.DebuggerSupport.Export
   defdelegate format_elm_introspect_brief(arg1), to: IdeWeb.WorkspaceLive.DebuggerSupport.Export
   defdelegate highlight_fragments(value, query), to: IdeWeb.WorkspaceLive.DebuggerSupport.Timeline
   defdelegate jump_latest(socket), to: IdeWeb.WorkspaceLive.DebuggerSupport.Live

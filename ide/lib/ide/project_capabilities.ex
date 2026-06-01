@@ -1,7 +1,6 @@
 defmodule Ide.ProjectCapabilities do
   @moduledoc false
 
-  alias Ide.Debugger.ElmIntrospect
   alias Ide.PebblePreferences
   alias Ide.ProjectCapabilities.Detect
 
@@ -92,8 +91,8 @@ defmodule Ide.ProjectCapabilities do
 
   @spec infer_file({String.t(), String.t(), String.t()}) :: MapSet.t(String.t())
   defp infer_file({source_root, _path, content}) do
-    case ElmIntrospect.analyze_source(content, "ProjectCapabilities.elm") do
-      {:ok, %{"elm_introspect" => introspect}} ->
+    case Ide.Debugger.CompileContract.analyze_source(content, "ProjectCapabilities.elm") do
+      {:ok, %{"debugger_contract" => introspect}} ->
         infer_introspect(introspect, source_root)
 
       _ ->

@@ -152,6 +152,67 @@ defmodule ElmExecutor.Runtime.CoreIREvaluatorTest do
              )
   end
 
+  test "normalize_wire_message_value tags nested constructors for update matching" do
+    context = %{
+      constructor_tags: [
+        %{ctor: "FromPhone", tag: 2},
+        %{ctor: "ProvidePosition", tag: 5}
+      ]
+    }
+
+    wire = %{
+      "ctor" => "FromPhone",
+      "args" => [
+        %{"ctor" => "ProvidePosition", "args" => [1, 2, 3]}
+      ]
+    }
+
+    assert {2, {5, {1, {2, 3}}}} = CoreIREvaluator.normalize_wire_message_value(wire, context)
+  end
+
+  test "case matches flat constructor args against nested tuple2 patterns" do
+    expr = %{
+      "op" => :case,
+      "subject" => %{"op" => :var, "name" => "msg"},
+      "branches" => [
+        %{
+          "pattern" => %{
+            "kind" => :constructor,
+            "name" => "FromPhone",
+            "arg_pattern" => %{
+              "kind" => :constructor,
+              "name" => "ProvideNextEvent",
+              "arg_pattern" => %{
+                "kind" => :tuple2,
+                "left" => %{"kind" => :var, "name" => "title"},
+                "right" => %{
+                  "kind" => :tuple2,
+                  "left" => %{"kind" => :var, "name" => "hour"},
+                  "right" => %{"kind" => :var, "name" => "minute"}
+                }
+              }
+            }
+          },
+          "expr" => %{"op" => :var, "name" => "title"}
+        }
+      ]
+    }
+
+    msg = %{
+      "ctor" => "FromPhone",
+      "args" => [%{"ctor" => "ProvideNextEvent", "args" => ["Standup", 9, 30]}]
+    }
+
+    assert {:ok, "Standup"} = CoreIREvaluator.evaluate(expr, %{"msg" => msg}, %{})
+  end
+
+  test "compares tagged constructor payloads to ctor maps with tag metadata" do
+    assert {:ok, true} =
+             CoreIREvaluator.evaluate(
+               call("__eq__", [{3, nil}, %{"ctor" => "Online", "args" => [], "tag" => 3}])
+             )
+  end
+
   test "constructor bind exposes payload, not constructor envelope" do
     expr = %{
       "op" => :case,

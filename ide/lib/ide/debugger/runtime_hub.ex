@@ -299,8 +299,8 @@ defmodule Ide.Debugger.RuntimeHub do
       maybe_append_runtime_status_after_init: fn state, target, execution, introspect ->
         RuntimeStatusFacades.maybe_append_after_execution(status, state, target, execution, introspect)
       end,
-      maybe_append_elm_introspect: fn state, payload ->
-        RuntimeStatusFacades.maybe_append_elm_introspect(status, state, payload)
+      maybe_append_contract: fn state, payload ->
+        RuntimeStatusFacades.maybe_append_contract(status, state, payload)
       end,
       maybe_append_runtime_exec: fn state, source_root ->
         RuntimeStatusFacades.maybe_append_runtime_exec(status, state, source_root)

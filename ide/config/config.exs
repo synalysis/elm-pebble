@@ -67,10 +67,22 @@ config :ide, Ide.PublishManifest, output_root: Path.expand("../priv/publish_mani
 
 config :ide, Ide.Settings, settings_path: Path.expand("../priv/ide_settings.json", __DIR__)
 
+# Default debugger execution to compiled Elixir; set ELMX_EXECUTION_BACKEND=core_ir to opt out.
+elmx_execution_backend =
+  case System.get_env("ELMX_EXECUTION_BACKEND") do
+    "core_ir" -> :core_ir
+    "compiled_elixir" -> :compiled_elixir
+    _ -> :compiled_elixir
+  end
+
 config :ide, Ide.Debugger.RuntimeExecutor,
   runtime_mode: :runtime_first,
+  execution_backend: elmx_execution_backend,
   external_executor_module: Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter,
   external_executor_strict: true
+
+config :ide, Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter,
+  persist_generated_sources: false
 
 config :ide, :debugger_lazy_elmc, false
 

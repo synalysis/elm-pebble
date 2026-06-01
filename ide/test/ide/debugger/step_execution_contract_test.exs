@@ -8,7 +8,7 @@ defmodule Ide.Debugger.StepExecutionContractTest do
     surface =
       Surface.from_map(%{
         model: %{"last_path" => "src/Main.elm"},
-        shell: %{"elm_introspect" => %{"module" => "Main"}}
+        shell: %{"debugger_contract" => %{"module" => "Main"}}
       })
 
     step = StepInput.from_surface(:watch, surface, "Tick")
@@ -43,7 +43,7 @@ defmodule Ide.Debugger.StepExecutionContractTest do
   end
 
   test "step_result_from_local_fallback matches companion phone source in request path" do
-    surface = Surface.from_map(%{model: %{}, shell: %{"elm_introspect" => %{"module" => "Main"}}})
+    surface = Surface.from_map(%{model: %{}, shell: %{"debugger_contract" => %{"module" => "Main"}}})
     step = StepInput.from_surface(:companion, surface, "Back")
 
     assert StepExecutionContract.request_from(step).source_root == "phone"

@@ -63,6 +63,7 @@ defmodule Ide.Debugger.SessionLifecycle do
         seq: 0,
         app_message_queues: AppMessageQueue.empty()
     }
+    |> Map.put(:last_execution_error, nil)
     |> BootstrapInit.clear_session_bootstrap_flags()
     |> CompanionConfiguration.attach_to_state(project_slug)
     |> ProjectResourceIndices.attach_all(project_slug)
@@ -86,6 +87,7 @@ defmodule Ide.Debugger.SessionLifecycle do
         debugger_seq: 0,
         app_message_queues: AppMessageQueue.empty()
     }
+    |> Map.put(:last_execution_error, nil)
     |> BootstrapInit.clear_session_bootstrap_flags()
     |> CompanionConfiguration.attach_to_state(project_slug)
     |> SimulatorSurfaceSettings.apply_to_state()

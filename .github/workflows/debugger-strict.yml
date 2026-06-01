@@ -68,3 +68,45 @@ jobs:
       - name: Run debugger template corpus subscription steps
         working-directory: ide
         run: mix test test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus_step
+
+  elmx-compiled-elixir:
+    name: elmx compile + compiled_elixir corpus
+    runs-on: ubuntu-latest
+    needs: elm_executor-runtime
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.1"
+          elixir-version: "1.17.3"
+
+      - name: Install elmx dependencies
+        working-directory: elmx
+        run: mix deps.get
+
+      - name: Run elmx unit tests
+        working-directory: elmx
+        run: mix test
+
+      - name: Install IDE dependencies
+        working-directory: ide
+        run: mix deps.get
+
+      - name: Run compiled_elixir template corpus
+        working-directory: ide
+        env:
+          ELMX_TEMPLATE_CORPUS: "1"
+        run: |
+          mix test test/ide/mcp/debugger_template_corpus_compiled_elixir_test.exs \
+            test/ide/debugger/compiled_elixir_template_parity_test.exs \
+            --only compiled_elixir_corpus
+
+      - name: Run elmx template compile gate
+        working-directory: ide
+        env:
+          ELMX_TEMPLATE_COMPILE_GATE: "1"
+        run: mix test test/ide/mcp/debugger_template_compile_gate_test.exs --only template_compile_gate

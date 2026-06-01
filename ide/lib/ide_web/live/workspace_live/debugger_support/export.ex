@@ -3,7 +3,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Export do
   @dialyzer :no_match
 
   alias Ide.Debugger.RuntimeArtifacts
-  alias Ide.Debugger.ElmIntrospect
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types
   def copy_json(term) do
     case Jason.encode(term, pretty: true) do
@@ -126,12 +125,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Export do
   end
 
   @doc """
-  Human-readable summary of `model.elm_introspect` for a frozen runtime snapshot (e.g. at timeline cursor).
+  Human-readable summary of the debugger contract for a frozen runtime snapshot (e.g. at timeline cursor).
   """
-  @spec format_elm_introspect_brief(map() | nil) :: String.t()
-  def format_elm_introspect_brief(nil), do: "(no snapshot)"
+  @spec format_debugger_contract_brief(map() | nil) :: String.t()
+  def format_debugger_contract_brief(nil), do: "(no snapshot)"
 
-  def format_elm_introspect_brief(%{} = runtime) do
+  def format_debugger_contract_brief(%{} = runtime) do
     model = Map.get(runtime, :model) || Map.get(runtime, "model") || %{}
     ei = RuntimeArtifacts.introspect(runtime)
     mode = Map.get(model, "elm_executor_mode") || Map.get(model, :elm_executor_mode)
@@ -143,20 +142,22 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Export do
             do: "elm_executor_mode: #{mode}\n",
             else: ""
 
-        prefix <> format_elm_introspect_inner(m)
+        prefix <> format_debugger_contract_inner(m)
 
       _ ->
-        format_elm_introspect_inner(nil)
+        format_debugger_contract_inner(nil)
     end
   end
 
-  def format_elm_introspect_brief(_), do: "(no snapshot)"
+  def format_debugger_contract_brief(_), do: "(no snapshot)"
 
-  @spec format_elm_introspect_inner(map() | nil) :: String.t()
-  defp format_elm_introspect_inner(nil),
+  def format_elm_introspect_brief(runtime), do: format_debugger_contract_brief(runtime)
+
+  @spec format_debugger_contract_inner(map() | nil) :: String.t()
+  defp format_debugger_contract_inner(nil),
     do: "No parser snapshot merged for this surface at this seq."
 
-  defp format_elm_introspect_inner(ei) when is_map(ei) do
+  defp format_debugger_contract_inner(ei) when is_map(ei) do
     mod = Map.get(ei, "module") || Map.get(ei, :module) || "—"
 
     source_stats_line = format_source_stats_line(ei)
@@ -190,7 +191,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Export do
         list ->
           list
           |> Enum.take(6)
-          |> Enum.map(&ElmIntrospect.import_entry_summary/1)
+          |> Enum.map(&ElmEx.DebuggerContract.import_entry_summary/1)
           |> Enum.join("; ")
           |> then(fn s -> if length(list) > 6, do: s <> " …", else: s end)
       end

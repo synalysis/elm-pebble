@@ -21,8 +21,20 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
   def eval("pebble.cmd", function_name, values, ops),
     do: eval_device_builtin(function_name, values, ops)
 
+  def eval("pebble.datalog", function_name, values, _ops),
+    do: eval_datalog_builtin(function_name, values)
+
   def eval("elm.kernel.pebblewatch", function_name, values, ops),
     do: eval_pebble_watch_kernel_builtin(function_name, values, ops)
+
+  def eval("pebble.compass", function_name, values, ops),
+    do: eval_pebble_compass_builtin(function_name, values, ops)
+
+  def eval("pebble.unobstructedarea", function_name, values, ops),
+    do: eval_pebble_unobstructed_builtin(function_name, values, ops)
+
+  def eval("pebble.dictation", function_name, values, ops),
+    do: eval_pebble_dictation_builtin(function_name, values, ops)
 
   def eval("companion.phone", function_name, values, ops),
     do: eval_protocol_builtin("phone_to_watch", function_name, values, ops)
@@ -67,8 +79,12 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
       "timerafter" ->
         Cmd.eval("timerAfter", values)
 
-      "getcurrenttimestring" ->
+      name
+      when name in ["getcurrenttimestring", "currenttimestring"] ->
         device_command("current_time_string", values, "12:00", ops)
+
+      name when name in ["datalogint32", "datalogbytes"] ->
+        eval_datalog_builtin(name, values)
 
       "getcurrentdatetime" ->
         device_command("current_date_time", values, current_date_time_value(), ops)
@@ -130,8 +146,48 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
       "storagedelete" ->
         storage_delete_command(values)
 
+      "compasscurrent" ->
+        compass_peek_command(values, ops)
+
+      "unobstructedcurrentbounds" ->
+        unobstructed_bounds_peek_command(values, ops)
+
+      "dictationstart" ->
+        dictation_start_command()
+
+      "dictationstop" ->
+        dictation_stop_command()
+
       _ ->
         :no_builtin
+    end
+  end
+
+  @spec eval_pebble_dictation_builtin(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) ::
+          EvalTypes.builtin_eval_result() | EvalTypes.command_map()
+  defp eval_pebble_dictation_builtin(function_name, _values, _ops) do
+    case function_name do
+      "start" -> dictation_start_command()
+      "stop" -> dictation_stop_command()
+      _ -> :no_builtin
+    end
+  end
+
+  @spec eval_pebble_compass_builtin(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) ::
+          EvalTypes.builtin_eval_result() | EvalTypes.command_map()
+  defp eval_pebble_compass_builtin(function_name, values, ops) do
+    case function_name do
+      "current" -> compass_peek_command(values, ops)
+      _ -> :no_builtin
+    end
+  end
+
+  @spec eval_pebble_unobstructed_builtin(String.t(), EvalTypes.runtime_values(), EvalTypes.ops_context()) ::
+          EvalTypes.builtin_eval_result() | EvalTypes.command_map()
+  defp eval_pebble_unobstructed_builtin(function_name, values, ops) do
+    case function_name do
+      "currentbounds" -> unobstructed_bounds_peek_command(values, ops)
+      _ -> :no_builtin
     end
   end
 
@@ -162,7 +218,8 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
       "timerafter" ->
         Cmd.eval("timerAfter", values)
 
-      "currenttimestring" ->
+      name
+      when name in ["currenttimestring", "getcurrenttimestring"] ->
         device_command("current_time_string", values, "12:00", ops)
 
       "currentdatetime" ->
@@ -216,13 +273,167 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package do
 
   defp device_command(_kind, _values, _value, _ops), do: :no_builtin
 
+  @spec compass_peek_command(EvalTypes.runtime_values(), EvalTypes.ops_context()) ::
+          EvalTypes.command_map() | :no_builtin
+  defp compass_peek_command([to_msg], ops) do
+    heading = %{"degrees" => 180.0, "isValid" => true}
+    device_command("compass_peek", [to_msg], %{"ctor" => "Ok", "args" => [heading]}, ops)
+  end
+
+  defp compass_peek_command(_values, _ops), do: :no_builtin
+
+  @spec unobstructed_bounds_peek_command(EvalTypes.runtime_values(), EvalTypes.ops_context()) ::
+          EvalTypes.command_map() | :no_builtin
+  defp unobstructed_bounds_peek_command([to_msg], ops) do
+    bounds = %{"x" => 0, "y" => 0, "w" => 144, "h" => 168}
+    device_command("unobstructed_bounds_peek", [to_msg], bounds, ops)
+  end
+
+  defp unobstructed_bounds_peek_command(_values, _ops), do: :no_builtin
+
+  @spec dictation_start_command() :: {:ok, map()}
+  defp dictation_start_command do
+    {:ok,
+     %{
+       "kind" => "cmd.batch",
+       "commands" => [
+         dictation_followup_command("DictationStatusChanged", %{"ctor" => "Starting", "args" => []}),
+         dictation_followup_command("DictationStatusChanged", %{"ctor" => "Recognizing", "args" => []}),
+         dictation_followup_command("DictationStatusChanged", %{"ctor" => "Finished", "args" => []}),
+         dictation_followup_command("DictationFinished", %{"ctor" => "Ok", "args" => ["Hello"]})
+       ]
+     }}
+  end
+
+  @spec dictation_stop_command() :: {:ok, map()}
+  defp dictation_stop_command do
+    {:ok,
+     dictation_followup_command("DictationFinished", %{
+       "ctor" => "Err",
+       "args" => [%{"ctor" => "Cancelled", "args" => []}]
+     })}
+  end
+
+  @spec dictation_followup_command(String.t(), map()) :: map()
+  defp dictation_followup_command(message, payload) when is_binary(message) and is_map(payload) do
+    %{
+      "kind" => "cmd.dictation.followup",
+      "package" => "pebble/dictation",
+      "message" => message,
+      "message_value" => %{"ctor" => message, "args" => [payload]}
+    }
+  end
+
+  @spec eval_datalog_builtin(String.t(), EvalTypes.runtime_values()) :: EvalTypes.builtin_eval_result()
+  defp eval_datalog_builtin(function_name, values) do
+    case function_name do
+      "tag" ->
+        case values do
+          [tag] when is_integer(tag) -> {:ok, %{"ctor" => "Tag", "args" => [tag]}}
+          _ -> :no_builtin
+        end
+
+      name when name in ["logint32", "datalogint32"] ->
+        case values do
+          [tag, value] when is_integer(value) ->
+            with {:ok, tag_id} <- datalog_tag_id([tag]) do
+              {:ok,
+               %{
+                 "kind" => "cmd.data_log.int32",
+                 "package" => "pebble/datalog",
+                 "tag" => tag_id,
+                 "value" => value
+               }}
+            else
+              _ -> :no_builtin
+            end
+
+          _ ->
+            :no_builtin
+        end
+
+      name when name in ["logbytes", "datalogbytes"] ->
+        case values do
+          [tag, bytes] when is_list(bytes) ->
+            with {:ok, tag_id} <- datalog_tag_id([tag]) do
+              {:ok,
+               %{
+                 "kind" => "cmd.data_log.bytes",
+                 "package" => "pebble/datalog",
+                 "tag" => tag_id,
+                 "bytes" => bytes
+               }}
+            else
+              _ -> :no_builtin
+            end
+
+          _ ->
+            :no_builtin
+        end
+
+      _ ->
+        :no_builtin
+    end
+  end
+
+  @spec datalog_tag_id(EvalTypes.runtime_values()) :: {:ok, integer()} | :error
+  defp datalog_tag_id([%{"ctor" => "Tag", "args" => [tag]} | _]) when is_integer(tag), do: {:ok, tag}
+  defp datalog_tag_id([%{ctor: "Tag", args: [tag]} | _]) when is_integer(tag), do: {:ok, tag}
+  defp datalog_tag_id([tag | _]) when is_integer(tag), do: {:ok, tag}
+  defp datalog_tag_id(_), do: :error
+
+  # Matches `Pebble.Health.metricToInt` / bundled Health.Metric constructors.
+  @health_metric_ids %{
+    "StepCount" => 0,
+    "ActiveSeconds" => 1,
+    "WalkedDistanceMeters" => 2,
+    "SleepSeconds" => 3,
+    "RestfulSleepSeconds" => 4,
+    "RestingKCalories" => 5,
+    "ActiveKCalories" => 6,
+    "HeartRateBPM" => 7
+  }
+
   @spec health_device_command(String.t(), EvalTypes.runtime_values(), EvalTypes.runtime_value(), EvalTypes.ops_context()) ::
           EvalTypes.command_map() | :no_builtin
-  defp health_device_command(kind, [metric, to_msg], value, ops) when is_integer(metric) do
-    device_command(kind, [to_msg], value, ops)
+  defp health_device_command(kind, [metric, to_msg | _rest], value, ops) do
+    with {:ok, _metric_id} <- health_metric_id(metric) do
+      device_command(kind, [to_msg], value, ops)
+    else
+      _ -> :no_builtin
+    end
   end
 
   defp health_device_command(_kind, _values, _value, _ops), do: :no_builtin
+
+  @spec health_metric_id(EvalTypes.runtime_value()) :: {:ok, integer()} | :error
+  defp health_metric_id(metric) when is_integer(metric), do: {:ok, metric}
+
+  defp health_metric_id(%{"ctor" => ctor}) when is_binary(ctor),
+    do: health_metric_id_from_ctor(ctor)
+
+  defp health_metric_id(%{ctor: ctor}) when is_binary(ctor), do: health_metric_id_from_ctor(ctor)
+
+  defp health_metric_id(%{"ctor" => "Health." <> name}) when is_binary(name),
+    do: health_metric_id_from_ctor(name)
+
+  defp health_metric_id(%{ctor: "Health." <> name}) when is_binary(name),
+    do: health_metric_id_from_ctor(name)
+
+  defp health_metric_id(_), do: :error
+
+  @spec health_metric_id_from_ctor(String.t()) :: {:ok, integer()} | :error
+  defp health_metric_id_from_ctor(ctor) when is_binary(ctor) do
+    name =
+      ctor
+      |> String.split(".")
+      |> List.last()
+
+    case Map.get(@health_metric_ids, name) do
+      id when is_integer(id) -> {:ok, id}
+      _ -> :error
+    end
+  end
 
   @spec backlight_command(EvalTypes.runtime_values()) :: EvalTypes.cmd_eval_result()
   defp backlight_command([mode]) do

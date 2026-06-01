@@ -20,7 +20,11 @@ defmodule Ide.Debugger.RuntimePreview do
           Types.runtime_state()
   def refresh_for_target(state, target, _executor)
       when is_map(state) and target in [:watch, :companion, :phone] do
-    surface = state |> Map.get(target, %{}) |> RuntimeArtifacts.normalize_surface()
+    surface =
+      state
+      |> Map.get(target, %{})
+      |> RuntimeArtifacts.normalize_surface()
+      |> enrich_surface_resource_indices(state)
 
     case render_view_from_surface(surface, target) do
       %{} = runtime -> put_in(state, [target], runtime)
@@ -131,6 +135,34 @@ defmodule Ide.Debugger.RuntimePreview do
   end
 
   def render_view_from_surface(_surface_runtime, _target), do: nil
+
+  @spec enrich_surface_resource_indices(Surface.surface_map(), Types.runtime_state()) ::
+          Surface.surface_map()
+  defp enrich_surface_resource_indices(surface, state)
+       when is_map(surface) and is_map(state) do
+    execution_model = RuntimeArtifacts.execution_model(surface)
+
+    if map_size(RuntimeArtifacts.bitmap_resource_indices(execution_model)) > 0 do
+      surface
+    else
+      project_slug = Map.get(state, :project_slug) || Map.get(state, :scope_key)
+
+      indices =
+        if is_binary(project_slug) do
+          RuntimeArtifacts.bitmap_resource_indices_for_project(project_slug)
+        else
+          %{}
+        end
+
+      if map_size(indices) > 0 do
+        Surface.put_shell(surface, Map.put(Surface.shell(surface), "bitmap_resource_indices", indices))
+      else
+        surface
+      end
+    end
+  end
+
+  defp enrich_surface_resource_indices(surface, _state), do: surface
 
   @spec preview_model_for_message(Types.app_model(), String.t() | nil) :: Types.app_model()
   defp preview_model_for_message(preview_model, _message) when is_map(preview_model), do: preview_model

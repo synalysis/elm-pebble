@@ -7,7 +7,7 @@ defmodule Ide.Debugger.RuntimeSurfaceMergeTest do
   test "merge_fields partitions elmc fields into model and shell" do
     surface = %{
       model: %{"runtime_model" => %{"n" => 1}},
-      shell: %{"elm_introspect" => %{"module" => "Main"}}
+      shell: %{"debugger_contract" => %{"module" => "Main"}}
     }
 
     merged =
@@ -19,7 +19,7 @@ defmodule Ide.Debugger.RuntimeSurfaceMergeTest do
     assert merged.model["elmc_check_status"] == "ok"
     assert merged.model["runtime_model"]["n"] == 1
     assert merged.shell["elm_executor_metadata"]["engine"] == "v1"
-    assert merged.shell["elm_introspect"]["module"] == "Main"
+    assert merged.shell["debugger_contract"]["module"] == "Main"
   end
 
   test "merge_into_state updates watch surface on runtime state" do

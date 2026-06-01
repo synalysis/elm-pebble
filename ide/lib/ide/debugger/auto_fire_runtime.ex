@@ -23,6 +23,8 @@ defmodule Ide.Debugger.AutoFireRuntime do
           required(:simulator_now) =>
             (Types.runtime_state(), Types.surface_target() -> NaiveDateTime.t()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
+          optional(:apply_device_data_responses) =>
+            (Types.runtime_state(), Types.surface_target(), String.t() -> Types.runtime_state()),
           optional(:default_interval_ms) => pos_integer()
         }
 
@@ -46,16 +48,7 @@ defmodule Ide.Debugger.AutoFireRuntime do
           {_step_message, message_value} = TimelineMessage.message_value_for_step(resolved_message)
 
           row_acc
-          |> then(fn st ->
-            ctx.apply_step.(
-              st,
-              target,
-              resolved_message,
-              message_value,
-              "subscription_auto_fire",
-              trigger
-            )
-          end)
+          |> apply_auto_fire_step(target, resolved_message, message_value, trigger, ctx)
           |> SubscriptionPayload.advance_simulator_clock_for_auto_fire(trigger)
         end)
         |> then(fn st -> put_clock(st, target, clock_snapshot(st, target, ctx), ctx) end)
@@ -88,6 +81,50 @@ defmodule Ide.Debugger.AutoFireRuntime do
   end
 
   def subscription_candidates(state, _target, _now, _ctx), do: {[], state}
+
+  defp apply_auto_fire_step(state, target, message, message_value, trigger, ctx)
+       when target in [:watch, :companion, :phone] and is_map(state) and is_map(ctx) do
+    before_seq = Map.get(state, :debugger_seq, 0)
+
+    stepped =
+      ctx.apply_step.(
+        state,
+        target,
+        message,
+        message_value,
+        "subscription_auto_fire",
+        trigger
+      )
+
+    if device_data_response_appended?(stepped, before_seq, target, ctx) do
+      stepped
+    else
+      case Map.get(ctx, :apply_device_data_responses) do
+        fun when is_function(fun, 3) -> fun.(stepped, target, message)
+        _ -> stepped
+      end
+    end
+  end
+
+  defp device_data_response_appended?(state, before_seq, target, ctx)
+       when is_map(state) and is_integer(before_seq) and target in [:watch, :companion, :phone] and is_map(ctx) do
+    source_root = ctx.source_root_for_target.(target)
+
+    state
+    |> Map.get(:debugger_timeline, [])
+    |> Enum.any?(fn
+      %{seq: seq, target: ^source_root, message_source: "device_data"} when is_integer(seq) ->
+        seq > before_seq
+
+      %{"seq" => seq, "target" => ^source_root, "message_source" => "device_data"} when is_integer(seq) ->
+        seq > before_seq
+
+      _ ->
+        false
+    end)
+  end
+
+  defp device_data_response_appended?(_state, _before_seq, _target, _ctx), do: false
 
   @spec subscription_due?(
           Types.runtime_state(),

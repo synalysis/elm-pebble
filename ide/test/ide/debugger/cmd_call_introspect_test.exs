@@ -2,7 +2,7 @@ defmodule Ide.Debugger.CmdCallIntrospectTest do
   use ExUnit.Case, async: true
 
   alias Ide.Debugger.DeviceRequest
-  alias Ide.Debugger.ElmIntrospect
+  alias Ide.Debugger.CompileContract
 
   @time_cmd_elm """
   module CmdCalls exposing (..)
@@ -37,8 +37,8 @@ defmodule Ide.Debugger.CmdCallIntrospectTest do
   """
 
   test "introspect update_cmd_calls rows map to device requests for time cmd" do
-    assert {:ok, %{"elm_introspect" => ei}} =
-             ElmIntrospect.analyze_source(@time_cmd_elm, "CmdCalls.elm")
+    assert {:ok, %{"debugger_contract" => ei}} =
+             CompileContract.analyze_source(@time_cmd_elm, "CmdCalls.elm")
 
     requests =
       ei["update_cmd_calls"]
@@ -51,8 +51,8 @@ defmodule Ide.Debugger.CmdCallIntrospectTest do
   end
 
   test "introspect init_cmd_calls rows map to battery device request" do
-    assert {:ok, %{"elm_introspect" => ei}} =
-             ElmIntrospect.analyze_source(@battery_cmd_elm, "BatteryCmd.elm")
+    assert {:ok, %{"debugger_contract" => ei}} =
+             CompileContract.analyze_source(@battery_cmd_elm, "BatteryCmd.elm")
 
     requests =
       ei["init_cmd_calls"]

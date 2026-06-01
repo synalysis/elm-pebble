@@ -431,9 +431,20 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator.Eval do
 
             true ->
               case {short, values} do
-                {"True", []} -> {:ok, true}
-                {"False", []} -> {:ok, false}
-                _ -> {:ok, %{"ctor" => short, "args" => values}}
+                {"True", []} ->
+                  {:ok, true}
+
+                {"False", []} ->
+                  {:ok, false}
+
+                _ ->
+                  value = %{"ctor" => short, "args" => values}
+
+                  {:ok,
+                   case CoreIREvaluator.constructor_tag_for_ctor(short, context) do
+                     tag when is_integer(tag) -> Map.put(value, "tag", tag)
+                     _ -> value
+                   end}
               end
           end
         end

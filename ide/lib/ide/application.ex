@@ -8,6 +8,12 @@ defmodule Ide.Application do
   @impl true
   @spec start(Application.start_type(), term()) :: Supervisor.on_start()
   def start(_type, _args) do
+    Application.put_env(
+      :elm_ex,
+      :package_source_roots,
+      Ide.Debugger.CompileContract.package_source_roots()
+    )
+
     repo =
       if release_runtime?() do
         Ide.RepoConfig.put_runtime_repo_config!()

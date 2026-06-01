@@ -11,6 +11,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   alias Ide.Resources.ResourceStore
   alias IdeWeb.WorkspaceLive.DebuggerPreview
   alias IdeWeb.WorkspaceLive.DebuggerSupport
+  alias IdeWeb.WorkspaceLive.DebuggerSupport.Util, as: DebuggerUtil
   alias Phoenix.LiveView.Rendered
 
   @type assigns :: map()
@@ -782,8 +783,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   defp companion_protocol_placeholder_model?(runtime_model, %{} = runtime) when is_map(runtime_model) do
     app_bootstrapped? =
       case RuntimeArtifacts.introspect(runtime) do
-        %{} -> true
-        _ -> false
+        ei when is_map(ei) and map_size(ei) > 0 ->
+          true
+
+        _ ->
+          runtime
+          |> RuntimeArtifacts.execution_model()
+          |> RuntimeArtifacts.versioned_elmx_artifacts?()
       end
 
     not app_bootstrapped? and
@@ -891,7 +897,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
   @spec debugger_export_surface_runtime(map(), non_neg_integer() | nil, non_neg_integer() | nil, atom()) ::
           map() | nil
   defp debugger_export_surface_runtime(state, selected_seq, cursor_seq, surface)
-       when surface in [:watch, :companion] do
+       when surface in [:watch, :companion, :phone] do
     seq = selected_seq || cursor_seq
 
     row_runtime =
@@ -901,16 +907,27 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
       |> case do
         %{watch_runtime: rt} when surface == :watch and is_map(rt) -> rt
         %{companion_runtime: rt} when surface == :companion and is_map(rt) -> rt
+        %{phone_runtime: rt} when surface == :phone and is_map(rt) -> rt
         _ -> nil
       end
 
     row_runtime ||
       case DebuggerSupport.snapshot_runtime_at_cursor(Map.get(state, :events, []), seq) do
         %{watch: rt} when surface == :watch -> rt
-        %{companion: rt, phone: phone} when surface == :companion -> rt || phone
-        _ -> Map.get(state, surface)
+        %{phone: rt} when surface == :phone -> rt
+        %{companion: companion, phone: phone} when surface == :companion ->
+          DebuggerUtil.companion_or_phone_runtime(companion, phone)
+
+        _ ->
+          fallback_surface_runtime(state, surface)
       end
   end
+
+  defp fallback_surface_runtime(state, :companion) when is_map(state) do
+    DebuggerUtil.companion_or_phone_runtime(Map.get(state, :companion), Map.get(state, :phone))
+  end
+
+  defp fallback_surface_runtime(state, surface) when is_map(state), do: Map.get(state, surface)
 
   @spec debugger_export_snapshot(map(), Project.t() | nil) ::
           {String.t(), map() | nil, non_neg_integer() | nil}

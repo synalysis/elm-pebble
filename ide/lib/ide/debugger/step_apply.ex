@@ -124,7 +124,7 @@ defmodule Ide.Debugger.StepApply do
          known_messages,
          update_branches,
          next_cursor,
-         requested_message,
+         _requested_message,
          message_value,
          timeline_message_value,
          source_override,

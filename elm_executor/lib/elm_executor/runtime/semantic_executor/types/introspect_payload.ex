@@ -2,7 +2,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.Types.IntrospectPayload do
   @moduledoc """
   Subset of IDE `elm_introspect` fields consumed by `SemanticExecutor` (string keys at runtime).
 
-  Mirrors `Ide.Debugger.ElmIntrospect.Payload` without a compile-time dependency on `ide`.
+  Mirrors `ElmEx.DebuggerContract.Payload` without a compile-time dependency on `elm_ex` at link time.
   """
 
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes

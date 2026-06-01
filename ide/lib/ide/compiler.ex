@@ -40,7 +40,9 @@ defmodule Ide.Compiler do
           required(:revision) => String.t(),
           required(:cached?) => boolean(),
           optional(:elm_executor_core_ir_b64) => String.t(),
-          optional(:elm_executor_metadata) => map()
+          optional(:elm_executor_metadata) => map(),
+          optional(:elmx_manifest) => map(),
+          optional(:elmx_revision) => String.t()
         }
   @type manifest_data :: %{
           optional(String.t()) => String.t() | integer() | boolean() | list() | map() | nil
@@ -245,7 +247,8 @@ defmodule Ide.Compiler do
         case Cache.get(project_slug, revision) do
           {:ok, entry} ->
             cached_result = Map.merge(entry.result, %{cached?: true, revision: revision})
-            {:ok, maybe_attach_elm_executor_artifacts(cached_result, project_dir)}
+
+            {:ok, maybe_attach_runtime_artifacts(cached_result, project_dir, revision)}
 
           {:error, :not_found} ->
             case run_elmc_compile(project_dir, revision) do
@@ -490,41 +493,119 @@ defmodule Ide.Compiler do
       |> Elmc.CLI.compile_project(out_dir)
       |> ElmcCliIngestBridge.to_compile_result(compiled_path: out_dir, revision: revision)
 
-    {:ok, maybe_attach_elm_executor_artifacts(result, project_dir)}
+    {:ok, maybe_attach_runtime_artifacts(result, project_dir, revision)}
   rescue
     error -> {:error, error}
   end
 
+  @spec maybe_attach_runtime_artifacts(compile_result(), String.t(), String.t()) :: compile_result()
+  defp maybe_attach_runtime_artifacts(result, project_dir, revision)
+       when is_map(result) and is_binary(project_dir) do
+    if Map.get(result, :status) == :ok do
+      result
+      |> maybe_attach_elm_executor_artifacts(project_dir)
+      |> maybe_attach_elmx_artifacts(project_dir, revision)
+    else
+      result
+    end
+  end
+
+  defp maybe_attach_runtime_artifacts(result, _project_dir, _revision), do: result
+
   @spec maybe_attach_elm_executor_artifacts(compile_result(), String.t()) :: compile_result()
   defp maybe_attach_elm_executor_artifacts(result, project_dir)
        when is_map(result) and is_binary(project_dir) do
-    if Map.get(result, :status) == :ok do
-      case build_elm_executor_artifacts(project_dir) do
-        {:ok, %{core_ir: core_ir, metadata: metadata}} ->
-          Map.merge(result, %{
-            elm_executor_core_ir_b64:
-              core_ir
-              |> :erlang.term_to_binary()
-              |> Base.encode64(),
-            elm_executor_metadata: metadata
-          })
+    case build_elm_executor_artifacts(project_dir) do
+      {:ok, %{core_ir: core_ir, metadata: metadata, contract_fields: contract_fields}} ->
+        Map.merge(result, %{
+          elm_executor_core_ir_b64:
+            core_ir
+            |> :erlang.term_to_binary()
+            |> Base.encode64(),
+          elm_executor_metadata: metadata
+        })
+        |> Map.merge(contract_fields)
 
-        _ ->
-          result
+      _ ->
+        result
+    end
+  end
+
+  @spec maybe_attach_elmx_artifacts(compile_result(), String.t(), String.t()) :: compile_result()
+  defp maybe_attach_elmx_artifacts(result, project_dir, revision)
+       when is_map(result) and is_binary(project_dir) do
+    if attach_elmx_artifacts?() do
+      case build_elmx_artifacts_in_memory(project_dir, revision: revision) do
+        {:ok, fields} -> Map.merge(result, fields)
+        _ -> result
       end
     else
       result
     end
   end
 
-  defp maybe_attach_elm_executor_artifacts(result, _project_dir), do: result
+  defp attach_elmx_artifacts? do
+    Ide.Debugger.RuntimeExecutor.compiled_elixir_backend?() or
+      Application.get_env(:ide, :attach_elmx_on_compile, false)
+  end
+
+  @doc """
+  Resolves the Elm entry module for in-memory `elmx` compiles from `src/*.elm` layout.
+  Prefers `CompanionApp` when present (phone/pebble companion workspaces), else `Main`.
+  """
+  @spec default_elmx_entry_module(String.t()) :: String.t()
+  def default_elmx_entry_module(project_dir) when is_binary(project_dir) do
+    cond do
+      File.exists?(Path.join(project_dir, "src/CompanionApp.elm")) -> "CompanionApp"
+      File.exists?(Path.join(project_dir, "src/Main.elm")) -> "Main"
+      true -> "Main"
+    end
+  end
+
+  @doc """
+  Compiles Elm → Elixir → BEAM in memory for debugger hot-reload (`:compiled_elixir` backend).
+  """
+  @spec build_elmx_artifacts_in_memory(String.t(), keyword()) ::
+          {:ok, %{elmx_manifest: map(), elmx_revision: String.t()}} | {:error, term()}
+  def build_elmx_artifacts_in_memory(project_dir, opts \\ []) when is_binary(project_dir) do
+    revision = Keyword.get(opts, :revision) || Keyword.get(opts, "revision")
+    entry_module = Keyword.get(opts, :entry_module) || default_elmx_entry_module(project_dir)
+
+    with {:ok, %Elmx.CompileResult{} = compile_result} <-
+           Elmx.compile_in_memory(project_dir, %{
+             entry_module: entry_module,
+             revision: revision,
+             mode: :ide_runtime,
+             strip_dead_code: Keyword.get(opts, :strip_dead_code, false)
+           }) do
+      rev = revision || Map.get(compile_result.manifest, "revision") || "unknown"
+
+      {:ok,
+       %{
+         elmx_manifest: compile_result.manifest,
+         elmx_revision: rev
+       }}
+    end
+  end
 
   @spec build_elm_executor_artifacts(String.t()) ::
           {:ok, %{core_ir: CoreIR.t(), metadata: map()}} | {:error, atom()}
   defp build_elm_executor_artifacts(project_dir) when is_binary(project_dir) do
     with {:ok, project} <- Bridge.load_project(project_dir),
          {:ok, ir} <- Lowerer.lower_project(project) do
-      build_core_ir_artifact(ir)
+      case build_core_ir_artifact(ir) do
+        {:ok, %{core_ir: core_ir, metadata: metadata}} ->
+          contract_fields =
+            case Ide.Debugger.CompileContract.build_from_project(project, core_ir) do
+              {:ok, contract} -> Ide.Debugger.CompileContract.artifact_fields(contract)
+              _ -> %{}
+            end
+
+          {:ok, %{core_ir: core_ir, metadata: metadata, contract_fields: contract_fields}}
+
+        {:error, _} = err ->
+          err
+      end
     else
       _ -> {:error, :elm_executor_artifacts_unavailable}
     end

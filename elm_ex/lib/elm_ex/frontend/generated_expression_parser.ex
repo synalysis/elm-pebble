@@ -203,19 +203,37 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
   @spec split_rightmost_inline_let_in(source()) :: {:ok, source(), source()} | :error
   defp split_rightmost_inline_let_in(line) when is_binary(line) do
-    case :binary.matches(line, " in ") do
-      [] ->
-        :error
+    trimmed = String.trim_trailing(line)
 
-      matches ->
-        {pos, len} = List.last(matches)
-        before = line |> String.slice(0, pos) |> String.trim_trailing()
-        in_expr = line |> String.slice(pos + len, String.length(line) - pos - len) |> String.trim_leading()
+    cond do
+      String.ends_with?(trimmed, " in") ->
+        before = trimmed |> String.slice(0, String.length(trimmed) - 3) |> String.trim_trailing()
 
         if String.contains?(before, "let ") do
-          {:ok, before, in_expr}
+          {:ok, before, ""}
         else
           :error
+        end
+
+      true ->
+        case :binary.matches(trimmed, " in ") do
+          [] ->
+            :error
+
+          matches ->
+            {pos, len} = List.last(matches)
+            before = trimmed |> String.slice(0, pos) |> String.trim_trailing()
+
+            in_expr =
+              trimmed
+              |> String.slice(pos + len, String.length(trimmed) - pos - len)
+              |> String.trim_leading()
+
+            if String.contains?(before, "let ") do
+              {:ok, before, in_expr}
+            else
+              :error
+            end
         end
     end
   end

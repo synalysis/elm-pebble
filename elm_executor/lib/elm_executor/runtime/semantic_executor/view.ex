@@ -11,6 +11,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.View do
   alias ElmEx.IR.Lowerer
   alias ElmExecutor.Runtime.CoreIREvaluator
   alias ElmExecutor.Runtime.CoreIREvaluator.Types, as: EvalTypes
+  alias ElmExecutor.Runtime.SemanticExecutor.EvalContext
   alias ElmExecutor.Runtime.SemanticExecutor.Types, as: SemTypes
   @doc """
   Derives drawable preview rows from a parser-shaped view tree and runtime model.
@@ -1684,7 +1685,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.View do
   @spec view_output_from_helper_function_body(map(), map(), map()) :: SemTypes.view_output()
   defp view_output_from_helper_function_body(node, runtime_model, eval_context)
        when is_map(node) and is_map(runtime_model) and is_map(eval_context) do
-    with %{} = ei <- Map.get(eval_context, :elm_introspect),
+    with %{} = ei <- EvalContext.contract(eval_context),
          target when is_binary(target) <- view_tree_helper_target(node),
          {module_name, function_name} <- resolve_helper_function(ei, target),
          arity <- helper_call_arity(node),
@@ -1863,7 +1864,7 @@ defmodule ElmExecutor.Runtime.SemanticExecutor.View do
 
   @spec helper_return_kind(map(), map()) :: :list_render_op | :render_op | :string | :unknown
   defp helper_return_kind(node, eval_context) when is_map(node) and is_map(eval_context) do
-    with %{} = ei <- Map.get(eval_context, :elm_introspect),
+    with %{} = ei <- EvalContext.contract(eval_context),
          target when is_binary(target) <- view_tree_helper_target(node),
          {module_name, function_name} <- resolve_helper_function(ei, target),
          arity <- helper_call_arity(node),

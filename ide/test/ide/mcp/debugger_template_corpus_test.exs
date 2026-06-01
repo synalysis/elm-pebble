@@ -12,12 +12,6 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusTest do
 
   @update_snapshots? System.get_env("UPDATE_DEBUGGER_TEMPLATE_SNAPSHOTS") in ["1", "true", "TRUE"]
 
-  test "subscription_step_pending is a subset of template keys" do
-    keys = MapSet.new(DebuggerTemplateCorpus.template_keys())
-
-    assert Enum.all?(DebuggerTemplateCorpus.subscription_step_pending(), &(&1 in keys))
-  end
-
   @tag :template_corpus
   @tag timeout: 180_000
   test "templates.list matches ProjectTemplates.template_keys" do

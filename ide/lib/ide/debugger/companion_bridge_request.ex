@@ -130,12 +130,58 @@ defmodule Ide.Debugger.CompanionBridgeRequest do
           name in ["currentPosition", "getCurrentPosition"] ->
         [Map.merge(%{api: "geolocation", op: "getCurrentPosition"}, meta)]
 
+      companion_call_target?(normalized, "timeline") and name == "getToken" ->
+        [Map.merge(%{api: "timeline", op: "getToken"}, meta)]
+
+      companion_call_target?(normalized, "timeline") and name == "insertPin" ->
+        [Map.merge(%{api: "timeline", op: "insertPin"}, meta)]
+
+      companion_call_target?(normalized, "phone") and String.downcase(name) == "sendbridgecommand" ->
+        envelope_requests_from_value(Enum.at(args, 0), meta)
+
       true ->
         []
     end
   end
 
   def from_cmd_call(_row), do: []
+
+  @spec envelope_requests_from_value(term(), map()) :: [map()]
+  defp envelope_requests_from_value(value, meta) do
+    case envelope_fields(value) do
+      %{api: api, op: op} = fields when is_binary(api) and is_binary(op) ->
+        [
+          Map.merge(
+            %{
+              api: api,
+              op: op,
+              bridge_id: Map.get(fields, :id),
+              payload: Map.get(fields, :payload)
+            },
+            meta
+          )
+        ]
+
+      _ ->
+        []
+    end
+  end
+
+  @spec envelope_fields(term()) :: map() | nil
+  defp envelope_fields(%{"api" => api, "op" => op} = map) when is_binary(api) and is_binary(op) do
+    %{
+      api: api,
+      op: op,
+      id: Map.get(map, "id") || Map.get(map, :id),
+      payload: Map.get(map, "payload") || Map.get(map, :payload) || %{}
+    }
+  end
+
+  defp envelope_fields(%{api: api, op: op} = map) when is_binary(api) and is_binary(op) do
+    envelope_fields(%{"api" => api, "op" => op, "id" => Map.get(map, :id), "payload" => Map.get(map, :payload)})
+  end
+
+  defp envelope_fields(_), do: nil
 
   @spec request_meta(Types.cmd_call()) :: %{optional(:callback) => String.t() | nil}
   defp request_meta(row) when is_map(row) do

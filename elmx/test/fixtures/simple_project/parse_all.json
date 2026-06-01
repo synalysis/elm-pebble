@@ -1,0 +1,8 @@
+{
+  "elm_make_enabled": true,
+  "elm_make_excluded_modules": [
+    "fixtures/simple_project/src/CoreCompliance.elm"
+  ],
+  "expected_expression_parse_failures": [],
+  "expected_unsupported_expr_roots": []
+}

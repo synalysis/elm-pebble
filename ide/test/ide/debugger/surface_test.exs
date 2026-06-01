@@ -17,7 +17,7 @@ defmodule Ide.Debugger.SurfaceTest do
         })
 
       assert surface.model == %{"count" => 1}
-      assert surface.shell["elm_introspect"] == %{"module" => "Main"}
+      assert surface.shell["debugger_contract"] == %{"module" => "Main"}
       assert surface.view_tree == %{"type" => "root"}
       assert surface.last_message == "Tick"
 
@@ -52,12 +52,12 @@ defmodule Ide.Debugger.SurfaceTest do
     test "merges shell artifacts for introspect lookups" do
       surface = %Surface{
         model: %{"runtime_model" => %{"latitudeE6" => 0}},
-        shell: %{"elm_introspect" => %{"module" => "Geo"}}
+        shell: %{"debugger_contract" => %{"module" => "Geo"}}
       }
 
       execution = Surface.execution_model(surface)
 
-      assert RuntimeArtifacts.introspect(execution) == %{"module" => "Geo"}
+      assert RuntimeArtifacts.introspect(execution)["module"] == "Geo"
       assert execution["runtime_model"] == %{"latitudeE6" => 0}
     end
   end

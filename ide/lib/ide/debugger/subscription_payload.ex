@@ -133,6 +133,12 @@ defmodule Ide.Debugger.SubscriptionPayload do
             message
           end
 
+        subscription_message_arity(state, target, message_text, ctx) == 1 ->
+          case subscription_simulated_arg(state, target, message_text, ctx) do
+            {:ok, arg} -> "#{message_text} #{arg}"
+            :error -> message
+          end
+
         true ->
           message
       end
@@ -232,6 +238,36 @@ defmodule Ide.Debugger.SubscriptionPayload do
   @spec blank_string?(Types.wire_scalar() | Types.protocol_ctor_value() | list()) :: boolean()
   defp blank_string?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank_string?(_value), do: true
+
+  @spec subscription_simulated_arg(Types.runtime_state(), Types.surface_target(), String.t(), attach_ctx() | nil) ::
+          {:ok, String.t()} | :error
+  defp subscription_simulated_arg(state, target, constructor, ctx)
+       when is_map(state) and is_binary(constructor) do
+    with %{} = ei <- resolve_introspect(state, target, ctx),
+         arg_type when is_binary(arg_type) <-
+           Map.get(ei, "msg_constructor_arg_types", %{}) |> Map.get(constructor) do
+      simulated_value_for_msg_arg_type(arg_type, state, target, ctx)
+    else
+      _ -> :error
+    end
+  end
+
+  @spec simulated_value_for_msg_arg_type(String.t(), Types.runtime_state(), Types.surface_target(), attach_ctx() | nil) ::
+          {:ok, String.t()} | :error
+  defp simulated_value_for_msg_arg_type(type, state, target, ctx) when is_binary(type) do
+    normalized =
+      type
+      |> String.replace(" ", "")
+      |> String.downcase()
+
+    cond do
+      String.contains?(normalized, "appfocus") and String.ends_with?(normalized, "state") ->
+        {:ok, subscription_app_focus_state(state, target, ctx)}
+
+      true ->
+        :error
+    end
+  end
 
   @spec subscription_message_arity(Types.runtime_state(), Types.surface_target(), String.t(), attach_ctx() | nil) ::
           non_neg_integer()

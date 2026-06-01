@@ -4,6 +4,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
   alias Ide.Debugger.CmdCall
   alias Ide.Debugger.DeviceData
   alias Ide.Debugger.DeviceDataResponses
+  alias Ide.Debugger.DeviceRequest
   alias Ide.Debugger.TimelineMessage
   alias Ide.Debugger.HttpExecutor
   alias Ide.Debugger.IntrospectAccess
@@ -114,14 +115,28 @@ defmodule Ide.Debugger.RuntimeFollowups do
   defp shadowed_by_device_data?(state, target, message, row)
        when is_map(state) and target in [:watch, :companion, :phone] and is_binary(message) and
               is_map(row) do
-    package = Map.get(row, "package") || Map.get(row, :package)
-    followup_message = Map.get(row, "message") || Map.get(row, :message)
+    surface = Surface.from_state(state, target)
 
-    package == "elm-pebble/elm-watch" and is_binary(followup_message) and
-      Enum.any?(DeviceDataResponses.requests_for_surface(state, target, message), fn req ->
-        DeviceData.response_message(req) == followup_message or
-          RuntimeModelMessages.wire_constructor(DeviceData.response_message(req)) == followup_message
-      end)
+    if blank_introspect?(surface) do
+      false
+    else
+      package = Map.get(row, "package") || Map.get(row, :package)
+      followup_message = Map.get(row, "message") || Map.get(row, :message)
+
+      package == "elm-pebble/elm-watch" and is_binary(followup_message) and
+        Enum.any?(DeviceDataResponses.requests_for_surface(state, target, message), fn req ->
+          DeviceData.response_message(req) == followup_message or
+            RuntimeModelMessages.wire_constructor(DeviceData.response_message(req)) ==
+              followup_message
+        end)
+    end
+  end
+
+  defp blank_introspect?(surface) do
+    case Surface.introspect(surface) do
+      ei when is_map(ei) and map_size(ei) > 0 -> false
+      _ -> true
+    end
   end
 
   defp shadowed_by_device_data?(_state, _target, _message, _row), do: false
@@ -319,8 +334,13 @@ defmodule Ide.Debugger.RuntimeFollowups do
       when target in [:watch, :companion, :phone] and is_map(command) and is_map(ctx) do
     case result do
       {:ok, payload} when is_map(payload) ->
-        response_message = Map.get(payload, "message") || followup_message || "elm/http"
-        message_value = Map.get(payload, "message_value")
+        response_message =
+          followup_message ||
+            Map.get(payload, "message") ||
+            Map.get(payload, :message) ||
+            "elm/http"
+
+        message_value = Map.get(payload, "message_value") || Map.get(payload, :message_value)
 
         state
         |> ctx.track_http_command.(command)
@@ -429,7 +449,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
             target,
             parent_message,
             followup_message,
-            followup_message_value
+            followup_message_value,
+            row
           )
 
         state
@@ -459,10 +480,19 @@ defmodule Ide.Debugger.RuntimeFollowups do
           Types.surface_target(),
           String.t(),
           String.t() | nil,
-          Types.subscription_payload() | map() | nil
+          Types.subscription_payload() | map() | nil,
+          map()
         ) :: {String.t(), map() | nil}
-  defp resolve_runtime_followup_step(state, target, parent_message, followup_message, followup_message_value)
-       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(parent_message) do
+  defp resolve_runtime_followup_step(
+         state,
+         target,
+         parent_message,
+         followup_message,
+         followup_message_value,
+         row
+       )
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(parent_message) and
+              is_map(row) do
     cond do
       is_map(followup_message_value) ->
         {RuntimeModelMessages.wire_constructor(followup_message || "") || followup_message || "",
@@ -474,7 +504,8 @@ defmodule Ide.Debugger.RuntimeFollowups do
             {message, value}
 
           {message, nil} ->
-            case synthesized_device_wire_value(state, target, parent_message, message) do
+            case device_command_wire_value(state, target, parent_message, message, row) ||
+                   synthesized_device_wire_value(state, target, parent_message, message) do
               %{} = value -> {message, value}
               _ -> {message, nil}
             end
@@ -485,8 +516,72 @@ defmodule Ide.Debugger.RuntimeFollowups do
     end
   end
 
-  defp resolve_runtime_followup_step(_state, _target, _parent_message, _followup_message, _followup_message_value),
-    do: {"", nil}
+  defp resolve_runtime_followup_step(
+         _state,
+         _target,
+         _parent_message,
+         _followup_message,
+         _followup_message_value,
+         _row
+       ),
+       do: {"", nil}
+
+  @spec device_command_wire_value(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t(),
+          map()
+        ) :: map() | nil
+  defp device_command_wire_value(state, target, parent_message, followup_message, row)
+       when is_map(state) and is_binary(parent_message) and is_binary(followup_message) and is_map(row) do
+    command = Map.get(row, "command") || Map.get(row, :command)
+
+    with %{"kind" => kind} when is_binary(kind) <- command,
+         true <- String.starts_with?(kind, "cmd.device.") do
+      model = Surface.app_model(Surface.from_state(state, target))
+
+      row
+      |> device_request_row(followup_message)
+      |> DeviceRequest.from_cmd_call()
+      |> List.first()
+      |> case do
+        nil ->
+          nil
+
+        req ->
+          req
+          |> DeviceData.finalize_request(model, parent_message)
+          |> DeviceData.response_wire_value()
+      end
+    else
+      _ -> nil
+    end
+  end
+
+  defp device_command_wire_value(_state, _target, _parent_message, _followup_message, _row), do: nil
+
+  @spec device_request_row(map(), String.t()) :: Types.cmd_call()
+  defp device_request_row(row, followup_message) when is_map(row) do
+    command = Map.get(row, "command") || Map.get(row, :command) || %{}
+    kind = Map.get(command, "kind") || Map.get(command, :kind) || ""
+
+    %{
+      "name" => device_command_name(kind, command),
+      "target" =>
+        Map.get(command, "target") || Map.get(command, :target) || "PebbleCmd.getCurrentDateTime",
+      "callback_constructor" => followup_message,
+      "branch_constructor" => Map.get(row, "branch_constructor"),
+      "task_sources" => Map.get(row, "task_sources", [])
+    }
+  end
+
+  defp device_command_name("cmd.device.current_date_time", _command), do: "getCurrentDateTime"
+  defp device_command_name("cmd.device.current_time_string", _command), do: "getCurrentTimeString"
+
+  defp device_command_name(_kind, command) do
+    Map.get(command, "name") || Map.get(command, :name) || ""
+  end
 
   @spec synthesized_device_wire_value(
           Types.runtime_state(),
@@ -497,14 +592,34 @@ defmodule Ide.Debugger.RuntimeFollowups do
   defp synthesized_device_wire_value(state, target, parent_message, ctor)
        when is_map(state) and target in [:watch, :companion, :phone] and is_binary(parent_message) and
               is_binary(ctor) and ctor != "" do
-    state
-    |> DeviceDataResponses.requests_for_surface(target, parent_message)
-    |> Enum.find_value(fn req ->
-      if req.response_message == ctor, do: DeviceData.response_wire_value(req)
-    end)
+    from_parent =
+      state
+      |> DeviceDataResponses.requests_for_surface(target, parent_message)
+      |> Enum.find_value(fn req ->
+        if req.response_message == ctor, do: DeviceData.response_wire_value(req)
+      end)
+
+    from_parent || callback_wire_from_surface(state, target, ctor, parent_message)
   end
 
   defp synthesized_device_wire_value(_state, _target, _parent_message, _ctor), do: nil
+
+  @spec callback_wire_from_surface(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t()
+        ) :: map() | nil
+  defp callback_wire_from_surface(state, target, ctor, current_message)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_binary(ctor) and ctor != "" do
+    surface = Surface.from_state(state, target)
+    model = Surface.app_model(surface)
+    introspect = Surface.introspect(surface)
+
+    DeviceData.response_wire_for_callback(introspect, model, ctor, current_message)
+  end
+
+  defp callback_wire_from_surface(_state, _target, _ctor, _current_message), do: nil
 
   @spec utc_offset_minutes_now() :: integer()
   defp utc_offset_minutes_now do

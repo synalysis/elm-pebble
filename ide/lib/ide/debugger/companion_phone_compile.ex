@@ -12,7 +12,6 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
   alias Ide.Debugger.AgentSession
   alias Ide.Debugger.AgentStore
   alias Ide.Debugger.CompileIngestApply
-  alias Ide.Debugger.ElmIntrospect
   alias Ide.Debugger.RuntimeBackgroundNotify
   alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Debugger.SurfaceAccess
@@ -107,7 +106,7 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
 
   defp companion_parser_expression_view?(state) do
     case SurfaceAccess.introspect(state, :companion) do
-      ei when is_map(ei) -> ElmIntrospect.parser_expression_view?(%{"elm_introspect" => ei})
+      ei when is_map(ei) -> ElmEx.DebuggerContract.parser_expression_view?(%{"debugger_contract" => ei})
       _ -> false
     end
   end

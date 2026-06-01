@@ -43,6 +43,7 @@ defmodule Ide.Debugger.SimulatorSettings do
       "longitude" => 11.576124,
       "accuracy" => 25.0,
       "timeline_peek" => false,
+      "companion_timeline_token" => "demo-timeline-token",
       "compass_heading_deg" => 0,
       "compass_valid" => true,
       "app_in_focus" => true,
@@ -137,6 +138,11 @@ defmodule Ide.Debugger.SimulatorSettings do
         normalize_float(WireValues.map_value(settings, "accuracy"), defaults["accuracy"], 0.0, 100_000.0),
       "timeline_peek" =>
         normalize_boolean(WireValues.map_value(settings, "timeline_peek"), defaults["timeline_peek"]),
+      "companion_timeline_token" =>
+        normalize_string(
+          WireValues.map_value(settings, "companion_timeline_token"),
+          defaults["companion_timeline_token"]
+        ),
       "compass_heading_deg" =>
         settings
         |> WireValues.map_value("compass_heading_deg")

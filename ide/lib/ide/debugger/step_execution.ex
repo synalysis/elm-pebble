@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.StepExecution do
   @moduledoc false
 
+  alias ElmExecutor.Runtime.SemanticExecutor.EvalContext
   alias Ide.Debugger.IntrospectAccess
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeExecutor
@@ -216,7 +217,7 @@ defmodule Ide.Debugger.StepExecution do
     |> RuntimeArtifacts.core_ir_eval_context()
     |> then(fn base ->
       case RuntimeArtifacts.introspect(execution_model) do
-        %{} = ei -> Map.put(base, :elm_introspect, ei)
+        %{} = ei -> EvalContext.put_contract(base, ei)
         _ -> base
       end
     end)
@@ -411,7 +412,7 @@ defmodule Ide.Debugger.StepExecution do
 
   @spec parser_expression_view_tree?(Types.view_output_tree(), Types.elm_introspect()) :: boolean()
   def parser_expression_view_tree?(tree, ei) when is_map(tree) and is_map(ei),
-    do: Ide.Debugger.ElmIntrospect.parser_expression_view_tree_node?(tree, ei)
+    do: ElmEx.DebuggerContract.parser_expression_view_tree_node?(tree, ei)
 
   def parser_expression_view_tree?(_tree, _ei), do: false
   @spec introspect_view_usable?(Types.view_output_tree(), Types.elm_introspect()) :: boolean()
@@ -430,7 +431,7 @@ defmodule Ide.Debugger.StepExecution do
 
   @spec unresolved_parser_view_root?(Types.view_output_tree(), Types.elm_introspect()) :: boolean()
   def unresolved_parser_view_root?(tree, ei) when is_map(tree) and is_map(ei),
-    do: Ide.Debugger.ElmIntrospect.parser_expression_view_tree_node?(tree, ei)
+    do: ElmEx.DebuggerContract.parser_expression_view_tree_node?(tree, ei)
 
   def unresolved_parser_view_root?(_tree, _ei), do: false
 

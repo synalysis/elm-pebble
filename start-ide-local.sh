@@ -14,7 +14,7 @@ cd "${IDE_DIR}"
 
 echo "Ensuring elmc dependency is compiled..."
 mix deps.get
-mix deps.compile elm_ex elmc
+mix deps.compile elm_ex elmc elmx
 
 echo "Ensuring IDE asset dependencies are installed..."
 if ! command -v npm >/dev/null 2>&1; then

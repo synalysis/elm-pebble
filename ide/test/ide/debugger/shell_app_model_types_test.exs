@@ -17,8 +17,9 @@ defmodule Ide.Debugger.ShellAppModelTypesTest do
     shell = RuntimeArtifacts.shell_map(normalized)
     app = Surface.app_model(Surface.from_map(normalized))
 
-    assert shell["elm_introspect"] == %{"module" => "Main"}
+    assert shell["debugger_contract"] == %{"module" => "Main"}
     refute Map.has_key?(app, "elm_introspect")
+    refute Map.has_key?(app, "debugger_contract")
     assert app["last_path"] == "src/Main.elm"
     assert app["runtime_model"] == %{"count" => 1}
   end
@@ -27,10 +28,10 @@ defmodule Ide.Debugger.ShellAppModelTypesTest do
     surface =
       Surface.from_map(%{
         model: %{"last_path" => "src/Main.elm"},
-        shell: %{"elm_introspect" => %{"module" => "Main"}}
+        shell: %{"debugger_contract" => %{"module" => "Main"}}
       })
 
-    assert surface.shell["elm_introspect"]["module"] == "Main"
+    assert surface.shell["debugger_contract"]["module"] == "Main"
     assert surface.model["last_path"] == "src/Main.elm"
   end
 end

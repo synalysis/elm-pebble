@@ -26,6 +26,8 @@ defmodule Ide.Debugger.Types.CompileIngestAttrs do
           optional(:elm_executor_core_ir) => Types.core_ir(),
           optional(:elm_executor_core_ir_b64) => String.t(),
           optional(:elm_executor_metadata) => map(),
+          optional(:elmx_manifest) => map(),
+          optional(:elmx_revision) => String.t(),
           optional(String.t()) => Types.wire_input(),
           optional(atom()) => Types.wire_input()
         }

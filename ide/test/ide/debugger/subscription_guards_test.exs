@@ -19,7 +19,7 @@ defmodule Ide.Debugger.SubscriptionGuardsTest do
         Map.put(model, "runtime_model", %{"enabled" => true})
       end)
       |> update_in([:watch, :shell], fn shell ->
-        Map.put(shell || %{}, "elm_introspect", %{
+        Map.put(shell || %{}, "debugger_contract", %{
           "subscriptions_params" => ["model"],
           "init_model" => %{"enabled" => false}
         })

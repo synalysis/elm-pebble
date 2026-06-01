@@ -109,8 +109,8 @@ defmodule Ide.Debugger.TriggerCandidates do
         trigger_id = normalize_trigger_id(trigger)
 
         message =
-          Map.get(trigger_message_index(subscription_calls), trigger_id) ||
-            callback ||
+          callback ||
+            Map.get(trigger_message_index(subscription_calls), trigger_id) ||
             best_message_for_trigger(known_messages, to_string(trigger || "")) ||
             List.first(known_messages) ||
             "Tick"
@@ -439,23 +439,9 @@ defmodule Ide.Debugger.TriggerCandidates do
 
   defp fallback_message_for_trigger(_known_messages, _trigger_down), do: nil
 
-  @spec trigger_tokens(String.t()) :: [String.t()]
-  defp trigger_tokens(trigger_down) when is_binary(trigger_down) do
-    trigger_down
-    |> String.split(~r/[^a-z0-9]+/, trim: true)
-    |> Enum.reject(&(&1 == "button" or &1 == "press" or &1 == "short" or &1 == "long"))
-  end
-
   @spec buttonish_trigger?(String.t()) :: boolean()
   defp buttonish_trigger?(trigger_down) when is_binary(trigger_down) do
     contains_any?(trigger_down, ["button", "up", "down", "select", "back", "press", "tap"])
-  end
-
-  @spec first_non_tick_message([String.t()]) :: String.t() | nil
-  defp first_non_tick_message(known_messages) when is_list(known_messages) do
-    Enum.find(known_messages, fn message ->
-      is_binary(message) and not tickish_message?(message)
-    end)
   end
 
   @spec default_message_for_trigger(String.t()) :: String.t()

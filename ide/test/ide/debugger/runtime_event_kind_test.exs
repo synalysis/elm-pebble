@@ -35,8 +35,11 @@ defmodule Ide.Debugger.RuntimeEventKindTest do
     assert RuntimeEventPayload.payload_module_for(:device_data) == DeviceDataEventPayload
     assert RuntimeEventPayload.payload_module_for(:replay) == ReplayEventPayload
     assert RuntimeEventPayload.payload_module_for(:elmc) == Ide.Debugger.Types.ElmcEventPayload
+    assert RuntimeEventPayload.payload_module_for(:contract) ==
+             Ide.Debugger.Types.DebuggerContractEventPayload
+
     assert RuntimeEventPayload.payload_module_for(:elm_introspect) ==
-             Ide.Debugger.Types.ElmIntrospectEventPayload
+             Ide.Debugger.Types.DebuggerContractEventPayload
     assert RuntimeEventPayload.payload_module_for(:generic) == nil
   end
 

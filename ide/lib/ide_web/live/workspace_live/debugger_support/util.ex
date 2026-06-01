@@ -403,6 +403,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Util do
         "debugger.start",
         "debugger.reset",
         "debugger.reload",
+        "debugger.contract",
         "debugger.elm_introspect",
         "debugger.elmc_check",
         "debugger.elmc_compile",

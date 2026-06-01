@@ -42,22 +42,22 @@ defmodule Ide.Debugger.DeviceDataHints do
           |> merge_declared_scalar_device_response(execution_model, req, hhmm_text, :string)
 
         {"clock_style_24h", value} when is_boolean(value) ->
-          Map.put(runtime_model, "clock_style_24h", value)
+          put_boolean_device_response(runtime_model, execution_model, req, value)
 
         {"timezone_is_set", value} when is_boolean(value) ->
-          Map.put(runtime_model, "timezone_is_set", value)
+          put_boolean_device_response(runtime_model, execution_model, req, value)
 
         {"timezone", value} when is_binary(value) ->
-          Map.put(runtime_model, "timezone", value)
+          merge_declared_scalar_device_response(runtime_model, execution_model, req, value, :string)
 
         {"watch_model", value} when is_binary(value) ->
-          Map.put(runtime_model, "watch_model", value)
+          merge_declared_scalar_device_response(runtime_model, execution_model, req, value, :string)
 
         {"watch_color", value} when is_binary(value) ->
-          Map.put(runtime_model, "watch_color", value)
+          merge_declared_scalar_device_response(runtime_model, execution_model, req, value, :string)
 
         {"firmware_version", value} when is_binary(value) ->
-          Map.put(runtime_model, "firmware_version", value)
+          merge_declared_scalar_device_response(runtime_model, execution_model, req, value, :string)
 
         {_kind, value} when is_map(value) ->
           RuntimeModelPreview.merge_matching_fields(runtime_model, value)
@@ -209,4 +209,52 @@ defmodule Ide.Debugger.DeviceDataHints do
   end
 
   defp maybe_put_device_preview(model, _req), do: model
+
+  @spec put_boolean_device_response(
+          Types.inner_runtime_model(),
+          Types.execution_model(),
+          Types.device_request(),
+          boolean()
+        ) :: Types.inner_runtime_model()
+  defp put_boolean_device_response(runtime_model, model, req, value)
+       when is_map(runtime_model) and is_map(model) and is_map(req) and is_boolean(value) do
+    ctor = Map.get(req, :response_message)
+
+    case boolean_fields_for_update_ctor(model, ctor) do
+      [field] ->
+        Map.put(runtime_model, field, value)
+
+      _ ->
+        merge_declared_scalar_device_response(runtime_model, model, req, value, :boolean)
+    end
+  end
+
+  @spec boolean_fields_for_update_ctor(Types.execution_model(), String.t() | nil) :: [String.t()]
+  defp boolean_fields_for_update_ctor(model, ctor) when is_map(model) and is_binary(ctor) and ctor != "" do
+    init = RuntimeModelNormalize.init_model(model)
+
+    case RuntimeArtifacts.introspect(model) do
+      ei when is_map(ei) ->
+        ei
+        |> Map.get("update_ctor_model_fields", %{})
+        |> Map.get(ctor, %{})
+        |> declared_model_fields(init)
+
+      _ ->
+        []
+    end
+  end
+
+  defp boolean_fields_for_update_ctor(_model, _ctor), do: []
+
+  @spec declared_model_fields(map(), Types.init_model_values()) :: [String.t()]
+  defp declared_model_fields(bindings, init) when is_map(bindings) and is_map(init) do
+    bindings
+    |> Map.values()
+    |> Enum.filter(fn field ->
+      is_binary(field) and (Map.has_key?(init, field) or Map.has_key?(init, String.to_atom(field)))
+    end)
+  end
+
+  defp declared_model_fields(_bindings, _init), do: []
 end

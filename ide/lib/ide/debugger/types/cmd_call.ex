@@ -1,11 +1,11 @@
 defmodule Ide.Debugger.Types.CmdCall do
   @moduledoc """
-  Structured row from `ElmIntrospect` `extract_cmd_calls/2` and subscription call extraction.
+  Structured row from debugger contract `extract_cmd_calls/2` and subscription call extraction.
 
   Runtime maps use **string keys** (see `wire_map/0`).
   """
 
-  alias Ide.Debugger.ElmIntrospect.Payload
+  alias ElmEx.DebuggerContract.Payload
 
   @type json_value :: Payload.json_value()
 

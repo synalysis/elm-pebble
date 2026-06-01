@@ -69,6 +69,12 @@ defmodule ElmEx.Frontend.LetLayoutTest do
              GeneratedExpressionParser.parse("let base = helper n in base + 1")
   end
 
+  test "normalizes let when in is at end of line and body follows on next line" do
+    source = "let appended = String.append left right in\n    String.length appended"
+
+    assert {:ok, %{op: :let_in, name: "appended"}} = GeneratedExpressionParser.parse(source)
+  end
+
   test "starter watch template Main.elm parses through generated frontend" do
     path =
       Path.expand(

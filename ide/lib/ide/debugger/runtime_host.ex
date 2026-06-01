@@ -47,7 +47,7 @@ defmodule Ide.Debugger.RuntimeHost do
           required(:maybe_append_runtime_status_after_init) =>
             (Types.runtime_state(), Types.surface_target(), map(), Types.elm_introspect() | map() ->
                Types.runtime_state()),
-          required(:maybe_append_elm_introspect) => (Types.runtime_state(), map() | nil -> Types.runtime_state()),
+          required(:maybe_append_contract) => (Types.runtime_state(), map() | nil -> Types.runtime_state()),
           required(:maybe_append_runtime_exec) => (Types.runtime_state(), String.t() -> Types.runtime_state()),
           required(:maybe_append_phone_view_render) => (Types.runtime_state(), String.t() -> Types.runtime_state()),
           required(:append_runtime_exec) =>

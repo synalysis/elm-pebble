@@ -478,14 +478,14 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
             ]
     """
 
-    assert {:ok, %{"elm_introspect" => ei}} =
-             Ide.Debugger.ElmIntrospect.analyze_source(source, "FrameGuardString.elm")
+    assert {:ok, %{"debugger_contract" => ei}} =
+             Ide.Debugger.CompileContract.analyze_source(source, "FrameGuardString.elm")
 
     state = %{
       watch: %{
         model: %{
           "runtime_model" => %{"alive" => false},
-          "elm_introspect" => ei
+          "debugger_contract" => ei
         }
       }
     }
@@ -1028,8 +1028,8 @@ defmodule Ide.Debugger.ProtocolAndCompanionIntegrationTest do
              })
 
     assert {:ok, stepped} = Debugger.step(slug, %{target: "phone", message: "Tick", count: 1})
-    assert get_in(reloaded, [:companion, :shell, "elm_introspect", "module"]) == "CompanionSnap"
-    refute get_in(reloaded, [:companion, :model, "elm_introspect"])
+    assert get_in(reloaded, [:companion, :shell, "debugger_contract", "module"]) == "CompanionSnap"
+    refute get_in(reloaded, [:companion, :model, "debugger_contract"])
     assert String.starts_with?(stepped.companion.last_message, "WeatherReceived ")
     assert get_in(stepped.companion.model, ["runtime_model", "lastResponse"]) == 1
 

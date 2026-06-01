@@ -22,7 +22,7 @@ the mixed parity gate (executor fixtures + debugger parity smoke).
 | Full Elm expression evaluation | gap | Interpreter subset; unsupported ops fail at runtime |
 | Full Elm data/path update semantics | partial | Full `update` when Core IR branch eval succeeds |
 | Template corpus (30 templates) | good | MCP bootstrap snapshots including multi-module watchfaces; phone templates require versioned Core IR on companion |
-| Template subscription-step gate (20 templates) | partial | Injects contract triggers; 9 templates pending Core IR `update` coverage (see `@subscription_step_pending`) |
+| Template subscription-step gate (all templates) | good | Injects contract-discovered triggers; requires `core_ir_update_eval` or `core_ir_update_noop` |
 
 ## Parity Gate Expectations
 

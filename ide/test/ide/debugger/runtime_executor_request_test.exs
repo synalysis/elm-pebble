@@ -10,7 +10,7 @@ defmodule Ide.Debugger.RuntimeExecutorRequestTest do
         model: %{"last_path" => "src/Main.elm", "last_source" => "module Main exposing (..)\n"},
         shell:
           Map.merge(
-            %{"elm_introspect" => %{"module" => "Main"}},
+            %{"debugger_contract" => %{"module" => "Main"}},
             CoreIRFixtures.step_input_attrs()
           )
       })

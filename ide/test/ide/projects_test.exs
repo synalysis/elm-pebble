@@ -1416,7 +1416,7 @@ defmodule Ide.ProjectsTest do
     companion_model = get_in(reloaded, [:companion, :model]) || %{}
     companion_runtime = Map.get(companion_model, "runtime_model") || %{}
 
-    assert get_in(companion_shell, ["elm_introspect", "module"]) == "CompanionApp"
+    assert get_in(companion_shell, ["debugger_contract", "module"]) == "CompanionApp"
     refute Map.has_key?(companion_model, "elm_introspect")
     assert %{"ctor" => "Just", "args" => [settings]} = companion_runtime["settings"]
     assert is_map(settings)
@@ -1454,7 +1454,7 @@ defmodule Ide.ProjectsTest do
     companion_model = get_in(state, [:companion, :model]) || %{}
     companion_runtime = Map.get(companion_model, "runtime_model") || %{}
 
-    assert get_in(companion_shell, ["elm_introspect", "module"]) == "CompanionApp"
+    assert get_in(companion_shell, ["debugger_contract", "module"]) == "CompanionApp"
     refute Map.has_key?(companion_model, "elm_introspect")
     assert companion_runtime["figure"] == 0
     assert companion_runtime["rotationsSinceDownload"] == 0

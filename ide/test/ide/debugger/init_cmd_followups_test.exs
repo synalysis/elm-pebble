@@ -17,8 +17,8 @@ defmodule Ide.Debugger.InitCmdFollowupsTest do
                      )
 
   test "runtime_followup_rows derives Http.get catalog follow-up from init_cmd_calls" do
-    assert {:ok, %{"elm_introspect" => ei}} =
-             Ide.Debugger.ElmIntrospect.analyze_source(@companion_source, "CompanionApp.elm")
+    assert {:ok, %{"debugger_contract" => ei}} =
+             Ide.Debugger.CompileContract.analyze_source(@companion_source, "CompanionApp.elm")
 
     [followup] = InitCmdFollowups.runtime_followup_rows(ei)
 
@@ -32,8 +32,8 @@ defmodule Ide.Debugger.InitCmdFollowupsTest do
   end
 
   test "merge_followups keeps executor rows and adds init http when missing" do
-    assert {:ok, %{"elm_introspect" => ei}} =
-             Ide.Debugger.ElmIntrospect.analyze_source(@companion_source, "CompanionApp.elm")
+    assert {:ok, %{"debugger_contract" => ei}} =
+             Ide.Debugger.CompileContract.analyze_source(@companion_source, "CompanionApp.elm")
 
     merged =
       InitCmdFollowups.merge_followups(
@@ -68,8 +68,8 @@ defmodule Ide.Debugger.InitCmdFollowupsTest do
   end
 
   test "merge_followups dedupes duplicate http urls" do
-    assert {:ok, %{"elm_introspect" => ei}} =
-             Ide.Debugger.ElmIntrospect.analyze_source(@companion_source, "CompanionApp.elm")
+    assert {:ok, %{"debugger_contract" => ei}} =
+             Ide.Debugger.CompileContract.analyze_source(@companion_source, "CompanionApp.elm")
 
     [catalog] = InitCmdFollowups.runtime_followup_rows(ei)
 

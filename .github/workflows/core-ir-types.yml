@@ -94,7 +94,7 @@ jobs:
         run: |
           mix test test/ide/debugger/protocol_schema_test.exs
           mix test test/ide/debugger/protocol_resolution_ctx_test.exs
-          mix test test/ide/debugger/elm_introspect_payload_test.exs
+          mix test test/ide/debugger/debugger_contract_payload_test.exs
           mix test test/ide/debugger/runtime_step_result_test.exs
           mix test test/ide/debugger/runtime_step_result_builders_test.exs
           mix test test/ide/debugger/runtime_artifacts_test.exs
@@ -122,7 +122,7 @@ jobs:
           mix test test/ide/debugger/runtime_event_kind_test.exs
           mix test test/ide/debugger/message_in_event_types_test.exs
           mix test test/ide/debugger/session_lifecycle_event_types_test.exs
-          mix test test/ide/debugger/elm_introspect_event_types_test.exs
+          mix test test/ide/debugger/debugger_contract_event_types_test.exs
           mix test test/ide/debugger/runtime_event_contract_test.exs
           mix test test/ide/debugger/elmc_surface_fields_test.exs
           mix test test/ide/debugger/runtime_surface_merge_test.exs

@@ -1,7 +1,7 @@
 defmodule Ide.Debugger.ViewTreeOperatorEvalTest do
   use ExUnit.Case, async: true
 
-  alias Ide.Debugger.ElmIntrospect
+  alias Ide.Debugger.CompileContract
   alias ElmExecutor.Runtime.SemanticExecutor
 
   test "modBy in view tree evaluates for layout coordinates" do
@@ -17,7 +17,7 @@ defmodule Ide.Debugger.ViewTreeOperatorEvalTest do
             ]
     """
 
-    assert {:ok, %{"elm_introspect" => ei}} = ElmIntrospect.analyze_source(source, "Main.elm")
+    assert {:ok, %{"debugger_contract" => ei}} = CompileContract.analyze_source(source, "Main.elm")
 
     rows =
       SemanticExecutor.derive_view_output_preview(
@@ -45,7 +45,7 @@ defmodule Ide.Debugger.ViewTreeOperatorEvalTest do
         Ui.root [ Ui.fillRect { x = 0, y = y, w = 10, h = 10 } Color.black ]
     """
 
-    assert {:ok, %{"elm_introspect" => ei}} = ElmIntrospect.analyze_source(source, "Main.elm")
+    assert {:ok, %{"debugger_contract" => ei}} = CompileContract.analyze_source(source, "Main.elm")
 
     rows =
       SemanticExecutor.derive_view_output_preview(
@@ -72,7 +72,7 @@ defmodule Ide.Debugger.ViewTreeOperatorEvalTest do
             ]
     """
 
-    assert {:ok, %{"elm_introspect" => ei}} = ElmIntrospect.analyze_source(source, "Main.elm")
+    assert {:ok, %{"debugger_contract" => ei}} = CompileContract.analyze_source(source, "Main.elm")
 
     wide_rows =
       SemanticExecutor.derive_view_output_preview(
@@ -105,7 +105,7 @@ defmodule Ide.Debugger.ViewTreeOperatorEvalTest do
             ]
     """
 
-    assert {:ok, %{"elm_introspect" => ei}} = ElmIntrospect.analyze_source(source, "Main.elm")
+    assert {:ok, %{"debugger_contract" => ei}} = CompileContract.analyze_source(source, "Main.elm")
 
     wide =
       SemanticExecutor.derive_view_output_preview(

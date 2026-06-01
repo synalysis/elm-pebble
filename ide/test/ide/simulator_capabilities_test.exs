@@ -38,11 +38,11 @@ defmodule Ide.SimulatorCapabilitiesTest do
   """
 
   test "detects watch and companion simulator capabilities from Elm source" do
-    {:ok, watch} = Ide.Debugger.ElmIntrospect.analyze_source(@phone_status_watch, "Main.elm")
-    {:ok, phone} = Ide.Debugger.ElmIntrospect.analyze_source(@phone_status_phone, "CompanionApp.elm")
+    {:ok, watch} = Ide.Debugger.CompileContract.analyze_source(@phone_status_watch, "Main.elm")
+    {:ok, phone} = Ide.Debugger.CompileContract.analyze_source(@phone_status_phone, "CompanionApp.elm")
 
-    watch_caps = Detect.watch_caps(Map.fetch!(watch, "elm_introspect"))
-    phone_caps = Detect.phone_caps(Map.fetch!(phone, "elm_introspect"))
+    watch_caps = Detect.watch_caps(Map.fetch!(watch, "debugger_contract"))
+    phone_caps = Detect.phone_caps(Map.fetch!(phone, "debugger_contract"))
 
     assert MapSet.member?(watch_caps, "watch_time")
     assert MapSet.member?(phone_caps, "battery")
@@ -73,8 +73,8 @@ defmodule Ide.SimulatorCapabilitiesTest do
   """
 
   test "detects tier 1 watch simulator capabilities from imports" do
-    {:ok, watch} = Ide.Debugger.ElmIntrospect.analyze_source(@tier1_watch, "Main.elm")
-    caps = Detect.watch_caps(Map.fetch!(watch, "elm_introspect"))
+    {:ok, watch} = Ide.Debugger.CompileContract.analyze_source(@tier1_watch, "Main.elm")
+    caps = Detect.watch_caps(Map.fetch!(watch, "debugger_contract"))
 
     assert MapSet.member?(caps, "watch_accel")
     assert MapSet.member?(caps, "watch_compass")
@@ -98,8 +98,8 @@ defmodule Ide.SimulatorCapabilitiesTest do
             ]
     """
 
-    {:ok, watch} = Ide.Debugger.ElmIntrospect.analyze_source(source, "Main.elm")
-    caps = Detect.watch_caps(Map.fetch!(watch, "elm_introspect"))
+    {:ok, watch} = Ide.Debugger.CompileContract.analyze_source(source, "Main.elm")
+    caps = Detect.watch_caps(Map.fetch!(watch, "debugger_contract"))
 
     assert MapSet.member?(caps, "watch_unobstructed_area")
   end
@@ -117,7 +117,7 @@ defmodule Ide.SimulatorCapabilitiesTest do
 
   test "active groups hide unrelated companion settings for minimal watchface" do
     {:ok, watch} =
-      Ide.Debugger.ElmIntrospect.analyze_source(
+      Ide.Debugger.CompileContract.analyze_source(
         """
         module Main exposing (main)
 
@@ -129,11 +129,11 @@ defmodule Ide.SimulatorCapabilitiesTest do
         "Main.elm"
       )
 
-    introspect = Map.fetch!(watch, "elm_introspect")
+    introspect = Map.fetch!(watch, "debugger_contract")
     caps = Detect.watch_caps(introspect)
 
     groups =
-      SimulatorSettings.active_groups(nil, %{watch: %{model: %{"elm_introspect" => introspect}}}, :debugger)
+      SimulatorSettings.active_groups(nil, %{watch: %{model: %{"debugger_contract" => introspect}}}, :debugger)
 
     titles = Enum.map(groups, fn {_id, title, _fields} -> title end)
 
@@ -151,7 +151,7 @@ defmodule Ide.SimulatorCapabilitiesTest do
 
   test "does not treat companion Http usage as weather simulator capability" do
     {:ok, phone} =
-      Ide.Debugger.ElmIntrospect.analyze_source(
+      Ide.Debugger.CompileContract.analyze_source(
         """
         module CompanionApp exposing (main)
 
@@ -171,13 +171,13 @@ defmodule Ide.SimulatorCapabilitiesTest do
         "CompanionApp.elm"
       )
 
-    caps = Detect.companion_caps(Map.fetch!(phone, "elm_introspect"))
+    caps = Detect.companion_caps(Map.fetch!(phone, "debugger_contract"))
     refute MapSet.member?(caps, "weather")
   end
 
   test "detects weather capability from Pebble.Companion.Weather" do
     {:ok, phone} =
-      Ide.Debugger.ElmIntrospect.analyze_source(
+      Ide.Debugger.CompileContract.analyze_source(
         """
         module CompanionApp exposing (main)
 
@@ -192,7 +192,7 @@ defmodule Ide.SimulatorCapabilitiesTest do
         "CompanionApp.elm"
       )
 
-    caps = Detect.companion_caps(Map.fetch!(phone, "elm_introspect"))
+    caps = Detect.companion_caps(Map.fetch!(phone, "debugger_contract"))
     assert MapSet.member?(caps, "weather")
   end
 
@@ -202,7 +202,7 @@ defmodule Ide.SimulatorCapabilitiesTest do
 
   test "detects accel tap capability from Pebble.Accel.onTap subscription" do
     {:ok, watch} =
-      Ide.Debugger.ElmIntrospect.analyze_source(
+      Ide.Debugger.CompileContract.analyze_source(
         """
         module Main exposing (main)
 
@@ -217,7 +217,7 @@ defmodule Ide.SimulatorCapabilitiesTest do
         "Main.elm"
       )
 
-    caps = Detect.watch_caps(Map.fetch!(watch, "elm_introspect"))
+    caps = Detect.watch_caps(Map.fetch!(watch, "debugger_contract"))
     assert MapSet.member?(caps, "watch_accel_tap")
   end
 
@@ -227,8 +227,8 @@ defmodule Ide.SimulatorCapabilitiesTest do
         Path.join(["priv", "project_templates", "watchface_tangram_time", "src", "Main.elm"])
       )
 
-    {:ok, watch} = Ide.Debugger.ElmIntrospect.analyze_source(source, "Main.elm")
-    refute MapSet.member?(Detect.watch_caps(Map.fetch!(watch, "elm_introspect")), "watch_accel_tap")
+    {:ok, watch} = Ide.Debugger.CompileContract.analyze_source(source, "Main.elm")
+    refute MapSet.member?(Detect.watch_caps(Map.fetch!(watch, "debugger_contract")), "watch_accel_tap")
   end
 
   test "tangram companion hides weather simulator settings" do
@@ -244,13 +244,13 @@ defmodule Ide.SimulatorCapabilitiesTest do
         ])
       )
 
-    {:ok, phone} = Ide.Debugger.ElmIntrospect.analyze_source(source, "CompanionApp.elm")
-    introspect = Map.fetch!(phone, "elm_introspect")
+    {:ok, phone} = Ide.Debugger.CompileContract.analyze_source(source, "CompanionApp.elm")
+    introspect = Map.fetch!(phone, "debugger_contract")
 
     refute MapSet.member?(Detect.companion_caps(introspect), "weather")
 
     debugger_state = %{
-      companion: %{model: %{"elm_introspect" => introspect}, shell: %{"elm_introspect" => introspect}}
+      companion: %{model: %{"debugger_contract" => introspect}, shell: %{"debugger_contract" => introspect}}
     }
 
     groups = SimulatorSettings.active_groups(nil, debugger_state, :debugger)

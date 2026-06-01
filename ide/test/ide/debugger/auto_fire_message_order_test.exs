@@ -67,7 +67,7 @@ defmodule Ide.Debugger.AutoFireMessageOrderTest do
     end)
   end
 
-  test "tangram auto-fire does not log CurrentDateTime before MinuteChanged on watch" do
+  test "tangram auto-fire delivers CurrentDateTime after MinuteChanged on watch" do
     slug = "auto-fire-tangram-order-#{System.unique_integer([:positive])}"
     {:ok, _} = Debugger.start_session(slug)
 
@@ -109,11 +109,10 @@ defmodule Ide.Debugger.AutoFireMessageOrderTest do
     datetime_seq = seq_for_ctor(watch_ctor_seqs, "CurrentDateTime")
 
     assert minute_seq
+    assert datetime_seq
     assert String.contains?(find_row_message(stopped, minute_seq), "MinuteChanged")
-
-    if datetime_seq do
-      assert minute_seq < datetime_seq
-    end
+    assert String.contains?(find_row_message(stopped, datetime_seq), "CurrentDateTime")
+    assert minute_seq < datetime_seq
   end
 
   test "weather animated auto-fire keeps MinuteChanged before CurrentDateTime when both appear" do

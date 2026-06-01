@@ -1,13 +1,12 @@
 defmodule Ide.Debugger.RuntimeArtifactsTest do
   use ExUnit.Case, async: true
 
-  alias Ide.Debugger.RuntimeArtifacts
-  alias Ide.Debugger.Surface
+  alias Ide.Debugger.{CompileContract, RuntimeArtifacts, Surface}
 
   describe "inner_runtime_model/1" do
     test "extracts nested runtime_model from app or execution model" do
       app = %{"runtime_model" => %{"latitudeE6" => 0}, "status" => "idle"}
-      execution = Map.merge(%{"elm_introspect" => %{}}, app)
+      execution = Map.merge(%{"debugger_contract" => %{}}, app)
 
       assert RuntimeArtifacts.inner_runtime_model(app) == %{"latitudeE6" => 0}
       assert RuntimeArtifacts.inner_runtime_model(execution) == %{"latitudeE6" => 0}
@@ -63,7 +62,8 @@ defmodule Ide.Debugger.RuntimeArtifactsTest do
     test "removes debugger shell keys from exported model view" do
       model = %{
         "count" => 1,
-        "elm_introspect" => %{"module" => "Main"},
+        "debugger_contract" => %{"module" => "Main"},
+        "elm_introspect" => %{"module" => "Legacy"},
         "elm_executor_core_ir_b64" => "abc",
         "vector_resource_indices" => %{"Fog" => 1}
       }
@@ -74,7 +74,7 @@ defmodule Ide.Debugger.RuntimeArtifactsTest do
 
     test "public_model prefers nested runtime_model" do
       model = %{
-        "elm_introspect" => %{"module" => "Main"},
+        "debugger_contract" => %{"module" => "Main"},
         "runtime_model" => %{"weather" => "fog"}
       }
 
@@ -95,35 +95,55 @@ defmodule Ide.Debugger.RuntimeArtifactsTest do
       normalized = RuntimeArtifacts.normalize_surface(surface)
 
       assert normalized.model == %{"count" => 1}
-      assert normalized.shell["elm_introspect"] == %{"module" => "Main"}
+      assert normalized.shell["debugger_contract"] == %{"module" => "Main"}
+      refute Map.has_key?(normalized.shell, "elm_introspect")
       assert normalized.shell["elm_executor_core_ir_b64"] == "abc"
     end
 
-    test "reads introspect from shell, not stripped app model" do
+    test "reads introspect from debugger_contract on shell" do
       surface = %{
         model: %{"runtime_model" => %{"latitudeE6" => 1}},
-        shell: %{"elm_introspect" => %{"module" => "Main", "update_case_branches" => ["Tick"]}}
+        shell: %{
+          "debugger_contract" => %{"module" => "Main", "update_case_branches" => ["Tick"]}
+        }
       }
 
-      assert RuntimeArtifacts.introspect(surface) == %{
-               "module" => "Main",
-               "update_case_branches" => ["Tick"]
-             }
+      contract = RuntimeArtifacts.introspect(surface)
+
+      assert contract["module"] == "Main"
+      assert contract["update_case_branches"] == ["Tick"]
+      assert contract["contract_version"] == "debugger_contract.v1"
 
       assert RuntimeArtifacts.introspect(surface.model) == nil
       assert RuntimeArtifacts.require_introspect(Surface.execution_model(surface))["module"] ==
                "Main"
+    end
+
+    test "reads introspect from legacy elm_introspect on shell when debugger_contract absent" do
+      surface = %{
+        model: %{},
+        shell: %{"elm_introspect" => %{"module" => "LegacyMain"}}
+      }
+
+      assert RuntimeArtifacts.introspect(surface)["module"] == "LegacyMain"
+      refute Map.has_key?(RuntimeArtifacts.shell_map(surface), "elm_introspect")
+    end
+
+    test "from_artifacts reads legacy elm_introspect after shell normalization" do
+      assert CompileContract.from_artifacts(%{
+               "elm_introspect" => %{"module" => "LegacyMain", "msg_constructors" => ["Tick"]}
+             })["module"] == "LegacyMain"
     end
   end
 
   describe "merge_shell_artifacts/2" do
     test "copies shell artifact keys onto base runtime model" do
       base = %{"count" => 1}
-      shell = %{"count" => 99, "elm_introspect" => %{"module" => "Main"}, "ignored" => true}
+      shell = %{"count" => 99, "debugger_contract" => %{"module" => "Main"}, "ignored" => true}
 
       assert RuntimeArtifacts.merge_shell_artifacts(base, shell) == %{
                "count" => 1,
-               "elm_introspect" => %{"module" => "Main"}
+               "debugger_contract" => %{"module" => "Main"}
              }
     end
   end
@@ -131,7 +151,7 @@ defmodule Ide.Debugger.RuntimeArtifactsTest do
   describe "core_ir_eval_context/2" do
     test "includes vector resource indices and module name" do
       model = %{
-        "elm_introspect" => %{"module" => "WeatherFace"},
+        "debugger_contract" => %{"module" => "WeatherFace"},
         "vector_resource_indices" => %{"Fog" => 3}
       }
 
@@ -143,7 +163,7 @@ defmodule Ide.Debugger.RuntimeArtifactsTest do
     end
 
     test "merges optional extras" do
-      model = %{"elm_introspect" => %{"module" => "Main"}}
+      model = %{"debugger_contract" => %{"module" => "Main"}}
       weather = %{"condition" => "fog"}
 
       ctx = RuntimeArtifacts.core_ir_eval_context(model, simulator_weather: weather)

@@ -72,7 +72,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Rendered do
     do: not match?({:ok, _node}, normalize_rendered_ui_value(tree))
 
   defp parser_expression_view_tree?(tree, ei) when is_map(tree) and is_map(ei),
-    do: Ide.Debugger.ElmIntrospect.parser_expression_view_tree_node?(tree, ei)
+    do: ElmEx.DebuggerContract.parser_expression_view_tree_node?(tree, ei)
 
   defp parser_expression_view_tree?(_tree, _ei), do: false
 

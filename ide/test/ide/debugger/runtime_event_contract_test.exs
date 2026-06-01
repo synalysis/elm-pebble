@@ -30,6 +30,7 @@ defmodule Ide.Debugger.RuntimeEventContractTest do
   test "RuntimeEventLog maps kinds to wire types and payload modules" do
     assert RuntimeEventLog.event_type(:start) == "debugger.start"
     assert RuntimeEventLog.payload_module(:replay) == RuntimeEventPayload.payload_module_for(:replay)
+    assert RuntimeEventLog.wire_type?("debugger.contract")
     assert RuntimeEventLog.wire_type?("debugger.elm_introspect")
     refute RuntimeEventLog.wire_type?("debugger.unknown")
   end

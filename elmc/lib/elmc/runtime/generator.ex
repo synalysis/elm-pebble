@@ -614,7 +614,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_dict_union(ElmcValue *a, ElmcValue *b);
     ElmcValue *elmc_dict_intersect(ElmcValue *a, ElmcValue *b);
     ElmcValue *elmc_dict_diff(ElmcValue *a, ElmcValue *b);
-    ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b);
+    ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b, ElmcValue *result);
     ElmcValue *elmc_dict_update(ElmcValue *key, ElmcValue *f, ElmcValue *dict);
     ElmcValue *elmc_dict_singleton(ElmcValue *key, ElmcValue *value);
 
@@ -4070,8 +4070,8 @@ defmodule Elmc.Runtime.Generator do
       return out;
     }
 
-    ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b) {
-      (void)lf; (void)bf; (void)rf;
+    ElmcValue *elmc_dict_merge(ElmcValue *lf, ElmcValue *bf, ElmcValue *rf, ElmcValue *a, ElmcValue *b, ElmcValue *result) {
+      (void)lf; (void)bf; (void)rf; (void)result;
       /* Stub: return union */
       return elmc_dict_union(a, b);
     }

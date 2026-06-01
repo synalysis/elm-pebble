@@ -7,7 +7,7 @@ defmodule Ide.Debugger.StepInputTest do
     surface =
       Surface.from_map(%{
         model: %{"runtime_model" => %{"count" => 1}},
-        shell: %{"elm_introspect" => %{"module" => "Main"}}
+        shell: %{"debugger_contract" => %{"module" => "Main"}}
       })
 
     input = StepInput.from_surface(:watch, surface, "Tick", trigger: "test")
@@ -16,11 +16,11 @@ defmodule Ide.Debugger.StepInputTest do
     assert input.message == "Tick"
     assert input.trigger == "test"
     assert is_map(input.execution_model)
-    assert Map.get(input.execution_model, "elm_introspect") == %{"module" => "Main"}
+    assert Map.get(input.execution_model, "debugger_contract") == %{"module" => "Main"}
   end
 
   test "to_executor_request uses phone source_root for companion target" do
-    surface = Surface.from_map(%{model: %{}, shell: %{"elm_introspect" => %{"module" => "Main"}}})
+    surface = Surface.from_map(%{model: %{}, shell: %{"debugger_contract" => %{"module" => "Main"}}})
     input = StepInput.from_surface(:companion, surface, "Tick")
 
     request = StepInput.to_executor_request(input)

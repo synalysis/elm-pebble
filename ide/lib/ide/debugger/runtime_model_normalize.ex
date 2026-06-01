@@ -50,10 +50,50 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
           Types.inner_runtime_model()
   def against_introspect(runtime_model, model)
        when is_map(runtime_model) and is_map(model) do
-    model_values(%{}, runtime_model, init_model(model))
+    runtime_model
+    |> restrict_to_declared_init_model_keys(model)
+    |> then(&model_values(%{}, &1, init_model(model)))
   end
 
   def against_introspect(runtime_model, _model), do: runtime_model
+
+  @spec restrict_to_declared_init_model_keys(
+          Types.inner_runtime_model(),
+          Types.execution_model() | Types.app_model()
+        ) :: Types.inner_runtime_model()
+  def restrict_to_declared_init_model_keys(runtime_model, model)
+       when is_map(runtime_model) and is_map(model) do
+    case init_model_declared_keys(model) do
+      [] -> runtime_model
+      keys -> Map.take(runtime_model, keys)
+    end
+  end
+
+  def restrict_to_declared_init_model_keys(runtime_model, _model), do: runtime_model
+
+  @spec restrict_to_init_model_keys(Types.inner_runtime_model(), Types.init_model_values()) ::
+          Types.inner_runtime_model()
+  def restrict_to_init_model_keys(runtime_model, init_model)
+       when is_map(runtime_model) and is_map(init_model) do
+    keys = Enum.map(Map.keys(init_model), &to_string/1)
+    Map.take(runtime_model, keys)
+  end
+
+  def restrict_to_init_model_keys(runtime_model, _init_model) when is_map(runtime_model),
+    do: runtime_model
+
+  def restrict_to_init_model_keys(runtime_model, _init_model), do: runtime_model
+
+  @spec init_model_declared_keys(Types.execution_model() | Types.app_model()) :: [String.t()]
+  def init_model_declared_keys(model) when is_map(model) do
+    case RuntimeArtifacts.introspect(model) do
+      %{"init_model" => value} when is_map(value) ->
+        Enum.map(Map.keys(value), &to_string/1)
+
+      _ ->
+        []
+    end
+  end
 
   @spec init_model(Types.execution_model() | Types.app_model()) :: Types.init_model_values()
   def init_model(model) when is_map(model) do
@@ -190,6 +230,7 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
     value =
       value
       |> RuntimeModelHydrate.static_value()
+      |> coerce_invalid_nil_ctor(shape)
       |> unwrap_just_scalar(shape)
       |> coerce_char_list_string(shape)
       |> coerce_singleton_int_list(shape)
@@ -200,6 +241,13 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
       true -> value
     end
   end
+
+  @spec coerce_invalid_nil_ctor(Types.wire_input(), Types.wire_input()) :: Types.wire_input()
+  defp coerce_invalid_nil_ctor(%{"ctor" => "nil", "args" => []}, shape) when is_boolean(shape),
+    do: shape
+
+  defp coerce_invalid_nil_ctor(%{"ctor" => "nil", "args" => []}, _shape), do: nil
+  defp coerce_invalid_nil_ctor(value, _shape), do: value
 
   @spec unwrap_just_scalar(Types.wire_input(), Types.wire_input()) :: Types.wire_input()
   defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, %{"ctor" => "Just", "args" => [_]}),

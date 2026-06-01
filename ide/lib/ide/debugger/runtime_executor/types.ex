@@ -1,7 +1,7 @@
 defmodule Ide.Debugger.RuntimeExecutor.Types do
   @moduledoc false
 
-  alias Ide.Debugger.ElmIntrospect.Payload
+  alias ElmEx.DebuggerContract.Payload
   alias Ide.Debugger.RuntimeArtifacts.Types, as: ArtifactTypes
   alias Ide.Debugger.Types
   alias ElmExecutor.Runtime.SemanticExecutor.Types.ExecutionResult, as: ExecutorExecutionResult

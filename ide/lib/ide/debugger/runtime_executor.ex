@@ -47,6 +47,18 @@ defmodule Ide.Debugger.RuntimeExecutor do
 
   @spec execute_external_strict(execution_input()) ::
           {:ok, execution_result()} | {:error, Types.execution_error()}
+  @doc false
+  @spec execution_backend() :: :core_ir | :compiled_elixir
+  def execution_backend do
+    Application.get_env(:ide, __MODULE__, [])
+    |> Keyword.get(:execution_backend, :core_ir)
+    |> normalize_execution_backend()
+  end
+
+  @doc false
+  @spec compiled_elixir_backend?() :: boolean()
+  def compiled_elixir_backend?, do: execution_backend() == :compiled_elixir
+
   defp execute_external_strict(input) when is_map(input) do
     module = external_executor_module()
 
@@ -62,7 +74,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
           {:ok, payload} when is_map(payload) ->
             case validate_execution_payload(payload) do
               :ok ->
-                {:ok, annotate_execution_backend(normalize_execution_result(payload), "external")}
+                {:ok, annotate_execution_backend(normalize_execution_result(payload), execution_backend_label())}
 
               {:error, reason} ->
                 {:error, {:core_ir_execution_failed, reason}}
@@ -119,9 +131,30 @@ defmodule Ide.Debugger.RuntimeExecutor do
 
   @spec external_executor_module() :: module() | nil
   defp external_executor_module do
-    Application.get_env(:ide, __MODULE__, [])
-    |> Keyword.get(:external_executor_module, Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter)
+    case execution_backend() do
+      :compiled_elixir ->
+        Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter
+
+      _ ->
+        Application.get_env(:ide, __MODULE__, [])
+        |> Keyword.get(:external_executor_module, Ide.Debugger.RuntimeExecutor.ElmExecutorAdapter)
+    end
   end
+
+  @spec execution_backend_label() :: String.t()
+  defp execution_backend_label do
+    case execution_backend() do
+      :compiled_elixir -> "compiled_elixir"
+      _ -> "external"
+    end
+  end
+
+  @spec normalize_execution_backend(term()) :: :core_ir | :compiled_elixir
+  defp normalize_execution_backend(:compiled_elixir), do: :compiled_elixir
+  defp normalize_execution_backend("compiled_elixir"), do: :compiled_elixir
+  defp normalize_execution_backend(:core_ir), do: :core_ir
+  defp normalize_execution_backend("core_ir"), do: :core_ir
+  defp normalize_execution_backend(_), do: :core_ir
 
   @spec runtime_mode() :: RuntimeMode.t()
   defp runtime_mode do

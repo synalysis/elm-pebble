@@ -222,6 +222,17 @@ static void emulator_storage_snapshot_callback(void *data) {
 #define ELMC_PEBBLE_FEATURE_DRAW_TEXT 1
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR || ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR || \
+    ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR || ELMC_PEBBLE_FEATURE_DRAW_CLEAR || \
+    ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || \
+    ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT || \
+    ELMC_PEBBLE_FEATURE_DRAW_CIRCLE || ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE || \
+    ELMC_PEBBLE_FEATURE_DRAW_PIXEL
+#define ELMC_PEBBLE_NEEDS_COLOR_FROM_CODE 1
+#else
+#define ELMC_PEBBLE_NEEDS_COLOR_FROM_CODE 0
+#endif
+
 #ifndef ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE
 #define ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE 128
 #endif
@@ -792,6 +803,7 @@ static void apply_pending_cmd(void) {
       int64_t target = cmd.p1;
       int32_t value = persist_read_int(key);
       int rc = target > 0 ? elmc_pebble_dispatch_tag_value(&s_elm_app, target, value) : -6;
+      (void)rc;
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read key=%lu value=%ld rc=%d",
               (unsigned long)key, (long)value, rc);
       break;
@@ -815,6 +827,7 @@ static void apply_pending_cmd(void) {
         persist_read_string(key, value, sizeof(value));
       }
       int rc = target > 0 ? elmc_pebble_dispatch_tag_string(&s_elm_app, target, value) : -6;
+      (void)rc;
       ELMC_PEBBLE_STORAGE_LOG(APP_LOG_LEVEL_INFO, "cmd storage_read_string key=%lu value=%s rc=%d",
               (unsigned long)key, value, rc);
       break;
@@ -1289,6 +1302,7 @@ static void startup_cmd_callback(void *data) {
   ELMC_PEBBLE_TRACE_EXIT("startup_cmd_callback");
 }
 
+#if ELMC_PEBBLE_NEEDS_COLOR_FROM_CODE
 static GColor color_from_code(int64_t value) {
   int code = (int)(value & 0xff);
   int red = ((code >> 4) & 0x3) * 85;
@@ -1301,6 +1315,7 @@ static GColor color_from_code(int64_t value) {
   return luminance >= 128 ? GColorWhite : GColorBlack;
 #endif
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
 static GTextAlignment text_alignment_from_options(int32_t options) {

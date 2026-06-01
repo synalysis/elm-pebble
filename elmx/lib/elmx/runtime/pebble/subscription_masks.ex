@@ -1,0 +1,63 @@
+defmodule Elmx.Runtime.Pebble.SubscriptionMasks do
+  @moduledoc """
+  Subscription bitmasks aligned with `elmc` `subscription_item_mask/1` (contract-driven).
+  """
+
+  @masks %{
+    "Pebble.Events.onSecondChange" => 1,
+    "Elm.Kernel.PebbleWatch.onSecondChange" => 1,
+    "Elm.Kernel.Time.every" => 1,
+    "Pebble.Events.onHourChange" => 1024,
+    "Elm.Kernel.PebbleWatch.onHourChange" => 1024,
+    "Pebble.Events.onMinuteChange" => 2048,
+    "Elm.Kernel.PebbleWatch.onMinuteChange" => 2048,
+    "Pebble.Events.onDayChange" => 65_536,
+    "Elm.Kernel.PebbleWatch.onDayChange" => 65_536,
+    "Pebble.Events.onMonthChange" => 131_072,
+    "Elm.Kernel.PebbleWatch.onMonthChange" => 131_072,
+    "Pebble.Events.onYearChange" => 262_144,
+    "Elm.Kernel.PebbleWatch.onYearChange" => 262_144,
+    "Pebble.Button.on" => 16_384,
+    "Pebble.Button.onPress" => 16_384,
+    "Pebble.Button.onRelease" => 16_384,
+    "Pebble.Button.onLongPress" => 16_384,
+    "Elm.Kernel.PebbleWatch.onButtonRaw" => 16_384,
+    "Elm.Kernel.PebbleWatch.onButtonUp" => 2,
+    "Elm.Kernel.PebbleWatch.onButtonSelect" => 4,
+    "Elm.Kernel.PebbleWatch.onButtonDown" => 8,
+    "Elm.Kernel.PebbleWatch.onButtonLongUp" => 128,
+    "Elm.Kernel.PebbleWatch.onButtonLongSelect" => 256,
+    "Elm.Kernel.PebbleWatch.onButtonLongDown" => 512,
+    "Pebble.Accel.onTap" => 16,
+    "Elm.Kernel.PebbleWatch.onAccelTap" => 16,
+    "Pebble.Accel.onData" => 32_768,
+    "Elm.Kernel.PebbleWatch.onAccelData" => 32_768,
+    "Pebble.System.onBatteryChange" => 32,
+    "Elm.Kernel.PebbleWatch.onBatteryChange" => 32,
+    "Pebble.System.onConnectionChange" => 64,
+    "Elm.Kernel.PebbleWatch.onConnectionChange" => 64,
+    "Pebble.Health.onEvent" => 2_147_483_648,
+    "Elm.Kernel.PebbleWatch.onHealthEvent" => 2_147_483_648,
+    "Pebble.AppFocus.onChange" => 524_288,
+    "Elm.Kernel.PebbleWatch.onAppFocusChange" => 524_288,
+    "Pebble.Compass.onChange" => 1_048_576,
+    "Elm.Kernel.PebbleWatch.onCompassChange" => 1_048_576,
+    "Pebble.Dictation.onStatus" => 2_097_152,
+    "Pebble.Dictation.onResult" => 2_097_152,
+    "Elm.Kernel.PebbleWatch.onDictationStatus" => 2_097_152,
+    "Elm.Kernel.PebbleWatch.onDictationResult" => 2_097_152,
+    "Pebble.UnobstructedArea.onWillChange" => 4_194_304,
+    "Pebble.UnobstructedArea.onChanging" => 4_194_304,
+    "Pebble.UnobstructedArea.onDidChange" => 4_194_304,
+    "Elm.Kernel.PebbleWatch.onUnobstructedWillChange" => 4_194_304,
+    "Elm.Kernel.PebbleWatch.onUnobstructedChanging" => 4_194_304,
+    "Elm.Kernel.PebbleWatch.onUnobstructedDidChange" => 4_194_304,
+    "Companion.Watch.onPhoneToWatch" => 4096,
+    "Pebble.Companion.Phone.onWatchToPhone" => 4096,
+    "Pebble.Companion.Storage.onStorage" => 8192,
+    "Pebble.Companion.PreferenceStore.onPreference" => 16_384
+  }
+
+  @spec mask(String.t()) :: non_neg_integer() | nil
+  def mask(target) when is_binary(target), do: Map.get(@masks, target)
+end

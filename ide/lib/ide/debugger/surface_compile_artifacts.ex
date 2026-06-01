@@ -5,7 +5,9 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
   alias ElmEx.Frontend.Bridge
   alias ElmEx.IR.Lowerer
   alias Ide.Compiler
+  alias Ide.Debugger.CompileContract
   alias Ide.Debugger.RuntimeArtifacts
+  alias Ide.Debugger.Surface
   alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.ElmcSurfaceFields
@@ -36,12 +38,17 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
         ) :: Types.runtime_state()
   def maybe_attach_for_parser_view(state, target, ctx)
       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
+    source_root = ctx.source_root_for_target.(target)
+
     cond do
-      surface_has_versioned_core_ir?(state, target) ->
-        state
+      inline_source_present?(state, source_root) ->
+        artifacts = artifacts_for_source_root(state, source_root, ctx)
+        ctx.merge_runtime_artifacts.(state, target, artifacts)
+
+      surface_has_versioned_runtime_artifacts?(state, target) ->
+        attach_missing_debugger_contract(state, target, ctx)
 
       true ->
-        source_root = ctx.source_root_for_target.(target)
         artifacts = artifacts_for_source_root(state, source_root, ctx)
         ctx.merge_runtime_artifacts.(state, target, artifacts)
     end
@@ -66,6 +73,20 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
 
   @spec artifacts_for_source_root(Types.runtime_state(), String.t(), attach_ctx()) ::
           Types.runtime_artifacts()
+  @doc false
+  @spec debugger_contract_for_reload(Types.runtime_state(), Types.surface_target(), attach_ctx()) ::
+          Types.elm_introspect() | nil
+  def debugger_contract_for_reload(state, target, ctx)
+      when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
+    state
+    |> artifacts_for_source_root(ctx.source_root_for_target.(target), ctx)
+    |> CompileContract.from_artifacts()
+  end
+
+  def debugger_contract_for_reload(_state, _target, _ctx), do: nil
+
+  @spec artifacts_for_source_root(Types.runtime_state(), String.t(), attach_ctx()) ::
+          Types.runtime_artifacts()
   def artifacts_for_source_root(state, source_root, ctx)
       when is_map(state) and is_binary(source_root) and is_map(ctx) do
     project_artifacts = safe_project_entrypoint_artifacts(state, source_root, ctx)
@@ -78,10 +99,13 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       end
 
     cond do
-      versioned_core_ir_artifacts?(project_artifacts) ->
+      inline_source_present?(state, source_root) and versioned_runtime_artifacts?(inline_artifacts) ->
+        inline_artifacts
+
+      versioned_runtime_artifacts?(project_artifacts) ->
         project_artifacts
 
-      versioned_core_ir_artifacts?(inline_artifacts) ->
+      versioned_runtime_artifacts?(inline_artifacts) ->
         inline_artifacts
 
       map_size(project_artifacts) > 0 ->
@@ -151,11 +175,85 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
   end
 
   @spec versioned_core_ir_artifacts?(Types.runtime_artifacts()) :: boolean()
+  defp versioned_runtime_artifacts?(artifacts) when is_map(artifacts) do
+    versioned_core_ir_artifacts?(artifacts) or versioned_elmx_artifacts?(artifacts)
+  end
+
   defp versioned_core_ir_artifacts?(artifacts) when is_map(artifacts) do
     b64 = Map.get(artifacts, "elm_executor_core_ir_b64")
 
     is_binary(b64) and b64 != "" and
       RuntimeArtifacts.versioned_core_ir?(%{"elm_executor_core_ir_b64" => b64})
+  end
+
+  @spec versioned_elmx_artifacts?(Types.runtime_artifacts()) :: boolean()
+  defp versioned_elmx_artifacts?(artifacts) when is_map(artifacts),
+    do: RuntimeArtifacts.versioned_elmx_artifacts?(artifacts)
+
+  @spec versioned_runtime_artifacts?(Types.runtime_state(), Types.surface_target()) :: boolean()
+  defp versioned_runtime_artifacts?(state, target)
+       when is_map(state) and target in [:watch, :companion, :phone] do
+    execution_model =
+      state
+      |> Map.get(target, %{})
+      |> RuntimeArtifacts.execution_model()
+
+    RuntimeArtifacts.versioned_core_ir?(execution_model) or
+      RuntimeArtifacts.versioned_elmx_artifacts?(execution_model)
+  end
+
+  @spec surface_has_versioned_runtime_artifacts?(Types.runtime_state(), Types.surface_target()) ::
+          boolean()
+  defp surface_has_versioned_runtime_artifacts?(state, target),
+    do: versioned_runtime_artifacts?(state, target)
+
+  @spec attach_missing_debugger_contract(Types.runtime_state(), Types.surface_target(), attach_ctx()) ::
+          Types.runtime_state()
+  defp attach_missing_debugger_contract(state, target, ctx)
+       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
+    surface = Surface.from_state(state, target)
+
+    if blank_introspect?(surface) do
+      source_root = ctx.source_root_for_target.(target)
+
+      artifacts =
+        state
+        |> artifacts_for_source_root(source_root, ctx)
+        |> debugger_contract_artifacts_only()
+
+      if map_size(artifacts) > 0 do
+        ctx.merge_runtime_artifacts.(state, target, artifacts)
+      else
+        state
+      end
+    else
+      state
+    end
+  end
+
+  defp attach_missing_debugger_contract(state, _target, _ctx), do: state
+
+  @spec blank_introspect?(Surface.t() | Surface.surface_map()) :: boolean()
+  defp blank_introspect?(surface) do
+    case RuntimeArtifacts.introspect(surface) do
+      ei when is_map(ei) and map_size(ei) > 0 -> false
+      _ -> true
+    end
+  end
+
+  @spec debugger_contract_artifacts_only(Types.runtime_artifacts()) :: Types.runtime_artifacts()
+  defp debugger_contract_artifacts_only(artifacts) when is_map(artifacts) do
+    artifacts
+    |> Map.take([
+      "debugger_contract",
+      "debugger_contract_b64",
+      "debugger_contract_version",
+      :debugger_contract,
+      :debugger_contract_b64,
+      :debugger_contract_version
+    ])
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
   end
 
   @spec inline_source_present?(Types.runtime_state(), String.t()) :: boolean()
@@ -187,6 +285,31 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
 
   @spec ephemeral_entrypoint_artifacts(String.t(), String.t(), String.t(), String.t()) ::
           Types.runtime_artifacts()
+  @spec project_watch_workspace_root(String.t()) :: {:ok, String.t()} | :error
+  defp project_watch_workspace_root(session_key) when is_binary(session_key) do
+    with %{} = project <- Projects.get_project_by_scope_key(session_key) do
+      _ = Projects.ensure_compiler_workspace(project)
+
+      watch_root =
+        project
+        |> Projects.project_workspace_path()
+        |> Path.join("watch")
+
+      if File.dir?(watch_root), do: {:ok, watch_root}, else: :error
+    else
+      _ -> :error
+    end
+  rescue
+    DBConnection.OwnershipError -> :error
+
+    error in RuntimeError ->
+      if String.contains?(Exception.message(error), "could not lookup Ecto repo") do
+        :error
+      else
+        reraise(error, __STACKTRACE__)
+      end
+  end
+
   defp ephemeral_entrypoint_artifacts(session_key, source, rel_path, "phone")
        when is_binary(session_key) and is_binary(source) and is_binary(rel_path) do
     workspace = ephemeral_workspace_path(session_key, source, rel_path)
@@ -206,6 +329,13 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
 
     if Path.expand(dest) != Path.expand(default_companion) and File.exists?(default_companion) do
       File.rm!(default_companion)
+    end
+
+    default_main = Path.join(phone_root, "src/Main.elm")
+
+    if Path.expand(dest) != Path.expand(default_main) and File.exists?(default_main) and
+         entry_module_from_path(dest) == "CompanionApp" do
+      File.rm!(default_main)
     end
 
     compile_artifacts =
@@ -235,7 +365,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
       |> lenient_core_ir_artifact_fields(entry_module_from_rel_path(rel_path))
   end
 
-  defp ephemeral_entrypoint_artifacts(session_key, source, rel_path, _source_root)
+  defp ephemeral_entrypoint_artifacts(session_key, source, rel_path, "watch")
        when is_binary(session_key) and is_binary(source) and is_binary(rel_path) do
     workspace = ephemeral_workspace_path(session_key, source, rel_path)
     watch_dir = Path.join(workspace, "watch")
@@ -244,9 +374,17 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
 
     unless File.dir?(watch_dir) do
       File.rm_rf!(workspace)
-      :ok = Ide.ProjectTemplates.apply_template("watch-demo-health", workspace)
-      File.rm_rf!(Path.join(watch_dir, "src"))
-      File.mkdir_p!(Path.join(watch_dir, "src"))
+
+      case project_watch_workspace_root(session_key) do
+        {:ok, project_watch_root} ->
+          File.mkdir_p!(workspace)
+          File.cp_r!(project_watch_root, watch_dir)
+
+        :error ->
+          :ok = ProjectTemplates.apply_template("watch-demo-health", workspace)
+          File.rm_rf!(Path.join(watch_dir, "src"))
+          File.mkdir_p!(Path.join(watch_dir, "src"))
+      end
     end
 
     File.mkdir_p!(Path.dirname(dest))
@@ -261,7 +399,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
     compile_artifacts =
       case Compiler.compile(
              "debugger-inline-#{session_key}-#{:erlang.phash2({rel_path, source})}",
-             workspace_root: workspace
+             workspace_root: watch_dir
            ) do
         {:ok, result} when is_map(result) ->
           result
@@ -310,13 +448,8 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
   end
 
   @spec default_entry_module(String.t()) :: String.t()
-  defp default_entry_module(project_dir) when is_binary(project_dir) do
-    cond do
-      File.exists?(Path.join(project_dir, "src/CompanionApp.elm")) -> "CompanionApp"
-      File.exists?(Path.join(project_dir, "src/Main.elm")) -> "Main"
-      true -> "Main"
-    end
-  end
+  defp default_entry_module(project_dir) when is_binary(project_dir),
+    do: Ide.Compiler.default_elmx_entry_module(project_dir)
 
   @spec lenient_core_ir_artifact_fields(String.t(), String.t()) :: Types.runtime_artifacts()
   defp lenient_core_ir_artifact_fields(project_dir, entry_module)

@@ -7,7 +7,7 @@ defmodule Ide.Debugger.Types do
   alias ElmEx.CoreIR.Types, as: CoreIRTypes
   alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewOutputRow
   alias ElmExecutor.Runtime.SemanticExecutor.Types.ViewTreeNode
-  alias Ide.Debugger.ElmIntrospect.Payload
+  alias ElmEx.DebuggerContract.Payload
   alias Ide.Debugger.Protocol.{ConstructorValue, Event, Schema}
   alias Ide.Debugger.RuntimeArtifacts.Types, as: RuntimeArtifactsTypes
   alias Ide.Debugger.Types.{
@@ -28,7 +28,7 @@ defmodule Ide.Debugger.Types do
     DebuggerTimelineRow,
     DeviceRequest,
     DisabledSubscription,
-    ElmIntrospectEventPayload,
+    DebuggerContractEventPayload,
     ElmcDiagnosticPreview,
     ElmcEventPayload,
     ElmcSurfaceFields,
@@ -127,8 +127,10 @@ defmodule Ide.Debugger.Types do
 
   @type trace_snapshot_reference_row :: TraceExportWire.snapshot_reference_row()
 
-  @type elm_introspect_event_payload ::
-          ElmIntrospectEventPayload.t() | ElmIntrospectEventPayload.wire_map()
+  @type debugger_contract_event_payload ::
+          DebuggerContractEventPayload.t() | DebuggerContractEventPayload.wire_map()
+
+  @type elm_introspect_event_payload :: debugger_contract_event_payload()
 
   @type hot_reload_event_payload :: HotReloadEventPayload.t() | HotReloadEventPayload.wire_map()
 
@@ -227,7 +229,9 @@ defmodule Ide.Debugger.Types do
 
   @type init_model_values :: wire_map()
 
-  @type elm_introspect :: Payload.wire_payload()
+  @type debugger_contract :: Payload.wire_payload()
+
+  @type elm_introspect :: debugger_contract()
 
   @type inner_runtime_model :: InnerRuntimeModel.t() | InnerRuntimeModel.wire_map()
 

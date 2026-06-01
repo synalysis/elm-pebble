@@ -2590,8 +2590,9 @@ defmodule Ide.Mcp.ToolsTest do
 
     assert inspect_latest.cursor_seq == inspect0.event_window
     assert Enum.any?(inspect_latest.view_renders, &(&1.target == "watch"))
-    assert inspect_latest.elm_introspect.watch["module"] == "McpSnap"
-    assert inspect_latest.elm_introspect.watch["init_model"]["n"] == 1
+    assert inspect_latest.debugger_contract.watch["module"] == "McpSnap"
+    assert inspect_latest.debugger_contract.watch["init_model"]["n"] == 1
+    assert inspect_latest.elm_introspect == inspect_latest.debugger_contract
 
     assert {:ok, render_tree} =
              Tools.call(
@@ -2732,7 +2733,7 @@ defmodule Ide.Mcp.ToolsTest do
              | _
            ] = inspect_diag.elmc_diagnostics
 
-    assert inspect_diag.elm_introspect.watch["module"] == "McpSnap"
+    assert inspect_diag.debugger_contract.watch["module"] == "McpSnap"
 
     assert {:error, msg} =
              Tools.call(

@@ -1,7 +1,7 @@
 defmodule Ide.Debugger.HotReload do
   @moduledoc false
 
-  alias Ide.Debugger.ElmIntrospectSnapshot
+  alias Ide.Debugger.DebuggerContractSnapshot
   alias Ide.Debugger.Types
 
   @type ctx :: %{
@@ -32,7 +32,7 @@ defmodule Ide.Debugger.HotReload do
              is_map(ctx) do
     revision = ctx.compute_revision.(rel_path, source)
     path = rel_path || "unknown"
-    target = ElmIntrospectSnapshot.target_key(source_root)
+    target = DebuggerContractSnapshot.target_key(source_root)
 
     state
     |> ctx.prepare_running_state.()

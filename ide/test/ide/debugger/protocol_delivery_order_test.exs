@@ -9,10 +9,8 @@ defmodule Ide.Debugger.ProtocolDeliveryOrderTest do
   test "runtime_ready_for_delivery? requires init to complete" do
     state = %{
       companion: %{
-        model: %{
-          "elm_introspect" => %{"module" => "CompanionApp"}
-        },
-        shell: %{"elm_introspect" => %{"module" => "CompanionApp"}}
+        model: %{},
+        shell: %{"debugger_contract" => %{"module" => "CompanionApp"}}
       }
     }
 
@@ -25,8 +23,8 @@ defmodule Ide.Debugger.ProtocolDeliveryOrderTest do
   test "inbound AppMessage is queued until recipient init completes" do
     state = %{
       companion: %{
-        model: %{"elm_introspect" => %{}},
-        shell: %{"elm_introspect" => %{}}
+        model: %{"debugger_contract" => %{}},
+        shell: %{"debugger_contract" => %{}}
       },
       app_message_queues: AppMessageQueue.empty()
     }
@@ -73,7 +71,7 @@ defmodule Ide.Debugger.ProtocolDeliveryOrderTest do
       %{
         watch: %{
           model: %{"debugger_init_complete" => true},
-          shell: %{"elm_introspect" => introspect},
+          shell: %{"debugger_contract" => introspect},
           view_tree: %{"type" => "windowStack"}
         }
       }

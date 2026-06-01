@@ -171,7 +171,8 @@ defmodule Ide.Debugger.InitSurfaceEffects do
 
   @spec apply_companion_bridge_commands(Types.runtime_state(), Types.surface_target(), ctx()) ::
           Types.runtime_state()
-  def apply_companion_bridge_commands(state, :companion = target, ctx) when is_map(state) and is_map(ctx) do
+  def apply_companion_bridge_commands(state, target, ctx)
+      when target in [:companion, :phone] and is_map(state) and is_map(ctx) do
     CompanionBridgeRuntime.apply_init_commands(state, target, ctx.companion_bridge_ctx.())
   end
 

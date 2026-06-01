@@ -30,7 +30,7 @@ defmodule Ide.Debugger.RuntimePreviewTest do
       },
       shell:
         Map.merge(
-          %{"elm_introspect" => introspect},
+          %{"debugger_contract" => introspect},
           CoreIRFixtures.step_input_attrs()
         ),
       view_tree: parser_tree
@@ -50,7 +50,7 @@ defmodule Ide.Debugger.RuntimePreviewTest do
 
     surface = %{
       model: %{"runtime_model" => %{}},
-      shell: %{"elm_introspect" => introspect},
+      shell: %{"debugger_contract" => introspect},
       view_tree: %{}
     }
 

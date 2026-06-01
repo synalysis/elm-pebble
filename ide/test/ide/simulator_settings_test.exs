@@ -1,12 +1,12 @@
 defmodule Ide.SimulatorSettingsTest do
   use ExUnit.Case, async: true
 
-  alias Ide.Debugger.ElmIntrospect
+  alias Ide.Debugger.CompileContract
   alias Ide.SimulatorSettings
 
   defp watch_time_debugger_state do
     {:ok, watch} =
-      ElmIntrospect.analyze_source(
+      CompileContract.analyze_source(
         """
         module Main exposing (main)
 
@@ -18,7 +18,7 @@ defmodule Ide.SimulatorSettingsTest do
         "Main.elm"
       )
 
-    %{watch: %{model: %{"elm_introspect" => Map.fetch!(watch, "elm_introspect")}}}
+    %{watch: %{model: %{"debugger_contract" => Map.fetch!(watch, "debugger_contract")}}}
   end
 
   test "emulator mode hides debugger-only simulated time fields" do

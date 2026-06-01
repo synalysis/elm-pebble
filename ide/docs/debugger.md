@@ -45,7 +45,10 @@ The UI returns after the watch bootstrap; companion configuration, phone-side st
 
 `Agent.get/3` on the debugger store uses the same long timeout as reloads (not the 5s Agent default), so snapshot reads wait behind an in-flight companion bootstrap instead of crashing the LiveView process.
 
-Elm introspection parses in-memory sources via `GeneratedParser.parse_source/2` (no temp files). `elm/http` follow-ups from init/update are queued and started in background tasks by default so the companion model is visible immediately; HTTP requests run concurrently and each response is applied via `update` when it completes (completion order, not request order). Set `config :ide, :debugger_async_http_followups, false` for synchronous, in-order HTTP inside the Agent (tests).
+Debugger metadata uses the **compile contract** (`debugger_contract.v1`) attached with
+Core IR at compile time — see [debugger_contract.md](debugger_contract.md). Legacy
+`CompileContract` / `ElmEx.DebuggerContract` own static analysis; hot reload stores
+`debugger_contract` on the surface shell (not `elm_introspect`). `elm/http` follow-ups from init/update are queued and started in background tasks by default so the companion model is visible immediately; HTTP requests run concurrently and each response is applied via `update` when it completes (completion order, not request order). Set `config :ide, :debugger_async_http_followups, false` for synchronous, in-order HTTP inside the Agent (tests).
 
 AppMessage delivery (`FromWatch` / `FromPhone` subscription steps) is deferred the same way by default: only `protocol_tx` is logged when the watch sends; `protocol_rx` and the recipient `update` run after the phone/watch surface has finished `init` (queued in `AppMessageQueue` until then, then delivered in a background task when async). Set `config :ide, :debugger_async_protocol_delivery, false` for synchronous delivery (tests). LiveView subscribes to `debugger:runtime:<scope_key>` and refreshes when background HTTP or protocol work completes.
 
@@ -64,7 +67,7 @@ Watch bootstrap may still defer `InitSurfaceEffects` and protocol queue drain (`
 
 `DebuggerTemplateCorpus` also asserts versioned Core IR on each surface, non-empty companion `runtime_model` for phone templates, and that neither watch nor companion left `operation_source` as `update_evaluation_failed` after bootstrap.
 
-A second gate (`--only template_corpus_step`) injects contract-discovered subscription triggers and requires `operation_source` in `core_ir_update_eval` or `core_ir_update_noop`. Templates listed in `@subscription_step_pending` inside `debugger_template_corpus.ex` are excluded until every trigger on that template succeeds.
+A second gate (`--only template_corpus_step`) injects contract-discovered subscription triggers and requires `operation_source` in `core_ir_update_eval` or `core_ir_update_noop`.
 
 Golden fixtures live under `ide/test/fixtures/debugger_template_corpus/<template>.json`. Refresh them after intentional preview changes:
 
@@ -107,7 +110,7 @@ When a subscription or init message is applied, the debugger runtime walks these
 | Protocol egress | `Ide.Debugger.ProtocolEvents` (facade), `.CmdCall`, `.Subscription` | `Cmd` → timeline `protocol_tx` / `protocol_rx` rows |
 | Protocol ingress | `Ide.Debugger.ProtocolRx`, `ProtocolRuntimePatch` | Companion/watch delivery, model patch from wire |
 | Device data | `Ide.Debugger.DeviceDataResponses`, `DeviceRequest` | Simulated or introspect-matched device callbacks |
-| Introspect | `Ide.Debugger.ElmIntrospect`, `ElmIntrospectSnapshot` | Parser outlines, cmd/subscription lists for branches |
+| Introspect | `Ide.Debugger.CompileContract`, `DebuggerContractSnapshot` | Compile contract + reload merge; cmd/subscription lists for branches |
 | Preview | `Ide.Debugger.RuntimePreview`, `RuntimeArtifacts` | `Main.view` / Core IR drawable rows at cursor (no re-run of `update`) |
 | Timeline | `Ide.Debugger.TimelineMessage`, `EventLog` | Row labels, cursor metadata, export |
 

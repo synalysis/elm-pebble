@@ -26,7 +26,7 @@ defmodule Ide.Debugger.RuntimeContextsTest do
         maybe_attach_compile_artifacts: fn st, _target, _ei -> st end,
         maybe_append_runtime_status: fn st, _target -> st end,
         maybe_append_runtime_status_after_init: fn st, _target, _exec, _intro -> st end,
-        maybe_append_elm_introspect: fn st, _payload -> st end,
+        maybe_append_contract: fn st, _payload -> st end,
         maybe_append_runtime_exec: fn st, _root -> st end,
         maybe_append_phone_view_render: fn st, _root -> st end,
         append_runtime_exec: fn st, _target, _extra -> st end,

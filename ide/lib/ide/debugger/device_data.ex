@@ -171,6 +171,12 @@ defmodule Ide.Debugger.DeviceData do
     "#{ctor} #{elm_literal(value)}"
   end
 
+  def response_message(%{response_message: ctor, kind: kind, preview: preview})
+      when is_binary(ctor) and ctor != "" and
+             kind in ["clock_style_24h", "timezone_is_set"] and is_boolean(preview) do
+    "#{ctor} #{elm_literal(preview)}"
+  end
+
   def response_message(%{
          response_message: ctor,
          kind: kind,
@@ -217,6 +223,56 @@ defmodule Ide.Debugger.DeviceData do
   def response_message(%{response_message: ctor}) when is_binary(ctor), do: ctor
   def response_message(_req), do: nil
 
+  @doc false
+  @spec response_wire_for_callback(
+          Types.elm_introspect(),
+          Types.app_model(),
+          String.t(),
+          String.t() | nil
+        ) :: Types.protocol_ctor_value() | nil
+  def response_wire_for_callback(ei, model, ctor, current_message)
+      when is_map(model) and is_binary(ctor) and ctor != "" do
+    case device_kind_for_callback(ei, ctor) do
+      kind when is_binary(kind) ->
+        %{kind: kind, response_message: ctor}
+        |> finalize_request(model, current_message)
+        |> response_wire_value()
+
+      _ ->
+        nil
+    end
+  end
+
+  def response_wire_for_callback(_ei, _model, _ctor, _current_message), do: nil
+
+  @spec device_kind_for_callback(Types.elm_introspect(), String.t()) :: String.t() | nil
+  defp device_kind_for_callback(ei, ctor) when is_map(ei) and is_binary(ctor) do
+    ["init_cmd_calls", "update_cmd_calls"]
+    |> Enum.reduce_while(nil, fn key, _acc ->
+      case cmd_calls_for(ei, key) do
+        calls when is_list(calls) ->
+          kind =
+            Enum.find_value(calls, fn call ->
+              callback = Map.get(call, "callback_constructor") || Map.get(call, :callback_constructor)
+
+              if callback == ctor do
+                case DeviceRequest.from_cmd_call(call) do
+                  [%{kind: kind} | _] -> kind
+                  _ -> nil
+                end
+              end
+            end)
+
+          if is_binary(kind), do: {:halt, kind}, else: :cont
+
+        _ ->
+          :cont
+      end
+    end)
+  end
+
+  defp device_kind_for_callback(_ei, _ctor), do: nil
+
   @spec response_wire_value(Types.device_request()) :: Types.protocol_ctor_value() | nil
   def response_wire_value(%{response_message: ctor, kind: "current_date_time", preview: preview})
       when is_binary(ctor) and ctor != "" and is_map(preview) do
@@ -243,6 +299,12 @@ defmodule Ide.Debugger.DeviceData do
       end
 
     %{"ctor" => ctor, "args" => [value]}
+  end
+
+  def response_wire_value(%{response_message: ctor, kind: kind, preview: preview})
+      when is_binary(ctor) and ctor != "" and
+             kind in ["clock_style_24h", "timezone_is_set"] and is_boolean(preview) do
+    %{"ctor" => ctor, "args" => [preview]}
   end
 
   def response_wire_value(%{response_message: ctor, kind: kind, preview: preview})

@@ -402,6 +402,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
       "debugger.start",
       "debugger.reset",
       "debugger.reload",
+      "debugger.contract",
       "debugger.elm_introspect",
       "debugger.elmc_check",
       "debugger.elmc_compile",
@@ -431,8 +432,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
     "#{root} · #{path} · #{rev}"
   end
 
-  defp lifecycle_summary(%{type: "debugger.elm_introspect", payload: payload})
-       when is_map(payload) do
+  defp lifecycle_summary(%{type: type, payload: payload})
+       when type in ["debugger.contract", "debugger.elm_introspect"] and is_map(payload) do
     mod = Map.get(payload, :module) || Map.get(payload, "module") || "—"
     tgt = Map.get(payload, :target) || Map.get(payload, "target") || "—"
     mc = Map.get(payload, :msg_count) || Map.get(payload, "msg_count") || 0

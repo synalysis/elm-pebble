@@ -6,7 +6,7 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
   requires versioned Core IR — used by `RuntimeExecutor.execute/1` on `%Request{}`.
   """
 
-  alias Ide.Debugger.ElmIntrospect.Payload
+  alias ElmEx.DebuggerContract.Payload
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeExecutor.Types, as: ExecutorTypes
   alias Ide.Debugger.Surface
@@ -32,6 +32,8 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
     :update_branches,
     :elm_executor_core_ir,
     :elm_executor_metadata,
+    :elmx_manifest,
+    :elmx_revision,
     :vector_resource_indices,
     :bitmap_resource_indices,
     :animation_resource_indices
@@ -49,6 +51,8 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
           update_branches: [String.t()] | nil,
           elm_executor_core_ir: Types.core_ir(),
           elm_executor_metadata: map() | nil,
+          elmx_manifest: map() | nil,
+          elmx_revision: String.t() | nil,
           vector_resource_indices: map() | nil,
           bitmap_resource_indices: map() | nil,
           animation_resource_indices: map() | nil
@@ -120,8 +124,17 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
   def validate_execution_ready!(request) do
     request = validate!(request)
 
-    unless versioned_core_ir?(request) do
-      raise ArgumentError, "runtime executor request requires versioned elm_executor Core IR"
+    cond do
+      Ide.Debugger.RuntimeExecutor.compiled_elixir_backend?() ->
+        unless elmx_execution_ready?(request) do
+          raise ArgumentError, "runtime executor request requires elmx_manifest and elmx_revision"
+        end
+
+      versioned_core_ir?(request) ->
+        :ok
+
+      true ->
+        raise ArgumentError, "runtime executor request requires versioned elm_executor Core IR"
     end
 
     request
@@ -132,6 +145,14 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
     RuntimeArtifacts.versioned_core_ir?(%{
       "elm_executor_core_ir" => request.elm_executor_core_ir,
       "elm_executor_metadata" => request.elm_executor_metadata
+    })
+  end
+
+  @spec elmx_execution_ready?(t()) :: boolean()
+  defp elmx_execution_ready?(%__MODULE__{} = request) do
+    RuntimeArtifacts.versioned_elmx_artifacts?(%{
+      "elmx_manifest" => request.elmx_manifest,
+      "elmx_revision" => request.elmx_revision
     })
   end
 end

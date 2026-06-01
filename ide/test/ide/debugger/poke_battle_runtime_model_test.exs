@@ -1,7 +1,7 @@
 defmodule Ide.Debugger.PokeBattleRuntimeModelTest do
   use Ide.DataCase, async: false
 
-  alias Ide.Debugger.ElmIntrospect
+  alias Ide.Debugger.CompileContract
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeExecutor
   alias Ide.Debugger.SurfaceCompileArtifacts
@@ -24,7 +24,7 @@ defmodule Ide.Debugger.PokeBattleRuntimeModelTest do
 
     artifacts = SurfaceCompileArtifacts.entrypoint_artifacts(slug, project, "watch")
 
-    assert {:ok, snapshot} = ElmIntrospect.analyze_source(source, "src/Main.elm")
+    assert {:ok, snapshot} = CompileContract.analyze_source(source, "src/Main.elm")
     ei = Map.new(snapshot, fn {k, v} -> {to_string(k), v} end)
 
     launch_context = %{
@@ -70,7 +70,7 @@ defmodule Ide.Debugger.PokeBattleRuntimeModelTest do
         )
       )
 
-    assert {:ok, snapshot} = ElmIntrospect.analyze_source(source, "src/Main.elm")
+    assert {:ok, snapshot} = CompileContract.analyze_source(source, "src/Main.elm")
     ei = Map.new(snapshot, fn {k, v} -> {to_string(k), v} end)
 
     request = %{
@@ -104,7 +104,7 @@ defmodule Ide.Debugger.PokeBattleRuntimeModelTest do
 
     assert {:ok, source} = Projects.read_source_file(project, "watch", "src/Main.elm")
     artifacts = SurfaceCompileArtifacts.entrypoint_artifacts(slug, project, "watch")
-    assert {:ok, snapshot} = ElmIntrospect.analyze_source(source, "src/Main.elm")
+    assert {:ok, snapshot} = CompileContract.analyze_source(source, "src/Main.elm")
     ei = Map.new(snapshot, fn {k, v} -> {to_string(k), v} end)
 
     ei =

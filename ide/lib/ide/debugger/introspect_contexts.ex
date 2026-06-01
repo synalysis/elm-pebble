@@ -1,13 +1,13 @@
 defmodule Ide.Debugger.IntrospectContexts do
   @moduledoc false
 
-  alias Ide.Debugger.ElmIntrospectSnapshot
+  alias Ide.Debugger.DebuggerContractSnapshot
   alias Ide.Debugger.InitSurfaceEffects
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.RuntimeModelHydrate
   alias Ide.Debugger.StepExecution
   alias Ide.Debugger.Types
-  alias Ide.Debugger.Types.ElmIntrospectEventPayload
+  alias Ide.Debugger.Types.DebuggerContractEventPayload
 
   @type snapshot_host :: %{
           required(:executor) => module(),
@@ -30,14 +30,15 @@ defmodule Ide.Debugger.IntrospectContexts do
         }
 
   @type merge_host :: %{
-          required(:snapshot_apply_ctx) => ElmIntrospectSnapshot.apply_ctx(),
+          required(:snapshot_apply_ctx) => DebuggerContractSnapshot.apply_ctx(),
+          required(:surface_compile) => Ide.Debugger.SurfaceCompileArtifacts.attach_ctx(),
           required(:init_surface_effects_ctx) => (-> InitSurfaceEffects.ctx()),
           required(:refresh_runtime_preview_for_target) =>
             (Types.runtime_state(), Types.surface_target() -> Types.runtime_state()),
           required(:apply_simulator_settings) => (Types.runtime_state() -> Types.runtime_state())
         }
 
-  @spec snapshot_apply(snapshot_host()) :: ElmIntrospectSnapshot.apply_ctx()
+  @spec snapshot_apply(snapshot_host()) :: DebuggerContractSnapshot.apply_ctx()
   def snapshot_apply(host) when is_map(host) do
     %{
       executor: host.executor,
@@ -53,10 +54,11 @@ defmodule Ide.Debugger.IntrospectContexts do
     }
   end
 
-  @spec merge(merge_host()) :: ElmIntrospectSnapshot.merge_ctx()
+  @spec merge(merge_host()) :: DebuggerContractSnapshot.merge_ctx()
   def merge(host) when is_map(host) do
     %{
       apply_snapshot: host.snapshot_apply_ctx,
+      surface_compile: host.surface_compile,
       after_apply: fn state, target, _source_root ->
         state
         |> InitSurfaceEffects.apply_all(target, host.init_surface_effects_ctx.())
@@ -70,7 +72,7 @@ defmodule Ide.Debugger.IntrospectContexts do
       end,
       apply_simulator_settings: host.apply_simulator_settings,
       introspect_event_payload: fn ei, rel_path, source_root ->
-        ElmIntrospectEventPayload.from_introspect(
+        DebuggerContractEventPayload.from_introspect(
           ei,
           rel_path,
           source_root,

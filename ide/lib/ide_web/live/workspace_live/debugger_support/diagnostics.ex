@@ -109,15 +109,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
   def diagnostics_preview_source_label(other), do: other
 
   @doc """
-  Returns `elm_introspect` maps embedded in each surface's model at the timeline cursor
+  Returns debugger contract maps for each surface at the timeline cursor
   (from the selected event's `watch` / `companion` / `phone` snapshots). Values are `nil` when absent.
   """
-  @spec elm_introspect_at_cursor([map()], Types.maybe_non_neg_integer()) :: %{
+  @spec debugger_contract_at_cursor([map()], Types.maybe_non_neg_integer()) :: %{
           watch: map() | nil,
           companion: map() | nil,
           phone: map() | nil
         }
-  def elm_introspect_at_cursor(events, cursor_seq) when is_list(events) do
+  def debugger_contract_at_cursor(events, cursor_seq) when is_list(events) do
     normalized = Timeline.normalize_cursor_seq(events, cursor_seq)
 
     selected =
@@ -129,14 +129,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
 
     if selected do
       %{
-        watch: runtime_elm_introspect(Map.get(selected, :watch)),
-        companion: runtime_elm_introspect(Map.get(selected, :companion)),
-        phone: runtime_elm_introspect(Map.get(selected, :phone))
+        watch: runtime_debugger_contract(Map.get(selected, :watch)),
+        companion: runtime_debugger_contract(Map.get(selected, :companion)),
+        phone: runtime_debugger_contract(Map.get(selected, :phone))
       }
     else
       %{watch: nil, companion: nil, phone: nil}
     end
   end
+
+  def elm_introspect_at_cursor(events, cursor_seq),
+    do: debugger_contract_at_cursor(events, cursor_seq)
 
   @doc """
   Returns runtime fingerprint summaries for watch/companion/phone at the timeline cursor.
@@ -319,12 +322,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Diagnostics do
   def merge_drift_detail(backend_detail, key_target_detail),
     do: RuntimeFingerprintDrift.merge_drift_detail(backend_detail, key_target_detail)
 
-  @spec runtime_elm_introspect(map()) :: map()
-  defp runtime_elm_introspect(nil), do: nil
+  @spec runtime_debugger_contract(map()) :: map()
+  defp runtime_debugger_contract(nil), do: nil
 
-  defp runtime_elm_introspect(%{} = rt), do: RuntimeArtifacts.introspect(rt)
+  defp runtime_debugger_contract(%{} = rt), do: RuntimeArtifacts.introspect(rt)
 
-  defp runtime_elm_introspect(_), do: nil
+  defp runtime_debugger_contract(_), do: nil
 
   @spec runtime_fingerprint(map()) :: map()
   defp runtime_fingerprint(nil), do: nil

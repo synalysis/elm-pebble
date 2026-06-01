@@ -3,7 +3,6 @@ defmodule Ide.SimulatorCapabilities do
   Infers which simulator settings are relevant for a project's watch and companion APIs.
   """
 
-  alias Ide.Debugger.ElmIntrospect
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -120,8 +119,8 @@ defmodule Ide.SimulatorCapabilities do
     |> Path.wildcard()
     |> Enum.reduce(nil, fn path, acc ->
       with {:ok, content} <- File.read(path),
-           {:ok, %{"elm_introspect" => introspect}} <-
-             ElmIntrospect.analyze_source(content, Path.basename(path)) do
+           {:ok, %{"debugger_contract" => introspect}} <-
+             Ide.Debugger.CompileContract.analyze_source(content, Path.basename(path)) do
         merge_introspect(acc, introspect, surface)
       else
         _ -> acc

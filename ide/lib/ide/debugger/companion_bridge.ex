@@ -67,6 +67,11 @@ defmodule Ide.Debugger.CompanionBridge do
         source: "environment",
         target_suffixes: ApiSuffixes.suffixes("Environment", ["onEnvironment"]),
         payload: :environment
+      },
+      %{
+        source: "timeline",
+        target_suffixes: ApiSuffixes.suffixes("Timeline", ["onToken", "onCommands"]),
+        payload: :timeline
       }
     ]
   end
@@ -128,7 +133,14 @@ defmodule Ide.Debugger.CompanionBridge do
 
       :environment ->
         settings["environment"]
+
+      :timeline ->
+        settings["companion_timeline_token"] || "demo-timeline-token"
     end
+  end
+
+  def payload(_settings, :timeline, %{op: "insertPin"}) do
+    %{}
   end
 
   @spec weather_info(Types.simulator_settings() | nil) :: Types.weather_info_map()

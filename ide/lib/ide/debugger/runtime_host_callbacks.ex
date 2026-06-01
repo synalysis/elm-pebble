@@ -50,7 +50,7 @@ defmodule Ide.Debugger.RuntimeHostCallbacks do
           required(:maybe_append_runtime_status_after_init) =>
             (Types.runtime_state(), Types.surface_target(), map(), Types.elm_introspect() | map() ->
                Types.runtime_state()),
-          required(:maybe_append_elm_introspect) =>
+          required(:maybe_append_contract) =>
             (Types.runtime_state(), map() | nil -> Types.runtime_state()),
           required(:maybe_append_runtime_exec) => (Types.runtime_state(), String.t() -> Types.runtime_state()),
           required(:maybe_append_phone_view_render) =>
@@ -82,7 +82,7 @@ defmodule Ide.Debugger.RuntimeHostCallbacks do
       maybe_attach_compile_artifacts: deps.maybe_attach_compile_artifacts,
       maybe_append_runtime_status: deps.maybe_append_runtime_status,
       maybe_append_runtime_status_after_init: deps.maybe_append_runtime_status_after_init,
-      maybe_append_elm_introspect: deps.maybe_append_elm_introspect,
+      maybe_append_contract: deps.maybe_append_contract,
       maybe_append_runtime_exec: deps.maybe_append_runtime_exec,
       maybe_append_phone_view_render: deps.maybe_append_phone_view_render,
       append_runtime_exec: deps.append_runtime_exec,

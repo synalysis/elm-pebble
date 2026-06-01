@@ -40,20 +40,6 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   @aplite_profile_templates ~w(watch-demo-compass)
 
-  # Watch (or companion+watch) templates where every declared subscription trigger still
-  # hits `update_evaluation_failed` today. Remove keys as Core IR coverage improves.
-  @subscription_step_pending ~w(
-    watch-demo-app-focus
-    watch-demo-data-log
-    watchface-digital
-    watchface-poke-battle
-    watchface-weather-animated
-    companion-demo-calendar
-    companion-demo-geolocation
-    companion-demo-phone-status
-    companion-demo-weather-env
-  )
-
   @fixtures_root Path.expand(
                   "../../../test/fixtures/debugger_template_corpus",
                   __DIR__
@@ -65,11 +51,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   @doc "Templates included in the subscription-step Core IR corpus gate."
   @spec subscription_step_template_keys() :: [String.t()]
-  def subscription_step_template_keys, do: template_keys() -- @subscription_step_pending
-
-  @doc "Templates excluded until subscription triggers evaluate via Core IR."
-  @spec subscription_step_pending() :: [String.t()]
-  def subscription_step_pending, do: @subscription_step_pending
+  def subscription_step_template_keys, do: template_keys()
 
   @doc "Directory holding per-template expected snapshot JSON."
   @spec fixtures_root() :: String.t()
@@ -489,6 +471,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       "elm_executor_core_ir_b64",
       "elm_executor_metadata",
       "elm_introspect",
+      "debugger_contract",
+      "debugger_contract_b64",
       "runtime_model_sha256",
       "runtime_view_tree_sha256",
       "last_path",

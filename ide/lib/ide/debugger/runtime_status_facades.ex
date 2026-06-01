@@ -1,7 +1,7 @@
 defmodule Ide.Debugger.RuntimeStatusFacades do
   @moduledoc false
 
-  alias Ide.Debugger.ElmIntrospectSnapshot
+  alias Ide.Debugger.DebuggerContractSnapshot
   alias Ide.Debugger.RuntimeStatusEvents
   alias Ide.Debugger.Types
 
@@ -20,16 +20,18 @@ defmodule Ide.Debugger.RuntimeStatusFacades do
           required(:source_root_for_target) => source_root_fn()
         }
 
-  @spec maybe_append_elm_introspect(host(), Types.runtime_state(), Types.elm_introspect() | nil) ::
-          Types.runtime_state()
-  def maybe_append_elm_introspect(_host, state, nil), do: state
+  @contract_event_type "debugger.contract"
 
-  def maybe_append_elm_introspect(host, state, payload)
+  @spec maybe_append_contract(host(), Types.runtime_state(), Types.debugger_contract() | nil) ::
+          Types.runtime_state()
+  def maybe_append_contract(_host, state, nil), do: state
+
+  def maybe_append_contract(host, state, payload)
       when is_map(host) and is_map(state) and is_map(payload) do
-    host.append_event.(state, "debugger.elm_introspect", payload)
+    host.append_event.(state, @contract_event_type, payload)
   end
 
-  def maybe_append_elm_introspect(_host, state, _payload), do: state
+  def maybe_append_contract(_host, state, _payload), do: state
 
   @spec maybe_append_runtime_exec(host(), Types.runtime_state(), String.t()) :: Types.runtime_state()
   def maybe_append_runtime_exec(host, state, source_root)
@@ -39,7 +41,7 @@ defmodule Ide.Debugger.RuntimeStatusFacades do
       source_root,
       host.append_event,
       host.source_root_for_target,
-      &ElmIntrospectSnapshot.target_key/1
+      &DebuggerContractSnapshot.target_key/1
     )
   end
 

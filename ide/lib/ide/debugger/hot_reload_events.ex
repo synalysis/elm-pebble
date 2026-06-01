@@ -5,7 +5,7 @@ defmodule Ide.Debugger.HotReloadEvents do
 
   @type host :: %{
           required(:append_event) => (map(), String.t(), map() -> map()),
-          required(:maybe_append_elm_introspect) => (map(), map() | nil -> map()),
+          required(:maybe_append_contract) => (map(), map() | nil -> map()),
           required(:maybe_append_runtime_exec) => (map(), String.t() -> map()),
           required(:maybe_append_phone_view_render) => (map(), String.t() -> map())
         }
@@ -27,7 +27,7 @@ defmodule Ide.Debugger.HotReloadEvents do
       "debugger.reload",
       Types.HotReloadEventPayload.from_reload(reason, rel_path, revision, source_root)
     )
-    |> host.maybe_append_elm_introspect.(intro_payload)
+    |> host.maybe_append_contract.(intro_payload)
     |> host.maybe_append_runtime_exec.(source_root)
     |> host.append_event.(
       "debugger.protocol_tx",

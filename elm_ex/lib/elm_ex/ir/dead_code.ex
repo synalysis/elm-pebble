@@ -9,25 +9,25 @@ defmodule ElmEx.IR.DeadCode do
 
   @default_roots ["init", "update", "view", "subscriptions", "main"]
 
-  @spec strip(IR.t(), String.t()) :: IR.t()
-  def strip(%IR{} = ir, entry_module) do
-    function_map =
-      ir.modules
-      |> Enum.flat_map(fn mod ->
-        mod.declarations
-        |> Enum.filter(&(&1.kind == :function))
-        |> Enum.map(fn decl ->
-          {"#{mod.name}.#{decl.name}", {mod.name, decl.name, decl.expr}}
-        end)
-      end)
-      |> Map.new()
+  @doc """
+  Returns `Module.function` keys reachable from `entry_module` roots (same walk as `strip/3`).
+  """
+  @spec reachable_keys(IR.t(), String.t(), keyword()) :: MapSet.t()
+  def reachable_keys(%IR{} = ir, entry_module, opts \\ []) when is_binary(entry_module) do
+    roots = Keyword.get(opts, :roots, @default_roots)
+    function_map = function_map(ir)
 
     initial_roots =
-      @default_roots
+      roots
       |> Enum.map(&"#{entry_module}.#{&1}")
       |> Enum.filter(&Map.has_key?(function_map, &1))
 
-    reachable = walk_reachable(function_map, MapSet.new(initial_roots), initial_roots)
+    walk_reachable(function_map, MapSet.new(initial_roots), initial_roots)
+  end
+
+  @spec strip(IR.t(), String.t(), keyword()) :: IR.t()
+  def strip(%IR{} = ir, entry_module, opts \\ []) do
+    reachable = reachable_keys(ir, entry_module, opts)
 
     modules =
       Enum.map(ir.modules, fn mod ->
@@ -40,6 +40,19 @@ defmodule ElmEx.IR.DeadCode do
       end)
 
     %{ir | modules: modules}
+  end
+
+  @spec function_map(IR.t()) :: map()
+  defp function_map(%IR{} = ir) do
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(&(&1.kind == :function))
+      |> Enum.map(fn decl ->
+        {"#{mod.name}.#{decl.name}", {mod.name, decl.name, decl.expr}}
+      end)
+    end)
+    |> Map.new()
   end
 
   @spec walk_reachable(map(), MapSet.t(), [String.t()]) :: MapSet.t()
@@ -61,79 +74,54 @@ defmodule ElmEx.IR.DeadCode do
   @spec collect_calls(map() | nil, String.t()) :: [String.t()]
   defp collect_calls(nil, _mod), do: []
 
-  defp collect_calls(%{op: :qualified_call, target: target, args: args}, mod)
-       when is_binary(target) do
-    arg_calls = Enum.flat_map(args || [], &collect_calls(&1, mod))
-    [target | arg_calls]
+  defp collect_calls(%{} = expr, mod) do
+    call_reference_targets(expr, mod) ++ collect_calls_from_children(expr, mod)
   end
 
-  defp collect_calls(%{op: :constructor_call, args: args}, mod) when is_list(args) do
-    Enum.flat_map(args, &collect_calls(&1, mod))
+  @spec call_reference_targets(map(), String.t()) :: [String.t()]
+  defp call_reference_targets(%{op: :qualified_call, target: target}, _mod) when is_binary(target),
+    do: [target]
+
+  defp call_reference_targets(%{op: :qualified_call1, target: target}, _mod) when is_binary(target),
+    do: [target]
+
+  defp call_reference_targets(%{op: :call, name: name}, mod) when is_binary(name) do
+    [local_call_target(name, mod)]
   end
 
-  defp collect_calls(%{op: :qualified_call1, target: target}, _mod) when is_binary(target) do
-    [target]
+  defp call_reference_targets(%{op: :call1, name: name}, mod) when is_binary(name) do
+    [local_call_target(name, mod)]
   end
 
-  defp collect_calls(%{op: :tuple2, left: left, right: right}, mod) do
-    collect_calls(left, mod) ++ collect_calls(right, mod)
+  defp call_reference_targets(%{op: :var, name: name}, mod) when is_binary(name) do
+    [local_call_target(name, mod)]
   end
 
-  defp collect_calls(%{op: :list_literal, items: items}, mod) when is_list(items) do
-    Enum.flat_map(items, &collect_calls(&1, mod))
+  defp call_reference_targets(_expr, _mod), do: []
+
+  @spec local_call_target(String.t(), String.t()) :: String.t()
+  defp local_call_target(name, mod) do
+    if String.contains?(name, ".") do
+      name
+    else
+      "#{mod}.#{name}"
+    end
   end
 
-  defp collect_calls(%{op: :call, name: name, args: args}, mod) when is_binary(name) do
-    ["#{mod}.#{name}" | Enum.flat_map(args || [], &collect_calls(&1, mod))]
-  end
+  @spec collect_calls_from_children(map(), String.t()) :: [String.t()]
+  defp collect_calls_from_children(expr, mod) when is_map(expr) do
+    Enum.flat_map(expr, fn
+      {_key, child} when is_map(child) ->
+        collect_calls(child, mod)
 
-  defp collect_calls(%{op: :call1, name: name}, mod) when is_binary(name) do
-    ["#{mod}.#{name}"]
-  end
+      {_key, children} when is_list(children) ->
+        Enum.flat_map(children, fn
+          child when is_map(child) -> collect_calls(child, mod)
+          _ -> []
+        end)
 
-  defp collect_calls(%{op: :var, name: name}, mod) when is_binary(name) do
-    ["#{mod}.#{name}"]
-  end
-
-  defp collect_calls(%{op: :let_in, value_expr: value_expr, in_expr: in_expr}, mod) do
-    collect_calls(value_expr, mod) ++ collect_calls(in_expr, mod)
-  end
-
-  defp collect_calls(%{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr}, mod) do
-    collect_calls(cond_expr, mod) ++
-      collect_calls(then_expr, mod) ++ collect_calls(else_expr, mod)
-  end
-
-  defp collect_calls(%{op: :compare, left: left, right: right}, mod) do
-    collect_calls(left, mod) ++ collect_calls(right, mod)
-  end
-
-  defp collect_calls(%{op: :record_literal, fields: fields}, mod) when is_list(fields) do
-    Enum.flat_map(fields, fn
-      %{expr: expr} -> collect_calls(expr, mod)
-      _ -> []
+      _ ->
+        []
     end)
   end
-
-  defp collect_calls(%{op: :record_update, base: base, fields: fields}, mod) when is_list(fields) do
-    collect_calls(base, mod) ++
-      Enum.flat_map(fields, fn
-        %{expr: expr} -> collect_calls(expr, mod)
-        _ -> []
-      end)
-  end
-
-  defp collect_calls(%{op: :field_access, arg: arg}, mod) when is_map(arg) do
-    collect_calls(arg, mod)
-  end
-
-  defp collect_calls(%{op: :lambda, body: body}, mod) when is_map(body) do
-    collect_calls(body, mod)
-  end
-
-  defp collect_calls(%{op: :case, branches: branches}, mod) when is_list(branches) do
-    Enum.flat_map(branches, fn branch -> collect_calls(branch.expr, mod) end)
-  end
-
-  defp collect_calls(_, _mod), do: []
 end

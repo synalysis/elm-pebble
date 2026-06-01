@@ -1,10 +1,10 @@
 defmodule Ide.EditorDocLinks do
   @moduledoc false
 
-  alias Ide.Debugger.ElmIntrospect
-  alias Ide.Debugger.ElmIntrospect.Types, as: ElmIntrospectTypes
+  alias Ide.Debugger.CompileContract
+  alias ElmEx.DebuggerContract.Types, as: DebuggerContractTypes
 
-  @type import_entry :: ElmIntrospectTypes.import_entry()
+  @type import_entry :: DebuggerContractTypes.import_entry()
   @type resolve_symbol_result ::
           {:ok, String.t(), String.t()} | {:error, :bad_qualified_word | :not_in_exposing}
 
@@ -20,7 +20,7 @@ defmodule Ide.EditorDocLinks do
           | {:error, resolve_error()}
   def resolve(content, offset, module_index)
       when is_binary(content) and is_integer(offset) and is_map(module_index) do
-    with {:ok, snapshot} <- ElmIntrospect.analyze_source(content, "Editor.elm"),
+    with {:ok, snapshot} <- CompileContract.analyze_source(content, "Editor.elm"),
          {:ok, imports} <- import_entries_from_snapshot(snapshot),
          {:ok, word} <- word_from_offset(content, offset),
          {:ok, module_name, symbol} <- resolve_module_for_word(word, imports),
@@ -40,6 +40,10 @@ defmodule Ide.EditorDocLinks do
 
   @spec import_entries_from_snapshot(map()) ::
           {:ok, [import_entry()]} | {:error, :no_import_metadata}
+  defp import_entries_from_snapshot(%{"debugger_contract" => %{"import_entries" => imports}})
+       when is_list(imports),
+       do: {:ok, imports}
+
   defp import_entries_from_snapshot(%{"elm_introspect" => %{"import_entries" => imports}})
        when is_list(imports),
        do: {:ok, imports}

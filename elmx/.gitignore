@@ -1,0 +1,4 @@
+/build/
+/elixir/
+/generated/
+*.beam

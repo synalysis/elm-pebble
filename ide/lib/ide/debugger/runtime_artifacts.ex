@@ -1,6 +1,6 @@
 defmodule Ide.Debugger.RuntimeArtifacts do
   @moduledoc """
-  Shared helpers for debugger runtime model artifacts (`elm_introspect`, Core IR, resource indices).
+  Shared helpers for debugger runtime model artifacts (`debugger_contract`, Core IR, resource indices).
 
   Centralizes decoding and evaluation-context construction so watch/companion models stay
   consistent across the debugger session, semantic executor requests, and preview rendering.
@@ -36,14 +36,24 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     "vector_resource_indices",
     "bitmap_resource_indices",
     "animation_resource_indices",
+    "debugger_contract",
+    "debugger_contract_b64",
+    "debugger_contract_version",
     "elm_introspect",
     "elm_executor_core_ir",
     "elm_executor_core_ir_b64",
-    "elm_executor_metadata"
+    "elm_executor_metadata",
+    "elmx_manifest",
+    "elmx_revision"
   ]
 
   @spec shell_artifact_keys() :: [String.t()]
   def shell_artifact_keys, do: @shell_artifact_keys
+
+  @doc false
+  @spec normalize_contract_shell(Types.wire_map()) :: Types.wire_map()
+  def normalize_contract_shell(shell) when is_map(shell), do: promote_legacy_contract_shell(shell)
+  def normalize_contract_shell(shell), do: shell
 
   @spec strip_shell_artifacts(app_model()) :: app_model()
   def strip_shell_artifacts(model) when is_map(model) do
@@ -59,6 +69,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     model
     |> Enum.filter(fn {key, value} -> key in keys and not is_nil(value) end)
     |> Map.new()
+    |> promote_legacy_contract_shell()
   end
 
   def take_shell_artifacts(_model), do: %{}
@@ -75,6 +86,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     take_shell_artifacts(%{model: model, shell: explicit})
     |> Map.merge(take_shell_artifacts(model))
     |> Map.merge(if is_map(explicit), do: explicit, else: %{})
+    |> promote_legacy_contract_shell()
   end
 
   def shell_map(surface) when is_map(surface) do
@@ -84,6 +96,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     take_shell_artifacts(surface)
     |> Map.merge(take_shell_artifacts(model))
     |> Map.merge(if is_map(explicit), do: explicit, else: %{})
+    |> promote_legacy_contract_shell()
   end
 
   def shell_map(_surface), do: %{}
@@ -144,21 +157,12 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   @spec introspect(Surface.t() | Surface.surface_map() | execution_model()) :: Types.elm_introspect() | nil
   def introspect(%Surface{} = surface) do
-    shell_map(surface)
-    |> Map.get("elm_introspect")
-    |> case do
-      value when is_map(value) -> value
-      _ -> nil
-    end
+    surface |> shell_map() |> Ide.Debugger.CompileContract.from_shell()
   end
 
   def introspect(surface_or_execution_model) when is_map(surface_or_execution_model) do
     shell_map(surface_or_execution_model)
-    |> Map.get("elm_introspect")
-    |> case do
-      value when is_map(value) -> value
-      _ -> nil
-    end
+    |> Ide.Debugger.CompileContract.from_shell()
   end
 
   def introspect(_), do: nil
@@ -238,6 +242,17 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   def versioned_core_ir?(_), do: false
 
+  @spec versioned_elmx_artifacts?(execution_model()) :: boolean()
+  def versioned_elmx_artifacts?(model) when is_map(model) do
+    manifest = Map.get(model, "elmx_manifest") || Map.get(model, :elmx_manifest)
+    revision = Map.get(model, "elmx_revision") || Map.get(model, :elmx_revision)
+
+    is_map(manifest) and Map.get(manifest, "contract") == "elmx.runtime_executor.v1" and
+      is_binary(revision) and revision != ""
+  end
+
+  def versioned_elmx_artifacts?(_), do: false
+
   @spec module_name(execution_model()) :: String.t()
   def module_name(model) when is_map(model) do
     model
@@ -291,12 +306,16 @@ defmodule Ide.Debugger.RuntimeArtifacts do
 
   @spec execution_artifacts(execution_model()) :: ArtifactTypes.t()
   def execution_artifacts(model) when is_map(model) do
-    metadata = Map.get(model, "elm_executor_metadata")
+    metadata = wire_field(model, "elm_executor_metadata")
     core_ir = decode_core_ir(model)
+    elmx_manifest = wire_field(model, "elmx_manifest")
+    elmx_revision = wire_field(model, "elmx_revision")
 
     %{}
     |> maybe_put_artifact(:elm_executor_metadata, metadata)
     |> maybe_put_artifact(:elm_executor_core_ir, core_ir)
+    |> maybe_put_artifact(:elmx_manifest, elmx_manifest)
+    |> maybe_put_artifact(:elmx_revision, elmx_revision)
   end
 
   def execution_artifacts(_model), do: %{}
@@ -457,6 +476,11 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     _ -> %{}
   end
 
+  @spec wire_field(map(), String.t()) :: term()
+  defp wire_field(map, key) when is_map(map) and is_binary(key) do
+    Map.get(map, key) || Map.get(map, String.to_atom(key))
+  end
+
   @spec maybe_put_artifact(ArtifactTypes.t(), atom(), Types.core_ir() | Types.wire_map() | nil) ::
           ArtifactTypes.t()
   defp maybe_put_artifact(map, key, value)
@@ -464,7 +488,29 @@ defmodule Ide.Debugger.RuntimeArtifacts do
     Map.put(map, key, value)
   end
 
+  defp maybe_put_artifact(map, key, value)
+       when is_map(map) and is_atom(key) and not is_nil(value) do
+    Map.put(map, key, value)
+  end
+
   defp maybe_put_artifact(map, _key, _value) when is_map(map), do: map
+
+  @spec promote_legacy_contract_shell(Types.wire_map()) :: Types.wire_map()
+  defp promote_legacy_contract_shell(shell) when is_map(shell) do
+    contract =
+      Map.get(shell, "debugger_contract") || Map.get(shell, :debugger_contract) ||
+        Map.get(shell, "elm_introspect") || Map.get(shell, :elm_introspect)
+
+    case contract do
+      c when is_map(c) ->
+        shell
+        |> Map.drop(["elm_introspect", :elm_introspect])
+        |> Map.put("debugger_contract", c)
+
+      _ ->
+        shell
+    end
+  end
 
   @spec shell_artifact_drop_keys() :: [String.t() | atom()]
   defp shell_artifact_drop_keys do

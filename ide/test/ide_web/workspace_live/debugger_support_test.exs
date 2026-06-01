@@ -388,7 +388,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
         },
         phone: %{
           model: %{
-            "elm_introspect" => %{"main_program" => %{}},
+            "debugger_contract" => %{"main_program" => %{}},
             "runtime_model" => %{"settings" => %{"enabled" => true}}
           }
         }
@@ -517,7 +517,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     state = %{
       watch: %{
         model: %{
-          "elm_introspect" => %{
+          "debugger_contract" => %{
             "msg_constructor_arities" => %{
               "FromPhone" => 1,
               "SecondChanged" => 1,
@@ -605,7 +605,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
   test "rendered_tree ignores parser tuple2 expression roots" do
     runtime = %{
       model: %{
-        "elm_introspect" => %{
+        "debugger_contract" => %{
           "view_tree" => %{
             "type" => "tuple2",
             "children" => [%{"type" => "expr", "value" => 1000}]
@@ -1213,6 +1213,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
   test "hydrate_animation_svg_ops attaches APNG data URL for bitmap sequences" do
     alias Ide.Projects.FileStore
+    alias Ide.Resources.CtorNaming
 
     slug = "debugger-bseq-test-#{System.unique_integer([:positive])}"
     project = %Ide.Projects.Project{slug: slug}
@@ -1222,14 +1223,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
 
     apng_bytes = minimal_apng_bytes(width: 8, height: 6, frames: 2)
 
-    File.write!(Path.join(animations_dir, "TestAnim.png"), apng_bytes)
-
-    manifest = %{
-      "schema_version" => 1,
-      "entries" => [
+    entry =
+      CtorNaming.ensure_row!(
         %{
           "id" => "1",
-          "ctor" => "TestAnim",
+          "base_name" => "TestAnim",
           "filename" => "TestAnim.png",
           "mime" => "image/png",
           "bytes" => byte_size(apng_bytes),
@@ -1238,8 +1236,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
           "frame_count" => 2,
           "duration_ms" => 20,
           "play_count" => 0
-        }
-      ]
+        },
+        :bitmap_animated
+      )
+
+    File.write!(Path.join(animations_dir, entry["filename"]), apng_bytes)
+
+    manifest = %{
+      "schema_version" => 1,
+      "entries" => [entry]
     }
 
     File.write!(
@@ -1666,7 +1671,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
         "children" => [%{"type" => "window", "children" => []}]
       },
       model: %{
-        "elm_introspect" => %{
+        "debugger_contract" => %{
           "view_return_type" => "Ui.UiNode",
           "view_tree" => %{
             "type" => "toUiNode",
@@ -1713,7 +1718,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
             "source" => %{"call" => "Ui.fillCircle", "path" => "src/Main.elm", "line" => 335}
           }
         ],
-        "elm_introspect" => %{
+        "debugger_contract" => %{
           "view_return_type" => "Ui.UiNode",
           "view_tree" => %{
             "type" => "toUiNode",
@@ -1907,7 +1912,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
   test "rendered_tree does not expose parser expression outline as rendered output" do
     runtime = %{
       model: %{
-        "elm_introspect" => %{
+        "debugger_contract" => %{
           "view_tree" => %{
             "type" => "toUiNode",
             "qualified_target" => "Ui.toUiNode",
@@ -2148,7 +2153,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
   test "rendered_tree falls back to parser view tree when runtime tree is absent" do
     runtime = %{
       model: %{
-        "elm_introspect" => %{
+        "debugger_contract" => %{
           "view_tree" => %{"type" => "root", "children" => [%{"type" => "text"}]}
         }
       }
@@ -2185,11 +2190,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
              DebuggerSupport.diagnostics_preview_at_cursor(events, 2)
   end
 
-  test "format_elm_introspect_brief summarizes elm_introspect on a runtime map" do
+  test "format_debugger_contract_brief summarizes debugger contract on a runtime map" do
     rt = %{
       model: %{
         "elm_executor_mode" => "runtime_executed",
-        "elm_introspect" => %{
+        "debugger_contract" => %{
           "module" => "M",
           "source_byte_size" => 2048,
           "source_line_count" => 88,
@@ -2228,7 +2233,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
       }
     }
 
-    out = DebuggerSupport.format_elm_introspect_brief(rt)
+    out = DebuggerSupport.format_debugger_contract_brief(rt)
     assert out =~ "runtime_executed"
     assert out =~ "module: M"
     assert out =~ "source:"
@@ -2269,14 +2274,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert out =~ "msg, model"
   end
 
-  test "elm_introspect_at_cursor reads elm_introspect from each embedded runtime" do
+  test "debugger_contract_at_cursor reads debugger contract from each embedded runtime" do
     events = [
       %{
         seq: 2,
         type: "debugger.reload",
         payload: %{},
-        watch: %{model: %{"elm_introspect" => %{"module" => "W"}}},
-        companion: %{model: %{"elm_introspect" => %{"module" => "C"}}},
+        watch: %{model: %{"debugger_contract" => %{"module" => "W"}}},
+        companion: %{model: %{"debugger_contract" => %{"module" => "C"}}},
         phone: %{model: %{}}
       },
       %{seq: 1, type: "debugger.start", payload: %{}}
@@ -2286,7 +2291,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
              watch: %{"module" => "W"},
              companion: %{"module" => "C"},
              phone: nil
-           } = DebuggerSupport.elm_introspect_at_cursor(events, 2)
+           } = DebuggerSupport.debugger_contract_at_cursor(events, 2)
   end
 
   test "diagnostics_preview_at_cursor falls back to companion when watch model has no diagnostics" do
@@ -2805,7 +2810,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     ]
 
     rows = DebuggerSupport.lifecycle_events_at_cursor(events, 2, 10)
-    intro = Enum.find(rows, &(&1.type == "debugger.elm_introspect"))
+    intro = Enum.find(rows, &(&1.type in ["debugger.contract", "debugger.elm_introspect"]))
     assert intro.summary =~ "M"
     assert intro.summary =~ "companion"
     assert intro.summary =~ "2 msgs"

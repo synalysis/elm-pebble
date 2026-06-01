@@ -114,6 +114,11 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
     %{}
     |> maybe_put_artifact("elm_executor_metadata", field(attrs, :elm_executor_metadata))
     |> maybe_put_artifact("elm_executor_core_ir_b64", field(attrs, :elm_executor_core_ir_b64))
+    |> maybe_put_artifact("debugger_contract", field(attrs, :debugger_contract))
+    |> maybe_put_artifact("debugger_contract_b64", field(attrs, :debugger_contract_b64))
+    |> maybe_put_artifact("debugger_contract_version", field(attrs, :debugger_contract_version))
+    |> maybe_put_artifact("elmx_manifest", field(attrs, :elmx_manifest))
+    |> maybe_put_artifact("elmx_revision", field(attrs, :elmx_revision))
   end
 
   @spec compile_artifact_target(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) ::

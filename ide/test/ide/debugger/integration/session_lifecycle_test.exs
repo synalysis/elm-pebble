@@ -204,8 +204,8 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert String.length(get_in(st, [:watch, :model, "runtime_model_sha256"])) == 64
     assert is_binary(get_in(st, [:watch, :model, "runtime_view_tree_sha256"]))
     assert String.length(get_in(st, [:watch, :model, "runtime_view_tree_sha256"])) == 64
-    assert get_in(st, [:watch, :shell, "elm_introspect", "module"]) == "Snap"
-    refute get_in(st, [:watch, :model, "elm_introspect"])
+    assert get_in(st, [:watch, :shell, "debugger_contract", "module"]) == "Snap"
+    refute get_in(st, [:watch, :model, "debugger_contract"])
 
     view_type = get_in(st, [:watch, :view_tree, "type"])
 
@@ -215,7 +215,7 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     refute view_type == "Window",
            "parser-only Window view tree must not be shown when Core IR preview is strict"
 
-    assert Enum.any?(st.events, &(&1.type == "debugger.elm_introspect"))
+    assert Enum.any?(st.events, &(&1.type in ["debugger.contract", "debugger.elm_introspect"]))
     assert Enum.any?(st.events, &(&1.type == "debugger.runtime_exec"))
     runtime_exec = Enum.find(st.events, &(&1.type == "debugger.runtime_exec"))
     assert runtime_exec.payload.target == "watch"
@@ -228,7 +228,7 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     assert String.length(runtime_exec.payload.runtime_model_sha256) == 64
     assert is_binary(runtime_exec.payload.view_tree_sha256)
     assert String.length(runtime_exec.payload.view_tree_sha256) == 64
-    intro = Enum.find(st.events, &(&1.type == "debugger.elm_introspect"))
+    intro = Enum.find(st.events, &(&1.type in ["debugger.contract", "debugger.elm_introspect"]))
     p = intro.payload
     assert is_map(p) && (Map.get(p, :module) == "Snap" || Map.get(p, "module") == "Snap")
     assert Map.get(p, :target) == "watch" || Map.get(p, "target") == "watch"
@@ -310,10 +310,10 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
                source_root: "phone"
              })
 
-    assert get_in(st, [:companion, :shell, "elm_introspect", "module"]) == "ProtoSnap"
+    assert get_in(st, [:companion, :shell, "debugger_contract", "module"]) == "ProtoSnap"
     assert get_in(st, [:companion, :view_tree, "type"]) == "CompanionRoot"
-    refute get_in(st, [:watch, :shell, "elm_introspect"])
-    refute get_in(st, [:watch, :model, "elm_introspect"])
+    refute get_in(st, [:watch, :shell, "debugger_contract"])
+    refute get_in(st, [:watch, :model, "debugger_contract"])
   end
 
 
@@ -387,8 +387,8 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
                source_root: "watch"
              })
 
-    assert get_in(st, [:watch, :shell, "elm_introspect", "module"]) == "Main"
-    refute get_in(st, [:watch, :model, "elm_introspect"])
+    assert get_in(st, [:watch, :shell, "debugger_contract", "module"]) == "Main"
+    refute get_in(st, [:watch, :model, "debugger_contract"])
 
     assert Enum.any?(st.events, fn event ->
              event.type == "debugger.device_data" and get_in(event.payload, [:target]) == "watch"
@@ -474,7 +474,7 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
                source_root: "phone"
              })
 
-    assert get_in(st, [:companion, :shell, "elm_introspect", "module"]) == "PhoneSnap"
+    assert get_in(st, [:companion, :shell, "debugger_contract", "module"]) == "PhoneSnap"
     assert get_in(st, [:companion, :view_tree, "type"]) == "CompanionRoot"
   end
 

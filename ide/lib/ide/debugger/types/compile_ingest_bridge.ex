@@ -91,7 +91,9 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
       elm_executor_core_ir_b64:
         Map.get(result, :elm_executor_core_ir_b64) || Map.get(result, "elm_executor_core_ir_b64"),
       elm_executor_metadata:
-        Map.get(result, :elm_executor_metadata) || Map.get(result, "elm_executor_metadata")
+        Map.get(result, :elm_executor_metadata) || Map.get(result, "elm_executor_metadata"),
+      elmx_manifest: Map.get(result, :elmx_manifest) || Map.get(result, "elmx_manifest"),
+      elmx_revision: Map.get(result, :elmx_revision) || Map.get(result, "elmx_revision")
     }
     |> drop_nil_fields()
   end

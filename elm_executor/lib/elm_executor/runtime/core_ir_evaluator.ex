@@ -78,6 +78,48 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     }
   end
 
+  @doc """
+  Normalizes debugger wire constructor trees into runtime values Core IR `update` can match.
+
+  Maps `Ok`/`Err` to `{1, _}` / `{0, _}` and, when `constructor_tags` are available, other
+  constructors to `{tag, payload}` with Elm-style nested tuple payloads.
+  """
+  @spec normalize_wire_message_value(term(), map()) :: term()
+  def normalize_wire_message_value(value, context \\ %{})
+
+  def normalize_wire_message_value(%{"ctor" => "Ok", "args" => [inner | _]}, context),
+    do: {1, normalize_wire_message_value(inner, context)}
+
+  def normalize_wire_message_value(%{"ctor" => "Err", "args" => [inner | _]}, context),
+    do: {0, normalize_wire_message_value(inner, context)}
+
+  def normalize_wire_message_value(%{ctor: "Ok", args: [inner | _]}, context),
+    do: {1, normalize_wire_message_value(inner, context)}
+
+  def normalize_wire_message_value(%{ctor: "Err", args: [inner | _]}, context),
+    do: {0, normalize_wire_message_value(inner, context)}
+
+  def normalize_wire_message_value(%{"ctor" => ctor, "args" => args}, context)
+      when is_binary(ctor) and is_list(args) do
+    normalize_wire_ctor(ctor, args, context)
+  end
+
+  def normalize_wire_message_value(%{ctor: ctor, args: args}, context)
+      when is_binary(ctor) and is_list(args) do
+    normalize_wire_ctor(ctor, args, context)
+  end
+
+  def normalize_wire_message_value(value, context) when is_map(value) do
+    Map.new(value, fn {key, nested} ->
+      {key, normalize_wire_message_value(nested, context)}
+    end)
+  end
+
+  def normalize_wire_message_value(value, context) when is_list(value),
+    do: Enum.map(value, &normalize_wire_message_value(&1, context))
+
+  def normalize_wire_message_value(value, _context), do: value
+
   @spec entry_module(EvalTypes.core_ir() | nil) :: String.t()
   def entry_module(core_ir) when is_map(core_ir) do
     modules = generic_map_value(core_ir, "modules") || generic_map_value(core_ir, :modules)
@@ -1015,6 +1057,38 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         )
 
       "pebble.cmd" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
+
+      "pebble.datalog" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
+
+      "pebble.compass" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
+
+      "pebble.unobstructedarea" ->
+        ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
+          module_name,
+          function_name,
+          values,
+          package_builtin_ops(env, context, stack)
+        )
+
+      "pebble.dictation" ->
         ElmExecutor.Runtime.CoreIREvaluator.Builtins.Package.eval(
           module_name,
           function_name,
@@ -3332,12 +3406,14 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   end
 
   @spec constructor_tag_for_ctor(String.t() | atom(), map()) :: integer() | nil
-  defp constructor_tag_for_ctor(ctor, context) when is_map(context) do
-    ctor = to_string(ctor)
+  def constructor_tag_for_ctor(ctor, context) when is_map(context) do
+    ctor = short_ctor_name(to_string(ctor))
 
     context
     |> Map.get(:constructor_tags, [])
-    |> Enum.filter(fn entry -> to_string(Map.get(entry, :ctor) || "") == ctor end)
+    |> Enum.filter(fn entry ->
+      short_ctor_name(to_string(Map.get(entry, :ctor) || Map.get(entry, "ctor") || "")) == ctor
+    end)
     |> prefer_resource_constructor_entry()
     |> case do
       %{tag: tag} when is_integer(tag) -> tag
@@ -3346,7 +3422,7 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
     end
   end
 
-  defp constructor_tag_for_ctor(_ctor, _context), do: nil
+  def constructor_tag_for_ctor(_ctor, _context), do: nil
 
   @spec prefer_resource_constructor_entry([map()]) :: map() | nil
   defp prefer_resource_constructor_entry([entry]), do: entry
@@ -3702,20 +3778,37 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         {:ok, value}
 
       :error ->
-        case try_companion_side_effect_cmd_stub(module_name, function_name) do
-          {:ok, value} -> {:ok, value}
-          :error -> :error
-        end
-        |> case do
+        case try_qualified_package_builtin(module_name, function_name, values, context, stack) do
           {:ok, value} ->
             {:ok, value}
 
           :error ->
-            case try_pebble_ui_to_ui_node_fallback(module_name, function_name, values) do
-              {:ok, value} -> {:ok, value}
-              :error -> unknown
+            case try_companion_side_effect_cmd_stub(module_name, function_name) do
+              {:ok, value} ->
+                {:ok, value}
+
+              :error ->
+                case try_pebble_ui_to_ui_node_fallback(module_name, function_name, values) do
+                  {:ok, value} -> {:ok, value}
+                  :error -> unknown
+                end
             end
         end
+    end
+  end
+
+  @spec try_qualified_package_builtin(
+          String.t(),
+          String.t(),
+          EvalTypes.runtime_values(),
+          EvalTypes.ops_context(),
+          EvalTypes.eval_stack()
+        ) :: {:ok, EvalTypes.runtime_value()} | :error
+  defp try_qualified_package_builtin(module_name, function_name, values, context, stack)
+       when is_binary(module_name) and is_binary(function_name) and is_list(values) do
+    case eval_builtin("#{module_name}.#{function_name}", values, %{}, context, stack) do
+      {:ok, value} -> {:ok, value}
+      _ -> :error
     end
   end
 
@@ -4533,6 +4626,27 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
         ) :: EvalTypes.pattern_match_result()
   defp match_constructor_args(pattern, arg_pattern, bind_name, args, context) when is_list(args) do
     cond do
+      is_map(arg_pattern) and tuple2_pattern?(arg_pattern) and length(args) > 1 ->
+        leaf_count = tuple2_leaf_count(arg_pattern)
+
+        if length(args) == leaf_count do
+          nested = nest_args_to_tuple2(args)
+
+          case match_pattern(arg_pattern, nested, context) do
+            {:ok, bindings} ->
+              if is_binary(bind_name) and bind_name != "" do
+                {:ok, Map.put(bindings, bind_name, nested)}
+              else
+                {:ok, bindings}
+              end
+
+            :nomatch ->
+              :nomatch
+          end
+        else
+          :nomatch
+        end
+
       is_map(arg_pattern) and length(args) == 1 ->
         with {:ok, bindings} <- match_pattern(arg_pattern, hd(args), context) do
           if is_binary(bind_name) and bind_name != "" do
@@ -4576,6 +4690,49 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   end
 
   defp match_pattern_list(_patterns, _values, _context), do: :nomatch
+
+  defp tuple2_pattern?(pattern) when is_map(pattern) do
+    kind = pattern["kind"] || pattern[:kind]
+    kind in [:tuple2, "tuple2"]
+  end
+
+  defp tuple2_leaf_count(pattern) when is_map(pattern) do
+    case pattern do
+      %{"kind" => kind, "right" => right} when kind in [:tuple2, "tuple2"] ->
+        1 + tuple2_leaf_count(right)
+
+      %{kind: kind, right: right} when kind in [:tuple2, "tuple2"] ->
+        1 + tuple2_leaf_count(right)
+
+      _ ->
+        1
+    end
+  end
+
+  defp nest_args_to_tuple2([single]), do: single
+  defp nest_args_to_tuple2([head | tail]), do: {head, nest_args_to_tuple2(tail)}
+
+  defp normalize_wire_ctor(ctor, [], context) do
+    case constructor_tag_for_ctor(ctor, context) do
+      tag when is_integer(tag) ->
+        tag
+
+      _ ->
+        %{"ctor" => short_ctor_name(ctor), "args" => []}
+    end
+  end
+
+  defp normalize_wire_ctor(ctor, args, context) when is_list(args) do
+    normalized_args = Enum.map(args, &normalize_wire_message_value(&1, context))
+
+    case constructor_tag_for_ctor(ctor, context) do
+      tag when is_integer(tag) ->
+        {tag, constructor_payload(normalized_args)}
+
+      _ ->
+        %{"ctor" => short_ctor_name(ctor), "args" => normalized_args}
+    end
+  end
 
   @spec field_access(EvalTypes.runtime_value(), String.t()) :: EvalTypes.runtime_value()
   defp field_access(base, field) when is_map(base) and is_binary(field) do
@@ -4685,14 +4842,67 @@ defmodule ElmExecutor.Runtime.CoreIREvaluator do
   end
 
   defp values_equal?(left, right) do
-    case {maybe_value(left), maybe_value(right)} do
-      {:invalid, :invalid} ->
-        result_values_equal?(left, right)
+    cond do
+      tagged_ctor_equal?(left, right) ->
+        true
 
-      {left_maybe, right_maybe} ->
-        left_maybe == right_maybe
+      true ->
+        case {maybe_value(left), maybe_value(right)} do
+          {:invalid, :invalid} ->
+            result_values_equal?(left, right)
+
+          {left_maybe, right_maybe} ->
+            left_maybe == right_maybe
+        end
     end
   end
+
+  defp tagged_ctor_equal?({left_tag, left_payload}, {right_tag, right_payload})
+       when is_integer(left_tag) and is_integer(right_tag) do
+    left_tag == right_tag and ctor_payloads_equal?(left_payload, right_payload)
+  end
+
+  defp tagged_ctor_equal?(
+         %{"ctor" => _ctor, "args" => args, "tag" => left_tag},
+         {right_tag, right_payload}
+       )
+       when is_integer(left_tag) and is_integer(right_tag) and is_list(args) do
+    left_tag == right_tag and ctor_payloads_equal?(constructor_payload(args), right_payload)
+  end
+
+  defp tagged_ctor_equal?(%{"ctor" => _ctor, "args" => [], "tag" => left_tag}, right_tag)
+       when is_integer(left_tag) and is_integer(right_tag) do
+    left_tag == right_tag
+  end
+
+  defp tagged_ctor_equal?(left_tag, %{"ctor" => _ctor, "args" => [], "tag" => right_tag})
+       when is_integer(left_tag) and is_integer(right_tag) do
+    left_tag == right_tag
+  end
+
+  defp tagged_ctor_equal?(left_tag, right_tag)
+       when is_integer(left_tag) and is_integer(right_tag) do
+    left_tag == right_tag
+  end
+
+  defp tagged_ctor_equal?({left_tag, left_payload}, %{"ctor" => _ctor, "args" => args, "tag" => right_tag})
+       when is_integer(left_tag) and is_integer(right_tag) and is_list(args) do
+    tagged_ctor_equal?({left_tag, left_payload}, {right_tag, constructor_payload(args)})
+  end
+
+  defp tagged_ctor_equal?(
+         %{"ctor" => left_ctor, "args" => left_args, "tag" => left_tag},
+         %{"ctor" => right_ctor, "args" => right_args, "tag" => right_tag}
+       )
+       when is_integer(left_tag) and is_integer(right_tag) and is_list(left_args) and is_list(right_args) do
+    short_ctor_name(left_ctor) == short_ctor_name(right_ctor) and
+      ctor_payloads_equal?(constructor_payload(left_args), constructor_payload(right_args))
+  end
+
+  defp tagged_ctor_equal?(_, _), do: false
+
+  defp ctor_payloads_equal?(left, right) when left == right, do: true
+  defp ctor_payloads_equal?(left, right), do: values_equal?(left, right)
 
   defp result_values_equal?(left, right) do
     case {result_value(left), result_value(right)} do

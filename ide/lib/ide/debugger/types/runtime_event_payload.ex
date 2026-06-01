@@ -9,7 +9,7 @@ defmodule Ide.Debugger.Types.RuntimeEventPayload do
   alias Ide.Debugger.Types.{
     CompanionBridgeEventPayload,
     DeviceDataEventPayload,
-    ElmIntrospectEventPayload,
+    DebuggerContractEventPayload,
     ElmcEventPayload,
     GeolocationEventPayload,
     HotReloadEventPayload,
@@ -52,6 +52,7 @@ defmodule Ide.Debugger.Types.RuntimeEventPayload do
     "debugger.reload" => :hot_reload,
     "debugger.runtime_exec" => :runtime_exec,
     "debugger.runtime_status" => :runtime_status,
+    "debugger.contract" => :contract,
     "debugger.elm_introspect" => :elm_introspect,
     "debugger.replay" => :replay,
     "debugger.snapshot_continue" => :snapshot_continue,
@@ -80,7 +81,8 @@ defmodule Ide.Debugger.Types.RuntimeEventPayload do
     hot_reload: HotReloadEventPayload,
     runtime_exec: RuntimeExecEventPayload,
     runtime_status: RuntimeStatusEventPayload,
-    elm_introspect: ElmIntrospectEventPayload,
+    contract: DebuggerContractEventPayload,
+    elm_introspect: DebuggerContractEventPayload,
     replay: ReplayEventPayload,
     snapshot_continue: SnapshotContinueEventPayload,
     elmc: ElmcEventPayload
@@ -106,6 +108,7 @@ defmodule Ide.Debugger.Types.RuntimeEventPayload do
           | :hot_reload
           | :runtime_exec
           | :runtime_status
+          | :contract
           | :elm_introspect
           | :replay
           | :snapshot_continue
@@ -173,7 +176,8 @@ defmodule Ide.Debugger.Types.RuntimeEventPayload do
 
   @type runtime_status :: RuntimeStatusEventPayload.t()
 
-  @type elm_introspect :: ElmIntrospectEventPayload.t()
+  @type contract :: DebuggerContractEventPayload.t()
+  @type elm_introspect :: DebuggerContractEventPayload.t()
 
   @type protocol_reload :: ProtocolTxRxPayload.t()
 

@@ -86,12 +86,7 @@ defmodule Ide.Debugger.DeviceDataResponses do
 
     if branch_scoped? and is_binary(current_ctor) and current_ctor != "" do
       Enum.filter(calls, fn row ->
-        case Map.get(row, "branch_constructor") do
-          nil -> true
-          "" -> true
-          ^current_ctor -> true
-          _ -> false
-        end
+        Map.get(row, "branch_constructor") == current_ctor
       end)
     else
       calls
@@ -107,13 +102,24 @@ defmodule Ide.Debugger.DeviceDataResponses do
           apply_ctx()
         ) :: Types.runtime_state()
   defp apply_device_response_step(state, target, req, ctx) when is_map(state) and is_map(req) and is_map(ctx) do
-    response_message = DeviceData.response_message(req)
-    wire_value = DeviceData.response_wire_value(req)
+    surface = Surface.from_state(state, target)
+    model = Surface.app_model(surface)
+    introspect = Surface.introspect(surface)
+    ctor = Map.get(req, :response_message) || Map.get(req, "response_message")
 
-    if is_binary(response_message) and response_message != "" do
-      ctx.apply_step_once.(state, target, response_message, wire_value, "device_data", "device_data")
-    else
-      state
+    wire_value =
+      DeviceData.response_wire_value(req) ||
+        DeviceData.response_wire_for_callback(introspect, model, ctor, nil)
+
+    cond do
+      is_binary(ctor) and ctor != "" and is_map(wire_value) ->
+        ctx.apply_step_once.(state, target, ctor, wire_value, "device_data", "device_data")
+
+      is_binary(response_message = DeviceData.response_message(req)) and response_message != "" ->
+        ctx.apply_step_once.(state, target, response_message, wire_value, "device_data", "device_data")
+
+      true ->
+        state
     end
   end
 end

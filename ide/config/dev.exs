@@ -82,3 +82,6 @@ config :phoenix_live_view,
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
+
+# Prebuild elmx artifacts on watch compile for compiled_elixir debugger stepping.
+config :ide, :attach_elmx_on_compile, true

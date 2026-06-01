@@ -10,12 +10,25 @@ defmodule ElmEx.Frontend.Bridge do
 
   @spec load_project(String.t()) :: {:ok, Project.t()} | {:error, map()}
   def load_project(project_dir) do
+    load_project_from_sources(project_dir, %{})
+  end
+
+  @doc """
+  Loads a project from disk, optionally overlaying module sources from memory.
+
+  `source_overrides` keys are paths relative to `project_dir` (for example `"src/Main.elm"`).
+  """
+  @spec load_project_from_sources(String.t(), %{String.t() => String.t()}) ::
+          {:ok, Project.t()} | {:error, map()}
+  def load_project_from_sources(project_dir, source_overrides \\ %{})
+      when is_binary(project_dir) and is_map(source_overrides) do
     project_dir = Path.expand(project_dir)
 
     with {:ok, elm_json} <- read_elm_json(project_dir),
          {:ok, module_paths} <- discover_module_paths(project_dir, elm_json),
          {:ok, diagnostics} <- run_elm_check(project_dir, module_paths),
-         {:ok, modules} <- load_modules(module_paths) do
+         {:ok, modules} <- load_modules(module_paths),
+         {:ok, modules} <- apply_source_overrides(project_dir, modules, source_overrides) do
       {:ok,
        %Project{
          project_dir: project_dir,
@@ -24,6 +37,33 @@ defmodule ElmEx.Frontend.Bridge do
          diagnostics: diagnostics
        }
        |> attach_lowerer_diagnostics()}
+    end
+  end
+
+  @spec apply_source_overrides(String.t(), [ElmEx.Frontend.Module.t()], map()) ::
+          {:ok, [ElmEx.Frontend.Module.t()]} | {:error, map()}
+  defp apply_source_overrides(_project_dir, modules, overrides)
+       when map_size(overrides) == 0,
+       do: {:ok, modules}
+
+  defp apply_source_overrides(project_dir, modules, overrides) do
+    Enum.reduce_while(modules, {:ok, []}, fn mod, {:ok, acc} ->
+      rel_path = Path.relative_to(mod.path, project_dir)
+
+      case Map.get(overrides, rel_path) do
+        source when is_binary(source) ->
+          case ElmEx.Frontend.GeneratedParser.parse_source(rel_path, source) do
+            {:ok, parsed} -> {:cont, {:ok, [parsed | acc]}}
+            {:error, reason} -> {:halt, {:error, Map.put(reason, :path, rel_path)}}
+          end
+
+        _ ->
+          {:cont, {:ok, [mod | acc]}}
+      end
+    end)
+    |> case do
+      {:ok, mods} -> {:ok, Enum.reverse(mods)}
+      other -> other
     end
   end
 

@@ -114,8 +114,8 @@ defmodule Ide.ProjectCapabilitiesTest do
   """
 
   test "detects companion geolocation commands and subscriptions" do
-    assert {:ok, %{"elm_introspect" => introspect}} =
-             Ide.Debugger.ElmIntrospect.analyze_source(@phone_geolocation, "CompanionApp.elm")
+    assert {:ok, %{"debugger_contract" => introspect}} =
+             Ide.Debugger.CompileContract.analyze_source(@phone_geolocation, "CompanionApp.elm")
 
     assert MapSet.equal?(
              ProjectCapabilities.infer_introspect(introspect, "phone"),
@@ -124,8 +124,8 @@ defmodule Ide.ProjectCapabilitiesTest do
   end
 
   test "detects companion configuration commands" do
-    assert {:ok, %{"elm_introspect" => introspect}} =
-             Ide.Debugger.ElmIntrospect.analyze_source(@phone_configuration, "CompanionApp.elm")
+    assert {:ok, %{"debugger_contract" => introspect}} =
+             Ide.Debugger.CompileContract.analyze_source(@phone_configuration, "CompanionApp.elm")
 
     assert MapSet.member?(
              ProjectCapabilities.infer_introspect(introspect, "phone"),
@@ -134,8 +134,8 @@ defmodule Ide.ProjectCapabilitiesTest do
   end
 
   test "detects companion configuration subscriptions" do
-    assert {:ok, %{"elm_introspect" => introspect}} =
-             Ide.Debugger.ElmIntrospect.analyze_source(
+    assert {:ok, %{"debugger_contract" => introspect}} =
+             Ide.Debugger.CompileContract.analyze_source(
                @phone_configuration_subscription,
                "CompanionApp.elm"
              )
@@ -147,8 +147,8 @@ defmodule Ide.ProjectCapabilitiesTest do
   end
 
   test "detects watch health commands and subscriptions" do
-    assert {:ok, %{"elm_introspect" => introspect}} =
-             Ide.Debugger.ElmIntrospect.analyze_source(@watch_health, "Main.elm")
+    assert {:ok, %{"debugger_contract" => introspect}} =
+             Ide.Debugger.CompileContract.analyze_source(@watch_health, "Main.elm")
 
     assert MapSet.equal?(
              ProjectCapabilities.infer_introspect(introspect, "watch"),
@@ -172,8 +172,8 @@ defmodule Ide.ProjectCapabilitiesTest do
   """
 
   test "detects tier 1 watch project capabilities from module imports" do
-    assert {:ok, %{"elm_introspect" => introspect}} =
-             Ide.Debugger.ElmIntrospect.analyze_source(@watch_tier1, "Main.elm")
+    assert {:ok, %{"debugger_contract" => introspect}} =
+             Ide.Debugger.CompileContract.analyze_source(@watch_tier1, "Main.elm")
 
     caps = ProjectCapabilities.infer_introspect(introspect, "watch")
 
@@ -183,8 +183,8 @@ defmodule Ide.ProjectCapabilitiesTest do
   end
 
   test "does not infer watch capabilities from phone sources" do
-    assert {:ok, %{"elm_introspect" => introspect}} =
-             Ide.Debugger.ElmIntrospect.analyze_source(@phone_geolocation, "CompanionApp.elm")
+    assert {:ok, %{"debugger_contract" => introspect}} =
+             Ide.Debugger.CompileContract.analyze_source(@phone_geolocation, "CompanionApp.elm")
 
     refute MapSet.member?(
              ProjectCapabilities.infer_introspect(introspect, "watch"),

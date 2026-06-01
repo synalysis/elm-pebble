@@ -29,6 +29,7 @@ defmodule Ide.Debugger.Types.RuntimeEventLog do
           | {:hot_reload, Payload.hot_reload()}
           | {:runtime_exec, Payload.runtime_exec()}
           | {:runtime_status, Payload.runtime_status()}
+          | {:contract, Payload.contract()}
           | {:elm_introspect, Payload.elm_introspect()}
           | {:replay, Payload.replay()}
           | {:snapshot_continue, Payload.snapshot_continue()}

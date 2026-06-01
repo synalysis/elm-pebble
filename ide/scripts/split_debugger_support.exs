@@ -205,12 +205,12 @@ mod_for = fn name ->
              "replay_live_warning?", "replay_live_drift", "replay_live_drift_severity"] ->
       :replay
 
-    name in ["copy_json", "debugger_agent_state_markdown", "format_elm_introspect_brief"] ->
+    name in ["copy_json", "debugger_agent_state_markdown", "format_debugger_contract_brief"] ->
       :export
 
     name in ["view_tree_outline", "model_diagnostic_preview", "event_diagnostic_preview",
              "diagnostics_preview_at_cursor", "diagnostics_preview_source_label",
-             "elm_introspect_at_cursor", "runtime_fingerprints_at_cursor",
+             "debugger_contract_at_cursor", "runtime_fingerprints_at_cursor",
              "runtime_fingerprint_compare_at_cursor", "backend_drift_detail",
              "key_target_drift_detail", "merge_drift_detail"] ->
       :diagnostics

@@ -167,6 +167,46 @@ defmodule Elmc.Backend.CCodegen do
     """
   end
 
+  # Constructor tags for bundled Pebble watch modules that are not always present in
+  # user IR. Values must match native launch_reason_to_elm_tag / worker harness tags.
+  @bundled_union_constructor_tags %{
+    "Pebble.Platform.LaunchSystem" => 1,
+    "Pebble.Platform.LaunchUser" => 2,
+    "Pebble.Platform.LaunchPhone" => 3,
+    "Pebble.Platform.LaunchWakeup" => 4,
+    "Pebble.Platform.LaunchWorker" => 5,
+    "Pebble.Platform.LaunchQuickLaunch" => 6,
+    "Pebble.Platform.LaunchTimelineAction" => 7,
+    "Pebble.Platform.LaunchSmartstrap" => 8,
+    "Pebble.Platform.LaunchUnknown" => 9,
+    "Pebble.Platform.Rectangular" => 1,
+    "Pebble.Platform.Round" => 2,
+    "Pebble.Platform.BlackWhite" => 1,
+    "Pebble.Platform.Color" => 2,
+    "Pebble.Health.StepCount" => 1,
+    "Pebble.Health.ActiveSeconds" => 2,
+    "Pebble.Health.WalkedDistanceMeters" => 3,
+    "Pebble.Health.SleepSeconds" => 4,
+    "Pebble.Health.RestfulSleepSeconds" => 5,
+    "Pebble.Health.RestingKCalories" => 6,
+    "Pebble.Health.ActiveKCalories" => 7,
+    "Pebble.Health.HeartRateBPM" => 8,
+    "Pebble.Health.SignificantUpdate" => 1,
+    "Pebble.Health.MovementUpdate" => 2,
+    "Pebble.Health.SleepUpdate" => 3
+  }
+
+  @bundled_health_metric_kernel_values %{
+    "Pebble.Health.StepCount" => 0,
+    "Pebble.Health.ActiveSeconds" => 1,
+    "Pebble.Health.WalkedDistanceMeters" => 2,
+    "Pebble.Health.SleepSeconds" => 3,
+    "Pebble.Health.RestfulSleepSeconds" => 4,
+    "Pebble.Health.RestingKCalories" => 5,
+    "Pebble.Health.ActiveKCalories" => 6,
+    "Pebble.Health.HeartRateBPM" => 7
+  }
+
   @spec constructor_tag_map(IR.t()) :: map()
   defp constructor_tag_map(%IR{} = ir) do
     qualified =
@@ -189,7 +229,7 @@ defmodule Elmc.Backend.CCodegen do
         {_name, _duplicates} -> []
       end)
 
-    Map.new(qualified ++ unqualified)
+    Map.merge(@bundled_union_constructor_tags, Map.new(qualified ++ unqualified))
   end
 
   defp enum_type_set(%IR{} = ir) do
@@ -7616,6 +7656,46 @@ defmodule Elmc.Backend.CCodegen do
   defp special_value_from_target("Elm.Kernel.PebbleWatch.onHealthEvent", _args),
     do: %{op: :int_literal, value: 2_147_483_648}
 
+  defp special_value_from_target("Pebble.Health.supported", args),
+    do: special_value_from_target("Elm.Kernel.PebbleWatch.healthSupported", args)
+
+  defp special_value_from_target("Pebble.Health.value", [metric, to_msg]),
+    do:
+      special_value_from_target("Elm.Kernel.PebbleWatch.healthValue", [
+        health_metric_to_kernel_expr(metric),
+        to_msg
+      ])
+
+  defp special_value_from_target("Pebble.Health.sumToday", [metric, to_msg]),
+    do:
+      special_value_from_target("Elm.Kernel.PebbleWatch.healthSumToday", [
+        health_metric_to_kernel_expr(metric),
+        to_msg
+      ])
+
+  defp special_value_from_target("Pebble.Health.sum", [metric, start_seconds, end_seconds, to_msg]),
+    do:
+      special_value_from_target("Elm.Kernel.PebbleWatch.healthSum", [
+        health_metric_to_kernel_expr(metric),
+        start_seconds,
+        end_seconds,
+        to_msg
+      ])
+
+  defp special_value_from_target("Pebble.Health.accessible", [
+         metric,
+         start_seconds,
+         end_seconds,
+         to_msg
+       ]),
+       do:
+         special_value_from_target("Elm.Kernel.PebbleWatch.healthAccessible", [
+           health_metric_to_kernel_expr(metric),
+           start_seconds,
+           end_seconds,
+           to_msg
+         ])
+
   defp special_value_from_target("Pebble.AppFocus.onChange", _args),
     do: %{op: :int_literal, value: 524_288}
 
@@ -8862,6 +8942,13 @@ defmodule Elmc.Backend.CCodegen do
   defp special_value_from_target("Dict.diff", [a, b]),
     do: %{op: :runtime_call, function: "elmc_dict_diff", args: [a, b]}
 
+  defp special_value_from_target("Dict.merge", [left_fn, both_fn, right_fn, a, b, result]),
+    do: %{
+      op: :runtime_call,
+      function: "elmc_dict_merge",
+      args: [left_fn, both_fn, right_fn, a, b, result]
+    }
+
   defp special_value_from_target("Dict.merge", [left_fn, both_fn, right_fn, a, b]),
     do: %{
       op: :runtime_call,
@@ -9090,6 +9177,9 @@ defmodule Elmc.Backend.CCodegen do
       target in ["pi", "Basics.pi"] or String.ends_with?(target, ".pi") ->
         %{op: :float_literal, value: 3.141592653589793}
 
+      Map.has_key?(@bundled_union_constructor_tags, target) ->
+        %{op: :int_literal, value: Map.fetch!(@bundled_union_constructor_tags, target)}
+
       true ->
         nil
     end
@@ -9104,6 +9194,16 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp special_value_from_target(_, _), do: nil
+
+  defp health_metric_to_kernel_expr(%{op: :constructor_call, target: target, args: []})
+       when is_binary(target) do
+    %{op: :int_literal, value: Map.get(@bundled_health_metric_kernel_values, target, 0)}
+  end
+
+  defp health_metric_to_kernel_expr(%{op: :int_literal, value: value}) when is_integer(value),
+    do: %{op: :int_literal, value: value}
+
+  defp health_metric_to_kernel_expr(metric) when is_map(metric), do: metric
 
   @spec clamp_frame_interval_ms(integer()) :: pos_integer()
   defp clamp_frame_interval_ms(ms) when is_integer(ms) do

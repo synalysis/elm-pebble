@@ -9,10 +9,11 @@ defmodule Ide.Debugger.Types.Shell do
   alias Ide.Debugger.Types
   alias ElmEx.CoreIR
   alias ElmEx.CoreIR.Types, as: CoreIRTypes
-  alias Ide.Debugger.ElmIntrospect.Payload
+  alias ElmEx.DebuggerContract.Payload
   alias Ide.Debugger.RuntimeArtifacts.Types, as: ArtifactTypes
 
   @type t :: %{
+          optional(:debugger_contract) => Payload.wire_payload(),
           optional(:elm_introspect) => Payload.wire_payload(),
           optional(:elm_executor_core_ir) => CoreIR.t() | CoreIRTypes.wire_map() | nil,
           optional(:elm_executor_core_ir_b64) => String.t(),

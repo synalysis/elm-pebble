@@ -2,7 +2,7 @@ defmodule Ide.Debugger.ProtocolTxRxPayloadTest do
   use ExUnit.Case, async: true
 
   alias Ide.Debugger
-  alias Ide.Debugger.ElmIntrospect
+  alias Ide.Debugger.CompileContract
 
   @phone_to_watch_elm """
   module Bridge exposing (..)
@@ -22,8 +22,8 @@ defmodule Ide.Debugger.ProtocolTxRxPayloadTest do
   """
 
   test "introspect init_cmd_calls include sendPhoneToWatch for protocol bridge mapping" do
-    assert {:ok, %{"elm_introspect" => ei}} =
-             ElmIntrospect.analyze_source(@phone_to_watch_elm, "Bridge.elm")
+    assert {:ok, %{"debugger_contract" => ei}} =
+             CompileContract.analyze_source(@phone_to_watch_elm, "Bridge.elm")
 
     assert Enum.any?(ei["init_cmd_calls"], fn row ->
              (row["name"] == "sendPhoneToWatch" or row[:name] == "sendPhoneToWatch") and

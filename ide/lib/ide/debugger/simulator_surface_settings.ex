@@ -43,7 +43,6 @@ defmodule Ide.Debugger.SimulatorSurfaceSettings do
       "batteryLevel" => settings["battery_percent"],
       "connected" => settings["connected"],
       "charging" => settings["charging"],
-      "clock_style_24h" => settings["clock_24h"],
       "timezone_id" => settings["timezone_id"],
       "timezone_offset_min" => settings["timezone_offset_min"],
       "locale" => settings["locale"],

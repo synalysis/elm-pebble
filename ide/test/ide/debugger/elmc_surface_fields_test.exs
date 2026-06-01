@@ -43,6 +43,18 @@ defmodule Ide.Debugger.ElmcSurfaceFieldsTest do
 
     assert artifacts["elm_executor_metadata"]["n"] == 1
     assert artifacts["elm_executor_core_ir_b64"] == "ir"
+
+    contract = %{"msg_constructors" => ["A"]}
+
+    assert ElmcSurfaceFields.optional_runtime_artifacts(%{
+             debugger_contract: contract,
+             debugger_contract_b64: "abc",
+             debugger_contract_version: "debugger_contract.v1"
+           }) == %{
+             "debugger_contract" => contract,
+             "debugger_contract_b64" => "abc",
+             "debugger_contract_version" => "debugger_contract.v1"
+           }
     assert ElmcSurfaceFields.compile_artifact_target(%{source_root: "watch"}) == :watch
     assert ElmcSurfaceFields.compile_artifact_target(%{source_root: "protocol"}) == nil
     assert ElmcSurfaceFields.compile_artifact_target(%{source_root: "phone"}) == :companion

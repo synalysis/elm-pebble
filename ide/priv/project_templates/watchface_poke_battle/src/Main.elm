@@ -149,7 +149,12 @@ update msg model =
             ( { model | use24Hour = value }, Cmd.none )
 
         MinuteChanged _ ->
-            ( model, refreshSteps model )
+            ( model
+            , Cmd.batch
+                [ refreshSteps model
+                , Time.currentDateTime CurrentDateTime
+                ]
+            )
 
         HourChanged _ ->
             ( model, Time.currentDateTime CurrentDateTime )

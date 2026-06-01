@@ -1145,7 +1145,7 @@ defmodule ElmEx.IR.Lowerer do
         tag = resolve_constructor_tag(resolved_target, lookup)
 
         if is_integer(tag) do
-          tagged_constructor_value(tag, rewritten_args)
+          tagged_constructor_value(tag, rewritten_args, resolved_target)
         end
 
       rewritten ->
@@ -1158,14 +1158,14 @@ defmodule ElmEx.IR.Lowerer do
     case qualify_constructor_target(resolved_target, lookup) do
       "Pebble.Ui.WindowStack" ->
         case rewritten_args do
-          [windows] -> tagged_constructor_value(@pebble_ui_window_stack_tag, [windows])
+          [windows] -> tagged_constructor_value(@pebble_ui_window_stack_tag, [windows], "Pebble.Ui.WindowStack")
           _ -> nil
         end
 
       "Pebble.Ui.WindowNode" ->
         case rewritten_args do
           [window_id, layers] ->
-            tagged_constructor_value(@pebble_ui_window_node_tag, [window_id, layers])
+            tagged_constructor_value(@pebble_ui_window_node_tag, [window_id, layers], "Pebble.Ui.WindowNode")
 
           _ ->
             nil
@@ -1174,7 +1174,7 @@ defmodule ElmEx.IR.Lowerer do
       "Pebble.Ui.CanvasLayer" ->
         case rewritten_args do
           [layer_id, ops] ->
-            tagged_constructor_value(@pebble_ui_canvas_layer_tag, [layer_id, ops])
+            tagged_constructor_value(@pebble_ui_canvas_layer_tag, [layer_id, ops], "Pebble.Ui.CanvasLayer")
 
           _ ->
             nil
@@ -1200,23 +1200,23 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec tagged_constructor_value(integer(), [expr()]) :: expr()
-  defp tagged_constructor_value(tag, rewritten_args) do
+  @spec tagged_constructor_value(integer(), [expr()], String.t()) :: expr()
+  defp tagged_constructor_value(tag, rewritten_args, qualified) when is_binary(qualified) do
     case rewritten_args do
       [] ->
-        %{op: :int_literal, value: tag}
+        %{op: :int_literal, value: tag, union_ctor: qualified}
 
       [arg] ->
         %{
           op: :tuple2,
-          left: %{op: :int_literal, value: tag},
+          left: %{op: :int_literal, value: tag, union_ctor: qualified},
           right: arg
         }
 
       many_args ->
         %{
           op: :tuple2,
-          left: %{op: :int_literal, value: tag},
+          left: %{op: :int_literal, value: tag, union_ctor: qualified},
           right: build_constructor_payload(many_args)
         }
     end
