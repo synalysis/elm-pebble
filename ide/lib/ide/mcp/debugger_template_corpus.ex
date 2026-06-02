@@ -73,6 +73,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       raise ArgumentError, "unknown template #{inspect(template_key)}"
     end
 
+    seed_corpus_random!()
+
     slug = Keyword.get(opts, :slug) || unique_slug(template_key)
     cleanup? = Keyword.get(opts, :cleanup, true)
 
@@ -183,6 +185,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   @spec bootstrap(String.t(), Projects.Project.t(), String.t()) :: :ok | {:error, term()}
   defp bootstrap(slug, project, template_key) do
+    seed_corpus_random!()
+
     with {:ok, _} <- Tools.call("debugger.start", %{"slug" => slug}, @capabilities),
          {:ok, _} <-
            Tools.call(
@@ -424,9 +428,16 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     |> Enum.map(fn row ->
       type = Map.get(row, :type) || Map.get(row, "type")
       message = Map.get(row, :message) || Map.get(row, "message")
-      "#{type}:#{message}"
+      "#{type}:#{normalize_timeline_message(message)}"
     end)
   end
+
+  @spec normalize_timeline_message(String.t() | nil) :: String.t()
+  defp normalize_timeline_message(message) when is_binary(message) do
+    Regex.replace(~r/^RandomGenerated \d+$/, message, "RandomGenerated <seed>")
+  end
+
+  defp normalize_timeline_message(message), do: to_string(message || "")
 
   @spec normalize_snapshot(map()) :: map()
   def normalize_snapshot(snapshot) when is_map(snapshot) do
@@ -435,7 +446,22 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     |> normalize_model_field("runtime_model")
     |> normalize_render_tree_field()
     |> Map.update("preview_ops", [], &normalize_preview_ops/1)
+    |> Map.update("timeline_init_messages", [], &normalize_timeline_messages/1)
   end
+
+  @spec normalize_timeline_messages([String.t()]) :: [String.t()]
+  defp normalize_timeline_messages(messages) when is_list(messages) do
+    Enum.map(messages, &normalize_timeline_entry/1)
+  end
+
+  defp normalize_timeline_entry(entry) when is_binary(entry) do
+    case String.split(entry, ":", parts: 2) do
+      [type, message] -> "#{type}:#{normalize_timeline_message(message)}"
+      _ -> entry
+    end
+  end
+
+  defp normalize_timeline_entry(entry), do: entry
 
   @spec normalize_model_field(map(), String.t()) :: map()
   defp normalize_model_field(snapshot, key) do
@@ -472,11 +498,30 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       "debugger_contract",
       "debugger_contract_b64",
       "runtime_model_sha256",
+      "runtime_view_output_model_sha256",
       "runtime_view_tree_sha256",
       "last_path",
+      "last_source",
       "last_runtime_step_message",
       "last_runtime_step_op",
-      "runtime_last_message"
+      "runtime_last_message",
+      "revision",
+      "launch_context",
+      "simulator_settings",
+      "runtime_execution",
+      "runtime_execution_mode",
+      "runtime_model_source",
+      "runtime_message_cursor",
+      "runtime_message_source",
+      "runtime_known_messages",
+      "runtime_update_branches",
+      "runtime_view_output",
+      "source_root",
+      "status",
+      "supports_color",
+      "screen_height",
+      "screen_width",
+      "_debugger_steps"
     ])
     |> Enum.reject(fn {key, _} ->
       key = to_string(key)
@@ -522,20 +567,40 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   defp normalize_render_tree(list) when is_list(list),
     do: Enum.map(list, &normalize_render_tree/1)
 
-  defp normalize_render_tree(other), do: other
+  defp normalize_render_tree(other), do: normalize_value(other)
 
   @spec normalize_preview_ops(list()) :: list()
   defp normalize_preview_ops(ops) when is_list(ops) do
     Enum.map(ops, &normalize_value/1)
   end
 
+  @snapshot_hash_keys ~w(
+    runtime_view_output_model_sha256
+    runtime_view_tree_sha256
+    runtime_model_sha256
+  )
+
   @spec normalize_value(term()) :: term()
   defp normalize_value(map) when is_map(map) do
-    Map.new(map, fn {k, v} -> {to_string(k), normalize_value(v)} end)
+    map
+    |> Map.drop(@snapshot_hash_keys)
+    |> Map.new(fn {k, v} -> {to_string(k), normalize_value(v)} end)
   end
 
   defp normalize_value(list) when is_list(list), do: Enum.map(list, &normalize_value/1)
   defp normalize_value({a, b}), do: [normalize_value(a), normalize_value(b)]
+
+  defp normalize_value(atom) when is_atom(atom) do
+    case atom do
+      true -> true
+      false -> false
+      nil -> nil
+      other -> Atom.to_string(other)
+    end
+  end
+
+  defp normalize_value(n) when is_float(n), do: Float.round(n, 2)
+
   defp normalize_value(other), do: other
 
   @spec watch_profile_for(String.t()) :: String.t()
@@ -845,5 +910,12 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
       end
     end)
     |> Enum.join("\n")
+  end
+
+  @spec seed_corpus_random!() :: :ok
+  defp seed_corpus_random! do
+    :rand.seed(:exsss, {0, 0, 1})
+    Application.put_env(:elmx, :corpus_fixed_random_int, 42_424_242)
+    :ok
   end
 end

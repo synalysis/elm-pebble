@@ -25,10 +25,12 @@ defmodule Elmx.Runtime.Core.Strings do
   @spec to_int(term()) :: term()
   def to_int(text) when is_binary(text) do
     case Integer.parse(String.trim(text)) do
-      {n, ""} -> {:Ok, n}
-      _ -> {:Err, "NOT_AN_INT"}
+      {n, ""} -> {:Just, n}
+      _ -> :Nothing
     end
   end
+
+  def to_int(_), do: :Nothing
 
   @spec to_float(term()) :: term()
   def to_float(text) when is_binary(text) do

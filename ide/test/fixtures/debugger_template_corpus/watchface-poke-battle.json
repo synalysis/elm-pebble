@@ -4,16 +4,14 @@
     "root_type": "windowStack",
     "runtime_view_output_kinds": [
       "clear",
-      "push_context",
       "text_color",
       "text",
-      "pop_context",
       "bitmap_in_rect",
       "fill_color",
       "fill_rect",
-      "stroke_width",
       "stroke_color",
-      "arc"
+      "arc",
+      "line"
     ],
     "status": "ok"
   },
@@ -30,7 +28,7 @@
       "kind": "text_label",
       "text": "08:53",
       "text_align": "center",
-      "text_color": null,
+      "text_color": 255,
       "text_overflow": "word_wrap",
       "w": 80,
       "x": 32,
@@ -44,7 +42,7 @@
       "kind": "text_label",
       "text": "PIKACHU",
       "text_align": "center",
-      "text_color": null,
+      "text_color": 255,
       "text_overflow": "word_wrap",
       "w": 72,
       "x": 57,
@@ -58,7 +56,7 @@
       "kind": "text_label",
       "text": ":L4",
       "text_align": "center",
-      "text_color": null,
+      "text_color": 255,
       "text_overflow": "word_wrap",
       "w": 40,
       "x": 85,
@@ -72,7 +70,7 @@
       "kind": "text_label",
       "text": "HP:",
       "text_align": "center",
-      "text_color": null,
+      "text_color": 255,
       "text_overflow": "word_wrap",
       "w": 24,
       "x": 60,
@@ -80,10 +78,11 @@
     },
     {
       "antialiased": true,
-      "bitmap_id": 9,
+      "bitmap_id": 3,
       "compositing_mode": 0,
       "h": 8,
       "kind": "bitmap_in_rect",
+      "resource": "BitmapStaticHealthEmpty",
       "w": 48,
       "x": 84,
       "y": 136
@@ -97,7 +96,7 @@
       "kind": "fill_rect",
       "stroke_color": 204,
       "stroke_width": 1,
-      "w": 3698,
+      "w": 39,
       "x": 86,
       "y": 138
     },
@@ -107,6 +106,7 @@
       "compositing_mode": 0,
       "h": 48,
       "kind": "bitmap_in_rect",
+      "resource": "BitmapStaticPikachuBack",
       "w": 56,
       "x": 24,
       "y": 103
@@ -114,11 +114,11 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "end_angle": 315,
+      "end_angle": 0,
       "h": 136,
       "kind": "arc",
-      "start_angle": 225,
-      "stroke_color": null,
+      "start_angle": 0,
+      "stroke_color": 2,
       "stroke_width": 1,
       "w": 136,
       "x": 4,
@@ -126,12 +126,24 @@
     },
     {
       "antialiased": true,
+      "color": 192,
       "compositing_mode": 0,
-      "end_angle": 315,
+      "kind": "line",
+      "stroke_color": 2,
+      "stroke_width": 1,
+      "x1": 30,
+      "x2": 114,
+      "y1": 140,
+      "y2": 140
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "end_angle": 0,
       "h": 132,
       "kind": "arc",
-      "start_angle": 225,
-      "stroke_color": null,
+      "start_angle": 0,
+      "stroke_color": 1,
       "stroke_width": 1,
       "w": 132,
       "x": 6,
@@ -139,48 +151,63 @@
     },
     {
       "antialiased": true,
-      "bitmap_id": 2,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 1,
+      "stroke_width": 1,
+      "x1": 29,
+      "x2": 115,
+      "y1": 137,
+      "y2": 137
+    },
+    {
+      "antialiased": true,
+      "bitmap_id": 4,
       "compositing_mode": 0,
       "h": 12,
       "kind": "bitmap_in_rect",
+      "resource": "BitmapStaticBoxBall",
       "w": 12,
       "x": 18,
       "y": 133
     },
     {
       "antialiased": true,
-      "bitmap_id": 2,
+      "bitmap_id": 4,
       "compositing_mode": 0,
       "h": 12,
       "kind": "bitmap_in_rect",
+      "resource": "BitmapStaticBoxBall",
       "w": 12,
       "x": 114,
       "y": 133
     },
     {
       "antialiased": true,
-      "bitmap_id": 15,
+      "bitmap_id": 1,
       "compositing_mode": 0,
       "h": 24,
       "kind": "bitmap_in_rect",
+      "resource": "BitmapStaticPokeball",
       "w": 24,
       "x": 108,
       "y": 87
     }
   ],
-  "preview_ops_sha256": "af07a51936d39cc1470b2f8724724c6c017aa698bc89fa8c0f2ca2b8c8a72a79",
+  "preview_ops_sha256": "1fe15a83a0b6e718ecefef29bca572e99ad451bf821a5f4814a0b94a9ba58de4",
   "render_tree": {
-    "node_count": 23,
+    "node_count": 32,
     "node_types": [
       "arc",
       "arc",
-      "bitmapInRect",
-      "bitmapInRect",
-      "bitmapInRect",
-      "bitmapInRect",
-      "bitmapInRect",
       "canvasLayer",
       "clear",
+      "drawBitmapInRect",
+      "drawBitmapInRect",
+      "drawBitmapInRect",
+      "drawBitmapInRect",
+      "drawBitmapInRect",
       "fillRect",
       "group",
       "group",
@@ -189,6 +216,15 @@
       "group",
       "group",
       "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "line",
+      "line",
       "text",
       "text",
       "text",
@@ -198,13 +234,6 @@
     ],
     "root_type": "windowStack",
     "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
       "children": [
         {
           "children": [
@@ -213,242 +242,381 @@
                 {
                   "children": [],
                   "color": 192,
-                  "label": "",
+                  "kind": "clear",
+                  "label": "clear",
                   "text": null,
                   "type": "clear"
                 },
                 {
                   "children": [
                     {
-                      "children": [],
-                      "font_id": 1,
-                      "h": 28,
+                      "children": [
+                        {
+                          "bounds": {
+                            "h": 28,
+                            "text": null,
+                            "w": 80,
+                            "x": 32,
+                            "y": 12
+                          },
+                          "children": [],
+                          "font": "DefaultFont",
+                          "kind": "text",
+                          "label": "08:53",
+                          "options": [],
+                          "text": "<TIME>",
+                          "text_align": "center",
+                          "text_overflow": "word_wrap",
+                          "type": "text"
+                        }
+                      ],
+                      "kind": "group",
                       "label": "",
-                      "text": "<TIME>",
-                      "text_align": "center",
-                      "text_overflow": "word_wrap",
-                      "type": "text",
-                      "w": 80,
-                      "x": 32,
-                      "y": 12
-                    }
-                  ],
-                  "label": "",
-                  "style": {
-                    "text": null,
-                    "text_color": 255
-                  },
-                  "text": null,
-                  "type": "group"
-                },
-                {
-                  "children": [
-                    {
-                      "children": [],
-                      "font_id": 1,
-                      "h": 16,
-                      "label": "",
-                      "text": "PIKACHU",
-                      "text_align": "center",
-                      "text_overflow": "word_wrap",
-                      "type": "text",
-                      "w": 72,
-                      "x": 57,
-                      "y": 104
-                    }
-                  ],
-                  "label": "",
-                  "style": {
-                    "text": null,
-                    "text_color": 255
-                  },
-                  "text": null,
-                  "type": "group"
-                },
-                {
-                  "children": [
-                    {
-                      "children": [],
-                      "font_id": 1,
-                      "h": 12,
-                      "label": "",
-                      "text": ":L4",
-                      "text_align": "center",
-                      "text_overflow": "word_wrap",
-                      "type": "text",
-                      "w": 40,
-                      "x": 85,
-                      "y": 119
-                    }
-                  ],
-                  "label": "",
-                  "style": {
-                    "text": null,
-                    "text_color": 255
-                  },
-                  "text": null,
-                  "type": "group"
-                },
-                {
-                  "children": [
-                    {
-                      "children": [],
-                      "font_id": 1,
-                      "h": 10,
-                      "label": "",
-                      "text": "HP:",
-                      "text_align": "center",
-                      "text_overflow": "word_wrap",
-                      "type": "text",
-                      "w": 24,
-                      "x": 60,
-                      "y": 134
-                    }
-                  ],
-                  "label": "",
-                  "style": {
-                    "text": null,
-                    "text_color": 255
-                  },
-                  "text": null,
-                  "type": "group"
-                },
-                {
-                  "bitmap_id": 9,
-                  "children": [],
-                  "h": 8,
-                  "label": "",
-                  "text": null,
-                  "type": "bitmapInRect",
-                  "w": 48,
-                  "x": 84,
-                  "y": 136
-                },
-                {
-                  "children": [
-                    {
-                      "children": [],
-                      "fill": 204,
-                      "h": 2,
-                      "label": "",
+                      "style": {
+                        "text": null,
+                        "text_color": 255
+                      },
                       "text": null,
-                      "type": "fillRect",
-                      "w": 3698,
-                      "x": 86,
-                      "y": 138
+                      "type": "group"
                     }
                   ],
+                  "kind": "group",
                   "label": "",
-                  "style": {
-                    "fill_color": 204,
-                    "text": null
-                  },
-                  "text": null,
-                  "type": "group"
-                },
-                {
-                  "bitmap_id": 16,
-                  "children": [],
-                  "h": 48,
-                  "label": "",
-                  "text": null,
-                  "type": "bitmapInRect",
-                  "w": 56,
-                  "x": 24,
-                  "y": 103
-                },
-                {
-                  "children": [
-                    {
-                      "children": [],
-                      "end_angle": 315,
-                      "h": 136,
-                      "label": "",
-                      "start_angle": 225,
-                      "text": null,
-                      "type": "arc",
-                      "w": 136,
-                      "x": 4,
-                      "y": 16
-                    }
-                  ],
-                  "label": "",
-                  "style": {
-                    "stroke_color": 255,
-                    "text": null
-                  },
                   "text": null,
                   "type": "group"
                 },
                 {
                   "children": [
                     {
-                      "children": [],
-                      "end_angle": 315,
-                      "h": 132,
+                      "children": [
+                        {
+                          "bounds": {
+                            "h": 16,
+                            "text": null,
+                            "w": 72,
+                            "x": 57,
+                            "y": 104
+                          },
+                          "children": [],
+                          "font": "DefaultFont",
+                          "kind": "text",
+                          "label": "PIKACHU",
+                          "options": [],
+                          "text": "PIKACHU",
+                          "text_align": "center",
+                          "text_overflow": "word_wrap",
+                          "type": "text"
+                        }
+                      ],
+                      "kind": "group",
                       "label": "",
-                      "start_angle": 225,
+                      "style": {
+                        "text": null,
+                        "text_color": 255
+                      },
                       "text": null,
-                      "type": "arc",
-                      "w": 132,
-                      "x": 6,
-                      "y": 18
+                      "type": "group"
                     }
                   ],
+                  "kind": "group",
                   "label": "",
-                  "style": {
-                    "stroke_color": 255,
-                    "text": null
-                  },
                   "text": null,
                   "type": "group"
                 },
                 {
-                  "bitmap_id": 2,
-                  "children": [],
-                  "h": 12,
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "bounds": {
+                            "h": 12,
+                            "text": null,
+                            "w": 40,
+                            "x": 85,
+                            "y": 119
+                          },
+                          "children": [],
+                          "font": "DefaultFont",
+                          "kind": "text",
+                          "label": ":L4",
+                          "options": [],
+                          "text": ":L4",
+                          "text_align": "center",
+                          "text_overflow": "word_wrap",
+                          "type": "text"
+                        }
+                      ],
+                      "kind": "group",
+                      "label": "",
+                      "style": {
+                        "text": null,
+                        "text_color": 255
+                      },
+                      "text": null,
+                      "type": "group"
+                    }
+                  ],
+                  "kind": "group",
                   "label": "",
                   "text": null,
-                  "type": "bitmapInRect",
-                  "w": 12,
-                  "x": 18,
-                  "y": 133
+                  "type": "group"
                 },
                 {
-                  "bitmap_id": 2,
-                  "children": [],
-                  "h": 12,
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "bounds": {
+                            "h": 10,
+                            "text": null,
+                            "w": 24,
+                            "x": 60,
+                            "y": 134
+                          },
+                          "children": [],
+                          "font": "DefaultFont",
+                          "kind": "text",
+                          "label": "HP:",
+                          "options": [],
+                          "text": "HP:",
+                          "text_align": "center",
+                          "text_overflow": "word_wrap",
+                          "type": "text"
+                        }
+                      ],
+                      "kind": "group",
+                      "label": "",
+                      "style": {
+                        "text": null,
+                        "text_color": 255
+                      },
+                      "text": null,
+                      "type": "group"
+                    }
+                  ],
+                  "kind": "group",
                   "label": "",
                   "text": null,
-                  "type": "bitmapInRect",
-                  "w": 12,
-                  "x": 114,
-                  "y": 133
+                  "type": "group"
                 },
                 {
-                  "bitmap_id": 15,
+                  "bounds": {
+                    "h": 8,
+                    "text": null,
+                    "w": 48,
+                    "x": 84,
+                    "y": 136
+                  },
                   "children": [],
-                  "h": 24,
+                  "kind": "drawBitmapInRect",
+                  "label": "drawBitmapInRect",
+                  "resource": "BitmapStaticHealthEmpty",
+                  "text": null,
+                  "type": "drawBitmapInRect"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "bounds": {
+                            "h": 2,
+                            "text": null,
+                            "w": 39,
+                            "x": 86,
+                            "y": 138
+                          },
+                          "children": [],
+                          "color": 204,
+                          "kind": "fillRect",
+                          "label": "fillRect",
+                          "text": null,
+                          "type": "fillRect"
+                        }
+                      ],
+                      "kind": "group",
+                      "label": "",
+                      "style": {
+                        "fill_color": 204,
+                        "text": null
+                      },
+                      "text": null,
+                      "type": "group"
+                    }
+                  ],
+                  "kind": "group",
                   "label": "",
                   "text": null,
-                  "type": "bitmapInRect",
-                  "w": 24,
-                  "x": 108,
-                  "y": 87
+                  "type": "group"
+                },
+                {
+                  "bounds": {
+                    "h": 48,
+                    "text": null,
+                    "w": 56,
+                    "x": 24,
+                    "y": 103
+                  },
+                  "children": [],
+                  "kind": "drawBitmapInRect",
+                  "label": "drawBitmapInRect",
+                  "resource": "BitmapStaticPikachuBack",
+                  "text": null,
+                  "type": "drawBitmapInRect"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "bounds": {
+                            "h": 136,
+                            "text": null,
+                            "w": 136,
+                            "x": 4,
+                            "y": 16
+                          },
+                          "children": [],
+                          "kind": "arc",
+                          "label": "arc",
+                          "text": null,
+                          "type": "arc"
+                        },
+                        {
+                          "children": [],
+                          "color": 192,
+                          "kind": "line",
+                          "label": "line",
+                          "text": null,
+                          "type": "line",
+                          "x1": 30,
+                          "x2": 114,
+                          "y1": 140,
+                          "y2": 140
+                        }
+                      ],
+                      "kind": "group",
+                      "label": "",
+                      "style": {
+                        "stroke_color": 2,
+                        "text": null
+                      },
+                      "text": null,
+                      "type": "group"
+                    }
+                  ],
+                  "kind": "group",
+                  "label": "",
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "bounds": {
+                            "h": 132,
+                            "text": null,
+                            "w": 132,
+                            "x": 6,
+                            "y": 18
+                          },
+                          "children": [],
+                          "kind": "arc",
+                          "label": "arc",
+                          "text": null,
+                          "type": "arc"
+                        },
+                        {
+                          "children": [],
+                          "color": 192,
+                          "kind": "line",
+                          "label": "line",
+                          "text": null,
+                          "type": "line",
+                          "x1": 29,
+                          "x2": 115,
+                          "y1": 137,
+                          "y2": 137
+                        }
+                      ],
+                      "kind": "group",
+                      "label": "",
+                      "style": {
+                        "stroke_color": 1,
+                        "text": null
+                      },
+                      "text": null,
+                      "type": "group"
+                    }
+                  ],
+                  "kind": "group",
+                  "label": "",
+                  "text": null,
+                  "type": "group"
+                },
+                {
+                  "bounds": {
+                    "h": 12,
+                    "text": null,
+                    "w": 12,
+                    "x": 18,
+                    "y": 133
+                  },
+                  "children": [],
+                  "kind": "drawBitmapInRect",
+                  "label": "drawBitmapInRect",
+                  "resource": "BitmapStaticBoxBall",
+                  "text": null,
+                  "type": "drawBitmapInRect"
+                },
+                {
+                  "bounds": {
+                    "h": 12,
+                    "text": null,
+                    "w": 12,
+                    "x": 114,
+                    "y": 133
+                  },
+                  "children": [],
+                  "kind": "drawBitmapInRect",
+                  "label": "drawBitmapInRect",
+                  "resource": "BitmapStaticBoxBall",
+                  "text": null,
+                  "type": "drawBitmapInRect"
+                },
+                {
+                  "bounds": {
+                    "h": 24,
+                    "text": null,
+                    "w": 24,
+                    "x": 108,
+                    "y": 87
+                  },
+                  "children": [],
+                  "kind": "drawBitmapInRect",
+                  "label": "drawBitmapInRect",
+                  "resource": "BitmapStaticPokeball",
+                  "text": null,
+                  "type": "drawBitmapInRect"
                 }
               ],
-              "id": 1,
+              "id": "1",
+              "kind": "canvasLayer",
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": 1,
+          "id": "1",
+          "kind": "window",
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
+      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
@@ -463,19 +631,12 @@
       "ctor": "Just"
     },
     "battleNonce": 0,
-    "clock_style_24h": true,
-    "colorMode": {
-      "args": [],
-      "ctor": "Color"
-    },
     "customName": "",
     "displayShape": {
       "args": [],
       "ctor": "Rectangular"
     },
     "healthSupported": true,
-    "last_message": "HealthSupported",
-    "last_operation": "HealthSupported",
     "layout": {
       "arcEnd": 315,
       "arcStart": 225,
@@ -550,19 +711,18 @@
     "showDate": false,
     "showSteps": false,
     "stepGoal": 10000,
-    "step_counter": 1,
     "stepsToday": {
       "args": [],
       "ctor": "Nothing"
     },
     "timeString": null,
-    "use24Hour": false
+    "use24Hour": true
   },
   "template": "watchface-poke-battle",
   "timeline_init_messages": [
     "update:HealthSupported True",
     "update:BatteryLevelChanged 88",
-    "update:ClockStyle24h",
+    "update:ClockStyle24h True",
     "update:CurrentDateTime {\"day\":27,\"dayOfWeek\":{\"args\":[],\"ctor\":\"Wednesday\"},\"hour\":8,\"minute\":53,\"month\":5,\"second\":0,\"utcOffsetMinutes\":0,\"year\":2026}",
     "update:CustomNameLoaded \"\"",
     "update:ShowStepsSettingLoaded 0",
@@ -571,10 +731,8 @@
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
-    "_debugger_steps": 8,
     "debugger_init_complete": true,
-    "elm_executor_mode": "runtime_executed",
-    "last_source": "module Main exposing (main)\n\nimport Battle as Battle exposing (Scene(..))\nimport Basics\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Events as Events\nimport Pebble.Frame as Frame\nimport Pebble.Health as Health\nimport Pebble.Platform as Platform\nimport Pebble.Storage as Storage\nimport Pebble.System as System\nimport Pebble.Time as Time\nimport Pebble.Ui as Ui\nimport Pokemon as Pokemon exposing (Player, PlayerSpecies(..))\nimport Render exposing (FaceModel, render)\n\n\ntype alias Model =\n    { screenW : Int\n    , screenH : Int\n    , displayShape : Platform.DisplayShape\n    , layout : Render.Layout\n    , now : Maybe Time.CurrentDateTime\n    , use24Hour : Bool\n    , batteryLevel : Maybe Int\n    , stepsToday : Maybe Int\n    , healthSupported : Bool\n    , stepGoal : Int\n    , playerSpecies : PlayerSpecies\n    , customName : String\n    , showDate : Bool\n    , showSteps : Bool\n    , player : Player\n    , opponent : Pokemon.Opponent\n    , opponentPick : Int\n    , scene : Scene\n    , opponentHealth : Float\n    , opponentYOffset : Int\n    , animating : Bool\n    , battleNonce : Int\n    }\n\n\ntype Msg\n    = CurrentDateTime Time.CurrentDateTime\n    | ClockStyle24h Bool\n    | MinuteChanged Int\n    | HourChanged Int\n    | BatteryLevelChanged Int\n    | StepsToday Int\n    | HealthSupported Bool\n    | FrameTick Frame.Frame\n    | SelectPressed\n    | UpPressed\n    | DownPressed\n    | PlayerSettingLoaded Int\n    | ShowDateSettingLoaded Int\n    | ShowStepsSettingLoaded Int\n    | CustomNameLoaded String\n\n\nstoragePlayerKey : Int\nstoragePlayerKey =\n    701\n\n\nstorageShowDateKey : Int\nstorageShowDateKey =\n    702\n\n\nstorageShowStepsKey : Int\nstorageShowStepsKey =\n    703\n\n\nstorageCustomNameKey : Int\nstorageCustomNameKey =\n    704\n\n\ndefaultStepGoal : Int\ndefaultStepGoal =\n    10000\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    let\n        screenW =\n            context.screen.width\n\n        screenH =\n            context.screen.height\n\n        startAnimating =\n            context.reason == Platform.LaunchWakeup\n    in\n    ( { screenW = screenW\n      , screenH = screenH\n      , displayShape = context.screen.shape\n      , layout = Render.layoutFor screenW screenH\n      , now = Nothing\n      , use24Hour = False\n      , batteryLevel = Nothing\n      , stepsToday = Nothing\n      , healthSupported = False\n      , stepGoal = defaultStepGoal\n      , playerSpecies = Pokemon.Pikachu\n      , customName = \"\"\n      , showDate = False\n      , showSteps = False\n      , player = Pokemon.playerFromSpecies screenW screenH Pokemon.Pikachu\n      , opponent =\n            Pokemon.opponentForTier screenW screenH 0 0\n      , opponentPick = 0\n      , scene =\n            if startAnimating then\n                Battle.initialScene\n\n            else\n                Waiting\n      , opponentHealth = 1\n      , opponentYOffset = 0\n      , animating = startAnimating\n      , battleNonce = 0\n      }\n    , Cmd.batch\n        [ Time.currentDateTime CurrentDateTime\n        , Time.clockStyle24h ClockStyle24h\n        , System.batteryLevel BatteryLevelChanged\n        , Health.supported HealthSupported\n        , Storage.readInt storagePlayerKey PlayerSettingLoaded\n        , Storage.readInt storageShowDateKey ShowDateSettingLoaded\n        , Storage.readInt storageShowStepsKey ShowStepsSettingLoaded\n        , Storage.readString storageCustomNameKey CustomNameLoaded\n        ]\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        CurrentDateTime value ->\n            ( { model | now = Just value }, Cmd.none )\n\n        ClockStyle24h value ->\n            ( { model | use24Hour = value }, Cmd.none )\n\n        MinuteChanged _ ->\n            ( model, refreshSteps model )\n\n        HourChanged _ ->\n            ( model, Time.currentDateTime CurrentDateTime )\n\n        BatteryLevelChanged level ->\n            ( { model | batteryLevel = Just (Basics.clamp 0 100 level) }, Cmd.none )\n\n        HealthSupported supported ->\n            ( { model | healthSupported = supported }\n            , if supported then\n                  refreshSteps model\n\n              else\n                  Cmd.none\n            )\n\n        StepsToday steps ->\n            let\n                tier =\n                    Pokemon.stepTierIndex steps model.stepGoal\n\n                pick =\n                    opponentPickIndex tier steps model.battleNonce\n            in\n            ( { model\n                | stepsToday = Just steps\n                , opponent =\n                    if model.scene == Waiting then\n                        Pokemon.opponentForTier model.screenW model.screenH tier pick\n\n                    else\n                        model.opponent\n                , opponentPick = pick\n              }\n            , Cmd.none\n            )\n\n        FrameTick _ ->\n            if model.animating then\n                advanceAnimation model\n\n            else\n                ( model, Cmd.none )\n\n        SelectPressed ->\n            startBattle model\n\n        UpPressed ->\n            cyclePlayer model\n\n        DownPressed ->\n            toggleDisplayOptions model\n\n        PlayerSettingLoaded index ->\n            let\n                species =\n                    Pokemon.playerSpeciesFromIndex index\n\n                player =\n                    Pokemon.playerFromSpecies model.screenW model.screenH species\n            in\n            ( { model\n                | playerSpecies = species\n                , player = withCustomName model.customName player\n              }\n            , Cmd.none\n            )\n\n        ShowDateSettingLoaded value ->\n            ( { model | showDate = value /= 0 }, Cmd.none )\n\n        ShowStepsSettingLoaded value ->\n            ( { model | showSteps = value /= 0 }, Cmd.none )\n\n        CustomNameLoaded name ->\n            ( { model | customName = name, player = withCustomName name model.player }\n            , Cmd.none\n            )\n\n\nwithCustomName : String -> Player -> Player\nwithCustomName name player =\n    if String.isEmpty name then\n        player\n\n    else\n        { player | displayName = String.left 8 name }\n\n\ntoggleDisplayOptions : Model -> ( Model, Cmd Msg )\ntoggleDisplayOptions model =\n    case ( model.showDate, model.showSteps ) of\n        ( False, False ) ->\n            ( { model | showDate = True }, Storage.writeInt storageShowDateKey 1 )\n\n        ( True, False ) ->\n            ( { model | showDate = False, showSteps = True }\n            , Cmd.batch\n                [ Storage.writeInt storageShowDateKey 0\n                , Storage.writeInt storageShowStepsKey 1\n                ]\n            )\n\n        ( _, True ) ->\n            ( { model | showDate = False, showSteps = False }\n            , Storage.writeInt storageShowStepsKey 0\n            )\n\n\ncyclePlayer : Model -> ( Model, Cmd Msg )\ncyclePlayer model =\n    let\n        nextIndex =\n            modBy 5 (playerIndex model.playerSpecies + 1)\n\n        species =\n            Pokemon.playerSpeciesFromIndex nextIndex\n\n        player =\n            Pokemon.playerFromSpecies model.screenW model.screenH species\n                |> withCustomName model.customName\n    in\n    ( { model | playerSpecies = species, player = player }\n    , Storage.writeInt storagePlayerKey nextIndex\n    )\n\n\nplayerIndex : PlayerSpecies -> Int\nplayerIndex species =\n    case species of\n        Pokemon.Pikachu ->\n            0\n\n        Pokemon.PlayerSquirtle ->\n            1\n\n        Pokemon.Flareon ->\n            2\n\n        Pokemon.Mew ->\n            3\n\n        Pokemon.Mewtwo ->\n            4\n\n\nstartBattle : Model -> ( Model, Cmd Msg )\nstartBattle model =\n    let\n        steps =\n            Maybe.withDefault 0 model.stepsToday\n\n        tier =\n            Pokemon.stepTierIndex steps model.stepGoal\n\n        nonce =\n            model.battleNonce + 1\n\n        pick =\n            opponentPickIndex tier steps nonce\n    in\n    ( { model\n        | animating = True\n        , scene = Battle.initialScene\n        , opponentHealth = 1\n        , opponentYOffset = 0\n        , opponent = Pokemon.opponentForTier model.screenW model.screenH tier pick\n        , opponentPick = pick\n        , battleNonce = nonce\n      }\n    , Cmd.none\n    )\n\n\n{-| Picks a roster index within the current tier. Uses step count and a battle\ncounter so opponent variety does not depend on `Random.step` (unsupported on watch).\n-}\nopponentPickIndex : Int -> Int -> Int -> Int\nopponentPickIndex tier steps nonce =\n    let\n        tierSize =\n            case tier of\n                0 ->\n                    3\n\n                3 ->\n                    1\n\n                _ ->\n                    2\n    in\n    modBy tierSize (steps + nonce * 17 + tier * 31)\n\n\nadvanceAnimation : Model -> ( Model, Cmd Msg )\nadvanceAnimation model =\n    case model.scene of\n        HealthDrain ->\n            let\n                nextHealth =\n                    model.opponentHealth - 0.2\n            in\n            if nextHealth > 0.1 then\n                ( { model | opponentHealth = nextHealth }, Cmd.none )\n\n            else\n                advanceFrom model { model | opponentHealth = nextHealth }\n\n        FaintSlide ->\n            let\n                nextOffset =\n                    model.opponentYOffset + 20\n            in\n            if nextOffset < 100 then\n                ( { model | opponentYOffset = nextOffset }, Cmd.none )\n\n            else\n                advanceFrom model { model | opponentYOffset = nextOffset }\n\n        _ ->\n            advanceFrom model model\n\n\nadvanceFrom : Model -> Model -> ( Model, Cmd Msg )\nadvanceFrom model nextModel =\n    let\n        ( scene, finished ) =\n            Battle.advance model.scene\n                { opponentHealth = nextModel.opponentHealth\n                , opponentYOffset = nextModel.opponentYOffset\n                }\n    in\n    if finished then\n        ( { nextModel | animating = False, scene = Waiting, opponentHealth = 1, opponentYOffset = 0 }\n        , Cmd.none\n        )\n\n    else if isFaintedScene scene then\n        ( { nextModel | scene = scene, opponentYOffset = 0, opponentHealth = 1 }, Cmd.none )\n\n    else\n        ( { nextModel | scene = scene }, Cmd.none )\n\n\nisFaintedScene : Scene -> Bool\nisFaintedScene battleScene =\n    case battleScene of\n        Fainted _ ->\n            True\n\n        _ ->\n            False\n\n\nrefreshSteps : Model -> Cmd Msg\nrefreshSteps model =\n    if model.healthSupported then\n        Health.sumToday Health.StepCount StepsToday\n\n    else\n        Cmd.none\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions model =\n    Events.batch\n        [ Events.onMinuteChange MinuteChanged\n        , Events.onHourChange HourChanged\n        , System.onBatteryChange BatteryLevelChanged\n        , Button.onRelease Button.Select SelectPressed\n        , Button.onRelease Button.Up UpPressed\n        , Button.onRelease Button.Down DownPressed\n        ]\n        |> addAnimationSub model\n\n\naddAnimationSub : Model -> Sub Msg -> Sub Msg\naddAnimationSub model subs =\n    if model.animating then\n        Sub.batch [ subs, Frame.every 500 FrameTick ]\n\n    else\n        subs\n\n\nclockHour : Model -> Int\nclockHour model =\n    case model.now of\n        Just now ->\n            now.hour\n\n        Nothing ->\n            0\n\n\nclockMinute : Model -> Int\nclockMinute model =\n    case model.now of\n        Just now ->\n            now.minute\n\n        Nothing ->\n            0\n\n\nclockMonth : Model -> Int\nclockMonth model =\n    case model.now of\n        Just now ->\n            now.month\n\n        Nothing ->\n            1\n\n\nclockDay : Model -> Int\nclockDay model =\n    case model.now of\n        Just now ->\n            now.day\n\n        Nothing ->\n            1\n\n\nplayerLevelFromSteps : Model -> Int\nplayerLevelFromSteps model =\n    model.stepsToday\n        |> Maybe.map (\\steps -> Basics.clamp 4 99 ((steps * 99) // max 1 model.stepGoal))\n        |> Maybe.withDefault 4\n\n\nplayerForView : Model -> Pokemon.Player\nplayerForView model =\n    { model.player | levelTag = \":L\" ++ String.fromInt (playerLevelFromSteps model) }\n\n\nthunderFlashForView : Model -> Bool\nthunderFlashForView model =\n    let\n        player =\n            playerForView model\n    in\n    model.scene == AttackFrame2 && player.attack == Pokemon.Thunder\n\n\n        faceModelFrom : Model -> FaceModel\n\n\nfaceModelFrom model =\n    { layout = model.layout\n    , scene = model.scene\n    , player = playerForView model\n    , opponent = model.opponent\n    , opponentHealth = model.opponentHealth\n    , opponentYOffset = model.opponentYOffset\n    , batteryPercent = Maybe.withDefault 100 model.batteryLevel\n    , showDate = model.showDate\n    , showSteps = model.showSteps\n    , stepsToday = model.stepsToday\n    , hour = clockHour model\n    , minute = clockMinute model\n    , month = clockMonth model\n    , day = clockDay model\n    , use24Hour = model.use24Hour\n    , thunderFlash = thunderFlashForView model\n    }\n\n\nview : Model -> Ui.UiNode\nview model =\n    Ui.toUiNode (render (faceModelFrom model))\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.watchface\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
+    "last_source": "module Main exposing (main)\n\nimport Battle as Battle exposing (Scene(..))\nimport Basics\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Events as Events\nimport Pebble.Frame as Frame\nimport Pebble.Health as Health\nimport Pebble.Platform as Platform\nimport Pebble.Storage as Storage\nimport Pebble.System as System\nimport Pebble.Time as Time\nimport Pebble.Ui as Ui\nimport Pokemon as Pokemon exposing (Player, PlayerSpecies(..))\nimport Render exposing (FaceModel, render)\n\n\ntype alias Model =\n    { screenW : Int\n    , screenH : Int\n    , displayShape : Platform.DisplayShape\n    , layout : Render.Layout\n    , now : Maybe Time.CurrentDateTime\n    , use24Hour : Bool\n    , batteryLevel : Maybe Int\n    , stepsToday : Maybe Int\n    , healthSupported : Bool\n    , stepGoal : Int\n    , playerSpecies : PlayerSpecies\n    , customName : String\n    , showDate : Bool\n    , showSteps : Bool\n    , player : Player\n    , opponent : Pokemon.Opponent\n    , opponentPick : Int\n    , scene : Scene\n    , opponentHealth : Float\n    , opponentYOffset : Int\n    , animating : Bool\n    , battleNonce : Int\n    }\n\n\ntype Msg\n    = CurrentDateTime Time.CurrentDateTime\n    | ClockStyle24h Bool\n    | MinuteChanged Int\n    | HourChanged Int\n    | BatteryLevelChanged Int\n    | StepsToday Int\n    | HealthSupported Bool\n    | FrameTick Frame.Frame\n    | SelectPressed\n    | UpPressed\n    | DownPressed\n    | PlayerSettingLoaded Int\n    | ShowDateSettingLoaded Int\n    | ShowStepsSettingLoaded Int\n    | CustomNameLoaded String\n\n\nstoragePlayerKey : Int\nstoragePlayerKey =\n    701\n\n\nstorageShowDateKey : Int\nstorageShowDateKey =\n    702\n\n\nstorageShowStepsKey : Int\nstorageShowStepsKey =\n    703\n\n\nstorageCustomNameKey : Int\nstorageCustomNameKey =\n    704\n\n\ndefaultStepGoal : Int\ndefaultStepGoal =\n    10000\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    let\n        screenW =\n            context.screen.width\n\n        screenH =\n            context.screen.height\n\n        startAnimating =\n            context.reason == Platform.LaunchWakeup\n    in\n    ( { screenW = screenW\n      , screenH = screenH\n      , displayShape = context.screen.shape\n      , layout = Render.layoutFor screenW screenH\n      , now = Nothing\n      , use24Hour = False\n      , batteryLevel = Nothing\n      , stepsToday = Nothing\n      , healthSupported = False\n      , stepGoal = defaultStepGoal\n      , playerSpecies = Pokemon.Pikachu\n      , customName = \"\"\n      , showDate = False\n      , showSteps = False\n      , player = Pokemon.playerFromSpecies screenW screenH Pokemon.Pikachu\n      , opponent =\n            Pokemon.opponentForTier screenW screenH 0 0\n      , opponentPick = 0\n      , scene =\n            if startAnimating then\n                Battle.initialScene\n\n            else\n                Waiting\n      , opponentHealth = 1\n      , opponentYOffset = 0\n      , animating = startAnimating\n      , battleNonce = 0\n      }\n    , Cmd.batch\n        [ Time.currentDateTime CurrentDateTime\n        , Time.clockStyle24h ClockStyle24h\n        , System.batteryLevel BatteryLevelChanged\n        , Health.supported HealthSupported\n        , Storage.readInt storagePlayerKey PlayerSettingLoaded\n        , Storage.readInt storageShowDateKey ShowDateSettingLoaded\n        , Storage.readInt storageShowStepsKey ShowStepsSettingLoaded\n        , Storage.readString storageCustomNameKey CustomNameLoaded\n        ]\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        CurrentDateTime value ->\n            ( { model | now = Just value }, Cmd.none )\n\n        ClockStyle24h value ->\n            ( { model | use24Hour = value }, Cmd.none )\n\n        MinuteChanged _ ->\n            ( model\n            , Cmd.batch\n                [ refreshSteps model\n                , Time.currentDateTime CurrentDateTime\n                ]\n            )\n\n        HourChanged _ ->\n            ( model, Time.currentDateTime CurrentDateTime )\n\n        BatteryLevelChanged level ->\n            ( { model | batteryLevel = Just (Basics.clamp 0 100 level) }, Cmd.none )\n\n        HealthSupported supported ->\n            ( { model | healthSupported = supported }\n            , if supported then\n                  refreshSteps model\n\n              else\n                  Cmd.none\n            )\n\n        StepsToday steps ->\n            let\n                tier =\n                    Pokemon.stepTierIndex steps model.stepGoal\n\n                pick =\n                    opponentPickIndex tier steps model.battleNonce\n            in\n            ( { model\n                | stepsToday = Just steps\n                , opponent =\n                    if model.scene == Waiting then\n                        Pokemon.opponentForTier model.screenW model.screenH tier pick\n\n                    else\n                        model.opponent\n                , opponentPick = pick\n              }\n            , Cmd.none\n            )\n\n        FrameTick _ ->\n            if model.animating then\n                advanceAnimation model\n\n            else\n                ( model, Cmd.none )\n\n        SelectPressed ->\n            startBattle model\n\n        UpPressed ->\n            cyclePlayer model\n\n        DownPressed ->\n            toggleDisplayOptions model\n\n        PlayerSettingLoaded index ->\n            let\n                species =\n                    Pokemon.playerSpeciesFromIndex index\n\n                player =\n                    Pokemon.playerFromSpecies model.screenW model.screenH species\n            in\n            ( { model\n                | playerSpecies = species\n                , player = withCustomName model.customName player\n              }\n            , Cmd.none\n            )\n\n        ShowDateSettingLoaded value ->\n            ( { model | showDate = value /= 0 }, Cmd.none )\n\n        ShowStepsSettingLoaded value ->\n            ( { model | showSteps = value /= 0 }, Cmd.none )\n\n        CustomNameLoaded name ->\n            ( { model | customName = name, player = withCustomName name model.player }\n            , Cmd.none\n            )\n\n\nwithCustomName : String -> Player -> Player\nwithCustomName name player =\n    if String.isEmpty name then\n        player\n\n    else\n        { player | displayName = String.left 8 name }\n\n\ntoggleDisplayOptions : Model -> ( Model, Cmd Msg )\ntoggleDisplayOptions model =\n    case ( model.showDate, model.showSteps ) of\n        ( False, False ) ->\n            ( { model | showDate = True }, Storage.writeInt storageShowDateKey 1 )\n\n        ( True, False ) ->\n            ( { model | showDate = False, showSteps = True }\n            , Cmd.batch\n                [ Storage.writeInt storageShowDateKey 0\n                , Storage.writeInt storageShowStepsKey 1\n                ]\n            )\n\n        ( _, True ) ->\n            ( { model | showDate = False, showSteps = False }\n            , Storage.writeInt storageShowStepsKey 0\n            )\n\n\ncyclePlayer : Model -> ( Model, Cmd Msg )\ncyclePlayer model =\n    let\n        nextIndex =\n            modBy 5 (playerIndex model.playerSpecies + 1)\n\n        species =\n            Pokemon.playerSpeciesFromIndex nextIndex\n\n        player =\n            Pokemon.playerFromSpecies model.screenW model.screenH species\n                |> withCustomName model.customName\n    in\n    ( { model | playerSpecies = species, player = player }\n    , Storage.writeInt storagePlayerKey nextIndex\n    )\n\n\nplayerIndex : PlayerSpecies -> Int\nplayerIndex species =\n    case species of\n        Pokemon.Pikachu ->\n            0\n\n        Pokemon.PlayerSquirtle ->\n            1\n\n        Pokemon.Flareon ->\n            2\n\n        Pokemon.Mew ->\n            3\n\n        Pokemon.Mewtwo ->\n            4\n\n\nstartBattle : Model -> ( Model, Cmd Msg )\nstartBattle model =\n    let\n        steps =\n            Maybe.withDefault 0 model.stepsToday\n\n        tier =\n            Pokemon.stepTierIndex steps model.stepGoal\n\n        nonce =\n            model.battleNonce + 1\n\n        pick =\n            opponentPickIndex tier steps nonce\n    in\n    ( { model\n        | animating = True\n        , scene = Battle.initialScene\n        , opponentHealth = 1\n        , opponentYOffset = 0\n        , opponent = Pokemon.opponentForTier model.screenW model.screenH tier pick\n        , opponentPick = pick\n        , battleNonce = nonce\n      }\n    , Cmd.none\n    )\n\n\n{-| Picks a roster index within the current tier. Uses step count and a battle\ncounter so opponent variety does not depend on `Random.step` (unsupported on watch).\n-}\nopponentPickIndex : Int -> Int -> Int -> Int\nopponentPickIndex tier steps nonce =\n    let\n        tierSize =\n            case tier of\n                0 ->\n                    3\n\n                3 ->\n                    1\n\n                _ ->\n                    2\n    in\n    modBy tierSize (steps + nonce * 17 + tier * 31)\n\n\nadvanceAnimation : Model -> ( Model, Cmd Msg )\nadvanceAnimation model =\n    case model.scene of\n        HealthDrain ->\n            let\n                nextHealth =\n                    model.opponentHealth - 0.2\n            in\n            if nextHealth > 0.1 then\n                ( { model | opponentHealth = nextHealth }, Cmd.none )\n\n            else\n                advanceFrom model { model | opponentHealth = nextHealth }\n\n        FaintSlide ->\n            let\n                nextOffset =\n                    model.opponentYOffset + 20\n            in\n            if nextOffset < 100 then\n                ( { model | opponentYOffset = nextOffset }, Cmd.none )\n\n            else\n                advanceFrom model { model | opponentYOffset = nextOffset }\n\n        _ ->\n            advanceFrom model model\n\n\nadvanceFrom : Model -> Model -> ( Model, Cmd Msg )\nadvanceFrom model nextModel =\n    let\n        ( scene, finished ) =\n            Battle.advance model.scene\n                { opponentHealth = nextModel.opponentHealth\n                , opponentYOffset = nextModel.opponentYOffset\n                }\n    in\n    if finished then\n        ( { nextModel | animating = False, scene = Waiting, opponentHealth = 1, opponentYOffset = 0 }\n        , Cmd.none\n        )\n\n    else if isFaintedScene scene then\n        ( { nextModel | scene = scene, opponentYOffset = 0, opponentHealth = 1 }, Cmd.none )\n\n    else\n        ( { nextModel | scene = scene }, Cmd.none )\n\n\nisFaintedScene : Scene -> Bool\nisFaintedScene battleScene =\n    case battleScene of\n        Fainted _ ->\n            True\n\n        _ ->\n            False\n\n\nrefreshSteps : Model -> Cmd Msg\nrefreshSteps model =\n    if model.healthSupported then\n        Health.sumToday Health.StepCount StepsToday\n\n    else\n        Cmd.none\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions model =\n    Events.batch\n        [ Events.onMinuteChange MinuteChanged\n        , Events.onHourChange HourChanged\n        , System.onBatteryChange BatteryLevelChanged\n        , Button.onRelease Button.Select SelectPressed\n        , Button.onRelease Button.Up UpPressed\n        , Button.onRelease Button.Down DownPressed\n        ]\n        |> addAnimationSub model\n\n\naddAnimationSub : Model -> Sub Msg -> Sub Msg\naddAnimationSub model subs =\n    if model.animating then\n        Sub.batch [ subs, Frame.every 500 FrameTick ]\n\n    else\n        subs\n\n\nclockHour : Model -> Int\nclockHour model =\n    case model.now of\n        Just now ->\n            now.hour\n\n        Nothing ->\n            0\n\n\nclockMinute : Model -> Int\nclockMinute model =\n    case model.now of\n        Just now ->\n            now.minute\n\n        Nothing ->\n            0\n\n\nclockMonth : Model -> Int\nclockMonth model =\n    case model.now of\n        Just now ->\n            now.month\n\n        Nothing ->\n            1\n\n\nclockDay : Model -> Int\nclockDay model =\n    case model.now of\n        Just now ->\n            now.day\n\n        Nothing ->\n            1\n\n\nplayerLevelFromSteps : Model -> Int\nplayerLevelFromSteps model =\n    model.stepsToday\n        |> Maybe.map (\\steps -> Basics.clamp 4 99 ((steps * 99) // max 1 model.stepGoal))\n        |> Maybe.withDefault 4\n\n\nplayerForView : Model -> Pokemon.Player\nplayerForView model =\n    { model.player | levelTag = \":L\" ++ String.fromInt (playerLevelFromSteps model) }\n\n\nthunderFlashForView : Model -> Bool\nthunderFlashForView model =\n    let\n        player =\n            playerForView model\n    in\n    model.scene == AttackFrame2 && player.attack == Pokemon.Thunder\n\n\n        faceModelFrom : Model -> FaceModel\n\n\nfaceModelFrom model =\n    { layout = model.layout\n    , scene = model.scene\n    , player = playerForView model\n    , opponent = model.opponent\n    , opponentHealth = model.opponentHealth\n    , opponentYOffset = model.opponentYOffset\n    , batteryPercent = Maybe.withDefault 100 model.batteryLevel\n    , showDate = model.showDate\n    , showSteps = model.showSteps\n    , stepsToday = model.stepsToday\n    , hour = clockHour model\n    , minute = clockMinute model\n    , month = clockMonth model\n    , day = clockDay model\n    , use24Hour = model.use24Hour\n    , thunderFlash = thunderFlashForView model\n    }\n\n\nview : Model -> Ui.UiNode\nview model =\n    Ui.toUiNode (render (faceModelFrom model))\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.watchface\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
     "launch_context": {
       "has_compass": false,
       "has_microphone": false,
@@ -590,7 +748,20 @@
       "watch_model": "Basalt",
       "watch_profile_id": "basalt"
     },
-    "revision": "70a2275e3574",
+    "revision": "8c096a678234",
+    "runtime_execution": {
+      "compiler": "elmx",
+      "contract": "elmx.runtime_executor.v1",
+      "engine": "elmx_runtime_v1",
+      "execution_backend": "compiled_elixir",
+      "runtime_mode": "runtime_first",
+      "runtime_model_entry_count": 22,
+      "runtime_model_sha256": "e147b543029e2f226cf47b241292b9a745ea80f5595a532331b5e0bb3082466f",
+      "runtime_model_source": "step_message",
+      "view_tree_node_count": 19,
+      "view_tree_sha256": "27f5a70be738d74a8acee02928589700291673745976e17f54f3b09327b584c0"
+    },
+    "runtime_execution_mode": "runtime_executed",
     "runtime_known_messages": [
       "CurrentDateTime",
       "ClockStyle24h",
@@ -619,19 +790,12 @@
         "ctor": "Just"
       },
       "battleNonce": 0,
-      "clock_style_24h": true,
-      "colorMode": {
-        "args": [],
-        "ctor": "Color"
-      },
       "customName": "",
       "displayShape": {
         "args": [],
         "ctor": "Rectangular"
       },
       "healthSupported": true,
-      "last_message": "HealthSupported",
-      "last_operation": "HealthSupported",
       "layout": {
         "arcEnd": 315,
         "arcStart": 225,
@@ -696,6 +860,7 @@
         "args": [],
         "ctor": "Pikachu"
       },
+      "runtime_view_output_model_sha256": "6bda5021e77233d181b2e345f6ca572784f80e4c3fba997f8467b87af7a748a6",
       "scene": {
         "args": [],
         "ctor": "Waiting"
@@ -705,12 +870,11 @@
       "showDate": false,
       "showSteps": false,
       "stepGoal": 10000,
-      "step_counter": 1,
       "stepsToday": {
         "args": [],
         "ctor": "Nothing"
       },
-      "use24Hour": false
+      "use24Hour": true
     },
     "runtime_model_source": "step_message",
     "runtime_update_branches": [
@@ -737,16 +901,12 @@
         "text": null
       },
       {
-        "kind": "push_context",
-        "text": null
-      },
-      {
         "color": 255,
         "kind": "text_color",
         "text": null
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 28,
         "kind": "text",
         "text": "<TIME>",
@@ -757,20 +917,12 @@
         "y": 12
       },
       {
-        "kind": "pop_context",
-        "text": null
-      },
-      {
-        "kind": "push_context",
-        "text": null
-      },
-      {
         "color": 255,
         "kind": "text_color",
         "text": null
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 16,
         "kind": "text",
         "text": "PIKACHU",
@@ -781,20 +933,12 @@
         "y": 104
       },
       {
-        "kind": "pop_context",
-        "text": null
-      },
-      {
-        "kind": "push_context",
-        "text": null
-      },
-      {
         "color": 255,
         "kind": "text_color",
         "text": null
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 12,
         "kind": "text",
         "text": ":L4",
@@ -805,20 +949,12 @@
         "y": 119
       },
       {
-        "kind": "pop_context",
-        "text": null
-      },
-      {
-        "kind": "push_context",
-        "text": null
-      },
-      {
         "color": 255,
         "kind": "text_color",
         "text": null
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 10,
         "kind": "text",
         "text": "HP:",
@@ -829,21 +965,14 @@
         "y": 134
       },
       {
-        "kind": "pop_context",
-        "text": null
-      },
-      {
-        "bitmap_id": 9,
+        "bitmap_id": 0,
         "h": 8,
         "kind": "bitmap_in_rect",
+        "resource": "BitmapStaticHealthEmpty",
         "text": null,
         "w": 48,
         "x": 84,
         "y": 136
-      },
-      {
-        "kind": "push_context",
-        "text": null
       },
       {
         "color": 204,
@@ -855,101 +984,93 @@
         "h": 2,
         "kind": "fill_rect",
         "text": null,
-        "w": 3698,
+        "w": 39,
         "x": 86,
         "y": 138
       },
       {
-        "kind": "pop_context",
-        "text": null
-      },
-      {
-        "bitmap_id": 16,
+        "bitmap_id": 0,
         "h": 48,
         "kind": "bitmap_in_rect",
+        "resource": "BitmapStaticPikachuBack",
         "text": null,
         "w": 56,
         "x": 24,
         "y": 103
       },
       {
-        "kind": "push_context",
-        "text": null
-      },
-      {
-        "kind": "stroke_width",
-        "text": null,
-        "value": 2
-      },
-      {
-        "color": 255,
+        "color": 2,
         "kind": "stroke_color",
         "text": null
       },
       {
-        "end_angle": 315,
+        "end_angle": 0,
         "h": 136,
         "kind": "arc",
-        "start_angle": 225,
+        "start_angle": 0,
         "text": null,
         "w": 136,
         "x": 4,
         "y": 16
       },
       {
-        "kind": "pop_context",
-        "text": null
-      },
-      {
-        "kind": "push_context",
-        "text": null
-      },
-      {
-        "kind": "stroke_width",
+        "color": 192,
+        "kind": "line",
         "text": null,
-        "value": 1
+        "x1": 30,
+        "x2": 114,
+        "y1": 140,
+        "y2": 140
       },
       {
-        "color": 255,
+        "color": 1,
         "kind": "stroke_color",
         "text": null
       },
       {
-        "end_angle": 315,
+        "end_angle": 0,
         "h": 132,
         "kind": "arc",
-        "start_angle": 225,
+        "start_angle": 0,
         "text": null,
         "w": 132,
         "x": 6,
         "y": 18
       },
       {
-        "kind": "pop_context",
-        "text": null
+        "color": 192,
+        "kind": "line",
+        "text": null,
+        "x1": 29,
+        "x2": 115,
+        "y1": 137,
+        "y2": 137
       },
       {
-        "bitmap_id": 2,
+        "bitmap_id": 0,
         "h": 12,
         "kind": "bitmap_in_rect",
+        "resource": "BitmapStaticBoxBall",
         "text": null,
         "w": 12,
         "x": 18,
         "y": 133
       },
       {
-        "bitmap_id": 2,
+        "bitmap_id": 0,
         "h": 12,
         "kind": "bitmap_in_rect",
+        "resource": "BitmapStaticBoxBall",
         "text": null,
         "w": 12,
         "x": 114,
         "y": 133
       },
       {
-        "bitmap_id": 15,
+        "bitmap_id": 0,
         "h": 24,
         "kind": "bitmap_in_rect",
+        "resource": "BitmapStaticPokeball",
         "text": null,
         "w": 24,
         "x": 108,
@@ -959,17 +1080,23 @@
     "screen_height": 168,
     "screen_width": 144,
     "simulator_settings": {
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "battery_percent": 88,
       "calendar_events": [],
+      "storage_values": {},
       "charging": false,
-      "clock_24h": true,
-      "compass_heading_deg": 0,
+      "timezone_id": "Europe/Berlin",
       "compass_valid": true,
+      "use_simulated_time": true,
+      "simulated_date": "2026-05-27",
+      "compass_heading_deg": 0,
+      "latitude": 48.14,
+      "companion_timeline_token": "demo-timeline-token",
+      "notifications_enabled": true,
+      "health_steps_today": 9100,
+      "language": "en",
       "connected": true,
+      "preferences": {},
+      "battery_percent": 88,
       "dictation_error": "",
-      "dictation_transcript": "",
       "environment": {
         "moon": {
           "moonriseMin": 900,
@@ -983,32 +1110,27 @@
         },
         "tide": null
       },
-      "health_steps": 4200,
-      "health_steps_today": 9100,
-      "language": "en",
-      "latitude": 48.137154,
-      "locale": "en-US",
-      "longitude": 11.576124,
-      "network_online": true,
-      "notifications_enabled": true,
-      "preferences": {},
-      "quiet_hours": false,
-      "region": "US",
-      "simulated_date": "2026-05-27",
-      "simulated_time": "08:53:00",
-      "storage_values": {},
-      "timeline_peek": false,
-      "timezone_id": "Europe/Berlin",
       "timezone_offset_min": 0,
-      "use_simulated_time": true,
-      "vibe_pattern_ms": [],
       "weather": {
         "condition": "clear",
         "humidityPercent": 50,
         "pressureHpa": 1013,
         "temperatureC": 21,
         "windKph": 8
-      }
+      },
+      "region": "US",
+      "clock_24h": true,
+      "longitude": 11.58,
+      "vibe_pattern_ms": [],
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "locale": "en-US",
+      "network_online": true,
+      "timeline_peek": false,
+      "health_steps": 4200,
+      "dictation_transcript": "",
+      "simulated_time": "08:53:00",
+      "quiet_hours": false
     },
     "source_root": "watch",
     "status": "idle",

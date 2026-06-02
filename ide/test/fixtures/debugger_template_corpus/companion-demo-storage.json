@@ -100,75 +100,99 @@
                 {
                   "children": [],
                   "color": 255,
-                  "label": "",
+                  "kind": "clear",
+                  "label": "clear",
                   "text": null,
                   "type": "clear"
                 },
                 {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 36
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 18,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Storage demo",
+                  "options": [],
                   "text": "Storage demo",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 36
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 54
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 18,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Theme --",
+                  "options": [],
                   "text": "Theme --",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 54
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 72
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 18,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Units --",
+                  "options": [],
                   "text": "Units --",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 72
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 90
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 18,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Select = cycle",
+                  "options": [],
                   "text": "Select = cycle",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 90
+                  "type": "text"
                 }
               ],
-              "id": 1,
+              "id": "1",
+              "kind": "canvasLayer",
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": 1,
+          "id": "1",
+          "kind": "window",
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
+      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
@@ -198,13 +222,11 @@
   },
   "template": "companion-demo-storage",
   "timeline_init_messages": [
-    "runtime:runtime no followups for 1 init cmd(s)",
     "init:init"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "elm_executor_mode": "runtime_executed",
     "last_source": "module Main exposing (main)\n\nimport Companion.Types exposing (PhoneToWatch(..), Theme(..), Units(..), WatchToPhone(..))\nimport Companion.Watch as CompanionWatch\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { theme : Maybe Theme\n    , units : Maybe Units\n    , screenW : Int\n    , screenH : Int\n    }\n\n\ntype Msg\n    = FromPhone PhoneToWatch\n    | SelectPressed\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { theme = Nothing\n      , units = Nothing\n      , screenW = context.screen.width\n      , screenH = context.screen.height\n      }\n    , CompanionWatch.sendWatchToPhone RequestStoredValues\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        SelectPressed ->\n            ( model, CompanionWatch.sendWatchToPhone CycleTheme )\n\n        FromPhone (ProvideTheme theme units) ->\n            ( { model | theme = Just theme, units = Just units }, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Sub.batch\n        [ CompanionWatch.onPhoneToWatch FromPhone\n        , Button.onPress Button.Select SelectPressed\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    let\n        lineH =\n            18\n\n        startY =\n            36\n\n        label x y text_ =\n            Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = y, w = model.screenW - 16, h = lineH } text_\n    in\n    Ui.windowStack\n        [ Ui.window 1\n            [ Ui.canvasLayer 1\n                [ Ui.clear Color.white\n                , label 8 startY \"Storage demo\"\n                , label 8 (startY + lineH) (\"Theme \" ++ themeLabel model.theme)\n                , label 8 (startY + lineH * 2) (\"Units \" ++ unitsLabel model.units)\n                , label 8 (startY + lineH * 3) \"Select = cycle\"\n                ]\n            ]\n        ]\n\n\nthemeLabel : Maybe Theme -> String\nthemeLabel maybeTheme =\n    case maybeTheme of\n        Nothing ->\n            \"--\"\n\n        Just Dark ->\n            \"dark\"\n\n        Just Light ->\n            \"light\"\n\n\nunitsLabel : Maybe Units -> String\nunitsLabel maybeUnits =\n    case maybeUnits of\n        Nothing ->\n            \"--\"\n\n        Just Metric ->\n            \"metric\"\n\n        Just Imperial ->\n            \"imperial\"\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
     "launch_context": {
       "has_compass": true,
@@ -222,6 +244,15 @@
       "watch_profile_id": "aplite"
     },
     "revision": "6de5124594f3",
+    "runtime_execution": {
+      "compiler": "elmx",
+      "contract": "elmx.runtime_executor.v1",
+      "engine": "elmx_runtime_v1",
+      "execution_backend": "compiled_elixir",
+      "runtime_mode": "runtime_first",
+      "runtime_model_source": "init_model"
+    },
+    "runtime_execution_mode": "runtime_executed",
     "runtime_model": {
       "colorMode": {
         "args": [],
@@ -231,6 +262,7 @@
         "args": [],
         "ctor": "Rectangular"
       },
+      "runtime_view_output_model_sha256": "c5dee58ee02978bf3d7b23932da62e1147ac71f2693367065822125e4609d70a",
       "screenH": 168,
       "screenW": 144,
       "theme": {
@@ -250,7 +282,7 @@
         "text": null
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 18,
         "kind": "text",
         "text": "Storage demo",
@@ -261,7 +293,7 @@
         "y": 36
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 18,
         "kind": "text",
         "text": "Theme --",
@@ -272,7 +304,7 @@
         "y": 54
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 18,
         "kind": "text",
         "text": "Units --",
@@ -283,7 +315,7 @@
         "y": 72
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 18,
         "kind": "text",
         "text": "Select = cycle",
@@ -297,17 +329,23 @@
     "screen_height": 168,
     "screen_width": 144,
     "simulator_settings": {
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "battery_percent": 88,
       "calendar_events": [],
+      "storage_values": {},
       "charging": false,
-      "clock_24h": true,
-      "compass_heading_deg": 0,
+      "timezone_id": "Europe/Berlin",
       "compass_valid": true,
+      "use_simulated_time": true,
+      "simulated_date": "2026-05-27",
+      "compass_heading_deg": 0,
+      "latitude": 48.14,
+      "companion_timeline_token": "demo-timeline-token",
+      "notifications_enabled": true,
+      "health_steps_today": 9100,
+      "language": "en",
       "connected": true,
+      "preferences": {},
+      "battery_percent": 88,
       "dictation_error": "",
-      "dictation_transcript": "",
       "environment": {
         "moon": {
           "moonriseMin": 900,
@@ -321,32 +359,27 @@
         },
         "tide": null
       },
-      "health_steps": 4200,
-      "health_steps_today": 9100,
-      "language": "en",
-      "latitude": 48.137154,
-      "locale": "en-US",
-      "longitude": 11.576124,
-      "network_online": true,
-      "notifications_enabled": true,
-      "preferences": {},
-      "quiet_hours": false,
-      "region": "US",
-      "simulated_date": "2026-05-27",
-      "simulated_time": "08:53:00",
-      "storage_values": {},
-      "timeline_peek": false,
-      "timezone_id": "Europe/Berlin",
       "timezone_offset_min": 0,
-      "use_simulated_time": true,
-      "vibe_pattern_ms": [],
       "weather": {
         "condition": "clear",
         "humidityPercent": 50,
         "pressureHpa": 1013,
         "temperatureC": 21,
         "windKph": 8
-      }
+      },
+      "region": "US",
+      "clock_24h": true,
+      "longitude": 11.58,
+      "vibe_pattern_ms": [],
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "locale": "en-US",
+      "network_online": true,
+      "timeline_peek": false,
+      "health_steps": 4200,
+      "dictation_transcript": "",
+      "simulated_time": "08:53:00",
+      "quiet_hours": false
     },
     "source_root": "watch",
     "status": "idle",

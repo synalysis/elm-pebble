@@ -17,16 +17,6 @@
     },
     {
       "antialiased": true,
-      "bitmap_id": 1,
-      "compositing_mode": 0,
-      "h": 1,
-      "kind": "bitmap_in_rect",
-      "w": 1,
-      "x": 0,
-      "y": 0
-    },
-    {
-      "antialiased": true,
       "compositing_mode": 0,
       "fill": 192,
       "fill_color": 192,
@@ -101,7 +91,7 @@
       "kind": "fill_rect",
       "stroke_color": 192,
       "stroke_width": 1,
-      "w": 22,
+      "w": 0,
       "x": 198,
       "y": 0
     },
@@ -114,18 +104,29 @@
       "kind": "fill_rect",
       "stroke_color": 192,
       "stroke_width": 1,
-      "w": 22,
+      "w": 0,
       "x": 198,
       "y": 134
+    },
+    {
+      "antialiased": true,
+      "bitmap_id": 0,
+      "compositing_mode": 0,
+      "h": 1,
+      "kind": "bitmap_in_rect",
+      "resource": "NoStaticBitmap",
+      "w": 1,
+      "x": 0,
+      "y": 0
     }
   ],
-  "preview_ops_sha256": "4a5fc9ab14f6c7e2168fe417c2264f4e24d29b953ea978dd1be29dbf78d9f42b",
+  "preview_ops_sha256": "c8ebf8bcdc03c3612b9c05ff04e27d40f08dc4f8d511b3ce8c8a5d9dbd0016c8",
   "render_tree": {
     "node_count": 12,
     "node_types": [
-      "bitmapInRect",
       "canvasLayer",
       "clear",
+      "drawBitmapInRect",
       "fillRect",
       "fillRect",
       "fillRect",
@@ -138,13 +139,6 @@
     ],
     "root_type": "windowStack",
     "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
       "children": [
         {
           "children": [
@@ -153,115 +147,153 @@
                 {
                   "children": [],
                   "color": 255,
-                  "label": "",
+                  "kind": "clear",
+                  "label": "clear",
                   "text": null,
                   "type": "clear"
                 },
                 {
-                  "bitmap_id": 1,
+                  "bounds": {
+                    "h": 1,
+                    "text": null,
+                    "w": 1,
+                    "x": 0,
+                    "y": 0
+                  },
                   "children": [],
-                  "h": 1,
-                  "label": "",
+                  "kind": "drawBitmapInRect",
+                  "label": "drawBitmapInRect",
+                  "resource": "NoStaticBitmap",
                   "text": null,
-                  "type": "bitmapInRect",
-                  "w": 1,
-                  "x": 0,
-                  "y": 0
+                  "type": "drawBitmapInRect"
                 },
                 {
+                  "bounds": {
+                    "h": 14,
+                    "text": null,
+                    "w": 14,
+                    "x": 18,
+                    "y": 60
+                  },
                   "children": [],
-                  "fill": 192,
-                  "h": 14,
-                  "label": "",
+                  "color": 192,
+                  "kind": "fillRect",
+                  "label": "fillRect",
                   "text": null,
-                  "type": "fillRect",
-                  "w": 14,
-                  "x": 18,
-                  "y": 60
+                  "type": "fillRect"
                 },
                 {
+                  "bounds": {
+                    "h": 20,
+                    "text": null,
+                    "w": 120,
+                    "x": 4,
+                    "y": 4
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 20,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Score 0",
+                  "options": [],
                   "text": "Score 0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 120,
-                  "x": 4,
-                  "y": 4
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 20,
+                    "text": null,
+                    "w": 120,
+                    "x": 4,
+                    "y": 24
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 20,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Best 0",
+                  "options": [],
                   "text": "Best 0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 120,
-                  "x": 4,
-                  "y": 24
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 62,
+                    "text": null,
+                    "w": 22,
+                    "x": 120,
+                    "y": 0
+                  },
                   "children": [],
-                  "fill": 192,
-                  "h": 62,
-                  "label": "",
+                  "color": 192,
+                  "kind": "fillRect",
+                  "label": "fillRect",
                   "text": null,
-                  "type": "fillRect",
-                  "w": 22,
-                  "x": 120,
-                  "y": 0
+                  "type": "fillRect"
                 },
                 {
+                  "bounds": {
+                    "h": 60,
+                    "text": null,
+                    "w": 22,
+                    "x": 120,
+                    "y": 108
+                  },
                   "children": [],
-                  "fill": 192,
-                  "h": 60,
-                  "label": "",
+                  "color": 192,
+                  "kind": "fillRect",
+                  "label": "fillRect",
                   "text": null,
-                  "type": "fillRect",
-                  "w": 22,
-                  "x": 120,
-                  "y": 108
+                  "type": "fillRect"
                 },
                 {
+                  "bounds": {
+                    "h": 88,
+                    "text": null,
+                    "w": 22,
+                    "x": 198,
+                    "y": 0
+                  },
                   "children": [],
-                  "fill": 192,
-                  "h": 88,
-                  "label": "",
+                  "color": 192,
+                  "kind": "fillRect",
+                  "label": "fillRect",
                   "text": null,
-                  "type": "fillRect",
-                  "w": 22,
-                  "x": 198,
-                  "y": 0
+                  "type": "fillRect"
                 },
                 {
+                  "bounds": {
+                    "h": 34,
+                    "text": null,
+                    "w": 22,
+                    "x": 198,
+                    "y": 134
+                  },
                   "children": [],
-                  "fill": 192,
-                  "h": 34,
-                  "label": "",
+                  "color": 192,
+                  "kind": "fillRect",
+                  "label": "fillRect",
                   "text": null,
-                  "type": "fillRect",
-                  "w": 22,
-                  "x": 198,
-                  "y": 134
+                  "type": "fillRect"
                 }
               ],
-              "id": 1,
+              "id": "1",
+              "kind": "canvasLayer",
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": 1,
+          "id": "1",
+          "kind": "window",
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
+      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
@@ -279,8 +311,6 @@
       "args": [],
       "ctor": "Rectangular"
     },
-    "last_message": "StorageStringLoaded",
-    "last_operation": "StorageStringLoaded",
     "runtime_view_output": [],
     "score": 0,
     "screenH": 168,
@@ -305,9 +335,7 @@
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
-    "_debugger_steps": 1,
     "debugger_init_complete": true,
-    "elm_executor_mode": "runtime_executed",
     "last_source": "module Main exposing (main)\n\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.Events as Events\nimport Pebble.Frame as Frame\nimport Pebble.Game.Collision as Collision\nimport Pebble.Platform as Platform\nimport Pebble.Storage as Storage\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\nimport Pebble.Vibes as Vibes\n\n\ntype alias Tube =\n    { x : Int\n    , gapY : Int\n    }\n\n\ntype alias Model =\n    { birdY : Int\n    , velocity : Int\n    , tubes : List Tube\n    , score : Int\n    , best : Int\n    , alive : Bool\n    , screenW : Int\n    , screenH : Int\n    , displayShape : Platform.DisplayShape\n    }\n\n\ntype Msg\n    = FrameTick Frame.Frame\n    | UpPressed\n    | StorageStringLoaded String\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( reset 0 context.screen.width context.screen.height context.screen.shape\n    , Storage.readString 42 StorageStringLoaded\n    )\n\n\nreset : Int -> Int -> Int -> Platform.DisplayShape -> Model\nreset best screenW screenH displayShape =\n    { birdY = 60\n    , velocity = 0\n    , tubes = [ { x = 120, gapY = 62 }, { x = 198, gapY = 88 } ]\n    , score = 0\n    , best = best\n    , alive = True\n    , screenW = screenW\n    , screenH = screenH\n    , displayShape = displayShape\n    }\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        FrameTick _ ->\n            if model.alive then\n                step model\n\n            else\n                ( model, Cmd.none )\n\n        UpPressed ->\n            if model.alive then\n                ( { model | velocity = -8 }, Cmd.none )\n\n            else\n                ( reset model.best model.screenW model.screenH model.displayShape, Cmd.none )\n\n        StorageStringLoaded value ->\n            ( { model | best = Maybe.withDefault 0 (String.toInt value) }, Cmd.none )\n\n\nstep : Model -> ( Model, Cmd Msg )\nstep model =\n    let\n        movedTubes =\n            List.map (\\tube -> { tube | x = tube.x - 3 }) model.tubes\n\n        recycled =\n            case movedTubes of\n                first :: rest ->\n                    if first.x < -22 then\n                        rest ++ [ { x = 144, gapY = 48 + modBy 64 (model.score * 17) } ]\n\n                    else\n                        movedTubes\n\n                [] ->\n                    movedTubes\n\n        nextY =\n            model.birdY + model.velocity\n\n        nextVelocity =\n            min 8 (model.velocity + 1)\n\n        bird =\n            { x = 18, y = nextY, w = 14, h = 14 }\n\n        tubeHits =\n            List.any (tubeCollision bird) recycled\n\n        dead =\n            nextY > 145 || nextY < 0 || tubeHits\n\n        nextScore =\n            model.score + 1\n\n        nextBest =\n            max model.best nextScore\n    in\n    ( { model\n        | birdY = nextY\n        , velocity = nextVelocity\n        , tubes = recycled\n        , score = nextScore\n        , best = nextBest\n        , alive = not dead\n      }\n    , if dead then\n          Cmd.batch\n            [ Storage.writeString 42 (String.fromInt nextBest)\n            , Vibes.shortPulse\n            ]\n\n      else\n          Cmd.none\n    )\n\n\ntubeCollision : Collision.Rect -> Tube -> Bool\ntubeCollision bird tube =\n    let\n        gapH =\n            46\n    in\n    Collision.rectRect bird { x = tube.x, y = 0, w = 22, h = tube.gapY }\n        || Collision.rectRect bird { x = tube.x, y = tube.gapY + gapH, w = 22, h = 168 - tube.gapY - gapH }\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Frame.every 33 FrameTick\n        , Button.onPress Button.Up UpPressed\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    Ui.toUiNode\n        ([ Ui.clear Color.white\n         , Ui.drawBitmapInRect Resources.NoStaticBitmap { x = 0, y = 0, w = 1, h = 1 }\n         , Ui.fillRect { x = 18, y = model.birdY, w = 14, h = 14 } Color.black\n         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 4, w = 120, h = 20 } (\"Score \" ++ String.fromInt model.score)\n         , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 24, w = 120, h = 20 } (\"Best \" ++ String.fromInt model.best)\n         ]\n            ++ List.concatMap drawTube model.tubes\n            ++ (if model.alive then\n                    []\n\n                else\n                    [ gameOverOp model ]\n               )\n        )\n\n\ngameOverOp : Model -> Ui.RenderOp\ngameOverOp model =\n    let\n        textOptions =\n            Ui.alignCenter Ui.defaultTextOptions\n\n        textW =\n            if Platform.displayShapeIsRound model.displayShape then\n                (min model.screenW model.screenH * 4) // 9\n\n            else\n                100\n\n        textX =\n            (model.screenW - textW) // 2\n\n        textY =\n            if Platform.displayShapeIsRound model.displayShape then\n                (min model.screenW model.screenH * 3 // 5) - 14\n\n            else\n                76\n    in\n    Ui.text Resources.DefaultFont textOptions { x = textX, y = textY, w = textW, h = 28 } \"Press Up\"\n\n\ndrawTube : Tube -> List Ui.RenderOp\ndrawTube tube =\n    [ Ui.fillRect { x = tube.x, y = 0, w = 22, h = tube.gapY } Color.black\n    , Ui.fillRect { x = tube.x, y = tube.gapY + 46, w = 22, h = 168 - tube.gapY - 46 } Color.black\n    ]\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
     "launch_context": {
       "has_compass": true,
@@ -325,6 +353,15 @@
       "watch_profile_id": "aplite"
     },
     "revision": "ddef190255c1",
+    "runtime_execution": {
+      "compiler": "elmx",
+      "contract": "elmx.runtime_executor.v1",
+      "engine": "elmx_runtime_v1",
+      "execution_backend": "compiled_elixir",
+      "runtime_mode": "runtime_first",
+      "runtime_model_source": "step_message"
+    },
+    "runtime_execution_mode": "runtime_executed",
     "runtime_known_messages": [
       "FrameTick",
       "UpPressed",
@@ -344,8 +381,7 @@
         "args": [],
         "ctor": "Rectangular"
       },
-      "last_message": "StorageStringLoaded",
-      "last_operation": "StorageStringLoaded",
+      "runtime_view_output_model_sha256": "87d75448c7d88a7ca885de11c39a19a48c0b46c6ca884327414bab2fae9ca23c",
       "score": 0,
       "screenH": 168,
       "screenW": 144,
@@ -374,9 +410,10 @@
         "text": null
       },
       {
-        "bitmap_id": 1,
+        "bitmap_id": 0,
         "h": 1,
         "kind": "bitmap_in_rect",
+        "resource": "NoStaticBitmap",
         "text": null,
         "w": 1,
         "x": 0,
@@ -392,7 +429,7 @@
         "y": 60
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 20,
         "kind": "text",
         "text": "Score 0",
@@ -403,7 +440,7 @@
         "y": 4
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 20,
         "kind": "text",
         "text": "Best 0",
@@ -436,7 +473,7 @@
         "h": 88,
         "kind": "fill_rect",
         "text": null,
-        "w": 22,
+        "w": 0,
         "x": 198,
         "y": 0
       },
@@ -445,7 +482,7 @@
         "h": 34,
         "kind": "fill_rect",
         "text": null,
-        "w": 22,
+        "w": 0,
         "x": 198,
         "y": 134
       }
@@ -453,17 +490,23 @@
     "screen_height": 168,
     "screen_width": 144,
     "simulator_settings": {
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "battery_percent": 88,
       "calendar_events": [],
+      "storage_values": {},
       "charging": false,
-      "clock_24h": true,
-      "compass_heading_deg": 0,
+      "timezone_id": "Europe/Berlin",
       "compass_valid": true,
+      "use_simulated_time": true,
+      "simulated_date": "2026-05-27",
+      "compass_heading_deg": 0,
+      "latitude": 48.14,
+      "companion_timeline_token": "demo-timeline-token",
+      "notifications_enabled": true,
+      "health_steps_today": 9100,
+      "language": "en",
       "connected": true,
+      "preferences": {},
+      "battery_percent": 88,
       "dictation_error": "",
-      "dictation_transcript": "",
       "environment": {
         "moon": {
           "moonriseMin": 900,
@@ -477,32 +520,27 @@
         },
         "tide": null
       },
-      "health_steps": 4200,
-      "health_steps_today": 9100,
-      "language": "en",
-      "latitude": 48.137154,
-      "locale": "en-US",
-      "longitude": 11.576124,
-      "network_online": true,
-      "notifications_enabled": true,
-      "preferences": {},
-      "quiet_hours": false,
-      "region": "US",
-      "simulated_date": "2026-05-27",
-      "simulated_time": "08:53:00",
-      "storage_values": {},
-      "timeline_peek": false,
-      "timezone_id": "Europe/Berlin",
       "timezone_offset_min": 0,
-      "use_simulated_time": true,
-      "vibe_pattern_ms": [],
       "weather": {
         "condition": "clear",
         "humidityPercent": 50,
         "pressureHpa": 1013,
         "temperatureC": 21,
         "windKph": 8
-      }
+      },
+      "region": "US",
+      "clock_24h": true,
+      "longitude": 11.58,
+      "vibe_pattern_ms": [],
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "locale": "en-US",
+      "network_online": true,
+      "timeline_peek": false,
+      "health_steps": 4200,
+      "dictation_transcript": "",
+      "simulated_time": "08:53:00",
+      "quiet_hours": false
     },
     "source_root": "watch",
     "status": "idle",
