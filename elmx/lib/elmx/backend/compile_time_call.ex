@@ -12,7 +12,7 @@ defmodule Elmx.Backend.CompileTimeCall do
   """
   @spec handled?(String.t()) :: boolean()
   def handled?(target) when is_binary(target) do
-    qualified_rewrite?(target) or pebble_rewrite?(target)
+    qualified_rewrite?(target) or pebble_rewrite_handled?(target)
   end
 
   @spec emit_function?(String.t(), String.t(), MapSet.t(), keyword()) :: boolean()
@@ -45,10 +45,21 @@ defmodule Elmx.Backend.CompileTimeCall do
     end)
   end
 
-  defp pebble_rewrite?(target) do
-    Enum.any?(0..@max_dummy_args, fn n ->
-      match?({:ok, _}, Pebble.rewrite_qualified_call(target, dummy_args(n)))
-    end)
+  # Subscription stubs rewrite to `0` only for arity-0 probes; do not treat that as
+  # "handled" or companion-core callback bodies are never emitted.
+  defp pebble_rewrite_handled?(target) do
+    case Pebble.rewrite_qualified_call(target, []) do
+      {:ok, %{op: :int_literal, value: 0}} ->
+        false
+
+      {:ok, _} ->
+        true
+
+      _ ->
+        Enum.any?(1..@max_dummy_args, fn n ->
+          match?({:ok, _}, Pebble.rewrite_qualified_call(target, dummy_args(n)))
+        end)
+    end
   end
 
   defp dummy_args(n) when n >= 0 do

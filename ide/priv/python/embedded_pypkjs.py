@@ -116,9 +116,9 @@ def weather_trace_log(runner, ws, stage, **data):
             pass
 
 
-def apply_settings_to_runner(runner, settings):
+def _companion_settings_apply_source(settings):
     settings_json = json.dumps(settings)
-    source = (
+    return (
         "(function(s){"
         "var g=typeof globalThis!=='undefined'?globalThis:this;"
         "g.__elmPebbleCompanionSimulatorSettings=s;"
@@ -129,20 +129,44 @@ def apply_settings_to_runner(runner, settings):
         "g.__elmPebblePendingSimulatorSettings=s;"
         "})(" + settings_json + ")"
     )
+
+
+def apply_settings_to_runner(runner, settings):
+    """Apply companion simulator settings on the JS runtime event-loop thread."""
     js = getattr(runner, "js", None)
     if js is None:
+        store_pending_simulator_settings(runner, settings)
         return False
 
-    context = getattr(js, "context", None)
-    if context is not None and hasattr(context, "eval"):
-        context.eval(source)
-        return True
+    source = _companion_settings_apply_source(settings)
 
-    if hasattr(js, "run"):
-        js.run(source)
-        return True
+    def do_apply():
+        js_now = getattr(runner, "js", None)
+        if js_now is None:
+            store_pending_simulator_settings(runner, settings)
+            return
 
-    return False
+        context = getattr(js_now, "context", None)
+        if context is None or not hasattr(context, "eval"):
+            store_pending_simulator_settings(runner, settings)
+            return
+
+        try:
+            with context:
+                context.eval(source)
+            remember_simulator_settings(runner, settings)
+            pending = getattr(runner, "_elm_pebble_pending_simulator_settings", None)
+            if pending == settings:
+                del runner._elm_pebble_pending_simulator_settings
+        except Exception as exc:
+            runner.log_output(
+                "Companion simulator settings apply failed: %s: %s"
+                % (type(exc).__name__, exc)
+            )
+            traceback.print_exc()
+
+    js.enqueue(do_apply)
+    return True
 
 
 def store_pending_simulator_settings(runner, settings):
@@ -186,10 +210,96 @@ def apply_pending_simulator_settings(runner):
     if not settings:
         return False
     if apply_settings_to_runner(runner, settings):
-        del runner._elm_pebble_pending_simulator_settings
         schedule_simulator_weather_to_watch(runner, "apply_pending_simulator_settings")
         return True
     return False
+
+
+def simulator_geolocation_from_settings(settings):
+    if not isinstance(settings, dict):
+        return None
+
+    lat = settings.get("latitude")
+    lon = settings.get("longitude")
+    if lat is None or lon is None:
+        return None
+
+    try:
+        lat_f = float(lat)
+        lon_f = float(lon)
+    except (TypeError, ValueError):
+        return None
+
+    accuracy = settings.get("accuracy")
+    if accuracy is None:
+        accuracy = settings.get("geolocation_accuracy")
+    try:
+        accuracy_f = float(accuracy) if accuracy is not None else 1000.0
+    except (TypeError, ValueError):
+        accuracy_f = 1000.0
+
+    return lon_f, lat_f, accuracy_f
+
+
+def _simulator_geolocation_coords_for_runner(runner):
+    if runner is None:
+        return None
+    settings = getattr(runner, "_elm_pebble_last_simulator_settings", None)
+    if settings is None:
+        settings = getattr(runner, "_elm_pebble_pending_simulator_settings", None)
+    return simulator_geolocation_from_settings(settings)
+
+
+def _enqueue_geolocation_success(runtime, success, lon, lat, accuracy):
+    """Build STPyV8 position objects on the JS event-loop thread only."""
+    from pypkjs.javascript.navigator.geolocation import Coordinates, Position
+
+    def deliver():
+        if not callable(success):
+            return
+        position = Position(
+            runtime,
+            Coordinates(runtime, lon, lat, accuracy),
+            round(time.time() * 1000),
+        )
+        success(position)
+
+    runtime.enqueue(deliver)
+
+
+def patch_embedded_geolocation():
+    from pypkjs.javascript.navigator.geolocation import Geolocation
+
+    if getattr(Geolocation, "__elm_patched__", False):
+        return
+
+    original_get_position = Geolocation._get_position
+    original_get_current_position = Geolocation.getCurrentPosition
+
+    def _get_position(self, success, failure):
+        coords = _simulator_geolocation_coords_for_runner(
+            getattr(self.runtime, "runner", None)
+        )
+        if coords is not None:
+            lon, lat, accuracy = coords
+            _enqueue_geolocation_success(self.runtime, success, lon, lat, accuracy)
+            return
+        return original_get_position(self, success, failure)
+
+    def getCurrentPosition(self, success, failure=None, options=None):
+        coords = _simulator_geolocation_coords_for_runner(
+            getattr(self.runtime, "runner", None)
+        )
+        if coords is not None:
+            lon, lat, accuracy = coords
+            _enqueue_geolocation_success(self.runtime, success, lon, lat, accuracy)
+            return 42
+        return original_get_current_position(self, success, failure, options)
+
+    _get_position.__elm_patched__ = True
+    Geolocation._get_position = _get_position
+    Geolocation.getCurrentPosition = getCurrentPosition
+    Geolocation.__elm_patched__ = True
 
 
 def normalize_ws_message(message):
@@ -197,6 +307,25 @@ def normalize_ws_message(message):
         return message
     if isinstance(message, bytes):
         return bytearray(message)
+    return None
+
+
+_js_lifecycle_lock = None
+
+
+def _get_js_lifecycle_lock():
+    global _js_lifecycle_lock
+    if _js_lifecycle_lock is None:
+        import gevent.lock
+
+        _js_lifecycle_lock = gevent.lock.RLock()
+    return _js_lifecycle_lock
+
+
+def _phone_pbw_with_js(runner):
+    for pbw in runner.pbws.values():
+        if pbw.src is not None:
+            return pbw
     return None
 
 
@@ -224,29 +353,51 @@ def patch_companion_cache_install():
         import gevent
 
         def go_install():
-            with tempfile.NamedTemporaryFile() as f:
-                f.write(pbw_bytes)
-                f.flush()
+            import gevent
 
-                try:
-                    runner.load_pbws([f.name], cache=True, start=True)
-                    apply_pending_simulator_settings(runner)
-                    schedule_simulator_weather_to_watch(runner, "companion_cache_refresh")
-                    loaded = [
-                        str(app_uuid)
-                        for app_uuid, pbw in runner.pbws.items()
-                        if pbw.src is not None
-                    ]
-                    runner.log_output(
-                        "Companion cache refreshed; started JS for: %s"
-                        % (", ".join(loaded) if loaded else "none")
-                    )
-                    ws.send(bytearray([0x05, 0x00, 0x00, 0x00, 0x00]))
-                except Exception as exc:
-                    runner.log_output(
-                        "Companion cache refresh failed: %s: %s" % (type(exc).__name__, exc)
-                    )
-                    ws.send(bytearray([0x05, 0x00, 0x00, 0x00, 0x01]))
+            ack_ok = bytearray([0x05, 0x00, 0x00, 0x00, 0x00])
+            ack_err = bytearray([0x05, 0x00, 0x00, 0x00, 0x01])
+            lock = _get_js_lifecycle_lock()
+
+            with lock:
+                with tempfile.NamedTemporaryFile() as f:
+                    f.write(pbw_bytes)
+                    f.flush()
+
+                    try:
+                        if getattr(runner, "js", None) is not None:
+                            runner.stop_js()
+                            gevent.sleep(0.3)
+
+                        runner.log_output(
+                            "Companion cache refresh loading PBW (%d bytes)..."
+                            % len(pbw_bytes)
+                        )
+                        runner.load_pbws([f.name], cache=True, start=False)
+                        phone_pbw = _phone_pbw_with_js(runner)
+                        if phone_pbw is None:
+                            raise ValueError("PBW has no pebble-js-app.js (phone companion)")
+
+                        runner.start_js(phone_pbw)
+                        apply_pending_simulator_settings(runner)
+                        loaded = [
+                            str(app_uuid)
+                            for app_uuid, pbw in runner.pbws.items()
+                            if pbw.src is not None
+                        ]
+                        runner.log_output(
+                            "Companion cache refreshed; started JS for: %s"
+                            % (", ".join(loaded) if loaded else "none")
+                        )
+                        ws.send(ack_ok)
+                        runner.log_output("Companion cache refresh ack sent to IDE")
+                    except Exception as exc:
+                        runner.log_output(
+                            "Companion cache refresh failed: %s: %s"
+                            % (type(exc).__name__, exc)
+                        )
+                        traceback.print_exc()
+                        ws.send(ack_err)
 
         gevent.spawn(go_install)
 
@@ -674,29 +825,91 @@ def send_wire_appmessage(pebble, message):
 
 
 def patch_pebble_send_appmessage():
+    """Use stock pypkjs sendAppMessage (companion already calls it from the JS event loop)."""
     from pypkjs.javascript.pebble import JSRuntimeException, Pebble
 
     if getattr(Pebble.sendAppMessage, "__elm_patched__", False):
         return
 
+    original_send_appmessage = Pebble.sendAppMessage
+
     def sendAppMessage(self, message, success=None, failure=None):
         self._check_ready()
-
         try:
-            tid = send_wire_appmessage(self, message)
+            original_send_appmessage(self, message, success, failure)
         except Exception as exc:
             if callable(failure):
                 self.runtime.enqueue(failure, exc)
-                return
-            raise JSRuntimeException(str(exc))
-
-        self.pending_acks[tid] = (success, failure)
+            else:
+                raise JSRuntimeException(str(exc))
 
     sendAppMessage.__elm_patched__ = True
     Pebble.sendAppMessage = sendAppMessage
 
 
 patch_pebble_send_appmessage()
+
+
+def patch_pebble_appmessage_acks():
+    """Deliver AppMessage ACK/NACK handling on the JS runtime queue."""
+    from pypkjs.javascript.pebble import Pebble
+
+    if getattr(Pebble._handle_response, "__elm_patched__", False):
+        return
+
+    original_handle_response = Pebble._handle_response
+
+    def _handle_response(self, tid, did_succeed):
+        def deliver():
+            original_handle_response(self, tid, did_succeed)
+
+        js = getattr(self.runtime, "js", None)
+        if js is None:
+            deliver()
+        else:
+            self.runtime.enqueue(deliver)
+
+    _handle_response.__elm_patched__ = True
+    Pebble._handle_response = _handle_response
+
+
+patch_pebble_appmessage_acks()
+
+
+def patch_pebble_inbound_appmessage():
+    """Deliver watch→phone AppMessages on the JS runtime queue (STPyV8 is not thread-safe)."""
+    from pypkjs.javascript.pebble import Pebble
+
+    if getattr(Pebble._handle_message, "__elm_patched__", False):
+        return
+
+    original_handle_message = Pebble._handle_message
+
+    def _handle_message(self, tid, uuid, dictionary):
+        if uuid != self.uuid:
+            return original_handle_message(self, tid, uuid, dictionary)
+
+        inbound = {int(key): value for key, value in dictionary.items()}
+
+        def deliver():
+            if getattr(self.runtime, "js", None) is None:
+                return
+            try:
+                original_handle_message(self, tid, uuid, inbound)
+            except Exception as exc:
+                self.runtime.log_output(
+                    "Inbound AppMessage delivery failed: %s: %s"
+                    % (type(exc).__name__, exc)
+                )
+                traceback.print_exc()
+
+        self.runtime.enqueue(deliver)
+
+    _handle_message.__elm_patched__ = True
+    Pebble._handle_message = _handle_message
+
+
+patch_pebble_inbound_appmessage()
 
 
 def patch_simulator_settings():
@@ -902,40 +1115,35 @@ def patch_runner_lifecycle_logging():
         return original_handle_stop(runner, uuid)
 
     def start_js(runner, pbw):
-        global _pending_companion_js_prefix
-        settings = getattr(runner, "_elm_pebble_pending_simulator_settings", None)
-        if settings is None:
-            settings = getattr(runner, "_elm_pebble_last_simulator_settings", None)
-        if settings:
-            prepare_companion_js_prefix(settings)
-        else:
-            _pending_companion_js_prefix = None
-        # region agent log
-        agent_log("initial", "H34,H35", "embedded_pypkjs.py:runner:start_js", "pypkjs starting js runtime", {
-            "uuid": str(pbw.uuid),
-            "has_js": pbw.src is not None,
-            "js_bytes": len(pbw.src) if pbw.src is not None else 0,
-        })
-        # endregion
-        result = original_start_js(runner, pbw)
-        settings = getattr(runner, "_elm_pebble_pending_simulator_settings", None)
-        if settings is None:
-            settings = getattr(runner, "_elm_pebble_last_simulator_settings", None)
-        if settings:
-            import gevent
-
-            gevent.spawn_later(0.15, apply_settings_to_runner, runner, settings)
-        schedule_simulator_weather_to_watch(runner, "start_js", delay_seconds=2.0)
-        return result
+        with _get_js_lifecycle_lock():
+            global _pending_companion_js_prefix
+            settings = getattr(runner, "_elm_pebble_pending_simulator_settings", None)
+            if settings is None:
+                settings = getattr(runner, "_elm_pebble_last_simulator_settings", None)
+            if settings:
+                prepare_companion_js_prefix(settings)
+            else:
+                _pending_companion_js_prefix = None
+            # region agent log
+            agent_log("initial", "H34,H35", "embedded_pypkjs.py:runner:start_js", "pypkjs starting js runtime", {
+                "uuid": str(pbw.uuid),
+                "has_js": pbw.src is not None,
+                "js_bytes": len(pbw.src) if pbw.src is not None else 0,
+            })
+            # endregion
+            result = original_start_js(runner, pbw)
+            schedule_simulator_weather_to_watch(runner, "start_js", delay_seconds=2.0)
+            return result
 
     def stop_js(runner):
-        # region agent log
-        agent_log("initial", "H37", "embedded_pypkjs.py:runner:stop_js", "pypkjs stopping js runtime", {
-            "running_uuid": str(runner.running_uuid) if runner.running_uuid else None,
-            "has_js_runtime": runner.js is not None,
-        })
-        # endregion
-        return original_stop_js(runner)
+        with _get_js_lifecycle_lock():
+            # region agent log
+            agent_log("initial", "H37", "embedded_pypkjs.py:runner:stop_js", "pypkjs stopping js runtime", {
+                "running_uuid": str(runner.running_uuid) if runner.running_uuid else None,
+                "has_js_runtime": runner.js is not None,
+            })
+            # endregion
+            return original_stop_js(runner)
 
     def run_js(runtime, source):
         global _pending_companion_js_prefix
@@ -974,6 +1182,7 @@ def patch_runner_lifecycle_logging():
 
 
 patch_runner_lifecycle_logging()
+patch_embedded_geolocation()
 
 
 if __name__ == "__main__":

@@ -57,6 +57,11 @@ export class EmulatorSessionClient {
       this.host.hideConfigPage()
       this.host.sessionEnded = false
       this.host.appInstalled = false
+      this.host.phoneCompanionCacheInstalled = false
+      this.host.phoneCompanionInstalledAt = 0
+      this.host.phoneBridgeReconnectAttempts = 0
+      this.host.phoneBridgeReconnectWindowStartedAt = 0
+      this.host.phoneBridgeLastReconnectedAt = 0
       this.host.setStatus("Launching embedded emulator...")
       void loadRFB().catch(() => {})
       this.host.session = await postJSON<EmulatorSessionInfo>("/api/emulator/launch", {slug, platform})

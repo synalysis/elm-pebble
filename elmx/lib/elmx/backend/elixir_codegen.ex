@@ -124,7 +124,7 @@ defmodule Elmx.Backend.ElixirCodegen do
       :ide_runtime ->
         emit_opts =
           opts
-          |> Map.take([:user_module_names])
+          |> Map.take([:user_module_names, :mode])
           |> Enum.into([])
 
         ReachableModules.modules_for_emit(ir, entry_module, emit_opts)
@@ -200,7 +200,7 @@ defmodule Elmx.Backend.ElixirCodegen do
     {body, env, _} = Emit.compile_expr(decl.expr, env, 0)
     uses_bitwise = Map.get(env, :uses_bitwise, false)
     fn_name = function_symbol(module_name, decl.name)
-    params = param_list(decl.args || [], emit_mode)
+    params = param_list(decl.args || [])
 
     source = """
     def #{fn_name}(#{params}) do
@@ -211,7 +211,7 @@ defmodule Elmx.Backend.ElixirCodegen do
     {source, uses_bitwise}
   end
 
-  defp param_list(args, _emit_mode) when is_list(args) do
+  defp param_list(args) when is_list(args) do
     Enum.map_join(args, ", ", fn arg ->
       arg |> Emit.param_name() |> Elmx.Backend.ElixirCodegen.Emit.Helpers.param_var_name(%{})
     end)

@@ -252,14 +252,14 @@ drawScene layout model =
 
 
 drawPokeball : Layout -> Opponent -> List Ui.RenderOp
-drawPokeball layout foe =
+drawPokeball _ foe =
     [ Ui.drawBitmapInRect Resources.BitmapStaticPokeball
         { x = foe.x, y = foe.y + 35, w = 24, h = 24 }
     ]
 
 
 drawOpeningPokeball : Layout -> Opponent -> List Ui.RenderOp
-drawOpeningPokeball layout foe =
+drawOpeningPokeball _ foe =
     [ Ui.drawBitmapInRect Resources.BitmapStaticPokeballOpen
         { x = foe.x + 10, y = foe.y + 35, w = 24, h = 24 }
     ]
@@ -289,7 +289,7 @@ drawOpponent layout model =
 
 
 drawTrainerCard : Layout -> Int -> Int -> String -> String -> Float -> Bool -> List Ui.RenderOp
-drawTrainerCard layout nameX nameY name levelTag health isOpponent =
+drawTrainerCard _ nameX nameY name levelTag health isOpponent =
     let
         barW =
             healthBarWidth health
@@ -364,7 +364,7 @@ drawAttack layout model frame =
 
 
 drawThunder : Layout -> Opponent -> List Ui.RenderOp
-drawThunder layout foe =
+drawThunder _ foe =
     let
         centerX =
             foe.x + 28
@@ -381,7 +381,7 @@ drawThunder layout foe =
 
 
 drawPsywave : Layout -> Player -> Int -> List Ui.RenderOp
-drawPsywave layout player frame =
+drawPsywave _ player frame =
     let
         baseX =
             player.x + 56
@@ -425,7 +425,7 @@ psyEllipse x y radX radY =
 
 
 drawEmbers : Layout -> Opponent -> Int -> List Ui.RenderOp
-drawEmbers layout foe frame =
+drawEmbers _ foe frame =
     let
         y =
             foe.y + 48
@@ -448,7 +448,7 @@ drawEmbers layout foe frame =
 
 
 drawBubbles : Layout -> Player -> Int -> List Ui.RenderOp
-drawBubbles layout player frame =
+drawBubbles _ player frame =
     let
         baseX =
             player.x + 56
@@ -492,7 +492,7 @@ largeBubbleCluster x y =
 
 
 eraseBelowOpponent : Layout -> Opponent -> List Ui.RenderOp
-eraseBelowOpponent layout foe =
+eraseBelowOpponent _ foe =
     [ Ui.fillRect { x = foe.x, y = foe.y + 58, w = 70, h = 80 } Color.white ]
 
 

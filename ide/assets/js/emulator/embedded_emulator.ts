@@ -31,7 +31,16 @@ const MAX_LOG_LINES = 300
 const MAX_LOG_CHARS = 40000
 const PUTBYTES_SUMMARY_INTERVAL = 25
 const SYSTEM_LOG_SUMMARY_INTERVAL = 50
-const PHONE_BRIDGE_INSTALL_TIMEOUT_MS = 120000
+// Large phone companions (YES + geolocation) can exceed 2 minutes on first cache load.
+const PHONE_BRIDGE_INSTALL_TIMEOUT_MS = 300_000
+/** Let native watch install and AppMessage traffic settle before reloading phone JS. */
+const PHONE_COMPANION_INSTALL_DELAY_MS = 2_000
+/** Ignore phone-bridge close events briefly after a successful companion cache load. */
+const PHONE_BRIDGE_POST_INSTALL_QUIET_MS = 4_000
+const PHONE_BRIDGE_RECONNECT_MAX = 4
+const PHONE_BRIDGE_RECONNECT_WINDOW_MS = 60_000
+/** Minimum gap between successful phone-bridge reconnects (avoids 1011 proxy storms). */
+const PHONE_BRIDGE_RECONNECT_COOLDOWN_MS = 8_000
 const VNC_WS_OPEN_TIMEOUT_MS = 10_000
 const VNC_CONNECT_TIMEOUT_MS = 12_000
 const VNC_RECONNECT_BASE_MS = 150
@@ -196,6 +205,12 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   configUrl: string | null = null
   configPopupTimer: ReturnType<typeof setInterval> | null = null
   phoneOpenedAt = 0
+  phoneCompanionCacheInstalled = false
+  phoneCompanionInstalledAt = 0
+  phoneBridgeReconnectInFlight = false
+  phoneBridgeReconnectAttempts = 0
+  phoneBridgeReconnectWindowStartedAt = 0
+  phoneBridgeLastReconnectedAt = 0
   logFlushScheduled = false
   simulatorDelivery: EmulatorSimulatorDelivery
   sessionClient: EmulatorSessionClient
@@ -262,6 +277,12 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     this.configUrl = null
     this.configPopupTimer = null
     this.phoneOpenedAt = 0
+    this.phoneCompanionCacheInstalled = false
+    this.phoneCompanionInstalledAt = 0
+    this.phoneBridgeReconnectInFlight = false
+    this.phoneBridgeReconnectAttempts = 0
+    this.phoneBridgeReconnectWindowStartedAt = 0
+    this.phoneBridgeLastReconnectedAt = 0
     this.logFlushScheduled = false
     this.destroyed = false
     this.simulatorDelivery = new EmulatorSimulatorDelivery(this)
@@ -671,8 +692,14 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       this.appendLog(`phone websocket closed (code ${event.code || "?"})`)
       this.phoneBridgeActive = false
       this.phoneBridgeReady = false
-      if (this.session && !this.stopping && !this.installing && this.phoneOpenedAt > 0) {
-        this.endSession("Embedded emulator phone bridge disconnected")
+      if (
+        this.session &&
+        !this.stopping &&
+        !this.installing &&
+        !this.phoneBridgeReconnectInFlight &&
+        this.phoneOpenedAt > 0
+      ) {
+        void this.reconnectPhoneBridgeAfterDisconnect()
       }
     })
   }
@@ -703,10 +730,21 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
         try {
           await this.ensurePhoneBridge()
           if (this.session?.id !== installSessionId) return
+          await new Promise<void>(resolve =>
+            window.setTimeout(resolve, PHONE_COMPANION_INSTALL_DELAY_MS)
+          )
+          if (this.session?.id !== installSessionId) return
           await this.installPbwViaPhoneBridge()
         } catch (error) {
           if (this.session?.id === installSessionId) {
-            this.appendLog(`phone bridge companion cache refresh failed: ${errMessage(error)}`)
+            const message = errMessage(error)
+            if (message.includes("Timed out waiting for phone bridge PBW install")) {
+              this.appendLog(
+                `${message} (companion JS may still be running; check pebble-js-app logs above)`
+              )
+            } else {
+              this.appendLog(`phone bridge companion cache refresh failed: ${message}`)
+            }
           }
         }
       }
@@ -726,6 +764,104 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     installSessionId?: string
   ): ReturnType<InstanceType<typeof EmulatorSessionClient>["installPbwViaNativeInstaller"]> {
     return this.sessionClient.installPbwViaNativeInstaller(installSessionId)
+  }
+
+  async reconnectPhoneBridgeAfterDisconnect(): Promise<void> {
+    if (
+      !this.session?.backend_enabled ||
+      this.destroyed ||
+      this.stopping ||
+      this.phoneBridgeReconnectInFlight
+    ) {
+      return
+    }
+
+    const now = Date.now()
+    if (
+      this.phoneBridgeLastReconnectedAt > 0 &&
+      now - this.phoneBridgeLastReconnectedAt < PHONE_BRIDGE_RECONNECT_COOLDOWN_MS
+    ) {
+      return
+    }
+    if (now - this.phoneCompanionInstalledAt < PHONE_BRIDGE_POST_INSTALL_QUIET_MS) {
+      await new Promise<void>(resolve =>
+        window.setTimeout(resolve, PHONE_BRIDGE_POST_INSTALL_QUIET_MS - (now - this.phoneCompanionInstalledAt))
+      )
+      if (this.destroyed || !this.session || this.phoneSocket?.readyState === WebSocket.OPEN) return
+    }
+
+    if (now - this.phoneBridgeReconnectWindowStartedAt > PHONE_BRIDGE_RECONNECT_WINDOW_MS) {
+      this.phoneBridgeReconnectAttempts = 0
+      this.phoneBridgeReconnectWindowStartedAt = now
+    }
+    this.phoneBridgeReconnectAttempts += 1
+    if (this.phoneBridgeReconnectAttempts > PHONE_BRIDGE_RECONNECT_MAX) {
+      this.endSession("Embedded emulator phone bridge disconnected too many times")
+      return
+    }
+
+    this.phoneBridgeReconnectInFlight = true
+    this.appendLog("phone bridge disconnected; attempting reconnect...")
+    try {
+      await new Promise<void>(resolve => window.setTimeout(resolve, 2_000))
+      if (this.destroyed || !this.session) return
+      await this.waitForPhoneBridgeReady(30_000)
+      if (this.destroyed || !this.session) return
+      await this.ensurePhoneBridge(45_000)
+      if (this.destroyed || !this.session) return
+      this.phoneBridgeLastReconnectedAt = Date.now()
+      this.appendLog("phone bridge reconnected")
+      if (this.phoneCompanionCacheInstalled) {
+        this.sendSimulatorSettingsToPhoneBridge({quiet: true})
+      } else if (this.session.has_phone_companion && this.session.artifact_path) {
+        await this.installPbwViaPhoneBridge()
+      }
+    } catch (error) {
+      if (!this.destroyed && this.session && !this.stopping) {
+        this.endSession(`Embedded emulator phone bridge disconnected (${errMessage(error)})`)
+      }
+    } finally {
+      this.phoneBridgeReconnectInFlight = false
+    }
+  }
+
+  async waitForSessionAlive(timeoutMs = 20_000): Promise<void> {
+    if (!this.session?.ping_path) return
+
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < timeoutMs) {
+      if (this.destroyed || !this.session?.ping_path) return
+      try {
+        const info = await postJSON<{alive?: boolean}>(this.session.ping_path)
+        if (info?.alive === true) return
+      } catch (_error) {
+        // session may still be restarting pypkjs
+      }
+      await new Promise<void>(resolve => window.setTimeout(resolve, 400))
+    }
+
+    throw new Error("Timed out waiting for emulator session to become alive")
+  }
+
+  async waitForPhoneBridgeReady(timeoutMs = 30_000): Promise<void> {
+    if (!this.session?.ping_path) return
+
+    const needsPhone = this.session.has_phone_companion === true
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < timeoutMs) {
+      if (this.destroyed || !this.session?.ping_path) return
+      try {
+        const info = await postJSON<{alive?: boolean; phone_bridge_ready?: boolean}>(
+          this.session.ping_path
+        )
+        if (info?.alive === true && (!needsPhone || info.phone_bridge_ready === true)) return
+      } catch (_error) {
+        // pypkjs may still be restarting after exit 133
+      }
+      await new Promise<void>(resolve => window.setTimeout(resolve, 500))
+    }
+
+    throw new Error("Timed out waiting for phone bridge (pypkjs) to become ready")
   }
 
   async ensurePhoneBridge(timeoutMs = 35_000): Promise<boolean> {
@@ -1173,6 +1309,8 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     this.phoneSocket.send(payload)
     this.appendLog(`sent PBW to phone bridge companion cache (${pbw.length} bytes, settings ${settingsJson.length} bytes)`)
     await result
+    this.phoneCompanionCacheInstalled = true
+    this.phoneCompanionInstalledAt = Date.now()
     this.appendLog("phone bridge companion cache refresh complete")
     this.sendSimulatorSettingsToPhoneBridge()
   }
@@ -2057,6 +2195,12 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     this.stopping = false
     this.installing = false
     this.pendingPypkjsInstall = null
+    this.phoneCompanionCacheInstalled = false
+    this.phoneCompanionInstalledAt = 0
+    this.phoneBridgeReconnectInFlight = false
+    this.phoneBridgeReconnectAttempts = 0
+    this.phoneBridgeReconnectWindowStartedAt = 0
+    this.phoneBridgeLastReconnectedAt = 0
     this.phoneBridgeActive = false
     this.stopPingAfterDisplayTimer()
     this.stopPing()

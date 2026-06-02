@@ -155,6 +155,8 @@ defmodule Elmx.Runtime.Pebble do
       "elmx_companion_storage_remove" -> companion_storage_remove_cmd(args)
       "elmx_companion_preferences_get" -> companion_preferences_get_cmd(args)
       "elmx_companion_preferences_set" -> companion_preferences_set_cmd(args)
+      "elmx_companion_preferences_decode_response" -> companion_preferences_decode_response(args)
+      "elmx_companion_configuration_on_closed" -> companion_configuration_on_closed(args)
       "elmx_companion_bridge_cmd" -> companion_bridge_cmd(args)
       "elmx_companion_phone_send" -> companion_phone_send_cmd(args)
       "elmx_companion_send_bridge_command" -> companion_send_bridge_command_cmd(args)
@@ -311,6 +313,14 @@ defmodule Elmx.Runtime.Pebble do
     do: Cmd.companion_bridge("preferences", "set", key: key, value: value)
 
   defp companion_preferences_set_cmd(_), do: Cmd.none()
+
+  defp companion_preferences_decode_response([schema, response]),
+    do: Elmx.Runtime.CompanionPreferences.decode_response(schema, response)
+
+  defp companion_preferences_decode_response(_), do: {:Err, :MissingResponse}
+
+  defp companion_configuration_on_closed([_to_msg]), do: 0
+  defp companion_configuration_on_closed(_), do: 0
 
   defp companion_bridge_cmd([api, op, callback]) when is_binary(api) and is_binary(op),
     do: Cmd.companion_bridge(api, op, callback: callback)

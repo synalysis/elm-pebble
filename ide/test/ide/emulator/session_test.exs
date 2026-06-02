@@ -303,7 +303,20 @@ defmodule Ide.Emulator.SessionTest do
   test "embedded pypkjs companion cache refresh starts phone JS" do
     source = File.read!("priv/python/embedded_pypkjs.py")
 
-    assert source =~ "runner.load_pbws([f.name], cache=True, start=True)"
+    assert source =~ "runner.load_pbws([f.name], cache=True, start=False)"
+    assert source =~ "_get_js_lifecycle_lock()"
+    assert source =~ "_phone_pbw_with_js(runner)"
+    assert source =~ "js.enqueue(do_apply)"
+    assert source =~ "patch_embedded_geolocation()"
+    assert source =~ "_enqueue_geolocation_success"
+    assert source =~ "getCurrentPosition"
+    assert source =~ "patch_pebble_inbound_appmessage()"
+    assert source =~ "original_handle_message"
+    assert source =~ "original_send_appmessage"
+    assert source =~ "patch_pebble_appmessage_acks()"
+    assert source =~ "original_handle_response"
+    assert source =~ "simulator_geolocation_from_settings"
+    refute source =~ "gevent.spawn_later(0.15, apply_settings_to_runner"
     assert source =~ "patch_pebble_send_appmessage()"
     assert source =~ "detect_appmessage_key_shift_corruption"
     assert source =~ "JSON.stringify(m)"

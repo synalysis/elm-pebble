@@ -313,6 +313,36 @@ defmodule Elmx.CompanionSpecialValuesTest do
              SpecialValues.rewrite("Pebble.Companion.DemoBridge.probeCommand", [])
   end
 
+  test "configuration onClosed with handler lowers to runtime subscribe" do
+    to_msg = %{op: :var, name: "toMsg"}
+
+    assert {:ok,
+            %{
+              op: :runtime_call,
+              function: "elmx_companion_configuration_on_closed",
+              args: [^to_msg]
+            }} = SpecialValues.rewrite("Pebble.Companion.Configuration.onClosed", [to_msg])
+
+    assert {:ok, %{op: :int_literal, value: 0}} =
+             SpecialValues.rewrite("Pebble.Companion.Configuration.onClosed", [])
+  end
+
+  test "preferences decodeResponse lowers to runtime decode helper" do
+    schema = %{op: :var, name: "schema"}
+    response = %{op: :var, name: "response"}
+
+    assert {:ok,
+            %{
+              op: :runtime_call,
+              function: "elmx_companion_preferences_decode_response",
+              args: [^schema, ^response]
+            }} =
+             SpecialValues.rewrite("Pebble.Companion.Preferences.decodeResponse", [
+               schema,
+               response
+             ])
+  end
+
   test "protocol_phone_to_watch followup uses companion source root" do
     cmd = Cmd.protocol_phone_to_watch({:ProvideLocale, "en-US"})
 

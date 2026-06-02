@@ -7,7 +7,6 @@ import Companion.Types exposing (PhoneToWatch(..), SunMode(..), WatchToPhone(..)
 import CompanionPreferences
 import Json.Decode as Decode
 import Platform
-import Task
 import Time
 
 
@@ -30,7 +29,6 @@ type Msg
     = FromWatch (Result String WatchToPhone)
     | FromConfiguration (Result String CompanionPreferences.Settings)
     | CurrentPosition (Result String LocationSnapshot)
-    | SendLocationSnapshot LocationSnapshot ( Time.Posix, Time.ZoneName )
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -73,9 +71,6 @@ update msg model =
         CurrentPosition (Err error) ->
             ( addError ("Location error: " ++ error) model, Cmd.none )
 
-        SendLocationSnapshot location ( now, zoneName ) ->
-            ( model, sendLocationSnapshot location now zoneName )
-
 
 currentSettings : Model -> CompanionPreferences.Settings
 currentSettings model =
@@ -94,15 +89,15 @@ requestCurrentLocation =
 
 sendLocationData : LocationSnapshot -> Cmd Msg
 sendLocationData location =
-    Task.map2 (\now zoneName -> ( now, zoneName )) Time.now Time.getZoneName
-        |> Task.perform (SendLocationSnapshot location)
+    sendLocationSnapshot location
 
 
-sendLocationSnapshot : LocationSnapshot -> Time.Posix -> Time.ZoneName -> Cmd Msg
-sendLocationSnapshot location now zoneName =
+sendLocationSnapshot : LocationSnapshot -> Cmd Msg
+sendLocationSnapshot location =
     let
+        -- Avoid Time.getZoneName in phone JS: Intl.DateTimeFormat exhausts V8 memory in pypkjs.
         tzOffsetMin =
-            timezoneOffsetForLocation location.longitude zoneName
+            longitudeTimezoneOffset location.longitude
 
         sunriseMin =
             sunriseMinute location tzOffsetMin
@@ -139,50 +134,9 @@ type alias SunSnapshot =
     }
 
 
-timezoneOffsetForLocation : Float -> Time.ZoneName -> Int
-timezoneOffsetForLocation longitude zoneName =
-    let
-        phoneOffset =
-            case zoneName of
-                Time.Offset offset ->
-                    offset
-
-                Time.Name _ ->
-                    longitudeTimezoneOffset longitude
-
-        guessedOffset =
-            longitudeTimezoneOffset longitude
-    in
-    if timezoneOffsetMismatch phoneOffset guessedOffset then
-        guessedOffset
-
-    else
-        phoneOffset
-
-
-timezoneOffsetMismatch : Int -> Int -> Bool
-timezoneOffsetMismatch phoneOffset guessedOffset =
-    (phoneOffset == 0 && abs guessedOffset >= 60)
-        || (guessedOffset == 0 && abs phoneOffset >= 60)
-        || (sign phoneOffset /= sign guessedOffset && abs (phoneOffset - guessedOffset) >= 120)
-        || abs (phoneOffset - guessedOffset) >= 360
-
-
 longitudeTimezoneOffset : Float -> Int
 longitudeTimezoneOffset longitude =
     round (longitude / 15) * 60
-
-
-sign : Int -> Int
-sign value =
-    if value < 0 then
-        -1
-
-    else if value > 0 then
-        1
-
-    else
-        0
 
 
 calcSunriseSunset : LocationSnapshot -> Int -> Time.Posix -> SunSnapshot

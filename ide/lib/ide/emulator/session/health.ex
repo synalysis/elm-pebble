@@ -3,7 +3,7 @@ defmodule Ide.Emulator.Session.Health do
 
   require Logger
 
-  alias Ide.Emulator.Session.{Config, ProcessHost}
+  alias Ide.Emulator.Session.{Config, ProcessHost, Startup}
   alias Ide.Emulator.Types
 
   @spec check(Types.session_state()) :: :ok | {:error, Types.session_error()}
@@ -59,7 +59,29 @@ defmodule Ide.Emulator.Session.Health do
 
       :pypkjs ->
         Logger.debug("embedded emulator pypkjs exited: #{inspect(reason)}")
-        {:noreply, %{state | pypkjs_pid: nil}}
+
+        state = %{state | pypkjs_pid: nil}
+
+        state =
+          if Map.get(state, :has_phone_companion, false) and
+               not Map.get(state, :installing?, false) do
+            case Startup.maybe_start_pypkjs(state) do
+              {:ok, restarted} ->
+                Logger.debug("embedded emulator restarted pypkjs after exit")
+                restarted
+
+              {:error, restart_reason} ->
+                Logger.debug(
+                  "embedded emulator pypkjs restart failed after exit: #{inspect(restart_reason)}"
+                )
+
+                state
+            end
+          else
+            state
+          end
+
+        {:noreply, state}
 
       role ->
         Logger.debug("embedded emulator #{role} exited: #{inspect(reason)}")

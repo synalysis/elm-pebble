@@ -137,12 +137,13 @@ defmodule Ide.Emulator.Session.InstallCalls do
 
   @spec restart_pypkjs(Types.session_state()) ::
           {:reply, :ok | {:error, term()}, Types.session_state()}
-  def restart_pypkjs(%{pypkjs_pid: nil} = state) do
+  def restart_pypkjs(state) do
+    ProcessHost.cleanup_process(state.pypkjs_pid)
+    state = %{state | pypkjs_pid: nil}
+
     case Startup.maybe_start_pypkjs(state) do
       {:ok, state} -> {:reply, :ok, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
-
-  def restart_pypkjs(state), do: {:reply, :ok, state}
 end

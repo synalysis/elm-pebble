@@ -1,7 +1,6 @@
 defmodule Elmx.StorageSpecialValuesTest do
   use ExUnit.Case, async: true
 
-  alias Elmx.Runtime.Cmd
   alias Elmx.Runtime.Pebble
   alias Elmx.Runtime.Pebble.SpecialValues
 

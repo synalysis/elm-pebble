@@ -211,7 +211,7 @@ fetchCurrentFigure model =
 
 
 fetchFigure : Int -> String -> Cmd Msg
-fetchFigure figureId name =
+fetchFigure _ name =
     Http.get
         { url = "https://raw.githubusercontent.com/lil-lab/kilogram/main/dataset/tangrams-svg/" ++ svgUrlName name ++ ".svg"
         , expect = Http.expectString SvgReceived

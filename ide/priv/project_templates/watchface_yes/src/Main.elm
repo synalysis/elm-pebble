@@ -147,9 +147,14 @@ update msg model =
             ( { model | now = Just value }, Cmd.none )
 
         MinuteChanged minute ->
-            ( { model | now = Maybe.map (\now -> { now | minute = minute }) model.now }
-            , CompanionWatch.sendWatchToPhone RequestUpdate
-            )
+            case model.now of
+                Nothing ->
+                    ( model, Time.currentDateTime CurrentDateTime )
+
+                Just now ->
+                    ( { model | now = Just { now | minute = minute } }
+                    , CompanionWatch.sendWatchToPhone RequestUpdate
+                    )
 
         HourChanged _ ->
             ( model, Time.currentDateTime CurrentDateTime )
@@ -317,12 +322,8 @@ drawDial model cx cy radius =
         sunset =
             sunWindow.sunsetMin
 
-        dayText =
-            if isDayAtTop model then
-                Color.black
-
-            else
-                Color.white
+        timeTextColor =
+            Color.white
 
         hand =
             pointAt cx cy (radius - 10) (angleFromMinute nowMin)
@@ -429,7 +430,7 @@ drawDial model cx cy radius =
            )
         ++ [ Ui.line { x = cx, y = cy } hand Color.white
            , Ui.fillCircle { x = cx, y = cy } 4 Color.white
-           , textAt dayText { x = cx - 31, y = timeTextY, w = 64, h = 18 } (timeString model)
+           , textAt timeTextColor { x = cx - 31, y = timeTextY, w = 64, h = 18 } (timeString model)
            ]
 
 
@@ -769,24 +770,7 @@ defaultSunWindow =
     }
 
 
-isDayAtTop : Model -> Bool
-isDayAtTop model =
-    let
-        sunWindow =
-            Maybe.withDefault defaultSunWindow model.sun
-
-        sunrise =
-            sunWindow.sunriseMin
-
-        sunset =
-            sunWindow.sunsetMin
-    in
-    sunWindow.mode == PolarDay || (sunrise <= 720 && 720 <= sunset)
-
-
-        timeString : Model -> String
-
-
+timeString : Model -> String
 timeString model =
     let
         minute =

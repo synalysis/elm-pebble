@@ -43,8 +43,9 @@ type Event
 open : String -> Cmd msg
 open url =
     Phone.sendBridgeCommand <|
-        Command.command "configuration-open" "configuration" "open"
+        (Command.command "configuration-open" "configuration" "open"
             |> Command.withPayload (Encode.object [ ( "url", Encode.string url ) ])
+        )
 
 
 {-| Receive configuration close events from the companion bridge.
@@ -53,7 +54,7 @@ Registering this subscription also tells the bridge to send configuration events
 -}
 onClosed : (Maybe String -> msg) -> Sub msg
 onClosed toMsg =
-    Platform.subscribe (handler (toClosedMsg toMsg))
+    Platform.subscribe (handler toMsg)
 
 
 {-| Register this platform handler with the companion bridge.

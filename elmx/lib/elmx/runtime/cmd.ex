@@ -215,9 +215,6 @@ defmodule Elmx.Runtime.Cmd do
   end
 
   @doc """
-  Synthetic followup row for dictation status/result messages (debugger stepping).
-  """
-  @doc """
   Delivers a message from a completed `Task.perform` on the next debugger step.
   """
   @spec task_immediate(term()) :: Types.wire_cmd()
@@ -232,6 +229,9 @@ defmodule Elmx.Runtime.Cmd do
     }
   end
 
+  @doc """
+  Synthetic followup row for dictation status/result messages (debugger stepping).
+  """
   @spec dictation_followup(String.t(), term()) :: Types.wire_cmd()
   def dictation_followup(message, payload) when is_binary(message) do
     payload_wire = Values.wire_value(payload)

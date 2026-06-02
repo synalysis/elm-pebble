@@ -4,7 +4,6 @@ defmodule ElmxTest do
   alias Elmx.CompileResult
 
   @fixture Path.expand("fixtures/minimal", __DIR__)
-  @full_fixture Path.expand("fixtures/simple_project", __DIR__)
 
   test "compile_in_memory returns entry module without writing elixir sources" do
     tmp = System.tmp_dir!() |> Path.join("elmx-test-#{System.unique_integer([:positive])}")

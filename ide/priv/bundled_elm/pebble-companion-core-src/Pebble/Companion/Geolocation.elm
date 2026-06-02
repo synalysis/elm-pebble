@@ -72,8 +72,9 @@ registerGeolocationHandler toMsg =
             toMsg
     in
     Phone.sendBridgeCommand <|
-        Command.command "geolocation-register" "geolocation" "register"
+        (Command.command "geolocation-register" "geolocation" "register"
             |> Command.withPayload (Encode.object [ ( "id", Encode.string "current-position" ) ])
+        )
 
 
 decodeGeolocation : Decode.Value -> Result String Location

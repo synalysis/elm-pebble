@@ -1,7 +1,6 @@
 defmodule Elmx.Runtime.Intrinsics.Registry do
   @moduledoc false
 
-  alias Elmx.Runtime.Cmd
   alias Elmx.Runtime.Core
   alias Elmx.Runtime.Core.Bitwise
   alias Elmx.Runtime.Core.Chars
