@@ -90,10 +90,15 @@ defmodule Elmx.Runtime.Core do
 
   @spec random_int(map()) :: integer()
   def random_int(%{low: low, high: high}) when is_integer(low) and is_integer(high) do
-    case Application.get_env(:elmx, :corpus_fixed_random_int) do
+    case corpus_fixed_random_int() do
       n when is_integer(n) -> clamp_int(n, low, high)
       _ -> low + rem(:rand.uniform(max(high - low + 1, 1)), max(high - low + 1, 1))
     end
+  end
+
+  defp corpus_fixed_random_int do
+    Process.get(:elmx_corpus_fixed_random_int) ||
+      Application.get_env(:elmx, :corpus_fixed_random_int)
   end
 
   def random_int(%{"low" => low, "high" => high}), do: random_int(%{low: low, high: high})

@@ -35,11 +35,11 @@ jobs:
 
       - name: Run debugger template corpus
         working-directory: ide
-        run: mix test test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus
+        run: mix test test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus --max-cases 1
 
       - name: Run debugger template corpus subscription steps
         working-directory: ide
-        run: mix test test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus_step
+        run: mix test test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus_step --max-cases 1
 
   elmx-compiled-elixir:
     name: elmx compile + compiled_elixir corpus

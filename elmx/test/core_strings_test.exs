@@ -17,12 +17,12 @@ defmodule Elmx.CoreStringsTest do
   end
 
   test "corpus_fixed_random_int overrides random_int when configured" do
-    Application.put_env(:elmx, :corpus_fixed_random_int, 99)
+    Process.put(:elmx_corpus_fixed_random_int, 99)
 
     try do
       assert Core.random_int(%{low: 1, high: 100}) == 99
     after
-      Application.delete_env(:elmx, :corpus_fixed_random_int)
+      Process.delete(:elmx_corpus_fixed_random_int)
     end
   end
 end
