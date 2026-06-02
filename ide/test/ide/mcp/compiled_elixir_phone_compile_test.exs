@@ -10,6 +10,10 @@ defmodule Ide.Mcp.CompiledElixirPhoneCompileTest do
   @enabled? Corpus.corpus_enabled?()
 
   @phone_templates [
+    "watchface-yes",
+    "watchface-tangram-time",
+    "watchface-weather-animated",
+    "watchface-tutorial-complete",
     "companion-demo-phone-status",
     "companion-demo-storage",
     "companion-demo-weather-env",
@@ -162,8 +166,11 @@ defmodule Ide.Mcp.CompiledElixirPhoneCompileTest do
         {:ok, %Elmx.CompileResult{}} ->
           assert Elmx.module_for_revision(revision)
 
+        {:error, reason} when reason == :missing_elm_json ->
+          flunk("phone workspace missing elm.json")
+
         {:error, reason} ->
-          assert Corpus.corpus_compile_smoke_failure?(reason) or reason == :missing_elm_json
+          Corpus.refute_compile_gap!(reason)
       end
     after
       _ = Projects.delete_project(project)
@@ -190,7 +197,7 @@ defmodule Ide.Mcp.CompiledElixirPhoneCompileTest do
           assert_model.(runtime_model)
 
         {:compile_error, reason} ->
-          assert Corpus.corpus_compile_smoke_failure?(reason)
+          Corpus.refute_compile_gap!(reason)
       end
     after
       _ = Projects.delete_project(project)

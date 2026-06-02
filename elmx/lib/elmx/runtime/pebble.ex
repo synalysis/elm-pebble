@@ -50,6 +50,7 @@ defmodule Elmx.Runtime.Pebble do
       "elmx_http_expect_json" -> Elmx.Runtime.Http.expect_json(args)
       "elmx_http_header" -> Elmx.Runtime.Http.header(args)
       "elmx_http_string_body" -> Elmx.Runtime.Http.string_body(args)
+      "elmx_http_json_body" -> Elmx.Runtime.Http.json_body(args)
       "elmx_http_empty_body" -> Elmx.Runtime.Http.empty_body(args)
       "elmx_ui_window_stack" -> apply_ui(:window_stack, args)
       "elmx_ui_window" -> apply_ui(:window, args)
@@ -96,14 +97,18 @@ defmodule Elmx.Runtime.Pebble do
       "elmx_core_result_and_then" -> apply_core(:result_and_then, args)
       "elmx_core_random_generator" -> apply_core(:random_generator, args)
       "elmx_cmd_random_generate" -> random_generate_cmd(args)
-      "elmx_light_enable" -> Cmd.none()
-      "elmx_light_disable" -> Cmd.none()
-      "elmx_light_interaction" -> Cmd.none()
+      "elmx_light_enable" -> Cmd.effect("light", variant: "enable")
+      "elmx_light_disable" -> Cmd.effect("light", variant: "disable")
+      "elmx_light_interaction" -> Cmd.effect("light", variant: "interaction")
       "elmx_platform_launch_reason_to_int" -> platform_launch_reason(args)
       "elmx_platform_display_shape_is_round" -> platform_display_shape_is_round(args)
       "elmx_platform_color_capability_is_color" -> platform_color_capability_is_color(args)
-      "elmx_platform_application" -> Cmd.none()
-      "elmx_platform_watchface" -> Cmd.none()
+      "elmx_platform_application" -> Cmd.effect("platform", variant: "application")
+      "elmx_platform_watchface" -> Cmd.effect("platform", variant: "watchface")
+      "elmx_time_now" -> Elmx.Runtime.Core.Time.now()
+      "elmx_time_get_zone_name" -> Elmx.Runtime.Core.Time.get_zone_name()
+      "elmx_kernel_time_now_millis" -> :os.system_time(:millisecond)
+      "elmx_kernel_time_zone_offset_minutes" -> Elmx.Runtime.Core.Time.zone_offset_minutes()
       "elmx_time_current_date_time" -> device_stub("current_date_time", args)
       "elmx_time_current_time_string" -> device_stub("current_time_string", args)
       "elmx_time_clock_style_24h" -> device_stub("clock_style_24h", args)
@@ -115,25 +120,25 @@ defmodule Elmx.Runtime.Pebble do
       "elmx_system_battery_level" -> device_stub("battery_level", args)
       "elmx_system_connection_status" -> device_stub("connection_status", args)
       "elmx_events_batch" -> Cmd.none()
-      "elmx_events_on_minute_change" -> Cmd.none()
-      "elmx_button_on" -> Cmd.none()
-      "elmx_accel_on_tap" -> Cmd.none()
-      "elmx_events_on_second_change" -> Cmd.none()
-      "elmx_button_on_press" -> Cmd.none()
+      "elmx_events_on_minute_change" -> subscription_cmd("Pebble.Events.onMinuteChange", args)
+      "elmx_button_on" -> subscription_cmd("Pebble.Button.on", args)
+      "elmx_accel_on_tap" -> subscription_cmd("Pebble.Accel.onTap", args)
+      "elmx_events_on_second_change" -> subscription_cmd("Pebble.Events.onSecondChange", args)
+      "elmx_button_on_press" -> subscription_cmd("Pebble.Button.onPress", args)
       "elmx_cmd_timer_after" -> timer_after_cmd(args)
       "elmx_storage_read_int" -> storage_read_int_cmd(args)
       "elmx_storage_read_string" -> storage_read_string_cmd(args)
-      "elmx_cmd_backlight" -> Cmd.none()
+      "elmx_cmd_backlight" -> backlight_cmd(args)
       "elmx_storage_write_int" -> storage_write_int_cmd(args)
       "elmx_storage_write_string" -> storage_write_string_cmd(args)
       "elmx_storage_delete" -> storage_delete_cmd(args)
-      "elmx_frame_every" -> Cmd.none()
-      "elmx_vibes_short_pulse" -> Cmd.none()
-      "elmx_vibes_long_pulse" -> Cmd.none()
-      "elmx_vibes_double_pulse" -> Cmd.none()
-      "elmx_vibes_pattern" -> Cmd.none()
-      "elmx_vibes_cancel" -> Cmd.none()
-      "elmx_button_on_release" -> Cmd.none()
+      "elmx_frame_every" -> frame_every_cmd(args)
+      "elmx_vibes_short_pulse" -> Cmd.effect("vibes", variant: "short_pulse")
+      "elmx_vibes_long_pulse" -> Cmd.effect("vibes", variant: "long_pulse")
+      "elmx_vibes_double_pulse" -> Cmd.effect("vibes", variant: "double_pulse")
+      "elmx_vibes_pattern" -> Cmd.effect("vibes", variant: "pattern", pattern: List.first(args))
+      "elmx_vibes_cancel" -> Cmd.effect("vibes", variant: "cancel")
+      "elmx_button_on_release" -> subscription_cmd("Pebble.Button.onRelease", args)
       "elmx_collision_rect_rect" -> collision_rect_rect(args)
       "elmx_datalog_tag" -> datalog_tag_value(args)
       "elmx_datalog_log_int32" -> datalog_log_int32_cmd(args)
@@ -467,6 +472,33 @@ defmodule Elmx.Runtime.Pebble do
   defp int_field(map, key) do
     Map.get(map, key) || Map.get(map, String.to_atom(key)) || 0
   end
+
+  defp subscription_cmd(target, args) when is_binary(target) do
+    callback = subscription_callback(args)
+    Cmd.subscription_register(target, callback: callback)
+  end
+
+  defp subscription_callback([callback | _]), do: callback
+  defp subscription_callback(_), do: "Tick"
+
+  defp frame_every_cmd([ms, callback]) when is_integer(ms) do
+    Cmd.subscription_register("Pebble.Frame.every",
+      interval_ms: ms,
+      callback: callback
+    )
+  end
+
+  defp frame_every_cmd([ms | rest]) when is_integer(ms) do
+    frame_every_cmd([ms, List.first(rest)])
+  end
+
+  defp frame_every_cmd(_), do: Cmd.subscription_register("Pebble.Frame.every", interval_ms: 33)
+
+  defp backlight_cmd([maybe]) do
+    Cmd.backlight_from_maybe(maybe)
+  end
+
+  defp backlight_cmd(_), do: Cmd.backlight_from_maybe(:Nothing)
 
   defp device_stub(kind, [callback]) do
     Cmd.device(kind, callback, device_stub_value(kind))

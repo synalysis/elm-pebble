@@ -338,16 +338,18 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
         payload
 
       {:error, reason} ->
+        detail = execution_error_detail(reason)
+
         %{
           model_patch: %{
             "runtime_model" => %{},
-            "runtime_execution_error" => inspect(reason, limit: 50)
+            "runtime_execution_error" => detail
           },
           view_tree: nil,
           runtime: %{
             "execution_status" => "error",
-            "error_code" => "core_ir_init_failed",
-            "error_detail" => inspect(reason, limit: 50)
+            "error_code" => "runtime_exec_error",
+            "error_detail" => detail
           }
         }
     end
@@ -378,4 +380,17 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
       _ -> []
     end
   end
+
+  @spec execution_error_detail(term()) :: String.t()
+  defp execution_error_detail({:core_ir_execution_failed, {:missing_elmx_manifest, detail}})
+       when is_binary(detail),
+       do: detail
+
+  defp execution_error_detail({:core_ir_execution_failed, :missing_elmx_manifest}),
+    do: "missing elmx manifest — recompile watch/phone and reload the debugger"
+
+  defp execution_error_detail({:core_ir_execution_failed, reason}),
+    do: execution_error_detail(reason)
+
+  defp execution_error_detail(reason), do: inspect(reason, limit: 200)
 end

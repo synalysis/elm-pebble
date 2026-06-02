@@ -551,12 +551,65 @@ defmodule Ide.Compiler do
        when is_map(result) and is_binary(project_dir) do
     if attach_elmx_artifacts?() do
       case build_elmx_artifacts_in_memory(project_dir, revision: revision) do
-        {:ok, fields} -> Map.merge(result, fields)
-        _ -> result
+        {:ok, fields} ->
+          Map.merge(result, fields)
+
+        {:error, reason} ->
+          result
+          |> Map.merge(elmx_compile_failure_fields(reason))
+          |> record_elmx_compile_gap()
       end
     else
       result
     end
+  end
+
+  defp elmx_compile_failure_fields(reason) do
+    message = elmx_compile_error_message(reason)
+
+    %{
+      elmx_compile_error: reason,
+      elmx_compile_error_message: message,
+      diagnostics:
+        Diagnostics.normalize_list([
+          %{
+            severity: "warning",
+            source: "elmx",
+            message: message <> " (debugger runtime only; PBW build uses elmc)",
+            file: nil,
+            line: nil,
+            column: nil
+          }
+        ])
+    }
+  end
+
+  defp elmx_compile_error_message({:unsupported_op, op, detail}) when is_binary(detail),
+    do: "elmx unsupported op #{inspect(op)}: #{detail}"
+
+  defp elmx_compile_error_message({:unsupported_op, op, detail}),
+    do: "elmx unsupported op #{inspect(op)}: #{inspect(detail)}"
+
+  defp elmx_compile_error_message(reason), do: "elmx compile failed: #{inspect(reason)}"
+
+  # elmx is debugger-only; keep elmc compile status so PBW packaging is not blocked.
+  @spec record_elmx_compile_gap(compile_result()) :: compile_result()
+  defp record_elmx_compile_gap(result) when is_map(result) do
+    Map.update(result, :output, nil, fn existing ->
+      message = Map.get(result, :elmx_compile_error_message)
+
+      cond do
+        is_binary(message) and message != "" ->
+          note = message <> " (debugger runtime only; PBW build uses elmc)"
+
+          if is_binary(existing) and existing != "",
+            do: existing <> "\n\n" <> note,
+            else: note
+
+        true ->
+          existing
+      end
+    end)
   end
 
   defp attach_elmx_artifacts?, do: true

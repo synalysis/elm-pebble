@@ -141,6 +141,60 @@ defmodule Elmx.ViewOutputTest do
     assert length(rows) == 2
   end
 
+  test "from_view_tree emits primitive draw ops (clear rect circle pixel arc)" do
+    tree =
+      Ui.to_ui_node([
+        Ui.clear(Ui.named_color("white")),
+        Ui.fill_rect(%{x: 0, y: 0, w: 144, h: 168}, Ui.named_color("black")),
+        Ui.rect(%{x: 4, y: 4, w: 20, h: 12}, Ui.named_color("red")),
+        Ui.circle(%{x: 72, y: 84}, 10, Ui.named_color("blue")),
+        Ui.fill_circle(%{x: 40, y: 40}, 6, Ui.named_color("green")),
+        Ui.pixel(%{x: 10, y: 10}, Ui.named_color("yellow")),
+        Ui.arc(%{x: 60, y: 70, w: 24, h: 24}, 0, 90),
+        Ui.fill_radial(%{x: 60, y: 70, w: 24, h: 24}, 0, 180)
+      ])
+
+    kinds =
+      ViewOutput.from_view_tree(tree, screen_w: 144, screen_h: 168)
+      |> Enum.map(& &1["kind"])
+      |> MapSet.new()
+
+    assert MapSet.subset?(
+             MapSet.new([
+               "clear",
+               "fill_rect",
+               "rect",
+               "circle",
+               "fill_circle",
+               "pixel",
+               "arc",
+               "fill_radial"
+             ]),
+             kinds
+           )
+  end
+
+  test "from_view_tree emits draw_vector_at row with resource index" do
+    tree =
+      Ui.to_ui_node([
+        Ui.draw_vector_at("VectorStaticWeatherClear", %{x: 20, y: 30})
+      ])
+
+    assert [
+             %{
+               "kind" => "vector_at",
+               "vector_id" => 3,
+               "x" => 20,
+               "y" => 30
+             }
+           ] =
+             ViewOutput.from_view_tree(tree,
+               vector_resource_indices: %{"VectorStaticWeatherClear" => 3},
+               screen_w: 144,
+               screen_h: 168
+             )
+  end
+
   test "from_view_tree emits text_int and WaitingForCompanion text_label rows" do
     tree =
       Ui.to_ui_node([

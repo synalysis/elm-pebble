@@ -15,6 +15,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Http do
       "Http.expectJson" -> expect_json(args)
       "Http.header" -> ui_call("elmx_http_header", args)
       "Http.stringBody" -> ui_call("elmx_http_string_body", args)
+      "Http.jsonBody" -> ui_call("elmx_http_json_body", args)
       "Http.emptyBody" -> ui_call("elmx_http_empty_body", args)
       _ -> :unmatched
     end

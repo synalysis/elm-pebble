@@ -94,4 +94,22 @@ defmodule Ide.Debugger.RuntimeExecutorCompiledElixirTest do
     stepped = get_in(step_payload.model_patch, ["runtime_model"])
     assert is_map(stepped)
   end
+
+  test "missing elmx manifest surfaces compile error detail when present" do
+    launch_context = RuntimeSurfaces.launch_context_for("basalt", "LaunchUser")
+
+    assert {:error, {:core_ir_execution_failed, {:missing_elmx_manifest, detail}}} =
+             RuntimeExecutor.execute(%{
+               source_root: "watch",
+               rel_path: "src/Main.elm",
+               source: "",
+               introspect: %{},
+               current_model: %{"launch_context" => launch_context},
+               current_view_tree: %{},
+               message: nil,
+               elmx_compile_error_message: "elmx unsupported op :qualified_call: Basics.foo"
+             })
+
+    assert detail =~ "Basics.foo"
+  end
 end

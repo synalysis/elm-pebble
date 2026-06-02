@@ -44,7 +44,20 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
     if is_map(manifest) and Map.get(manifest, "contract") == "elmx.runtime_executor.v1" do
       :ok
     else
-      {:error, {:core_ir_execution_failed, :missing_elmx_manifest}}
+      {:error, missing_elmx_manifest_error(input)}
+    end
+  end
+
+  @spec missing_elmx_manifest_error(map()) :: Types.execution_error()
+  defp missing_elmx_manifest_error(input) do
+    detail =
+      Map.get(input, :elmx_compile_error_message) ||
+        Map.get(input, "elmx_compile_error_message")
+
+    if is_binary(detail) and detail != "" do
+      {:core_ir_execution_failed, {:missing_elmx_manifest, detail}}
+    else
+      {:core_ir_execution_failed, :missing_elmx_manifest}
     end
   end
 

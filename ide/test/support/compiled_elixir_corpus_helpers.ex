@@ -17,10 +17,21 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
     :ok
   end
 
+  @doc """
+  Deprecated: zero-gap policy rejects all compile/codegen failures in gates and corpus.
+
+  Kept only so old call sites can be migrated; always returns `false`.
+  """
   @spec corpus_compile_smoke_failure?(term()) :: boolean()
-  def corpus_compile_smoke_failure?(reason) do
-    reason in [:unsupported_op, :emit_failed] or match?({:unsupported_op, _, _}, reason) or
-      match?({:emit_failed, _}, reason)
+  def corpus_compile_smoke_failure?(_reason), do: false
+
+  @doc """
+  Fails the test when elmx compile/codegen did not succeed (zero-gap debugger policy).
+  """
+  @spec refute_compile_gap!(term()) :: no_return()
+  def refute_compile_gap!(reason) do
+    raise ExUnit.AssertionError,
+      message: "elmx compile gap (zero-gap policy): #{inspect(reason)}"
   end
 
   @spec corpus_launch_context() :: map()

@@ -32,12 +32,12 @@ defmodule Elmx.StorageSpecialValuesTest do
     assert cmd["key"] == 100
   end
 
-  test "backlight rewrites to no-op runtime cmd" do
+  test "backlight rewrites to backlight runtime cmd" do
     mode = %{op: :int_literal, value: 1}
 
     assert {:ok, %{op: :runtime_call, function: "elmx_cmd_backlight", args: [^mode]}} =
              SpecialValues.rewrite("Pebble.Cmd.backlight", [mode])
 
-    assert Cmd.none() == Pebble.runtime_dispatch("elmx_cmd_backlight", [mode])
+    assert %{"kind" => "cmd.backlight"} = Pebble.runtime_dispatch("elmx_cmd_backlight", [mode])
   end
 end

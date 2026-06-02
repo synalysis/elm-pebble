@@ -124,6 +124,9 @@ defmodule Elmx.Runtime.Stdlib do
     end
   end
 
+  def special_call("Time.now", _arg_code), do: {:ok, "Elmx.Runtime.Core.Time.now()"}
+  def special_call("Time.getZoneName", _arg_code), do: {:ok, "Elmx.Runtime.Core.Time.get_zone_name()"}
+
   def special_call("Debug.toString", arg_code) do
     case split_top_level_args(arg_code) do
       [value] -> {:ok, "Elmx.Runtime.Core.Debug.to_string(#{value})"}

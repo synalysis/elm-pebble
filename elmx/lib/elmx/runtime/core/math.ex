@@ -73,6 +73,8 @@ defmodule Elmx.Runtime.Core.Math do
   def log_base(_base, _value), do: 0.0
 
   @spec is_infinite(term()) :: boolean()
+  def is_infinite(:infinity), do: true
+  def is_infinite(:negative_infinity), do: true
   def is_infinite(n) when is_float(n), do: n == :infinity or n == :negative_infinity
   def is_infinite(_), do: false
 

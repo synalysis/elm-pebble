@@ -112,14 +112,47 @@ defmodule Elmx.Backend.QualifiedRewrite do
       {"Tuple.pair", [left, right]} ->
         {:ok, %{op: :tuple2, left: left, right: right}}
 
+      {"Tuple.mapFirst", [fun, tuple]} ->
+        runtime2("elmc_tuple_map_first", [fun, tuple])
+
+      {"Tuple.mapSecond", [fun, tuple]} ->
+        runtime2("elmc_tuple_map_second", [fun, tuple])
+
+      {"Tuple.mapBoth", [f, g, tuple]} ->
+        runtime3("elmc_tuple_map_both", [f, g, tuple])
+
+      {"Result.fromMaybe", [err, maybe]} ->
+        runtime2("elmc_result_from_maybe", [err, maybe])
+
+      {"Result.toMaybe", [result]} ->
+        runtime2("elmc_result_to_maybe", [result])
+
       {"Basics.clamp", [lo, hi, value]} ->
         runtime3("elmx_math_clamp", [lo, hi, value])
 
       {"Platform.Sub.none", []} ->
         {:ok, %{op: :int_literal, value: 0}}
 
+      {"Time.now", []} ->
+        {:ok, %{op: :runtime_call, function: "elmx_time_now", args: []}}
+
+      {"Time.getZoneName", []} ->
+        {:ok, %{op: :runtime_call, function: "elmx_time_get_zone_name", args: []}}
+
+      {"Time.posixToMillis", [posix]} ->
+        {:ok, posix}
+
+      {"Time.millisToPosix", [millis]} ->
+        {:ok, millis}
+
+      {"Elm.Kernel.Time.nowMillis", []} ->
+        {:ok, %{op: :runtime_call, function: "elmx_kernel_time_now_millis", args: []}}
+
+      {"Elm.Kernel.Time.zoneOffsetMinutes", []} ->
+        {:ok, %{op: :runtime_call, function: "elmx_kernel_time_zone_offset_minutes", args: []}}
+
       _ ->
-        :error
+        Elmx.Backend.QualifiedPartials.rewrite(target, args)
     end
   end
 

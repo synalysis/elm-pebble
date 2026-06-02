@@ -122,6 +122,8 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
     |> maybe_put_artifact("debugger_contract_version", field(attrs, :debugger_contract_version))
     |> maybe_put_artifact("elmx_manifest", field(attrs, :elmx_manifest))
     |> maybe_put_artifact("elmx_revision", field(attrs, :elmx_revision))
+    |> maybe_put_artifact("elmx_compile_error", field(attrs, :elmx_compile_error))
+    |> maybe_put_artifact("elmx_compile_error_message", field(attrs, :elmx_compile_error_message))
   end
 
   @spec compile_artifact_target(CompileIngestAttrs.t() | CompileIngestAttrs.wire_map()) ::

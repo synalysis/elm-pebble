@@ -217,6 +217,21 @@ defmodule Elmx.Runtime.Cmd do
   @doc """
   Synthetic followup row for dictation status/result messages (debugger stepping).
   """
+  @doc """
+  Delivers a message from a completed `Task.perform` on the next debugger step.
+  """
+  @spec task_immediate(term()) :: Types.wire_cmd()
+  def task_immediate(msg) do
+    {message, message_value} = message_wire(msg)
+
+    %{
+      "kind" => "cmd.task.immediate",
+      "package" => "elm/core",
+      "message" => message,
+      "message_value" => message_value
+    }
+  end
+
   @spec dictation_followup(String.t(), term()) :: Types.wire_cmd()
   def dictation_followup(message, payload) when is_binary(message) do
     payload_wire = Values.wire_value(payload)
@@ -336,6 +351,42 @@ defmodule Elmx.Runtime.Cmd do
       end
 
     {message, message_value}
+  end
+
+  @doc """
+  Registers a Pebble subscription for debugger stepping (contract-driven `target` string).
+  """
+  @spec subscription_register(String.t(), keyword()) :: Types.wire_cmd()
+  def subscription_register(target, opts \\ []) when is_binary(target) do
+    {message, message_value} =
+      case Keyword.get(opts, :callback) do
+        nil -> {"", nil}
+        callback -> message_wire(callback)
+      end
+
+    base = %{
+      "kind" => "cmd.subscription.register",
+      "package" => "elm-pebble/elm-watch",
+      "target" => target,
+      "message" => message
+    }
+
+    base
+    |> maybe_put_field("interval_ms", Keyword.get(opts, :interval_ms))
+    |> maybe_put_field("message_value", message_value)
+  end
+
+  @doc """
+  Side-effect command the IDE may simulate (vibes, light) without a followup message.
+  """
+  @spec effect(String.t(), keyword()) :: Types.wire_cmd()
+  def effect(kind, opts \\ []) when is_binary(kind) do
+    %{
+      "kind" => "cmd.effect." <> kind,
+      "package" => "elm-pebble/elm-watch"
+    }
+    |> maybe_put_field("variant", Keyword.get(opts, :variant))
+    |> maybe_put_field("pattern", Keyword.get(opts, :pattern))
   end
 
   @doc """

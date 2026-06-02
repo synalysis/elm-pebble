@@ -142,6 +142,44 @@ defmodule Elmx.Runtime.Followups do
     ]
   end
 
+  defp command_to_followups(%{"kind" => "cmd.task.immediate"} = command, source_root) do
+    message = Map.get(command, "message")
+
+    if is_binary(message) and message != "" do
+      [
+        %{
+          "message" => message,
+          "message_value" => Map.get(command, "message_value"),
+          "source_root" => source_root,
+          "source" => "task_command",
+          "package" => Map.get(command, "package", "elm/core"),
+          "command" => command
+        }
+      ]
+    else
+      []
+    end
+  end
+
+  defp command_to_followups(%{"kind" => "cmd.subscription.register"} = command, source_root) do
+    message = Map.get(command, "message")
+
+    if is_binary(message) and message != "" do
+      [
+        %{
+          "message" => message,
+          "message_value" => Map.get(command, "message_value"),
+          "source_root" => source_root,
+          "source" => "subscription_command",
+          "package" => Map.get(command, "package", "elm-pebble/elm-watch"),
+          "command" => command
+        }
+      ]
+    else
+      []
+    end
+  end
+
   defp command_to_followups(%{"kind" => "cmd.storage." <> _} = command, source_root) do
     [
       %{

@@ -123,7 +123,7 @@ headerOps model page =
     , Ui.text Resources.DefaultFont Ui.defaultTextOptions
         { x = 0, y = 2, w = model.screenW, h = 18 }
         (pageTitle page ++ " " ++ String.fromInt (model.pageIndex + 1) ++ "/" ++ String.fromInt (List.length pages))
-    , Ui.text Resources.DefaultFont
+        , Ui.text Resources.DefaultFont
         (Ui.alignLeft Ui.defaultTextOptions |> Ui.trailingEllipsis)
         { x = 4, y = model.screenH - 16, w = model.screenW - 8, h = 14 }
         "Up/Down: page"
@@ -253,9 +253,9 @@ pathsOps =
 
 textOps : Model -> List Ui.RenderOp
 textOps model =
-  let
+    let
     y0 =
-      contentTop + 4
+        contentTop + 4
   in
   [ Ui.text Resources.DefaultFont Ui.defaultTextOptions
       { x = 0, y = y0, w = model.screenW, h = 20 }

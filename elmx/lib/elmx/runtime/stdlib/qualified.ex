@@ -94,6 +94,8 @@ defmodule Elmx.Runtime.Stdlib.Qualified do
 
   def call("Task.succeed", arg_code), do: unary("Elmx.Runtime.Core.Task.succeed", arg_code)
   def call("Task.fail", arg_code), do: unary("Elmx.Runtime.Core.Task.fail", arg_code)
+  def call("Task.map2", arg_code), do: ternary("Elmx.Runtime.Core.Task.map2", arg_code)
+  def call("Task.perform", arg_code), do: binary_fn("Elmx.Runtime.Core.Task.perform", arg_code)
   def call("Process.spawn", arg_code), do: unary("Elmx.Runtime.Core.Process.spawn", arg_code)
   def call("Process.sleep", arg_code), do: unary("Elmx.Runtime.Core.Process.sleep", arg_code)
   def call("Process.kill", arg_code), do: unary("Elmx.Runtime.Core.Process.kill", arg_code)

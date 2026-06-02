@@ -89,7 +89,11 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
       source_root: Map.get(result, :source_root) || Map.get(result, "source_root"),
       diagnostics: diagnostics_field(result),
       elmx_manifest: Map.get(result, :elmx_manifest) || Map.get(result, "elmx_manifest"),
-      elmx_revision: Map.get(result, :elmx_revision) || Map.get(result, "elmx_revision")
+      elmx_revision: Map.get(result, :elmx_revision) || Map.get(result, "elmx_revision"),
+      elmx_compile_error:
+        Map.get(result, :elmx_compile_error) || Map.get(result, "elmx_compile_error"),
+      elmx_compile_error_message:
+        Map.get(result, :elmx_compile_error_message) || Map.get(result, "elmx_compile_error_message")
     }
     |> drop_nil_fields()
   end

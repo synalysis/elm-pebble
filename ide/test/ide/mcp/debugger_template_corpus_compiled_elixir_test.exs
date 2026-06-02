@@ -77,7 +77,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["x"] == 18
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -107,7 +107,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["value"] == 1
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -139,7 +139,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["timeString"] == "--:--"
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -288,7 +288,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["refreshes"] == 0
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -461,7 +461,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert Enum.count(runtime_model["cells"], &(&1 != 0)) >= 2
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -567,7 +567,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["value"] == 1
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -739,7 +739,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["charging"] == true
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -776,7 +776,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["locale"] == "de-DE"
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -813,7 +813,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["online"] == true
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -1104,7 +1104,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["theme"]["ctor"] == "Light"
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -1138,7 +1138,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["units"]["ctor"] == "Imperial"
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -1262,7 +1262,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["lastTitle"] == "Team Sync"
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -1439,7 +1439,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert_model.(runtime_model)
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -1467,7 +1467,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert_model.(runtime_model)
 
           {:compile_error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)
@@ -1494,7 +1494,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert manifest["contract"] == "elmx.runtime_executor.v1"
 
           {:error, reason} ->
-            assert Corpus.corpus_compile_smoke_failure?(reason)
+            Corpus.refute_compile_gap!(reason)
         end
       after
         _ = Ide.Projects.delete_project(project)

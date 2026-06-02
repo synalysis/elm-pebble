@@ -9,10 +9,10 @@ Track parity with `elmc` C codegen. Update matrix rows as backend support lands.
 | M0 Scaffold + switch | done | `elmx` package, IDE `execution_backend`, `CompiledElixirAdapter` |
 | M1 Pure Elm codegen | done | `Elmx.Backend.ElixirCodegen` + Emit; includes `watchface-poke-battle` full compile |
 | M2 Runtime library | done | `Stdlib`, `Values`, `Executor`, `Cmd`, `Followups` |
-| M3 Pebble surface | partial | `SpecialValues` + runtime stubs; structural `Pebble.Ui` via cross-module emit + `ViewShape` |
+| M3 Pebble surface | done | `SpecialValues` + structured cmds (`cmd.subscription.*`, `cmd.effect.*`, device peeks); structural `Pebble.Ui` via `ViewShape` / `ViewOutput` |
 | M4 Debugger in-memory hot-reload | done | `compile_in_memory`, Loader, ModuleRegistry, `Ide.Compiler.build_elmx_artifacts_in_memory/2` |
 | M5 Template corpus | done | `ELMX_TEMPLATE_CORPUS=1` → 121 corpus + 57 parity tests green; CI job `elmx-compiled-elixir` in `debugger-strict.yml` |
-| M6 elm/core + Pebble parity | partial | Kernel/list/string/math/platform shims; nested case + let-bound calls; `++` runtime |
+| M6 elm/core + Pebble parity | done | `CoreCompliance` green; Basics trig via `Core.Math` emit; `Char` case + `Debug.toString` formatting |
 
 ## IDE integration
 
@@ -27,7 +27,10 @@ Track parity with `elmc` C codegen. Update matrix rows as backend support lands.
 | `elmx/test/simple_project_compile_test.exs` | compile + init |
 | `elmx/test/step_execution_test.exs` | update step |
 | `elmx/test/followups_test.exs` | cmd followups on init |
-| `elmx/test/backend_coverage_gate_test.exs` | no unsupported IR ops in fixture |
+| `elmx/test/backend_coverage_gate_test.exs` | no unsupported IR ops in `simple_project` + representative IDE templates |
+| `elmx/test/qualified_call_audit_test.exs` | generated code must not use `Stdlib.qualified_call` fallbacks |
+| `elmx/test/subscription_cmds_test.exs` | `cmd.subscription.register` / `cmd.effect.*` runtime cmds |
+| `elmx/test/core_debug_math_test.exs` | `Debug.toString` + float edge helpers |
 | `elmx/test/constructor_lookup_test.exs` | IR-derived union constructor lookup |
 | `elmx/test/constructor_emit_test.exs` | constructor emit via SpecialValues + union shape |
 | `elmx/test/main_program_test.exs` | worker fields + dead-code roots from `main` IR |
@@ -102,6 +105,7 @@ Run corpus: `ELMX_TEMPLATE_CORPUS=1 mix test --only compiled_elixir_corpus` (fro
 - ~~`Basics.compare` string ordering~~ — `Core.basics_compare/2` + `List.sortWith` via `elmx_basics_compare`; `basics_compare_test.exs`
 - ~~Companion `Phone.outgoing` / `registerHandler`~~ — rewrite + runtime `cmd_none` (matches Core IR; PKJS port wiring is IDE/simulator concern)
 - Port/runtime bridge fidelity for `Phone.send` / `sendBridgeCommand` — bridge cmds emit `cmd.companion.bridge`; IDE fulfills in simulator
+- ~~Opaque `missing_elmx_manifest` when elmx compile fails~~ — `elmx_compile_error` / `elmx_compile_error_message` on compile result; executor returns `{:missing_elmx_manifest, detail}`
 - ~~`MessageDecode` maps wire `()` to `nil`~~ (`message_decode_test.exs` — `PinInserted (Ok ())`)
 - ~~`corpus_phone_step_execute!` accepts optional `current_runtime_model:`~~ (`compiled_elixir_corpus_helpers.exs`)
 - Case emit: constructor wildcard branches ordered after specific payloads; unresolved names no longer default to `/0` captures; `kind: :string` / `:int` patterns emit literal matches; plain string-key pairs stay nested in `Ok` patterns (fixes `GotPreference`); `Result.andThen`/`mapError` runtime arg order aligned with `elmc`

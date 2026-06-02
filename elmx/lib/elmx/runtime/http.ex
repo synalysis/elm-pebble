@@ -103,6 +103,17 @@ defmodule Elmx.Runtime.Http do
   @spec empty_body(list()) :: Types.http_body()
   def empty_body(_args), do: empty_body()
 
+  @spec json_body(list()) :: Types.http_body()
+  def json_body([value]) do
+    %{
+      "kind" => "json",
+      "content_type" => "application/json",
+      "body" => Elmx.Runtime.Json.Encode.encode(0, value)
+    }
+  end
+
+  def json_body(_), do: empty_body()
+
   @spec request_descriptor(
           String.t(),
           term(),

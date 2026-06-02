@@ -1,13 +1,15 @@
 defmodule Ide.Mcp.DebuggerTemplateCompileGateTest do
   @moduledoc """
-  Full priv-template elmx compile sweep.
+  Full priv-template elmx compile sweep with zero-gap policy.
+
+  Any `{:error, reason}` from `build_elmx_artifacts_in_memory/2` fails the gate — no smoke
+  exceptions for `:unsupported_op` or `:emit_failed`.
 
   Run with `ELMX_TEMPLATE_COMPILE_GATE=1 mix test --only template_compile_gate`.
   """
 
   use Ide.DataCase, async: false
 
-  alias Ide.Debugger.CompiledElixirCorpusHelpers, as: Corpus
   alias Ide.ProjectTemplates
   alias Ide.ProjectTemplates.SourceValidation
 
@@ -17,7 +19,7 @@ defmodule Ide.Mcp.DebuggerTemplateCompileGateTest do
   @tag timeout: 600_000
   test "every project template watch workspace compiles with elmx when enabled" do
     if @enabled? do
-      Corpus.ensure_compiled_elixir_backend!()
+      _ = Application.ensure_all_started(:elmx)
 
       failures =
         ProjectTemplates.template_keys()
@@ -71,7 +73,7 @@ defmodule Ide.Mcp.DebuggerTemplateCompileGateTest do
                else: {:error, :bad_manifest}
 
           {:error, reason} ->
-            if Corpus.corpus_compile_smoke_failure?(reason), do: :ok, else: {:error, reason}
+            {:error, reason}
         end
       after
         _ = File.rm_rf(workspace)
@@ -120,7 +122,7 @@ defmodule Ide.Mcp.DebuggerTemplateCompileGateTest do
                else: {:error, :bad_manifest}
 
           {:error, reason} ->
-            if Corpus.corpus_compile_smoke_failure?(reason), do: :ok, else: {:error, reason}
+            {:error, reason}
         end
       after
         _ = File.rm_rf(workspace)

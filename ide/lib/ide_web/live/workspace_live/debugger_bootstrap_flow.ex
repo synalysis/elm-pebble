@@ -42,8 +42,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     bootstrap_tab = Keyword.get(opts, :bootstrap_tab)
     watch_profile_id = Keyword.fetch!(opts, :watch_profile_id)
 
+    scope_key = Projects.scope_key(project)
+
     with :ok <- start_session(project, watch_profile_id, progress),
          {:ok, compile_results, primary} <- warm_compile(project, progress),
+         :ok <- ingest_warm_compile_results(scope_key, compile_results, progress),
          {:ok, message} <- bootstrap_watch_preview(project, bootstrap_tab, progress),
          :ok <- maybe_sync_companion(project, progress) do
       {:ok,
@@ -78,28 +81,30 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   end
 
   defp run_companion_bootstrap_async(project, scope_key, progress) do
-    progress.("Loading companion model...")
+    with :ok <- compile_and_ingest_phone(project, scope_key, progress) do
+      progress.("Loading companion model...")
 
-    reload =
-      with_companion_fast_bootstrap(scope_key, fn ->
-        companion_reload(project, progress)
-      end)
+      reload =
+        with_companion_fast_bootstrap(scope_key, fn ->
+          companion_reload(project, progress)
+        end)
 
-    _ = CompanionPhoneCompile.schedule_if_needed(scope_key, project)
+      _ = CompanionPhoneCompile.schedule_if_needed(scope_key, project)
 
-    case reload do
-      {:ok, _} ->
-        progress.("Applying companion init follow-ups...")
-        :ok = DeferredCompanionInit.run(scope_key)
-        progress.("Fetching companion HTTP data...")
-        :ok = Ide.Debugger.RuntimeBackgroundDrains.await_idle(scope_key, 120_000)
-        {:ok, %{reload: reload}}
+      case reload do
+        {:ok, _} ->
+          progress.("Applying companion init follow-ups...")
+          :ok = DeferredCompanionInit.run(scope_key)
+          progress.("Fetching companion HTTP data...")
+          :ok = Ide.Debugger.RuntimeBackgroundDrains.await_idle(scope_key, 120_000)
+          {:ok, %{reload: reload}}
 
-      {:error, _} = err ->
-        err
+        {:error, _} = err ->
+          err
 
-      :skipped ->
-        {:ok, %{reload: :skipped}}
+        :skipped ->
+          {:ok, %{reload: :skipped}}
+      end
     end
   end
 
@@ -220,14 +225,31 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     end
   end
 
-  @spec ingest_phone_compile(String.t(), map()) :: :ok
-  defp ingest_phone_compile(scope_key, result) when is_binary(scope_key) and is_map(result) do
+  @spec ingest_warm_compile_results(String.t(), compile_results(), progress()) :: :ok
+  defp ingest_warm_compile_results(scope_key, compile_results, progress)
+       when is_binary(scope_key) and is_list(compile_results) do
+    progress.("Attaching runtime artifacts...")
+
+    Enum.each(compile_results, fn
+      {label, {:ok, result}} ->
+        ingest_compile_result(scope_key, result, label)
+
+      _ ->
+        :ok
+    end)
+
+    :ok
+  end
+
+  @spec ingest_compile_result(String.t(), map(), String.t()) :: :ok
+  defp ingest_compile_result(scope_key, result, source_root)
+       when is_binary(scope_key) and is_map(result) and is_binary(source_root) do
     diagnostics = Map.get(result, :diagnostics) || Map.get(result, "diagnostics") || []
     counts = Diagnostics.summary(diagnostics)
 
     attrs =
       result
-      |> Map.put(:source_root, "phone")
+      |> Map.put(:source_root, source_root)
       |> Map.put(:error_count, counts.error_count)
       |> Map.put(:warning_count, counts.warning_count)
       |> Map.put(:diagnostics, diagnostics)
@@ -235,6 +257,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
     {:ok, _} = Ide.Debugger.ingest_elmc_compile(scope_key, attrs)
     :ok
+  end
+
+  @spec ingest_phone_compile(String.t(), map()) :: :ok
+  defp ingest_phone_compile(scope_key, result) when is_binary(scope_key) and is_map(result) do
+    ingest_compile_result(scope_key, result, "phone")
   end
 
   @spec bootstrap_watch_preview(Project.t(), bootstrap_tab(), progress()) ::

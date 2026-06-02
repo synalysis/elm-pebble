@@ -275,6 +275,37 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
     {:ok, ["Enum.reverse(", list_code, ")"], env, c1}
   end
 
+  def compile_list_qualified("List.tail", [list], env, counter) do
+    {list_code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(list, env, counter)
+    {:ok, ["Elmx.Runtime.Core.list_tail(", list_code, ")"], env, c1}
+  end
+
+  def compile_list_qualified("List.isEmpty", [list], env, counter) do
+    {list_code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(list, env, counter)
+    {:ok, ["Elmx.Runtime.Core.list_is_empty(", list_code, ")"], env, c1}
+  end
+
+  def compile_list_qualified("List.map2", [fun, as, bs], env, counter) do
+    compile_core_nary("list_map2", [fun, as, bs], env, counter)
+  end
+
+  def compile_list_qualified("List.map3", [fun, as, bs, cs], env, counter) do
+    compile_core_nary("list_map3", [fun, as, bs, cs], env, counter)
+  end
+
+  def compile_list_qualified("List.intersperse", [sep, list], env, counter) do
+    compile_core_nary("list_intersperse", [sep, list], env, counter)
+  end
+
+  def compile_list_qualified("List.partition", [fun, list], env, counter) do
+    compile_core_nary("list_partition", [fun, list], env, counter)
+  end
+
+  def compile_list_qualified("List.unzip", [list], env, counter) do
+    {list_code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(list, env, counter)
+    {:ok, ["Elmx.Runtime.Core.list_unzip(", list_code, ")"], env, c1}
+  end
+
   def compile_list_qualified("List.indexedMap", [fun], env, counter) do
     {fun_code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(fun, env, counter)
     list = Helpers.let_emit_name("__list")
@@ -291,6 +322,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
   end
 
   def compile_list_qualified(_, _, _, _), do: :error
+
+  defp compile_core_nary(core_fun, args, env, counter) do
+    {parts, env, c} = Elmx.Backend.ElixirCodegen.Emit.Helpers.compile_arg_parts(args, env, counter)
+
+    {:ok,
+     ["Elmx.Runtime.Core.", core_fun, "(", Enum.intersperse(parts, ", "), ")"],
+     env, c}
+  end
 
   defp compile_list_core_hof(core_fun, fun, list, env, counter) do
     {fun_code, env, c1} = compile_fold_fun(fun, env, counter)
@@ -615,10 +654,42 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
      ], env, c3}
   end
 
+  def compile_string_qualified("String.map", [fun, text], env, counter),
+    do: compile_strings_nary("map", [fun, text], env, counter)
+
+  def compile_string_qualified("String.filter", [fun, text], env, counter),
+    do: compile_strings_nary("filter", [fun, text], env, counter)
+
+  def compile_string_qualified("String.foldl", [fun, acc, text], env, counter),
+    do: compile_strings_nary("foldl", [fun, acc, text], env, counter)
+
+  def compile_string_qualified("String.foldr", [fun, acc, text], env, counter),
+    do: compile_strings_nary("foldr", [fun, acc, text], env, counter)
+
+  def compile_string_qualified("String.all", [fun, text], env, counter),
+    do: compile_strings_nary("all", [fun, text], env, counter)
+
+  def compile_string_qualified("String.any", [fun, text], env, counter),
+    do: compile_strings_nary("any", [fun, text], env, counter)
+
+  def compile_string_qualified("String.indexes", [substr, text], env, counter),
+    do: compile_strings_nary("indexes", [substr, text], env, counter)
+
+  def compile_string_qualified("String.indices", [substr, text], env, counter),
+    do: compile_strings_nary("indexes", [substr, text], env, counter)
+
   def compile_string_qualified("Elm.Kernel.String." <> rest, args, env, counter),
     do: compile_string_qualified("String." <> rest, args, env, counter)
 
   def compile_string_qualified(_, _, _, _), do: :error
+
+  defp compile_strings_nary(fun, args, env, counter) do
+    {parts, env, c} = Elmx.Backend.ElixirCodegen.Emit.Helpers.compile_arg_parts(args, env, counter)
+
+    {:ok,
+     ["Elmx.Runtime.Core.Strings.", fun, "(", Enum.intersperse(parts, ", "), ")"],
+     env, c}
+  end
 
   defp compile_string_binary(fun, fixed, text, env, counter) do
     {fixed_code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(fixed, env, counter)
@@ -777,6 +848,124 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
     {:ok, [op, "(", l, ", ", r, ")"], env, c2}
   end
 
+  def compile_basics_qualified("Basics.sin", [arg], env, counter) do
+    compile_basics_math_unary(:sin, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Char.toUpper", [arg], env, counter) do
+    compile_char_unary(:to_upper, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Char.toLower", [arg], env, counter) do
+    compile_char_unary(:to_lower, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Char.toLocaleUpper", [arg], env, counter) do
+    compile_char_unary(:to_upper, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Char.toLocaleLower", [arg], env, counter) do
+    compile_char_unary(:to_lower, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Char.isDigit", [arg], env, counter),
+    do: compile_char_predicate(:is_digit, arg, env, counter)
+
+  def compile_basics_qualified("Char.isHexDigit", [arg], env, counter),
+    do: compile_char_predicate(:is_hex_digit, arg, env, counter)
+
+  def compile_basics_qualified("Char.isOctDigit", [arg], env, counter),
+    do: compile_char_predicate(:is_oct_digit, arg, env, counter)
+
+  def compile_basics_qualified("Char.isLower", [arg], env, counter),
+    do: compile_char_predicate(:is_lower, arg, env, counter)
+
+  def compile_basics_qualified("Char.isUpper", [arg], env, counter),
+    do: compile_char_predicate(:is_upper, arg, env, counter)
+
+  def compile_basics_qualified("Char.isAlpha", [arg], env, counter),
+    do: compile_char_predicate(:is_alpha, arg, env, counter)
+
+  def compile_basics_qualified("Char.isAlphaNum", [arg], env, counter),
+    do: compile_char_predicate(:is_alpha_num, arg, env, counter)
+
+  def compile_basics_qualified("Basics.cos", [arg], env, counter) do
+    compile_basics_math_unary(:cos, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Basics.tan", [arg], env, counter) do
+    compile_basics_math_unary(:tan, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Basics.sqrt", [arg], env, counter) do
+    compile_basics_math_unary(:sqrt, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Basics.asin", [arg], env, counter) do
+    compile_basics_math_unary(:asin, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Basics.acos", [arg], env, counter) do
+    compile_basics_math_unary(:acos, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Basics.atan", [arg], env, counter) do
+    compile_basics_math_unary(:atan, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Basics.degrees", [arg], env, counter) do
+    compile_basics_math_unary(:degrees, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Basics.radians", [arg], env, counter) do
+    compile_basics_math_unary(:radians, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Basics.turns", [arg], env, counter) do
+    compile_basics_math_unary(:turns, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Basics.atan2", [y, x], env, counter) do
+    {y_code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(y, env, counter)
+    {x_code, env, c2} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(x, env, c1)
+    {:ok, ["Elmx.Runtime.Core.Math.atan2(", y_code, ", ", x_code, ")"], env, c2}
+  end
+
+  def compile_basics_qualified("Basics.pow", [base, exp], env, counter) do
+    {b, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(base, env, counter)
+    {e, env, c2} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(exp, env, c1)
+    {:ok, ["Elmx.Runtime.Core.Math.pow(", b, ", ", e, ")"], env, c2}
+  end
+
+  def compile_basics_qualified("Basics.logBase", [base, value], env, counter) do
+    {b, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(base, env, counter)
+    {v, env, c2} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(value, env, c1)
+    {:ok, ["Elmx.Runtime.Core.Math.log_base(", b, ", ", v, ")"], env, c2}
+  end
+
+  def compile_basics_qualified("Basics.xor", [left, right], env, counter) do
+    {l, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(left, env, counter)
+    {r, env, c2} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(right, env, c1)
+    {:ok, ["Elmx.Runtime.Core.Math.xor(", l, ", ", r, ")"], env, c2}
+  end
+
+  def compile_basics_qualified("Basics.fromPolar", [polar], env, counter) do
+    compile_basics_from_polar(polar, env, counter)
+  end
+
+  def compile_basics_qualified("Basics.toPolar", [point], env, counter) do
+    {code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(point, env, counter)
+    {:ok, ["Elmx.Runtime.Core.Math.to_polar(", code, ")"], env, c1}
+  end
+
+  def compile_basics_qualified("Basics.isInfinite", [arg], env, counter) do
+    compile_basics_math_unary(:is_infinite, arg, env, counter)
+  end
+
+  def compile_basics_qualified("Basics.isNaN", [arg], env, counter) do
+    compile_basics_math_unary(:is_nan, arg, env, counter)
+  end
+
   def compile_basics_qualified("Basics.abs", [arg], env, counter) do
     {code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(arg, env, counter)
     {:ok, ["abs(", code, ")"], env, c1}
@@ -826,6 +1015,48 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
   end
 
   def compile_basics_qualified(_, _, _, _), do: :error
+
+  defp compile_basics_from_polar(polar, env, counter) do
+    case polar do
+      %{op: :tuple2, left: mag, right: angle} ->
+        {m, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(mag, env, counter)
+        {a, env, c2} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(angle, env, c1)
+        {:ok, ["Elmx.Runtime.Core.Math.from_polar(", m, ", ", a, ")"], env, c2}
+
+      _ ->
+        {code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(polar, env, counter)
+        {:ok, ["Elmx.Runtime.Core.Math.from_polar(elem(", code, ", 0), elem(", code, ", 1))"], env, c1}
+    end
+  end
+
+  defp compile_basics_math_unary(fun, arg, env, counter) when is_atom(fun) do
+    {code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(arg, env, counter)
+
+    {:ok,
+     [
+       "Elmx.Runtime.Core.Math.",
+       Atom.to_string(fun),
+       "(",
+       code,
+       ")"
+     ], env, c1}
+  end
+
+  defp compile_char_unary(fun, arg, env, counter) when is_atom(fun),
+    do: compile_char_predicate(fun, arg, env, counter)
+
+  defp compile_char_predicate(fun, arg, env, counter) when is_atom(fun) do
+    {code, env, c1} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(arg, env, counter)
+
+    {:ok,
+     [
+       "Elmx.Runtime.Core.Chars.",
+       Atom.to_string(fun),
+       "(",
+       code,
+       ")"
+     ], env, c1}
+  end
 
   @spec compile_bitwise_qualified(String.t(), ir_arg_list(), env(), emit_counter()) ::
           qualified_result()

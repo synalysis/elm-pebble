@@ -12,9 +12,13 @@ defmodule Elmx.MixProject do
         ignore_warnings: ".dialyzer_ignore.exs"
       ],
       deps: deps(),
-      escript: [main_module: Elmx.CLI]
+      escript: [main_module: Elmx.CLI],
+      elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   def application do
     [

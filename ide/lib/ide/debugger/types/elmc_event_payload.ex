@@ -61,6 +61,15 @@ defmodule Ide.Debugger.Types.ElmcEventPayload do
         payload
       end
 
+    payload =
+      case Map.get(attrs, :elmx_compile_error_message) || Map.get(attrs, "elmx_compile_error_message") do
+        message when is_binary(message) and message != "" ->
+          Map.put(payload, :elmx_compile_error_message, message)
+
+        _ ->
+          payload
+      end
+
     payload
     |> merge_diagnostic_preview(attrs)
   end

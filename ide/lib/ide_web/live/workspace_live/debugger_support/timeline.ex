@@ -594,7 +594,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline do
     rev = elmc_payload_display(payload, :revision)
     cached = elmc_payload_display(payload, :cached)
     path = elmc_payload_display(payload, :compiled_path)
-    "#{status} · #{errs} err · rev #{rev} · cached=#{cached} · #{path}"
+    elmx = elmc_payload_display(payload, :elmx_compile_error_message)
+
+    base = "#{status} · #{errs} err · rev #{rev} · cached=#{cached} · #{path}"
+
+    if elmx != "—" and elmx != "" do
+      base <> " · elmx: " <> String.slice(elmx, 0, 120)
+    else
+      base
+    end
   end
 
   defp lifecycle_summary(%{type: "debugger.elmc_manifest", payload: payload})

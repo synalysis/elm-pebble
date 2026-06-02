@@ -89,11 +89,17 @@ surface supported/blocked status. The current companion package shape is
 
 ### 2. Debugger Runtime Fidelity
 
-- Harden `elmx` runtime coverage (expression forms, stdlib, record updates).
-- Keep snapshot continuation, replay, tick, and protocol events deterministic.
+- **Shipped baseline:** `:compiled_elixir` (`elmx`) is the default debugger backend.
+- **Zero-gap compile policy:** `ELMX_TEMPLATE_COMPILE_GATE=1` requires every shipped template
+  watch + phone root to elmx-compile with no smoke exceptions; see
+  `docs/ELMX_DEBUGGER_FIDELITY_MATRIX.md`.
+- Harden remaining `elmx` gaps as new templates surface (cross-module partial application,
+  rare stdlib corners) — driven by compile gate failures, not one-off app hacks.
+- Keep snapshot continuation, replay, tick, protocol, and subscription follow-up rows
+  deterministic (`subscription_command`, device, HTTP, companion bridge).
 - Preserve trace export/import and MCP cursor inspection as stable contracts.
-- Gate changes with `ide/test/ide/mcp/debugger_template_corpus_test.exs` and
-  `.github/workflows/debugger-strict.yml`.
+- **Release gate:** `scripts/debugger_release_gate.sh` plus
+  `.github/workflows/debugger-strict.yml` on every PR.
 
 ### 3. Editor and Language Server
 

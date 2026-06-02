@@ -5,10 +5,10 @@ This matrix tracks the implementation mode and current parity status for eligibl
 | Module | Mode | Status | Notes |
 | --- | --- | --- | --- |
 | Array | runtime intrinsic + lowered wrappers | compliance | `CoreCompliance` + `stdlib_qualified_emit_test`; list-backed; negative `get` → `Nothing`. |
-| Basics | runtime intrinsic + lowered operators | compliance | `modBy`/min/max/clamp via emit; float/trig emit paths exist; full float edge cases pending. |
+| Basics | runtime intrinsic + lowered operators | compliance | `modBy`/min/max/clamp via emit; trig via `Core.Math` emit; `isNaN`/`isInfinite` helpers. |
 | Bitwise | runtime intrinsic | compliance | `Core.Bitwise` + `bitwiseExtras` unsigned `shiftRightZfBy` vs elmc. |
-| Char | runtime intrinsic | compliance | `fromCode`/`toCode` roundtrip in `CoreCompliance`; case transforms pending. |
-| Debug | runtime intrinsic | compliance | `debugEcho` via `Core.Debug.log`; richer Elm-like `toString` pending. |
+| Char | runtime intrinsic | compliance | `fromCode`/`toCode` roundtrip; `toUpper`/`toLower` via `Core.Chars` emit. |
+| Debug | runtime intrinsic | compliance | `debugEcho` via `Core.Debug.log`; `toString` formats ctor/list/record shapes. |
 | Dict | lowered + runtime intrinsic | compliance | `Core.Collections` list-backed dict; `CoreCompliance` dict/set suite green. |
 | List | lowered + runtime intrinsic | compliance | Core list helpers + fold/map/sort/sortBy/sortWith via `Core` + `list_stdlib_emit_test.exs`. |
 | Result | lowered | compliance | `CoreCompliance` maybe/result/nested case; combinators via `Core`/`Stdlib`. |

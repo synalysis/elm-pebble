@@ -63,6 +63,13 @@ jobs:
         working-directory: elmx
         run: mix test
 
+      - name: Run elmx coverage and qualified-call gate tests
+        working-directory: elmx
+        run: |
+          mix test test/backend_coverage_gate_test.exs \
+            test/qualified_call_audit_test.exs \
+            test/phone_template_audit_test.exs
+
       - name: Install IDE dependencies
         working-directory: ide
         run: mix deps.get

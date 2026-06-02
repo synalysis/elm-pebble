@@ -68,5 +68,14 @@ defmodule Elmx.StdlibQualifiedEmitTest do
     assert emit_qualified("String.append", [left, right]) =~ "Core.append"
     assert emit_qualified("Basics.modBy", [%{op: :int_literal, value: 5}, %{op: :int_literal, value: 10}]) =~
              "Integer.mod"
+
+    theta = %{op: :float_literal, value: 1.0}
+    assert emit_qualified("Basics.sin", [theta]) =~ "Elmx.Runtime.Core.Math.sin"
+    assert emit_qualified("Basics.cos", [theta]) =~ "Elmx.Runtime.Core.Math.cos"
+    assert emit_qualified("Basics.sqrt", [theta]) =~ "Elmx.Runtime.Core.Math.sqrt"
+
+    ch = %{op: :char_literal, value: "a"}
+    assert emit_qualified("Char.toUpper", [ch]) =~ "Elmx.Runtime.Core.Chars.to_upper"
+    assert emit_qualified("Char.toLower", [ch]) =~ "Elmx.Runtime.Core.Chars.to_lower"
   end
 end

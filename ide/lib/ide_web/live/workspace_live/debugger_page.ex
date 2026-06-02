@@ -755,10 +755,51 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
 
   @spec runtime_model_warnings_text(map() | nil) :: String.t() | nil
   defp runtime_model_warnings_text(runtime) do
-    runtime
-    |> debugger_raw_runtime_model()
-    |> Ide.Debugger.RuntimeModelQuality.unresolved_field_names()
-    |> case do
+    model = debugger_raw_runtime_model(runtime)
+
+    warnings =
+      [
+        elmx_compile_warning(model),
+        runtime_execution_warning(model),
+        unresolved_runtime_model_warning(model)
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    case warnings do
+      [] -> nil
+      parts -> Enum.join(parts, "\n\n")
+    end
+  end
+
+  @spec elmx_compile_warning(map()) :: String.t() | nil
+  defp elmx_compile_warning(model) when is_map(model) do
+    case Map.get(model, "elmx_compile_error_message") || Map.get(model, :elmx_compile_error_message) do
+      message when is_binary(message) and message != "" ->
+        "elmx compile failed: #{message}\n\nRecompile the watch (and phone, if used) from the Build tab, then reload the debugger."
+
+      _ ->
+        nil
+    end
+  end
+
+  defp elmx_compile_warning(_), do: nil
+
+  @spec runtime_execution_warning(map()) :: String.t() | nil
+  defp runtime_execution_warning(model) when is_map(model) do
+    case Map.get(model, "runtime_execution_error") || Map.get(model, :runtime_execution_error) do
+      message when is_binary(message) and message != "" ->
+        "Runtime execution error: #{message}"
+
+      _ ->
+        nil
+    end
+  end
+
+  defp runtime_execution_warning(_), do: nil
+
+  @spec unresolved_runtime_model_warning(map()) :: String.t() | nil
+  defp unresolved_runtime_model_warning(model) when is_map(model) do
+    case Ide.Debugger.RuntimeModelQuality.unresolved_field_names(model) do
       [] ->
         nil
 
@@ -766,11 +807,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage do
         """
         Some watch `runtime_model` fields still contain parser/introspect artifacts (`$var`, `call`, `$opaque`) instead of evaluated Elm values: #{Enum.join(fields, ", ")}.
 
-        Typical causes: Core IR was missing on reload, or `Main.init` did not evaluate via the executor. Reload after compile finishes, or check `runtime_execution_error` / `operation_source` on the watch model. Preview needs a fully evaluated model (see `previewUnavailable` when view eval fails).
+        Typical causes: elmx artifacts were missing on reload, or `Main.init` did not evaluate via the executor. Recompile, reload the debugger, and check `runtime_execution_error` / `operation_source` on the watch model. Preview needs a fully evaluated model (see `previewUnavailable` when view eval fails).
         """
         |> String.trim()
     end
   end
+
+  defp unresolved_runtime_model_warning(_), do: nil
 
   @spec debugger_debugger_model(map() | nil) :: map()
   defp debugger_debugger_model(runtime) do

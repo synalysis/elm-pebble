@@ -266,10 +266,14 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def execution_artifacts(model) when is_map(model) do
     elmx_manifest = wire_field(model, "elmx_manifest")
     elmx_revision = wire_field(model, "elmx_revision")
+    elmx_compile_error = wire_field(model, "elmx_compile_error")
+    elmx_compile_error_message = wire_field(model, "elmx_compile_error_message")
 
     %{}
     |> maybe_put_artifact(:elmx_manifest, elmx_manifest)
     |> maybe_put_artifact(:elmx_revision, elmx_revision)
+    |> maybe_put_artifact(:elmx_compile_error, elmx_compile_error)
+    |> maybe_put_artifact(:elmx_compile_error_message, elmx_compile_error_message)
   end
 
   def execution_artifacts(_model), do: %{}

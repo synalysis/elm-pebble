@@ -28,15 +28,62 @@ defmodule Ide.Debugger.PackageCommandHandler do
   @spec handle(runtime_state(), String.t(), String.t(), followup_row()) :: handle_result()
   def handle(state, target_name, package, row) when is_map(state) and is_binary(target_name) do
     command = Map.get(row, "command") || Map.get(row, :command)
+    source = Map.get(row, "source") || Map.get(row, :source)
 
-    if storage_command?(command) do
-      handle_storage_command(state, target_name, package, row, command)
-    else
-      :unhandled
+    cond do
+      subscription_command_row?(source, command) ->
+        handle_subscription_command(state, target_name, package, row, command)
+
+      storage_command?(command) ->
+        handle_storage_command(state, target_name, package, row, command)
+
+      true ->
+        :unhandled
     end
   end
 
   def handle(_state, _target_name, _package, _row), do: :unhandled
+
+  @spec subscription_command_row?(String.t() | nil, Types.cmd_call() | nil) :: boolean()
+  defp subscription_command_row?("subscription_command", %{} = command) do
+    command_kind(command) == "cmd.subscription.register"
+  end
+
+  defp subscription_command_row?(_source, _command), do: false
+
+  @spec handle_subscription_command(
+          runtime_state(),
+          String.t(),
+          String.t(),
+          followup_row(),
+          Types.cmd_call()
+        ) ::
+          handle_result()
+  defp handle_subscription_command(state, target_name, package, row, command) do
+    response_message = Map.get(row, "message") || Map.get(row, :message)
+    message_value = Map.get(command, "message_value") || Map.get(command, :message_value)
+
+    event_payload = %{
+      target: target_name,
+      package: package,
+      response_message: response_message,
+      command: %{
+        kind: command_kind(command),
+        target: Map.get(command, "target") || Map.get(command, :target),
+        interval_ms: Map.get(command, "interval_ms") || Map.get(command, :interval_ms)
+      },
+      response: message_value
+    }
+
+    step =
+      if is_binary(response_message) and response_message != "" do
+        %{message: response_message, message_value: message_value}
+      else
+        nil
+      end
+
+    {:handled, state, event_payload, step}
+  end
 
   @spec storage_command?(Types.cmd_call() | nil) :: boolean()
   defp storage_command?(%{} = command),
