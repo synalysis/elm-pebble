@@ -50,8 +50,6 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Watch do
       "Pebble.Button.onLongPress" -> subscription_mask("Pebble.Button.onLongPress")
       "Pebble.Accel.onTap" -> subscription_mask("Pebble.Accel.onTap")
       "Elm.Kernel.PebbleWatch.onAccelTap" -> subscription_mask("Elm.Kernel.PebbleWatch.onAccelTap")
-      "Time.every" -> subscription_mask("Elm.Kernel.Time.every")
-      "Elm.Kernel.Time.every" -> subscription_mask("Elm.Kernel.Time.every")
       "Pebble.Frame.every" -> frame_subscription(args)
       "Elm.Kernel.PebbleWatch.onFrame" -> frame_subscription(args)
       "Pebble.Frame.atFps" -> frame_fps_subscription(args)

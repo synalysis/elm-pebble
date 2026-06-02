@@ -61,20 +61,12 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
           ExecutorTypes.execution_result()
   def annotate_backend(%{} = payload, backend, reason \\ nil)
       when is_binary(backend) do
-    runtime_model_source =
-      payload
-      |> Map.get(:model_patch, %{})
-      |> Map.get("runtime_model_source")
-
-    view_tree = Map.get(payload, :view_tree) || Map.get(payload, "view_tree")
-
     runtime =
       payload
       |> Map.get(:runtime, %{})
       |> Map.put("execution_backend", backend)
       |> Map.put("runtime_mode", runtime_mode_string())
       |> maybe_put_fallback_reason(reason)
-      |> put_elmx_execution_metadata(runtime_model_source, view_tree)
 
     model_patch =
       payload
@@ -84,23 +76,6 @@ defmodule Ide.Debugger.RuntimeExecutor.ResultNormalizer do
 
     %{payload | model_patch: model_patch, runtime: runtime}
   end
-
-  defp put_elmx_execution_metadata(runtime, source, view_tree)
-       when is_map(runtime) and is_binary(source) and source != "" do
-    runtime
-    |> Map.put("operation_source", source)
-    |> Map.put("runtime_model_source", source)
-    |> Map.put("view_tree_source", elmx_view_tree_source(view_tree, source))
-  end
-
-  defp put_elmx_execution_metadata(runtime, _source, _view_tree), do: runtime
-
-  defp elmx_view_tree_source(view_tree, "step_message")
-       when is_map(view_tree) and map_size(view_tree) > 0,
-       do: "step_derived_view_tree"
-
-  defp elmx_view_tree_source(_view_tree, "init_model"), do: "elmc_runtime_view_tree"
-  defp elmx_view_tree_source(_view_tree, _), do: "none"
 
   @spec runtime_mode_string() :: String.t()
   defp runtime_mode_string do

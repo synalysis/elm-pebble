@@ -324,7 +324,7 @@ defmodule Ide.PebblePreferences do
     generated typed preferences schema.
     -}
     configurationFlagsDecoder =
-        Decode.optionalField "configurationResponse" Decode.string
+        Decode.field "configurationResponse" (Decode.nullable Decode.string)
 
 
     {-| Decode the raw `configuration.closed` bridge event response.

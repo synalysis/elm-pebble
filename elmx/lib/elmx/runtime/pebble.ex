@@ -57,7 +57,6 @@ defmodule Elmx.Runtime.Pebble do
       "elmx_ui_canvas_layer" -> apply_ui(:canvas_layer, args)
       "elmx_ui_group" -> apply_ui(:group, args)
       "elmx_ui_context" -> apply_ui(:context, args)
-      "elmx_ui_to_ui_node" -> apply_ui(:to_ui_node, args)
       "elmx_ui_draw_bitmap_in_rect" -> apply_ui(:draw_bitmap_in_rect, args)
       "elmx_ui_clear" -> apply_ui(:clear, args)
       "elmx_ui_fill_rect" -> apply_ui(:fill_rect, args)

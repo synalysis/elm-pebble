@@ -28,12 +28,12 @@ defmodule IdeWeb.WorkspaceLive.ResourcesFlowTest do
              ResourceStore.import_bitmap(project, png, "sprite.png", color_mode: "Color")
 
     assert {[%{} = row], nil} = ResourcesFlow.load_bitmap_resources(project)
-    assert row.ctor == "BitmapStaticSprite"
+    assert row.ctor == "Sprite"
     assert length(row.variant_slots) == 2
 
     assert Enum.any?(
              row.variant_slots,
-             &(&1.color_mode == "Color" and &1.filename == "BitmapStaticSprite~color.png")
+             &(&1.color_mode == "Color" and &1.filename == "Sprite~color.png")
            )
   end
 

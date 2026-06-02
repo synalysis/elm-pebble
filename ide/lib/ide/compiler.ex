@@ -620,28 +620,10 @@ defmodule Ide.Compiler do
   """
   @spec default_elmx_entry_module(String.t()) :: String.t()
   def default_elmx_entry_module(project_dir) when is_binary(project_dir) do
-    src_dir = Path.join(project_dir, "src")
-
     cond do
-      File.exists?(Path.join(src_dir, "CompanionApp.elm")) ->
-        "CompanionApp"
-
-      File.exists?(Path.join(src_dir, "Main.elm")) ->
-        "Main"
-
-      true ->
-        case File.ls(src_dir) do
-          {:ok, names} ->
-            names
-            |> Enum.filter(&String.ends_with?(&1, ".elm"))
-            |> case do
-              [single] -> Path.rootname(single)
-              _ -> "Main"
-            end
-
-          _ ->
-            "Main"
-        end
+      File.exists?(Path.join(project_dir, "src/CompanionApp.elm")) -> "CompanionApp"
+      File.exists?(Path.join(project_dir, "src/Main.elm")) -> "Main"
+      true -> "Main"
     end
   end
 

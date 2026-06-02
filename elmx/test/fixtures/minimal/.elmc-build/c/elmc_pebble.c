@@ -230,24 +230,13 @@ static int elmc_decode_path_payload(ElmcValue *payload, ElmcPebbleDrawCmd *out_c
   if (!offset_and_rotation || offset_and_rotation->tag != ELMC_TAG_TUPLE2 || offset_and_rotation->payload == NULL) return -4;
   ElmcTuple2 *off1 = (ElmcTuple2 *)offset_and_rotation->payload;
   if (!off1->first || !off1->second) return -5;
+  out_cmd->path_offset_x = elmc_as_int(off1->first);
 
-  if (off1->first->tag == ELMC_TAG_TUPLE2 && off1->first->payload != NULL) {
-    /* Pebble.Ui.path: tuple2(points, tuple2(tuple2(offset_x, offset_y), rotation)) */
-    ElmcTuple2 *xy = (ElmcTuple2 *)off1->first->payload;
-    if (!xy->first || !xy->second) return -6;
-    out_cmd->path_offset_x = elmc_as_int(xy->first);
-    out_cmd->path_offset_y = elmc_as_int(xy->second);
-    out_cmd->path_rotation = elmc_as_int(off1->second);
-  } else {
-    /* path_expr: tuple2(points, tuple2(offset_x, tuple2(offset_y, rotation))) */
-    out_cmd->path_offset_x = elmc_as_int(off1->first);
-
-    if (off1->second->tag != ELMC_TAG_TUPLE2 || off1->second->payload == NULL) return -6;
-    ElmcTuple2 *off2 = (ElmcTuple2 *)off1->second->payload;
-    if (!off2->first || !off2->second) return -7;
-    out_cmd->path_offset_y = elmc_as_int(off2->first);
-    out_cmd->path_rotation = elmc_as_int(off2->second);
-  }
+  if (off1->second->tag != ELMC_TAG_TUPLE2 || off1->second->payload == NULL) return -6;
+  ElmcTuple2 *off2 = (ElmcTuple2 *)off1->second->payload;
+  if (!off2->first || !off2->second) return -7;
+  out_cmd->path_offset_y = elmc_as_int(off2->first);
+  out_cmd->path_rotation = elmc_as_int(off2->second);
 
   int count = 0;
   ElmcValue *cursor = points;
@@ -404,13 +393,6 @@ static void elmc_pebble_scene_mark_full_dirty(ElmcPebbleApp *app) {
   app->dirty_rect.h = 0;
 }
 #endif
-
-void elmc_pebble_invalidate_scene(ElmcPebbleApp *app) {
-  if (!app) return;
-#if ELMC_PEBBLE_DIRTY_REGION_ENABLED
-  elmc_pebble_scene_mark_full_dirty(app);
-#endif
-}
 
 static int elmc_pebble_scene_reserve(ElmcPebbleApp *app, int extra) {
   if (!app || extra < 0) return -1;

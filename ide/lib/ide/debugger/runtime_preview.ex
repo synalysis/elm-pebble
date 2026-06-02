@@ -242,10 +242,7 @@ defmodule Ide.Debugger.RuntimePreview do
         end
 
       if map_size(indices) > 0 do
-        surface
-        |> Surface.from_map()
-        |> Surface.put_shell(Map.put(Surface.shell(surface), Atom.to_string(key), indices))
-        |> Surface.to_map()
+        Surface.put_shell(surface, Map.put(Surface.shell(surface), Atom.to_string(key), indices))
       else
         surface
       end

@@ -1093,28 +1093,6 @@ ElmcValue *elmc_task_fail(ElmcValue *value) {
   return elmc_result_err(value);
 }
 
-ElmcValue *elmc_task_map(ElmcValue *f, ElmcValue *task) {
-  return elmc_result_map(f, task);
-}
-
-ElmcValue *elmc_task_map2(ElmcValue *f, ElmcValue *a, ElmcValue *b) {
-  if (!a || a->tag != ELMC_TAG_RESULT || !a->payload) return elmc_result_err(elmc_new_string("invalid"));
-  if (!b || b->tag != ELMC_TAG_RESULT || !b->payload) return elmc_result_err(elmc_new_string("invalid"));
-  ElmcResult *ra = (ElmcResult *)a->payload;
-  ElmcResult *rb = (ElmcResult *)b->payload;
-  if (!ra->is_ok) return elmc_retain(a);
-  if (!rb->is_ok) return elmc_retain(b);
-  ElmcValue *args[2] = { ra->value, rb->value };
-  ElmcValue *mapped = elmc_closure_call(f, args, 2);
-  ElmcValue *out = elmc_result_ok(mapped);
-  elmc_release(mapped);
-  return out;
-}
-
-ElmcValue *elmc_task_and_then(ElmcValue *f, ElmcValue *task) {
-  return elmc_result_and_then(f, task);
-}
-
 ElmcValue *elmc_process_spawn(ElmcValue *task) {
   ElmcProcessSlot *slot = elmc_process_alloc_slot();
   int64_t pid_raw = slot ? slot->pid : 0;

@@ -16,7 +16,6 @@ defmodule Elmx.SubscriptionsFrameTest do
 
   test "batch OR includes frame and accel tap subscriptions" do
     items = [
-      %{op: :qualified_call, target: "Time.every", args: [%{op: :int_literal, value: 1000}, :msg]},
       %{op: :qualified_call, target: "Pebble.Frame.every", args: [%{op: :int_literal, value: 33}, :msg]},
       %{op: :qualified_call, target: "Pebble.Accel.onTap", args: [:msg]}
     ]

@@ -94,7 +94,7 @@ defmodule Elmx.Runtime.MessageDecode do
   end
 
   defp decode_nullary_string(ctor) do
-    atom = ctor |> nullary_message_atom() |> String.to_atom()
+    atom = String.to_atom(ctor)
 
     if frame_tick_ctor?(ctor) do
       {atom, default_frame_payload()}
@@ -102,13 +102,6 @@ defmodule Elmx.Runtime.MessageDecode do
       atom
     end
   end
-
-  # Debugger step strings are often lowercased ("inc"); Elm msg constructors are PascalCase ("Inc").
-  defp nullary_message_atom(<<first::utf8, rest::binary>>) when first in ?a..?z do
-    <<first - 32, rest::binary>>
-  end
-
-  defp nullary_message_atom(ctor) when is_binary(ctor), do: ctor
 
   defp parse_paren_payload(content) when is_binary(content) do
     case String.split(content, " ", parts: 2) do

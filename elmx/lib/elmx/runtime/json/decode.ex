@@ -26,10 +26,6 @@ defmodule Elmx.Runtime.Json.Decode do
   @spec field(String.t(), decoder()) :: decoder()
   def field(name, decoder) when is_binary(name), do: {:json_decoder, {:field, name, decoder}}
 
-  @spec optional_field(String.t(), decoder()) :: decoder()
-  def optional_field(name, decoder) when is_binary(name),
-    do: {:json_decoder, {:optional_field, name, decoder}}
-
   @spec list(decoder()) :: decoder()
   def list(decoder), do: {:json_decoder, {:list, decoder}}
 
@@ -225,19 +221,6 @@ defmodule Elmx.Runtime.Json.Decode do
     case map_field(value, name) do
       {:ok, field_value} -> apply_decoder(inner, field_value)
       :error -> {:Err, "missing field #{name}"}
-    end
-  end
-
-  defp apply_decoder({:json_decoder, {:optional_field, name, inner}}, value) when is_map(value) do
-    case map_field(value, name) do
-      {:ok, field_value} ->
-        case apply_decoder(inner, field_value) do
-          {:Ok, decoded} -> {:Ok, {:Just, decoded}}
-          {:Err, _} = err -> err
-        end
-
-      :error ->
-        {:Ok, :Nothing}
     end
   end
 

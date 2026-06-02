@@ -12,9 +12,6 @@ defmodule Elmx.SpecialValuesUiTest do
 
     assert {:ok, %{op: :runtime_call, function: "elmx_ui_group", args: [_]}} =
              SpecialValues.rewrite("Pebble.Ui.group", [ctx])
-
-    assert {:ok, %{op: :runtime_call, function: "elmx_ui_to_ui_node", args: [^ops]}} =
-             SpecialValues.rewrite("Pebble.Ui.root", [ops])
   end
 
   test "Pebble.Time weekday constructors rewrite to tag integers" do

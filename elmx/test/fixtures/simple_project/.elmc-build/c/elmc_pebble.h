@@ -458,7 +458,6 @@ int elmc_pebble_scene_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_c
 int elmc_pebble_ensure_scene(ElmcPebbleApp *app);
 int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
 int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
-void elmc_pebble_invalidate_scene(ElmcPebbleApp *app);
 void elmc_pebble_clear_view_cache(ElmcPebbleApp *app);
 int elmc_pebble_tick(ElmcPebbleApp *app);
 int64_t elmc_pebble_active_subscriptions(ElmcPebbleApp *app);
