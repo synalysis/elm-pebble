@@ -47,7 +47,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Locale --",
+      "text": "Locale en-US",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -84,7 +84,7 @@
       "y": 108
     }
   ],
-  "preview_ops_sha256": "cc5bc905a561d1eb2613792ecac158c8008c8ca874f16d4fae058839f6a005b8",
+  "preview_ops_sha256": "f057b29c650ed569c64ff7cd5d77433abd816ce385571a04110acf413de45326",
   "render_tree": {
     "node_count": 9,
     "node_types": [
@@ -100,13 +100,6 @@
     ],
     "root_type": "windowStack",
     "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
       "children": [
         {
           "children": [
@@ -115,88 +108,117 @@
                 {
                   "children": [],
                   "color": 255,
-                  "label": "",
+                  "kind": "clear",
+                  "label": "clear",
                   "text": null,
                   "type": "clear"
                 },
                 {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 36
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 18,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "08:53",
+                  "options": [],
                   "text": "<TIME>",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 36
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 54
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 18,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Bat 0% idle",
+                  "options": [],
                   "text": "Bat 0% idle",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 54
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 72
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 18,
-                  "label": "",
-                  "text": "Locale --",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Locale en-US",
+                  "options": [],
+                  "text": "Locale en-US",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 72
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 90
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 18,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Net offline",
+                  "options": [],
                   "text": "Net offline",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 90
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 18,
+                    "text": null,
+                    "w": 128,
+                    "x": 8,
+                    "y": 108
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 18,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Notif off",
+                  "options": [],
                   "text": "Notif off",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 128,
-                  "x": 8,
-                  "y": 108
+                  "type": "text"
                 }
               ],
-              "id": 1,
+              "id": "1",
+              "kind": "canvasLayer",
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": 1,
+          "id": "1",
+          "kind": "window",
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
+      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
@@ -205,16 +227,6 @@
   "runtime_model": {
     "batteryPercent": 0,
     "charging": false,
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
-    },
-    "last_message": "CurrentTimeString",
-    "last_operation": "CurrentTimeString",
     "locale": "en-US",
     "notificationsEnabled": false,
     "online": false,
@@ -231,9 +243,7 @@
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
-    "_debugger_steps": 1,
     "debugger_init_complete": true,
-    "elm_executor_mode": "runtime_executed",
     "last_source": "module Main exposing (main)\n\nimport Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))\nimport Companion.Watch as CompanionWatch\nimport Json.Decode as Decode\nimport Pebble.Cmd as Cmd\nimport Pebble.Events as Events\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { timeString : String\n    , batteryPercent : Int\n    , charging : Bool\n    , locale : String\n    , online : Bool\n    , notificationsEnabled : Bool\n    , quietHours : Bool\n    , screenW : Int\n    , screenH : Int\n    }\n\n\ntype Msg\n    = MinuteChanged Int\n    | CurrentTimeString String\n    | FromPhone PhoneToWatch\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { timeString = \"--:--\"\n      , batteryPercent = 0\n      , charging = False\n      , locale = \"--\"\n      , online = False\n      , notificationsEnabled = False\n      , quietHours = False\n      , screenW = context.screen.width\n      , screenH = context.screen.height\n      }\n    , Cmd.batch\n        [ Cmd.getCurrentTimeString CurrentTimeString\n        , CompanionWatch.sendWatchToPhone RequestPhoneStatus\n        ]\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        MinuteChanged _ ->\n            ( model\n            , Cmd.batch\n                [ Cmd.getCurrentTimeString CurrentTimeString\n                , CompanionWatch.sendWatchToPhone RequestPhoneStatus\n                ]\n            )\n\n        CurrentTimeString value ->\n            ( { model | timeString = value }, Cmd.none )\n\n        FromPhone (ProvideBattery percent charging) ->\n            ( { model | batteryPercent = percent, charging = charging }, Cmd.none )\n\n        FromPhone (ProvideLocale locale) ->\n            ( { model | locale = locale }, Cmd.none )\n\n        FromPhone (ProvideConnectivity online) ->\n            ( { model | online = online }, Cmd.none )\n\n        FromPhone (ProvideNotifications enabled quietHours) ->\n            ( { model | notificationsEnabled = enabled, quietHours = quietHours }, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Events.onMinuteChange MinuteChanged\n        , CompanionWatch.onPhoneToWatch FromPhone\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    let\n        lineH =\n            18\n\n        startY =\n            36\n\n        label x y text_ =\n            Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = y, w = model.screenW - 16, h = lineH } text_\n    in\n    Ui.windowStack\n        [ Ui.window 1\n            [ Ui.canvasLayer 1\n                [ Ui.clear Color.white\n                , label 8 startY model.timeString\n                , label 8 (startY + lineH) (\"Bat \" ++ String.fromInt model.batteryPercent ++ \"% \" ++ chargingLabel model.charging)\n                , label 8 (startY + lineH * 2) (\"Locale \" ++ model.locale)\n                , label 8 (startY + lineH * 3) (\"Net \" ++ onlineLabel model.online)\n                , label 8 (startY + lineH * 4) (\"Notif \" ++ notificationLabel model.notificationsEnabled model.quietHours)\n                ]\n            ]\n        ]\n\n\nchargingLabel : Bool -> String\nchargingLabel charging =\n    if charging then\n        \"chg\"\n\n    else\n        \"idle\"\n\n\nonlineLabel : Bool -> String\nonlineLabel online =\n    if online then\n        \"online\"\n\n    else\n        \"offline\"\n\n\nnotificationLabel : Bool -> Bool -> String\nnotificationLabel enabled quietHours =\n    if quietHours then\n        \"quiet\"\n\n    else if enabled then\n        \"on\"\n\n    else\n        \"off\"\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.watchface\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
     "launch_context": {
       "has_compass": true,
@@ -251,6 +261,19 @@
       "watch_profile_id": "aplite"
     },
     "revision": "c179f1e1bc2f",
+    "runtime_execution": {
+      "compiler": "elmx",
+      "contract": "elmx.runtime_executor.v1",
+      "engine": "elmx_runtime_v1",
+      "execution_backend": "compiled_elixir",
+      "runtime_mode": "runtime_first",
+      "runtime_model_entry_count": 9,
+      "runtime_model_sha256": "5fa5c372c2330f8f8c0dc8aad3a3d9c3753a6ebaca0fe9dc42a9b4b91e13ac99",
+      "runtime_model_source": "step_message",
+      "view_tree_node_count": 10,
+      "view_tree_sha256": "3c5ba4feb6678a712f4294b2cd40b0326aa349f32e03f95bd49dcf497f636b8e"
+    },
+    "runtime_execution_mode": "runtime_executed",
     "runtime_known_messages": [
       "MinuteChanged",
       "CurrentTimeString",
@@ -261,20 +284,11 @@
     "runtime_model": {
       "batteryPercent": 0,
       "charging": false,
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
-      },
-      "last_message": "CurrentTimeString",
-      "last_operation": "CurrentTimeString",
       "locale": "en-US",
       "notificationsEnabled": false,
       "online": false,
       "quietHours": false,
+      "runtime_view_output_model_sha256": "faf5785d164165fba4394c5bebe044b7b17f666378c79848a96dc65f2447910f",
       "screenH": 168,
       "screenW": 144,
       "timeString": "08:53"
@@ -295,7 +309,7 @@
         "text": null
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 18,
         "kind": "text",
         "text": "<TIME>",
@@ -306,7 +320,7 @@
         "y": 36
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 18,
         "kind": "text",
         "text": "Bat 0% idle",
@@ -317,7 +331,7 @@
         "y": 54
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 18,
         "kind": "text",
         "text": "Locale --",
@@ -328,7 +342,7 @@
         "y": 72
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 18,
         "kind": "text",
         "text": "Net offline",
@@ -339,7 +353,7 @@
         "y": 90
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 18,
         "kind": "text",
         "text": "Notif off",
@@ -353,17 +367,23 @@
     "screen_height": 168,
     "screen_width": 144,
     "simulator_settings": {
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "battery_percent": 88,
       "calendar_events": [],
+      "storage_values": {},
       "charging": false,
-      "clock_24h": true,
-      "compass_heading_deg": 0,
+      "timezone_id": "Europe/Berlin",
       "compass_valid": true,
+      "use_simulated_time": true,
+      "simulated_date": "2026-05-27",
+      "compass_heading_deg": 0,
+      "latitude": 48.14,
+      "companion_timeline_token": "demo-timeline-token",
+      "notifications_enabled": true,
+      "health_steps_today": 9100,
+      "language": "en",
       "connected": true,
+      "preferences": {},
+      "battery_percent": 88,
       "dictation_error": "",
-      "dictation_transcript": "",
       "environment": {
         "moon": {
           "moonriseMin": 900,
@@ -377,32 +397,27 @@
         },
         "tide": null
       },
-      "health_steps": 4200,
-      "health_steps_today": 9100,
-      "language": "en",
-      "latitude": 48.137154,
-      "locale": "en-US",
-      "longitude": 11.576124,
-      "network_online": true,
-      "notifications_enabled": true,
-      "preferences": {},
-      "quiet_hours": false,
-      "region": "US",
-      "simulated_date": "2026-05-27",
-      "simulated_time": "08:53:00",
-      "storage_values": {},
-      "timeline_peek": false,
-      "timezone_id": "Europe/Berlin",
       "timezone_offset_min": 0,
-      "use_simulated_time": true,
-      "vibe_pattern_ms": [],
       "weather": {
         "condition": "clear",
         "humidityPercent": 50,
         "pressureHpa": 1013,
         "temperatureC": 21,
         "windKph": 8
-      }
+      },
+      "region": "US",
+      "clock_24h": true,
+      "longitude": 11.58,
+      "vibe_pattern_ms": [],
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "locale": "en-US",
+      "network_online": true,
+      "timeline_peek": false,
+      "health_steps": 4200,
+      "dictation_transcript": "",
+      "simulated_time": "08:53:00",
+      "quiet_hours": false
     },
     "source_root": "watch",
     "status": "idle",

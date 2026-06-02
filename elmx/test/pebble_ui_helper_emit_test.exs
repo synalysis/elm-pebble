@@ -27,4 +27,36 @@ defmodule Elmx.PebbleUiHelperEmitTest do
     assert IO.iodata_to_binary(code) =~ "cmd_none"
     refute IO.iodata_to_binary(code) =~ ~r/\bnone\(/
   end
+
+  test "let-bound multi-arg helper calls are curried" do
+    label =
+      %{
+        op: :lambda,
+        args: ["x", "y", "text_"],
+        body: %{op: :int_literal, value: 0}
+      }
+
+    body =
+      %{
+        op: :call,
+        name: "label",
+        args: [
+          %{op: :int_literal, value: 8},
+          %{op: :int_literal, value: 36},
+          %{op: :string_literal, value: "hi"}
+        ]
+      }
+
+    expr = %{op: :let_in, name: "label", value_expr: label, in_expr: body}
+    env = Emit.function_env("Main", ["model"])
+
+    {code, _, _} = Emit.compile_expr(expr, env, 0)
+    emitted = IO.iodata_to_binary(code)
+
+    assert emitted =~ "fn x ->"
+    assert emitted =~ "fn y ->"
+    assert emitted =~ "fn text_ ->"
+    assert emitted =~ "label.(8).(36).(\"hi\")"
+    refute emitted =~ "label.(8, 36, \"hi\")"
+  end
 end

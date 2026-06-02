@@ -138,7 +138,8 @@
                 {
                   "children": [],
                   "color": 255,
-                  "label": "",
+                  "kind": "clear",
+                  "label": "clear",
                   "text": null,
                   "type": "clear"
                 },
@@ -147,7 +148,8 @@
                   "color": 192,
                   "cx": 72,
                   "cy": 84,
-                  "label": "",
+                  "kind": "circle",
+                  "label": "circle",
                   "r": 58,
                   "text": null,
                   "type": "circle"
@@ -155,7 +157,8 @@
                 {
                   "children": [],
                   "color": 192,
-                  "label": "",
+                  "kind": "pixel",
+                  "label": "pixel",
                   "text": null,
                   "type": "pixel",
                   "x": 72,
@@ -164,7 +167,8 @@
                 {
                   "children": [],
                   "color": 192,
-                  "label": "",
+                  "kind": "pixel",
+                  "label": "pixel",
                   "text": null,
                   "type": "pixel",
                   "x": 130,
@@ -173,7 +177,8 @@
                 {
                   "children": [],
                   "color": 192,
-                  "label": "",
+                  "kind": "pixel",
+                  "label": "pixel",
                   "text": null,
                   "type": "pixel",
                   "x": 72,
@@ -182,7 +187,8 @@
                 {
                   "children": [],
                   "color": 192,
-                  "label": "",
+                  "kind": "pixel",
+                  "label": "pixel",
                   "text": null,
                   "type": "pixel",
                   "x": 14,
@@ -191,7 +197,8 @@
                 {
                   "children": [],
                   "color": 192,
-                  "label": "",
+                  "kind": "line",
+                  "label": "line",
                   "text": null,
                   "type": "line",
                   "x1": 72,
@@ -202,7 +209,8 @@
                 {
                   "children": [],
                   "color": 192,
-                  "label": "",
+                  "kind": "line",
+                  "label": "line",
                   "text": null,
                   "type": "line",
                   "x1": 72,
@@ -215,41 +223,35 @@
                   "color": 192,
                   "cx": 72,
                   "cy": 84,
-                  "label": "",
+                  "kind": "fillCircle",
+                  "label": "fillCircle",
                   "r": 4,
                   "text": null,
                   "type": "fillCircle"
                 }
               ],
-              "id": 1,
+              "id": "1",
+              "kind": "canvasLayer",
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": 1,
+          "id": "1",
+          "kind": "window",
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
+      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
     }
   },
   "runtime_model": {
-    "colorMode": {
-      "args": [],
-      "ctor": "BlackWhite"
-    },
-    "displayShape": {
-      "args": [],
-      "ctor": "Rectangular"
-    },
     "hour": 8,
-    "last_message": "CurrentDateTime",
-    "last_operation": "CurrentDateTime",
     "minute": 53,
     "runtime_view_output": [],
     "screenH": 168,
@@ -263,9 +265,7 @@
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
-    "_debugger_steps": 1,
     "debugger_init_complete": true,
-    "elm_executor_mode": "runtime_executed",
     "last_source": "module Main exposing (main)\n\nimport Pebble.Events as PebbleEvents\nimport Pebble.Platform as PebblePlatform\nimport Pebble.Ui as PebbleUi\nimport Pebble.Ui.Color as PebbleColor\nimport Pebble.Cmd as PebbleCmd\nimport Json.Decode as Decode\n\n\ntype alias Model =\n    { hour : Int\n    , minute : Int\n    , screenW : Int\n    , screenH : Int\n    }\n\n\ntype Msg\n    = CurrentDateTime PebbleCmd.CurrentDateTime\n    | HourChanged Int\n    | MinuteChanged Int\n\n\ninit : PebblePlatform.LaunchContext -> ( Model, Cmd Msg )\ninit context =\n    ( { hour = 12\n      , minute = 0\n      , screenW = context.screen.width\n      , screenH = context.screen.height\n      }\n    , PebbleCmd.getCurrentDateTime CurrentDateTime\n    )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        CurrentDateTime value ->\n            ( { model\n                | hour = value.hour\n                , minute = value.minute\n              }\n            , Cmd.none\n            )\n\n        HourChanged hour ->\n            ( { model | hour = hour }, Cmd.none )\n\n        MinuteChanged minute ->\n            ( { model | minute = minute }, Cmd.none )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    PebbleEvents.batch\n        [ PebbleEvents.onHourChange HourChanged\n        , PebbleEvents.onMinuteChange MinuteChanged\n        ]\n\n\nview : Model -> PebbleUi.UiNode\nview model =\n    let\n        centerX =\n            model.screenW // 2\n\n        centerY =\n            model.screenH // 2\n\n        radius =\n            max 22 ((min model.screenW model.screenH // 2) - 14)\n\n        minuteRadius =\n            (radius * 86) // 100\n\n        hourRadius =\n            (radius * 62) // 100\n\n        minuteIndex =\n            modBy 12 (model.minute // 5)\n\n        hourIndex =\n            modBy 12 (model.hour + (model.minute // 30))\n\n        minuteX =\n            handX centerX minuteRadius minuteIndex\n\n        minuteY =\n            handY centerY minuteRadius minuteIndex\n\n        hourX =\n            handX centerX hourRadius hourIndex\n\n        hourY =\n            handY centerY hourRadius hourIndex\n\n        markerTopX =\n            handX centerX radius 0\n\n        markerTopY =\n            handY centerY radius 0\n\n        markerRightX =\n            handX centerX radius 3\n\n        markerRightY =\n            handY centerY radius 3\n\n        markerBottomX =\n            handX centerX radius 6\n\n        markerBottomY =\n            handY centerY radius 6\n\n        markerLeftX =\n            handX centerX radius 9\n\n        markerLeftY =\n            handY centerY radius 9\n    in\n    PebbleUi.windowStack\n        [ PebbleUi.window 1\n            [ PebbleUi.canvasLayer 1\n                [ PebbleUi.clear PebbleColor.white\n                , PebbleUi.circle { x = centerX, y = centerY } radius PebbleColor.black\n                , markerPixel markerTopX markerTopY\n                , markerPixel markerRightX markerRightY\n                , markerPixel markerBottomX markerBottomY\n                , markerPixel markerLeftX markerLeftY\n                , PebbleUi.line { x = centerX, y = centerY } { x = hourX, y = hourY } PebbleColor.black\n                , PebbleUi.line { x = centerX, y = centerY } { x = minuteX, y = minuteY } PebbleColor.black\n                , PebbleUi.fillCircle { x = centerX, y = centerY } 4 PebbleColor.black\n                ]\n            ]\n        ]\n\n\nmarkerPixel : Int -> Int -> PebbleUi.RenderOp\nmarkerPixel x y =\n    PebbleUi.pixel { x = x, y = y } PebbleColor.black\n\n\nhandX : Int -> Int -> Int -> Int\nhandX centerX handRadius index =\n    centerX + ((unit12X index * handRadius) // 1000)\n\n\nhandY : Int -> Int -> Int -> Int\nhandY centerY handRadius index =\n    centerY + ((unit12Y index * handRadius) // 1000)\n\n\nunit12X : Int -> Int\nunit12X index =\n    case modBy 12 index of\n        0 ->\n            0\n\n        1 ->\n            500\n\n        2 ->\n            866\n\n        3 ->\n            1000\n\n        4 ->\n            866\n\n        5 ->\n            500\n\n        6 ->\n            0\n\n        7 ->\n            -500\n\n        8 ->\n            -866\n\n        9 ->\n            -1000\n\n        10 ->\n            -866\n\n        _ ->\n            -500\n\n\nunit12Y : Int -> Int\nunit12Y index =\n    case modBy 12 index of\n        0 ->\n            -1000\n\n        1 ->\n            -866\n\n        2 ->\n            -500\n\n        3 ->\n            0\n\n        4 ->\n            500\n\n        5 ->\n            866\n\n        6 ->\n            1000\n\n        7 ->\n            866\n\n        8 ->\n            500\n\n        9 ->\n            0\n\n        10 ->\n            -500\n\n        _ ->\n            -866\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    PebblePlatform.watchface\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
     "launch_context": {
       "has_compass": true,
@@ -283,6 +283,19 @@
       "watch_profile_id": "aplite"
     },
     "revision": "58449c92307e",
+    "runtime_execution": {
+      "compiler": "elmx",
+      "contract": "elmx.runtime_executor.v1",
+      "engine": "elmx_runtime_v1",
+      "execution_backend": "compiled_elixir",
+      "runtime_mode": "runtime_first",
+      "runtime_model_entry_count": 4,
+      "runtime_model_sha256": "f0b9058c882f8b952a382474474d5ab70612ffe599efbf659fcaa1c727375cca",
+      "runtime_model_source": "step_message",
+      "view_tree_node_count": 13,
+      "view_tree_sha256": "fbb47c2892fb7056de333c97bd2fe18b3822551f1aff6d118209ea55fea9bf65"
+    },
+    "runtime_execution_mode": "runtime_executed",
     "runtime_known_messages": [
       "CurrentDateTime",
       "HourChanged",
@@ -291,18 +304,9 @@
     "runtime_message_cursor": 1,
     "runtime_message_source": "init_device_data",
     "runtime_model": {
-      "colorMode": {
-        "args": [],
-        "ctor": "BlackWhite"
-      },
-      "displayShape": {
-        "args": [],
-        "ctor": "Rectangular"
-      },
       "hour": 8,
-      "last_message": "CurrentDateTime",
-      "last_operation": "CurrentDateTime",
       "minute": 53,
+      "runtime_view_output_model_sha256": "584fcd9f31d7b5bf52259ab6b9eac52d5804b7159052d458f725aee9431050a3",
       "screenH": 168,
       "screenW": 144
     },
@@ -384,17 +388,23 @@
     "screen_height": 168,
     "screen_width": 144,
     "simulator_settings": {
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "battery_percent": 88,
       "calendar_events": [],
+      "storage_values": {},
       "charging": false,
-      "clock_24h": true,
-      "compass_heading_deg": 0,
+      "timezone_id": "Europe/Berlin",
       "compass_valid": true,
+      "use_simulated_time": true,
+      "simulated_date": "2026-05-27",
+      "compass_heading_deg": 0,
+      "latitude": 48.14,
+      "companion_timeline_token": "demo-timeline-token",
+      "notifications_enabled": true,
+      "health_steps_today": 9100,
+      "language": "en",
       "connected": true,
+      "preferences": {},
+      "battery_percent": 88,
       "dictation_error": "",
-      "dictation_transcript": "",
       "environment": {
         "moon": {
           "moonriseMin": 900,
@@ -408,32 +418,27 @@
         },
         "tide": null
       },
-      "health_steps": 4200,
-      "health_steps_today": 9100,
-      "language": "en",
-      "latitude": 48.137154,
-      "locale": "en-US",
-      "longitude": 11.576124,
-      "network_online": true,
-      "notifications_enabled": true,
-      "preferences": {},
-      "quiet_hours": false,
-      "region": "US",
-      "simulated_date": "2026-05-27",
-      "simulated_time": "08:53:00",
-      "storage_values": {},
-      "timeline_peek": false,
-      "timezone_id": "Europe/Berlin",
       "timezone_offset_min": 0,
-      "use_simulated_time": true,
-      "vibe_pattern_ms": [],
       "weather": {
         "condition": "clear",
         "humidityPercent": 50,
         "pressureHpa": 1013,
         "temperatureC": 21,
         "windKph": 8
-      }
+      },
+      "region": "US",
+      "clock_24h": true,
+      "longitude": 11.58,
+      "vibe_pattern_ms": [],
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "locale": "en-US",
+      "network_online": true,
+      "timeline_peek": false,
+      "health_steps": 4200,
+      "dictation_transcript": "",
+      "simulated_time": "08:53:00",
+      "quiet_hours": false
     },
     "source_root": "watch",
     "status": "idle",

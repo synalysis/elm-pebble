@@ -12,6 +12,8 @@ defmodule Elmx.Runtime.Core do
       %{"ctor" => "Just", "args" => [value]} -> value
       %{ctor: :Nothing} -> default
       %{ctor: :Just, args: [value]} -> value
+      %{"ctor" => "Err"} -> default
+      {:Err, _} -> default
       nil -> default
       other -> other
     end
@@ -88,10 +90,17 @@ defmodule Elmx.Runtime.Core do
 
   @spec random_int(map()) :: integer()
   def random_int(%{low: low, high: high}) when is_integer(low) and is_integer(high) do
-    low + rem(:rand.uniform(max(high - low + 1, 1)), max(high - low + 1, 1))
+    case Application.get_env(:elmx, :corpus_fixed_random_int) do
+      n when is_integer(n) -> clamp_int(n, low, high)
+      _ -> low + rem(:rand.uniform(max(high - low + 1, 1)), max(high - low + 1, 1))
+    end
   end
 
   def random_int(%{"low" => low, "high" => high}), do: random_int(%{low: low, high: high})
+
+  defp clamp_int(n, low, high) when is_integer(n) and is_integer(low) and is_integer(high) do
+    min(max(n, low), high)
+  end
 
   @doc """
   Elm `List.head` — returns `Just` / `Nothing` in the shape generated `case` expects.

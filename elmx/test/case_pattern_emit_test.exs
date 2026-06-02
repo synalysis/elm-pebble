@@ -141,7 +141,8 @@ defmodule Elmx.CasePatternEmitTest do
     {code, _, _} = Emit.compile_expr(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "label.(8, 9, \"hi\")"
+    assert source =~ "label.(8).(9).(\"hi\")"
+    refute source =~ "label.(8, 9, \"hi\")"
     refute source =~ "elmx_fn_Main_label"
   end
 

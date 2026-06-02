@@ -324,18 +324,19 @@ defmodule Elmx.Backend.ElixirCodegen.Emit do
 
     {body_code, _, _} = compile_expr(body, lambda_env, 0)
 
-    param_refs =
-      Enum.map_join(args, ", ", fn arg ->
-        binding_ref(param_name(arg), lambda_env)
+    code =
+      Enum.reduce(Enum.reverse(args), body_code, fn arg, inner ->
+        param = binding_ref(param_name(arg), lambda_env)
+        ["fn ", param, " -> ", inner, " end"]
       end)
 
-    {[
-       "fn ",
-       param_refs,
-       " -> ",
-       body_code,
-       " end"
-     ], Map.put(env, name, true), counter}
+    code =
+      case args do
+        [] -> ["fn _ -> ", body_code, " end"]
+        [_ | _] -> code
+      end
+
+    {code, Map.put(env, name, true), counter}
   end
 
   @comparison_ops ~w(__eq__ __neq__ __lt__ __lte__ __gt__ __gte__)
@@ -439,19 +440,25 @@ defmodule Elmx.Backend.ElixirCodegen.Emit do
   end
 
   defp compile_user_call(name, args, env, counter) when is_binary(name) and is_list(args) do
-  if Map.get(env, String.to_atom(name)) == true do
-    {arg_parts, env, c1} = compile_arg_parts(args, env, counter)
-    {[binding_ref(name, env), ".(", Enum.intersperse(arg_parts, ", "), ")"], env, c1}
-  else
-    case compile_basics_unqualified(name, args, env, counter) do
-      {:ok, code, env, c} ->
-        {code, env, c}
+    if Map.get(env, String.to_atom(name)) == true do
+      {arg_parts, env, c1} = compile_arg_parts(args, env, counter)
 
-      :error ->
-        {arg_parts, env, c1} = compile_arg_parts(args, env, counter)
-        {compile_module_call(name, arg_parts, env), env, c1}
+      code =
+        Enum.reduce(arg_parts, binding_ref(name, env), fn arg, acc ->
+          [acc, ".(", arg, ")"]
+        end)
+
+      {[code], env, c1}
+    else
+      case compile_basics_unqualified(name, args, env, counter) do
+        {:ok, code, env, c} ->
+          {code, env, c}
+
+        :error ->
+          {arg_parts, env, c1} = compile_arg_parts(args, env, counter)
+          {compile_module_call(name, arg_parts, env), env, c1}
+      end
     end
-  end
   end
 
   defp compile_basics_unqualified("max", args, env, counter),

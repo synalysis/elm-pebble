@@ -100,75 +100,99 @@
                 {
                   "children": [],
                   "color": 255,
-                  "label": "",
+                  "kind": "clear",
+                  "label": "clear",
                   "text": null,
                   "type": "clear"
                 },
                 {
+                  "bounds": {
+                    "h": 20,
+                    "text": null,
+                    "w": 136,
+                    "x": 4,
+                    "y": 8
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 20,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "DataLog demo",
+                  "options": [],
                   "text": "DataLog demo",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 8
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 20,
+                    "text": null,
+                    "w": 136,
+                    "x": 4,
+                    "y": 36
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 20,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "0",
+                  "options": [],
                   "text": "0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 36
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 20,
+                    "text": null,
+                    "w": 136,
+                    "x": 4,
+                    "y": 56
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 20,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "0",
+                  "options": [],
                   "text": "0",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 56
+                  "type": "text"
                 },
                 {
+                  "bounds": {
+                    "h": 40,
+                    "text": null,
+                    "w": 136,
+                    "x": 4,
+                    "y": 84
+                  },
                   "children": [],
-                  "font_id": 1,
-                  "h": 40,
-                  "label": "",
+                  "font": "DefaultFont",
+                  "kind": "text",
+                  "label": "Up: int32 Select: int32 Down: bytes",
+                  "options": [],
                   "text": "Up: int32 Select: int32 Down: bytes",
                   "text_align": "center",
                   "text_overflow": "word_wrap",
-                  "type": "text",
-                  "w": 136,
-                  "x": 4,
-                  "y": 84
+                  "type": "text"
                 }
               ],
-              "id": 1,
+              "id": "1",
+              "kind": "canvasLayer",
               "label": "",
               "text": null,
               "type": "canvasLayer"
             }
           ],
-          "id": 1,
+          "id": "1",
+          "kind": "window",
           "label": "",
           "text": null,
           "type": "window"
         }
       ],
+      "kind": "windowStack",
       "label": "",
       "text": null,
       "type": "windowStack"
@@ -197,7 +221,6 @@
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
-    "elm_executor_mode": "runtime_executed",
     "last_source": "module Main exposing (main)\n\nimport Json.Decode as Decode\nimport Pebble.Button as Button\nimport Pebble.DataLog as DataLog\nimport Pebble.Events as Events\nimport Pebble.Platform as Platform\nimport Pebble.Ui as Ui\nimport Pebble.Ui.Color as Color\nimport Pebble.Ui.Resources as Resources\n\n\ntype alias Model =\n    { events : Int\n    , lastValue : Int\n    }\n\n\ntype Msg\n    = UpPressed\n    | SelectPressed\n    | DownPressed\n\n\nlogTag : DataLog.Tag\nlogTag =\n    DataLog.tag 9001\n\n\ninit : Platform.LaunchContext -> ( Model, Cmd Msg )\ninit _ =\n    ( { events = 0, lastValue = 0 }, Cmd.none )\n\n\nupdate : Msg -> Model -> ( Model, Cmd Msg )\nupdate msg model =\n    case msg of\n        UpPressed ->\n            logEvent { model | lastValue = model.events + 1 }\n\n        SelectPressed ->\n            logEvent { model | lastValue = model.events * 2 + 1 }\n\n        DownPressed ->\n            logBytes { model | lastValue = model.events + 10 }\n\n\nlogEvent : Model -> ( Model, Cmd Msg )\nlogEvent model =\n    let\n        next =\n            { model | events = model.events + 1 }\n    in\n    ( next, DataLog.logInt32 logTag next.events )\n\n\nlogBytes : Model -> ( Model, Cmd Msg )\nlogBytes model =\n    let\n        next =\n            { model | events = model.events + 1 }\n    in\n    ( next\n    , DataLog.logBytes logTag [ next.events, next.lastValue, 42 ]\n    )\n\n\nsubscriptions : Model -> Sub Msg\nsubscriptions _ =\n    Events.batch\n        [ Button.onPress Button.Up UpPressed\n        , Button.onPress Button.Select SelectPressed\n        , Button.onPress Button.Down DownPressed\n        ]\n\n\nview : Model -> Ui.UiNode\nview model =\n    Ui.toUiNode\n        [ Ui.clear Color.white\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 8, w = 136, h = 20 } \"DataLog demo\"\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 36, w = 136, h = 20 } (String.fromInt model.events)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 56, w = 136, h = 20 } (String.fromInt model.lastValue)\n        , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 84, w = 136, h = 40 } \"Up: int32 Select: int32 Down: bytes\"\n        ]\n\n\nmain : Program Decode.Value Model Msg\nmain =\n    Platform.application\n        { init = init\n        , update = update\n        , view = view\n        , subscriptions = subscriptions\n        }\n",
     "launch_context": {
       "has_compass": true,
@@ -215,6 +238,15 @@
       "watch_profile_id": "aplite"
     },
     "revision": "21c37541942b",
+    "runtime_execution": {
+      "compiler": "elmx",
+      "contract": "elmx.runtime_executor.v1",
+      "engine": "elmx_runtime_v1",
+      "execution_backend": "compiled_elixir",
+      "runtime_mode": "runtime_first",
+      "runtime_model_source": "init_model"
+    },
+    "runtime_execution_mode": "runtime_executed",
     "runtime_model": {
       "colorMode": {
         "args": [],
@@ -226,6 +258,7 @@
       },
       "events": 0,
       "lastValue": 0,
+      "runtime_view_output_model_sha256": "164690b5bfdba08b0ad27c01b029f11276692e18bb1df3a8f2099c0b41fd3125",
       "screenH": 168,
       "screenW": 144
     },
@@ -237,7 +270,7 @@
         "text": null
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 20,
         "kind": "text",
         "text": "DataLog demo",
@@ -248,7 +281,7 @@
         "y": 8
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 20,
         "kind": "text",
         "text": "0",
@@ -259,7 +292,7 @@
         "y": 36
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 20,
         "kind": "text",
         "text": "0",
@@ -270,7 +303,7 @@
         "y": 56
       },
       {
-        "font_id": 1,
+        "font_id": 0,
         "h": 40,
         "kind": "text",
         "text": "Up: int32 Select: int32 Down: bytes",
@@ -284,17 +317,23 @@
     "screen_height": 168,
     "screen_width": 144,
     "simulator_settings": {
-      "accuracy": 25.0,
-      "app_in_focus": true,
-      "battery_percent": 88,
       "calendar_events": [],
+      "storage_values": {},
       "charging": false,
-      "clock_24h": true,
-      "compass_heading_deg": 0,
+      "timezone_id": "Europe/Berlin",
       "compass_valid": true,
+      "use_simulated_time": true,
+      "simulated_date": "2026-05-27",
+      "compass_heading_deg": 0,
+      "latitude": 48.14,
+      "companion_timeline_token": "demo-timeline-token",
+      "notifications_enabled": true,
+      "health_steps_today": 9100,
+      "language": "en",
       "connected": true,
+      "preferences": {},
+      "battery_percent": 88,
       "dictation_error": "",
-      "dictation_transcript": "",
       "environment": {
         "moon": {
           "moonriseMin": 900,
@@ -308,32 +347,27 @@
         },
         "tide": null
       },
-      "health_steps": 4200,
-      "health_steps_today": 9100,
-      "language": "en",
-      "latitude": 48.137154,
-      "locale": "en-US",
-      "longitude": 11.576124,
-      "network_online": true,
-      "notifications_enabled": true,
-      "preferences": {},
-      "quiet_hours": false,
-      "region": "US",
-      "simulated_date": "2026-05-27",
-      "simulated_time": "08:53:00",
-      "storage_values": {},
-      "timeline_peek": false,
-      "timezone_id": "Europe/Berlin",
       "timezone_offset_min": 0,
-      "use_simulated_time": true,
-      "vibe_pattern_ms": [],
       "weather": {
         "condition": "clear",
         "humidityPercent": 50,
         "pressureHpa": 1013,
         "temperatureC": 21,
         "windKph": 8
-      }
+      },
+      "region": "US",
+      "clock_24h": true,
+      "longitude": 11.58,
+      "vibe_pattern_ms": [],
+      "accuracy": 25.0,
+      "app_in_focus": true,
+      "locale": "en-US",
+      "network_online": true,
+      "timeline_peek": false,
+      "health_steps": 4200,
+      "dictation_transcript": "",
+      "simulated_time": "08:53:00",
+      "quiet_hours": false
     },
     "source_root": "watch",
     "status": "idle",
