@@ -8138,6 +8138,46 @@ defmodule Elmc.Backend.CCodegen do
   defp special_value_from_target("Task.fail", [value]),
     do: %{op: :runtime_call, function: "elmc_task_fail", args: [value]}
 
+  defp special_value_from_target("Task.map", [f]),
+    do: %{
+      op: :lambda,
+      args: ["__t"],
+      body: %{op: :runtime_call, function: "elmc_task_map", args: [f, %{op: :var, name: "__t"}]}
+    }
+
+  defp special_value_from_target("Task.map2", [f]),
+    do: %{
+      op: :lambda,
+      args: ["__a", "__b"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_task_map2",
+        args: [f, %{op: :var, name: "__a"}, %{op: :var, name: "__b"}]
+      }
+    }
+
+  defp special_value_from_target("Task.map2", [f, a]),
+    do: %{
+      op: :lambda,
+      args: ["__b"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_task_map2",
+        args: [f, a, %{op: :var, name: "__b"}]
+      }
+    }
+
+  defp special_value_from_target("Task.andThen", [f]),
+    do: %{
+      op: :lambda,
+      args: ["__t"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_task_and_then",
+        args: [f, %{op: :var, name: "__t"}]
+      }
+    }
+
   defp special_value_from_target("Process.spawn", [task]),
     do: %{op: :runtime_call, function: "elmc_process_spawn", args: [task]}
 
@@ -8810,6 +8850,15 @@ defmodule Elmc.Backend.CCodegen do
 
   defp special_value_from_target("Result.fromMaybe", [err, maybe]),
     do: %{op: :runtime_call, function: "elmc_result_from_maybe", args: [err, maybe]}
+
+  defp special_value_from_target("Task.map", [f, task]),
+    do: %{op: :runtime_call, function: "elmc_task_map", args: [f, task]}
+
+  defp special_value_from_target("Task.map2", [f, a, b]),
+    do: %{op: :runtime_call, function: "elmc_task_map2", args: [f, a, b]}
+
+  defp special_value_from_target("Task.andThen", [f, task]),
+    do: %{op: :runtime_call, function: "elmc_task_and_then", args: [f, task]}
 
   # --- elm/core: String (extended) ---
   defp special_value_from_target("String.length", [s]),

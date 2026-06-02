@@ -55,6 +55,9 @@ defmodule Elmx.Runtime.Intrinsics.Registry do
       "elmx_core_result_with_default" => {Core, :result_with_default},
       "elmx_core_result_and_then" => {Core, :result_and_then},
       "elmx_core_result_map_error" => {Core, :result_map_error},
+      "elmx_core_task_map" => {Task, :map},
+      "elmx_core_task_map2" => {Task, :map2, args: [0, 1, 2]},
+      "elmx_core_task_and_then" => {Task, :and_then},
       "elmx_core_random_generator" => {Core, :random_generator}
     }
   end
@@ -291,6 +294,9 @@ defmodule Elmx.Runtime.Intrinsics.Registry do
       "elmc_debug_to_string" => {Debug, :to_string},
       "elmc_task_succeed" => {Task, :succeed},
       "elmc_task_fail" => {Task, :fail},
+      "elmc_task_map" => {Task, :map},
+      "elmc_task_map2" => {Task, :map2, args: [0, 1, 2]},
+      "elmc_task_and_then" => {Task, :and_then},
       "elmc_process_spawn" => {Process, :spawn},
       "elmc_process_sleep" => {Process, :sleep},
       "elmc_process_kill" => {Process, :kill},

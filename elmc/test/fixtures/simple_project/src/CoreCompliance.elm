@@ -46,9 +46,12 @@ module CoreCompliance exposing
     , setSizeAfterInsert
     , stringAppendLength
     , stringEmptyCheck
+    , taskAndThenChain
     , taskFailArg
     , taskFailInt
     , taskFailNested
+    , taskMap2Sum
+    , taskMapDouble
     , processKillOk
     , processSpawnPidFromFail
     , processSpawnPidFromSucceed
@@ -320,6 +323,21 @@ taskSucceedNested =
 taskFailNested : Task.Task (Task.Task Int Int) Int
 taskFailNested =
     Task.fail (Task.succeed 11)
+
+
+taskMapDouble : Task.Task Int Int
+taskMapDouble =
+    Task.map (\n -> n * 2) (Task.succeed 11)
+
+
+taskMap2Sum : Task.Task Int Int
+taskMap2Sum =
+    Task.map2 (+) (Task.succeed 3) (Task.succeed 4)
+
+
+taskAndThenChain : Task.Task Int Int
+taskAndThenChain =
+    Task.succeed 2 |> Task.andThen (\n -> Task.succeed (n + 10))
 
 
 processSpawnPidFromSucceed : Int

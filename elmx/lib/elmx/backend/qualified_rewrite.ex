@@ -56,6 +56,21 @@ defmodule Elmx.Backend.QualifiedRewrite do
       {"Result.mapError", [fun, result]} ->
         runtime2("elmx_core_result_map_error", [fun, result])
 
+      {"Task.map", [fun]} ->
+        curried("elmx_core_task_map", [fun], "__t")
+
+      {"Task.map", [fun, task]} ->
+        runtime2("elmx_core_task_map", [fun, task])
+
+      {"Task.map2", [fun, a, b]} ->
+        runtime3("elmx_core_task_map2", [fun, a, b])
+
+      {"Task.andThen", [fun]} ->
+        curried("elmx_core_task_and_then", [fun], "__t")
+
+      {"Task.andThen", [fun, task]} ->
+        runtime2("elmx_core_task_and_then", [fun, task])
+
       {"Random.int", [low, high]} ->
         runtime2("elmx_core_random_generator", [low, high])
 

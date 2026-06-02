@@ -28,6 +28,9 @@ defmodule Elmc.CoreDifferentialConformanceTest do
     "elmc_array_get",
     "elmc_task_succeed",
     "elmc_task_fail",
+    "elmc_task_map",
+    "elmc_task_map2",
+    "elmc_task_and_then",
     "elmc_process_spawn",
     "elmc_process_sleep",
     "elmc_process_kill"

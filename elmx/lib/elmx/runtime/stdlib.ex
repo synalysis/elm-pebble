@@ -202,6 +202,9 @@ defmodule Elmx.Runtime.Stdlib do
       "elmx_core_result_and_then" ->
         "Elmx.Runtime.Core.result_and_then(#{pick(args, 0, "&Function.identity/1")}, #{pick(args, 1, "{:Err, nil}")})"
       "elmx_core_result_map_error" -> "Elmx.Runtime.Core.result_map_error(#{pick(args, 0, "&Function.identity/1")}, #{pick(args, 1, "{:Err, nil}")})"
+      "elmx_core_task_map" -> "Elmx.Runtime.Core.Task.map(#{pick(args, 0, "&Function.identity/1")}, #{pick(args, 1, "{:Err, nil}")})"
+      "elmx_core_task_map2" -> "Elmx.Runtime.Core.Task.map2(#{pick(args, 0, "&Function.identity/2")}, #{pick(args, 1, "{:Err, nil}")}, #{pick(args, 2, "{:Err, nil}")})"
+      "elmx_core_task_and_then" -> "Elmx.Runtime.Core.Task.and_then(#{pick(args, 0, "&Function.identity/1")}, #{pick(args, 1, "{:Err, nil}")})"
       "elmx_core_random_generator" -> "Elmx.Runtime.Core.random_generator(#{pick(args, 0, "0")}, #{pick(args, 1, "1")})"
       "elmx_cmd_random_generate" ->
         "Elmx.Runtime.Pebble.runtime_dispatch(\"elmx_cmd_random_generate\", [#{Enum.join(args, ", ")}])"

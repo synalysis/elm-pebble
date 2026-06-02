@@ -443,6 +443,9 @@ defmodule Elmc.CoreComplianceTest do
         ElmcValue *task_fail_arg = elmc_fn_CoreCompliance_taskFailArg(task_fail_arg_args, 1);
         ElmcValue *task_succeed_nested = elmc_fn_CoreCompliance_taskSucceedNested(NULL, 0);
         ElmcValue *task_fail_nested = elmc_fn_CoreCompliance_taskFailNested(NULL, 0);
+        ElmcValue *task_map_double = elmc_fn_CoreCompliance_taskMapDouble(NULL, 0);
+        ElmcValue *task_map2_sum = elmc_fn_CoreCompliance_taskMap2Sum(NULL, 0);
+        ElmcValue *task_and_then_chain = elmc_fn_CoreCompliance_taskAndThenChain(NULL, 0);
         ElmcValue *process_spawn_succeed = elmc_fn_CoreCompliance_processSpawnPidFromSucceed(NULL, 0);
         ElmcValue *process_spawn_fail = elmc_fn_CoreCompliance_processSpawnPidFromFail(NULL, 0);
         ElmcValue *process_sleep_ok = elmc_fn_CoreCompliance_processSleepOk(NULL, 0);
@@ -482,6 +485,9 @@ defmodule Elmc.CoreComplianceTest do
         print_result_i("taskFailArg", task_fail_arg);
         print_result_result_i("taskSucceedNested", task_succeed_nested);
         print_result_result_i("taskFailNested", task_fail_nested);
+        print_result_i("taskMapDouble", task_map_double);
+        print_result_i("taskMap2Sum", task_map2_sum);
+        print_result_i("taskAndThenChain", task_and_then_chain);
         print_i("processSpawnPidFromSucceed", process_spawn_succeed);
         print_i("processSpawnPidFromFail", process_spawn_fail);
         print_i("processSleepOk", process_sleep_ok);
@@ -521,6 +527,9 @@ defmodule Elmc.CoreComplianceTest do
         elmc_release(task_fail_arg);
         elmc_release(task_succeed_nested);
         elmc_release(task_fail_nested);
+        elmc_release(task_map_double);
+        elmc_release(task_map2_sum);
+        elmc_release(task_and_then_chain);
         elmc_release(process_spawn_succeed);
         elmc_release(process_spawn_fail);
         elmc_release(process_sleep_ok);
@@ -631,6 +640,9 @@ defmodule Elmc.CoreComplianceTest do
     assert values["taskFailArg"] == "0,42"
     assert values["taskSucceedNested"] == "1,0,9"
     assert values["taskFailNested"] == "0,1,11"
+    assert values["taskMapDouble"] == "1,22"
+    assert values["taskMap2Sum"] == "1,7"
+    assert values["taskAndThenChain"] == "1,12"
     assert values["processSpawnPidFromSucceed"] > 0
     assert values["processSpawnPidFromFail"] == values["processSpawnPidFromSucceed"] + 1
     assert values["processSleepOk"] == 1

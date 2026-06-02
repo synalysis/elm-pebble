@@ -104,6 +104,25 @@ defmodule Elmx.Backend.QualifiedPartials do
 
       {"Basics.compare", [a]} -> binary_bound("elmc_basics_compare", [a], "__b")
 
+      {"Task.map", [fun]} -> unary_bound("elmx_core_task_map", [fun], "__t")
+
+      {"Task.map2", [fun]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__a", "__b"],
+           body: %{
+             op: :runtime_call,
+             function: "elmx_core_task_map2",
+             args: [fun, %{op: :var, name: "__a"}, %{op: :var, name: "__b"}]
+           }
+         }}
+
+      {"Task.map2", [fun, a]} ->
+        ternary_bound("elmx_core_task_map2", [fun, a], ["__b"])
+
+      {"Task.andThen", [fun]} -> unary_bound("elmx_core_task_and_then", [fun], "__t")
+
       # --- Tuple (pair uses tuple2 IR, not a runtime call) ---
       {"Tuple.pair", []} ->
         {:ok,

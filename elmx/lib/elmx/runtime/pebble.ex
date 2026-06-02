@@ -95,6 +95,9 @@ defmodule Elmx.Runtime.Pebble do
       "elmx_core_result_map_error" -> apply_core(:result_map_error, args)
       "elmx_core_result_with_default" -> apply_core(:result_with_default, args)
       "elmx_core_result_and_then" -> apply_core(:result_and_then, args)
+      "elmx_core_task_map" -> apply_task(:map, args)
+      "elmx_core_task_map2" -> apply_task(:map2, args)
+      "elmx_core_task_and_then" -> apply_task(:and_then, args)
       "elmx_core_random_generator" -> apply_core(:random_generator, args)
       "elmx_cmd_random_generate" -> random_generate_cmd(args)
       "elmx_light_enable" -> Cmd.effect("light", variant: "enable")
@@ -207,6 +210,8 @@ defmodule Elmx.Runtime.Pebble do
   defp apply_ui_line(args), do: apply_ui(:line, args)
 
   defp apply_core(fun, args), do: apply(Elmx.Runtime.Core, fun, args)
+
+  defp apply_task(fun, args), do: apply(Elmx.Runtime.Core.Task, fun, args)
 
   defp list_repeat([n, value]), do: Elmx.Runtime.Core.list_repeat(n, value)
   defp list_repeat(_), do: []
