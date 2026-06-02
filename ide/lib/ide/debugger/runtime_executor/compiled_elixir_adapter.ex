@@ -27,7 +27,7 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
              Map.put(input, :debugger_contract, "elmx.runtime_executor.v1")
            ),
          :ok <- validate_runtime_model(payload) do
-      {:ok, ResultNormalizer.normalize(payload)}
+      {:ok, payload |> maybe_mark_unmapped_message(input) |> ResultNormalizer.normalize()}
     else
       {:error, {:core_ir_execution_failed, _} = err} -> {:error, err}
       {:error, {:elmx_execution_failed, _} = err} -> {:error, {:core_ir_execution_failed, err}}
@@ -87,4 +87,59 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
       {:error, {:core_ir_execution_failed, :missing_runtime_model}}
     end
   end
+
+  @spec maybe_mark_unmapped_message(map(), map()) :: map()
+  defp maybe_mark_unmapped_message(payload, input) when is_map(payload) and is_map(input) do
+    message = Map.get(input, :message) || Map.get(input, "message")
+    introspect = Map.get(input, :introspect) || Map.get(input, "introspect") || %{}
+
+    branches =
+      introspect
+      |> Map.get("update_case_branches", Map.get(introspect, :update_case_branches, []))
+      |> List.wrap()
+      |> Kernel.++(
+        introspect
+        |> Map.get("msg_constructors", Map.get(introspect, :msg_constructors, []))
+        |> List.wrap()
+      )
+      |> Enum.uniq()
+
+    if mapped_update_message?(message, branches) do
+      payload
+    else
+      patch = Map.get(payload, :model_patch, %{})
+      runtime = Map.get(patch, "runtime_execution", %{})
+
+      runtime =
+        runtime
+        |> Map.put("operation_source", "unmapped_message")
+        |> Map.put("runtime_model_source", "unmapped_message")
+
+      patch =
+        patch
+        |> Map.put("runtime_model_source", "unmapped_message")
+        |> Map.put("runtime_execution", runtime)
+
+      Map.put(payload, :model_patch, patch)
+    end
+  end
+
+  defp maybe_mark_unmapped_message(payload, _input), do: payload
+
+  defp mapped_update_message?(message, branches)
+       when is_binary(message) and is_list(branches) and branches != [] do
+    ctor =
+      message
+      |> String.trim()
+      |> String.split(~r/[\s(]/, parts: 2)
+      |> List.first()
+
+    Enum.any?(branches, fn branch ->
+      is_binary(branch) and String.downcase(branch) == String.downcase(ctor)
+    end)
+  end
+
+  defp mapped_update_message?(_message, []), do: true
+  defp mapped_update_message?(nil, _branches), do: true
+  defp mapped_update_message?(_message, _branches), do: true
 end

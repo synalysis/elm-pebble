@@ -234,6 +234,15 @@ defmodule Ide.Debugger.StepApply do
       |> StepExecution.tag_runtime_view_output_capture()
       |> Map.update("_debugger_steps", 1, &(&1 + 1))
 
+    runtime_model = Map.get(updated_model, "runtime_model") || %{}
+
+    updated_model =
+      StepExecution.refresh_runtime_fingerprints(
+        updated_model,
+        runtime_model,
+        runtime_view_tree || %{}
+      )
+
     rendered_view_tree =
       StepExecution.render_view_after_update(
         runtime_view_tree,

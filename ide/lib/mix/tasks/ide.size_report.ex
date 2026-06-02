@@ -6,6 +6,8 @@ defmodule Mix.Tasks.Ide.SizeReport do
       mix ide.size_report --package
       mix ide.size_report --templates watchface-yes,game-2048,starter
       mix ide.size_report --package --targets flint,gabbro
+      mix ide.size_report --package --baseline tmp/map_size_report --fail-on-regression
+      mix ide.size_report --baseline-manifest priv/size_report_baselines/flint.json --fail-on-regression
   """
 
   use Mix.Task
@@ -22,7 +24,17 @@ defmodule Mix.Tasks.Ide.SizeReport do
 
     {opts, _argv, invalid} =
       OptionParser.parse(args,
-        strict: [package: :boolean, templates: :string, out: :string, targets: :string],
+        strict: [
+          package: :boolean,
+          templates: :string,
+          out: :string,
+          targets: :string,
+          baseline: :string,
+          baseline_manifest: :string,
+          fail_on_regression: :boolean,
+          max_bin_regression: :integer,
+          max_generated_c_regression: :integer
+        ],
         aliases: [p: :package]
       )
 
@@ -38,6 +50,11 @@ defmodule Mix.Tasks.Ide.SizeReport do
     templates = parse_templates(Keyword.get(opts, :templates))
     package? = Keyword.get(opts, :package, false)
     targets = parse_targets(Keyword.get(opts, :targets))
+    baseline_root = baseline_root(opts)
+    baseline_manifest = load_baseline_manifest(opts)
+    max_bin_regression = Keyword.get(opts, :max_bin_regression, 512)
+    max_generated_c_regression = Keyword.get(opts, :max_generated_c_regression, 8192)
+    fail_on_regression? = Keyword.get(opts, :fail_on_regression, false)
 
     reports =
       Enum.map(templates, fn template ->
@@ -49,7 +66,43 @@ defmodule Mix.Tasks.Ide.SizeReport do
         end
       end)
 
+    reports =
+      reports
+      |> maybe_apply_directory_baseline(baseline_root, out_root, targets)
+      |> maybe_apply_manifest_baseline(baseline_manifest, targets)
+
+    if fail_on_regression? and (baseline_root || baseline_manifest) do
+      enforce_regression_budget!(reports, max_bin_regression, max_generated_c_regression)
+    end
+
     IO.puts(Jason.encode!(%{templates: reports}, pretty: true))
+  end
+
+  defp baseline_root(opts) do
+    case Keyword.get(opts, :baseline) do
+      nil -> nil
+      path -> Path.expand(path)
+    end
+  end
+
+  defp load_baseline_manifest(opts) do
+    case Keyword.get(opts, :baseline_manifest) do
+      nil ->
+        nil
+
+      path ->
+        path = Path.expand(path)
+
+        case File.read(path) do
+          {:ok, contents} ->
+            contents
+            |> Jason.decode!()
+            |> Map.get("templates", %{})
+
+          {:error, reason} ->
+            Mix.raise("could not read baseline manifest #{path}: #{inspect(reason)}")
+        end
+    end
   end
 
   defp parse_templates(nil), do: @default_templates
@@ -153,7 +206,7 @@ defmodule Mix.Tasks.Ide.SizeReport do
             artifact: file_report(result.artifact_path),
             app_bins: target_bin_reports(build_dir, target),
             objects: object_reports(build_dir),
-            map_symbols: map_symbol_report(Path.join(build_dir, "pebble-app.map")),
+            map_symbols: map_symbol_report(find_pebble_map_file(build_dir)),
             has_phone_companion: result.has_phone_companion
           }
 
@@ -233,6 +286,24 @@ defmodule Mix.Tasks.Ide.SizeReport do
     end
   end
 
+  defp find_pebble_map_file(build_dir) do
+    candidates = [
+      Path.join(build_dir, "pebble-app.map"),
+      Path.join(build_dir, "flint/pebble-app.map"),
+      Path.join(build_dir, "gabbro/pebble-app.map")
+    ]
+
+    Enum.find_value(candidates, fn path ->
+      if File.regular?(path), do: path
+    end) ||
+      (build_dir
+       |> Path.join("**/pebble-app.map")
+       |> Path.wildcard()
+       |> Enum.sort()
+       |> List.first()) ||
+      Path.join(build_dir, "pebble-app.map")
+  end
+
   defp map_symbol_report(path) do
     with {:ok, contents} <- File.read(path) do
       contents
@@ -297,4 +368,180 @@ defmodule Mix.Tasks.Ide.SizeReport do
     |> Enum.reject(&is_nil/1)
     |> Enum.sum()
   end
+
+  defp maybe_apply_directory_baseline(reports, nil, _out_root, _targets), do: reports
+
+  defp maybe_apply_directory_baseline(reports, baseline_root, out_root, targets) do
+    Enum.map(reports, fn report ->
+      Map.put(report, :baseline, directory_baseline_compare(report, baseline_root, out_root, targets))
+    end)
+  end
+
+  defp maybe_apply_manifest_baseline(reports, nil, _targets), do: reports
+
+  defp maybe_apply_manifest_baseline(reports, manifest, targets) do
+    target = baseline_compare_target(targets)
+    bin_key = "pebble_app_bin_#{target}"
+
+    Enum.map(reports, fn report ->
+      existing = Map.get(report, :baseline, %{})
+
+      Map.put(
+        report,
+        :baseline,
+        manifest_baseline_compare(report, manifest, bin_key, existing)
+      )
+    end)
+  end
+
+  defp directory_baseline_compare(%{template: template, status: "ok"}, baseline_root, out_root, targets) do
+    target = baseline_compare_target(targets)
+
+    current_bin =
+      template
+      |> pebble_app_bin_path(out_root, target)
+      |> file_size()
+
+    baseline_bin =
+      template
+      |> pebble_app_bin_path(baseline_root, target)
+      |> file_size()
+
+    %{
+      target: target,
+      pebble_app_bin: metric_delta(current_bin, baseline_bin)
+    }
+  end
+
+  defp directory_baseline_compare(_report, _baseline_root, _out_root, _targets), do: %{}
+
+  defp manifest_baseline_compare(%{template: template} = report, manifest, bin_key, existing) do
+    status = Map.get(report, :status) || Map.get(report, "status")
+    compiler = Map.get(report, :compiler) || Map.get(report, "compiler")
+
+    if status in ["ok", :ok] and is_map(compiler) do
+      compare_manifest_baseline(template, compiler, manifest, bin_key, existing)
+    else
+      existing
+    end
+  end
+
+  defp compare_manifest_baseline(template, compiler, manifest, bin_key, existing) do
+    template_manifest = manifest_entry(manifest, template)
+    current_generated_c = manifest_metric(compiler, :generated_c, :bytes)
+    baseline_generated_c = manifest_metric_flat(template_manifest, "generated_c_bytes")
+    current_bin = current_pebble_app_bin_bytes(existing)
+
+    baseline_bin =
+      case manifest_metric_flat(template_manifest, bin_key) do
+        value when is_integer(value) -> value
+        _ -> get_in(existing, [:pebble_app_bin, :baseline])
+      end
+
+    existing
+    |> Map.put(:generated_c, metric_delta(current_generated_c, baseline_generated_c))
+    |> Map.put(:pebble_app_bin, metric_delta(current_bin, baseline_bin))
+  end
+
+  defp manifest_entry(manifest, template) when is_map(manifest) do
+    Map.get(manifest, template) || Map.get(manifest, to_string(template)) || %{}
+  end
+
+  defp manifest_metric(map, outer, inner) when is_map(map) do
+    get_in(map, [outer, inner]) || get_in(map, [to_string(outer), to_string(inner)])
+  end
+
+  defp manifest_metric_flat(map, key) when is_map(map) do
+    Map.get(map, key) || Map.get(map, to_string(key))
+  end
+
+  defp current_pebble_app_bin_bytes(%{pebble_app_bin: %{current: current}}) when is_integer(current),
+    do: current
+
+  defp current_pebble_app_bin_bytes(%{current_bin_bytes: current}) when is_integer(current), do: current
+  defp current_pebble_app_bin_bytes(_), do: nil
+
+  defp metric_delta(current, baseline) do
+    case {current, baseline} do
+      {current, baseline} when is_integer(current) and is_integer(baseline) ->
+        %{current: current, baseline: baseline, delta: current - baseline}
+
+      {current, nil} ->
+        %{current: current, baseline: nil, delta: nil}
+
+      {nil, baseline} ->
+        %{current: nil, baseline: baseline, delta: nil}
+
+      _ ->
+        %{current: nil, baseline: nil, delta: nil}
+    end
+  end
+
+  defp baseline_compare_target(:all), do: "flint"
+  defp baseline_compare_target([target | _]), do: target
+  defp baseline_compare_target(_), do: "flint"
+
+  defp pebble_app_bin_path(template, workspace_root, target) do
+    Path.join([
+      workspace_root,
+      template,
+      ".pebble-sdk/app/build",
+      target,
+      "pebble-app.bin"
+    ])
+  end
+
+  defp enforce_regression_budget!(reports, max_bin_regression, max_generated_c_regression) do
+    regressions =
+      reports
+      |> Enum.flat_map(&regression_messages(&1, max_bin_regression, max_generated_c_regression))
+
+    if regressions != [] do
+      Mix.raise("size regression over budget:\n" <> Enum.join(regressions, "\n"))
+    end
+
+    :ok
+  end
+
+  defp regression_messages(report, max_bin_regression, max_generated_c_regression) do
+    baseline = Map.get(report, :baseline, %{})
+
+    bin_msg =
+      case Map.get(baseline, :pebble_app_bin) do
+        %{delta: delta} when is_integer(delta) and delta > max_bin_regression ->
+          ["#{report.template}: pebble-app.bin grew by #{delta} bytes (budget #{max_bin_regression})"]
+
+        %{delta: delta} when is_integer(delta) ->
+          legacy_bin_regression(report.template, delta, max_bin_regression)
+
+        _ ->
+          legacy_bin_regression_from_flat(report, max_bin_regression)
+      end
+
+    generated_c_msg =
+      case Map.get(baseline, :generated_c) do
+        %{delta: delta} when is_integer(delta) and delta > max_generated_c_regression ->
+          [
+            "#{report.template}: elmc_generated.c grew by #{delta} bytes (budget #{max_generated_c_regression})"
+          ]
+
+        _ ->
+          []
+      end
+
+    bin_msg ++ generated_c_msg
+  end
+
+  defp legacy_bin_regression(_template, _delta, max) when max < 0, do: []
+
+  defp legacy_bin_regression(template, delta, max) when delta > max,
+    do: ["#{template}: pebble-app.bin grew by #{delta} bytes (budget #{max})"]
+
+  defp legacy_bin_regression(_template, _delta, _max), do: []
+
+  defp legacy_bin_regression_from_flat(%{template: template, baseline: %{delta_bytes: delta}}, max)
+       when is_integer(delta) and delta > max,
+       do: ["#{template}: pebble-app.bin grew by #{delta} bytes (budget #{max})"]
+
+  defp legacy_bin_regression_from_flat(_report, _max), do: []
 end

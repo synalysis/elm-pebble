@@ -28,6 +28,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Ui do
       "Pebble.Ui.defaultTextOptions" -> {:ok, %{op: :list_literal, items: []}}
       "Pebble.Ui.context" -> ui_call("elmx_ui_context", args)
       "Pebble.Ui.group" -> ui_call("elmx_ui_group", args)
+      "Pebble.Ui.root" -> ui_call("elmx_ui_to_ui_node", args)
+      "Pebble.Ui.toUiNode" -> ui_call("elmx_ui_to_ui_node", args)
       "Pebble.Ui.alignLeft" -> ui_call("elmx_ui_align_left", args)
       "Pebble.Ui.AlignLeft" -> ui_call("elmx_ui_align_left", args)
       "Pebble.Ui.alignCenter" -> ui_call("elmx_ui_align_center", args)

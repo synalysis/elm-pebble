@@ -3,6 +3,44 @@ defmodule Ide.DebuggerIntegrationHelpers do
 
   import ExUnit.Assertions
 
+  @doc """
+  Wraps a watch test Elm fragment in imports + `main` so `elmx` can compile and step it.
+  The fragment must define `Model`, `Msg`, `init`, `update`, and `view`.
+  """
+  def watchface_module(module, fragment) when is_binary(module) and is_binary(fragment) do
+    fragment = String.trim(fragment)
+
+    subscriptions_block =
+      if String.contains?(fragment, "subscriptions") do
+        ""
+      else
+        """
+
+        subscriptions _ =
+            Sub.none
+        """
+      end
+
+    """
+    module #{module} exposing (..)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as PebblePlatform
+    import Pebble.Ui as Ui
+
+    #{fragment}#{subscriptions_block}
+
+    main : Program Decode.Value Model Msg
+    main =
+        PebblePlatform.watchface
+            { init = init
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+    """
+  end
+
   def assert_replay_telemetry(payload, expected) when is_map(payload) and is_map(expected) do
     telemetry = Map.get(payload, :replay_telemetry)
     assert is_map(telemetry)

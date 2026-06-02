@@ -108,6 +108,9 @@ defmodule Elmx.Runtime.Stdlib.Qualified do
   def call("Json.Decode.bool", _arg_code), do: {:ok, "Elmx.Runtime.Json.Decode.bool()"}
   def call("Json.Decode.value", _arg_code), do: {:ok, "Elmx.Runtime.Json.Decode.value()"}
   def call("Json.Decode.field", arg_code), do: json_decode_binary("field", arg_code)
+
+  def call("Json.Decode.optionalField", arg_code),
+    do: json_decode_binary("optional_field", arg_code)
   def call("Json.Decode.at", arg_code), do: json_decode_binary("at", arg_code)
   def call("Json.Decode.index", arg_code), do: json_decode_binary("index", arg_code)
   def call("Json.Decode.list", arg_code), do: json_decode_unary_builder("list", arg_code)

@@ -24,6 +24,9 @@ defmodule Elmx.JsonDecodeComposeTest do
     assert {:ok, code} = Stdlib.qualified_call("Json.Decode.field", "\"current\", inner")
     assert code == "Elmx.Runtime.Json.Decode.field(\"current\", inner)"
 
+    assert {:ok, code} = Stdlib.qualified_call("Json.Decode.optionalField", "\"name\", inner")
+    assert code == "Elmx.Runtime.Json.Decode.optional_field(\"name\", inner)"
+
     assert {:ok, code} = Stdlib.qualified_call("Json.Decode.map2", "f, d1, d2")
     assert code == "Elmx.Runtime.Json.Decode.map2(f, d1, d2)"
 

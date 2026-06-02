@@ -1,0 +1,90 @@
+name: elmc Codegen
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  elmc:
+    name: elmc compile, tests, Dialyzer, conformance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.1"
+          elixir-version: "1.17.3"
+
+      - name: Install elm_ex dependencies
+        working-directory: elm_ex
+        run: mix deps.get
+
+      - name: Install elmc dependencies
+        working-directory: elmc
+        run: mix deps.get
+
+      - name: Compile elmc with warnings as errors
+        working-directory: elmc
+        run: mix compile --warnings-as-errors
+
+      - name: Run elmc tests
+        working-directory: elmc
+        run: mix test
+
+      - name: Run elmc Dialyzer
+        working-directory: elmc
+        run: mix dialyzer
+
+      - name: Run conformance guardrails
+        working-directory: elmc
+        run: bash scripts/run_conformance_guardrails.sh
+
+  ide-size-report:
+    name: IDE compiler size regression gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.1"
+          elixir-version: "1.17.3"
+
+      - name: Install elm_ex dependencies
+        working-directory: elm_ex
+        run: mix deps.get
+
+      - name: Install elmc dependencies
+        working-directory: elmc
+        run: mix deps.get
+
+      - name: Install IDE dependencies
+        working-directory: ide
+        run: mix deps.get
+
+      - name: Compile IDE with warnings as errors
+        working-directory: ide
+        run: mix compile --warnings-as-errors
+
+      - name: Run size report unit tests
+        working-directory: ide
+        run: mix test test/ide/size_report_map_path_test.exs
+
+      - name: Check compiler output size against manifest baseline
+        working-directory: ide
+        run: >
+          mix ide.size_report
+          --templates game-2048,watchface-tangram-time,watchface-poke-battle
+          --baseline-manifest priv/size_report_baselines/flint.json
+          --fail-on-regression
+          --max-bin-regression 512
+          --max-generated-c-regression 8192
+          > /tmp/size_report.json

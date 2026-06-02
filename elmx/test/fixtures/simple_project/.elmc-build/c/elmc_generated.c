@@ -202,14 +202,19 @@ static ElmcValue *elmc_lambda_2(ElmcValue **args, int argc, ElmcValue **captures
   (void)capture_count;
   ElmcValue *patternArg = (argc > 0) ? args[0] : NULL;
   
-  ElmcValue *tmp_1;
   
-  
+  const int case_msg_tag_1 = (patternArg && (patternArg)->tag == ELMC_TAG_INT ? elmc_as_int(patternArg) : (patternArg && (patternArg)->tag == ELMC_TAG_TUPLE2 && (patternArg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(patternArg)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
+  case 1:
     ElmcValue *tmp_2 = ((ElmcTuple2 *)patternArg->payload)->second ? elmc_retain(((ElmcTuple2 *)patternArg->payload)->second) : elmc_int_zero();
-
     tmp_1 = tmp_2;
+    break;
+default:
+    tmp_1 = elmc_int_zero();
+    break;
 
-  
+  }
 
   return tmp_1;
 }
@@ -240,24 +245,23 @@ ElmcValue *elmc_fn_Main_advanced(ElmcValue ** const args, const int argc) {
 ElmcValue *n = (argc > 0) ? args[0] : NULL;
   (void)n;
   
-      
-
   
-  ElmcValue *tmp_1 = elmc_fn_Main_helper_native(elmc_as_int(n));
-  
+    // inlined Main.helper
 
-      
+  const elmc_int_t native_let_base_1 = (elmc_as_int(n) + 2);
+  
   
   ElmcValue *tmp_2;
-  if ((elmc_as_int(tmp_1) > 10)) {
-    ElmcValue *tmp_3 = elmc_retain(tmp_1);
+  if ((native_let_base_1 > 10)) {
+    ElmcValue *tmp_3 = elmc_new_int(native_let_base_1);
       tmp_2 = tmp_3;
   } else {
-    ElmcValue *tmp_4 = elmc_new_int(elmc_as_int(tmp_1) + 1);
+
+      ElmcValue *tmp_4 = elmc_new_int((native_let_base_1 + 1));
+
       tmp_2 = tmp_4;
   }
 
-  elmc_release(tmp_1);
 
   
   
@@ -414,10 +418,11 @@ ElmcValue *msg = (argc > 0) ? args[0] : NULL;
   (void)msg;
   (void)model;
   
-  ElmcValue *tmp_1;
   
-  if ((msg) && ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 3 && (1))) {
-
+  const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
+  case 3:
 
 
       ElmcValue *tmp_2 = msg ? elmc_retain(msg) : elmc_int_zero();
@@ -429,12 +434,9 @@ ElmcValue *msg = (argc > 0) ? args[0] : NULL;
       elmc_release(tmp_2);
       elmc_release(tmp_3);
 
-
     tmp_1 = tmp_4;
-
-}
-else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 4) || ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 4))) {
-
+    break;
+case 4:
 
 
       ElmcValue *tmp_5 = msg ? elmc_retain(msg) : elmc_int_zero();
@@ -446,12 +448,9 @@ else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 4) || ((ms
       elmc_release(tmp_5);
       elmc_release(tmp_6);
 
-
     tmp_1 = tmp_7;
-
-}
-else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 5) || ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 5))) {
-
+    break;
+case 5:
 
 
       ElmcValue *tmp_8 = msg ? elmc_retain(msg) : elmc_int_zero();
@@ -463,12 +462,9 @@ else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 5) || ((ms
       elmc_release(tmp_8);
       elmc_release(tmp_9);
 
-
     tmp_1 = tmp_10;
-
-}
-else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 6) || ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 6))) {
-
+    break;
+case 6:
 
 
       ElmcValue *tmp_11 = msg ? elmc_retain(msg) : elmc_int_zero();
@@ -480,12 +476,9 @@ else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 6) || ((ms
       elmc_release(tmp_11);
       elmc_release(tmp_12);
 
-
     tmp_1 = tmp_13;
-
-}
-else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 7) || ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 7))) {
-
+    break;
+case 7:
 
 
       ElmcValue *tmp_14 = msg ? elmc_retain(msg) : elmc_int_zero();
@@ -497,12 +490,9 @@ else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 7) || ((ms
       elmc_release(tmp_14);
       elmc_release(tmp_15);
 
-
     tmp_1 = tmp_16;
-
-}
-else {
-
+    break;
+default:
 
 
       ElmcValue *tmp_17 = msg ? elmc_retain(msg) : elmc_int_zero();
@@ -514,12 +504,10 @@ else {
       elmc_release(tmp_17);
       elmc_release(tmp_18);
 
-
     tmp_1 = tmp_19;
+    break;
 
-}
-
-  
+  }
 
   
   
@@ -536,191 +524,150 @@ ElmcValue *msg = (argc > 0) ? args[0] : NULL;
   (void)msg;
   (void)model;
   
-  ElmcValue *tmp_1;
   
-  if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 1) || ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 1))) {
+  const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
+  case 1:
 
-    
+        // inlined Main.counterOf
 
-
-      ElmcValue *tmp_2 = model ? elmc_retain(model) : elmc_int_zero();
+      const elmc_int_t native_let_counter_2 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
   
-      ElmcValue *call_args_3[1] = { tmp_2 };
-      ElmcValue *tmp_3 = elmc_fn_Main_counterOf(call_args_3, 1);
-  
-      elmc_release(tmp_2);
-
-      
   
   
 
-      ElmcValue *tmp_4 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_3 = model ? elmc_retain(model) : elmc_int_zero();
   
-      ElmcValue *call_args_5[1] = { tmp_4 };
-      ElmcValue *tmp_5 = elmc_fn_Main_temperatureOf(call_args_5, 1);
+      ElmcValue *call_args_4[1] = { tmp_3 };
+      ElmcValue *tmp_4 = elmc_fn_Main_temperatureOf(call_args_4, 1);
   
-      elmc_release(tmp_4);
-
-      ElmcValue *tmp_6 = elmc_new_int(elmc_as_int(tmp_3) + 1);
-      const char *rec_names_7[2] = { "temperature", "value" };
-      ElmcValue *rec_values_7[2] = { tmp_5, tmp_6 };
-        ElmcValue *tmp_7 = elmc_record_new_take(2, rec_names_7, rec_values_7);
-
-      ElmcValue *tmp_8 = elmc_int_zero();
-        ElmcValue *tmp_9 = elmc_tuple2_take(tmp_7, tmp_8);
-
       elmc_release(tmp_3);
 
+  
+      ElmcValue *tmp_5 = elmc_new_int((native_let_counter_2 + 1));
 
-    tmp_1 = tmp_9;
+      const char *rec_names_6[2] = { "temperature", "value" };
+      ElmcValue *rec_values_6[2] = { tmp_4, tmp_5 };
+        ElmcValue *tmp_6 = elmc_record_new_take(2, rec_names_6, rec_values_6);
 
-}
-else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 2) || ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 2))) {
+      ElmcValue *tmp_7 = elmc_int_zero();
+        ElmcValue *tmp_8 = elmc_tuple2_take(tmp_6, tmp_7);
 
-    
 
+    tmp_1 = tmp_8;
+    break;
+case 2:
+
+        // inlined Main.counterOf
+
+      const elmc_int_t native_let_counter_9 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
+  
+  
+  
 
       ElmcValue *tmp_10 = model ? elmc_retain(model) : elmc_int_zero();
   
       ElmcValue *call_args_11[1] = { tmp_10 };
-      ElmcValue *tmp_11 = elmc_fn_Main_counterOf(call_args_11, 1);
+      ElmcValue *tmp_11 = elmc_fn_Main_temperatureOf(call_args_11, 1);
   
       elmc_release(tmp_10);
 
-      
   
-  
+      ElmcValue *tmp_12 = elmc_new_int((native_let_counter_9 - 1));
 
-      ElmcValue *tmp_12 = model ? elmc_retain(model) : elmc_int_zero();
-  
-      ElmcValue *call_args_13[1] = { tmp_12 };
-      ElmcValue *tmp_13 = elmc_fn_Main_temperatureOf(call_args_13, 1);
-  
-      elmc_release(tmp_12);
+      const char *rec_names_13[2] = { "temperature", "value" };
+      ElmcValue *rec_values_13[2] = { tmp_11, tmp_12 };
+        ElmcValue *tmp_13 = elmc_record_new_take(2, rec_names_13, rec_values_13);
 
-      ElmcValue *tmp_14 = elmc_new_int(elmc_as_int(tmp_11) - 1);
-      const char *rec_names_15[2] = { "temperature", "value" };
-      ElmcValue *rec_values_15[2] = { tmp_13, tmp_14 };
-        ElmcValue *tmp_15 = elmc_record_new_take(2, rec_names_15, rec_values_15);
-
-      ElmcValue *tmp_16 = elmc_int_zero();
-        ElmcValue *tmp_17 = elmc_tuple2_take(tmp_15, tmp_16);
-
-      elmc_release(tmp_11);
+      ElmcValue *tmp_14 = elmc_int_zero();
+        ElmcValue *tmp_15 = elmc_tuple2_take(tmp_13, tmp_14);
 
 
-    tmp_1 = tmp_17;
+    tmp_1 = tmp_15;
+    break;
+case 8:
 
-}
-else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 8) || ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 8))) {
-
-
-      ElmcValue *tmp_18 = elmc_new_int(1);
-      ElmcValue *tmp_19 = ((ElmcTuple2 *)msg->payload)->second ? elmc_retain(((ElmcTuple2 *)msg->payload)->second) : elmc_int_zero();
-        ElmcValue *tmp_20 = elmc_tuple2_take(tmp_18, tmp_19);
+      ElmcValue *tmp_16 = elmc_new_int(1);
+      ElmcValue *tmp_17 = ((ElmcTuple2 *)msg->payload)->second ? elmc_retain(((ElmcTuple2 *)msg->payload)->second) : elmc_int_zero();
+        ElmcValue *tmp_18 = elmc_tuple2_take(tmp_16, tmp_17);
 
   
 
-      ElmcValue *tmp_21 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_19 = model ? elmc_retain(model) : elmc_int_zero();
   
-      ElmcValue *call_args_22[1] = { tmp_21 };
-      ElmcValue *tmp_22 = elmc_fn_Main_counterOf(call_args_22, 1);
+      ElmcValue *call_args_20[1] = { tmp_19 };
+      ElmcValue *tmp_20 = elmc_fn_Main_counterOf(call_args_20, 1);
   
-      elmc_release(tmp_21);
+      elmc_release(tmp_19);
 
-      const char *rec_names_23[2] = { "temperature", "value" };
-      ElmcValue *rec_values_23[2] = { tmp_20, tmp_22 };
-        ElmcValue *tmp_23 = elmc_record_new_take(2, rec_names_23, rec_values_23);
+      const char *rec_names_21[2] = { "temperature", "value" };
+      ElmcValue *rec_values_21[2] = { tmp_18, tmp_20 };
+        ElmcValue *tmp_21 = elmc_record_new_take(2, rec_names_21, rec_values_21);
 
-      ElmcValue *tmp_24 = elmc_int_zero();
-        ElmcValue *tmp_25 = elmc_tuple2_take(tmp_23, tmp_24);
+      ElmcValue *tmp_22 = elmc_int_zero();
+        ElmcValue *tmp_23 = elmc_tuple2_take(tmp_21, tmp_22);
 
+    tmp_1 = tmp_23;
+    break;
+case 9:
+    ElmcValue *tmp_24 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_25 = elmc_int_zero();
+        ElmcValue *tmp_26 = elmc_tuple2_take(tmp_24, tmp_25);
 
-    tmp_1 = tmp_25;
+    tmp_1 = tmp_26;
+    break;
+case 10:
+    ElmcValue *tmp_27 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_28 = elmc_int_zero();
+        ElmcValue *tmp_29 = elmc_tuple2_take(tmp_27, tmp_28);
 
-}
-else if ((msg) && ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 9 && (1))) {
+    tmp_1 = tmp_29;
+    break;
+case 11:
+    ElmcValue *tmp_30 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_31 = elmc_int_zero();
+        ElmcValue *tmp_32 = elmc_tuple2_take(tmp_30, tmp_31);
 
-    ElmcValue *tmp_26 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_27 = elmc_int_zero();
-        ElmcValue *tmp_28 = elmc_tuple2_take(tmp_26, tmp_27);
+    tmp_1 = tmp_32;
+    break;
+case 12:
+    ElmcValue *tmp_33 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_34 = elmc_int_zero();
+        ElmcValue *tmp_35 = elmc_tuple2_take(tmp_33, tmp_34);
 
+    tmp_1 = tmp_35;
+    break;
+case 13:
+    ElmcValue *tmp_36 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_37 = elmc_int_zero();
+        ElmcValue *tmp_38 = elmc_tuple2_take(tmp_36, tmp_37);
 
-    tmp_1 = tmp_28;
+    tmp_1 = tmp_38;
+    break;
+case 14:
+    ElmcValue *tmp_39 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_40 = elmc_int_zero();
+        ElmcValue *tmp_41 = elmc_tuple2_take(tmp_39, tmp_40);
 
-}
-else if ((msg) && ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 10 && (1))) {
+    tmp_1 = tmp_41;
+    break;
+case 15:
+    ElmcValue *tmp_42 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_43 = elmc_int_zero();
+        ElmcValue *tmp_44 = elmc_tuple2_take(tmp_42, tmp_43);
 
-    ElmcValue *tmp_29 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_30 = elmc_int_zero();
-        ElmcValue *tmp_31 = elmc_tuple2_take(tmp_29, tmp_30);
+    tmp_1 = tmp_44;
+    break;
+default:
+    ElmcValue *tmp_45 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_46 = elmc_int_zero();
+        ElmcValue *tmp_47 = elmc_tuple2_take(tmp_45, tmp_46);
 
+    tmp_1 = tmp_47;
+    break;
 
-    tmp_1 = tmp_31;
-
-}
-else if ((msg) && ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 11 && (1))) {
-
-    ElmcValue *tmp_32 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_33 = elmc_int_zero();
-        ElmcValue *tmp_34 = elmc_tuple2_take(tmp_32, tmp_33);
-
-
-    tmp_1 = tmp_34;
-
-}
-else if ((msg) && ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 12 && (1))) {
-
-    ElmcValue *tmp_35 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_36 = elmc_int_zero();
-        ElmcValue *tmp_37 = elmc_tuple2_take(tmp_35, tmp_36);
-
-
-    tmp_1 = tmp_37;
-
-}
-else if ((msg) && ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 13 && (1))) {
-
-    ElmcValue *tmp_38 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_39 = elmc_int_zero();
-        ElmcValue *tmp_40 = elmc_tuple2_take(tmp_38, tmp_39);
-
-
-    tmp_1 = tmp_40;
-
-}
-else if ((msg) && ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 14 && (1))) {
-
-    ElmcValue *tmp_41 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_42 = elmc_int_zero();
-        ElmcValue *tmp_43 = elmc_tuple2_take(tmp_41, tmp_42);
-
-
-    tmp_1 = tmp_43;
-
-}
-else if ((msg) && ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 15 && (1))) {
-
-    ElmcValue *tmp_44 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_45 = elmc_int_zero();
-        ElmcValue *tmp_46 = elmc_tuple2_take(tmp_44, tmp_45);
-
-
-    tmp_1 = tmp_46;
-
-}
-else {
-
-    ElmcValue *tmp_47 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_48 = elmc_int_zero();
-        ElmcValue *tmp_49 = elmc_tuple2_take(tmp_47, tmp_48);
-
-
-    tmp_1 = tmp_49;
-
-}
-
-  
+  }
 
   
   
@@ -737,10 +684,11 @@ ElmcValue *msg = (argc > 0) ? args[0] : NULL;
   (void)msg;
   (void)model;
   
-  ElmcValue *tmp_1;
   
-  if ((msg) && ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 3 && (1))) {
-
+  const int case_msg_tag_1 = (msg && (msg)->tag == ELMC_TAG_INT ? elmc_as_int(msg) : (msg && (msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
+  case 3:
     
 
 
@@ -806,198 +754,164 @@ ElmcValue *msg = (argc > 0) ? args[0] : NULL;
 
       elmc_release(tmp_3);
 
-
     tmp_1 = tmp_23;
+    break;
+case 4:
 
-}
-else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 4) || ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 4))) {
+        // inlined Main.counterOf
 
-    
-
-
-      ElmcValue *tmp_24 = model ? elmc_retain(model) : elmc_int_zero();
-  
-      ElmcValue *call_args_25[1] = { tmp_24 };
-      ElmcValue *tmp_25 = elmc_fn_Main_counterOf(call_args_25, 1);
-  
-      elmc_release(tmp_24);
-
-      
+      const elmc_int_t native_let_counter_24 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
   
   
-      const elmc_int_t native_let_next_26 = (elmc_as_int(tmp_25) + 1);
+  
+      const elmc_int_t native_let_next_25 = (native_let_counter_24 + 1);
   
   
   
 
-      ElmcValue *tmp_27 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_26 = model ? elmc_retain(model) : elmc_int_zero();
   
-      ElmcValue *call_args_28[1] = { tmp_27 };
-      ElmcValue *tmp_28 = elmc_fn_Main_temperatureOf(call_args_28, 1);
+      ElmcValue *call_args_27[1] = { tmp_26 };
+      ElmcValue *tmp_27 = elmc_fn_Main_temperatureOf(call_args_27, 1);
   
-      elmc_release(tmp_27);
+      elmc_release(tmp_26);
 
-      ElmcValue *tmp_29 = elmc_new_int(native_let_next_26);
-      const char *rec_names_30[2] = { "temperature", "value" };
-      ElmcValue *rec_values_30[2] = { tmp_28, tmp_29 };
-        ElmcValue *tmp_30 = elmc_record_new_take(2, rec_names_30, rec_values_30);
+      ElmcValue *tmp_28 = elmc_new_int(native_let_next_25);
+      const char *rec_names_29[2] = { "temperature", "value" };
+      ElmcValue *rec_values_29[2] = { tmp_27, tmp_28 };
+        ElmcValue *tmp_29 = elmc_record_new_take(2, rec_names_29, rec_values_29);
 
-      ElmcValue *tmp_31 = elmc_new_int(2);
-      ElmcValue *tmp_32 = elmc_new_int(1);
-      ElmcValue *tmp_33 = elmc_new_int(native_let_next_26);
+      ElmcValue *tmp_30 = elmc_new_int(2);
+      ElmcValue *tmp_31 = elmc_new_int(1);
+      ElmcValue *tmp_32 = elmc_new_int(native_let_next_25);
+      ElmcValue *tmp_33 = elmc_int_zero();
       ElmcValue *tmp_34 = elmc_int_zero();
-      ElmcValue *tmp_35 = elmc_int_zero();
   
   
-      ElmcValue *tmp_36 = elmc_tuple2_ints(0, 0);
+      ElmcValue *tmp_35 = elmc_tuple2_ints(0, 0);
 
-        ElmcValue *tmp_37 = elmc_tuple2_take(tmp_35, tmp_36);
+        ElmcValue *tmp_36 = elmc_tuple2_take(tmp_34, tmp_35);
 
-        ElmcValue *tmp_38 = elmc_tuple2_take(tmp_34, tmp_37);
+        ElmcValue *tmp_37 = elmc_tuple2_take(tmp_33, tmp_36);
 
-        ElmcValue *tmp_39 = elmc_tuple2_take(tmp_33, tmp_38);
+        ElmcValue *tmp_38 = elmc_tuple2_take(tmp_32, tmp_37);
 
-        ElmcValue *tmp_40 = elmc_tuple2_take(tmp_32, tmp_39);
+        ElmcValue *tmp_39 = elmc_tuple2_take(tmp_31, tmp_38);
 
-        ElmcValue *tmp_41 = elmc_tuple2_take(tmp_31, tmp_40);
+        ElmcValue *tmp_40 = elmc_tuple2_take(tmp_30, tmp_39);
 
-        ElmcValue *tmp_42 = elmc_tuple2_take(tmp_30, tmp_41);
-
-
-      elmc_release(tmp_25);
+        ElmcValue *tmp_41 = elmc_tuple2_take(tmp_29, tmp_40);
 
 
-    tmp_1 = tmp_42;
 
-}
-else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 5) || ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 5))) {
-
-    ElmcValue *tmp_43 = model ? elmc_retain(model) : elmc_int_zero();
+    tmp_1 = tmp_41;
+    break;
+case 5:
+    ElmcValue *tmp_42 = model ? elmc_retain(model) : elmc_int_zero();
   
   
 
-      ElmcValue *tmp_44 = elmc_new_int(2);
+      ElmcValue *tmp_43 = elmc_new_int(2);
   
-      ElmcValue *call_args_45[1] = { tmp_44 };
-      ElmcValue *tmp_45 = elmc_fn_Main_requestWeather(call_args_45, 1);
+      ElmcValue *call_args_44[1] = { tmp_43 };
+      ElmcValue *tmp_44 = elmc_fn_Main_requestWeather(call_args_44, 1);
   
-      elmc_release(tmp_44);
+      elmc_release(tmp_43);
 
-      ElmcValue *tmp_46 = elmc_fn_Main_requestSystemInfo(NULL, 0);
-      ElmcValue *list_items_47[2] = { tmp_45, tmp_46 };
-      ElmcValue *tmp_47 = elmc_list_from_values_take(list_items_47, 2);
+      ElmcValue *tmp_45 = elmc_fn_Main_requestSystemInfo(NULL, 0);
+      ElmcValue *list_items_46[2] = { tmp_44, tmp_45 };
+      ElmcValue *tmp_46 = elmc_list_from_values_take(list_items_46, 2);
   
 
-        ElmcValue *tmp_48 = elmc_tuple2_take(tmp_43, tmp_47);
+        ElmcValue *tmp_47 = elmc_tuple2_take(tmp_42, tmp_46);
 
+    tmp_1 = tmp_47;
+    break;
+case 6:
 
-    tmp_1 = tmp_48;
+        // inlined Main.counterOf
 
-}
-else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 6) || ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 6))) {
-
-    
-
+      const elmc_int_t native_let_counter_48 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
+  
+  
+  
 
       ElmcValue *tmp_49 = model ? elmc_retain(model) : elmc_int_zero();
   
       ElmcValue *call_args_50[1] = { tmp_49 };
-      ElmcValue *tmp_50 = elmc_fn_Main_counterOf(call_args_50, 1);
+      ElmcValue *tmp_50 = elmc_fn_Main_temperatureOf(call_args_50, 1);
   
       elmc_release(tmp_49);
 
-      
   
-  
+      ElmcValue *tmp_51 = elmc_new_int((native_let_counter_48 - 1));
 
-      ElmcValue *tmp_51 = model ? elmc_retain(model) : elmc_int_zero();
-  
-      ElmcValue *call_args_52[1] = { tmp_51 };
-      ElmcValue *tmp_52 = elmc_fn_Main_temperatureOf(call_args_52, 1);
-  
-      elmc_release(tmp_51);
+      const char *rec_names_52[2] = { "temperature", "value" };
+      ElmcValue *rec_values_52[2] = { tmp_50, tmp_51 };
+        ElmcValue *tmp_52 = elmc_record_new_take(2, rec_names_52, rec_values_52);
 
-      ElmcValue *tmp_53 = elmc_new_int(elmc_as_int(tmp_50) - 1);
-      const char *rec_names_54[2] = { "temperature", "value" };
-      ElmcValue *rec_values_54[2] = { tmp_52, tmp_53 };
-        ElmcValue *tmp_54 = elmc_record_new_take(2, rec_names_54, rec_values_54);
-
-      ElmcValue *tmp_55 = elmc_new_int(4);
-      ElmcValue *tmp_56 = elmc_new_int(1);
+      ElmcValue *tmp_53 = elmc_new_int(4);
+      ElmcValue *tmp_54 = elmc_new_int(1);
+      ElmcValue *tmp_55 = elmc_int_zero();
+      ElmcValue *tmp_56 = elmc_int_zero();
       ElmcValue *tmp_57 = elmc_int_zero();
-      ElmcValue *tmp_58 = elmc_int_zero();
-      ElmcValue *tmp_59 = elmc_int_zero();
   
   
-      ElmcValue *tmp_60 = elmc_tuple2_ints(0, 0);
+      ElmcValue *tmp_58 = elmc_tuple2_ints(0, 0);
 
-        ElmcValue *tmp_61 = elmc_tuple2_take(tmp_59, tmp_60);
+        ElmcValue *tmp_59 = elmc_tuple2_take(tmp_57, tmp_58);
 
-        ElmcValue *tmp_62 = elmc_tuple2_take(tmp_58, tmp_61);
+        ElmcValue *tmp_60 = elmc_tuple2_take(tmp_56, tmp_59);
 
-        ElmcValue *tmp_63 = elmc_tuple2_take(tmp_57, tmp_62);
+        ElmcValue *tmp_61 = elmc_tuple2_take(tmp_55, tmp_60);
 
-        ElmcValue *tmp_64 = elmc_tuple2_take(tmp_56, tmp_63);
+        ElmcValue *tmp_62 = elmc_tuple2_take(tmp_54, tmp_61);
 
-        ElmcValue *tmp_65 = elmc_tuple2_take(tmp_55, tmp_64);
+        ElmcValue *tmp_63 = elmc_tuple2_take(tmp_53, tmp_62);
 
-        ElmcValue *tmp_66 = elmc_tuple2_take(tmp_54, tmp_65);
-
-      elmc_release(tmp_50);
+        ElmcValue *tmp_64 = elmc_tuple2_take(tmp_52, tmp_63);
 
 
-    tmp_1 = tmp_66;
+    tmp_1 = tmp_64;
+    break;
+case 7:
 
-}
-else if ((msg) && (((msg)->tag == ELMC_TAG_INT && elmc_as_int(msg) == 7) || ((msg)->tag == ELMC_TAG_TUPLE2 && (msg)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(msg)->payload)->first) == 7))) {
+        // inlined Main.counterOf
 
-    
-
-
-      ElmcValue *tmp_67 = model ? elmc_retain(model) : elmc_int_zero();
+      const elmc_int_t native_let_counter_65 = ELMC_RECORD_GET_INDEX_INT(model, 1 /* value */);
   
-      ElmcValue *call_args_68[1] = { tmp_67 };
-      ElmcValue *tmp_68 = elmc_fn_Main_counterOf(call_args_68, 1);
-  
-      elmc_release(tmp_67);
-
-      
   
   
 
-      ElmcValue *tmp_69 = model ? elmc_retain(model) : elmc_int_zero();
+      ElmcValue *tmp_66 = model ? elmc_retain(model) : elmc_int_zero();
   
-      ElmcValue *call_args_70[1] = { tmp_69 };
-      ElmcValue *tmp_70 = elmc_fn_Main_temperatureOf(call_args_70, 1);
+      ElmcValue *call_args_67[1] = { tmp_66 };
+      ElmcValue *tmp_67 = elmc_fn_Main_temperatureOf(call_args_67, 1);
   
-      elmc_release(tmp_69);
+      elmc_release(tmp_66);
 
-      ElmcValue *tmp_71 = elmc_new_int(elmc_as_int(tmp_68) + 1);
-      const char *rec_names_72[2] = { "temperature", "value" };
-      ElmcValue *rec_values_72[2] = { tmp_70, tmp_71 };
-        ElmcValue *tmp_72 = elmc_record_new_take(2, rec_names_72, rec_values_72);
+  
+      ElmcValue *tmp_68 = elmc_new_int((native_let_counter_65 + 1));
 
+      const char *rec_names_69[2] = { "temperature", "value" };
+      ElmcValue *rec_values_69[2] = { tmp_67, tmp_68 };
+        ElmcValue *tmp_69 = elmc_record_new_take(2, rec_names_69, rec_values_69);
+
+      ElmcValue *tmp_70 = elmc_int_zero();
+        ElmcValue *tmp_71 = elmc_tuple2_take(tmp_69, tmp_70);
+
+
+    tmp_1 = tmp_71;
+    break;
+default:
+    ElmcValue *tmp_72 = model ? elmc_retain(model) : elmc_int_zero();
       ElmcValue *tmp_73 = elmc_int_zero();
         ElmcValue *tmp_74 = elmc_tuple2_take(tmp_72, tmp_73);
 
-      elmc_release(tmp_68);
-
-
     tmp_1 = tmp_74;
+    break;
 
-}
-else {
-
-    ElmcValue *tmp_75 = model ? elmc_retain(model) : elmc_int_zero();
-      ElmcValue *tmp_76 = elmc_int_zero();
-        ElmcValue *tmp_77 = elmc_tuple2_take(tmp_75, tmp_76);
-
-
-    tmp_1 = tmp_77;
-
-}
-
-  
+  }
 
   
   
@@ -1535,24 +1449,23 @@ ElmcValue *elmc_fn_Main_temperatureValue(ElmcValue ** const args, const int argc
 ElmcValue *temperature = (argc > 0) ? args[0] : NULL;
   (void)temperature;
   
-  ElmcValue *tmp_1;
   
-  if ((temperature) && (((temperature)->tag == ELMC_TAG_INT && elmc_as_int(temperature) == 1) || ((temperature)->tag == ELMC_TAG_TUPLE2 && (temperature)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(temperature)->payload)->first) == 1))) {
-
+  const int case_msg_tag_1 = (temperature && (temperature)->tag == ELMC_TAG_INT ? elmc_as_int(temperature) : (temperature && (temperature)->tag == ELMC_TAG_TUPLE2 && (temperature)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(temperature)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
+  case 1:
     ElmcValue *tmp_2 = ((ElmcTuple2 *)temperature->payload)->second ? elmc_retain(((ElmcTuple2 *)temperature->payload)->second) : elmc_int_zero();
-
     tmp_1 = tmp_2;
-
-}
-else {
-
+    break;
+case 2:
     ElmcValue *tmp_3 = ((ElmcTuple2 *)temperature->payload)->second ? elmc_retain(((ElmcTuple2 *)temperature->payload)->second) : elmc_int_zero();
-
     tmp_1 = tmp_3;
+    break;
+default:
+    tmp_1 = elmc_int_zero();
+    break;
 
-}
-
-  
+  }
 
   
   
@@ -1581,73 +1494,51 @@ ElmcValue *elmc_fn_Pebble_Platform_launchReasonToInt(ElmcValue ** const args, co
 ElmcValue *launchReason = (argc > 0) ? args[0] : NULL;
   (void)launchReason;
   
-  ElmcValue *tmp_1;
   
-  if ((launchReason) && (((launchReason)->tag == ELMC_TAG_INT && elmc_as_int(launchReason) == 1) || ((launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) == 1))) {
-
-
+  const int case_msg_tag_1 = (launchReason && (launchReason)->tag == ELMC_TAG_INT ? elmc_as_int(launchReason) : (launchReason && (launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
+  case 1:
 
     tmp_1 = elmc_int_zero();
-
-}
-else if ((launchReason) && (((launchReason)->tag == ELMC_TAG_INT && elmc_as_int(launchReason) == 2) || ((launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) == 2))) {
-
-
+    break;
+case 2:
 
     tmp_1 = elmc_new_int(1);
-
-}
-else if ((launchReason) && (((launchReason)->tag == ELMC_TAG_INT && elmc_as_int(launchReason) == 3) || ((launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) == 3))) {
-
-
+    break;
+case 3:
 
     tmp_1 = elmc_new_int(2);
-
-}
-else if ((launchReason) && (((launchReason)->tag == ELMC_TAG_INT && elmc_as_int(launchReason) == 4) || ((launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) == 4))) {
-
-
+    break;
+case 4:
 
     tmp_1 = elmc_new_int(3);
-
-}
-else if ((launchReason) && (((launchReason)->tag == ELMC_TAG_INT && elmc_as_int(launchReason) == 5) || ((launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) == 5))) {
-
-
+    break;
+case 5:
 
     tmp_1 = elmc_new_int(4);
-
-}
-else if ((launchReason) && (((launchReason)->tag == ELMC_TAG_INT && elmc_as_int(launchReason) == 6) || ((launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) == 6))) {
-
-
+    break;
+case 6:
 
     tmp_1 = elmc_new_int(5);
-
-}
-else if ((launchReason) && (((launchReason)->tag == ELMC_TAG_INT && elmc_as_int(launchReason) == 7) || ((launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) == 7))) {
-
-
+    break;
+case 7:
 
     tmp_1 = elmc_new_int(6);
-
-}
-else if ((launchReason) && (((launchReason)->tag == ELMC_TAG_INT && elmc_as_int(launchReason) == 8) || ((launchReason)->tag == ELMC_TAG_TUPLE2 && (launchReason)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(launchReason)->payload)->first) == 8))) {
-
-
+    break;
+case 8:
 
     tmp_1 = elmc_new_int(7);
-
-}
-else {
-
-
+    break;
+case 9:
 
     tmp_1 = elmc_new_int(-1);
+    break;
+default:
+    tmp_1 = elmc_int_zero();
+    break;
 
-}
-
-  
+  }
 
   
   
@@ -1722,38 +1613,31 @@ ElmcValue *elmc_fn_Companion_Internal_encodeLocationCode(ElmcValue ** const args
 ElmcValue *value = (argc > 0) ? args[0] : NULL;
   (void)value;
   
-  ElmcValue *tmp_1;
   
-  if ((value) && (((value)->tag == ELMC_TAG_INT && elmc_as_int(value) == 1) || ((value)->tag == ELMC_TAG_TUPLE2 && (value)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(value)->payload)->first) == 1))) {
-
-
+  const int case_msg_tag_1 = (value && (value)->tag == ELMC_TAG_INT ? elmc_as_int(value) : (value && (value)->tag == ELMC_TAG_TUPLE2 && (value)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(value)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
+  case 1:
 
     tmp_1 = elmc_new_int(1);
-
-}
-else if ((value) && (((value)->tag == ELMC_TAG_INT && elmc_as_int(value) == 2) || ((value)->tag == ELMC_TAG_TUPLE2 && (value)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(value)->payload)->first) == 2))) {
-
-
+    break;
+case 2:
 
     tmp_1 = elmc_new_int(2);
-
-}
-else if ((value) && (((value)->tag == ELMC_TAG_INT && elmc_as_int(value) == 3) || ((value)->tag == ELMC_TAG_TUPLE2 && (value)->payload != NULL && elmc_as_int(((ElmcTuple2 *)(value)->payload)->first) == 3))) {
-
-
+    break;
+case 3:
 
     tmp_1 = elmc_new_int(3);
-
-}
-else {
-
-
+    break;
+case 4:
 
     tmp_1 = elmc_new_int(4);
+    break;
+default:
+    tmp_1 = elmc_int_zero();
+    break;
 
-}
-
-  
+  }
 
   
   
@@ -1768,14 +1652,19 @@ ElmcValue *elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue ** const args, c
 ElmcValue *message = (argc > 0) ? args[0] : NULL;
   (void)message;
   
-  ElmcValue *tmp_1;
   
-  
-
+  const int case_msg_tag_1 = (message && (message)->tag == ELMC_TAG_INT ? elmc_as_int(message) : (message && (message)->tag == ELMC_TAG_TUPLE2 && (message)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(message)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
+  case 1:
 
     tmp_1 = elmc_new_int(2);
+    break;
+default:
+    tmp_1 = elmc_int_zero();
+    break;
 
-  
+  }
 
   
   
@@ -1790,9 +1679,11 @@ ElmcValue *elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue ** const args,
 ElmcValue *message = (argc > 0) ? args[0] : NULL;
   (void)message;
   
-  ElmcValue *tmp_1;
   
-  
+  const int case_msg_tag_1 = (message && (message)->tag == ELMC_TAG_INT ? elmc_as_int(message) : (message && (message)->tag == ELMC_TAG_TUPLE2 && (message)->payload != NULL ? elmc_as_int(((ElmcTuple2 *)(message)->payload)->first) : -1));
+  ElmcValue *tmp_1 = elmc_int_zero();
+  switch (case_msg_tag_1) {
+  case 1:
 
 
       ElmcValue *tmp_2 = ((ElmcTuple2 *)message->payload)->second ? elmc_retain(((ElmcTuple2 *)message->payload)->second) : elmc_int_zero();
@@ -1802,10 +1693,13 @@ ElmcValue *message = (argc > 0) ? args[0] : NULL;
   
       elmc_release(tmp_2);
 
-
     tmp_1 = tmp_3;
+    break;
+default:
+    tmp_1 = elmc_int_zero();
+    break;
 
-  
+  }
 
   
   

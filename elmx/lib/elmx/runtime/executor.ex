@@ -115,6 +115,10 @@ defmodule Elmx.Runtime.Executor do
     if function_exported?(module, :update, 2) do
       {model, cmd} = apply(module, :update, [msg, runtime_model_from_elm(runtime_model)])
       {runtime_model, _} = Values.tuple_result_to_model_cmd({model, cmd})
+
+      runtime_model =
+        Map.put(runtime_model, "last_operation", last_operation_label(message, msg))
+
       {runtime_model, "step_message", cmd}
     else
       {runtime_model, "unmapped_message", Values.cmd_none()}
@@ -274,4 +278,25 @@ defmodule Elmx.Runtime.Executor do
   end
 
   defp put_new_int_field(model, _key, _value), do: model
+
+  defp last_operation_label(message, msg) when is_binary(message) do
+    case msg do
+      value when is_atom(value) ->
+        Atom.to_string(value)
+
+      {ctor, _} when is_atom(ctor) ->
+        Atom.to_string(ctor)
+
+      _ ->
+        message
+        |> String.trim()
+        |> String.split(~r/[\s(]/, parts: 2)
+        |> List.first()
+        |> to_string()
+    end
+  end
+
+  defp last_operation_label(_message, msg) when is_atom(msg), do: Atom.to_string(msg)
+  defp last_operation_label(_message, {ctor, _}) when is_atom(ctor), do: Atom.to_string(ctor)
+  defp last_operation_label(_message, _), do: ""
 end

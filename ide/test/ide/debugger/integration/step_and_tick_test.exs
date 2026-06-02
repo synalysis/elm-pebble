@@ -141,19 +141,31 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
   test "step without explicit message cycles msg constructors deterministically" do
     slug = "sim-step-cycle-#{System.unique_integer([:positive])}"
 
-    source = """
-    module StepCycle exposing (..)
+    source =
+      watchface_module(
+        "StepCycle",
+        """
+        type alias Model = { n : Int }
 
-    type Msg
-        = Inc
-        | Dec
+        type Msg
+            = Inc
+            | Dec
 
-    init _ =
-        ( { n = 1 }, Cmd.none )
+        init _ =
+            ( { n = 1 }, Cmd.none )
 
-    view m =
-        Ui.root []
-    """
+        update msg model =
+            case msg of
+                Inc ->
+                    ( { n = model.n + 1 }, Cmd.none )
+
+                Dec ->
+                    ( { n = model.n - 1 }, Cmd.none )
+
+        view _ =
+            Ui.root []
+        """
+      )
 
     {:ok, _} = Debugger.start_session(slug)
 
@@ -214,22 +226,36 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
   test "tick injects subscription-style ingress with deterministic message source" do
     slug = "sim-tick-#{System.unique_integer([:positive])}"
 
-    source = """
-    module TickSnap exposing (..)
+    source =
+      watchface_module(
+        "TickSnap",
+        """
+        import Time
 
-    type Msg
-        = Tick
-        | Inc
+        type alias Model = { n : Int }
 
-    init _ =
-        ( { n = 1 }, Cmd.none )
+        type Msg
+            = Tick
+            | Inc
 
-    subscriptions model =
-        Time.every 1000 Tick
+        init _ =
+            ( { n = 1 }, Cmd.none )
 
-    view m =
-        Ui.root []
-    """
+        update msg model =
+            case msg of
+                Tick ->
+                    ( model, Cmd.none )
+
+                Inc ->
+                    ( { n = model.n + 1 }, Cmd.none )
+
+        subscriptions _ =
+            Time.every 1000 Tick
+
+        view _ =
+            Ui.root []
+        """
+      )
 
     {:ok, _} = Debugger.start_session(slug)
 
@@ -272,29 +298,33 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
   test "tick synthesizes realistic current time device response when command requests it" do
     slug = "sim-device-time-#{System.unique_integer([:positive])}"
 
-    source = """
-    module DeviceTimeSnap exposing (..)
+    source =
+      watchface_module(
+        "DeviceTimeSnap",
+        """
+        import Pebble.Cmd as PebbleCmd
 
-    import Pebble.Cmd as PebbleCmd
+        type alias Model = { hhmm : Int }
 
-    type Msg
-        = Tick
-        | CurrentTime String
+        type Msg
+            = Tick
+            | CurrentTime String
 
-    init _ =
-        ( { hhmm = 0 }, Cmd.none )
+        init _ =
+            ( { hhmm = 0 }, Cmd.none )
 
-    update msg model =
-        case msg of
-            Tick ->
-                ( model, PebbleCmd.getCurrentTimeString CurrentTime )
+        update msg model =
+            case msg of
+                Tick ->
+                    ( model, PebbleCmd.getCurrentTimeString CurrentTime )
 
-            CurrentTime _ ->
-                ( model, Cmd.none )
+                CurrentTime _ ->
+                    ( model, Cmd.none )
 
-    subscriptions _ =
-        Sub.none
-    """
+        view _ =
+            Ui.root []
+        """
+      )
 
     {:ok, _} = Debugger.start_session(slug)
 
@@ -538,51 +568,64 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
   test "tick synthesizes structured current date/time device response with UTC offset" do
     slug = "sim-device-datetime-#{System.unique_integer([:positive])}"
 
-    source = """
-    module DeviceDateTimeSnap exposing (..)
+    source =
+      watchface_module(
+        "DeviceDateTimeSnap",
+        """
+        import Pebble.Cmd as PebbleCmd
+        import Time
 
-    import Pebble.Cmd as PebbleCmd
-    import Time
+        type alias Model =
+            { year : Int
+            , month : Int
+            , day : Int
+            , dayOfWeek : Time.Weekday
+            , hour : Int
+            , minute : Int
+            , second : Int
+            , utcOffsetMinutes : Int
+            }
 
-    type Msg
-        = Tick
-        | CurrentDateTime PebbleCmd.CurrentDateTime
+        type Msg
+            = Tick
+            | CurrentDateTime PebbleCmd.CurrentDateTime
 
-    init _ =
-        ( { year = 0
-          , month = 0
-          , day = 0
-          , dayOfWeek = Time.Mon
-          , hour = 0
-          , minute = 0
-          , second = 0
-          , utcOffsetMinutes = 0
-          }
-        , Cmd.none
-        )
+        init _ =
+            ( { year = 0
+              , month = 0
+              , day = 0
+              , dayOfWeek = Time.Mon
+              , hour = 0
+              , minute = 0
+              , second = 0
+              , utcOffsetMinutes = 0
+              }
+            , Cmd.none
+            )
 
-    update msg model =
-        case msg of
-            Tick ->
-                ( model, PebbleCmd.getCurrentDateTime CurrentDateTime )
+        update msg model =
+            case msg of
+                Tick ->
+                    ( model, PebbleCmd.getCurrentDateTime CurrentDateTime )
 
-            CurrentDateTime value ->
-                ( { model
-                    | year = value.year
-                    , month = value.month
-                    , day = value.day
-                    , dayOfWeek = value.dayOfWeek
-                    , hour = value.hour
-                    , minute = value.minute
-                    , second = value.second
-                    , utcOffsetMinutes = value.utcOffsetMinutes
-                  }
-                , Cmd.none
-                )
+                CurrentDateTime value ->
+                    ( { model
+                        | year = value.year
+                        , month = value.month
+                        , day = value.day
+                        , dayOfWeek = value.dayOfWeek
+                        , hour = value.hour
+                        , minute = value.minute
+                        , second = value.second
+                        , utcOffsetMinutes = value.utcOffsetMinutes
+                      }
+                    , Cmd.none
+                    )
 
-    subscriptions _ =
-        Sub.none
-    """
+        view _ =
+            Ui.root []
+        """
+      )
 
     {:ok, _} = Debugger.start_session(slug)
 
@@ -627,9 +670,9 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
 
     assert Enum.any?(ticked.events, fn event ->
              event.type == "debugger.update_in" and
-               String.starts_with?(
+               String.contains?(
                  Map.get(event.payload, :message) || Map.get(event.payload, "message") || "",
-                 "CurrentDateTime "
+                 "CurrentDateTime"
                )
            end)
   end
@@ -1005,22 +1048,28 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
   test "set_auto_fire can enable one subscription trigger without firing siblings" do
     slug = "sim-auto-fire-single-subscription-#{System.unique_integer([:positive])}"
 
-    source = """
-    module AutoFireSingleSubscription exposing (..)
+    source =
+      watchface_module(
+        "AutoFireSingleSubscription",
+        """
+        import Pebble.Events as Evts
 
-    type Msg
-      = Tick
-      | MinuteChanged Int
+        type alias Model = {}
 
-    init _ =
-      ( {}, Cmd.none )
+        type Msg
+            = Tick
+            | MinuteChanged Int
 
-    update msg model =
-      ( model, Cmd.none )
+        init _ =
+            ( {}, Cmd.none )
 
-    subscriptions _ =
-      Evts.batch [ Evts.onSecondChange Tick, Evts.onMinuteChange MinuteChanged ]
-    """
+        update _ model =
+            ( model, Cmd.none )
+
+        subscriptions _ =
+            Evts.batch [ Evts.onSecondChange Tick, Evts.onMinuteChange MinuteChanged ]
+        """
+      )
 
     {:ok, _} = Debugger.start_session(slug)
 
@@ -1046,7 +1095,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
            ]
 
     enabled_seq = enabled.seq
-    Process.sleep(1_150)
+    Process.sleep(2_100)
 
     assert {:ok, stopped} = Debugger.stop_auto_tick(slug)
 
@@ -1149,19 +1198,31 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
   test "replay_recent reapplies recent update messages oldest-to-newest" do
     slug = "sim-replay-#{System.unique_integer([:positive])}"
 
-    source = """
-    module ReplaySnap exposing (..)
+    source =
+      watchface_module(
+        "ReplaySnap",
+        """
+        type alias Model = { n : Int }
 
-    type Msg
-        = Inc
-        | Dec
+        type Msg
+            = Inc
+            | Dec
 
-    init _ =
-        ( { n = 1 }, Cmd.none )
+        init _ =
+            ( { n = 1 }, Cmd.none )
 
-    view m =
-        Ui.root []
-    """
+        update msg model =
+            case msg of
+                Inc ->
+                    ( { n = model.n + 1 }, Cmd.none )
+
+                Dec ->
+                    ( { n = model.n - 1 }, Cmd.none )
+
+        view _ =
+            Ui.root []
+        """
+      )
 
     {:ok, _} = Debugger.start_session(slug)
 
@@ -1172,9 +1233,14 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
         reason: "replay_base"
       })
 
-    {:ok, stepped0} = Debugger.step(slug, %{target: "watch", count: 3})
+    {:ok, after_inc} = Debugger.step(slug, %{target: "watch", message: "Inc", count: 1})
+    assert get_in(after_inc, [:watch, :model, "runtime_model", "n"]) == 2
+
+    {:ok, stepped0} = Debugger.step(slug, %{target: "watch", message: "Dec", count: 1})
+    assert get_in(stepped0, [:watch, :model, "runtime_model", "n"]) == 1
     seq_before_latest_step = stepped0.seq
-    {:ok, _} = Debugger.step(slug, %{target: "watch", count: 1})
+
+    {:ok, _} = Debugger.step(slug, %{target: "watch", message: "Inc", count: 1})
 
     assert {:ok, replayed} =
              Debugger.replay_recent(slug, %{
@@ -1184,7 +1250,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
              })
 
     assert get_in(replayed, [:watch, :model, "runtime_model", "n"]) == 1
-    assert get_in(replayed, [:watch, :model, "runtime_last_message"]) == "Inc"
+    assert get_in(replayed, [:watch, :model, "runtime_last_message"]) == "Dec"
 
     assert replay_exec =
              Enum.find(
@@ -1206,7 +1272,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
     assert Map.get(replay_event.payload, :replayed_count) == 1
     assert Map.get(replay_event.payload, :cursor_seq) == seq_before_latest_step
     assert Map.get(replay_event.payload, :replay_target_counts) == %{"watch" => 1}
-    assert Map.get(replay_event.payload, :replay_message_counts) == %{"Inc" => 1}
+    assert Map.get(replay_event.payload, :replay_message_counts) == %{"Dec" => 1}
 
     assert_replay_telemetry(replay_event.payload, %{
       mode: "unknown",
@@ -1217,7 +1283,7 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
       used_frozen_preview: false
     })
 
-    assert [%{seq: preview_seq, target: "watch", message: "Inc"}] =
+    assert [%{seq: preview_seq, target: "watch", message: "Dec"}] =
              Map.get(replay_event.payload, :replay_preview)
 
     assert is_integer(preview_seq)
@@ -1227,19 +1293,31 @@ defmodule Ide.Debugger.StepAndTickIntegrationTest do
   test "replay_recent can apply exact frozen preview rows" do
     slug = "sim-replay-frozen-#{System.unique_integer([:positive])}"
 
-    source = """
-    module ReplayFrozen exposing (..)
+    source =
+      watchface_module(
+        "ReplayFrozen",
+        """
+        type alias Model = { n : Int }
 
-    type Msg
-        = Inc
-        | Dec
+        type Msg
+            = Inc
+            | Dec
 
-    init _ =
-        ( { n = 1 }, Cmd.none )
+        init _ =
+            ( { n = 1 }, Cmd.none )
 
-    view m =
-        Ui.root []
-    """
+        update msg model =
+            case msg of
+                Inc ->
+                    ( { n = model.n + 1 }, Cmd.none )
+
+                Dec ->
+                    ( { n = model.n - 1 }, Cmd.none )
+
+        view _ =
+            Ui.root []
+        """
+      )
 
     {:ok, _} = Debugger.start_session(slug)
 

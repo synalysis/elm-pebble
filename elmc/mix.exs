@@ -8,7 +8,11 @@ defmodule Elmc.MixProject do
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      escript: [main_module: Elmc.CLI]
+      escript: [main_module: Elmc.CLI],
+      dialyzer: [
+        plt_add_apps: [:mix],
+        flags: [:error_handling, :unmatched_returns]
+      ]
     ]
   end
 

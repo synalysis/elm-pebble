@@ -101,6 +101,6 @@ defmodule Elmc.GoldenSnapshotTest do
              "((ElmcMaybe *)((ElmcTuple2 *)pair->payload)->second->payload)->value"
            )
 
-    assert String.contains?(generated, "elmc_as_int(msg) == 1")
+    assert String.contains?(generated, "switch (case_msg_tag_")
   end
 end

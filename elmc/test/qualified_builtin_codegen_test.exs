@@ -288,16 +288,49 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     [case_body | _rest] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
 
-    assert Regex.match?(~r/ElmcValue \*tmp_\d+;\s+if \(/, case_body)
+    assert case_body =~ "switch (case_msg_tag_"
+    assert case_body =~ "case "
     assert case_body =~ " = elmc_new_string(\"N\");"
     assert case_body =~ " = elmc_new_string(\"S\");"
-    refute case_body =~ " = elmc_int_zero();"
+    refute Regex.match?(~r/else if \(.*->tag == ELMC_TAG_TUPLE2/, case_body)
     refute Regex.match?(~r/elmc_release\(tmp_\d+\);\s+tmp_\d+ = tmp_\d+;/, case_body)
 
     refute Regex.match?(
              ~r/ElmcValue \*tmp_\d+ = elmc_new_string\(\"N\"\);\s+tmp_\d+ = tmp_\d+;/,
              case_body
            )
+  end
+
+  test "Basics.round on bound trig product stays native in scoring-style expressions" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/trig_round_native_project", __DIR__)
+    out_dir = Path.expand("tmp/trig_round_native_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+
+    main_path = Path.join(project_dir, "src/Main.elm")
+    File.write!(main_path, File.read!(main_path) <> trig_round_native_source())
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      generated_c
+      |> String.split("static ElmcValue *elmc_fn_Main_trigRoundScore_native")
+      |> List.last()
+
+    [fn_body | _] = String.split(body, "ElmcValue *elmc_fn_", parts: 2)
+
+    assert fn_body =~ "elmc_basics_sin_double((double)degrees)"
+    refute fn_body =~ "elmc_new_int(elmc_basics_round("
   end
 
   test "boolean record fields in conditions use native bool accessors" do
@@ -453,7 +486,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     refute integer_let_body =~ "native_float_headerBottom"
     refute integer_let_body =~ "elmc_new_float"
-    assert integer_let_body =~ "height - elmc_as_int(tmp_"
+    assert integer_let_body =~ "native_let_headerBottom_"
+    assert integer_let_body =~ "(2 * (height - native_let_headerBottom_"
   end
 
   test "min over record Int fields lowers to native C comparison" do
@@ -1030,55 +1064,43 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute native_let_body =~ "elmc_string_from_native_int(value)"
     refute native_let_body =~ "ELMC_TAG_STRING"
 
-    alias_body =
+    alias_if_body =
       generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextAliasIf_commands_append")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeTextAliasIf_native")
       |> List.last()
 
-    [native_alias_body | _rest] = String.split(alias_body, "int elmc_fn_", parts: 2)
+    [native_alias_if_body | _rest] = String.split(alias_if_body, "static ", parts: 2)
 
-    assert native_alias_body =~ "const elmc_int_t direct_native_let_color_"
+    assert native_alias_if_body =~ "ELMC_COLOR_BLACK"
+    assert native_alias_if_body =~ "ELMC_COLOR_WHITE"
+    refute native_alias_if_body =~ "elmc_new_int(192)"
+    refute native_alias_if_body =~ "elmc_new_int(255)"
 
-    assert native_alias_body =~
-             "elmc_fn_Main_nativeTextAtAlias_commands_append_native(direct_native_let_color_"
-
-    refute native_alias_body =~ "elmc_new_int(192)"
-    refute native_alias_body =~ "elmc_new_int(255)"
-    refute native_alias_body =~ "? elmc_retain(tmp_"
-
-    explicit_alias_body =
+    explicit_alias_if_body =
       generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextExplicitAliasIf_commands_append")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeTextExplicitAliasIf_native")
       |> List.last()
 
-    [native_explicit_alias_body | _rest] =
-      String.split(explicit_alias_body, "int elmc_fn_", parts: 2)
+    [native_explicit_alias_if_body | _rest] =
+      String.split(explicit_alias_if_body, "static ", parts: 2)
 
-    assert native_explicit_alias_body =~ "const elmc_int_t direct_native_let_color_"
+    assert native_explicit_alias_if_body =~ "ELMC_COLOR_BLACK"
+    assert native_explicit_alias_if_body =~ "ELMC_COLOR_WHITE"
+    refute native_explicit_alias_if_body =~ "elmc_new_int(192)"
+    refute native_explicit_alias_if_body =~ "elmc_new_int(255)"
 
-    assert native_explicit_alias_body =~
-             "elmc_fn_Main_nativeTextAtExplicitAlias_commands_append_native(direct_native_let_color_"
-
-    refute native_explicit_alias_body =~ "elmc_new_int(192)"
-    refute native_explicit_alias_body =~ "elmc_new_int(255)"
-    refute native_explicit_alias_body =~ "? elmc_retain(tmp_"
-
-    exposed_type_body =
+    exposed_type_if_body =
       generated_c
-      |> String.split("static int elmc_fn_Main_nativeTextExposedTypeIf_commands_append")
+      |> String.split("static ElmcValue *elmc_fn_Main_nativeTextExposedTypeIf_native")
       |> List.last()
 
-    [native_exposed_type_body | _rest] =
-      String.split(exposed_type_body, "int elmc_fn_", parts: 2)
+    [native_exposed_type_if_body | _rest] =
+      String.split(exposed_type_if_body, "static ", parts: 2)
 
-    assert native_exposed_type_body =~ "const elmc_int_t direct_native_let_color_"
-
-    assert native_exposed_type_body =~
-             "elmc_fn_Main_nativeTextAtExposedType_commands_append_native(direct_native_let_color_"
-
-    refute native_exposed_type_body =~ "elmc_new_int(192)"
-    refute native_exposed_type_body =~ "elmc_new_int(255)"
-    refute native_exposed_type_body =~ "? elmc_retain(tmp_"
+    assert native_exposed_type_if_body =~ "ELMC_COLOR_BLACK"
+    assert native_exposed_type_if_body =~ "ELMC_COLOR_WHITE"
+    refute native_exposed_type_if_body =~ "elmc_new_int(192)"
+    refute native_exposed_type_if_body =~ "elmc_new_int(255)"
 
     bounds_body =
       generated_c
@@ -1492,7 +1514,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     refute compare_body =~ "elmc_basics_compare"
     refute compare_body =~ "elmc_new_int(720)"
-    assert compare_body =~ "elmc_as_int("
+    assert compare_body =~ "ELMC_RECORD_GET_INDEX_INT"
+    assert compare_body =~ "native_let_sunrise_"
     assert compare_body =~ " < 720"
     assert compare_body =~ " == 720"
   end
@@ -2292,6 +2315,16 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
                 { x = x, y = y, w = 10, h = 12 }
         in
         bounds.x
+    """
+  end
+
+  defp trig_round_native_source do
+    """
+
+
+    trigRoundScore : Int -> Int
+    trigRoundScore degrees =
+        Basics.round (Basics.sin degrees * Basics.toFloat 100)
     """
   end
 
@@ -3353,9 +3386,31 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "animated vector draw ops use pebble vector resource slot 2 when static is slot 1" do
-    project_dir = Path.expand("../../ide/workspace_projects/users/1/drawing/watch", __DIR__)
+    source_template =
+      Path.expand("../../ide/priv/project_templates/watch_demo_drawing_showcase", __DIR__)
+
+    project_dir = Path.expand("tmp/vector_resource_slot_project", __DIR__)
     out_dir = Path.expand("tmp/vector_resource_slot_codegen", __DIR__)
+    File.rm_rf!(project_dir)
     File.rm_rf!(out_dir)
+    File.cp_r!(source_template, project_dir)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => [
+          "src",
+          "../../../../packages/elm-pebble/elm-watch/src"
+        ],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
+          "indirect" => %{}
+        },
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
 
     assert {:ok, _result} =
              Elmc.compile(project_dir, %{
@@ -3374,8 +3429,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> hd()
 
     assert animated_body =~ "elmc_new_int(31)"
-    assert animated_body =~ "elmc_new_int(2)"
-    refute animated_body =~ "elmc_new_int(1)"
+    assert animated_body =~ "VectorAnimatedTransitionClearToCloudy"
+    refute animated_body =~ "elmc_new_int(30)"
+    refute animated_body =~ "VectorStaticWeatherClear"
 
     static_body =
       generated_c
@@ -3385,6 +3441,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       |> hd()
 
     assert static_body =~ "elmc_new_int(30)"
-    assert static_body =~ "elmc_new_int(1)"
+    assert static_body =~ "VectorStaticWeatherClear"
+    refute static_body =~ "elmc_new_int(31)"
+    refute static_body =~ "VectorAnimatedTransitionClearToCloudy"
   end
 end

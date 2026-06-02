@@ -98,7 +98,7 @@ Most apps should use `decodeConfigurationFlags`, which also applies the
 generated typed preferences schema.
 -}
 configurationFlagsDecoder =
-    Decode.field "configurationResponse" (Decode.nullable Decode.string)
+    Decode.optionalField "configurationResponse" Decode.string
 
 
 {-| Decode the raw `configuration.closed` bridge event response.

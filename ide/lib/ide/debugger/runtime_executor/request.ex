@@ -33,6 +33,8 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
     :update_branches,
     :elmx_manifest,
     :elmx_revision,
+    :elmx_compile_error,
+    :elmx_compile_error_message,
     :vector_resource_indices,
     :bitmap_resource_indices,
     :animation_resource_indices
@@ -50,6 +52,8 @@ defmodule Ide.Debugger.RuntimeExecutor.Request do
           update_branches: [String.t()] | nil,
           elmx_manifest: map() | nil,
           elmx_revision: String.t() | nil,
+          elmx_compile_error: map() | nil,
+          elmx_compile_error_message: String.t() | nil,
           vector_resource_indices: map() | nil,
           bitmap_resource_indices: map() | nil,
           animation_resource_indices: map() | nil
