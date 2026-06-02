@@ -574,9 +574,17 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     Enum.map(ops, &normalize_value/1)
   end
 
+  @snapshot_hash_keys ~w(
+    runtime_view_output_model_sha256
+    runtime_view_tree_sha256
+    runtime_model_sha256
+  )
+
   @spec normalize_value(term()) :: term()
   defp normalize_value(map) when is_map(map) do
-    Map.new(map, fn {k, v} -> {to_string(k), normalize_value(v)} end)
+    map
+    |> Map.drop(@snapshot_hash_keys)
+    |> Map.new(fn {k, v} -> {to_string(k), normalize_value(v)} end)
   end
 
   defp normalize_value(list) when is_list(list), do: Enum.map(list, &normalize_value/1)
