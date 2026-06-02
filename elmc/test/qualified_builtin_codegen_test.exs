@@ -3351,4 +3351,40 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
         ]
     """
   end
+
+  test "animated vector draw ops use pebble vector resource slot 2 when static is slot 1" do
+    project_dir = Path.expand("../../ide/workspace_projects/users/1/drawing/watch", __DIR__)
+    out_dir = Path.expand("tmp/vector_resource_slot_codegen", __DIR__)
+    File.rm_rf!(out_dir)
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    animated_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_animatedVectorOps")
+      |> Enum.at(1)
+      |> String.split("ElmcValue *elmc_fn_Main_combinedOps")
+      |> hd()
+
+    assert animated_body =~ "elmc_new_int(31)"
+    assert animated_body =~ "elmc_new_int(2)"
+    refute animated_body =~ "elmc_new_int(1)"
+
+    static_body =
+      generated_c
+      |> String.split("ElmcValue *elmc_fn_Main_staticVectorOps")
+      |> Enum.at(1)
+      |> String.split("ElmcValue *elmc_fn_Main_animatedVectorOps")
+      |> hd()
+
+    assert static_body =~ "elmc_new_int(30)"
+    assert static_body =~ "elmc_new_int(1)"
+  end
 end

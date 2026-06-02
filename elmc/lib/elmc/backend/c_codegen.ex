@@ -99,6 +99,7 @@ defmodule Elmc.Backend.CCodegen do
 
     constructor_tags = constructor_tag_map(ir)
     Process.put(:elmc_constructor_tags, constructor_tags)
+    Process.put(:elmc_vector_resource_slots, pebble_vector_resource_slot_map(ir))
     Process.put(:elmc_enum_types, enum_type_set(ir))
     Process.put(:elmc_record_alias_shapes, record_alias_shape_map(ir))
     Process.put(:elmc_record_field_types, record_alias_field_types_map(ir))
@@ -137,6 +138,7 @@ defmodule Elmc.Backend.CCodegen do
     Process.delete(:elmc_lambda_counter)
     Process.delete(:elmc_lambda_defs)
     Process.delete(:elmc_constructor_tags)
+    Process.delete(:elmc_vector_resource_slots)
     Process.delete(:elmc_enum_types)
 
     trig_fallback_prelude =
@@ -231,6 +233,46 @@ defmodule Elmc.Backend.CCodegen do
       end)
 
     Map.merge(@bundled_union_constructor_tags, Map.new(qualified ++ unqualified))
+  end
+
+  # Static and animated vectors live in separate Elm unions (each real ctor is tag 0),
+  # but Pebble maps both into one vector resource table ordered static then animated.
+  @spec pebble_vector_resource_slot_map(IR.t()) :: %{String.t() => pos_integer()}
+  defp pebble_vector_resource_slot_map(%IR{} = ir) do
+    ir.modules
+    |> Enum.find_value(%{}, fn mod ->
+      if mod.name in ["Pebble.Ui.Resources", "Resources"] do
+        static =
+          mod
+          |> union_ctor_names("StaticVector")
+          |> Enum.reject(&no_resource_ctor?/1)
+
+        animated =
+          mod
+          |> union_ctor_names("AnimatedVector")
+          |> Enum.reject(&no_resource_ctor?/1)
+
+        (static ++ animated)
+        |> Enum.with_index(1)
+        |> Map.new(fn {name, index} -> {name, index} end)
+      end
+    end)
+  end
+
+  defp union_ctor_names(mod, union_name) when is_map(mod) and is_binary(union_name) do
+    case Map.get(mod.unions, union_name) do
+      %{tags: tags} when is_map(tags) ->
+        tags
+        |> Enum.sort_by(fn {_name, tag} -> tag end)
+        |> Enum.map(fn {name, _tag} -> name end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp no_resource_ctor?(name) when is_binary(name) do
+    String.starts_with?(name, "No")
   end
 
   defp enum_type_set(%IR{} = ir) do
@@ -2206,16 +2248,19 @@ defmodule Elmc.Backend.CCodegen do
 
   @spec compile_expr(Types.ir_expr() | nil, Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
-  defp compile_expr(%{op: :int_literal, value: 0}, _env, counter) do
+  defp compile_expr(%{op: :int_literal} = expr, _env, counter) do
+    value = int_literal_compile_value(expr)
     next = counter + 1
     var = "tmp_#{next}"
-    {"ElmcValue *#{var} = elmc_int_zero();", var, next}
-  end
 
-  defp compile_expr(%{op: :int_literal, value: value}, _env, counter) do
-    next = counter + 1
-    var = "tmp_#{next}"
-    {"ElmcValue *#{var} = elmc_new_int(#{value});", var, next}
+    code =
+      if value == 0 do
+        "ElmcValue *#{var} = elmc_int_zero();"
+      else
+        "ElmcValue *#{var} = elmc_new_int(#{value});"
+      end
+
+    {code, var, next}
   end
 
   defp compile_expr(%{op: :c_int_expr, value: value}, _env, counter) when is_binary(value) do
@@ -2529,14 +2574,20 @@ defmodule Elmc.Backend.CCodegen do
   defp compile_expr(%{op: :qualified_call, target: target, args: args}, env, counter) do
     case special_value_from_target(target, args) do
       nil ->
-        case qualified_builtin_operator_name(target) do
-          nil ->
-            compile_cross_module_call(target, args, env, counter)
+        cond do
+          resource_union_constructor?(target, args) ->
+            compile_expr(resource_union_index_expr(target), env, counter)
 
-          builtin_name ->
-            case compile_builtin_operator_call(builtin_name, args, env, counter) do
-              nil -> compile_cross_module_call(target, args, env, counter)
-              result -> result
+          true ->
+            case qualified_builtin_operator_name(target) do
+              nil ->
+                compile_cross_module_call(target, args, env, counter)
+
+              builtin_name ->
+                case compile_builtin_operator_call(builtin_name, args, env, counter) do
+                  nil -> compile_cross_module_call(target, args, env, counter)
+                  result -> result
+                end
             end
         end
 
@@ -6346,8 +6397,8 @@ defmodule Elmc.Backend.CCodegen do
 
   defp direct_int_value(nil, _env, counter), do: {"", "0", counter}
 
-  defp direct_int_value(%{op: :int_literal, value: value}, _env, counter),
-    do: {"", "#{value}", counter}
+  defp direct_int_value(%{op: :int_literal} = expr, _env, counter),
+    do: {"", "#{int_literal_compile_value(expr)}", counter}
 
   defp direct_int_value(%{op: :char_literal, value: value}, _env, counter),
     do: {"", "#{value}", counter}
@@ -6381,20 +6432,38 @@ defmodule Elmc.Backend.CCodegen do
         direct_int_value(field, env, counter)
 
       nil ->
-        with builtin when not is_nil(builtin) <- qualified_builtin_operator_name(target),
-             {:ok, code, value, counter} <- direct_int_builtin(builtin, args, env, counter) do
-          {code, value, counter}
-        else
-          _ ->
-            direct_runtime_int_value(
-              %{op: :qualified_call, target: target, args: args},
-              env,
-              counter
-            )
+        cond do
+          resource_union_constructor?(target, args) ->
+            {"", "#{pebble_resource_slot_index(target)}", counter}
+
+          true ->
+            with builtin when not is_nil(builtin) <- qualified_builtin_operator_name(target),
+                 {:ok, code, value, counter} <- direct_int_builtin(builtin, args, env, counter) do
+              {code, value, counter}
+            else
+              _ ->
+                direct_runtime_int_value(
+                  %{op: :qualified_call, target: target, args: args},
+                  env,
+                  counter
+                )
+            end
         end
 
       expr ->
         direct_int_value(expr, env, counter)
+    end
+  end
+
+  defp direct_int_value(%{op: :constructor_call, target: target, args: args}, env, counter) do
+    if resource_union_constructor?(target, args) do
+      {"", "#{pebble_resource_slot_index(target)}", counter}
+    else
+      direct_runtime_int_value(
+        %{op: :constructor_call, target: target, args: args},
+        env,
+        counter
+      )
     end
   end
 
@@ -7302,6 +7371,21 @@ defmodule Elmc.Backend.CCodegen do
 
   defp special_value_from_target("Pebble.Ui.drawBitmapInRect", args),
     do: encoded_draw_cmd_expr(draw_kind(:bitmap_in_rect), args, 5)
+
+  defp special_value_from_target("Pebble.Ui.drawRotatedBitmap", [bitmap, bounds, rotation, center]),
+    do:
+      encoded_cmd_expr(
+        draw_kind(:rotated_bitmap),
+        [
+          bitmap,
+          field_access_expr(bounds, "w"),
+          field_access_expr(bounds, "h"),
+          rotation,
+          field_access_expr(center, "x"),
+          field_access_expr(center, "y")
+        ],
+        6
+      )
 
   defp special_value_from_target("Pebble.Ui.drawRotatedBitmap", args),
     do: encoded_draw_cmd_expr(draw_kind(:rotated_bitmap), args, 6)
@@ -9596,13 +9680,44 @@ defmodule Elmc.Backend.CCodegen do
   end
 
   defp resource_union_constructor?(target, args) when is_binary(target) and is_list(args) do
-    args == [] and String.starts_with?(target, "Pebble.Ui.Resources.")
+    args == [] and Map.has_key?(vector_resource_slot_map(), resource_union_ctor_name(target))
   end
 
   defp resource_union_constructor?(_, _), do: false
 
+  defp resource_union_ctor_name(target) when is_binary(target) do
+    target |> String.split(".") |> List.last()
+  end
+
+  defp vector_resource_slot_map do
+    Process.get(:elmc_vector_resource_slots, %{})
+  end
+
+  defp int_literal_compile_value(%{op: :int_literal, value: value, union_ctor: ctor})
+       when is_binary(ctor) do
+    case Map.get(vector_resource_slot_map(), resource_union_ctor_name(ctor)) do
+      slot when is_integer(slot) and slot > 0 -> slot
+      _ -> value
+    end
+  end
+
+  defp int_literal_compile_value(%{op: :int_literal, value: value}), do: value
+
   defp resource_union_index_expr(target) when is_binary(target) do
-    %{op: :int_literal, value: constructor_tag(target) + 1}
+  %{op: :int_literal, value: pebble_resource_slot_index(target)}
+  end
+
+  @spec pebble_resource_slot_index(String.t()) :: pos_integer()
+  defp pebble_resource_slot_index(target) when is_binary(target) do
+    ctor = target |> String.split(".") |> List.last()
+
+    case Process.get(:elmc_vector_resource_slots, %{}) do
+      %{^ctor => index} when is_integer(index) and index > 0 ->
+        index
+
+      _ ->
+        constructor_tag(target) + 1
+    end
   end
 
   @spec field_access_expr(map(), String.t()) :: map()

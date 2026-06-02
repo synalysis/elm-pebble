@@ -93,6 +93,16 @@ defmodule Ide.PebbleToolchainTest do
     assert template =~ "ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT"
     assert template =~ "ELMC_PEBBLE_DRAW_BITMAP_SEQUENCE_AT"
     assert template =~ "gbitmap_sequence_create_with_resource"
+    assert template =~ "bitmap_sequence_normalize_play_count"
+    assert template =~ "bitmap_sequence_advance_playback"
+    assert template =~ "gbitmap_sequence_update_bitmap_next_frame"
+    assert source =~ "ApngPatch.pebble_stage_bytes"
+    assert template =~ "PLAY_COUNT_INFINITE"
+    assert template =~ "vector_sequence_playable_duration_ms"
+    assert template =~ "vector_sequence_frame_at_elapsed"
+    assert template =~ "elmc_pebble_invalidate_scene"
+    refute template =~ "s_vector_sequence_anim_origin_seq"
+    assert template =~ "gdraw_command_frame_get_duration"
   end
 
   test "emulator packaging writes storage log build flags header" do

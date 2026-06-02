@@ -97,15 +97,61 @@ type AutoDismissFlashContext = HookContext & {
   scheduleDismiss: () => void
 }
 
+type VectorSequenceAnimClock = {
+  startedAt: number
+}
+
 type VectorSequenceAnimationContext = HookContext & {
   frames: HTMLElement[]
   durations: number[]
   playCount: number
-  loopCount: number
   frameIndex: number
-  timer: ReturnType<typeof setTimeout> | null
+  timer: ReturnType<typeof setInterval> | null
   showFrame: (index: number) => void
-  scheduleNext: () => void
+  syncFrame: () => void
+  readConfig: () => void
+}
+
+const debuggerVectorSequenceAnimState: Map<string, VectorSequenceAnimClock> =
+  (window as unknown as {__debuggerVectorSequenceAnimState?: Map<string, VectorSequenceAnimClock>})
+    .__debuggerVectorSequenceAnimState ??
+  (() => {
+    const map = new Map<string, VectorSequenceAnimClock>()
+    ;(window as unknown as {__debuggerVectorSequenceAnimState: Map<string, VectorSequenceAnimClock>}).__debuggerVectorSequenceAnimState =
+      map
+    return map
+  })()
+
+function vectorSequenceInfinitePlayCount(playCount: number): boolean {
+  return playCount === 0 || playCount === 0xffff || playCount === 0xffffffff
+}
+
+function vectorSequenceFrameIndexAtElapsed(
+  elapsedMs: number,
+  durations: number[],
+  playCount: number
+): number {
+  if (durations.length === 0) return 0
+
+  const totalMs = durations.reduce((sum, duration) => sum + (duration > 0 ? duration : 1), 0)
+  if (totalMs <= 0) return 0
+
+  let windowMs = elapsedMs
+  if (!vectorSequenceInfinitePlayCount(playCount)) {
+    const limit = totalMs * Math.max(playCount, 1)
+    if (windowMs >= limit) return durations.length - 1
+  }
+
+  windowMs = windowMs % totalMs
+
+  let acc = 0
+  for (let index = 0; index < durations.length; index++) {
+    const duration = durations[index] ?? 1
+    acc += duration > 0 ? duration : 1
+    if (windowMs < acc) return index
+  }
+
+  return durations.length - 1
 }
 
 type CopyToClipboardContext = HookContext & {
@@ -718,51 +764,60 @@ const AutoDismissFlash: ViewHook = {
 const VectorSequenceAnimation: ViewHook = {
   mounted(this: VectorSequenceAnimationContext) {
     this.frames = [...this.el.querySelectorAll<HTMLElement>(".debugger-vector-seq-frame")]
-    this.durations = JSON.parse(this.el.dataset.frameDurations || "[]") as number[]
-    this.playCount = Number.parseInt(this.el.dataset.playCount || "1", 10)
-    this.loopCount = 0
-    this.frameIndex = 0
+    this.frameIndex = -1
     this.timer = null
 
     this.showFrame = index => {
+      if (index === this.frameIndex) return
       this.frames.forEach((frame, frameIndex) => {
         frame.style.opacity = frameIndex === index ? "1" : "0"
       })
       this.frameIndex = index
     }
 
-    this.scheduleNext = () => {
-      if (this.timer != null) window.clearTimeout(this.timer)
-      if (this.frames.length <= 1) return
-
-      const duration = this.durations[this.frameIndex] || 100
-
-      this.timer = window.setTimeout(() => {
-        const nextIndex = this.frameIndex + 1
-
-        if (nextIndex >= this.frames.length) {
-          this.loopCount += 1
-
-          if (this.playCount !== 0xffff && this.loopCount >= Math.max(this.playCount, 1)) {
-            this.showFrame(this.frames.length - 1)
-            return
-          }
-
-          this.showFrame(0)
-        } else {
-          this.showFrame(nextIndex)
-        }
-
-        this.scheduleNext()
-      }, duration)
+    this.readConfig = () => {
+      this.durations = JSON.parse(this.el.dataset.frameDurations || "[]") as number[]
+      this.playCount = Number.parseInt(this.el.dataset.playCount || "1", 10)
     }
 
-    this.showFrame(0)
-    this.scheduleNext()
+    this.syncFrame = () => {
+      if (this.frames.length <= 1) {
+        this.showFrame(0)
+        return
+      }
+
+      const animId = this.el.id
+      if (!animId) return
+
+      let clock = debuggerVectorSequenceAnimState.get(animId)
+      if (!clock) {
+        clock = {startedAt: performance.now()}
+        debuggerVectorSequenceAnimState.set(animId, clock)
+      }
+
+      const index = vectorSequenceFrameIndexAtElapsed(
+        performance.now() - clock.startedAt,
+        this.durations,
+        this.playCount
+      )
+      this.showFrame(index)
+    }
+
+    this.readConfig()
+    this.syncFrame()
+
+    if (this.frames.length > 1) {
+      this.timer = window.setInterval(() => this.syncFrame(), 33)
+    }
+  },
+
+  updated(this: VectorSequenceAnimationContext) {
+    this.readConfig()
+    this.syncFrame()
   },
 
   destroyed(this: VectorSequenceAnimationContext) {
-    if (this.timer != null) window.clearTimeout(this.timer)
+    if (this.timer != null) window.clearInterval(this.timer)
   }
 }
 

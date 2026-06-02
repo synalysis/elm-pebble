@@ -406,6 +406,8 @@ defmodule Ide.Resources.ResourceStore do
           {:ok, map()} | {:error, Types.resource_error()}
   def import_vector_sequence(%Project{} = project, frames, original_name, opts)
       when is_list(frames) and is_binary(original_name) do
+    opts = Keyword.put_new(opts, :play_count, 0)
+
     with {:ok, result} <- SvgConverter.convert_svg_sequence(frames, opts),
          :ok <- SvgConverter.validate_pdc_bytes(result.bytes),
          :ok <- PdcDecoder.validate_watch_compatible(result.bytes),

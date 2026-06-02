@@ -1417,7 +1417,7 @@ defmodule Ide.PebbleToolchain do
 
               if filename != "" and File.exists?(source_path) do
                 :ok = File.mkdir_p(Path.dirname(target_path))
-                :ok = File.cp(source_path, target_path)
+                :ok = stage_animation_file(source_path, target_path)
 
                 [
                   %{
@@ -1442,6 +1442,16 @@ defmodule Ide.PebbleToolchain do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp stage_animation_file(source_path, target_path) do
+    with {:ok, bytes} <- File.read(source_path) do
+      bytes
+      |> Ide.Resources.ApngPatch.pebble_stage_bytes()
+      |> then(&File.write!(target_path, &1))
+    end
+
+    :ok
   end
 
   @spec macro_name(String.t() | atom()) :: String.t()

@@ -439,6 +439,7 @@ defmodule Elmc.Backend.Pebble do
     int elmc_pebble_ensure_scene(ElmcPebbleApp *app);
     int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
     int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
+    void elmc_pebble_invalidate_scene(ElmcPebbleApp *app);
     void elmc_pebble_clear_view_cache(ElmcPebbleApp *app);
     int elmc_pebble_tick(ElmcPebbleApp *app);
     int64_t elmc_pebble_active_subscriptions(ElmcPebbleApp *app);
@@ -965,6 +966,13 @@ defmodule Elmc.Backend.Pebble do
       app->dirty_rect.h = 0;
     }
     #endif
+
+    void elmc_pebble_invalidate_scene(ElmcPebbleApp *app) {
+      if (!app) return;
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+      elmc_pebble_scene_mark_full_dirty(app);
+    #endif
+    }
 
     static int elmc_pebble_scene_reserve(ElmcPebbleApp *app, int extra) {
       if (!app || extra < 0) return -1;

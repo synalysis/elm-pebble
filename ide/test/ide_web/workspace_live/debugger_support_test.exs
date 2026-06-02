@@ -1261,6 +1261,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert anim_op.y == 20
     assert length(anim_op.frame_elements) >= 2
     assert length(anim_op.durations) == length(anim_op.frame_elements)
+    # play_count 0 is IDE/PDC infinite; debugger JS treats 0 as loop forever.
+    assert anim_op.play_count == 0
   end
 
   test "hydrate_animation_svg_ops attaches APNG data URL for bitmap sequences" do
